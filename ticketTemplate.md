@@ -42,6 +42,11 @@ and depend only on the repo plus its declared toolchain.>
 
 Estimate: N min · Depends on: <ticket IDs or "none">
 
+> Machine-checkable dependencies are Linear **blocks** relations — the loop
+> enforces only those. Anything outside Linear (DNS, human review, hardware)
+> gates via triage: the ticket stays in Backlog until resolved, then moves to
+> Todo. Keep this line in sync with the relations for human readers.
+
 ## Open questions
 
 - None  <!-- must read exactly this before the ticket enters the pickable queue -->
