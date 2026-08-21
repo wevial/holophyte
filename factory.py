@@ -32,10 +32,11 @@ def parse_task(line):
     return text, budget
 
 
-def sh(cmd, cwd=None):
-    r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+def sh(args, cwd=None):
+    """Run an argv list — no shell, so task text can't break quoting."""
+    r = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError(f"`{cmd}` failed:\n{r.stdout}\n{r.stderr}")
+        raise RuntimeError(f"`{args}` failed:\n{r.stdout}\n{r.stderr}")
     return r.stdout.strip()
 
 
@@ -65,7 +66,7 @@ def complete_task(task_text):
 def run_task(task, budget_min):
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
-    sh(f"git checkout -b {branch} main", TARGET)
+    sh(["git", "checkout", "-b", branch, "main"], TARGET)
 
     def timed(goal):
         """Run one agent turn with a hard wall-clock cap; None on timeout."""
@@ -90,12 +91,12 @@ def run_task(task, budget_min):
                 "Acceptance criteria are part of the task line; the task is done "
                 "only when they hold. Commit your work with a clear message. "
                 "Stay strictly on-scope; do not expand the task.")
-    if out is None or sh("git rev-parse HEAD", TARGET) == sh("git rev-parse main", TARGET):
+    if out is None or sh(["git", "rev-parse", "HEAD"], TARGET) == sh(["git", "rev-parse", "main"], TARGET):
         print(f"[hollow2] implementer made no commits for: {task}")
-        sh(f"git checkout main && git branch -D {branch}", TARGET)
+        sh(["git", "checkout", "main"], TARGET); sh(["git", "branch", "-D", branch], TARGET)
         return False
 
-    sha = sh("git rev-parse HEAD", TARGET)
+    sha = sh(["git", "rev-parse", "HEAD"], TARGET)
 
     # 2. review loop (max 2 rounds)
     for rnd in range(1, MAX_ROUNDS + 1):
@@ -112,7 +113,7 @@ def run_task(task, budget_min):
         if rnd == MAX_ROUNDS:
             print(f"[hollow2] task failed {MAX_ROUNDS} review rounds; "
                   f"leaving branch {branch} at {sha} for a human. Task: {task}")
-            sh("git checkout main", TARGET)
+            sh(["git", "checkout", "main"], TARGET)
             return False
 
         # 3. implementer addresses findings (same branch, new commit)
@@ -120,17 +121,17 @@ def run_task(task, budget_min):
                     f"{verdict}\n\n"
                     "Fix only the concrete blockers listed (ADDRESS/FOLLOW_UP/DECLINE "
                     "the rest in your commit message). Commit the fixes.")
-        if out is None or sh("git rev-parse HEAD", TARGET) == sha:
+        if out is None or sh(["git", "rev-parse", "HEAD"], TARGET) == sha:
             print(f"[hollow2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
-            sh("git checkout main", TARGET)
+            sh(["git", "checkout", "main"], TARGET)
             return False
-        sha = sh("git rev-parse HEAD", TARGET)
+        sha = sh(["git", "rev-parse", "HEAD"], TARGET)
 
     # 4. merge + check off
-    sh("git checkout main", TARGET)
-    sh(f"git merge --no-ff {branch} -m 'Merge {branch}: {task}'", TARGET)
-    sh(f"git branch -d {branch}", TARGET)
+    sh(["git", "checkout", "main"], TARGET)
+    sh(["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {task}"], TARGET)
+    sh(["git", "branch", "-d", branch], TARGET)
     complete_task(task)
     print(f"[hollow2] merged: {task}")
     return True
