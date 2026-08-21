@@ -1,4 +1,4 @@
-# hollow2
+# holo2
 
 A minimal software factory. One script, no frameworks.
 
@@ -8,4 +8,4 @@ A minimal software factory. One script, no frameworks.
 - On any task that fails 2 rounds or produces no commits, the loop stops and
   leaves the branch behind for a human.
 
-Usage: `python3 factory.py /srv/dev/hollow2test`
+Usage: `python3 factory.py /srv/dev/holo2test`

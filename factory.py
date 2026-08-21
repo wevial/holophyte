@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hollow2: a minimal software factory.
+"""holo2: a minimal software factory.
 
 Loop:
   1. Read TODO.md in the target repo, claim the first unchecked task.
@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-TARGET = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/srv/dev/hollow2test")
+TARGET = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/srv/dev/holo2test")
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
 
@@ -80,7 +80,7 @@ def run_task(task, budget_min):
         try:
             return claude(goal, TARGET)
         except TimeoutError:
-            print(f"[hollow2] task exceeded {budget_min} min budget")
+            print(f"[holo2] task exceeded {budget_min} min budget")
             return None
         finally:
             signal.alarm(0)
@@ -92,7 +92,7 @@ def run_task(task, budget_min):
                 "only when they hold. Commit your work with a clear message. "
                 "Stay strictly on-scope; do not expand the task.")
     if out is None or sh(["git", "rev-parse", "HEAD"], TARGET) == sh(["git", "rev-parse", "main"], TARGET):
-        print(f"[hollow2] implementer made no commits for: {task}")
+        print(f"[holo2] implementer made no commits for: {task}")
         sh(["git", "checkout", "main"], TARGET); sh(["git", "branch", "-D", branch], TARGET)
         return False
 
@@ -111,7 +111,7 @@ def run_task(task, budget_min):
             break
 
         if rnd == MAX_ROUNDS:
-            print(f"[hollow2] task failed {MAX_ROUNDS} review rounds; "
+            print(f"[holo2] task failed {MAX_ROUNDS} review rounds; "
                   f"leaving branch {branch} at {sha} for a human. Task: {task}")
             sh(["git", "checkout", "main"], TARGET)
             return False
@@ -122,7 +122,7 @@ def run_task(task, budget_min):
                     "Fix only the concrete blockers listed (ADDRESS/FOLLOW_UP/DECLINE "
                     "the rest in your commit message). Commit the fixes.")
         if out is None or sh(["git", "rev-parse", "HEAD"], TARGET) == sha:
-            print(f"[hollow2] fix round timed out or made no progress; "
+            print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
             sh(["git", "checkout", "main"], TARGET)
             return False
@@ -133,7 +133,7 @@ def run_task(task, budget_min):
     sh(["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {task}"], TARGET)
     sh(["git", "branch", "-d", branch], TARGET)
     complete_task(task)
-    print(f"[hollow2] merged: {task}")
+    print(f"[holo2] merged: {task}")
     return True
 
 
@@ -141,9 +141,9 @@ def main():
     while True:
         task, budget_min = claim_task()
         if not task:
-            print("[hollow2] TODO.md has no open tasks. done.")
+            print("[holo2] TODO.md has no open tasks. done.")
             return
-        print(f"[hollow2] claimed: {task} (budget {budget_min} min)")
+        print(f"[holo2] claimed: {task} (budget {budget_min} min)")
         if not run_task(task, budget_min):
             return  # stop on first failure; human decides next
 
