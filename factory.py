@@ -19,17 +19,32 @@ DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
 BUDGET_RE = re.compile(r"\((\d+)\s*min\)\s*$")
+VERIFY_RE = re.compile(r"\(verify:\s*(.+?)\)\s*$")
 
 
 def parse_task(line):
-    """Split 'do thing (acceptance: x) (15 min)' -> text, budget minutes."""
+    """Split 'do thing (verify: cmd) (15 min)' -> text, verify cmd, budget."""
     text = line.strip()
-    budget = DEFAULT_BUDGET_MIN
+    budget, verify = DEFAULT_BUDGET_MIN, None
     m = BUDGET_RE.search(text)
     if m:
         budget = int(m.group(1))
         text = BUDGET_RE.sub("", text).strip()
-    return text, budget
+    m = VERIFY_RE.search(text)
+    if m:
+        verify = m.group(1).strip()
+        text = VERIFY_RE.sub("", text).strip()
+    return text, verify, budget
+
+
+def run_verify(cmd):
+    """Mechanical acceptance check. Returns (ok, output). Runs via shell on
+    purpose: the command is author-supplied in TODO.md, not agent output."""
+    if not cmd:
+        return True, "(no verify command)"
+    r = subprocess.run(cmd, shell=True, cwd=TARGET, capture_output=True,
+                       text=True, timeout=300)
+    return r.returncode == 0, (r.stdout + r.stderr).strip()[-2000:]
 
 
 def sh(args, cwd=None):
@@ -54,7 +69,7 @@ def claim_task():
     text = (TARGET / "TODO.md").read_text()
     m = TASK_RE.search(text)
     if not m:
-        return None, None
+        return None, None, None
     return parse_task(m.group(1))
 
 
@@ -63,7 +78,7 @@ def complete_task(task_text):
     path.write_text(path.read_text().replace(f"[ ] {task_text}", f"[x] {task_text}", 1))
 
 
-def run_task(task, budget_min):
+def run_task(task, verify_cmd, budget_min):
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
     sh(["git", "checkout", "-b", branch, "main"], TARGET)
@@ -98,16 +113,30 @@ def run_task(task, budget_min):
 
     sha = sh(["git", "rev-parse", "HEAD"], TARGET)
 
-    # 2. review loop (max 2 rounds)
+    # 2. review loop (max 2 rounds). Verify gate runs before each review:
+    # a failing mechanical check skips the reviewer and goes straight to fixes.
     for rnd in range(1, MAX_ROUNDS + 1):
+        ok, out = run_verify(verify_cmd)
+        if not ok:
+            print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
+            if rnd == MAX_ROUNDS:
+                print(f"[holo2] task failed verify at max rounds; "
+                      f"leaving branch {branch} at {sha} for a human.")
+                sh(["git", "checkout", "main"], TARGET)
+                return False
+        else:
+            print(f"[holo2] verify ok before round {rnd}")
+
         verdict = claude(
             f"You are a READ-ONLY code reviewer. Review commit {sha} (diff vs main) "
             f"in this repo against the task: {task}\n"
-            "Do not modify anything. End your reply with exactly one line:\n"
+            + (f"A mechanical verification command was run and "
+               f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n" if verify_cmd else "")
+            + "Do not modify anything. End your reply with exactly one line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", TARGET, readonly=True)
 
-        if "VERDICT: APPROVE" in verdict:
+        if ok and "VERDICT: APPROVE" in verdict:
             break
 
         if rnd == MAX_ROUNDS:
@@ -128,7 +157,15 @@ def run_task(task, budget_min):
             return False
         sha = sh(["git", "rev-parse", "HEAD"], TARGET)
 
-    # 4. merge + check off + commit the checkoff atomically-ish
+    # 4. pre-merge verify (catches fix-round regressions), then merge
+    ok, out = run_verify(verify_cmd)
+    if not ok:
+        print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
+              f"at {sha} for a human:\n{out}")
+        sh(["git", "checkout", "main"], TARGET)
+        return False
+    print("[holo2] verify ok before merge")
+
     sh(["git", "checkout", "main"], TARGET)
     sh(["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {task}"], TARGET)
     sh(["git", "branch", "-d", branch], TARGET)
@@ -141,12 +178,13 @@ def run_task(task, budget_min):
 
 def main():
     while True:
-        task, budget_min = claim_task()
+        task, verify_cmd, budget_min = claim_task()
         if not task:
             print("[holo2] TODO.md has no open tasks. done.")
             return
-        print(f"[holo2] claimed: {task} (budget {budget_min} min)")
-        if not run_task(task, budget_min):
+        print(f"[holo2] claimed: {task} (budget {budget_min} min, "
+              f"verify: {verify_cmd or 'none'})")
+        if not run_task(task, verify_cmd, budget_min):
             return  # stop on first failure; human decides next
 
 
