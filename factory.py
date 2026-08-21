@@ -55,12 +55,26 @@ def sh(args, cwd=None):
     return r.stdout.strip()
 
 
-def claude(goal, cwd, readonly=False):
-    """Run a Claude Code turn with a single goal. Reviewer gets no write perms."""
-    cmd = ["claude", "-p", goal, "--dangerously-skip-permissions"]
-    if readonly:
-        cmd = ["claude", "-p", goal,
+# Role -> harness/model pins. One role, one harness: variables stay pinned
+# per gate (implementer=opencode/ox-alpha, reviewer=claude/opus med,
+# checker=claude/terra med for the future supervisor loop).
+IMPL_MODEL = "openrouter/stealth/ox-alpha"   # opencode
+REVIEW_MODEL = "opus"                        # claude, effort medium
+CHECK_MODEL = "openrouter/openai/gpt-5.6-terra"  # opencode, variant medium
+
+
+def agent(role, goal, cwd):
+    """Run one agent turn for a role. Returns combined output text."""
+    if role == "implement":
+        cmd = ["opencode", "run", "-m", IMPL_MODEL, goal]
+    elif role == "review":
+        cmd = ["claude", "-p", goal, "--model", REVIEW_MODEL,
+               "--effort", "medium",
                "--disallowedTools", "Edit,Write,NotebookEdit,Bash"]
+    elif role == "check":
+        cmd = ["opencode", "run", "-m", CHECK_MODEL, "--variant", "medium", goal]
+    else:
+        raise ValueError(role)
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=1800)
     return (r.stdout + "\n" + r.stderr).strip()
 
@@ -102,7 +116,7 @@ def run_task(task, verify_cmd, budget_min):
         old = signal.signal(signal.SIGALRM, handler)
         signal.alarm(budget_min * 60)
         try:
-            return claude(goal, TARGET)
+            return agent("implement", goal, TARGET)
         except TimeoutError:
             print(f"[holo2] task exceeded {budget_min} min budget")
             return None
@@ -136,14 +150,14 @@ def run_task(task, verify_cmd, budget_min):
         else:
             print(f"[holo2] verify ok before round {rnd}")
 
-        verdict = claude(
+        verdict = agent("review",
             f"You are a READ-ONLY code reviewer. Review commit {sha} (diff vs main) "
             f"in this repo against the task: {task}\n"
             + (f"A mechanical verification command was run and "
                f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n" if verify_cmd else "")
             + "Do not modify anything. End your reply with exactly one line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-            "If REQUEST_CHANGES, list only concrete blockers.", TARGET, readonly=True)
+            "If REQUEST_CHANGES, list only concrete blockers.", TARGET)
 
         if ok and "VERDICT: APPROVE" in verdict:
             break
