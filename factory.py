@@ -2,7 +2,7 @@
 """holo2: a minimal software factory.
 
 Loop:
-  1. Read TODO.md in the target repo, claim the first unchecked task.
+  1. Claim the first ready ticket from Linear (project in linear_provider).
   2. Spawn an implementer agent (goal-based) on a branch.
   3. Spawn a read-only reviewer agent on the committed result.
   4. If findings: implementer fixes, one narrow re-review. Max 2 review rounds.
@@ -39,7 +39,7 @@ def parse_task(line):
 
 def run_verify(cmd):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
-    purpose: the command is author-supplied in TODO.md, not agent output."""
+    purpose: the command is author-supplied on the ticket, not agent output."""
     if not cmd:
         return True, "(no verify command)"
     r = subprocess.run(cmd, shell=True, cwd=TARGET, capture_output=True,
@@ -81,29 +81,24 @@ def agent(role, goal, cwd):
     return (r.stdout + "\n" + r.stderr).strip()
 
 
-def claim_task():
-    text = (TARGET / "TODO.md").read_text()
-    m = TASK_RE.search(text)
-    if not m:
-        return None, None, None
-    return parse_task(m.group(1))
-
-
-def complete_task(task_text):
-    path = TARGET / "TODO.md"
-    path.write_text(path.read_text().replace(f"[ ] {task_text}", f"[x] {task_text}", 1))
-
-
-def ledger(task, entry):
-    """Append a timestamped record to FINDINGS.md in the target repo."""
+def ledger(task_id, entry):
+    """Persist a findings record: Linear comment (primary) + FINDINGS.md."""
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        import linear_provider
+        linear_provider.comment(task_id, f"**{ts}**\n\n{entry}")
+    except Exception as e:
+        print(f"[holo2] Linear comment failed ({e}); FINDINGS.md only")
     p = TARGET / "FINDINGS.md"
     with p.open("a") as f:
-        f.write(f"\n## {ts} — {task[:100]}\n{entry}\n")
+        f.write(f"\n## {ts} — {task_id}\n{entry}\n")
 
 
-def run_task(task, verify_cmd, budget_min):
+def run_task(task):
+    """task: dict from a provider — {id, title, verify, budget_min}."""
+    task_id, task = task["id"], task["title"]
+    verify_cmd, budget_min = task.get("verify"), task["budget_min"]
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
     sh(["git", "checkout", "-b", branch, "main"], TARGET)
@@ -167,7 +162,7 @@ def run_task(task, verify_cmd, budget_min):
         if rnd == MAX_ROUNDS:
             print(f"[holo2] task failed {MAX_ROUNDS} review rounds; "
                   f"leaving branch {branch} at {sha} for a human. Task: {task}")
-            ledger(task, f"FAILED after {MAX_ROUNDS} review rounds; branch {branch} "
+            ledger(task_id, f"FAILED after {MAX_ROUNDS} review rounds; branch {branch} "
                          f"preserved at {sha}\n\nLast reviewer verdict:\n{verdict}")
             sh(["git", "checkout", "main"], TARGET)
             return False
@@ -180,7 +175,7 @@ def run_task(task, verify_cmd, budget_min):
                     "it in the commit message), or DECLINE (invalid/out-of-scope — "
                     "state the rationale in the commit message). Then fix only the "
                     "ADDRESS items and commit.")
-        ledger(task, f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
+        ledger(task_id, f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                      f"Reviewer findings:\n{verdict}\n\n"
                      f"Implementer response:\n{out}")
         if out is None or sh(["git", "rev-parse", "HEAD"], TARGET) == sha:
@@ -202,26 +197,25 @@ def run_task(task, verify_cmd, budget_min):
     sh(["git", "checkout", "main"], TARGET)
     sh(["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {task}"], TARGET)
     sh(["git", "branch", "-d", branch], TARGET)
-    complete_task(task)
-    ledger(task, f"MERGED to main (branch {branch} deleted). "
+    import linear_provider
+    linear_provider.complete(task_id)
+    ledger(task_id, f"MERGED to main (branch {branch} deleted). "
                  f"Verify: {'passed' if ok else 'n/a'}. Rounds used: {rnd}.")
     sh(["git", "add", "FINDINGS.md"], TARGET)
-    sh(["git", "add", "TODO.md"], TARGET)
-    sh(["git", "commit", "-m", f"Complete task: {task}"], TARGET)
+    sh(["git", "commit", "-m", f"Complete task {task_id}: {task}"], TARGET)
     print(f"[holo2] merged: {task}")
     return True
 
 
 def main():
+    import linear_provider
     while True:
-        task, verify_cmd, budget_min = claim_task()
+        task = linear_provider.claim_next()
         if not task:
-            print("[holo2] TODO.md has no open tasks. done.")
+            print("[holo2] Linear has no ready tickets. done.")
             return
-        print(f"[holo2] claimed: {task} (budget {budget_min} min, "
-              f"verify: {verify_cmd or 'none'})")
-        if not run_task(task, verify_cmd, budget_min):
-            return  # stop on first failure; human decides next
+        if not run_task(task):
+            return  # stop on first failure; ticket stays In Progress for a human
 
 
 if __name__ == "__main__":
