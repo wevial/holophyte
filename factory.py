@@ -37,13 +37,13 @@ def parse_task(line):
     return text, verify, budget
 
 
-def run_verify(cmd):
+def run_verify(cmd, cwd=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output."""
     if not cmd:
         return True, "(no verify command)"
-    r = subprocess.run(cmd, shell=True, cwd=TARGET, capture_output=True,
-                       text=True, timeout=300)
+    r = subprocess.run(cmd, shell=True, cwd=str(cwd or TARGET),
+                       capture_output=True, text=True, timeout=300)
     return r.returncode == 0, (r.stdout + r.stderr).strip()[-2000:]
 
 
@@ -95,13 +95,22 @@ def ledger(task_id, entry):
         f.write(f"\n## {ts} — {task_id}\n{entry}\n")
 
 
+WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
+
+
 def run_task(task):
-    """task: dict from a provider — {id, title, verify, budget_min}."""
-    task_id, task = task["id"], task["title"]
+    """task: dict from a provider — {id, title, verify, budget_min}.
+
+    Each task works in its own git worktree (TARGET stays on main, untouched),
+    so a dirty/failed task can never block the repo or the next ticket.
+    """
+    task_id = task["id"]
     verify_cmd, budget_min = task.get("verify"), task["budget_min"]
+    task = task["title"]
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
-    sh(["git", "checkout", "-b", branch, "main"], TARGET)
+    wt = WORKTREES / slug
+    sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
 
     def timed(goal):
         """Run one agent turn with a hard wall-clock cap; None on timeout."""
@@ -113,7 +122,7 @@ def run_task(task):
         old = signal.signal(signal.SIGALRM, handler)
         signal.alarm(budget_min * 60)
         try:
-            return agent("implement", goal, TARGET)
+            return agent("implement", goal, wt)
         except TimeoutError:
             print(f"[holo2] task exceeded {budget_min} min budget")
             return None
@@ -126,23 +135,23 @@ def run_task(task):
                 "Acceptance criteria are part of the task line; the task is done "
                 "only when they hold. Commit your work with a clear message. "
                 "Stay strictly on-scope; do not expand the task.")
-    if out is None or sh(["git", "rev-parse", "HEAD"], TARGET) == sh(["git", "rev-parse", "main"], TARGET):
+    if out is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sh(["git", "rev-parse", "main"], TARGET):
         print(f"[holo2] implementer made no commits for: {task}")
-        sh(["git", "checkout", "main"], TARGET); sh(["git", "branch", "-D", branch], TARGET)
+        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
+        sh(["git", "branch", "-D", branch], TARGET)
         return False
 
-    sha = sh(["git", "rev-parse", "HEAD"], TARGET)
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     # 2. review loop (max 2 rounds). Verify gate runs before each review:
     # a failing mechanical check skips the reviewer and goes straight to fixes.
     for rnd in range(1, MAX_ROUNDS + 1):
-        ok, out = run_verify(verify_cmd)
+        ok, out = run_verify(verify_cmd, wt)
         if not ok:
             print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
             if rnd == MAX_ROUNDS:
                 print(f"[holo2] task failed verify at max rounds; "
-                      f"leaving branch {branch} at {sha} for a human.")
-                sh(["git", "checkout", "main"], TARGET)
+                      f"leaving branch {branch} (worktree {wt}) at {sha} for a human.")
                 return False
         else:
             print(f"[holo2] verify ok before round {rnd}")
@@ -154,7 +163,7 @@ def run_task(task):
                f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n" if verify_cmd else "")
             + "Do not modify anything. End your reply with exactly one line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-            "If REQUEST_CHANGES, list only concrete blockers.", TARGET)
+            "If REQUEST_CHANGES, list only concrete blockers.", wt)
 
         if ok and "VERDICT: APPROVE" in verdict:
             break
@@ -164,7 +173,6 @@ def run_task(task):
                   f"leaving branch {branch} at {sha} for a human. Task: {task}")
             ledger(task_id, f"FAILED after {MAX_ROUNDS} review rounds; branch {branch} "
                          f"preserved at {sha}\n\nLast reviewer verdict:\n{verdict}")
-            sh(["git", "checkout", "main"], TARGET)
             return False
 
         # 3. implementer addresses findings (same branch, new commit)
@@ -178,24 +186,22 @@ def run_task(task):
         ledger(task_id, f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                      f"Reviewer findings:\n{verdict}\n\n"
                      f"Implementer response:\n{out}")
-        if out is None or sh(["git", "rev-parse", "HEAD"], TARGET) == sha:
+        if out is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
-            sh(["git", "checkout", "main"], TARGET)
             return False
-        sha = sh(["git", "rev-parse", "HEAD"], TARGET)
+        sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     # 4. pre-merge verify (catches fix-round regressions), then merge
-    ok, out = run_verify(verify_cmd)
+    ok, out = run_verify(verify_cmd, wt)
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
-        sh(["git", "checkout", "main"], TARGET)
         return False
     print("[holo2] verify ok before merge")
 
-    sh(["git", "checkout", "main"], TARGET)
     sh(["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {task}"], TARGET)
+    sh(["git", "worktree", "remove", str(wt)], TARGET)
     sh(["git", "branch", "-d", branch], TARGET)
     import linear_provider
     linear_provider.complete(task_id)
