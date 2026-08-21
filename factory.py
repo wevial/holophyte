@@ -110,7 +110,19 @@ def run_task(task):
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
     wt = WORKTREES / slug
-    sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
+    if wt.exists():
+        # leftover from a previous failed run — reuse it as-is so preserved
+        # work survives; the branch check below still gates on commits.
+        sh(["git", "worktree", "prune"], TARGET)
+        r = subprocess.run(["git", "worktree", "list", "--porcelain"],
+                           cwd=TARGET, capture_output=True, text=True)
+        registered = str(wt) in r.stdout
+        if not registered:
+            sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
+        sh(["git", "checkout", "-B", branch, "main"], cwd=wt)
+    else:
+        sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
+        sh(["git", "checkout", "-b", branch], cwd=wt)
 
     def timed(goal):
         """Run one agent turn with a hard wall-clock cap; None on timeout."""
