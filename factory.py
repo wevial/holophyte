@@ -66,7 +66,9 @@ CHECK_MODEL = "openrouter/openai/gpt-5.6-terra"  # opencode, variant medium
 def agent(role, goal, cwd):
     """Run one agent turn for a role. Returns combined output text."""
     if role == "implement":
-        cmd = ["opencode", "run", "-m", IMPL_MODEL, goal]
+        # opencode pins its project root at startup and ignores subprocess cwd;
+        # --dir is required to target the repo.
+        cmd = ["opencode", "run", "--dir", str(cwd), "-m", IMPL_MODEL, goal]
     elif role == "review":
         cmd = ["claude", "-p", goal, "--model", REVIEW_MODEL,
                "--effort", "medium",
