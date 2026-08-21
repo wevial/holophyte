@@ -128,11 +128,13 @@ def run_task(task, budget_min):
             return False
         sha = sh(["git", "rev-parse", "HEAD"], TARGET)
 
-    # 4. merge + check off
+    # 4. merge + check off + commit the checkoff atomically-ish
     sh(["git", "checkout", "main"], TARGET)
     sh(["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {task}"], TARGET)
     sh(["git", "branch", "-d", branch], TARGET)
     complete_task(task)
+    sh(["git", "add", "TODO.md"], TARGET)
+    sh(["git", "commit", "-m", f"Complete task: {task}"], TARGET)
     print(f"[holo2] merged: {task}")
     return True
 
