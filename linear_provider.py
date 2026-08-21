@@ -1,127 +1,132 @@
 #!/usr/bin/env python3
-"""Minimal Linear MCP-over-HTTP client for holo2 (read/write issues).
+"""Linear provider for holo2.
 
-Uses the Hermes-stored OAuth token (~/.hermes/mcp-tokens/linear.json) against
-https://mcp.linear.app/mcp. Handles the streamable-HTTP JSON-RPC dance:
-initialize -> initialized -> tools/call. Re-initializes per invocation; fine
-for a single-threaded loop calling a few times per task.
+Uses a personal API key from LINEAR_API_KEY (env var or .env next to this
+file) against the direct GraphQL API.
+
+Loop-facing API: claim_next() / complete() / comment() / list_ready_issues().
 """
 import json
-import uuid
+import os
+import re
 import urllib.request
 from pathlib import Path
 
-MCP_URL = "https://mcp.linear.app/mcp"
-TOKEN_FILE = Path.home() / ".hermes/mcp-tokens/linear.json"
+HERE = Path(__file__).parent
 PROJECT_ID = "REDACTED"  # Lotuspod
+TEAM = "Personal Projects"
+GRAPHQL = "https://api.linear.app/graphql"
 
 
-def _token():
-    return json.loads(TOKEN_FILE.read_text())["access_token"]
+def _load_env_key():
+    if os.environ.get("LINEAR_API_KEY"):
+        return os.environ["LINEAR_API_KEY"]
+    env_file = HERE / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if line.startswith("LINEAR_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
 
 
-def _post(payload, session_id=None):
-    headers = {
-        "Authorization": f"Bearer {_token()}",
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-    }
-    if session_id:
-        headers["mcp-session-id"] = session_id
-    req = urllib.request.Request(MCP_URL, data=json.dumps(payload).encode(),
-                                 headers=headers)
-    r = urllib.request.urlopen(req, timeout=60)
-    sid = r.headers.get("mcp-session-id", session_id)
-    body = r.read().decode()
-    # SSE-style response: take the data: line(s)
-    results = []
-    for line in body.splitlines():
-        if line.startswith("data: "):
-            try:
-                results.append(json.loads(line[6:]))
-            except json.JSONDecodeError:
-                pass
-    if not results and body.strip():
-        try:
-            results.append(json.loads(body))
-        except json.JSONDecodeError:
-            pass
-    return results, sid
-
-
-class Linear:
-    def __init__(self):
-        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                "params": {"protocolVersion": "2025-03-26", "capabilities": {},
-                           "clientInfo": {"name": "holo2", "version": "0.1"}}}
-        _, self.sid = _post(init)
-        _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, self.sid)
-        self._n = 1
-
-    def call(self, tool, args):
-        return self._call_no_team(tool, {"team": "Personal Projects", **args})
-
-    def _call_no_team(self, tool, args):
-        self._n += 1
-        payload = {"jsonrpc": "2.0", "id": self._n, "method": "tools/call",
-                   "params": {"name": tool, "arguments": args}}
-        results, _ = _post(payload, self.sid)
-        for r in results:
-            if "error" in r:
-                raise RuntimeError(r["error"])
-            content = r.get("result", {}).get("content", [])
-            text = "\n".join(c.get("text", "") for c in content if c.get("type") == "text")
-            try:
-                return json.loads(text)
-            except (json.JSONDecodeError, TypeError):
-                return text
-        raise RuntimeError("no result from MCP call")
+def _gql(query, variables=None):
+    key = _load_env_key()
+    if not key:
+        raise RuntimeError("LINEAR_API_KEY not set (env or .env)")
+    body = json.dumps({"query": query, "variables": variables or {}}).encode()
+    req = urllib.request.Request(GRAPHQL, data=body, headers={
+        "Authorization": key, "Content-Type": "application/json"})
+    r = json.load(urllib.request.urlopen(req, timeout=30))
+    if r.get("errors"):
+        raise RuntimeError(f"Linear GraphQL error: {r['errors']}")
+    return r["data"]
 
 
 # --- Loop-facing provider API -------------------------------------------------
 
-def list_ready_issues(project_id=PROJECT_ID):
-    """Issues in the project that are triaged, not terminal, unblocked.
+READY_QUERY = """
+query($project: String!) {
+  project(id: $project) {
+    issues(first: 50, filter: { state: { type: { nin: ["completed", "canceled", "backlog"] } } }) {
+      nodes {
+        identifier id title description
+        estimate
+        state { type name }
+        relations { nodes { type relatedIssue { identifier state { type } } } }
+      }
+    }
+  }
+}"""
 
-    Note: status comes back as a plain string; dependency info lives under
-    get_issue(includeRelations=True) -> relations.blockedBy, whose entries
-    carry their own statusType.
+
+def list_ready_issues(project_id=PROJECT_ID):
+    """Triaged (Todo/started), non-terminal, unblocked issues in the project.
+
+    Note: Linear stores a blocker as an edge with type=blocks whose SOURCE is
+    the blocking issue; the target issue's own relations list does not include
+    it. So we fetch the whole project's relations once and invert.
     """
-    lin = Linear()
-    raw = lin.call("list_issues", {"project": project_id, "limit": 50})
-    issues = raw.get("issues", []) if isinstance(raw, dict) else raw.get("issues", [])
+    data = _gql(READY_QUERY, {"project": project_id})
+    issues = data["project"]["issues"]["nodes"]
+
+    all_q = """query($project: String!) {
+      project(id: $project) { issues(first: 50) {
+        nodes { identifier relations { nodes { type relatedIssue { identifier } } } }
+      } }
+    }"""
+    all_nodes = _gql(all_q, {"project": project_id})["project"]["issues"]["nodes"]
+    blocked_by = {}
+    for n in all_nodes:
+        for rel in n["relations"]["nodes"]:
+            if rel["type"] == "blocks":
+                blocked_by.setdefault(rel["relatedIssue"]["identifier"],
+                                      []).append(n["identifier"])
+
     ready = []
     for i in issues:
-        if i.get("statusType", "") in ("completed", "canceled", "backlog"):
-            continue  # done, killed, or untriaged backlog (Todo = pickable)
-        full = lin._call_no_team("get_issue",
-                                 {"id": i["id"], "includeRelations": True})
-        blocked = [b for b in (full.get("relations", {}).get("blockedBy") or [])
-                   if b.get("statusType") not in ("completed", "canceled")]
-        if not blocked:
+        my_blockers = blocked_by.get(i["identifier"], [])
+        # blockers only gate while they are themselves open — but any issue
+        # still in the ready query's non-terminal set is open by definition,
+        # and completed ones are absent from blocked_by sources only if done;
+        # be explicit: check each blocker's state via the map we already have.
+        open_blockers = [b for b in my_blockers
+                         if b in {x["identifier"] for x in issues}]
+        if not open_blockers:
             ready.append(i)
     return ready
 
 
 def parse_task(issue):
-    """Extract task text + verify command from a ticket's description."""
-    import re
+    """Extract task + verify command from a ticketTemplate.md description."""
     desc = issue.get("description", "") or ""
-    m = re.search(r"\*\*Verify command\(s\):\*\*\s*```\n(.*?)```", desc, re.S)
+    m = re.search(r"## Verify command\(s\)\s*```\n(.*?)```", desc, re.S)
     verify = m.group(1).strip() if m else None
-    title = issue.get("title", "").strip()
-    return {"id": issue["identifier"], "title": title, "verify": verify,
-            "budget_min": int(issue.get("estimate", {}).get("value") or 20)}
+    return {"id": issue["identifier"], "title": issue["title"].strip(),
+            "verify": verify,
+            "budget_min": int(issue.get("estimate") or 20)}
+
+
+def _state_id(name):
+    data = _gql('query($team: String!) { workflowStates(filter: { team: '
+                '{ name: { eq: $team } } }) { nodes { id name type } } }',
+                {"team": TEAM})
+    return next(s["id"] for s in data["workflowStates"]["nodes"]
+                if s["name"] == name)
+
+
+def _set_state(issue_id, state_id):
+    _gql('mutation($id: String!, $state: String!) { issueUpdate(id: $id, '
+         'input: { stateId: $state }) { success } }',
+         {"id": issue_id, "state": state_id})
 
 
 def claim_next():
-    """Pick the first ready issue -> In Progress. Returns parsed task or None."""
+    """First ready issue (by identifier) -> In Progress. Parsed task or None."""
     ready = list_ready_issues()
     if not ready:
         return None
     issue = sorted(ready, key=lambda i: i["identifier"])[0]
-    lin = Linear()
-    lin.call("save_issue", {"id": issue["identifier"], "state": "In Progress"})
+    _set_state(issue["id"], _state_id("In Progress"))
     task = parse_task(issue)
     print(f"[holo2] claimed {task['id']}: {task['title']} "
           f"(budget {task['budget_min']} min)")
@@ -129,13 +134,13 @@ def claim_next():
 
 
 def complete(task_id):
-    lin = Linear()
-    lin.call("save_issue", {"id": task_id, "state": "Done"})
+    _set_state(task_id, _state_id("Done"))
 
 
 def comment(task_id, body):
-    lin = Linear()
-    lin.call("save_comment", {"issue": task_id, "body": body})
+    _gql('mutation($issue: String!, $body: String!) { commentCreate(input: '
+         '{ issueId: $issue, body: $body }) { success } }',
+         {"issue": task_id, "body": body})
 
 
 if __name__ == "__main__":
