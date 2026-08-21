@@ -15,8 +15,21 @@ from pathlib import Path
 
 TARGET = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/srv/dev/hollow2test")
 MAX_ROUNDS = 2
+DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
+BUDGET_RE = re.compile(r"\((\d+)\s*min\)\s*$")
+
+
+def parse_task(line):
+    """Split 'do thing (acceptance: x) (15 min)' -> text, budget minutes."""
+    text = line.strip()
+    budget = DEFAULT_BUDGET_MIN
+    m = BUDGET_RE.search(text)
+    if m:
+        budget = int(m.group(1))
+        text = BUDGET_RE.sub("", text).strip()
+    return text, budget
 
 
 def sh(cmd, cwd=None):
@@ -39,7 +52,9 @@ def claude(goal, cwd, readonly=False):
 def claim_task():
     text = (TARGET / "TODO.md").read_text()
     m = TASK_RE.search(text)
-    return (m.group(1), m.start(1)) if m else (None, None)
+    if not m:
+        return None, None
+    return parse_task(m.group(1))
 
 
 def complete_task(task_text):
@@ -47,16 +62,35 @@ def complete_task(task_text):
     path.write_text(path.read_text().replace(f"[ ] {task_text}", f"[x] {task_text}", 1))
 
 
-def run_task(task):
+def run_task(task, budget_min):
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
     sh(f"git checkout -b {branch} main", TARGET)
 
-    # 1. implement
-    claude(f"Implement this task in this repo: {task}\n"
-           "Commit your work with a clear message. Stay strictly on-scope.", TARGET)
+    def timed(goal):
+        """Run one agent turn with a hard wall-clock cap; None on timeout."""
+        import signal
 
-    if sh("git rev-parse --verify HEAD", TARGET) == sh("git rev-parse main", TARGET):
+        def handler(signum, frame):
+            raise TimeoutError()
+
+        old = signal.signal(signal.SIGALRM, handler)
+        signal.alarm(budget_min * 60)
+        try:
+            return claude(goal, TARGET)
+        except TimeoutError:
+            print(f"[hollow2] task exceeded {budget_min} min budget")
+            return None
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old)
+
+    # 1. implement
+    out = timed(f"Implement this task in this repo: {task}\n"
+                "Acceptance criteria are part of the task line; the task is done "
+                "only when they hold. Commit your work with a clear message. "
+                "Stay strictly on-scope; do not expand the task.")
+    if out is None or sh("git rev-parse HEAD", TARGET) == sh("git rev-parse main", TARGET):
         print(f"[hollow2] implementer made no commits for: {task}")
         sh(f"git checkout main && git branch -D {branch}", TARGET)
         return False
@@ -82,10 +116,15 @@ def run_task(task):
             return False
 
         # 3. implementer addresses findings (same branch, new commit)
-        claude(f"A reviewer left findings on your work for task: {task}\n\n"
-               f"{verdict}\n\n"
-               "Fix only the concrete blockers listed (ADDRESS/FOLLOW_UP/DECLINE "
-               "the rest in your commit message). Commit the fixes.", TARGET)
+        out = timed(f"A reviewer left findings on your work for task: {task}\n\n"
+                    f"{verdict}\n\n"
+                    "Fix only the concrete blockers listed (ADDRESS/FOLLOW_UP/DECLINE "
+                    "the rest in your commit message). Commit the fixes.")
+        if out is None or sh("git rev-parse HEAD", TARGET) == sha:
+            print(f"[hollow2] fix round timed out or made no progress; "
+                  f"leaving branch {branch} at {sha} for a human.")
+            sh("git checkout main", TARGET)
+            return False
         sha = sh("git rev-parse HEAD", TARGET)
 
     # 4. merge + check off
@@ -99,12 +138,12 @@ def run_task(task):
 
 def main():
     while True:
-        task, _ = claim_task()
+        task, budget_min = claim_task()
         if not task:
             print("[hollow2] TODO.md has no open tasks. done.")
             return
-        print(f"[hollow2] claimed: {task}")
-        if not run_task(task):
+        print(f"[hollow2] claimed: {task} (budget {budget_min} min)")
+        if not run_task(task, budget_min):
             return  # stop on first failure; human decides next
 
 
