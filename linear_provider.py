@@ -28,9 +28,13 @@ def _load_env_var(name):
     return None
 
 
-# Target project: override with HOLO2_PROJECT_ID (env or .env); Lotuspod fallback.
-PROJECT_ID = _load_env_var("HOLO2_PROJECT_ID") or \
-    "REDACTED"  # Lotuspod
+# Target Linear project. Configured via HOLO2_PROJECT_ID (env or .env) —
+# never hardcoded here, so public history stays free of internal IDs.
+PROJECT_ID = _load_env_var("HOLO2_PROJECT_ID")
+if not PROJECT_ID:
+    raise RuntimeError(
+        "HOLO2_PROJECT_ID not set — add it to .env next to this file "
+        "(Linear project UUID to drive)")
 
 
 def _load_env_key():
