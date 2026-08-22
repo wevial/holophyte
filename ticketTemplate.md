@@ -32,6 +32,14 @@
 <Exact runnable command(s). Exit code 0 = pass. The factory runs these
 mechanically before review and before merge; they must be non-interactive
 and depend only on the repo plus its declared toolchain.>
+
+Rules:
+- Run from the repo/worktree root; use RELATIVE paths only (never `cd` to an
+  absolute repo path — the factory executes these inside a per-task worktree).
+- Assert BEHAVIOR (a command succeeds, output is valid, tests pass), not
+  implementation details (specific filenames, internal structure). Where the
+  code lives is the implementer's call if behavior holds.
+- Keep each command deterministic and idempotent.
 ```
 
 ## Implementation notes
