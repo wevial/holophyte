@@ -140,7 +140,12 @@ def parse(text):
     t.acceptance_done = _checkboxes(ac, CHECKED_RE)
     t.verify_commands = _verify_commands(t.sections.get("Verify command(s)", ""))
     t.notes = _bullets(t.sections.get("Implementation notes", ""))
-    est = ESTIMATE_RE.match(_clean(t.sections.get("Estimate & dependencies", "")))
+    est = None
+    for ln in t.sections.get("Estimate & dependencies", "").splitlines():
+        m = ESTIMATE_RE.match(ln.strip())
+        if m:
+            est = m
+            break
     t.estimate_min = int(est.group(1)) if est else None
     t.depends_on = _deps(est.group(2)) if est else None
     oq = COMMENT_RE.sub("", t.sections.get("Open questions", ""))

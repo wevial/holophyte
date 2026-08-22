@@ -37,8 +37,8 @@ Usage: `python3 factory.py /srv/dev/holo2test`
 - `ticket_template.py` — parser/validator for that shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.
-- `test_ticket_template.py` — stdlib unittest suite for it
-  (`python3 -m unittest test_ticket_template`).
+- `tests/test_ticket_template.py` — stdlib unittest suite for it
+  (`python3 -m unittest discover tests`).
 - `strman.py` — small string utilities.
 - `FINDINGS.md` (generated) — append-only review/merge ledger, mirrored
   to Linear ticket comments.

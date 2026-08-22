@@ -1,6 +1,6 @@
 """Tests for ticket_template: parse + validate ticketTemplate.md tickets.
 
-Run: python3 -m unittest test_ticket_template -v
+Run: python3 -m unittest discover tests -v
 """
 import subprocess
 import sys
@@ -8,9 +8,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import ticket_template as tt
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 
 FILLED = """\
 # Add export endpoint
@@ -59,6 +61,17 @@ Estimate: 30 min · Depends on: none
 - None
 """
 
+BLOCKQUOTE = """\
+> Machine-checkable dependencies are Linear **blocks** relations — the loop
+> enforces only those. Anything outside Linear (DNS, human review, hardware)
+> gates via triage: the ticket stays in Backlog until resolved, then moves to
+> Todo. Keep this line in sync with the relations for human readers.
+"""
+
+FILLED_WITH_BLOCKQUOTE = FILLED.replace(
+    "Estimate: 30 min · Depends on: none\n",
+    "Estimate: 30 min · Depends on: none\n\n" + BLOCKQUOTE)
+
 
 class ParseTests(unittest.TestCase):
     def setUp(self):
@@ -101,6 +114,16 @@ class ParseTests(unittest.TestCase):
             "Depends on: none", "Depends on: KO-1, KO-23"))
         self.assertEqual(t.depends_on, ["KO-1", "KO-23"])
 
+    def test_estimate_line_ignores_trailing_blockquote(self):
+        t = tt.parse(FILLED_WITH_BLOCKQUOTE)
+        self.assertEqual(t.estimate_min, 30)
+        self.assertEqual(t.depends_on, [])
+
+    def test_depends_on_ids_split_with_blockquote(self):
+        t = tt.parse(FILLED_WITH_BLOCKQUOTE.replace(
+            "Depends on: none", "Depends on: KO-1, KO-23"))
+        self.assertEqual(t.depends_on, ["KO-1", "KO-23"])
+
 
 class ValidateTests(unittest.TestCase):
     def assert_problems_contain(self, text, fragment):
@@ -110,6 +133,9 @@ class ValidateTests(unittest.TestCase):
 
     def test_filled_ticket_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+
+    def test_filled_ticket_with_blockquote_is_valid(self):
+        self.assertEqual(tt.validate(tt.parse(FILLED_WITH_BLOCKQUOTE)), [])
 
     def test_missing_section(self):
         self.assert_problems_contain(
@@ -191,7 +217,7 @@ class TemplateFileTests(unittest.TestCase):
     """The real ticketTemplate.md must parse; unfilled, it must NOT validate."""
 
     def setUp(self):
-        self.text = (HERE / "ticketTemplate.md").read_text()
+        self.text = (ROOT / "ticketTemplate.md").read_text()
         self.t = tt.parse(self.text)
 
     def test_all_sections_recognized_in_order(self):
@@ -211,7 +237,7 @@ class TemplateFileTests(unittest.TestCase):
 class CliTests(unittest.TestCase):
     def run_cli(self, *paths):
         return subprocess.run(
-            [sys.executable, str(HERE / "ticket_template.py"), *paths],
+            [sys.executable, str(ROOT / "ticket_template.py"), *paths],
             capture_output=True, text=True)
 
     def test_valid_file_exits_zero(self):
@@ -232,7 +258,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("missing section", r.stdout)
 
     def test_real_template_file_exits_nonzero(self):
-        r = self.run_cli(str(HERE / "ticketTemplate.md"))
+        r = self.run_cli(str(ROOT / "ticketTemplate.md"))
         self.assertNotEqual(r.returncode, 0)
 
     def test_no_args_usage_exit_two(self):
