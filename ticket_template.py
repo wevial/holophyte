@@ -193,6 +193,12 @@ def validate(t):
     if t.stray_h1s:
         p.append(f"{len(t.stray_h1s)} extra H1 heading(s); exactly one allowed")
 
+    seen_first = {}
+    for idx, name in enumerate(t.order):
+        seen_first.setdefault(name, idx)
+    for a, b in zip(SECTION_ORDER, SECTION_ORDER[1:]):
+        if a in seen_first and b in seen_first and seen_first[a] >= seen_first[b]:
+            p.append(f"sections out of template order: '## {a}' must come before '## {b}'")
     for name in SECTION_ORDER:
         n = t.order.count(name)
         if n == 0:

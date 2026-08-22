@@ -267,3 +267,23 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SectionOrderTests(unittest.TestCase):
+    """validate() enforces the docstring's 'required sections in order' claim."""
+
+    def test_reordered_sections_fail(self):
+        summary_block = (
+            "## Summary\n"
+            "\n"
+            "Add a CSV export endpoint for the orders list.\n")
+        # move Summary to the very end: violates 'before What / Why / How'
+        head = FILLED.replace(summary_block, "", 1).rstrip("\n")
+        reordered = head + "\n\n" + summary_block
+        problems = tt.validate(tt.parse(reordered))
+        self.assertTrue(any("out of template order" in p for p in problems),
+                        f"expected order error, got {problems}")
+
+    def test_conforming_order_passes(self):
+        problems = tt.validate(tt.parse(FILLED))
+        self.assertFalse([p for p in problems if "out of template order" in p])
