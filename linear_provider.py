@@ -13,20 +13,28 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).parent
-PROJECT_ID = "REDACTED"  # Lotuspod
 TEAM = "Personal Projects"
 GRAPHQL = "https://api.linear.app/graphql"
 
 
-def _load_env_key():
-    if os.environ.get("LINEAR_API_KEY"):
-        return os.environ["LINEAR_API_KEY"]
+def _load_env_var(name):
+    if os.environ.get(name):
+        return os.environ[name]
     env_file = HERE / ".env"
     if env_file.exists():
         for line in env_file.read_text().splitlines():
-            if line.startswith("LINEAR_API_KEY="):
+            if line.startswith(name + "="):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
     return None
+
+
+# Target project: override with HOLO2_PROJECT_ID (env or .env); Lotuspod fallback.
+PROJECT_ID = _load_env_var("HOLO2_PROJECT_ID") or \
+    "REDACTED"  # Lotuspod
+
+
+def _load_env_key():
+    return _load_env_var("LINEAR_API_KEY")
 
 
 def _gql(query, variables=None):
