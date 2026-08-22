@@ -34,6 +34,11 @@ Usage: `python3 factory.py /srv/dev/holo2test`
 - `ticketTemplate.md` — ticket shape. Verify commands go in the
   "Verify command(s)" section (exit 0 = pass, relative paths only);
   estimate is the budget in minutes.
+- `ticket_template.py` — parser/validator for that shape;
+  `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
+  pickable-ready.
+- `test_ticket_template.py` — stdlib unittest suite for it
+  (`python3 -m unittest test_ticket_template`).
 - `strman.py` — small string utilities.
 - `FINDINGS.md` (generated) — append-only review/merge ledger, mirrored
   to Linear ticket comments.
