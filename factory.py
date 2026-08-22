@@ -212,7 +212,25 @@ def run_task(task):
         return False
     print("[holo2] verify ok before merge")
 
-    sh(["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {task}"], TARGET)
+    # Commit any pending FINDINGS.md changes BEFORE merging so the merge
+    # never trips over a dirty index.
+    r = subprocess.run(["git", "status", "--porcelain", "FINDINGS.md"],
+                       cwd=TARGET, capture_output=True, text=True)
+    if r.stdout.strip():
+        sh(["git", "add", "FINDINGS.md"], TARGET)
+        sh(["git", "commit", "-m", f"FINDINGS: {task_id} review records"], TARGET)
+
+    mr = subprocess.run(["git", "merge", "--no-ff", branch, "-m",
+                         f"Merge {branch}: {task}"], cwd=TARGET,
+                        capture_output=True, text=True)
+    if mr.returncode != 0 and "FINDINGS.md" in (mr.stdout + mr.stderr):
+        # conflict limited to FINDINGS.md — prefer the branch side (fuller log)
+        subprocess.run(["git", "checkout", "--theirs", "FINDINGS.md"],
+                       cwd=TARGET, capture_output=True, text=True)
+        sh(["git", "add", "FINDINGS.md"], TARGET)
+        sh(["git", "commit", "--no-edit"], TARGET)
+    else:
+        assert mr.returncode == 0, (mr.stdout, mr.stderr)
     sh(["git", "worktree", "remove", str(wt)], TARGET)
     sh(["git", "branch", "-d", branch], TARGET)
     import linear_provider
