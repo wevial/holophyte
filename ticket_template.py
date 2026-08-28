@@ -10,17 +10,19 @@ declarations, an "Estimate: N min · Depends on: ..." line, and open questions
 reading exactly "- None". Unfilled placeholders ({{...}} or <...>) fail.
 
 Scope is capped mechanically as well: a ticket over MAX_ESTIMATE_MIN minutes,
-MAX_CRITERIA acceptance criteria, or MAX_IN_SCOPE "In scope" bullets is
-rejected — scope rules kept only in prose get skipped. Every list entry under
-"Acceptance criteria" counts toward that cap, and one that is not a "- [ ]"
-checkbox is rejected on its own, so extra criteria cannot hide in a plain or
-numbered bullet. A "What:" line that chains deliverables instead yields an
+MAX_CRITERIA acceptance criteria, or MAX_IN_SCOPE "In scope" entries is
+rejected — scope rules kept only in prose get skipped. Every list entry
+counts toward those caps, whatever its marker ("-", "*", "+", "1."), and an
+acceptance criterion that is not a "- [ ]" checkbox is rejected on its own,
+so extra scope cannot hide behind list syntax the parser might skip. A
+"What:" line that chains deliverables instead yields an
 ADVISORY_PREFIX-marked note, which does not affect validity; blocking() drops
 advisories for callers that gate on the result.
 
 Markdown that Linear has normalized round-trips: "**What: **" for "**What:**"
-and "* None" for "- None" are the same structure, so both are accepted. Loose
-formatting beyond those equivalences still fails.
+is the same structure as the plain form, and any bullet marker ("-", "*",
+"+") reads the same, so those variants are accepted. Loose formatting beyond
+those equivalences still fails.
 
 CLI: python3 ticket_template.py TICKET.md [...]  ->  exit 0 iff all valid.
 """
@@ -50,13 +52,15 @@ ADVISORY_PREFIX = "advisory: "
 SCOPE_CHAINING = (" and ", ";", ", then ")
 H1_RE = re.compile(r"^#\s+(.*?)\s*$")
 H2_RE = re.compile(r"^##\s+(.*?)\s*$")
-BULLET_RE = re.compile(r"^[-*]\s+(.*)$")
-UNCHECKED_RE = re.compile(r"^[-*]\s+\[ \]\s*(.*)$")
-CHECKED_RE = re.compile(r"^[-*]\s+\[[xX]\]\s*(.*)$")
-# Any list entry, bulleted or numbered. Acceptance criteria must be
-# checkboxes; matching the looser shape is what lets validate() see -- and
-# reject -- entries that would otherwise slip past MAX_CRITERIA unnoticed.
-LIST_ITEM_RE = re.compile(r"^(?:[-*]|\d+[.)])\s+(.*)$")
+# Markdown's three bullet markers. All of them render identically, so a cap
+# that recognized only some of them would be bypassable by typing "+".
+BULLET = r"[-*+]"
+UNCHECKED_RE = re.compile(rf"^{BULLET}\s+\[ \]\s*(.*)$")
+CHECKED_RE = re.compile(rf"^{BULLET}\s+\[[xX]\]\s*(.*)$")
+# Any list entry, bulleted or numbered. Counting the loosest list shape --
+# everywhere a cap applies -- is what keeps entries from slipping past
+# MAX_CRITERIA or MAX_IN_SCOPE by wearing a marker the parser skipped.
+LIST_ITEM_RE = re.compile(rf"^(?:{BULLET}|\d+[.)])\s+(.*)$")
 # Linear rewrites "**What:**" as "**What: **", so the space is allowed inside
 # the bold run — but the key, the colon, and the bold markers stay required.
 BOLD_KEY_RE = re.compile(r"^\*\*(What|Why|How):[ \t]*\*\*\s*(.*)$")
@@ -68,17 +72,18 @@ FENCE_RE = re.compile(r"^```\w*\s*$")
 # One literal contract declaration: a relative path, a colon, and the exact
 # value that must appear in that file. Literal only — no regex, no shell.
 CONTRACT_RE = re.compile(r"^(\S+?):\s*(.*)$")
-OPEN_QUESTIONS_NONE = ("- None", "* None")
+OPEN_QUESTIONS_NONE = ("- None", "* None", "+ None")
 
 
 def _clean(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _bullets(body):
+def _list_items(body):
+    """Every list entry in the section, bulleted (-, *, +) or numbered."""
     out = []
     for line in body.splitlines():
-        m = BULLET_RE.match(line.strip())
+        m = LIST_ITEM_RE.match(line.strip())
         if m:
             out.append(_clean(m.group(1)))
     return out
@@ -215,13 +220,13 @@ def parse(text):
         if m:
             kv[m.group(1)] = _clean(m.group(2))
     t.what, t.why, t.how = kv.get("What", ""), kv.get("Why", ""), kv.get("How", "")
-    t.in_scope = _bullets(t.sections.get("In scope", ""))
-    t.out_of_scope = _bullets(t.sections.get("Out of scope", ""))
+    t.in_scope = _list_items(t.sections.get("In scope", ""))
+    t.out_of_scope = _list_items(t.sections.get("Out of scope", ""))
     t.acceptance, t.acceptance_done, t.acceptance_other = _criteria(
         t.sections.get("Acceptance criteria", ""))
     t.verify_commands = _verify_commands(t.sections.get("Verify command(s)", ""))
     t.contract_checks = _contract_checks(t.sections.get("Contract checks", ""))
-    t.notes = _bullets(t.sections.get("Implementation notes", ""))
+    t.notes = _list_items(t.sections.get("Implementation notes", ""))
     est = None
     for ln in t.sections.get("Estimate & dependencies", "").splitlines():
         m = ESTIMATE_RE.match(ln.strip())
@@ -325,12 +330,12 @@ def validate(t):
         p.append("'**How:**' line missing under 'What / Why / How' "
                  "('Why' is optional)")
     if not t.in_scope:
-        p.append("'In scope' has no bullets")
+        p.append("'In scope' has no entries")
     elif len(t.in_scope) > MAX_IN_SCOPE:
-        p.append(f"'In scope' has {len(t.in_scope)} bullets; the cap is "
+        p.append(f"'In scope' has {len(t.in_scope)} entries; the cap is "
                  f"{MAX_IN_SCOPE} — split the ticket")
     if not t.out_of_scope:
-        p.append("'Out of scope' has no bullets")
+        p.append("'Out of scope' has no entries")
 
     if not t.acceptance and not t.acceptance_done:
         p.append("'Acceptance criteria' has no '- [ ] Given/when/then' items")

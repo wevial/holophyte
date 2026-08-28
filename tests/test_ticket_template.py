@@ -388,11 +388,23 @@ def with_extra_criteria(*entries):
     return at_cap.replace(last, "\n".join((last,) + entries))
 
 
-def with_in_scope(n):
-    """FILLED with its single In-scope bullet replaced by `n` bullets."""
+def with_in_scope(n, marker="-"):
+    """FILLED with its single In-scope bullet replaced by `n` entries.
+
+    `marker` is prepended to each entry as written, so a caller can spell the
+    list with any Markdown list syntax.
+    """
     return FILLED.replace(
         "- CSV serialization of the orders list",
-        "\n".join(f"- Scope item {i}" for i in range(1, n + 1)))
+        "\n".join(f"{marker} Scope item {i}" for i in range(1, n + 1)))
+
+
+def with_extra_in_scope(*entries):
+    """FILLED at the In-scope cap (3 bullets) plus `entries` verbatim."""
+    at_cap = with_in_scope(3)
+    last = "- Scope item 3"
+    assert last in at_cap
+    return at_cap.replace(last, "\n".join((last,) + entries))
 
 
 class ScopeCapTests(unittest.TestCase):
@@ -456,7 +468,36 @@ class ScopeCapTests(unittest.TestCase):
 
     def test_in_scope_over_cap_is_invalid(self):
         self.assert_problems_contain(
-            with_in_scope(4), "'In scope' has 4 bullets; the cap is 3")
+            with_in_scope(4), "'In scope' has 4 entries; the cap is 3")
+
+    def test_in_scope_counts_every_list_marker(self):
+        """"+" and "1." render as list items just like "-", so a cap that
+        recognized only some markers would be bypassable by typing another."""
+        for marker in ("*", "+"):
+            with self.subTest(marker=marker):
+                self.assert_problems_contain(
+                    with_in_scope(4, marker),
+                    "'In scope' has 4 entries; the cap is 3")
+        self.assert_problems_contain(
+            with_in_scope(4, "1."), "'In scope' has 4 entries; the cap is 3")
+
+    def test_mixed_marker_in_scope_entries_count_toward_the_cap(self):
+        for extra in ("+ Scope item 4", "4. Scope item 4", "4) Scope item 4",
+                      "* Scope item 4"):
+            with self.subTest(extra=extra):
+                self.assert_problems_contain(
+                    with_extra_in_scope(extra),
+                    "'In scope' has 4 entries; the cap is 3")
+
+    def test_plus_criteria_count_toward_the_cap(self):
+        self.assert_problems_contain(
+            with_extra_criteria("+ [ ] Given case 6, when run, then result 6."),
+            "'Acceptance criteria' has 6 items; the cap is 5")
+
+    def test_plus_non_checkbox_criterion_counts_toward_the_cap(self):
+        self.assert_problems_contain(
+            with_extra_criteria("+ Given case 6, when run, then result 6."),
+            "'Acceptance criteria' has 6 items; the cap is 5")
 
 
 class ScopeAdvisoryTests(unittest.TestCase):

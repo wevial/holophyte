@@ -14,7 +14,7 @@
 
 ## In scope
 
-<!-- Scope caps, enforced by ticket_template.py: max 3 bullets here, 5 acceptance criteria, 30 min estimate. Split anything larger. -->
+<!-- Scope caps, enforced by ticket_template.py: max 3 entries here, 5 acceptance criteria, 30 min estimate. Every list entry counts, whatever its marker. Split anything larger. -->
 
 - <Behavior, surface, route, data, or integration included in this ticket.>
 
