@@ -12,11 +12,12 @@ Usage: `python3 factory.py /srv/dev/holo2test`
    `blocks` relations are the only machine-checked dependencies).
 2. Cut a per-task branch in a sibling worktree (`<repo>.worktrees/`), so
    the main checkout stays untouched.
-3. Implementer agent (opencode, write access) implements and commits,
-   under a wall-clock budget from the ticket's estimate (default 20 min).
+3. Implementer agent (Claude Code / Opus at high effort, write access)
+   implements and commits under a wall-clock budget from the ticket's estimate
+   (default 20 min).
 4. Verify gate: the ticket's mechanical verify command must pass before
    each review round and again before merge.
-5. Read-only reviewer agent (Claude) reviews the diff against the task;
+5. Read-only reviewer agent (Codex / GPT-5.6 Sol at medium effort) reviews the diff against the task;
    findings go back to the implementer for one fix round. Max 2 review
    rounds.
 6. On approval: `--no-ff` merge to `main`, worktree and branch cleaned

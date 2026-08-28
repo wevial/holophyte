@@ -55,26 +55,22 @@ def sh(args, cwd=None):
     return r.stdout.strip()
 
 
-# Role -> harness/model pins. One role, one harness: variables stay pinned
-# per gate (implementer=opencode/ox-alpha, reviewer=claude/opus med,
-# checker=claude/terra med for the future supervisor loop).
-IMPL_MODEL = "openrouter/stealth/ox-alpha"   # opencode
-REVIEW_MODEL = "opus"                        # claude, effort medium
-CHECK_MODEL = "openrouter/openai/gpt-5.6-terra"  # opencode, variant medium
+# Role -> harness/model pins. Each gate uses a distinct, live-probed route:
+# Claude Code / Opus High implements; Codex / GPT-5.6 Sol Medium reviews.
+IMPL_MODEL = "opus"
+IMPL_EFFORT = "high"
+REVIEW_MODEL = "gpt-5.6-sol"
+REVIEW_SANDBOX = "read-only"
 
 
 def agent(role, goal, cwd):
     """Run one agent turn for a role. Returns combined output text."""
     if role == "implement":
-        # opencode pins its project root at startup and ignores subprocess cwd;
-        # --dir is required to target the repo.
-        cmd = ["opencode", "run", "--dir", str(cwd), "-m", IMPL_MODEL, goal]
+        cmd = ["claude", "-p", goal, "--model", IMPL_MODEL,
+               "--effort", IMPL_EFFORT]
     elif role == "review":
-        cmd = ["claude", "-p", goal, "--model", REVIEW_MODEL,
-               "--effort", "medium",
-               "--disallowedTools", "Edit,Write,NotebookEdit,Bash"]
-    elif role == "check":
-        cmd = ["opencode", "run", "-m", CHECK_MODEL, "--variant", "medium", goal]
+        cmd = ["codex", "exec", "-C", str(cwd), "-m", REVIEW_MODEL,
+               "-s", REVIEW_SANDBOX, "--ephemeral", goal]
     else:
         raise ValueError(role)
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=1800)
