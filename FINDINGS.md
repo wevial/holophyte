@@ -526,3 +526,29 @@ claim-time filename/pattern cross-check belongs in v2's emitter contract.
 
 ## 2026-08-28T21:55:09Z — KO-114
 MERGED to main (branch task/factory-verify-gate-2-3-reject deleted). Verify: passed. Rounds used: 1.
+
+## 2026-08-28T22:05:38Z — KO-115
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- [factory.py:242](/workspace/factory.py:242) logs up to 2,000 characters of the checked file on mismatch and forwards that output to the reviewer. Configuration files may contain credentials, violating the repository rule never to log secrets. Report only the path and missing literal.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Adjudication and fix are done — one finding, committed as `2bc20e1`.
+
+**Finding: `factory.py:242` logs up to 2,000 chars of the checked file → ADDRESS.**
+
+Valid on two counts. AGENTS.md:48 says "never commit or log secrets," and a contract declaration can legitimately point at a config file holding credentials — the drift report is forwarded to the reviewer, so that dump exfiltrates it. It also overshot the documented contract: both `ticketTemplate.md` and README:47 promise a failure "naming the path and the literal," nothing more.
+
+What changed:
+- `contract_report` now returns only the problem, relative path, and expected literal. The `text` variable is gone; the file is read solely for the substring test.
+- Docstring records *why* the contents are never echoed, so it isn't re-added.
+- New test `test_drift_report_does_not_echo_the_checked_file` plants a credential in a drifted file and asserts it never reaches the report. Verified RED against `ab44b63` (it printed `token: hunter2-do-not-log` in the report), green after.
+- The existing drift test keeps its path/literal assertions; its `assertIn("8000", out)` line depended on the dump and was dropped.
+
+Diagnostic cost: the report no longer shows what the value drifted *to*. That's the trade the reviewer asked for, and it's cheap — the failure names the file, and whoever reads the report has the checkout.
+
+I left the sibling `vacuous_report` untouched: it quotes command output, which AGENTS.md:40-42 explicitly requires be made visible, and that's a different source than an arbitrary declared file.
+
+Tests: verify gate 21/21, full suite 72/72. Nothing deferred or declined.
