@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import review_runner
+
 TARGET = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/srv/dev/holo2test")
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
@@ -56,23 +58,29 @@ def sh(args, cwd=None):
 
 
 # Role -> harness/model pins. Each gate uses a distinct, live-probed route:
-# Claude Code / Opus High implements; Codex / GPT-5.6 Sol Medium reviews.
+# Claude Code / Opus High implements; the local container boundary runs Codex /
+# GPT-5.6 Sol Medium against a detached, zero-remote, read-only candidate.
 IMPL_MODEL = "opus"
 IMPL_EFFORT = "high"
-REVIEW_MODEL = "gpt-5.6-sol"
-REVIEW_EFFORT = "medium"
-REVIEW_SANDBOX = "read-only"
+REVIEW_PROFILE = "codex-sol-medium"
 
 
-def agent(role, goal, cwd):
+def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
     """Run one agent turn for a role. Returns combined output text."""
     if role == "implement":
         cmd = ["claude", "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role == "review":
-        cmd = ["codex", "exec", "-C", str(cwd), "-m", REVIEW_MODEL,
-               "-c", f'model_reasoning_effort="{REVIEW_EFFORT}"',
-               "-s", REVIEW_SANDBOX, "--ephemeral", goal]
+        if not base_sha or not candidate_sha:
+            raise ValueError("review requires exact base_sha and candidate_sha")
+        return review_runner.run_review(
+            repo=Path(cwd),
+            base_sha=base_sha,
+            candidate_sha=candidate_sha,
+            prompt=goal,
+            profile=REVIEW_PROFILE,
+            timeout=1800,
+        )
     else:
         raise ValueError(role)
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=1800)
@@ -121,6 +129,7 @@ def run_task(task):
     else:
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
         sh(["git", "checkout", "-b", branch], cwd=wt)
+    base_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     def timed(goal):
         """Run one agent turn with a hard wall-clock cap; None on timeout."""
@@ -167,13 +176,16 @@ def run_task(task):
             print(f"[holo2] verify ok before round {rnd}")
 
         verdict = agent("review",
-            f"You are a READ-ONLY code reviewer. Review commit {sha} (diff vs main) "
+            f"You are a READ-ONLY code reviewer. Review commit {sha} using "
+            "refs/review/base as the frozen base and refs/review/candidate as "
+            "the candidate "
             f"in this repo against the task: {task}\n"
             + (f"A mechanical verification command was run and "
                f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n" if verify_cmd else "")
             + "Do not modify anything. End your reply with exactly one line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-            "If REQUEST_CHANGES, list only concrete blockers.", wt)
+            "If REQUEST_CHANGES, list only concrete blockers.", wt,
+            base_sha=base_sha, candidate_sha=sha)
 
         if ok and "VERDICT: APPROVE" in verdict:
             break

@@ -17,7 +17,9 @@ Usage: `python3 factory.py /srv/dev/holo2test`
    (default 20 min).
 4. Verify gate: the ticket's mechanical verify command must pass before
    each review round and again before merge.
-5. Read-only reviewer agent (Codex / GPT-5.6 Sol at medium effort) reviews the diff against the task;
+5. Local reviewer agent (Codex / GPT-5.6 Sol at medium effort) reviews the
+   diff against the task inside the hardened container boundary described
+   below;
    findings go back to the implementer for one fix round. Max 2 review
    rounds.
 6. On approval: `--no-ff` merge to `main`, worktree and branch cleaned
@@ -30,6 +32,9 @@ Usage: `python3 factory.py /srv/dev/holo2test`
 ## Files
 
 - `factory.py` — the loop.
+- `review_runner.py` — exact-SHA staging and the model-neutral local reviewer
+  boundary.
+- `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
 - `linear_provider.py` — Linear GraphQL client: claim/complete/comment,
   ready-ticket and blocker resolution.
 - `ticketTemplate.md` — ticket shape. Verify commands go in the
@@ -48,3 +53,27 @@ Usage: `python3 factory.py /srv/dev/holo2test`
 
 `LINEAR_API_KEY` and `HOLO2_PROJECT_ID` — env vars or `.env` next to
 `linear_provider.py`.
+
+## Local reviewer boundary
+
+The factory never gives a reviewer the implementation worktree directly.
+`review_runner.py` stages the frozen base and candidate commits into a fresh,
+detached, zero-remote Git repository and verifies its identity before and after
+the review. Docker mounts that repository at `/workspace` read-only. The
+container also has a read-only root filesystem, no Linux capabilities, no
+privilege escalation, bounded processes/memory/CPU, and no Docker socket or
+host home.
+
+Codex runs with `danger-full-access` **inside** this container because Ubuntu's
+AppArmor policy blocks its nested Bubblewrap sandbox in the Hermes service
+context. The outer container is the enforcement boundary: an actual write
+probe under `/workspace` must fail before the model is called. Only a
+disposable copy of `~/.codex/auth.json` and the installed Codex release binaries
+are mounted; the copy and all reviewer state are removed afterward. Outbound
+network remains enabled because Codex uses remote inference, but no GitHub,
+SSH, Linear, Docker, or unrelated host credentials are exposed.
+
+The first review builds `holophyte-reviewer:ubuntu24.04-v1` automatically from
+the digest-pinned Ubuntu image. A run fails closed if preflight identity or
+write rejection fails, the Codex tool host cannot execute a local command, the
+container times out, or the staged repository fingerprint changes.
