@@ -615,3 +615,6 @@ VERDICT: PASS
 
 ## 2026-08-28T22:38:18Z — KO-124
 MERGED to main (branch task/ticket-template-mechanical-sco deleted). Verify: passed. Rounds used: 2.
+
+## 2026-08-28T22:41:28Z — KO-125
+MERGED to main (branch task/factory-record-actual-ticket-d deleted). Verify: passed. Rounds used: 1.
