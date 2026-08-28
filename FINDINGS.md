@@ -723,3 +723,25 @@ actual: 13.1 min · estimate: 25 min · rounds: 2
 ## 2026-08-28T23:15:41Z — KO-121
 MERGED to main (branch task/store-v2-5-7-pickability-predi deleted). Verify: passed.
 actual: 4.1 min · estimate: 20 min · rounds: 1
+
+## 2026-08-28T23:24:33Z — KO-122
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `store.py:99-135, 812`: `resumePhase` is only added inside `CREATE TABLE IF NOT EXISTS`. Databases initialized by earlier Store v2 commits are not migrated, so `init()` leaves them without the column and every `resume()` fails with `OperationalError: no such column: resumePhase`.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+**Adjudication: ADDRESS** — the finding is a real blocker, confirmed by reproduction.
+
+I built a store using `store.py` as of `93d4ccf` (the commit before mine), then ran the new `init()` over it: `runs` still had no `resumePhase`, and `resume()` raised `sqlite3.OperationalError: no such column: resumePhase`. `SCHEMA` is `CREATE TABLE IF NOT EXISTS` throughout, so an existing table is never re-created and nothing else would ever supply the column.
+
+**Fix** (`store.py:190-244`):
+- New `ADDED_COLUMNS` — `(table, column, DDL)` for columns added after a table's CREATE statement first shipped, currently just `runs.resumePhase`.
+- `init()` now runs `SCHEMA`, then adds any listed column missing from an existing table via `ALTER TABLE ADD COLUMN`. Still idempotent.
+- SQLite carries the CHECK constraint through `ADD COLUMN`, so a migrated store enforces §4's phase union identically to a fresh one. The comment records what `ADD COLUMN` won't take (UNIQUE, non-constant NOT NULL default) so a later column needing either gets a table rebuild rather than a broken line in the list.
+- The note above `SCHEMA` now states the rule: adding a column there requires an `ADDED_COLUMNS` entry too.
+
+**Tests** (`tests/test_store_schema.py`, +3, suite now 55): the pre-`resumePhase` `runs` table is kept verbatim in the test file and created *before* `init()` — the upgrade as it actually happens. Covers the column arriving, its CHECK surviving the migration, and `resume()` working end-to-end on a migrated store. I verified all three fail with the migration disabled (the third with the reviewer's exact `OperationalError`) and pass with it.
+
+Nothing was declined or deferred; this was the only finding.
