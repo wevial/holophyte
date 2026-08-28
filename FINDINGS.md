@@ -745,3 +745,7 @@ I built a store using `store.py` as of `93d4ccf` (the commit before mine), then 
 **Tests** (`tests/test_store_schema.py`, +3, suite now 55): the pre-`resumePhase` `runs` table is kept verbatim in the test file and created *before* `init()` — the upgrade as it actually happens. Covers the column arriving, its CHECK surviving the migration, and `resume()` working end-to-end on a migrated store. I verified all three fail with the migration disabled (the third with the reviewer's exact `OperationalError`) and pass with it.
 
 Nothing was declined or deferred; this was the only finding.
+
+## 2026-08-28T23:25:40Z — KO-122
+MERGED to main (branch task/store-v2-6-7-resume-guidance-i deleted). Verify: passed.
+actual: 10.0 min · estimate: 20 min · rounds: 2
