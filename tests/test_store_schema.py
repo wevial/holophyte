@@ -32,6 +32,10 @@ DOCUMENTED_COLUMNS = {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
         "providerSessionId", "branch", "prUrl", "startedAt", "lastHeartbeat",
         "endedAt", "reviewRoundCount", "outcome", "outcomeReason",
+        # Store-owned, not a documented field: §5 requires a resume to
+        # "re-enter the phase it left" and leaves the mechanism to us, so
+        # `resume()` reads the parked phase from this column.
+        "resumePhase",
     },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",
