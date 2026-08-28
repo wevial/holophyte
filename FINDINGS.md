@@ -626,3 +626,29 @@ actual: 5.5 min · estimate: 30 min · rounds: 1
 ## 2026-08-28T22:52:02Z — KO-118
 MERGED to main (branch task/store-v2-2-7-claim-lease-trans deleted). Verify: passed.
 actual: 4.5 min · estimate: 25 min · rounds: 1
+
+## 2026-08-28T22:57:28Z — KO-119
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `store.py:345`: `conn.commit()` is outside the rollback guard. A deferred constraint failure at commit leaves the transaction open and the delivery ID uncommitted but reserved; retrying on the same connection fails with `OperationalError: cannot start a transaction within a transaction`. Wrap commit failures with rollback so retries remain possible.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Done — one finding, adjudicated **ADDRESS**, fixed and committed as `0cdfe02`.
+
+**The finding was real, and I reproduced it exactly.** `tickets.activeRunId` is `DEFERRABLE INITIALLY DEFERRED` with `PRAGMA foreign_keys = ON`, so an effect writing a dangling run reference passes its `INSERT` and only fails at `COMMIT` — where SQLite leaves the transaction open. The RED test failed with the reviewer's precise error:
+
+```
+sqlite3.OperationalError: cannot start a transaction within a transaction
+```
+
+at `store.py:329` on the retry's `BEGIN IMMEDIATE`, with the delivery id reserved but uncommitted.
+
+**Fix** (`store.py:341`): moved `conn.commit()` inside the existing `except BaseException: conn.rollback(); raise` guard, so a failed commit takes the same path as a failed effect — everything rolls back including the id, the exception propagates, and the connection stays usable for Linear's redelivery. Docstring bullet updated to cover it.
+
+**Test** (`tests/test_store_delivery.py:137`): effect inserts a ticket with `activeRunId = 999999`; asserts `IntegrityError`, nothing committed, and that a retry of the same delivery id then processes and commits normally. `test_store*` 15/15, full suite 111/111.
+
+**FOLLOW_UP named in the commit message:** `claim()` at `store.py:282` has the identical shape and is reachable the same way through the deferred `projects.activeRunId` FK it writes. It shipped in KO-118 with its own tests, so I left it for its own ticket rather than an unreviewed drive-by fix here — say the word if you'd rather I fold it in.
+
+One thing I did not do: AGENTS.md asks for findings and adjudications in `FINDINGS.md` and the Linear ticket ledger. `FINDINGS.md` reads as factory-appended (timestamped `Reviewer findings:` / `Implementer response:` blocks), so I left both to the runner rather than hand-editing shared append-only evidence or posting to Linear myself. The adjudication text above is ready to record if you want me to write either one.
