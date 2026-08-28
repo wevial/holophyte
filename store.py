@@ -4,10 +4,10 @@ Local-first by resolved decision (2026-08-22): all loop state lives behind
 this one module so a hosted backend later is a driver swap, not a loop
 rewrite. Stdlib ``sqlite3`` only.
 
-The API so far is ``open()`` and ``init()`` for the schema, plus
-``claim()`` for the per-project lease. The remaining query helpers
-(idempotency, pickability, status transitions, resume, fingerprints) belong
-to the later tickets in this chain.
+The API so far is ``open()`` and ``init()`` for the schema, ``claim()``
+for the per-project lease, and ``with_delivery()`` for webhook idempotency.
+The remaining query helpers (pickability, status transitions, resume,
+fingerprints) belong to the later tickets in this chain.
 
 Conventions, fixed here for every later ticket to follow:
 
@@ -32,6 +32,7 @@ are cited here instead of vendored.
 """
 from __future__ import annotations
 
+import collections
 import sqlite3
 import time
 
@@ -280,3 +281,65 @@ def claim(conn, project_id, ticket_id, now=None):
         raise
     conn.commit()
     return run_id
+
+
+# What `with_delivery()` hands back. A namedtuple rather than a bare value
+# because "the effect returned None" and "the effect never ran" are different
+# answers a webhook handler acts on differently, and no sentinel return value
+# can tell them apart when the effect is free to return anything.
+Delivery = collections.namedtuple("Delivery", ("replayed", "result"))
+
+
+def with_delivery(conn, delivery_id, effect, now=None):
+    """Run `effect(conn)` exactly once per `delivery_id`; return a `Delivery`.
+
+    State-model §1: every inbound Linear delivery id is recorded in
+    `linearDeliveries` *in the same transaction as its effect*. That sharing is
+    the whole primitive. A check-then-act split across two transactions still
+    races two concurrent copies of the same redelivery, and recording the id in
+    its own transaction would burn it even when the effect went on to fail.
+
+    So: one `BEGIN IMMEDIATE`, insert the id, run the effect, commit. The three
+    outcomes are
+
+    * fresh id — `Delivery(replayed=False, result=<what the effect returned>)`,
+      the effect's writes and the delivery row committed together;
+    * duplicate id — the insert raises `IntegrityError`, the effect never runs,
+      the transaction rolls back, and the result is `Delivery(True, None)`.
+      Nothing is written, so the original `processedAt` is not restamped;
+    * the effect raises — everything rolls back, *including the delivery id*,
+      and the exception propagates. Linear's next redelivery is processed
+      rather than swallowed, which is the point of the shared transaction.
+
+    Only the insert is guarded, never the effect: an `IntegrityError` from the
+    effect's own writes is a real failure, and reporting it as a replay would
+    silently drop a delivery that was never processed.
+
+    `effect` must confine itself to `conn` and must not commit, roll back or
+    open its own transaction; doing so breaks the atomicity this exists for.
+    `now` is epoch milliseconds for `processedAt`, defaulting to the clock.
+    """
+    # SQLite allows NULL in a TEXT PRIMARY KEY, and allows it repeatedly, so an
+    # absent id would silently process every replay instead of colliding on the
+    # second one. Refuse it here rather than let the dedup quietly not happen.
+    if not isinstance(delivery_id, str) or not delivery_id:
+        raise ValueError(f"delivery id must be a non-empty string, got {delivery_id!r}")
+    if now is None:
+        now = int(time.time() * 1000)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO linearDeliveries (deliveryId, processedAt)"
+                " VALUES (?, ?)",
+                (delivery_id, now),
+            )
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            return Delivery(replayed=True, result=None)
+        result = effect(conn)
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return Delivery(replayed=False, result=result)
