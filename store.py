@@ -5,9 +5,10 @@ this one module so a hosted backend later is a driver swap, not a loop
 rewrite. Stdlib ``sqlite3`` only.
 
 The API so far is ``open()`` and ``init()`` for the schema, ``claim()``
-for the per-project lease, ``with_delivery()`` for webhook idempotency, and
-``mirror_ticket()``/``transition()`` for ticket status. The remaining query
-helpers (pickability, resume, fingerprints) belong to the later tickets in
+for the per-project lease, ``with_delivery()`` for webhook idempotency,
+``mirror_ticket()``/``transition()`` for ticket status, and
+``pickable()``/``next_pickable()`` for the pickability predicate. The
+remaining query helpers (resume, fingerprints) belong to the later tickets in
 this chain.
 
 Conventions, fixed here for every later ticket to follow:
@@ -584,3 +585,125 @@ def mirror_ticket(
                 ),
             )
     return ticket_id
+
+
+# The answer `pickable()` gives back. A namedtuple so a caller that wants the
+# diagnostics can read `.reason`, with `__bool__` overridden so the common
+# `if store.pickable(conn, t):` reads the verdict and not the mere existence
+# of the tuple — a plain namedtuple is always truthy, which would turn every
+# unpickable ticket into a pickable one at the one call site that matters.
+class Pickability(collections.namedtuple("Pickability", ("pickable", "reason"))):
+    """`bool(...)` is the predicate; `.reason` names the clause that failed.
+
+    `reason` is None exactly when the ticket is pickable, and otherwise a
+    human-readable string naming the *first* failing clause in the order §2
+    writes them — a diagnostic, not a parseable code.
+    """
+
+    __slots__ = ()
+
+    def __bool__(self):
+        return self.pickable
+
+
+def pickable(conn, ticket_id):
+    """Is `ticket_id` claimable right now? Returns a `Pickability`.
+
+    State-model §2's predicate, one function and one truth, transcribed
+    clause for clause::
+
+        status == 'ready'
+          && activeRunId == null
+          && acceptanceCriteria.length > 0
+          && verificationCommands.length > 0
+          && all(dependsOn).status == 'merged'
+
+    The two list clauses are re-checked here rather than trusted to
+    `mirror_ticket()`'s `needs_spec` routing. The rule is that an
+    under-specced ticket is not pickable *ever*, and a status column that
+    somebody wrote directly is not evidence about the lists — so the
+    predicate reads the lists.
+
+    `dependsOn` holds linearIssueIds, resolved within the ticket's own
+    project. Empty passes vacuously. A dep naming an issue this store has not
+    mirrored is *not* pickable: an unmirrored dep cannot be shown to be
+    merged, and the fail-closed answer is the safe one for a gate. Cycle
+    detection is out of scope (the doc defers it); a cycle here simply means
+    neither ticket is ever pickable, which is the honest answer.
+
+    A ticket id that does not exist is not pickable either, for the same
+    reason: the gate answers "no" rather than raising, since every caller is
+    asking whether to start work.
+
+    Read-only, and deliberately not transactional. This is the gate's
+    question, not its answer: `claim()` takes `BEGIN IMMEDIATE` and re-asserts
+    the lease it needs, so a ticket that goes unpickable between the two calls
+    loses at the claim, not on a lock held here.
+    """
+    row = conn.execute(
+        "SELECT projectId, status, activeRunId, acceptanceCriteria,"
+        " verificationCommands, dependsOn FROM tickets WHERE id = ?",
+        (ticket_id,),
+    ).fetchone()
+    if row is None:
+        return Pickability(False, f"ticket {ticket_id} does not exist")
+    return _pickability(conn, row)
+
+
+def _pickability(conn, row):
+    """Evaluate §2's clauses over one already-fetched `tickets` row.
+
+    Split out only so `next_pickable()` can walk candidate rows through the
+    exact same predicate instead of re-deriving any part of it in SQL.
+    """
+    project_id, status, active_run_id, criteria, commands, depends_on = row
+    if status != "ready":
+        return Pickability(False, f"status is {status}, not ready")
+    if active_run_id is not None:
+        return Pickability(False, f"run {active_run_id} is already active on it")
+    if not json.loads(criteria):
+        return Pickability(False, "it has no acceptance criteria")
+    if not json.loads(commands):
+        return Pickability(False, "it has no verification commands")
+    for dep in json.loads(depends_on):
+        dep_row = conn.execute(
+            "SELECT status FROM tickets"
+            " WHERE linearIssueId = ? AND projectId = ?",
+            (dep, project_id),
+        ).fetchone()
+        if dep_row is None:
+            return Pickability(False, f"it depends on {dep}, which is not mirrored")
+        if dep_row[0] != "merged":
+            return Pickability(
+                False, f"it depends on {dep}, which is {dep_row[0]}, not merged"
+            )
+    return Pickability(True, None)
+
+
+def next_pickable(conn, project_id):
+    """Return the id of the project's next pickable ticket, or None.
+
+    The v0 flat queue: every ticket of the project in ascending `id` order —
+    mirror order, so the ticket seen first is offered first — and the first
+    one `pickable()` accepts wins. Ascending `id` rather than `mirroredAt`
+    because a re-mirror restamps `mirroredAt`, and editing a ticket's body
+    should not move it in the queue.
+
+    Deliberately no SQL prefilter on the cheap clauses: every candidate goes
+    through the same `pickable()` predicate, so there is one implementation of
+    §2 to keep correct rather than two that can drift apart.
+
+    Says nothing about whether the project may start a run at all — the §7
+    single-threading lease is `claim()`'s assertion, and re-checking it here
+    would only make it look like this answer could be trusted without it.
+    """
+    rows = conn.execute(
+        "SELECT id, projectId, status, activeRunId, acceptanceCriteria,"
+        " verificationCommands, dependsOn FROM tickets"
+        " WHERE projectId = ? ORDER BY id",
+        (project_id,),
+    ).fetchall()
+    for row in rows:
+        if _pickability(conn, row[1:]):
+            return row[0]
+    return None
