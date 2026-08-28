@@ -191,7 +191,18 @@ class ContractCheckTests(unittest.TestCase):
         self.assertIn("contract check", out)
         self.assertIn("config/tunnel.yml", out)
         self.assertIn("expected literal: 8622", out)
-        self.assertIn("8000", out)
+
+    def test_drift_report_does_not_echo_the_checked_file(self):
+        # A declared file may hold credentials and this report reaches the
+        # reviewer, so the path and the missing literal are all it may carry.
+        self.conf.write_text("token: hunter2-do-not-log\nport: 8000\n")
+
+        ok, out = factory.run_verify("printf 'suite ok\n'", self.cwd,
+                                     self.contracts)
+
+        self.assertFalse(ok)
+        self.assertNotIn("hunter2-do-not-log", out)
+        self.assertNotIn("token", out)
 
     def test_ticket_without_contract_checks_is_unaffected(self):
         self.conf.write_text("service: http://localhost:8000\n")

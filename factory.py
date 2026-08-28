@@ -218,13 +218,17 @@ def contract_report(contracts, cwd):
     the worktree.
 
     Returns the report for the first declaration that does not hold, naming the
-    path and the expected literal so a drifted value (KO-106's port) is visible
-    without reading the file, or None when every declared literal is present.
-    The comparison is a verbatim substring test: no globs, no regex, no shell.
+    path and the expected literal so a drifted value (KO-106's port) is
+    actionable, or None when every declared literal is present. The comparison
+    is a verbatim substring test: no globs, no regex, no shell.
+
+    The checked file's contents are never echoed. A ticket may point a
+    declaration at a configuration file holding credentials, and this report is
+    forwarded to the reviewer; the path and the missing literal say what
+    drifted without logging a secret.
     """
     root = Path(cwd)
     for path, literal in contracts or ():
-        text = None
         problem = ticket_template.contract_path_problem(path)
         if problem is None and not literal:
             problem = "declaration has an empty expected literal"
@@ -232,17 +236,12 @@ def contract_report(contracts, cwd):
         if problem is None and not target.is_file():
             problem = "declared file does not exist"
         if problem is None:
-            text = target.read_text(errors="replace")
-            if literal in text:
+            if literal in target.read_text(errors="replace"):
                 continue
             problem = "expected literal is absent from the file"
-        report = (f"[verify] FAILED: contract check — {problem}\n"
-                  f"[verify]   path: {path}\n"
-                  f"[verify]   expected literal: {literal}")
-        if text is not None:
-            body = text.strip() or "(empty file)"
-            report += f"\n[verify]   file contents:\n{body[-2000:]}"
-        return report
+        return (f"[verify] FAILED: contract check — {problem}\n"
+                f"[verify]   path: {path}\n"
+                f"[verify]   expected literal: {literal}")
     return None
 
 
