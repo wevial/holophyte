@@ -9,6 +9,13 @@ a ``` fence, an optional "Contract checks" fence of "path: literal"
 declarations, an "Estimate: N min · Depends on: ..." line, and open questions
 reading exactly "- None". Unfilled placeholders ({{...}} or <...>) fail.
 
+Scope is capped mechanically as well: a ticket over MAX_ESTIMATE_MIN minutes,
+MAX_CRITERIA acceptance criteria, or MAX_IN_SCOPE "In scope" bullets is
+rejected — scope rules kept only in prose get skipped. A "What:" line that
+chains deliverables instead yields an ADVISORY_PREFIX-marked note, which does
+not affect validity; blocking() drops advisories for callers that gate on the
+result.
+
 Markdown that Linear has normalized round-trips: "**What: **" for "**What:**"
 and "* None" for "- None" are the same structure, so both are accepted. Loose
 formatting beyond those equivalences still fails.
@@ -28,6 +35,17 @@ TEMPLATE_ORDER = [
 ]
 OPTIONAL_SECTIONS = {"Contract checks"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
+# Mechanical scope caps. Module-level so a future per-project config can
+# override them without touching validate().
+MAX_ESTIMATE_MIN = 30
+MAX_CRITERIA = 5
+MAX_IN_SCOPE = 3
+# Marks a validate() entry as guidance rather than a rejection.
+ADVISORY_PREFIX = "advisory: "
+# Connectives that usually mean a "What:" line describes two deliverables.
+# Advisory only: "read and write the cache" is one deliverable, so a human
+# decides — the caps above are what actually gate.
+SCOPE_CHAINING = (" and ", ";", ", then ")
 H1_RE = re.compile(r"^#\s+(.*?)\s*$")
 H2_RE = re.compile(r"^##\s+(.*?)\s*$")
 BULLET_RE = re.compile(r"^[-*]\s+(.*)$")
@@ -244,7 +262,10 @@ def contract_path_problem(path):
 
 
 def validate(t):
-    """All template violations as human-readable strings; [] means valid."""
+    """All template violations as human-readable strings.
+
+    An entry starting with ADVISORY_PREFIX is scope guidance, not a
+    violation: the ticket is valid iff blocking(validate(t)) is empty."""
     p = []
     if not t.title:
         p.append("missing H1 title ('# ...' on the first heading line)")
@@ -283,6 +304,9 @@ def validate(t):
                  "('Why' is optional)")
     if not t.in_scope:
         p.append("'In scope' has no bullets")
+    elif len(t.in_scope) > MAX_IN_SCOPE:
+        p.append(f"'In scope' has {len(t.in_scope)} bullets; the cap is "
+                 f"{MAX_IN_SCOPE} — split the ticket")
     if not t.out_of_scope:
         p.append("'Out of scope' has no bullets")
 
@@ -293,6 +317,10 @@ def validate(t):
     for i, ac in enumerate(t.acceptance, 1):
         if not ac:
             p.append(f"acceptance criterion #{i} is empty")
+    n_criteria = len(t.acceptance) + len(t.acceptance_done)
+    if n_criteria > MAX_CRITERIA:
+        p.append(f"'Acceptance criteria' has {n_criteria} items; the cap is "
+                 f"{MAX_CRITERIA} — split the ticket")
 
     if not t.verify_commands:
         p.append("'Verify command(s)' has no runnable command lines inside "
@@ -316,6 +344,9 @@ def validate(t):
         p.append("'Estimate & dependencies' must read "
                  "'Estimate: N min · Depends on: <ticket IDs or \"none\">'")
     else:
+        if t.estimate_min > MAX_ESTIMATE_MIN:
+            p.append(f"estimate is {t.estimate_min} min; the cap is "
+                     f"{MAX_ESTIMATE_MIN} min — split the ticket")
         for d in t.depends_on:
             if not LINEAR_ID_RE.match(d):
                 p.append(f"'Depends on' entry is not a ticket ID or \"none\": {d}")
@@ -323,7 +354,20 @@ def validate(t):
     if not t.open_questions_none:
         p.append("'Open questions' must read exactly '- None' before the "
                  "ticket enters the pickable queue")
+
+    chained = next((m for m in SCOPE_CHAINING if m in t.what.lower()), None)
+    if chained:
+        p.append(f"{ADVISORY_PREFIX}'**What:**' chains scope on {chained!r}; "
+                 f"consider splitting it into one ticket per deliverable")
     return p
+
+
+def blocking(problems):
+    """The entries of a validate() result that make a ticket invalid.
+
+    Advisories are guidance about scope shape, not template violations, so a
+    caller gating on validity filters them out and still shows them."""
+    return [pr for pr in problems if not pr.startswith(ADVISORY_PREFIX)]
 
 
 def main(argv):
@@ -333,13 +377,15 @@ def main(argv):
     invalid = 0
     for path in argv:
         problems = validate(parse(Path(path).read_text()))
-        if problems:
+        blockers = blocking(problems)
+        if blockers:
             invalid += 1
             print(f"{path}: INVALID")
-            for pr in problems:
-                print(f"  - {pr}")
         else:
             print(f"{path}: OK")
+        advisories = [a for a in problems if a.startswith(ADVISORY_PREFIX)]
+        for pr in blockers + advisories:
+            print(f"  - {pr}")
     return 1 if invalid else 0
 
 

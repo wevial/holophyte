@@ -314,6 +314,17 @@ class CliTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("OK", r.stdout)
 
+    def test_advisory_prints_but_does_not_fail_the_run(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
+            f.write(FILLED.replace(
+                "GET /orders.csv streams the current user's orders as CSV.",
+                "Parses the orders query and updates the CSV writer."))
+            f.flush()
+            r = self.run_cli(f.name)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("OK", r.stdout)
+        self.assertIn(tt.ADVISORY_PREFIX, r.stdout)
+
     def test_invalid_file_exits_nonzero_and_lists_problems(self):
         with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
             f.write(FILLED.replace("## Summary", "## Summaries"))
@@ -353,3 +364,95 @@ class SectionOrderTests(unittest.TestCase):
     def test_conforming_order_passes(self):
         problems = tt.validate(tt.parse(FILLED))
         self.assertFalse([p for p in problems if "out of template order" in p])
+
+
+def with_criteria(unchecked, checked=0):
+    """FILLED with its 2 criteria replaced by `unchecked` + `checked` items."""
+    items = [f"- [ ] Given case {i}, when run, then result {i}."
+             for i in range(1, unchecked + 1)]
+    items += [f"- [x] Given done case {i}, when run, then result {i}."
+              for i in range(1, checked + 1)]
+    return FILLED.replace(
+        "- [ ] Given 3 orders, when GET /orders.csv, then 4 lines including "
+        "header.\n"
+        "- [ ] Given no orders, when GET /orders.csv, then only the header "
+        "row.",
+        "\n".join(items))
+
+
+def with_in_scope(n):
+    """FILLED with its single In-scope bullet replaced by `n` bullets."""
+    return FILLED.replace(
+        "- CSV serialization of the orders list",
+        "\n".join(f"- Scope item {i}" for i in range(1, n + 1)))
+
+
+class ScopeCapTests(unittest.TestCase):
+    """Scope caps are mechanical: over the cap, the ticket is rejected."""
+
+    def assert_problems_contain(self, text, fragment):
+        problems = tt.validate(tt.parse(text))
+        self.assertTrue(any(fragment in p for p in problems),
+                        f"{fragment!r} not in {problems}")
+
+    def test_estimate_at_cap_is_valid(self):
+        self.assertIn("Estimate: 30 min", FILLED)  # fixture sits at the cap
+        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+
+    def test_estimate_over_cap_is_invalid(self):
+        self.assert_problems_contain(
+            FILLED.replace("Estimate: 30 min", "Estimate: 31 min"),
+            "estimate is 31 min; the cap is 30 min")
+
+    def test_criteria_at_cap_are_valid(self):
+        self.assertEqual(tt.validate(tt.parse(with_criteria(5))), [])
+
+    def test_criteria_over_cap_are_invalid(self):
+        self.assert_problems_contain(
+            with_criteria(6), "'Acceptance criteria' has 6 items; the cap is 5")
+
+    def test_criteria_already_checked_off_still_count_toward_the_cap(self):
+        self.assert_problems_contain(
+            with_criteria(3, checked=3),
+            "'Acceptance criteria' has 6 items; the cap is 5")
+
+    def test_in_scope_at_cap_is_valid(self):
+        self.assertEqual(tt.validate(tt.parse(with_in_scope(3))), [])
+
+    def test_in_scope_over_cap_is_invalid(self):
+        self.assert_problems_contain(
+            with_in_scope(4), "'In scope' has 4 bullets; the cap is 3")
+
+
+class ScopeAdvisoryTests(unittest.TestCase):
+    """A chained What line is flagged, but never changes the verdict."""
+
+    CHAINED = {
+        " and ": "Parses the orders query and updates the CSV writer.",
+        ";": "Parses the orders query; updates the CSV writer.",
+        ", then ": "Parses the orders query, then updates the CSV writer.",
+    }
+
+    def test_chained_what_line_is_advised_but_stays_valid(self):
+        for marker, what in self.CHAINED.items():
+            with self.subTest(marker=marker):
+                problems = tt.validate(tt.parse(FILLED.replace(
+                    "GET /orders.csv streams the current user's orders as "
+                    "CSV.", what)))
+                advisories = [p for p in problems
+                              if p.startswith(tt.ADVISORY_PREFIX)]
+                self.assertEqual(len(advisories), 1, problems)
+                self.assertIn(repr(marker), advisories[0])
+                self.assertEqual(tt.blocking(problems), [])
+
+    def test_single_deliverable_what_line_is_not_advised(self):
+        self.assertEqual(
+            [p for p in tt.validate(tt.parse(FILLED))
+             if p.startswith(tt.ADVISORY_PREFIX)],
+            [])
+
+    def test_advisory_does_not_mask_a_real_problem(self):
+        text = FILLED.replace(
+            "GET /orders.csv streams the current user's orders as CSV.",
+            self.CHAINED[" and "]).replace("- None", "- Which CSV dialect?")
+        self.assertTrue(tt.blocking(tt.validate(tt.parse(text))))
