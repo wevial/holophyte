@@ -35,6 +35,7 @@ are cited here instead of vendored.
 from __future__ import annotations
 
 import collections
+import contextlib
 import json
 import sqlite3
 import time
@@ -211,6 +212,41 @@ def init(conn):
     conn.commit()
 
 
+@contextlib.contextmanager
+def _transaction(conn):
+    """Run the block in one `BEGIN IMMEDIATE`, or join the caller's transaction.
+
+    Every writer in this module is a read (what is there now?) followed by a
+    write (change it), which two concurrent callers must not interleave — so
+    when this owns the transaction it takes `BEGIN IMMEDIATE`, whose write
+    lock is held up front, and callers serialize in SQLite instead of racing.
+    It commits on a clean exit and rolls back on any exception, including
+    `KeyboardInterrupt`.
+
+    When a transaction is *already* open the block joins it and this commits
+    and rolls back nothing: the owner does both, at its own boundary. That is
+    what lets these writers run as the effect of `with_delivery()`, which owns
+    a transaction precisely so the delivery id and the effect's writes commit
+    or roll back as one. Without it, a nested `BEGIN` would raise
+    `OperationalError: cannot start a transaction within a transaction` and no
+    Linear delivery could atomically record the ticket write it caused.
+
+    A joined block inherits the owner's locking, so an owner that wants the
+    serialization above must have opened its transaction IMMEDIATE too;
+    `with_delivery()` and `claim()` do.
+    """
+    if conn.in_transaction:
+        yield
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+
+
 class ClaimConflict(Exception):
     """A claim was refused and nothing was written.
 
@@ -321,6 +357,10 @@ def with_delivery(conn, delivery_id, effect, now=None):
 
     `effect` must confine itself to `conn` and must not commit, roll back or
     open its own transaction; doing so breaks the atomicity this exists for.
+    The store's own writers satisfy that by construction — `mirror_ticket()`
+    and `transition()` go through `_transaction()`, which joins an open
+    transaction instead of starting one — so `lambda c: mirror_ticket(c, ...)`
+    is the intended shape of an effect, not a special case.
     `now` is epoch milliseconds for `processedAt`, defaulting to the clock.
     """
     # SQLite allows NULL in a TEXT PRIMARY KEY, and allows it repeatedly, so an
@@ -422,17 +462,20 @@ def transition(conn, ticket_id, to_status):
     Legality is `TICKET_TRANSITIONS`, i.e. state-model §3, and nothing else.
     An illegal move raises `IllegalTransition` and leaves the row untouched.
 
-    `BEGIN IMMEDIATE` for the same reason as `claim()`: this is a read (where
-    is the ticket now?) followed by a write (move it), and two concurrent
-    callers must not both read the same `from` status and both act on it. The
-    write lock is taken up front, so they serialize and the second one
-    validates against the status the first one actually wrote.
+    One `_transaction()` for the same reason as `claim()`: this is a read
+    (where is the ticket now?) followed by a write (move it), and two
+    concurrent callers must not both read the same `from` status and both act
+    on it. `BEGIN IMMEDIATE` takes the write lock up front, so they serialize
+    and the second one validates against the status the first one wrote. When
+    the caller already owns a transaction the move joins it and commits with
+    it, which is what makes this usable as a `with_delivery()` effect: a
+    Linear status webhook records its delivery id and the status change
+    together or not at all.
 
     The previous status is returned because the caller usually has to log or
     mirror the change, and re-reading it afterwards cannot recover it.
     """
-    conn.execute("BEGIN IMMEDIATE")
-    try:
+    with _transaction(conn):
         row = conn.execute(
             "SELECT status FROM tickets WHERE id = ?", (ticket_id,)
         ).fetchone()
@@ -447,10 +490,6 @@ def transition(conn, ticket_id, to_status):
         conn.execute(
             "UPDATE tickets SET status = ? WHERE id = ?", (to_status, ticket_id)
         )
-    except BaseException:
-        conn.rollback()
-        raise
-    conn.commit()
     return from_status
 
 
@@ -490,6 +529,13 @@ def mirror_ticket(
     issue does not overwrite it — it fails on the `linearIssueId` uniqueness
     constraint instead. `now` is epoch milliseconds for `mirroredAt`,
     defaulting to the clock.
+
+    The upsert runs in one `_transaction()`, so it joins a transaction the
+    caller already owns rather than opening its own. Mirroring is the effect
+    of an inbound Linear issue webhook, and §1 wants that effect and its
+    delivery id committed together, so `with_delivery(conn, id, lambda c:
+    mirror_ticket(c, ...))` has to work — the argument validation above still
+    raises before any transaction is touched.
     """
     criteria = _json_list("acceptance_criteria", acceptance_criteria)
     commands = _json_list("verification_commands", verification_commands)
@@ -498,8 +544,7 @@ def mirror_ticket(
     derived = "ready" if specced else "needs_spec"
     if now is None:
         now = int(time.time() * 1000)
-    conn.execute("BEGIN IMMEDIATE")
-    try:
+    with _transaction(conn):
         row = conn.execute(
             "SELECT id, status FROM tickets"
             " WHERE linearIssueId = ? AND projectId = ?",
@@ -532,8 +577,4 @@ def mirror_ticket(
                     time_box_ms, affinity, depends, now, ticket_id,
                 ),
             )
-    except BaseException:
-        conn.rollback()
-        raise
-    conn.commit()
     return ticket_id
