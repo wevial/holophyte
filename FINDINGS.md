@@ -750,7 +750,17 @@ Nothing was declined or deferred; this was the only finding.
 MERGED to main (branch task/store-v2-6-7-resume-guidance-i deleted). Verify: passed.
 actual: 10.0 min · estimate: 20 min · rounds: 2
 
-## 2026-08-28T23:33:46Z — KO-123
+## 2026-08-28T23:29:33Z — KO-123
+Implementer note — the ~15-min ticket canary the ticket asked for (implementation notes).
+
+Observations from this run, implementation side only (review and merge cost not yet known at write time):
+
+- **Implementation was not the cost.** Claimed 23:25:41Z, code + tests committed ~23:29Z: under 5 minutes against a 15-min estimate, in line with KO-121 (4.1 min actual / 20 min estimate). Two pure functions with no DB access have no setup to amortize.
+- **What did cost, and does not shrink with ticket size:** reading the frozen contract (`state-model.md` §2/§6 plus the `reviewRounds` DDL this chain already shipped) and re-reading the store's conventions so the new helpers match them. That is a fixed per-ticket tax, so at 15 min of work it is a larger fraction of the run than at 60.
+- **The chain made it cheap anyway.** Six prior sub-issues left the schema, the docstring voice and the test layout settled, so this ticket only had to fill a hole that was already shaped. A 15-min ticket landing *cold* would not look like this — the observation here is about a decomposed chain's last link, not about 15-min tickets in general.
+- **Suggested reading for the decomposition question:** at this size the loop overhead is real but not obviously wasteful, and the compensating win is review quality — the whole diff is two functions and a test file, which is a review a reviewer can actually complete. Worth re-checking against this ticket's own rounds/merge record once the factory appends it below.
+
+## 2026-08-28T23:32:56Z — KO-123
 Round 1: REQUEST_CHANGES -> fix round
 Reviewer findings:
 - `store.py:957-964`: An absent `line` and an explicit `line=-1` normalize to the same key, producing identical fingerprints and 1.0 overlap for distinct findings. Reject non-positive line numbers or encode absence distinctly.
@@ -758,48 +768,12 @@ Reviewer findings:
 VERDICT: REQUEST_CHANGES
 
 Implementer response:
-Verified — the record's claims hold: without the check, all 4 new cases fail with "ValueError not raised", and the reviewer's exact scenario reproduces (`fingerprints equal: True`, `overlap: 1.0`).
+**Adjudication: ADDRESS** — real and reachable, and it defeats the helpers' only purpose.
 
-## Adjudication
+`_finding_keys()` normalized an absent `line` to the module sentinel `_NO_LINE = -1`, and its only validation on an explicit `line` was "is an int, is not a bool". So `{"path": "store.py", "severity": "p0"}` and `{"path": "store.py", "severity": "p0", "line": -1}` both keyed to `("store.py", -1, "p0")`: a whole-file finding and a line-cited finding fingerprinting identically and scoring 1.0 overlap. That is a false stuck-review signal in §6 — the exact failure the fingerprint is supposed to detect, inverted.
 
-**`store.py:957-964` — ADDRESS.** Valid and reachable. `_finding_keys()` normalized an absent `line` to `_NO_LINE = -1`, and its only check on an explicit `line` was "is an int, is not a bool" — so a whole-file finding and one citing `line: -1` both keyed to `("store.py", -1, "p0")`. Identical fingerprints and 1.0 overlap for two different complaints is a false stuck-review signal under §6, i.e. the exact failure these helpers exist to detect, inverted.
+**Fix** (`store.py:957-970`): `_finding_keys()` now raises `ValueError` for a line below 1, alongside the existing non-integer check. I took the reviewer's first route rather than the second: lines are 1-based, so 0 and negatives are malformed on their own terms and rejecting the whole non-positive range is independently correct — it makes `_NO_LINE` unreachable as a side effect, and it matches the strictness `path` and `severity` already get. Encoding absence distinctly would have changed the canonical form and invalidated every fingerprint already persisted in `reviewRounds`, which the pinned goldens exist to prevent. The `_NO_LINE` comment and the `_finding_keys()` "Raises" paragraph now both state that the sentinel's safety depends on this check.
 
-## Fix
+**Tests** (`tests/test_store_fingerprint.py`, +1 test, +3 subtests; suite 67 store / 163 total, OK): lines 0, -2 and -1 added to the malformed-findings table, plus `test_the_absent_line_sentinel_cannot_be_written_explicitly`, which reaches through `store._NO_LINE` rather than a literal so it keeps testing the collision if the sentinel's value ever moves, and asserts it through `findings_overlap()` as well as `findings_fingerprint()`. Verified the new cases fail without the check (no `ValueError`; the two findings hash alike) and pass with it. `ROUND_DIGEST` is unchanged — its findings cite positive or absent lines — so no stored fingerprint drifts.
 
-`_finding_keys()` now rejects a line below 1 alongside the existing non-integer check. I took the reviewer's first suggested route rather than the second: lines are 1-based, so 0 and negatives are malformed on their own terms, and rejecting the whole non-positive range makes `_NO_LINE` unreachable as a side effect while matching the strictness `path` and `severity` already get. Encoding absence distinctly would have changed the canonical form and invalidated every fingerprint already persisted in `reviewRounds` — which the pinned goldens exist to prevent. The `_NO_LINE` comment and the docstring's "Raises" paragraph now both record that the sentinel's safety rests on this check.
-
-`ROUND_DIGEST` is unchanged (its findings cite positive or absent lines), so no stored fingerprint drifts.
-
-## Tests
-
-Lines 0, -2 and -1 added to the malformed-findings table, plus `test_the_absent_line_sentinel_cannot_be_written_explicitly`, which reaches through `store._NO_LINE` rather than a literal so it follows the sentinel if its value moves, and asserts through `findings_overlap()` as well. Full suite: 163 tests, OK.
-
-No FOLLOW_UP or DECLINE items — this was the only finding.
-
-Committed as `3ec5d60` (fix) and `ada8f25` (FINDINGS.md record), and posted the matching round record to KO-123 per the AGENTS.md ledger convention. Nothing pushed or merged.
-
-## 2026-08-28T23:36:02Z — KO-123
-Round 2: REQUEST_CHANGES -> fix round
-Reviewer findings:
-- `store.py:901-907,994-997`: The unescaped field/record separators allow distinct finding sets to produce the same fingerprint. For example, `[("a",1,"p0"), ("b",2,"p1")]` hashes identically to `[("a\\x1f1\\x1fp0\\x1eb",2,"p1")]`. Reject separators in paths or use collision-safe encoding.
-
-VERDICT: REQUEST_CHANGES
-
-Implementer response:
-**Adjudication: ADDRESS** (the sole finding) — fixed in `e4c2cee`.
-
-The collision was real and I reproduced it before fixing: the round `[("a",1,"p0"), ("b",2,"p1")]` and the single finding `("a\x1f1\x1fp0\x1eb", 2, "p1")` hashed to the identical digest `9fb8d4f3…`. The code's own comment claimed "the ASCII separators cannot occur in a path a reviewer cites," but nothing enforced it and `findings` is a decoded JSON document, so a path can hold any character.
-
-Worth noting how bad the failure mode is: those two rounds have `findings_overlap` of **0.0** — they share no key at all — yet fingerprinted alike. §6 reads a fingerprint match as "the same round twice," so a reviewer that changed its mind completely would have tripped a stuck-review.
-
-**The fix.** The reviewer offered two options; I took rejection over collision-safe encoding, because fingerprints are persisted in `reviewRounds.findingsFingerprint` and compared against rounds recorded by earlier releases. Re-encoding would silently invalidate every digest already in a database — the test file pins golden literals specifically to catch that. `_finding_keys()` now rejects both separators in `path`, sitting alongside the existing checks for missing path, unknown severity, and non-positive line; the fix lands in the shared helper, so `findings_fingerprint()` and `findings_overlap()` are both covered.
-
-**Verification.** Full suite: 164 tests, all passing. The golden `ROUND` digest still hashes to `f60c148a…`, unchanged. Added a regression test that asserts the forged finding raises and documents the 0.0-overlap-yet-matching-fingerprint scenario as the reason.
-
-## 2026-08-28T23:36:51Z — KO-123
-Terminal adjudication after 2 review rounds: PASS
-
-Adjudicator reply:
-The candidate provides stable, validated SHA-256 findings fingerprints and symmetric Jaccard overlap using canonical finding keys, with focused coverage for ordering, malformed input, empty rounds, and collision boundaries. It is mergeable as presented.
-
-VERDICT: PASS
+Nothing was declined or deferred; this was the only finding.

@@ -7,9 +7,10 @@ rewrite. Stdlib ``sqlite3`` only.
 The API so far is ``open()`` and ``init()`` for the schema, ``claim()``
 for the per-project lease, ``with_delivery()`` for webhook idempotency,
 ``mirror_ticket()``/``transition()`` for ticket status,
-``pickable()``/``next_pickable()`` for the pickability predicate, and
-``resume()`` for the resume guidance invariant. The remaining query helpers
-(fingerprints) belong to the last ticket in this chain.
+``pickable()``/``next_pickable()`` for the pickability predicate,
+``resume()`` for the resume guidance invariant, and
+``findings_fingerprint()``/``findings_overlap()`` for stuck-review
+detection.
 
 Conventions, fixed here for every later ticket to follow:
 
@@ -37,6 +38,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import hashlib
 import json
 import sqlite3
 import time
@@ -888,3 +890,153 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
             (run_id, source, guidance, now),
         )
     return target
+
+
+# §2's severity union, transcribed. Checked here because `reviewRounds.findings`
+# is a JSON document rather than rows, so no CHECK constraint stands behind it:
+# this helper is the only place a severity typo can be caught before it changes
+# a fingerprint and, through it, whether the review looks converged.
+SEVERITIES = ("p0", "p1", "p2", "nit")
+
+# The canonical record's separators. §2 writes the key as `path:line:severity`,
+# but a colon is a legal character in a path, so joining on one would let
+# `{"path": "a:1", "line": 2}` and `{"path": "a", "line": ...}` collide into
+# the same record. The ASCII separators are not characters a reviewer cites a
+# path by, which is what makes them unambiguous — but "not expected" is not
+# "cannot happen", and `findings` is a decoded JSON document, so a path may
+# carry any character at all. `_finding_keys()` therefore *rejects* them rather
+# than trusting their absence: a path holding a separator could otherwise forge
+# a record boundary and hash a round to another round's fingerprint. Rejecting
+# keeps the encoding escape-free, so digests already stored stay valid.
+_FIELD_SEP = "\x1f"   # ASCII unit separator
+_RECORD_SEP = "\x1e"  # ASCII record separator
+
+# A finding with no line is keyed at -1: absent has to be *some* value, and a
+# sentinel outside the range of real line numbers keeps "the whole file" and
+# "line 1" distinct instead of folding one into the other. It is only outside
+# that range because `_finding_keys()` rejects non-positive lines, so no
+# reviewer can hand us a -1 that collides with "no line" and makes two
+# different findings fingerprint alike.
+_NO_LINE = -1
+
+# The fingerprint of a round that found nothing: sha256 of the empty canonical
+# form, which is what the general path already computes for an empty set. Named
+# because callers compare against it ("did this round find anything?") and
+# pinned as a literal because it is written into a NOT NULL column and compared
+# across rounds recorded by different releases — this value cannot drift.
+EMPTY_FINGERPRINT = (
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+)
+
+
+def _finding_keys(findings):
+    """Normalize `findings` to the set of `(path, line, severity)` keys.
+
+    The key is §2's, and what it leaves out is the point: `message` and
+    `criterion` are prose a reviewer rewrites every round, so including them
+    would make an unchanged complaint look like a new one and hide exactly the
+    non-convergence the fingerprint exists to catch.
+
+    A **set**, so two findings sharing a key collapse into one. Under this key
+    they are the same complaint about the same place, and duplicates would
+    otherwise make the fingerprint depend on how many times the reviewer said
+    it. It also keeps `findings_fingerprint()` and `findings_overlap()` reading
+    the same canonical input, which is what makes them comparable at all.
+
+    Raises `ValueError` for a finding missing `path` or `severity`, carrying a
+    severity outside §2's union, citing a line below 1, or naming a path that
+    contains one of the canonical form's ASCII separators — a fingerprint over
+    malformed findings would be a number that compares fine and means nothing.
+    Lines are 1-based, so a 0 or a negative is junk either way; rejecting it
+    also keeps `_NO_LINE` unreachable as an explicit value. A separator inside
+    a path is rejected for the sharper reason that the canonical form does not
+    escape them: `[("a", 1, "p0"), ("b", 2, "p1")]` and the single finding
+    `("a\x1f1\x1fp0\x1eb", 2, "p1")` would otherwise serialize to the same
+    bytes and hash alike, which is §6 reading two rounds that share nothing as
+    the same round twice.
+    """
+    keys = set()
+    for finding in findings:
+        try:
+            path = finding["path"]
+            severity = finding["severity"]
+        except (TypeError, KeyError) as exc:
+            raise ValueError(
+                f"finding must carry a path and a severity, got {finding!r}"
+            ) from exc
+        if not isinstance(path, str) or not path:
+            raise ValueError(f"finding path must be a non-empty string, got {path!r}")
+        if _FIELD_SEP in path or _RECORD_SEP in path:
+            raise ValueError(
+                "finding path must not contain the canonical form's ASCII"
+                f" separators, got {path!r}"
+            )
+        if severity not in SEVERITIES:
+            raise ValueError(
+                f"finding severity must be one of {SEVERITIES}, got {severity!r}"
+            )
+        line = finding.get("line")
+        if line is None:
+            line = _NO_LINE
+        elif isinstance(line, bool) or not isinstance(line, int):
+            raise ValueError(
+                f"finding line must be an integer or absent, got {line!r}"
+            )
+        elif line < 1:
+            raise ValueError(
+                f"finding line must be a positive integer or absent, got {line!r}"
+            )
+        keys.add((path, line, severity))
+    return keys
+
+
+def findings_fingerprint(findings):
+    """Hash a review round's `findings` into its stable fingerprint.
+
+    State-model §2: "hash of sorted (path:line:severity) tuples". `findings` is
+    the decoded `reviewRounds.findings` list — mappings with `path`, an
+    optional `line`, and a `severity`; any other keys are ignored.
+
+    Sorted before hashing, so the order the reviewer happened to emit its
+    findings in cannot change the answer: two rounds that raised the same
+    complaints fingerprint identically, which is the whole mechanism §6's
+    `review_stuck` trip condition reads. A round that found nothing hashes to
+    `EMPTY_FINGERPRINT` rather than raising — zero findings is a `pass`, an
+    ordinary outcome, not an error.
+
+    Pure. The result is a 64-character sha256 hex digest, sized for
+    `reviewRounds.findingsFingerprint`.
+    """
+    canonical = _RECORD_SEP.join(
+        _FIELD_SEP.join((path, str(line), severity))
+        for path, line, severity in sorted(_finding_keys(findings))
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def findings_overlap(earlier, later):
+    """How much two rounds' findings share, as a fraction in [0.0, 1.0].
+
+    The Jaccard index over the same `(path, line, severity)` keys
+    `findings_fingerprint()` hashes: shared keys divided by the keys either
+    round raised. Two rounds sharing two of three findings each score
+    `2/4 = 0.5` — the shared fraction of everything on the table, not of
+    either round alone, so neither a reviewer that drops findings nor one that
+    piles new ones on can inflate the number.
+
+    §6 reads a fingerprint match as "the same round twice" and this as the
+    softer signal next to it: a review that keeps re-raising most of its
+    findings is not converging even when the fingerprints differ. The
+    threshold is the supervisor's policy, not this function's.
+
+    Identical inputs always score 1.0, including two rounds that both found
+    nothing: the sets are equal, and a `pass` after a `pass` is not the caller's
+    stuck-review question. Argument order does not matter — the measure is
+    symmetric; the names only say how it is usually read.
+    """
+    earlier_keys = _finding_keys(earlier)
+    later_keys = _finding_keys(later)
+    union = earlier_keys | later_keys
+    if not union:
+        return 1.0
+    return len(earlier_keys & later_keys) / len(union)
