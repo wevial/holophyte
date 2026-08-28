@@ -134,6 +134,32 @@ class WithDeliveryTests(unittest.TestCase):
         self.assertEqual(effect.calls, ["iss_1"])
         self.assertEqual(self.committed(), (["iss_1"], [("del_1", 1700)]))
 
+    def test_a_failed_commit_rolls_back_so_the_connection_stays_usable(self):
+        # `tickets.activeRunId` is DEFERRABLE INITIALLY DEFERRED, so a dangling
+        # reference survives the INSERT and only fails at COMMIT. SQLite leaves
+        # the transaction open on that failure: unrolled back, the delivery id
+        # is reserved but uncommitted and the next BEGIN IMMEDIATE raises
+        # "cannot start a transaction within a transaction".
+        def dangling(conn):
+            conn.execute(
+                "INSERT INTO tickets"
+                " (projectId, linearIssueId, linearIdentifier, title, status,"
+                "  affinity, mirroredAt, activeRunId)"
+                " VALUES (?, 'iss_1', 'HOL-1', 'a ticket', 'ready', 'any', 0,"
+                "         999999)",
+                (self.project_id,),
+            )
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            store.with_delivery(self.conn, "del_1", dangling, now=1700)
+
+        self.assertEqual(self.committed(), ([], []))
+
+        retry = store.with_delivery(self.conn, "del_1", self.mirror("iss_1"), now=1900)
+
+        self.assertFalse(retry.replayed)
+        self.assertEqual(self.committed(), (["iss_1"], [("del_1", 1900)]))
+
     def test_an_unusable_delivery_id_is_refused_before_anything_runs(self):
         # SQLite permits NULL in a TEXT PRIMARY KEY, and permits it repeatedly,
         # so a missing id would silently defeat the dedup instead of colliding.

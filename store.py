@@ -307,9 +307,10 @@ def with_delivery(conn, delivery_id, effect, now=None):
     * duplicate id — the insert raises `IntegrityError`, the effect never runs,
       the transaction rolls back, and the result is `Delivery(True, None)`.
       Nothing is written, so the original `processedAt` is not restamped;
-    * the effect raises — everything rolls back, *including the delivery id*,
-      and the exception propagates. Linear's next redelivery is processed
-      rather than swallowed, which is the point of the shared transaction.
+    * the effect raises, or the commit does — everything rolls back,
+      *including the delivery id*, and the exception propagates. Linear's next
+      redelivery is processed rather than swallowed, which is the point of the
+      shared transaction, and the connection is left usable for that retry.
 
     Only the insert is guarded, never the effect: an `IntegrityError` from the
     effect's own writes is a real failure, and reporting it as a replay would
@@ -338,8 +339,14 @@ def with_delivery(conn, delivery_id, effect, now=None):
             conn.rollback()
             return Delivery(replayed=True, result=None)
         result = effect(conn)
+        # Inside the guard: a deferred constraint the effect violated is only
+        # checked here, and SQLite leaves the transaction *open* when COMMIT
+        # fails that way. Without the rollback the id would be reserved but
+        # uncommitted, and the connection's next BEGIN IMMEDIATE would raise
+        # "cannot start a transaction within a transaction" — so the retry that
+        # should process the delivery could not even start.
+        conn.commit()
     except BaseException:
         conn.rollback()
         raise
-    conn.commit()
     return Delivery(replayed=False, result=result)
