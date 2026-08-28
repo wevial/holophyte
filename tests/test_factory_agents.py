@@ -144,7 +144,7 @@ class ReviewLoopTests(unittest.TestCase):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
                               check=True, capture_output=True, text=True).stdout
 
-    def run_task(self, *replies):
+    def run_task(self, *replies, budget_min=1):
         """Drive one task, answering each review/adjudicate turn in order."""
         replies = list(replies)
 
@@ -161,7 +161,7 @@ class ReviewLoopTests(unittest.TestCase):
         with patch.object(factory, "agent", fake_agent):
             return factory.run_task({
                 "id": "KO-116", "title": "add a thing",
-                "verify": "echo ok", "budget_min": 1, "contracts": [],
+                "verify": "echo ok", "budget_min": budget_min, "contracts": [],
             })
 
     def findings(self):
@@ -193,6 +193,17 @@ class ReviewLoopTests(unittest.TestCase):
         self.assertNotIn(self.branch, self.git("branch", "--list", self.branch))
         self.assertFalse(self.wt.exists())
         self.assertEqual(self.linear.completed, ["KO-116"])
+
+    def test_close_out_records_actual_duration_estimate_and_rounds(self):
+        # Claim at t=100 s, close-out 42.7 s later: 0.711 min, reported to one
+        # decimal, against a 20 min estimate and a single review round.
+        with patch.object(factory, "monotonic", side_effect=[100.0, 142.7]):
+            merged = self.run_task("VERDICT: APPROVE", budget_min=20)
+
+        self.assertTrue(merged)
+        timing = "actual: 0.7 min · estimate: 20 min · rounds: 1"
+        self.assertIn(timing, self.findings())
+        self.assertIn(timing, "\n".join(body for _, body in self.linear.comments))
 
     def test_terminal_fail_preserves_the_branch_and_stops(self):
         merged = self.run_task("VERDICT: REQUEST_CHANGES",
