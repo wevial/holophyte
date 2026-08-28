@@ -39,14 +39,177 @@ def parse_task(line):
     return text, verify, budget
 
 
+# Markers the instrumented verify script prints around each `&&` clause, so a
+# failure can be attributed to the clause that produced it.
+CLAUSE_MARK = "__holo2_verify_clause__"
+FAIL_MARK = "__holo2_verify_failed__"
+
+
+def split_and_clauses(cmd):
+    """Split a verify command on its top-level `&&` operators.
+
+    Returns the clause list, or None when the command uses shell constructs
+    whose meaning per-clause instrumentation could change (`||`, `;`, `&`,
+    newlines, heredocs, backticks) or whose quoting/nesting is unbalanced.
+    Those commands are run verbatim instead."""
+    if "<<" in cmd:
+        return None
+    clauses, buf = [], []
+    quote, depth, escaped = None, 0, False
+    i = 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if escaped:
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+        elif quote:
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "`":
+            return None
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif ch == "#" and (i == 0 or cmd[i - 1].isspace() or cmd[i - 1] in "&("):
+            # A comment runs to end of line, so any `&&` inside it is text.
+            # Only a trailing comment is safe to keep: a newline would resume
+            # code, and inside `(...)` the comment would swallow the closer.
+            if depth or "\n" in cmd[i:]:
+                return None
+            buf.append(cmd[i:])
+            break
+        elif depth == 0:
+            prev = next((c for c in reversed(buf) if not c.isspace()), "")
+            if cmd[i:i + 2] == "&&":
+                clauses.append("".join(buf).strip())
+                buf = []
+                i += 2
+                continue
+            if ch == "&" and prev not in "><":  # background job
+                return None
+            if cmd[i:i + 2] == "||" or ch in ";\n":
+                return None
+        buf.append(ch)
+        i += 1
+    if quote or escaped or depth:
+        return None
+    clauses.append("".join(buf).strip())
+    return None if any(not c for c in clauses) else clauses
+
+
+def instrumented_script(clauses):
+    """One shell script that runs the clauses in order, stopping at the first
+    failure with the original exit status. The clauses stay in a single shell,
+    so `cd` and exported variables still carry across them.
+
+    The failure is reported from an EXIT trap reading a clause counter, so a
+    clause that ends the shell itself (`exit 7`) is still attributed rather
+    than escaping as a bare non-zero status."""
+    parts = ["__holo2_clause=0",
+             "trap '__holo2_rc=$?; [ \"$__holo2_rc\" -eq 0 ] || "
+             "printf \"%s\\n\" \"{} $__holo2_clause $__holo2_rc\"' EXIT"
+             .format(FAIL_MARK)]
+    for idx, clause in enumerate(clauses, 1):
+        parts.append("__holo2_clause={}".format(idx))
+        parts.append("printf '%s\\n' '{} {}'".format(CLAUSE_MARK, idx))
+        parts.append("{{ {}\n}} || exit $?".format(clause))
+    return "\n".join(parts)
+
+
+def parse_clause_output(output):
+    """Split marked output into per-clause text. Returns
+    (per_clause, failed, cleaned) where failed is (clause index, exit code).
+
+    A clause whose output has no trailing newline glues the next marker onto
+    its last line ("first__holo2_verify_clause__ 2"), so markers are split
+    off mid-line: the prefix stays with the clause that printed it."""
+    per_clause, failed, cleaned, current = {}, None, [], None
+
+    def emit(text):
+        cleaned.append(text)
+        if current is not None:
+            per_clause[current].append(text)
+
+    for line in output.splitlines():
+        # Peel off any output a marker got glued onto.
+        cut = len(line)
+        for mark in (CLAUSE_MARK, FAIL_MARK):
+            pos = line.find(mark)
+            if pos > 0:
+                cut = min(cut, pos)
+        if cut < len(line):
+            emit(line[:cut])
+            line = line[cut:]
+        if line.startswith(CLAUSE_MARK + " "):
+            current = int(line.split()[1])
+            per_clause[current] = []
+            continue
+        if line.startswith(FAIL_MARK + " "):
+            _, idx, rc = line.split()
+            failed = (int(idx), int(rc))
+            continue
+        emit(line)
+    return ({k: "\n".join(v) for k, v in per_clause.items()},
+            failed, "\n".join(cleaned))
+
+
+def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
+    """Name the command that failed and show its output — never a bare
+    non-zero exit. Silence is reported as silence, not as an empty pass.
+
+    For a chain, every clause that actually ran is listed with its own
+    output, and the clauses the failure short-circuited are named as not
+    executed, so the reader can tell "did not run" from "ran and said
+    nothing"."""
+    if not (failed and clauses and 1 <= failed[0] <= len(clauses)):
+        body = cleaned.strip() or "(no output — the command failed silently)"
+        return (f"[verify] FAILED: command exited {returncode}\n"
+                f"[verify]   full command: {cmd}\n"
+                f"[verify]   output:\n{body[-2000:]}")
+    idx, rc = failed
+    head = (f"[verify] FAILED: clause {idx} of {len(clauses)} exited {rc}\n"
+            f"[verify]   full command: {cmd}\n"
+            f"[verify]   failing clause: {clauses[idx - 1]}")
+    lines = []
+    for n in range(1, idx + 1):
+        status = f"exit {rc}" if n == idx else "ok"
+        lines.append(f"[verify]   --- clause {n} ({status}): {clauses[n - 1]}")
+        lines.append(per_clause.get(n, "").strip() or (
+            "(no output — the clause failed silently)" if n == idx
+            else "(no output)"))
+    if idx < len(clauses):
+        lines.append("[verify]   not executed: clause " + ", ".join(
+            str(n) for n in range(idx + 1, len(clauses) + 1)))
+    return f"{head}\n" + "\n".join(lines)[-2000:]
+
+
 def run_verify(cmd, cwd=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
-    purpose: the command is author-supplied on the ticket, not agent output."""
+    purpose: the command is author-supplied on the ticket, not agent output.
+
+    A failure is always attributable: a top-level `&&` chain is marked clause
+    by clause inside one shell, and the report points at the clause that
+    exited non-zero, including when that clause failed without printing
+    anything."""
     if not cmd:
         return True, "(no verify command)"
-    r = subprocess.run(cmd, shell=True, cwd=str(cwd or TARGET),
-                       capture_output=True, text=True, timeout=300)
-    return r.returncode == 0, (r.stdout + r.stderr).strip()[-2000:]
+    clauses = split_and_clauses(cmd)
+    marked = bool(clauses) and len(clauses) > 1
+    r = subprocess.run(instrumented_script(clauses) if marked else cmd,
+                       shell=True, cwd=str(cwd or TARGET),
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True, timeout=300)
+    per_clause, failed, cleaned = parse_clause_output(r.stdout)
+    if r.returncode == 0:
+        return True, cleaned.strip()[-2000:]
+    return False, failure_report(cmd, clauses if marked else None,
+                                 per_clause, failed, r.returncode, cleaned)
 
 
 def sh(args, cwd=None):
