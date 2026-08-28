@@ -479,3 +479,47 @@ implemented section-order check + 2 tests, 36/36 green, merged 7bcd707.
 Blocker lesson for v2: verify commands must print diagnostics on failure —
 compound && chains with silent greps give fixers nothing to act on; and a
 green gate that runs zero tests must be treated as RED, not pass.
+
+## 2026-08-28T21:41:58Z — KO-109
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- [factory.py:81](/workspace/factory.py:81) treats `&&` inside shell comments as an operator. `true # && false` is changed from success to failure, so verification semantics are not preserved.
+- [factory.py:105](/workspace/factory.py:105) cannot diagnose a clause containing shell `exit`: `echo before && exit 7 && echo never` reports only the whole command, not clause 2 as required.
+- The supplied verification discovered zero tests, which the repository policy explicitly treats as failure. The candidate’s four focused tests were not exercised by that gate.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+All three findings adjudicated **ADDRESS** and fixed in `95f8bfd`.
+
+**1. `&&` inside a shell comment — ADDRESS.** Confirmed: `true # && false` split into `true #` / `false` and turned a passing command into a failure. `split_and_clauses` ([factory.py:78](factory.py#L78)) now stops scanning at an unquoted `#` in word position and keeps the remainder with the current clause; it bails to verbatim execution if a newline follows the comment or the comment opens inside `(...)`, where the end-of-line rule would swallow the closer.
+
+**2. Clause containing shell `exit` — ADDRESS.** Confirmed: the `|| { ...; }` failure handler was never reached when the clause exited the shell itself, so `echo before && exit 7 && echo never` fell back to a whole-command report. `instrumented_script` now keeps a clause counter and reports from an EXIT trap, which fires on every exit path; each clause is just `{ ... } || exit $?`. Checked under `/bin/sh` (dash) that the trap preserves the original exit status. It now reports `clause 2 of 3 exited 7`.
+
+**3. Zero-test discovery — ADDRESS.** This one was my error. KO-109 names `tests/test_verify_gate.py` and verifies with `-p 'test_verify_gate*'`; I committed the suite as `tests/test_factory_verify.py`, so the gate collected zero tests and reported green — the KO-107 lesson repeating. Renamed to the file the ticket names. Running the real gate then exposed an unmet acceptance criterion ("reports clause 1, clause 2, exit code 7, and the first clause output"): the report showed only the failing clause's output. `failure_report` now lists every executed clause with its output and names the short-circuited clauses as not executed.
+
+Making `run_verify` itself treat a zero-test "OK" as RED is KO-114 (verify gate 2/3), which KO-109's Out of scope section excludes — noted in the commit message rather than implemented here.
+
+Verification: the ticket's exact command `python3 -m unittest discover -s tests -p 'test_verify_gate*' -v` → 8 tests, exit 0; full suite 49 tests, OK. Four of the eight tests are RED against the previous commit (comment splitting, `exit` attribution, both report-shape criteria) — I ran them against `HEAD~1`'s `factory.py` to confirm.
+
+## 2026-08-28T21:43:02Z — KO-109
+FAILED after 2 review rounds; branch task/factory-verify-gate-1-3-fail-l preserved at 95f8bfddf81ce05f561cf5f5dd328db3a1fa12f6
+
+Last reviewer verdict:
+- [factory.py](/workspace/factory.py:120): Clause markers are not guaranteed to start on a new line. For `printf first && sh -c 'echo boom; exit 7' && printf never`, the report assigns `boom` to clause 1 and labels the failing clause 2 as silent. This violates the requirement to show each executed clause’s output accurately.
+
+VERDICT: REQUEST_CHANGES
+
+## 2026-08-28T22:20:00Z — KO-109 (manual close-out)
+FAILED in loop after 2 review rounds. Round-1 findings (comment-`&&`, `exit`
+attribution, wrong test filename -> vacuous gate) all fixed by implementer in
+95f8bfd. Round-2 blocker: clause markers not newline-anchored — `printf first`
+glued the next marker onto its output, misattributing the failing clause's
+text to the previous clause.
+Human re-round at preserved branch: parse_clause_output now splits markers
+off mid-line, keeping the glued prefix with the clause that printed it.
+RED->GREEN test on the reviewer's exact reproduction. Focused gate 9/9, full
+suite 50/50. Merged dfc4ca8; worktree and branch removed.
+Lesson (recurred from KO-107): implementer named the test file
+test_factory_verify.py against the ticket's test_verify_gate* pattern —
+claim-time filename/pattern cross-check belongs in v2's emitter contract.
