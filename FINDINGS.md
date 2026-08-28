@@ -777,3 +777,7 @@ Implementer response:
 **Tests** (`tests/test_store_fingerprint.py`, +1 test, +3 subtests; suite 67 store / 163 total, OK): lines 0, -2 and -1 added to the malformed-findings table, plus `test_the_absent_line_sentinel_cannot_be_written_explicitly`, which reaches through `store._NO_LINE` rather than a literal so it keeps testing the collision if the sentinel's value ever moves, and asserts it through `findings_overlap()` as well as `findings_fingerprint()`. Verified the new cases fail without the check (no `ValueError`; the two findings hash alike) and pass with it. `ROUND_DIGEST` is unchanged — its findings cite positive or absent lines — so no stored fingerprint drifts.
 
 Nothing was declined or deferred; this was the only finding.
+
+## 2026-08-28T23:36:52Z — KO-123
+MERGED to main (branch task/store-v2-7-7-findings-fingerpr deleted). Verify: passed.
+actual: 11.2 min · estimate: 15 min · rounds: 2
