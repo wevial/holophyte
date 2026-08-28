@@ -5,9 +5,10 @@ this one module so a hosted backend later is a driver swap, not a loop
 rewrite. Stdlib ``sqlite3`` only.
 
 The API so far is ``open()`` and ``init()`` for the schema, ``claim()``
-for the per-project lease, and ``with_delivery()`` for webhook idempotency.
-The remaining query helpers (pickability, status transitions, resume,
-fingerprints) belong to the later tickets in this chain.
+for the per-project lease, ``with_delivery()`` for webhook idempotency, and
+``mirror_ticket()``/``transition()`` for ticket status. The remaining query
+helpers (pickability, resume, fingerprints) belong to the later tickets in
+this chain.
 
 Conventions, fixed here for every later ticket to follow:
 
@@ -17,8 +18,9 @@ Conventions, fixed here for every later ticket to follow:
   follow rather than splitting the file across two casings.
 * **List-typed fields are JSON text.** SQLite has no array type, so the
   contract's ``string[]`` and object-array fields are stored as a JSON
-  document defaulting to ``'[]'``. Encoding/decoding is a later ticket's
-  concern; the schema only pins the storage.
+  document defaulting to ``'[]'``. ``mirror_ticket()`` encodes the ticket's
+  three lists on the way in; decoding belongs to the readers, in the later
+  tickets.
 * **Optional (``?``) fields are nullable; everything else is NOT NULL.**
 * **Union types become CHECK constraints**, so an unknown status, phase or
   verdict is rejected by the database rather than by a caller who
@@ -26,13 +28,14 @@ Conventions, fixed here for every later ticket to follow:
 * **Rows are keyed by a synthetic ``id INTEGER PRIMARY KEY``**, standing in
   for the contract's Convex-shaped ``Id<table>`` references.
 
-Contract source: docs/v2/state-model.md §1-§2, plus the per-project lease
+Contract source: docs/v2/state-model.md §1-§3, plus the per-project lease
 column from §7. That document is deliberately gitignored, so the sections
 are cited here instead of vendored.
 """
 from __future__ import annotations
 
 import collections
+import json
 import sqlite3
 import time
 
@@ -350,3 +353,187 @@ def with_delivery(conn, delivery_id, effect, now=None):
         conn.rollback()
         raise
     return Delivery(replayed=False, result=result)
+
+
+# The §3 status diagram, transcribed edge for edge:
+#
+#     needs_spec → ready → in_flight → merged
+#                     ↕                  ↘
+#              blocked_on_deps      abandoned
+#                     ↕
+#             blocked_on_operator
+#
+# Read as data so the table below can be diffed against the drawing: each key
+# is a status, each value the statuses it may move to. `merged` and
+# `abandoned` are terminal, so they map to empty sets rather than being left
+# out — a missing key and "nowhere to go" would otherwise be the same lookup.
+#
+# The one reading the drawing does not spell out is the `↘`, which hangs off
+# the `in_flight → merged` edge: a run either merges or is given up on, and
+# `merged` is done (§3's table: "done"), so it is `in_flight → abandoned`, not
+# `merged → abandoned`.
+#
+# A status is not in its own set: `ready → ready` is refused like any other
+# non-edge, so a no-op status write cannot pass for a real transition.
+TICKET_TRANSITIONS = {
+    "needs_spec": frozenset({"ready"}),
+    "ready": frozenset({"in_flight", "blocked_on_deps"}),
+    "in_flight": frozenset({"merged", "abandoned"}),
+    "blocked_on_deps": frozenset({"ready", "blocked_on_operator"}),
+    "blocked_on_operator": frozenset({"blocked_on_deps"}),
+    "merged": frozenset(),
+    "abandoned": frozenset(),
+}
+
+# Derived, not re-typed, so the enum cannot drift from the transition table.
+# It must still match the `tickets.status` CHECK in SCHEMA above; the tests
+# assert that against the database rather than trusting the agreement.
+TICKET_STATUSES = tuple(TICKET_TRANSITIONS)
+
+
+class IllegalTransition(Exception):
+    """A status change the §3 diagram does not draw; nothing was written.
+
+    Also raised for an unknown target status and for a ticket id that does not
+    exist — neither names an edge of the diagram, and both are the same
+    mistake from the caller's side: a status change that will not happen.
+    """
+
+
+def _json_list(field, values):
+    """Encode a contract `string[]` field as the JSON text the schema stores.
+
+    A bare `str` is rejected rather than encoded: it is the easy mistake here,
+    it is iterable, and a JSON string is truthy where the empty list is not —
+    so passing one would route an under-specced ticket to `ready`.
+    """
+    if isinstance(values, str):
+        raise ValueError(f"{field} must be a list of strings, got {values!r}")
+    items = list(values)
+    bad = [v for v in items if not isinstance(v, str)]
+    if bad:
+        raise ValueError(f"{field} must contain only strings, got {bad[0]!r}")
+    return json.dumps(items)
+
+
+def transition(conn, ticket_id, to_status):
+    """Move `ticket_id` to `to_status`; return the status it came from.
+
+    Legality is `TICKET_TRANSITIONS`, i.e. state-model §3, and nothing else.
+    An illegal move raises `IllegalTransition` and leaves the row untouched.
+
+    `BEGIN IMMEDIATE` for the same reason as `claim()`: this is a read (where
+    is the ticket now?) followed by a write (move it), and two concurrent
+    callers must not both read the same `from` status and both act on it. The
+    write lock is taken up front, so they serialize and the second one
+    validates against the status the first one actually wrote.
+
+    The previous status is returned because the caller usually has to log or
+    mirror the change, and re-reading it afterwards cannot recover it.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT status FROM tickets WHERE id = ?", (ticket_id,)
+        ).fetchone()
+        if row is None:
+            raise IllegalTransition(f"ticket {ticket_id} does not exist")
+        (from_status,) = row
+        if to_status not in TICKET_TRANSITIONS.get(from_status, frozenset()):
+            raise IllegalTransition(
+                f"ticket {ticket_id}: {from_status} -> {to_status} is not a"
+                " transition the state-model §3 diagram draws"
+            )
+        conn.execute(
+            "UPDATE tickets SET status = ? WHERE id = ?", (to_status, ticket_id)
+        )
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return from_status
+
+
+def mirror_ticket(
+    conn,
+    project_id,
+    linear_issue_id,
+    linear_identifier,
+    title,
+    acceptance_criteria=(),
+    verification_commands=(),
+    time_box_ms=None,
+    affinity="any",
+    depends_on=(),
+    now=None,
+):
+    """Upsert the Holophyte mirror of a Linear issue; return its ticket id.
+
+    The routing rule, state-model §2: a ticket lacking acceptance criteria or
+    a verification command is **not pickable**, so a new one lands in
+    `needs_spec`; one carrying both lands in `ready`. That is a data
+    invariant, not a prompt instruction — the loop cannot pick up an
+    under-specced ticket because the store never gives it a pickable one.
+    The criteria/command *defaults are empty* for the same reason: a caller
+    that forgets to pass them gets the unpickable answer, not the pickable one.
+
+    On re-mirror the Linear-owned fields are refreshed and the status is left
+    alone, with one exception: `needs_spec → ready` once the body finally
+    carries both lists. §1 gives Holophyte the in-flight substate, so a mirror
+    push may not drag a running ticket backwards, and the promotion is the one
+    edge of the §3 diagram a mirror can walk on its own — every other status
+    change is somebody's decision and goes through `transition()`. In
+    particular `blocked_on_deps → ready` is *not* taken here: it is the
+    dependency resolver's call, not a side effect of a body edit.
+
+    Lookups are scoped to `project_id`, so re-mirroring another project's
+    issue does not overwrite it — it fails on the `linearIssueId` uniqueness
+    constraint instead. `now` is epoch milliseconds for `mirroredAt`,
+    defaulting to the clock.
+    """
+    criteria = _json_list("acceptance_criteria", acceptance_criteria)
+    commands = _json_list("verification_commands", verification_commands)
+    depends = _json_list("depends_on", depends_on)
+    specced = bool(json.loads(criteria)) and bool(json.loads(commands))
+    derived = "ready" if specced else "needs_spec"
+    if now is None:
+        now = int(time.time() * 1000)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT id, status FROM tickets"
+            " WHERE linearIssueId = ? AND projectId = ?",
+            (linear_issue_id, project_id),
+        ).fetchone()
+        if row is None:
+            ticket_id = conn.execute(
+                "INSERT INTO tickets"
+                " (projectId, linearIssueId, linearIdentifier, title, status,"
+                "  acceptanceCriteria, verificationCommands, timeBoxMs,"
+                "  affinity, dependsOn, mirroredAt)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    project_id, linear_issue_id, linear_identifier, title,
+                    derived, criteria, commands, time_box_ms, affinity,
+                    depends, now,
+                ),
+            ).lastrowid
+        else:
+            ticket_id, status = row
+            if status == "needs_spec" and derived == "ready":
+                status = "ready"
+            conn.execute(
+                "UPDATE tickets SET linearIdentifier = ?, title = ?,"
+                " status = ?, acceptanceCriteria = ?, verificationCommands = ?,"
+                " timeBoxMs = ?, affinity = ?, dependsOn = ?, mirroredAt = ?"
+                " WHERE id = ?",
+                (
+                    linear_identifier, title, status, criteria, commands,
+                    time_box_ms, affinity, depends, now, ticket_id,
+                ),
+            )
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return ticket_id
