@@ -552,3 +552,6 @@ Diagnostic cost: the report no longer shows what the value drifted *to*. That's 
 I left the sibling `vacuous_report` untouched: it quotes command output, which AGENTS.md:40-42 explicitly requires be made visible, and that's a different source than an arbitrary declared file.
 
 Tests: verify gate 21/21, full suite 72/72. Nothing deferred or declined.
+
+## 2026-08-28T22:06:51Z — KO-115
+MERGED to main (branch task/factory-verify-gate-3-3-explic deleted). Verify: passed. Rounds used: 2.
