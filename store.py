@@ -43,7 +43,10 @@ import time
 
 # One statement per table, in dependency order where it matters. Every
 # statement is IF NOT EXISTS, which is the whole of init()'s idempotency:
-# re-running it on a populated database is a no-op, not a rebuild.
+# re-running it on a populated database is a no-op, not a rebuild. That same
+# no-op is why a column added to a table here has to be added to
+# ADDED_COLUMNS below as well — an existing table is never re-created, so
+# nothing else would ever give it the column.
 #
 # `trigger` and `action` are SQLite keywords, so those two column names are
 # quoted; they are the contract's names and renaming them to dodge the
@@ -216,13 +219,56 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
     return conn
 
 
+# Columns added to a table after its CREATE statement first shipped, as
+# (table, column, DDL). SCHEMA is `CREATE TABLE IF NOT EXISTS` throughout,
+# which does exactly nothing to a table that already exists — so without this
+# list a store initialized by an earlier version of the module keeps its
+# original columns forever, and the first reader of a newer one fails with
+# `no such column`. Adding a column to SCHEMA is therefore only half the
+# change; the other half is an entry here.
+#
+# Each DDL is transcribed from that column's clause in SCHEMA so a migrated
+# database and a fresh one end up with the same column, CHECK included:
+# SQLite's ALTER TABLE ADD COLUMN takes a CHECK constraint and enforces it on
+# every later write. What it will not take is UNIQUE, or a NOT NULL without a
+# constant default — a column needing either wants a table rebuild, not a line
+# here. The schema test holds the two databases against each other.
+ADDED_COLUMNS = (
+    (
+        "runs",
+        "resumePhase",
+        "resumePhase TEXT"
+        " CHECK (resumePhase IS NULL"
+        " OR resumePhase IN ('claimed', 'working', 'verifying', 'reviewing',"
+        "                    'addressing', 'merge_gate',"
+        "                    'awaiting_merge_approval', 'merging', 'squashing',"
+        "                    'done', 'blocked_on_operator', 'failed',"
+        "                    'killed'))",
+    ),
+)
+
+
 def init(conn):
-    """Create every table the state model defines, if absent.
+    """Create every table the state model defines, if absent, and migrate.
+
+    Two steps, because `CREATE TABLE IF NOT EXISTS` alone would only ever
+    bootstrap an empty file: the tables are created, then every `ADDED_COLUMNS`
+    entry missing from an existing table is added. That second step is what
+    carries a store created by an earlier version of this module forward
+    instead of leaving it one column short of the code that reads it.
 
     Idempotent: safe to call on an already-initialized database, where it
-    creates nothing and touches no rows.
+    creates nothing, adds nothing and touches no rows. Not a downgrade path —
+    an older module opening a newer store sees columns it does not know about,
+    which is harmless, while the reverse is what this repairs.
     """
     conn.executescript(SCHEMA)
+    for table, column, ddl in ADDED_COLUMNS:
+        # A misspelled table name leaves `columns` empty and the ALTER then
+        # raises `no such table`, which is the loud failure this should be.
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
     conn.commit()
 
 
