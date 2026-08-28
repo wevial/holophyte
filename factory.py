@@ -187,7 +187,7 @@ def run_task(task):
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
             base_sha=base_sha, candidate_sha=sha)
 
-        if ok and "VERDICT: APPROVE" in verdict:
+        if ok and review_runner.terminal_verdict(verdict) == "APPROVE":
             break
 
         if rnd == MAX_ROUNDS:
