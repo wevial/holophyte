@@ -618,3 +618,7 @@ MERGED to main (branch task/ticket-template-mechanical-sco deleted). Verify: pas
 
 ## 2026-08-28T22:41:28Z — KO-125
 MERGED to main (branch task/factory-record-actual-ticket-d deleted). Verify: passed. Rounds used: 1.
+
+## 2026-08-28T22:47:31Z — KO-117
+MERGED to main (branch task/store-v2-1-7-schema-ddl-wal-bo deleted). Verify: passed.
+actual: 5.5 min · estimate: 30 min · rounds: 1
