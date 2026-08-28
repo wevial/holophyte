@@ -380,6 +380,14 @@ def with_criteria(unchecked, checked=0):
         "\n".join(items))
 
 
+def with_extra_criteria(*entries):
+    """FILLED at the criteria cap (5 checkboxes) plus `entries` verbatim."""
+    at_cap = with_criteria(5)
+    last = "- [ ] Given case 5, when run, then result 5."
+    assert last in at_cap
+    return at_cap.replace(last, "\n".join((last,) + entries))
+
+
 def with_in_scope(n):
     """FILLED with its single In-scope bullet replaced by `n` bullets."""
     return FILLED.replace(
@@ -415,6 +423,33 @@ class ScopeCapTests(unittest.TestCase):
         self.assert_problems_contain(
             with_criteria(3, checked=3),
             "'Acceptance criteria' has 6 items; the cap is 5")
+
+    def test_plain_bullet_criteria_count_toward_the_cap(self):
+        """The cap counts criteria, not checkbox syntax. A plain bullet is
+        still a criterion the implementer must satisfy, so it cannot be the
+        sixth one that slips past."""
+        self.assert_problems_contain(
+            with_extra_criteria("- Given case 6, when run, then result 6."),
+            "'Acceptance criteria' has 6 items; the cap is 5")
+
+    def test_numbered_criteria_count_toward_the_cap(self):
+        self.assert_problems_contain(
+            with_extra_criteria("6. Given case 6, when run, then result 6.",
+                                "7) Given case 7, when run, then result 7."),
+            "'Acceptance criteria' has 7 items; the cap is 5")
+
+    def test_non_checkbox_criterion_is_rejected_on_its_own(self):
+        """Even under the cap, an entry the template does not define is a
+        blocker — the ticket says what it means with '- [ ]'."""
+        text = FILLED.replace(
+            "- [ ] Given no orders, when GET /orders.csv, then only the "
+            "header row.",
+            "- Given no orders, when GET /orders.csv, then only the header "
+            "row.")
+        self.assert_problems_contain(
+            text, "acceptance criterion is not a '- [ ] ...' checkbox: "
+                  "Given no orders")
+        self.assertTrue(tt.blocking(tt.validate(tt.parse(text))))
 
     def test_in_scope_at_cap_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(with_in_scope(3))), [])

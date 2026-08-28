@@ -11,10 +11,12 @@ reading exactly "- None". Unfilled placeholders ({{...}} or <...>) fail.
 
 Scope is capped mechanically as well: a ticket over MAX_ESTIMATE_MIN minutes,
 MAX_CRITERIA acceptance criteria, or MAX_IN_SCOPE "In scope" bullets is
-rejected — scope rules kept only in prose get skipped. A "What:" line that
-chains deliverables instead yields an ADVISORY_PREFIX-marked note, which does
-not affect validity; blocking() drops advisories for callers that gate on the
-result.
+rejected — scope rules kept only in prose get skipped. Every list entry under
+"Acceptance criteria" counts toward that cap, and one that is not a "- [ ]"
+checkbox is rejected on its own, so extra criteria cannot hide in a plain or
+numbered bullet. A "What:" line that chains deliverables instead yields an
+ADVISORY_PREFIX-marked note, which does not affect validity; blocking() drops
+advisories for callers that gate on the result.
 
 Markdown that Linear has normalized round-trips: "**What: **" for "**What:**"
 and "* None" for "- None" are the same structure, so both are accepted. Loose
@@ -51,6 +53,10 @@ H2_RE = re.compile(r"^##\s+(.*?)\s*$")
 BULLET_RE = re.compile(r"^[-*]\s+(.*)$")
 UNCHECKED_RE = re.compile(r"^[-*]\s+\[ \]\s*(.*)$")
 CHECKED_RE = re.compile(r"^[-*]\s+\[[xX]\]\s*(.*)$")
+# Any list entry, bulleted or numbered. Acceptance criteria must be
+# checkboxes; matching the looser shape is what lets validate() see -- and
+# reject -- entries that would otherwise slip past MAX_CRITERIA unnoticed.
+LIST_ITEM_RE = re.compile(r"^(?:[-*]|\d+[.)])\s+(.*)$")
 # Linear rewrites "**What:**" as "**What: **", so the space is allowed inside
 # the bold run — but the key, the colon, and the bold markers stay required.
 BOLD_KEY_RE = re.compile(r"^\*\*(What|Why|How):[ \t]*\*\*\s*(.*)$")
@@ -78,13 +84,29 @@ def _bullets(body):
     return out
 
 
-def _checkboxes(body, rx):
-    out = []
+def _criteria(body):
+    """Acceptance-criteria list entries as (unchecked, checked, other).
+
+    "other" is every list entry that is not a "- [ ]"/"- [x]" checkbox — a
+    plain bullet, a numbered item. The author wrote those as criteria, so
+    dropping them would let a ticket carry more than MAX_CRITERIA and still
+    validate clean; validate() counts them toward the cap and rejects their
+    form instead.
+    """
+    unchecked, checked, other = [], [], []
     for line in body.splitlines():
-        m = rx.match(line.strip())
-        if m:
-            out.append(_clean(m.group(1)))
-    return out
+        s = line.strip()
+        item = LIST_ITEM_RE.match(s)
+        if not item:
+            continue
+        done, todo = CHECKED_RE.match(s), UNCHECKED_RE.match(s)
+        if todo:
+            unchecked.append(_clean(todo.group(1)))
+        elif done:
+            checked.append(_clean(done.group(1)))
+        else:
+            other.append(_clean(item.group(1)))
+    return unchecked, checked, other
 
 
 def _fenced_lines(body):
@@ -151,6 +173,7 @@ class Ticket:
         self.out_of_scope = []
         self.acceptance = []
         self.acceptance_done = []
+        self.acceptance_other = []
         self.verify_commands = []
         self.contract_checks = []
         self.notes = []
@@ -194,9 +217,8 @@ def parse(text):
     t.what, t.why, t.how = kv.get("What", ""), kv.get("Why", ""), kv.get("How", "")
     t.in_scope = _bullets(t.sections.get("In scope", ""))
     t.out_of_scope = _bullets(t.sections.get("Out of scope", ""))
-    ac = t.sections.get("Acceptance criteria", "")
-    t.acceptance = _checkboxes(ac, UNCHECKED_RE)
-    t.acceptance_done = _checkboxes(ac, CHECKED_RE)
+    t.acceptance, t.acceptance_done, t.acceptance_other = _criteria(
+        t.sections.get("Acceptance criteria", ""))
     t.verify_commands = _verify_commands(t.sections.get("Verify command(s)", ""))
     t.contract_checks = _contract_checks(t.sections.get("Contract checks", ""))
     t.notes = _bullets(t.sections.get("Implementation notes", ""))
@@ -317,7 +339,10 @@ def validate(t):
     for i, ac in enumerate(t.acceptance, 1):
         if not ac:
             p.append(f"acceptance criterion #{i} is empty")
-    n_criteria = len(t.acceptance) + len(t.acceptance_done)
+    for item in t.acceptance_other:
+        p.append(f"acceptance criterion is not a '- [ ] ...' checkbox: {item}")
+    n_criteria = (len(t.acceptance) + len(t.acceptance_done)
+                  + len(t.acceptance_other))
     if n_criteria > MAX_CRITERIA:
         p.append(f"'Acceptance criteria' has {n_criteria} items; the cap is "
                  f"{MAX_CRITERIA} — split the ticket")
