@@ -656,3 +656,62 @@ One thing I did not do: AGENTS.md asks for findings and adjudications in `FINDIN
 ## 2026-08-28T22:58:25Z — KO-119
 MERGED to main (branch task/store-v2-3-7-webhook-delivery deleted). Verify: passed.
 actual: 6.4 min · estimate: 20 min · rounds: 2
+
+## 2026-08-28T23:07:39Z — KO-120
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- [store.py:436](/workspace/store.py:436) and [store.py:503](/workspace/store.py:503): `transition()` and `mirror_ticket()` always open and commit their own transactions, so they cannot run as effects of `with_delivery()`, which already owns the transaction. Reproduced `with_delivery(..., lambda c: mirror_ticket(c, ...))` failing with `OperationalError: cannot start a transaction within a transaction`; consequently, ticket mirroring cannot be atomically recorded with its Linear delivery as required.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Committed as `56dd288`.
+
+## Adjudication: ADDRESS
+
+The finding was real and reproduced exactly. Both `transition()` and `mirror_ticket()` opened their own `BEGIN IMMEDIATE`, so passing either as a `with_delivery()` effect raised `OperationalError: cannot start a transaction within a transaction`.
+
+I treated it as in scope rather than a follow-up: mirroring a ticket and moving its status *are* what an inbound Linear delivery does, so writers that structurally can't be delivery effects defeat state-model §1 for its primary case. The fix stays inside `store.py`, the file this ticket owns, and adds no public API.
+
+**Fix** — new `_transaction(conn)` context manager (`store.py:214`). It takes `BEGIN IMMEDIATE` and commits/rolls back only when it owns the transaction; when one is already open it joins and leaves both boundaries to the owner. `transition()` and `mirror_ticket()` now use it and are otherwise unchanged — same validation, same rollback-on-failure, same return values, same up-front serialization standalone.
+
+**Tests** — three in `tests/test_store_status.py`, all RED against the parent commit with the reported error:
+- a mirror and its delivery id commit as one
+- a transition and its delivery id commit as one
+- an effect that mirrors and *then* fails leaves neither the row nor the delivery id
+
+Mutation-checked: making the joined block commit at its own boundary fails the third test; dropping the join restores all three original errors. My first version of the rollback test survived the commit-anyway mutation — it asserted only that the id was released, which the pre-existing `with_delivery` guard already did — so I replaced it with the write-then-fail case that actually pins atomicity.
+
+`test_store*` 29/29 (+3), full suite 125/125.
+
+**FOLLOW_UP, named in the commit message:** `claim()` (`store.py:280`) has the identical shape and is equally uncomposable. It shipped in KO-118 with its own tests and wasn't flagged, so I left it rather than make an unreviewed drive-by change to another ticket's code — `_transaction()` is in place for whoever takes it. Say the word if you'd rather I fold it in now.
+
+I did not hand-edit `FINDINGS.md`; following the KO-119 precedent, it reads as factory-appended evidence. The adjudication text above is ready to record there or in the Linear ledger if you want me to.
+
+## 2026-08-28T23:10:43Z — KO-120
+Round 2: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `store.py:247`: `_transaction()` commits outside its exception guard. A deferred constraint failure during `commit()` leaves the transaction open with ticket writes pending, so retries can join contaminated state instead of starting cleanly. Move `commit()` inside the rollback guard.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Committed as `fd8d4ed`.
+
+**Adjudication**
+
+- **`store.py:247` — ADDRESS.** Valid and reachable. The schema declares its `runs` foreign keys `DEFERRABLE INITIALLY DEFERRED` (`store.py:65,89,91`) with `PRAGMA foreign_keys = ON`, so a dangling reference passes the INSERT and only fails at COMMIT — and SQLite leaves the transaction open on that failure. Since `_transaction()` dispatches on `conn.in_transaction`, the *next* writer on that connection reads True, takes the "join the caller's transaction" path, and commits the rejected writes along with its own. `with_delivery()` already commits inside its guard with a comment naming this exact hazard, so the helper was the inconsistent one.
+
+**Fix:** moved `conn.commit()` inside the `try`, with a comment pointing at the `with_delivery()` precedent, and updated the docstring's rollback claim to cover the commit itself.
+
+**Test:** `test_a_failed_commit_leaves_the_connection_clean_for_the_retry` drives a dangling `activeRunId` through `_transaction()`, then asserts the connection is out of the transaction and a subsequent `mirror_ticket()` commits clean. Verified it fails on the old ordering (`AssertionError: True is not false` on `in_transaction`) and passes now. Full suite: 126 tests, OK.
+
+**Noted as FOLLOW_UP in the commit message, not fixed:** `claim()` (`store.py:321`) hand-rolls the same `BEGIN IMMEDIATE`/try/commit shape with the identical defect. It predates this branch and is untouched by it; the right fix is routing it through `_transaction()`, which changes the claim path and wants its own tests — outside this task's scope. There's no ticket for it yet, so it needs one if you want it picked up.
+
+## 2026-08-28T23:11:31Z — KO-120
+Terminal adjudication after 2 review rounds: PASS
+
+Adjudicator reply:
+The candidate correctly implements the required status transitions and `needs_spec` routing, with atomic transaction behavior and passing focused verification.
+
+VERDICT: PASS
