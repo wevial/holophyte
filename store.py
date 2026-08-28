@@ -4,10 +4,10 @@ Local-first by resolved decision (2026-08-22): all loop state lives behind
 this one module so a hosted backend later is a driver swap, not a loop
 rewrite. Stdlib ``sqlite3`` only.
 
-This ticket bootstraps the schema and nothing else — ``open()`` and
-``init()`` are the whole API. Query helpers (claim lease, idempotency,
-pickability, status transitions, resume, fingerprints) belong to the later
-tickets in this chain.
+The API so far is ``open()`` and ``init()`` for the schema, plus
+``claim()`` for the per-project lease. The remaining query helpers
+(idempotency, pickability, status transitions, resume, fingerprints) belong
+to the later tickets in this chain.
 
 Conventions, fixed here for every later ticket to follow:
 
@@ -33,6 +33,7 @@ are cited here instead of vendored.
 from __future__ import annotations
 
 import sqlite3
+import time
 
 # One statement per table, in dependency order where it matters. Every
 # statement is IF NOT EXISTS, which is the whole of init()'s idempotency:
@@ -204,3 +205,78 @@ def init(conn):
     """
     conn.executescript(SCHEMA)
     conn.commit()
+
+
+class ClaimConflict(Exception):
+    """A claim was refused and nothing was written.
+
+    The typed failure of `claim()`: either the project already has an active
+    run — v0's single-threading rule (state-model §7), so this caller does not
+    get to start another one — or the ticket does not belong to the project
+    whose lease was asked for. Both leave every table exactly as it was.
+    """
+
+
+def claim(conn, project_id, ticket_id, now=None):
+    """Take the project's lease for a new run on `ticket_id`; return its id.
+
+    One `BEGIN IMMEDIATE` transaction, per state-model §7: assert
+    `projects.activeRunId IS NULL`, insert the `runs` row in phase `claimed`,
+    then point both `projects.activeRunId` and `tickets.activeRunId` at it.
+
+    IMMEDIATE matters. The lease is a read (is it free?) followed by a write
+    (take it), and a deferred transaction takes no write lock until the write,
+    which leaves room for two claimers to both read "free". IMMEDIATE takes the
+    write lock up front, so concurrent claimers serialize in SQLite and the
+    second one reads a lease that is already held. Losing is therefore a
+    deterministic `ClaimConflict`, not a race.
+
+    Every failure path rolls back, so a lost claim leaves no orphan `runs` row.
+    `attempt` is 1 + the ticket's prior runs, making it 1-based. `now` is epoch
+    milliseconds for `startedAt`/`lastHeartbeat`, defaulting to the clock.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # A project row that does not exist matches nothing here and fails a
+        # moment later on the runs.projectId foreign key: an unknown project is
+        # a malformed claim, not a lease conflict, and reads better as one.
+        held = conn.execute(
+            "SELECT activeRunId FROM projects"
+            " WHERE id = ? AND activeRunId IS NOT NULL",
+            (project_id,),
+        ).fetchone()
+        if held is not None:
+            raise ClaimConflict(
+                f"project {project_id}: lease already held by run {held[0]}"
+            )
+        (prior,) = conn.execute(
+            "SELECT COUNT(*) FROM runs WHERE ticketId = ?", (ticket_id,)
+        ).fetchone()
+        run_id = conn.execute(
+            "INSERT INTO runs"
+            " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?)",
+            (ticket_id, project_id, prior + 1, now, now),
+        ).lastrowid
+        conn.execute(
+            "UPDATE projects SET activeRunId = ? WHERE id = ?",
+            (run_id, project_id),
+        )
+        # Scoped by projectId as well as id: claiming another project's ticket
+        # would otherwise hand out this project's lease for work it does not
+        # own. Zero rows updated means exactly that, and is refused.
+        updated = conn.execute(
+            "UPDATE tickets SET activeRunId = ? WHERE id = ? AND projectId = ?",
+            (run_id, ticket_id, project_id),
+        ).rowcount
+        if updated != 1:
+            raise ClaimConflict(
+                f"ticket {ticket_id} is not a ticket of project {project_id}"
+            )
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return run_id
