@@ -908,7 +908,10 @@ _RECORD_SEP = "\x1e"  # ASCII record separator
 
 # A finding with no line is keyed at -1: absent has to be *some* value, and a
 # sentinel outside the range of real line numbers keeps "the whole file" and
-# "line 1" distinct instead of folding one into the other.
+# "line 1" distinct instead of folding one into the other. It is only outside
+# that range because `_finding_keys()` rejects non-positive lines, so no
+# reviewer can hand us a -1 that collides with "no line" and makes two
+# different findings fingerprint alike.
 _NO_LINE = -1
 
 # The fingerprint of a round that found nothing: sha256 of the empty canonical
@@ -935,9 +938,11 @@ def _finding_keys(findings):
     it. It also keeps `findings_fingerprint()` and `findings_overlap()` reading
     the same canonical input, which is what makes them comparable at all.
 
-    Raises `ValueError` for a finding missing `path` or `severity`, or carrying
-    a severity outside §2's union — a fingerprint over malformed findings would
-    be a number that compares fine and means nothing.
+    Raises `ValueError` for a finding missing `path` or `severity`, carrying a
+    severity outside §2's union, or citing a line below 1 — a fingerprint over
+    malformed findings would be a number that compares fine and means nothing.
+    Lines are 1-based, so a 0 or a negative is junk either way; rejecting it
+    also keeps `_NO_LINE` unreachable as an explicit value.
     """
     keys = set()
     for finding in findings:
@@ -960,6 +965,10 @@ def _finding_keys(findings):
         elif isinstance(line, bool) or not isinstance(line, int):
             raise ValueError(
                 f"finding line must be an integer or absent, got {line!r}"
+            )
+        elif line < 1:
+            raise ValueError(
+                f"finding line must be a positive integer or absent, got {line!r}"
             )
         keys.add((path, line, severity))
     return keys

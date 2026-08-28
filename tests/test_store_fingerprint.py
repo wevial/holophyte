@@ -100,10 +100,30 @@ class FingerprintTests(unittest.TestCase):
             ("no severity", {"path": "store.py", "message": "m"}),
             ("unknown severity", finding("store.py", "blocker")),
             ("non-integer line", finding("store.py", "p0", line="12")),
+            ("zero line", finding("store.py", "p0", line=0)),
+            ("negative line", finding("store.py", "p0", line=-2)),
+            ("line at the absent sentinel", finding("store.py", "p0", line=-1)),
         ):
             with self.subTest(finding=label):
                 with self.assertRaises(ValueError):
                     store.findings_fingerprint([item])
+
+    def test_the_absent_line_sentinel_cannot_be_written_explicitly(self):
+        """A finding cannot claim the key that "no line" normalizes to.
+
+        Absent has to key at *some* value, and it keys at -1. If a reviewer
+        could also cite line -1, that finding and a whole-file one would share
+        a key: identical fingerprints and 1.0 overlap for two different
+        complaints, which is exactly the false "stuck review" §6 must not see.
+        Rejecting it is what keeps the sentinel private to this module.
+        """
+        with self.assertRaises(ValueError):
+            store.findings_fingerprint([finding("store.py", "p0", line=store._NO_LINE)])
+        with self.assertRaises(ValueError):
+            store.findings_overlap(
+                [finding("store.py", "p0")],
+                [finding("store.py", "p0", line=store._NO_LINE)],
+            )
 
 
 class OverlapTests(unittest.TestCase):
