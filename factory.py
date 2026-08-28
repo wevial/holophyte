@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from time import monotonic
 
 import review_runner
 import ticket_template
@@ -353,6 +354,9 @@ def run_task(task):
     so a dirty/failed task can never block the repo or the next ticket.
     """
     task_id = task["id"]
+    # Claim-to-merge wall clock: run_task is entered immediately after the
+    # claim, so this is the ticket's actual duration as far as the loop knows.
+    started = monotonic()
     verify_cmd, budget_min = task.get("verify"), task["budget_min"]
     contracts = task.get("contracts")
     task = task["title"]
@@ -532,8 +536,13 @@ def run_task(task):
     sh(["git", "branch", "-d", branch], TARGET)
     import linear_provider
     linear_provider.complete(task_id)
+    # One greppable line of timing data per merged ticket: the estimate stays
+    # write-only otherwise, and a future burndown script reads this format.
+    actual_min = (monotonic() - started) / 60
     ledger(task_id, f"MERGED to main (branch {branch} deleted). "
-                 f"Verify: {'passed' if ok else 'n/a'}. Rounds used: {rnd}.")
+                 f"Verify: {'passed' if ok else 'n/a'}.\n"
+                 f"actual: {actual_min:.1f} min · estimate: {budget_min} min · "
+                 f"rounds: {rnd}")
     sh(["git", "add", "FINDINGS.md"], TARGET)
     sh(["git", "commit", "-m", f"Complete task {task_id}: {task}"], TARGET)
     print(f"[holo2] merged: {task}")
