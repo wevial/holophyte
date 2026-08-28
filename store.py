@@ -901,8 +901,13 @@ SEVERITIES = ("p0", "p1", "p2", "nit")
 # The canonical record's separators. §2 writes the key as `path:line:severity`,
 # but a colon is a legal character in a path, so joining on one would let
 # `{"path": "a:1", "line": 2}` and `{"path": "a", "line": ...}` collide into
-# the same record. The ASCII separators cannot occur in a path a reviewer cites,
-# so the encoding stays unambiguous without escaping anything.
+# the same record. The ASCII separators are not characters a reviewer cites a
+# path by, which is what makes them unambiguous — but "not expected" is not
+# "cannot happen", and `findings` is a decoded JSON document, so a path may
+# carry any character at all. `_finding_keys()` therefore *rejects* them rather
+# than trusting their absence: a path holding a separator could otherwise forge
+# a record boundary and hash a round to another round's fingerprint. Rejecting
+# keeps the encoding escape-free, so digests already stored stay valid.
 _FIELD_SEP = "\x1f"   # ASCII unit separator
 _RECORD_SEP = "\x1e"  # ASCII record separator
 
@@ -939,10 +944,16 @@ def _finding_keys(findings):
     the same canonical input, which is what makes them comparable at all.
 
     Raises `ValueError` for a finding missing `path` or `severity`, carrying a
-    severity outside §2's union, or citing a line below 1 — a fingerprint over
+    severity outside §2's union, citing a line below 1, or naming a path that
+    contains one of the canonical form's ASCII separators — a fingerprint over
     malformed findings would be a number that compares fine and means nothing.
     Lines are 1-based, so a 0 or a negative is junk either way; rejecting it
-    also keeps `_NO_LINE` unreachable as an explicit value.
+    also keeps `_NO_LINE` unreachable as an explicit value. A separator inside
+    a path is rejected for the sharper reason that the canonical form does not
+    escape them: `[("a", 1, "p0"), ("b", 2, "p1")]` and the single finding
+    `("a\x1f1\x1fp0\x1eb", 2, "p1")` would otherwise serialize to the same
+    bytes and hash alike, which is §6 reading two rounds that share nothing as
+    the same round twice.
     """
     keys = set()
     for finding in findings:
@@ -955,6 +966,11 @@ def _finding_keys(findings):
             ) from exc
         if not isinstance(path, str) or not path:
             raise ValueError(f"finding path must be a non-empty string, got {path!r}")
+        if _FIELD_SEP in path or _RECORD_SEP in path:
+            raise ValueError(
+                "finding path must not contain the canonical form's ASCII"
+                f" separators, got {path!r}"
+            )
         if severity not in SEVERITIES:
             raise ValueError(
                 f"finding severity must be one of {SEVERITIES}, got {severity!r}"

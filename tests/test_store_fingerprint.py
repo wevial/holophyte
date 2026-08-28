@@ -103,10 +103,33 @@ class FingerprintTests(unittest.TestCase):
             ("zero line", finding("store.py", "p0", line=0)),
             ("negative line", finding("store.py", "p0", line=-2)),
             ("line at the absent sentinel", finding("store.py", "p0", line=-1)),
+            ("field separator in path", finding("sto\x1fre.py", "p0", line=1)),
+            ("record separator in path", finding("sto\x1ere.py", "p0", line=1)),
         ):
             with self.subTest(finding=label):
                 with self.assertRaises(ValueError):
                     store.findings_fingerprint([item])
+
+    def test_a_path_cannot_forge_a_record_boundary(self):
+        """A path carrying the separators cannot smuggle in a second finding.
+
+        The canonical form joins fields and records on ASCII separators and
+        escapes nothing, so a path free to hold them could serialize to another
+        round's bytes: a two-finding round and the one finding whose path spells
+        out its separators hashed alike. That collision is the worst kind §6 can
+        read — the two rounds below share *no* key, overlap 0.0, and would have
+        matched fingerprints, which reads as "the same round twice" and trips a
+        stuck review on a reviewer that changed its mind completely. Rejecting
+        the separators is what keeps the encoding unambiguous without escaping,
+        and so keeps the golden digests above valid.
+        """
+        honest = [finding("a", "p0", line=1), finding("b", "p1", line=2)]
+        forged = [finding("a\x1f1\x1fp0\x1eb", "p1", line=2)]
+        self.assertEqual(store.findings_overlap(honest, honest), 1.0)
+        with self.assertRaises(ValueError):
+            store.findings_fingerprint(forged)
+        with self.assertRaises(ValueError):
+            store.findings_overlap(honest, forged)
 
     def test_the_absent_line_sentinel_cannot_be_written_explicitly(self):
         """A finding cannot claim the key that "no line" normalizes to.
