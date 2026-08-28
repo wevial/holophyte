@@ -44,6 +44,12 @@ def parse_task(line):
 CLAUSE_MARK = "__holo2_verify_clause__"
 FAIL_MARK = "__holo2_verify_failed__"
 
+# Zero-test summaries a runner prints while still exiting 0 — a gate that went
+# green having verified nothing. Deliberately narrow: only the standard
+# unittest and pytest phrasings, anchored to their own line, with no
+# natural-language inference about other runners.
+VACUOUS_RE = re.compile(r"^\s*(?:Ran 0 tests\b|collected 0 items\b)", re.M)
+
 
 def split_and_clauses(cmd):
     """Split a verify command on its top-level `&&` operators.
@@ -189,6 +195,22 @@ def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
     return f"{head}\n" + "\n".join(lines)[-2000:]
 
 
+def vacuous_green_report(cmd, cleaned):
+    """A test command that exits 0 having collected no tests verified nothing,
+    so it is RED. Returns the report naming `vacuous-green`, quoting the
+    summary line that gave it away and the output around it, or None when the
+    output shows tests actually ran."""
+    m = VACUOUS_RE.search(cleaned)
+    if not m:
+        return None
+    summary = cleaned[m.start():].splitlines()[0].strip()
+    body = cleaned.strip() or "(no output)"
+    return (f"[verify] FAILED: vacuous-green — exited 0 but ran no tests\n"
+            f"[verify]   zero-test summary: {summary}\n"
+            f"[verify]   full command: {cmd}\n"
+            f"[verify]   output:\n{body[-2000:]}")
+
+
 def run_verify(cmd, cwd=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
@@ -196,7 +218,8 @@ def run_verify(cmd, cwd=None):
     A failure is always attributable: a top-level `&&` chain is marked clause
     by clause inside one shell, and the report points at the clause that
     exited non-zero, including when that clause failed without printing
-    anything."""
+    anything. An exit-0 run that reports zero collected tests is failed as
+    `vacuous-green` rather than passed."""
     if not cmd:
         return True, "(no verify command)"
     clauses = split_and_clauses(cmd)
@@ -207,7 +230,8 @@ def run_verify(cmd, cwd=None):
                        text=True, timeout=300)
     per_clause, failed, cleaned = parse_clause_output(r.stdout)
     if r.returncode == 0:
-        return True, cleaned.strip()[-2000:]
+        vacuous = vacuous_green_report(cmd, cleaned)
+        return (False, vacuous) if vacuous else (True, cleaned.strip()[-2000:])
     return False, failure_report(cmd, clauses if marked else None,
                                  per_clause, failed, r.returncode, cleaned)
 
