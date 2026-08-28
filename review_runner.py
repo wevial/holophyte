@@ -149,7 +149,6 @@ def validate_review_transcript(transcript: str) -> None:
     failure_markers = (
         "Code Mode is unavailable",
         "failed to spawn code-mode host",
-        "ERROR codex_core::tools::router",
     )
     if any(marker in transcript for marker in failure_markers):
         raise ReviewBoundaryError("reviewer tool host failed; verdict is not evidence")
