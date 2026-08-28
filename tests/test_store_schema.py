@@ -32,6 +32,10 @@ DOCUMENTED_COLUMNS = {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
         "providerSessionId", "branch", "prUrl", "startedAt", "lastHeartbeat",
         "endedAt", "reviewRoundCount", "outcome", "outcomeReason",
+        # Store-owned, not a documented field: §5 requires a resume to
+        # "re-enter the phase it left" and leaves the mechanism to us, so
+        # `resume()` reads the parked phase from this column.
+        "resumePhase",
     },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",
@@ -51,6 +55,39 @@ A_PROJECT = (
     "linearTeamId, repoPath, defaultBranch, autonomyProfile",
     ("team_abc", "/srv/dev/holophyte", "main", "personal"),
 )
+
+# `runs` exactly as it shipped before `resumePhase` was added, kept verbatim
+# rather than derived from store.SCHEMA: this is a real older store, and the
+# point of the test below is that init() carries one forward. Creating it
+# first and then calling init() is the upgrade as it actually happens —
+# SCHEMA's `CREATE TABLE IF NOT EXISTS runs` leaves this table alone, so only
+# the migration step can supply the missing column.
+LEGACY_RUNS_TABLE = """
+CREATE TABLE IF NOT EXISTS runs (
+    id                INTEGER PRIMARY KEY,
+    ticketId          INTEGER NOT NULL REFERENCES tickets (id),
+    projectId         INTEGER NOT NULL REFERENCES projects (id),
+    attempt           INTEGER NOT NULL,
+    phase             TEXT    NOT NULL
+        CHECK (phase IN ('claimed', 'working', 'verifying', 'reviewing',
+                         'addressing', 'merge_gate', 'awaiting_merge_approval',
+                         'merging', 'squashing', 'done', 'blocked_on_operator',
+                         'failed', 'killed')),
+    workerId          TEXT,
+    providerSessionId TEXT,
+    branch            TEXT,
+    prUrl             TEXT,
+    startedAt         INTEGER NOT NULL,
+    lastHeartbeat     INTEGER NOT NULL,
+    endedAt           INTEGER,
+    reviewRoundCount  INTEGER NOT NULL DEFAULT 0,
+    outcome           TEXT
+        CHECK (outcome IS NULL
+               OR outcome IN ('merged', 'killed', 'abandoned', 'failed')),
+    outcomeReason     TEXT,
+    UNIQUE (ticketId, attempt)
+);
+"""
 
 
 class StoreSchemaTests(unittest.TestCase):
@@ -121,6 +158,71 @@ class StoreSchemaTests(unittest.TestCase):
                 f"INSERT INTO projects ({columns}) VALUES (?, ?, 'main', 'nonsense')",
                 values[:2],
             )
+
+
+    def legacy_store(self):
+        """A store whose `runs` predates `resumePhase`, then brought up to date."""
+        conn = self.open()
+        conn.executescript(LEGACY_RUNS_TABLE)
+        store.init(conn)
+        return conn
+
+    def test_init_adds_columns_an_older_store_is_missing(self):
+        conn = self.legacy_store()
+
+        actual = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+
+        self.assertEqual(actual, DOCUMENTED_COLUMNS["runs"])
+
+    def test_a_migrated_column_carries_its_check_constraint(self):
+        # ALTER TABLE ADD COLUMN keeps the CHECK, so the phase union is
+        # enforced on an upgraded store as it is on a fresh one. Without this
+        # the column would exist but accept anything, which is worse than the
+        # missing column: it fails at read time instead of at write time.
+        conn = self.legacy_store()
+        run_id = self.a_run(conn)
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute(
+                "UPDATE runs SET resumePhase = 'nonsense' WHERE id = ?", (run_id,)
+            )
+
+    def test_resume_works_on_a_migrated_store(self):
+        # The end-to-end version: before the migration this raised
+        # `OperationalError: no such column: resumePhase` on every store that
+        # existed before the column did.
+        conn = self.legacy_store()
+        run_id = self.a_run(conn, phase="blocked_on_operator")
+
+        phase = store.resume(conn, run_id, guidance="use the other adapter")
+
+        self.assertEqual(phase, "working")
+        self.assertEqual(
+            conn.execute("SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
+            ("working",),
+        )
+
+    def a_run(self, conn, phase="working"):
+        """One project, ticket and run in `phase`, for the migration tests."""
+        columns, values = A_PROJECT
+        project_id = conn.execute(
+            f"INSERT INTO projects ({columns}) VALUES (?, ?, ?, ?)", values
+        ).lastrowid
+        ticket_id = conn.execute(
+            "INSERT INTO tickets"
+            " (projectId, linearIssueId, linearIdentifier, title, status,"
+            "  affinity, mirroredAt)"
+            " VALUES (?, 'iss_1', 'HOL-1', 'a ticket', 'in_flight', 'any', 0)",
+            (project_id,),
+        ).lastrowid
+        run_id = conn.execute(
+            "INSERT INTO runs"
+            " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat)"
+            " VALUES (?, ?, 1, ?, 0, 0)",
+            (ticket_id, project_id, phase),
+        ).lastrowid
+        conn.commit()
+        return run_id
 
 
 if __name__ == "__main__":

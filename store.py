@@ -6,10 +6,10 @@ rewrite. Stdlib ``sqlite3`` only.
 
 The API so far is ``open()`` and ``init()`` for the schema, ``claim()``
 for the per-project lease, ``with_delivery()`` for webhook idempotency,
-``mirror_ticket()``/``transition()`` for ticket status, and
-``pickable()``/``next_pickable()`` for the pickability predicate. The
-remaining query helpers (resume, fingerprints) belong to the later tickets in
-this chain.
+``mirror_ticket()``/``transition()`` for ticket status,
+``pickable()``/``next_pickable()`` for the pickability predicate, and
+``resume()`` for the resume guidance invariant. The remaining query helpers
+(fingerprints) belong to the last ticket in this chain.
 
 Conventions, fixed here for every later ticket to follow:
 
@@ -43,7 +43,10 @@ import time
 
 # One statement per table, in dependency order where it matters. Every
 # statement is IF NOT EXISTS, which is the whole of init()'s idempotency:
-# re-running it on a populated database is a no-op, not a rebuild.
+# re-running it on a populated database is a no-op, not a rebuild. That same
+# no-op is why a column added to a table here has to be added to
+# ADDED_COLUMNS below as well — an existing table is never re-created, so
+# nothing else would ever give it the column.
 #
 # `trigger` and `action` are SQLite keywords, so those two column names are
 # quoted; they are the contract's names and renaming them to dodge the
@@ -118,6 +121,19 @@ CREATE TABLE IF NOT EXISTS runs (
         CHECK (outcome IS NULL
                OR outcome IN ('merged', 'killed', 'abandoned', 'failed')),
     outcomeReason     TEXT,
+    -- §5's "re-enters the phase it left": the phase a parked run goes back
+    -- to, written by whoever parks it and consumed by `resume()`. Not a
+    -- state-model field — the doc states the rule and leaves the mechanism
+    -- open, and a column is cheaper to keep true than reconstructing the
+    -- phase from the runEvents log. NULL means "nothing recorded", which
+    -- `resume()` reads as §4's drawn edge back, `working`.
+    resumePhase       TEXT
+        CHECK (resumePhase IS NULL
+               OR resumePhase IN ('claimed', 'working', 'verifying', 'reviewing',
+                                  'addressing', 'merge_gate',
+                                  'awaiting_merge_approval', 'merging',
+                                  'squashing', 'done', 'blocked_on_operator',
+                                  'failed', 'killed')),
     UNIQUE (ticketId, attempt)
 );
 
@@ -203,13 +219,56 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
     return conn
 
 
+# Columns added to a table after its CREATE statement first shipped, as
+# (table, column, DDL). SCHEMA is `CREATE TABLE IF NOT EXISTS` throughout,
+# which does exactly nothing to a table that already exists — so without this
+# list a store initialized by an earlier version of the module keeps its
+# original columns forever, and the first reader of a newer one fails with
+# `no such column`. Adding a column to SCHEMA is therefore only half the
+# change; the other half is an entry here.
+#
+# Each DDL is transcribed from that column's clause in SCHEMA so a migrated
+# database and a fresh one end up with the same column, CHECK included:
+# SQLite's ALTER TABLE ADD COLUMN takes a CHECK constraint and enforces it on
+# every later write. What it will not take is UNIQUE, or a NOT NULL without a
+# constant default — a column needing either wants a table rebuild, not a line
+# here. The schema test holds the two databases against each other.
+ADDED_COLUMNS = (
+    (
+        "runs",
+        "resumePhase",
+        "resumePhase TEXT"
+        " CHECK (resumePhase IS NULL"
+        " OR resumePhase IN ('claimed', 'working', 'verifying', 'reviewing',"
+        "                    'addressing', 'merge_gate',"
+        "                    'awaiting_merge_approval', 'merging', 'squashing',"
+        "                    'done', 'blocked_on_operator', 'failed',"
+        "                    'killed'))",
+    ),
+)
+
+
 def init(conn):
-    """Create every table the state model defines, if absent.
+    """Create every table the state model defines, if absent, and migrate.
+
+    Two steps, because `CREATE TABLE IF NOT EXISTS` alone would only ever
+    bootstrap an empty file: the tables are created, then every `ADDED_COLUMNS`
+    entry missing from an existing table is added. That second step is what
+    carries a store created by an earlier version of this module forward
+    instead of leaving it one column short of the code that reads it.
 
     Idempotent: safe to call on an already-initialized database, where it
-    creates nothing and touches no rows.
+    creates nothing, adds nothing and touches no rows. Not a downgrade path —
+    an older module opening a newer store sees columns it does not know about,
+    which is harmless, while the reverse is what this repairs.
     """
     conn.executescript(SCHEMA)
+    for table, column, ddl in ADDED_COLUMNS:
+        # A misspelled table name leaves `columns` empty and the ALTER then
+        # raises `no such table`, which is the loud failure this should be.
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
     conn.commit()
 
 
@@ -707,3 +766,125 @@ def next_pickable(conn, project_id):
         if _pickability(conn, row[1:]):
             return row[0]
     return None
+
+
+# §5's resumable set, transcribed: "mechanically resumable — `failed`, or any
+# of working/verifying/reviewing/addressing where lastHeartbeat is older than
+# staleThresholdMs", plus `blocked_on_operator`, the one phase that takes an
+# answer. Staleness is deliberately not re-derived here: §5 says resume is
+# always safe to attempt, and whether a live run *should* be resumed is the
+# supervisor's judgement, not a fact this mutation can improve on.
+#
+# Everything else is refused. `claimed` has nothing to resume into, and
+# `merge_gate`, `awaiting_merge_approval`, `merging`, `squashing`, `done` and
+# `killed` are either mid-merge or over: none of them is a phase the §4
+# diagram draws a resume edge out of.
+RESUMABLE_PHASES = frozenset(
+    {"failed", "working", "verifying", "reviewing", "addressing",
+     "blocked_on_operator"}
+)
+
+
+class ResumeRefused(Exception):
+    """A resume the state model does not allow; nothing was written.
+
+    Raised for a run that does not exist and for one in a phase §5 gives no
+    resume for — both are the same answer to the caller: this run is not
+    going to start moving again because you asked.
+    """
+
+
+class GuidanceNotAccepted(ResumeRefused):
+    """Human text was offered to a run that never asked for it.
+
+    §5's enforced invariant, and the reason this is a subclass rather than a
+    return value: guidance landing on a `working` run is the mid-run steering
+    injection the whole phase model exists to prevent, so it is a validation
+    error and the run is left exactly as it was.
+    """
+
+
+def resume(conn, run_id, guidance=None, source="human", now=None):
+    """Resume `run_id`, optionally with `guidance`; return the phase re-entered.
+
+    State-model §5. Two rules, and the first one is the point of the ticket:
+
+    * **Guidance requires `blocked_on_operator`.** A non-None `guidance` on a
+      run in any other phase raises `GuidanceNotAccepted` before anything is
+      written. Mid-run injection is what makes supervisors unpredictable, so
+      the supervisor's `redirect` has to park the run with a question and wait
+      for the answer to come back through this one door. The converse is not a
+      rule: a bare resume of a blocked run is allowed, an operator saying
+      "never mind, carry on".
+    * **A bare resume re-enters the phase the run left.** For `failed` that is
+      `runs.resumePhase`, recorded by whoever failed it, falling back to
+      `working` — the only edge §4 draws out of `failed` — when nothing was
+      recorded. A run parked in `blocked_on_operator` always re-enters
+      `working` (§4 again: `blocked_on_operator --> working : guidance
+      provided`); an answered question resumes as work whatever the run was
+      doing when it stopped to ask. And a stale `working`/`verifying`/
+      `reviewing`/`addressing` run re-enters the phase it is already in, which
+      is that same rule with nothing to move.
+
+    `resumePhase` is cleared on the way out, so a later failure that records
+    nothing cannot resume into a phase left over from an earlier one.
+
+    Every accepted resume writes an `interventions` row — §2 keeps those out
+    of `runEvents` precisely because they are queryable decisions, and a
+    resume is one whether or not a human typed anything. `source` says who
+    resumed (`human` or `supervisor`); the trigger is `manual` because §6's
+    triggers name why a run was *stopped* and none of them names a resume.
+
+    Phase is the only field this moves. A resumed run's `lastHeartbeat` stays
+    where the worker left it: heartbeats are written by whoever is doing the
+    work, and stamping one here would claim liveness this call has no evidence
+    for. `now` is epoch milliseconds for the intervention's `at`, defaulting
+    to the clock.
+
+    Runs in one `_transaction()`, like the other writers, so a resume arriving
+    as the effect of a Linear webhook commits with its delivery id.
+    """
+    # An empty string is not an answer, and it is falsy, so a caller that let
+    # one through would have its "no guidance" and its "guidance" paths
+    # silently agree here while §5 says they are different calls.
+    if guidance is not None and (
+        not isinstance(guidance, str) or not guidance.strip()
+    ):
+        raise ValueError(f"guidance must be non-empty text or None, got {guidance!r}")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT phase, resumePhase FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            raise ResumeRefused(f"run {run_id} does not exist")
+        phase, resume_phase = row
+        # The guidance gate is asked first: on a `done` run offered guidance
+        # both rules are broken, and the one worth naming is the injection.
+        if guidance is not None and phase != "blocked_on_operator":
+            raise GuidanceNotAccepted(
+                f"run {run_id} is in phase {phase}, not blocked_on_operator:"
+                " guidance is only accepted by a run that asked for it"
+            )
+        if phase not in RESUMABLE_PHASES:
+            raise ResumeRefused(
+                f"run {run_id}: phase {phase} is not one state-model §5 resumes"
+            )
+        if phase == "failed" and resume_phase is not None:
+            target = resume_phase
+        elif phase in ("failed", "blocked_on_operator"):
+            target = "working"
+        else:
+            target = phase
+        conn.execute(
+            "UPDATE runs SET phase = ?, resumePhase = NULL WHERE id = ?",
+            (target, run_id),
+        )
+        conn.execute(
+            'INSERT INTO interventions'
+            ' (runId, source, "trigger", "action", guidance, at)'
+            " VALUES (?, ?, 'manual', 'resume', ?, ?)",
+            (run_id, source, guidance, now),
+        )
+    return target
