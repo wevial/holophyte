@@ -759,3 +759,21 @@ Observations from this run, implementation side only (review and merge cost not 
 - **What did cost, and does not shrink with ticket size:** reading the frozen contract (`state-model.md` §2/§6 plus the `reviewRounds` DDL this chain already shipped) and re-reading the store's conventions so the new helpers match them. That is a fixed per-ticket tax, so at 15 min of work it is a larger fraction of the run than at 60.
 - **The chain made it cheap anyway.** Six prior sub-issues left the schema, the docstring voice and the test layout settled, so this ticket only had to fill a hole that was already shaped. A 15-min ticket landing *cold* would not look like this — the observation here is about a decomposed chain's last link, not about 15-min tickets in general.
 - **Suggested reading for the decomposition question:** at this size the loop overhead is real but not obviously wasteful, and the compensating win is review quality — the whole diff is two functions and a test file, which is a review a reviewer can actually complete. Worth re-checking against this ticket's own rounds/merge record once the factory appends it below.
+
+## 2026-08-28T23:32:56Z — KO-123
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `store.py:957-964`: An absent `line` and an explicit `line=-1` normalize to the same key, producing identical fingerprints and 1.0 overlap for distinct findings. Reject non-positive line numbers or encode absence distinctly.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+**Adjudication: ADDRESS** — real and reachable, and it defeats the helpers' only purpose.
+
+`_finding_keys()` normalized an absent `line` to the module sentinel `_NO_LINE = -1`, and its only validation on an explicit `line` was "is an int, is not a bool". So `{"path": "store.py", "severity": "p0"}` and `{"path": "store.py", "severity": "p0", "line": -1}` both keyed to `("store.py", -1, "p0")`: a whole-file finding and a line-cited finding fingerprinting identically and scoring 1.0 overlap. That is a false stuck-review signal in §6 — the exact failure the fingerprint is supposed to detect, inverted.
+
+**Fix** (`store.py:957-970`): `_finding_keys()` now raises `ValueError` for a line below 1, alongside the existing non-integer check. I took the reviewer's first route rather than the second: lines are 1-based, so 0 and negatives are malformed on their own terms and rejecting the whole non-positive range is independently correct — it makes `_NO_LINE` unreachable as a side effect, and it matches the strictness `path` and `severity` already get. Encoding absence distinctly would have changed the canonical form and invalidated every fingerprint already persisted in `reviewRounds`, which the pinned goldens exist to prevent. The `_NO_LINE` comment and the `_finding_keys()` "Raises" paragraph now both state that the sentinel's safety depends on this check.
+
+**Tests** (`tests/test_store_fingerprint.py`, +1 test, +3 subtests; suite 67 store / 163 total, OK): lines 0, -2 and -1 added to the malformed-findings table, plus `test_the_absent_line_sentinel_cannot_be_written_explicitly`, which reaches through `store._NO_LINE` rather than a literal so it keeps testing the collision if the sentinel's value ever moves, and asserts it through `findings_overlap()` as well as `findings_fingerprint()`. Verified the new cases fail without the check (no `ValueError`; the two findings hash alike) and pass with it. `ROUND_DIGEST` is unchanged — its findings cite positive or absent lines — so no stored fingerprint drifts.
+
+Nothing was declined or deferred; this was the only finding.
