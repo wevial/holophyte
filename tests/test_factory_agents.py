@@ -46,8 +46,9 @@ class AgentRouteTests(unittest.TestCase):
         run.assert_called_once_with(
             [
                 "codex", "exec", "-C", str(self.worktree),
-                "-m", "gpt-5.6-sol", "-s", "read-only", "--ephemeral",
-                "review the candidate",
+                "-m", "gpt-5.6-sol",
+                "-c", 'model_reasoning_effort="medium"',
+                "-s", "read-only", "--ephemeral", "review the candidate",
             ],
             cwd=self.worktree, capture_output=True, text=True, timeout=1800,
         )

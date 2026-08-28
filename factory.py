@@ -60,6 +60,7 @@ def sh(args, cwd=None):
 IMPL_MODEL = "opus"
 IMPL_EFFORT = "high"
 REVIEW_MODEL = "gpt-5.6-sol"
+REVIEW_EFFORT = "medium"
 REVIEW_SANDBOX = "read-only"
 
 
@@ -70,6 +71,7 @@ def agent(role, goal, cwd):
                "--effort", IMPL_EFFORT]
     elif role == "review":
         cmd = ["codex", "exec", "-C", str(cwd), "-m", REVIEW_MODEL,
+               "-c", f'model_reasoning_effort="{REVIEW_EFFORT}"',
                "-s", REVIEW_SANDBOX, "--ephemeral", goal]
     else:
         raise ValueError(role)
