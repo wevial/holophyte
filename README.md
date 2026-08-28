@@ -18,8 +18,9 @@ Usage: `python3 factory.py /srv/dev/holo2test`
 4. Verify gate: the ticket's mechanical verify command must pass before
    each review round and again before merge. A failure is fail-loud: a
    top-level `&&` chain is run clause by clause in one shell, and the report
-   names the clause that failed, its exit status, and its output — silence
-   is reported as silence, never as a bare non-zero exit.
+   names the clause that failed and its exit status, shows the output of
+   every clause that ran, and names the clauses the failure short-circuited
+   — silence is reported as silence, never as a bare non-zero exit.
 5. Local reviewer agent (Codex / GPT-5.6 Sol at medium effort) reviews the
    diff against the task inside the hardened container boundary described
    below;

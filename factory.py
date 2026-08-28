@@ -76,6 +76,14 @@ def split_and_clauses(cmd):
             depth -= 1
             if depth < 0:
                 return None
+        elif ch == "#" and (i == 0 or cmd[i - 1].isspace() or cmd[i - 1] in "&("):
+            # A comment runs to end of line, so any `&&` inside it is text.
+            # Only a trailing comment is safe to keep: a newline would resume
+            # code, and inside `(...)` the comment would swallow the closer.
+            if depth or "\n" in cmd[i:]:
+                return None
+            buf.append(cmd[i:])
+            break
         elif depth == 0:
             prev = next((c for c in reversed(buf) if not c.isspace()), "")
             if cmd[i:i + 2] == "&&":
@@ -98,13 +106,19 @@ def split_and_clauses(cmd):
 def instrumented_script(clauses):
     """One shell script that runs the clauses in order, stopping at the first
     failure with the original exit status. The clauses stay in a single shell,
-    so `cd` and exported variables still carry across them."""
-    parts = []
+    so `cd` and exported variables still carry across them.
+
+    The failure is reported from an EXIT trap reading a clause counter, so a
+    clause that ends the shell itself (`exit 7`) is still attributed rather
+    than escaping as a bare non-zero status."""
+    parts = ["__holo2_clause=0",
+             "trap '__holo2_rc=$?; [ \"$__holo2_rc\" -eq 0 ] || "
+             "printf \"%s\\n\" \"{} $__holo2_clause $__holo2_rc\"' EXIT"
+             .format(FAIL_MARK)]
     for idx, clause in enumerate(clauses, 1):
+        parts.append("__holo2_clause={}".format(idx))
         parts.append("printf '%s\\n' '{} {}'".format(CLAUSE_MARK, idx))
-        parts.append("{{ {}\n}} || {{ __holo2_rc=$?; "
-                     "printf '%s\\n' \"{} {} $__holo2_rc\"; "
-                     "exit $__holo2_rc; }}".format(clause, FAIL_MARK, idx))
+        parts.append("{{ {}\n}} || exit $?".format(clause))
     return "\n".join(parts)
 
 
@@ -130,20 +144,32 @@ def parse_clause_output(output):
 
 def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
     """Name the command that failed and show its output — never a bare
-    non-zero exit. Silence is reported as silence, not as an empty pass."""
-    if failed and clauses:
-        idx, rc = failed
-        head = (f"[verify] FAILED: clause {idx} of {len(clauses)} exited {rc}\n"
+    non-zero exit. Silence is reported as silence, not as an empty pass.
+
+    For a chain, every clause that actually ran is listed with its own
+    output, and the clauses the failure short-circuited are named as not
+    executed, so the reader can tell "did not run" from "ran and said
+    nothing"."""
+    if not (failed and clauses and 1 <= failed[0] <= len(clauses)):
+        body = cleaned.strip() or "(no output — the command failed silently)"
+        return (f"[verify] FAILED: command exited {returncode}\n"
                 f"[verify]   full command: {cmd}\n"
-                f"[verify]   failing clause: {clauses[idx - 1]}\n"
-                f"[verify]   clause output:")
-        body = per_clause.get(idx, "").strip()
-    else:
-        head = (f"[verify] FAILED: command exited {returncode}\n"
-                f"[verify]   full command: {cmd}\n"
-                f"[verify]   output:")
-        body = cleaned.strip()
-    return f"{head}\n{body[-2000:] or '(no output — the command failed silently)'}"
+                f"[verify]   output:\n{body[-2000:]}")
+    idx, rc = failed
+    head = (f"[verify] FAILED: clause {idx} of {len(clauses)} exited {rc}\n"
+            f"[verify]   full command: {cmd}\n"
+            f"[verify]   failing clause: {clauses[idx - 1]}")
+    lines = []
+    for n in range(1, idx + 1):
+        status = f"exit {rc}" if n == idx else "ok"
+        lines.append(f"[verify]   --- clause {n} ({status}): {clauses[n - 1]}")
+        lines.append(per_clause.get(n, "").strip() or (
+            "(no output — the clause failed silently)" if n == idx
+            else "(no output)"))
+    if idx < len(clauses):
+        lines.append("[verify]   not executed: clause " + ", ".join(
+            str(n) for n in range(idx + 1, len(clauses) + 1)))
+    return f"{head}\n" + "\n".join(lines)[-2000:]
 
 
 def run_verify(cmd, cwd=None):
