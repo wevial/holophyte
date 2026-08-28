@@ -35,22 +35,28 @@ class AgentRouteTests(unittest.TestCase):
             cwd=self.worktree, capture_output=True, text=True, timeout=1800,
         )
 
-    @patch.object(factory.subprocess, "run")
-    def test_reviewer_uses_read_only_codex_sol(self, run):
-        run.return_value.stdout = "VERDICT: APPROVE"
-        run.return_value.stderr = ""
+    @patch.object(factory.review_runner, "run_review")
+    def test_reviewer_uses_containerized_codex_sol(self, run_review):
+        run_review.return_value = "VERDICT: APPROVE"
+        base = "1" * 40
+        candidate = "2" * 40
 
-        result = factory.agent("review", "review the candidate", self.worktree)
+        result = factory.agent(
+            "review",
+            "review the candidate",
+            self.worktree,
+            base_sha=base,
+            candidate_sha=candidate,
+        )
 
         self.assertEqual(result, "VERDICT: APPROVE")
-        run.assert_called_once_with(
-            [
-                "codex", "exec", "-C", str(self.worktree),
-                "-m", "gpt-5.6-sol",
-                "-c", 'model_reasoning_effort="medium"',
-                "-s", "read-only", "--ephemeral", "review the candidate",
-            ],
-            cwd=self.worktree, capture_output=True, text=True, timeout=1800,
+        run_review.assert_called_once_with(
+            repo=self.worktree,
+            base_sha=base,
+            candidate_sha=candidate,
+            prompt="review the candidate",
+            profile="codex-sol-medium",
+            timeout=1800,
         )
 
 
