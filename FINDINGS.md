@@ -612,3 +612,6 @@ Adjudicator reply:
 Candidate mechanically enforces all three scope caps, handles list-marker bypasses, and passes the specified 64-test verification.
 
 VERDICT: PASS
+
+## 2026-08-28T22:38:18Z — KO-124
+MERGED to main (branch task/ticket-template-mechanical-sco deleted). Verify: passed. Rounds used: 2.
