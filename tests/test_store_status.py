@@ -15,6 +15,7 @@ Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -257,6 +258,36 @@ class TicketStatusTests(unittest.TestCase):
         self.assertEqual(
             self.conn.execute("SELECT COUNT(*) FROM linearDeliveries").fetchone(),
             (0,),
+        )
+
+    def test_a_failed_commit_leaves_the_connection_clean_for_the_retry(self):
+        # `tickets.activeRunId` is DEFERRABLE INITIALLY DEFERRED, so a dangling
+        # reference survives the INSERT and only fails at COMMIT, which SQLite
+        # leaves the transaction open on. Uncaught there, the failed block's
+        # writes stay pending and the next writer joins them instead of
+        # starting clean — the retry would commit the state it was meant to
+        # replace.
+        with self.assertRaises(sqlite3.IntegrityError):
+            with store._transaction(self.conn):
+                self.conn.execute(
+                    "INSERT INTO tickets"
+                    " (projectId, linearIssueId, linearIdentifier, title,"
+                    "  status, affinity, mirroredAt, activeRunId)"
+                    " VALUES (?, 'iss_9', 'HOL-9', 'a ticket', 'ready', 'any',"
+                    "         0, 999999)",
+                    (self.project_id,),
+                )
+
+        self.assertFalse(self.conn.in_transaction)
+
+        ticket_id = self.mirror("iss_9")
+
+        self.assertEqual(self.status_of(ticket_id), "ready")
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT activeRunId FROM tickets WHERE id = ?", (ticket_id,)
+            ).fetchone(),
+            (None,),
         )
 
 

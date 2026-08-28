@@ -221,7 +221,7 @@ def _transaction(conn):
     when this owns the transaction it takes `BEGIN IMMEDIATE`, whose write
     lock is held up front, and callers serialize in SQLite instead of racing.
     It commits on a clean exit and rolls back on any exception, including
-    `KeyboardInterrupt`.
+    `KeyboardInterrupt` and one raised by the commit itself.
 
     When a transaction is *already* open the block joins it and this commits
     and rolls back nothing: the owner does both, at its own boundary. That is
@@ -241,10 +241,16 @@ def _transaction(conn):
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield
+        # Inside the guard, like `with_delivery()`: a deferred constraint the
+        # block violated is only checked at COMMIT, and SQLite leaves the
+        # transaction *open* when it fails that way. Unrolled back, the block's
+        # writes stay pending on the connection, and the next `_transaction()`
+        # would see `in_transaction` and silently join that contaminated state
+        # instead of starting clean.
+        conn.commit()
     except BaseException:
         conn.rollback()
         raise
-    conn.commit()
 
 
 class ClaimConflict(Exception):
