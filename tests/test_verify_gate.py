@@ -108,5 +108,53 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
         self.assertIn("failing clause: grep -q absent sub/value.txt # why", out)
 
 
+class VacuousGreenTests(unittest.TestCase):
+    """An exit-0 test command that collected no tests verified nothing (KO-107:
+    a discovery pattern matching no file reported a green gate)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cwd = Path(tmp.name)
+        (self.cwd / "suite").mkdir()
+        (self.cwd / "suite" / "test_real.py").write_text(
+            "import unittest\n\n\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n"
+            "        self.assertTrue(True)\n")
+
+    def test_unittest_discovery_that_ran_no_tests_is_red(self):
+        # Real discovery against a pattern no file matches: exits 0, "OK".
+        ok, out = factory.run_verify(
+            "python3 -m unittest discover -s suite -p 'test_absent*'", self.cwd)
+
+        self.assertFalse(ok)
+        self.assertIn("vacuous-green", out)
+        self.assertIn("Ran 0 tests", out)
+
+    def test_pytest_collecting_no_items_is_red(self):
+        ok, out = factory.run_verify(
+            "printf '%s\\n' 'collected 0 items' 'no tests ran in 0.01s'",
+            self.cwd)
+
+        self.assertFalse(ok)
+        self.assertIn("vacuous-green", out)
+        self.assertIn("zero-test summary: collected 0 items", out)
+
+    def test_unittest_run_that_executed_tests_stays_green(self):
+        ok, out = factory.run_verify(
+            "python3 -m unittest discover -s suite -p 'test_real*'", self.cwd)
+
+        self.assertTrue(ok, out)
+        self.assertIn("Ran 1 test", out)
+
+    def test_pytest_collecting_items_stays_green(self):
+        ok, out = factory.run_verify(
+            "printf '%s\\n' 'collected 10 items' '10 passed in 0.4s'",
+            self.cwd)
+
+        self.assertTrue(ok, out)
+
+
 if __name__ == "__main__":
     unittest.main()
