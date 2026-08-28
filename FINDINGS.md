@@ -558,3 +558,57 @@ MERGED to main (branch task/factory-verify-gate-3-3-explic deleted). Verify: pas
 
 ## 2026-08-28T22:23:35Z — KO-116
 MERGED to main (branch task/factory-loop-fix-round-for-rev deleted). Verify: passed. Rounds used: 1.
+
+## 2026-08-28T22:34:02Z — KO-124
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- [ticket_template.py](/workspace/ticket_template.py:197): Acceptance criteria using plain or numbered bullets are neither counted nor rejected. Five checkbox criteria plus additional criteria validate successfully, bypassing the mechanical five-criterion cap. Count all criterion list items or reject unrecognized entries.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Adjudication: **ADDRESS** — the one finding was a real bypass of the cap this branch introduced. Reproduced it first: 5 checkboxes + 3 non-checkbox entries → 8 criteria, `validate()` returned `[]`.
+
+**Fix** (`ticket_template.py:57`, `:85`, `:348`):
+- `LIST_ITEM_RE` matches any list entry, bulleted (`-`/`*`) or numbered (`1.`/`1)`).
+- `_criteria()` classifies every entry in the section into `acceptance` / `acceptance_done` / `acceptance_other`, replacing `_checkboxes()` (which had no other caller).
+- `validate()` does both remedies the finding offered: all three lists count toward `MAX_CRITERIA`, and each non-checkbox entry is rejected by name. Rejecting alone would have sufficed to close the bypass, but counting keeps the cap message honest about how many criteria the ticket actually carries — and a silent drop loses a criterion the implementer was meant to satisfy.
+
+Boundary behavior is unchanged: 5 checkboxes still valid; a section of only plain bullets still reports `has no '- [ ] Given/when/then' items`.
+
+**Verification** — 3 new tests (plain bullet over cap, numbered entries over cap, single non-checkbox entry rejected under the cap). Verified RED against the parent commit: 3 failures, the other 57 pass. Post-fix: `test_ticket_template*` 60/60, full suite 91/91.
+
+No FOLLOW_UP or DECLINE items — the review left a single finding.
+
+## 2026-08-28T22:37:25Z — KO-124
+Round 2: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- [ticket_template.py](/workspace/ticket_template.py:53): Scope caps remain bypassable. Standard Markdown `+` bullets are ignored in both sections, and numbered `In scope` entries are ignored. Five checkbox criteria plus a sixth `+` criterion, or three in-scope bullets plus a fourth `+`/numbered item, validate with no blockers.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Adjudication and fix are done.
+
+**Finding — scope caps bypassable via `+` bullets / numbered In-scope entries: ADDRESS.** I reproduced all three bypasses against the pre-fix code first; each validated with zero blockers.
+
+Root cause was two separate gaps:
+- `BULLET_RE`/`UNCHECKED_RE`/`CHECKED_RE`/`LIST_ITEM_RE` only matched `-` and `*`, so a `+` item was invisible to both caps.
+- `In scope` (and `Out of scope`, `Implementation notes`) parsed through `_bullets()`, which never matched numbered items — the looser `LIST_ITEM_RE` was only wired into acceptance criteria.
+
+Fix (`ticket_template.py:53`): a single `BULLET = r"[-*+]"` class feeds the checkbox regexes and `LIST_ITEM_RE`, and `_bullets()` became `_list_items()` matching `LIST_ITEM_RE`, so every list section reads the full list shape. Also added `"+ None"` to `OPEN_QUESTIONS_NONE` so the marker set stays uniform, and changed the cap wording from "bullets" to "entries" in the messages and the `ticketTemplate.md` scope-cap comment, since numbered items now count.
+
+Verification — the three reported bypasses now block:
+- `+ [ ]`/`+` sixth criterion → `'Acceptance criteria' has 6 items; the cap is 5`
+- `+ Scope item 4` → `'In scope' has 4 entries; the cap is 3`
+- `4. Scope item 4` → same blocker
+
+New tests cover each marker (`*`, `+`, `1.`, `4)`) for both caps; a ticket written entirely in `+` bullets still validates clean. Full suite: 95 tests, all passing. Committed as `9c3cb55`.
+
+## 2026-08-28T22:38:16Z — KO-124
+Terminal adjudication after 2 review rounds: PASS
+
+Adjudicator reply:
+Candidate mechanically enforces all three scope caps, handles list-marker bypasses, and passes the specified 64-test verification.
+
+VERDICT: PASS
