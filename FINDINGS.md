@@ -715,3 +715,7 @@ Adjudicator reply:
 The candidate correctly implements the required status transitions and `needs_spec` routing, with atomic transaction behavior and passing focused verification.
 
 VERDICT: PASS
+
+## 2026-08-28T23:11:32Z — KO-120
+MERGED to main (branch task/store-v2-4-7-ticket-status-tra deleted). Verify: passed.
+actual: 13.1 min · estimate: 25 min · rounds: 2
