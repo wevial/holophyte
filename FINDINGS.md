@@ -523,3 +523,6 @@ suite 50/50. Merged dfc4ca8; worktree and branch removed.
 Lesson (recurred from KO-107): implementer named the test file
 test_factory_verify.py against the ticket's test_verify_gate* pattern —
 claim-time filename/pattern cross-check belongs in v2's emitter contract.
+
+## 2026-08-28T21:55:09Z — KO-114
+MERGED to main (branch task/factory-verify-gate-2-3-reject deleted). Verify: passed. Rounds used: 1.
