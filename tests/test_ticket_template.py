@@ -72,6 +72,25 @@ FILLED_WITH_BLOCKQUOTE = FILLED.replace(
     "Estimate: 30 min · Depends on: none\n",
     "Estimate: 30 min · Depends on: none\n\n" + BLOCKQUOTE)
 
+CONTRACTS = """\
+## Contract checks
+
+```
+config/tunnel.yml: 8622
+```
+
+"""
+
+FILLED_WITH_CONTRACTS = FILLED.replace("## Implementation notes",
+                                       CONTRACTS + "## Implementation notes")
+
+# What Linear stores after normalizing an authored body: the bold run swallows
+# the space after the colon, and "- " list markers come back as "* ".
+LINEAR_NORMALIZED = (FILLED.replace("**What:**", "**What: **")
+                           .replace("**Why:**", "**Why: **")
+                           .replace("**How:**", "**How: **")
+                           .replace("- None", "* None"))
+
 
 class ParseTests(unittest.TestCase):
     def setUp(self):
@@ -119,6 +138,13 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(t.estimate_min, 30)
         self.assertEqual(t.depends_on, [])
 
+    def test_no_contract_checks_section_means_no_declarations(self):
+        self.assertEqual(self.t.contract_checks, [])
+
+    def test_contract_checks_parsed_as_path_and_literal(self):
+        t = tt.parse(FILLED_WITH_CONTRACTS)
+        self.assertEqual(t.contract_checks, [("config/tunnel.yml", "8622")])
+
     def test_depends_on_ids_split_with_blockquote(self):
         t = tt.parse(FILLED_WITH_BLOCKQUOTE.replace(
             "Depends on: none", "Depends on: KO-1, KO-23"))
@@ -136,6 +162,46 @@ class ValidateTests(unittest.TestCase):
 
     def test_filled_ticket_with_blockquote_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(FILLED_WITH_BLOCKQUOTE)), [])
+
+    def test_ticket_with_contract_checks_is_valid(self):
+        self.assertEqual(tt.validate(tt.parse(FILLED_WITH_CONTRACTS)), [])
+
+    def test_absolute_contract_path_rejected(self):
+        for bad in ("/etc/tunnel.yml: 8622", "../outside/tunnel.yml: 8622"):
+            self.assert_problems_contain(
+                FILLED_WITH_CONTRACTS.replace("config/tunnel.yml: 8622", bad),
+                "contract check path must")
+
+    def test_contract_check_without_a_literal_rejected(self):
+        self.assert_problems_contain(
+            FILLED_WITH_CONTRACTS.replace("config/tunnel.yml: 8622",
+                                          "config/tunnel.yml:"),
+            "empty expected literal")
+
+    def test_contract_checks_section_with_an_empty_fence_rejected(self):
+        self.assert_problems_contain(
+            FILLED_WITH_CONTRACTS.replace("config/tunnel.yml: 8622\n", ""),
+            "no 'relative/path: expected literal' declarations")
+
+    def test_linear_normalized_body_is_valid(self):
+        self.assertEqual(tt.validate(tt.parse(LINEAR_NORMALIZED)), [])
+
+    def test_linear_normalized_body_still_needs_its_fields(self):
+        self.assert_problems_contain(
+            LINEAR_NORMALIZED.replace(
+                "**What: ** GET /orders.csv streams the current user's "
+                "orders as CSV.\n", ""),
+            "'**What:**' line missing")
+
+    def test_linear_normalized_open_questions_still_must_be_none(self):
+        self.assert_problems_contain(
+            LINEAR_NORMALIZED.replace("* None", "* Which CSV dialect?"),
+            "'- None'")
+
+    def test_loose_what_line_is_still_rejected(self):
+        self.assert_problems_contain(
+            FILLED.replace("**What:** GET", "What: GET"),
+            "'**What:**' line missing")
 
     def test_missing_section(self):
         self.assert_problems_contain(
@@ -221,7 +287,7 @@ class TemplateFileTests(unittest.TestCase):
         self.t = tt.parse(self.text)
 
     def test_all_sections_recognized_in_order(self):
-        self.assertEqual([n for n in self.t.order], tt.SECTION_ORDER)
+        self.assertEqual([n for n in self.t.order], tt.TEMPLATE_ORDER)
 
     def test_rules_block_inside_fence_not_treated_as_commands(self):
         self.assertEqual(

@@ -5,8 +5,13 @@ parse(text) pulls a ticket apart into fields; validate(ticket) returns a
 list of human-readable problems (empty list = valid). The checks mirror the
 rules the template itself states: required sections in order, at least one
 "- [ ]" acceptance criterion, runnable relative-path-only verify commands in
-a ``` fence, an "Estimate: N min · Depends on: ..." line, and open questions
+a ``` fence, an optional "Contract checks" fence of "path: literal"
+declarations, an "Estimate: N min · Depends on: ..." line, and open questions
 reading exactly "- None". Unfilled placeholders ({{...}} or <...>) fail.
+
+Markdown that Linear has normalized round-trips: "**What: **" for "**What:**"
+and "* None" for "- None" are the same structure, so both are accepted. Loose
+formatting beyond those equivalences still fails.
 
 CLI: python3 ticket_template.py TICKET.md [...]  ->  exit 0 iff all valid.
 """
@@ -14,22 +19,32 @@ import re
 import sys
 from pathlib import Path
 
-SECTION_ORDER = [
+# Every section the template defines, in order. "Contract checks" is optional
+# so tickets without literal requirements stay valid; the rest are required.
+TEMPLATE_ORDER = [
     "Summary", "What / Why / How", "In scope", "Out of scope",
-    "Acceptance criteria", "Verify command(s)", "Implementation notes",
-    "Estimate & dependencies", "Open questions",
+    "Acceptance criteria", "Verify command(s)", "Contract checks",
+    "Implementation notes", "Estimate & dependencies", "Open questions",
 ]
+OPTIONAL_SECTIONS = {"Contract checks"}
+SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
 H1_RE = re.compile(r"^#\s+(.*?)\s*$")
 H2_RE = re.compile(r"^##\s+(.*?)\s*$")
 BULLET_RE = re.compile(r"^[-*]\s+(.*)$")
 UNCHECKED_RE = re.compile(r"^[-*]\s+\[ \]\s*(.*)$")
 CHECKED_RE = re.compile(r"^[-*]\s+\[[xX]\]\s*(.*)$")
-BOLD_KEY_RE = re.compile(r"^\*\*(What|Why|How):\*\*\s*(.*)$")
+# Linear rewrites "**What:**" as "**What: **", so the space is allowed inside
+# the bold run — but the key, the colon, and the bold markers stay required.
+BOLD_KEY_RE = re.compile(r"^\*\*(What|Why|How):[ \t]*\*\*\s*(.*)$")
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
 LINEAR_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|<[^<>\n\s][^<>\n]*>")
 COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 FENCE_RE = re.compile(r"^```\w*\s*$")
+# One literal contract declaration: a relative path, a colon, and the exact
+# value that must appear in that file. Literal only — no regex, no shell.
+CONTRACT_RE = re.compile(r"^(\S+?):\s*(.*)$")
+OPEN_QUESTIONS_NONE = ("- None", "* None")
 
 
 def _clean(s):
@@ -54,22 +69,47 @@ def _checkboxes(body, rx):
     return out
 
 
+def _fenced_lines(body):
+    """Non-blank lines inside the section's ``` fence."""
+    out, in_fence = [], False
+    for line in body.splitlines():
+        s = line.strip()
+        if FENCE_RE.match(s):
+            in_fence = not in_fence
+            continue
+        if in_fence and s:
+            out.append(s)
+    return out
+
+
 def _verify_commands(body):
     """Command lines inside the section's ``` fence.
 
     Blank lines and the template's own annotation ("Rules:" plus its bullet
     list) are skipped; everything else left in the fence is a command.
     """
-    cmds, in_fence = [], False
-    for line in body.splitlines():
-        s = line.strip()
-        if FENCE_RE.match(s):
-            in_fence = not in_fence
-            continue
-        if not in_fence or not s or s.startswith("Rules:") or s.startswith("- "):
-            continue
-        cmds.append(s)
-    return cmds
+    return [s for s in _fenced_lines(body)
+            if not s.startswith("Rules:") and not s.startswith("- ")]
+
+
+def _contract_checks(body):
+    """Literal contract declarations inside the section's ``` fence.
+
+    Each line is "relative/path: exact literal" and becomes a (path, literal)
+    pair, verbatim — no globbing, no regex, no substitution. A line without a
+    colon yields ("", line) so validate() can name the malformed declaration
+    instead of silently dropping a contract the ticket meant to enforce.
+
+    The template's trailing "Rules:" annotation and everything under it are
+    prose, not declarations, so scanning stops there.
+    """
+    checks = []
+    for line in _fenced_lines(body):
+        if line.startswith("Rules:"):
+            break
+        m = CONTRACT_RE.match(line)
+        checks.append((m.group(1), m.group(2).strip()) if m else ("", line))
+    return checks
 
 
 def _deps(raw):
@@ -94,6 +134,7 @@ class Ticket:
         self.acceptance = []
         self.acceptance_done = []
         self.verify_commands = []
+        self.contract_checks = []
         self.notes = []
         self.estimate_min = None
         self.depends_on = None
@@ -139,6 +180,7 @@ def parse(text):
     t.acceptance = _checkboxes(ac, UNCHECKED_RE)
     t.acceptance_done = _checkboxes(ac, CHECKED_RE)
     t.verify_commands = _verify_commands(t.sections.get("Verify command(s)", ""))
+    t.contract_checks = _contract_checks(t.sections.get("Contract checks", ""))
     t.notes = _bullets(t.sections.get("Implementation notes", ""))
     est = None
     for ln in t.sections.get("Estimate & dependencies", "").splitlines():
@@ -149,7 +191,7 @@ def parse(text):
     t.estimate_min = int(est.group(1)) if est else None
     t.depends_on = _deps(est.group(2)) if est else None
     oq = COMMENT_RE.sub("", t.sections.get("Open questions", ""))
-    t.open_questions_none = _clean(oq) == "- None"
+    t.open_questions_none = _clean(oq) in OPEN_QUESTIONS_NONE
     return t
 
 
@@ -173,6 +215,8 @@ def _labeled_texts(t):
             yield f"{label} #{i}", item
     for cmd in t.verify_commands:
         yield "verify command", cmd
+    for path, literal in t.contract_checks:
+        yield "contract check", f"{path}: {literal}"
 
 
 def _has_nonrelative_path(cmd):
@@ -183,6 +227,20 @@ def _has_nonrelative_path(cmd):
         if re.match(r"^[A-Za-z]:[\\/]", piece):
             return True
     return False
+
+
+def contract_path_problem(path):
+    """Why `path` is unusable as a contract-check target, or None if it is a
+    plain relative repository path. Shared with the factory's verify gate so
+    the ticket-time rule and the run-time rule cannot drift apart."""
+    if not path:
+        return "declaration must read 'relative/path: expected literal'"
+    if (path.startswith("/") or path.startswith("~")
+            or re.match(r"^[A-Za-z]:[\\/]", path)):
+        return "path must be relative to the repo root"
+    if ".." in path.split("/"):
+        return "path must stay inside the repo (no '..' segments)"
+    return None
 
 
 def validate(t):
@@ -196,16 +254,19 @@ def validate(t):
     seen_first = {}
     for idx, name in enumerate(t.order):
         seen_first.setdefault(name, idx)
-    for a, b in zip(SECTION_ORDER, SECTION_ORDER[1:]):
-        if a in seen_first and b in seen_first and seen_first[a] >= seen_first[b]:
+    # Compare only the template sections actually present, so an absent
+    # optional section does not open a gap in the order check.
+    present = [n for n in TEMPLATE_ORDER if n in seen_first]
+    for a, b in zip(present, present[1:]):
+        if seen_first[a] >= seen_first[b]:
             p.append(f"sections out of template order: '## {a}' must come before '## {b}'")
-    for name in SECTION_ORDER:
+    for name in TEMPLATE_ORDER:
         n = t.order.count(name)
-        if n == 0:
+        if n == 0 and name not in OPTIONAL_SECTIONS:
             p.append(f"missing section '## {name}'")
         elif n > 1:
             p.append(f"duplicate section '## {name}' ({n}x)")
-    for u in sorted(set(t.order) - set(SECTION_ORDER)):
+    for u in sorted(set(t.order) - set(TEMPLATE_ORDER)):
         p.append(f"unknown section '## {u}' (not in ticketTemplate.md)")
 
     for label, text in _labeled_texts(t):
@@ -240,6 +301,16 @@ def validate(t):
         if _has_nonrelative_path(cmd):
             p.append(f"verify command uses a non-relative path "
                      f"(template rule: relative only): {cmd}")
+
+    if "Contract checks" in t.order and not t.contract_checks:
+        p.append("'Contract checks' section has no 'relative/path: expected "
+                 "literal' declarations inside a ``` fence")
+    for path, literal in t.contract_checks:
+        problem = contract_path_problem(path)
+        if problem:
+            p.append(f"contract check {problem}: {path or literal}")
+        elif not literal:
+            p.append(f"contract check has an empty expected literal: {path}")
 
     if t.estimate_min is None:
         p.append("'Estimate & dependencies' must read "

@@ -43,7 +43,9 @@ Usage: `python3 factory.py /srv/dev/holo2test`
   ready-ticket and blocker resolution.
 - `ticketTemplate.md` — ticket shape. Verify commands go in the
   "Verify command(s)" section (exit 0 = pass, relative paths only);
-  estimate is the budget in minutes.
+  estimate is the budget in minutes. The optional "Contract checks" section
+  declares `relative/path: exact literal` lines the gate asserts verbatim, so
+  a required value (a port, a URL) cannot drift while the commands still pass.
 - `ticket_template.py` — parser/validator for that shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.

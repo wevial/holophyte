@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import review_runner
+import ticket_template
 
 TARGET = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/srv/dev/holo2test")
 MAX_ROUNDS = 2
@@ -211,7 +212,41 @@ def vacuous_green_report(cmd, cleaned):
             f"[verify]   output:\n{body[-2000:]}")
 
 
-def run_verify(cmd, cwd=None):
+def contract_report(contracts, cwd):
+    """Run the ticket's literal contract checks — each a (relative path,
+    expected literal) pair parsed from its `## Contract checks` fence — against
+    the worktree.
+
+    Returns the report for the first declaration that does not hold, naming the
+    path and the expected literal so a drifted value (KO-106's port) is visible
+    without reading the file, or None when every declared literal is present.
+    The comparison is a verbatim substring test: no globs, no regex, no shell.
+    """
+    root = Path(cwd)
+    for path, literal in contracts or ():
+        text = None
+        problem = ticket_template.contract_path_problem(path)
+        if problem is None and not literal:
+            problem = "declaration has an empty expected literal"
+        target = root / path
+        if problem is None and not target.is_file():
+            problem = "declared file does not exist"
+        if problem is None:
+            text = target.read_text(errors="replace")
+            if literal in text:
+                continue
+            problem = "expected literal is absent from the file"
+        report = (f"[verify] FAILED: contract check — {problem}\n"
+                  f"[verify]   path: {path}\n"
+                  f"[verify]   expected literal: {literal}")
+        if text is not None:
+            body = text.strip() or "(empty file)"
+            report += f"\n[verify]   file contents:\n{body[-2000:]}"
+        return report
+    return None
+
+
+def run_verify(cmd, cwd=None, contracts=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
 
@@ -219,9 +254,19 @@ def run_verify(cmd, cwd=None):
     by clause inside one shell, and the report points at the clause that
     exited non-zero, including when that clause failed without printing
     anything. An exit-0 run that reports zero collected tests is failed as
-    `vacuous-green` rather than passed."""
+    `vacuous-green` rather than passed.
+
+    Literal contract checks declared on the ticket run first: they are
+    deterministic, need no subprocess, and a drifted literal is a RED result
+    even when the command itself passes. A ticket declaring none is unaffected.
+    """
+    drifted = contract_report(contracts, cwd or TARGET)
+    if drifted:
+        return False, drifted
+    passed = (f"[verify] contract checks passed: {len(contracts)}\n"
+              if contracts else "")
     if not cmd:
-        return True, "(no verify command)"
+        return True, passed + "(no verify command)"
     clauses = split_and_clauses(cmd)
     marked = bool(clauses) and len(clauses) > 1
     r = subprocess.run(instrumented_script(clauses) if marked else cmd,
@@ -231,7 +276,7 @@ def run_verify(cmd, cwd=None):
     per_clause, failed, cleaned = parse_clause_output(r.stdout)
     if r.returncode == 0:
         vacuous = vacuous_green_report(cmd, cleaned)
-        return (False, vacuous) if vacuous else (True, cleaned.strip()[-2000:])
+        return (False, vacuous) if vacuous else (True, passed + cleaned.strip()[-2000:])
     return False, failure_report(cmd, clauses if marked else None,
                                  per_clause, failed, r.returncode, cleaned)
 
@@ -299,6 +344,7 @@ def run_task(task):
     """
     task_id = task["id"]
     verify_cmd, budget_min = task.get("verify"), task["budget_min"]
+    contracts = task.get("contracts")
     task = task["title"]
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
@@ -352,7 +398,7 @@ def run_task(task):
     # 2. review loop (max 2 rounds). Verify gate runs before each review:
     # a failing mechanical check skips the reviewer and goes straight to fixes.
     for rnd in range(1, MAX_ROUNDS + 1):
-        ok, out = run_verify(verify_cmd, wt)
+        ok, out = run_verify(verify_cmd, wt, contracts)
         if not ok:
             print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
             if rnd == MAX_ROUNDS:
@@ -402,7 +448,7 @@ def run_task(task):
         sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     # 4. pre-merge verify (catches fix-round regressions), then merge
-    ok, out = run_verify(verify_cmd, wt)
+    ok, out = run_verify(verify_cmd, wt, contracts)
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")

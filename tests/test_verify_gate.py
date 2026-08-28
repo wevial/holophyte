@@ -3,12 +3,15 @@
 Run: python3 -m unittest discover -s tests -p 'test_verify_gate*' -v
 """
 import importlib.util
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))  # factory.py imports ticket_template by name
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
 factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -154,6 +157,93 @@ class VacuousGreenTests(unittest.TestCase):
             self.cwd)
 
         self.assertTrue(ok, out)
+
+
+class ContractCheckTests(unittest.TestCase):
+    """Literal contract assertions declared on the ticket (KO-106 drifted from
+    its required port 8622 while every command still exited 0)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cwd = Path(tmp.name)
+        (self.cwd / "config").mkdir()
+        self.conf = self.cwd / "config" / "tunnel.yml"
+        self.conf.write_text("service: http://localhost:8622\n")
+        self.contracts = [("config/tunnel.yml", "8622")]
+
+    def test_declared_literal_present_keeps_the_gate_green(self):
+        ok, out = factory.run_verify("printf 'suite ok\n'", self.cwd,
+                                     self.contracts)
+
+        self.assertTrue(ok, out)
+        self.assertIn("contract checks passed: 1", out)
+        self.assertIn("suite ok", out)
+
+    def test_drifted_literal_is_red_and_names_path_and_literal(self):
+        self.conf.write_text("service: http://localhost:8000\n")
+
+        # The command itself still exits 0 — only the contract has drifted.
+        ok, out = factory.run_verify("printf 'suite ok\n'", self.cwd,
+                                     self.contracts)
+
+        self.assertFalse(ok)
+        self.assertIn("contract check", out)
+        self.assertIn("config/tunnel.yml", out)
+        self.assertIn("expected literal: 8622", out)
+        self.assertIn("8000", out)
+
+    def test_ticket_without_contract_checks_is_unaffected(self):
+        self.conf.write_text("service: http://localhost:8000\n")
+
+        ok, out = factory.run_verify("printf 'suite ok\n'", self.cwd)
+
+        self.assertTrue(ok, out)
+        self.assertNotIn("contract check", out)
+
+    def test_declared_file_that_does_not_exist_is_red(self):
+        ok, out = factory.run_verify("printf 'suite ok\n'", self.cwd,
+                                     [("config/gone.yml", "8622")])
+
+        self.assertFalse(ok)
+        self.assertIn("does not exist", out)
+        self.assertIn("config/gone.yml", out)
+
+    def test_absolute_declared_path_is_refused_rather_than_read(self):
+        ok, out = factory.run_verify("printf 'suite ok\n'", self.cwd,
+                                     [("/etc/hostname", "8622")])
+
+        self.assertFalse(ok)
+        self.assertIn("must be relative", out)
+
+
+class TaskExtractionTests(unittest.TestCase):
+    """linear_provider hands the parsed declarations to the gate."""
+
+    @classmethod
+    def setUpClass(cls):
+        # linear_provider refuses to import without a configured project.
+        os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
+        import linear_provider
+        cls.provider = linear_provider
+
+    def issue(self, description):
+        return {"identifier": "KO-1", "title": "t", "estimate": 30,
+                "description": description}
+
+    def test_contract_checks_section_reaches_the_task(self):
+        task = self.provider.parse_task(self.issue(
+            "# T\n\n## Verify command(s)\n\n```\npytest -q\n```\n\n"
+            "## Contract checks\n\n```\nconfig/tunnel.yml: 8622\n```\n"))
+
+        self.assertEqual(task["verify"], "pytest -q")
+        self.assertEqual(task["contracts"], [("config/tunnel.yml", "8622")])
+
+    def test_ticket_without_the_section_declares_no_contracts(self):
+        task = self.provider.parse_task(self.issue(
+            "# T\n\n## Verify command(s)\n\n```\npytest -q\n```\n"))
+
+        self.assertEqual(task["contracts"], [])
 
 
 if __name__ == "__main__":
