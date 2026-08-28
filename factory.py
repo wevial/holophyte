@@ -124,9 +124,28 @@ def instrumented_script(clauses):
 
 def parse_clause_output(output):
     """Split marked output into per-clause text. Returns
-    (per_clause, failed, cleaned) where failed is (clause index, exit code)."""
+    (per_clause, failed, cleaned) where failed is (clause index, exit code).
+
+    A clause whose output has no trailing newline glues the next marker onto
+    its last line ("first__holo2_verify_clause__ 2"), so markers are split
+    off mid-line: the prefix stays with the clause that printed it."""
     per_clause, failed, cleaned, current = {}, None, [], None
+
+    def emit(text):
+        cleaned.append(text)
+        if current is not None:
+            per_clause[current].append(text)
+
     for line in output.splitlines():
+        # Peel off any output a marker got glued onto.
+        cut = len(line)
+        for mark in (CLAUSE_MARK, FAIL_MARK):
+            pos = line.find(mark)
+            if pos > 0:
+                cut = min(cut, pos)
+        if cut < len(line):
+            emit(line[:cut])
+            line = line[cut:]
         if line.startswith(CLAUSE_MARK + " "):
             current = int(line.split()[1])
             per_clause[current] = []
@@ -135,9 +154,7 @@ def parse_clause_output(output):
             _, idx, rc = line.split()
             failed = (int(idx), int(rc))
             continue
-        cleaned.append(line)
-        if current is not None:
-            per_clause[current].append(line)
+        emit(line)
     return ({k: "\n".join(v) for k, v in per_clause.items()},
             failed, "\n".join(cleaned))
 

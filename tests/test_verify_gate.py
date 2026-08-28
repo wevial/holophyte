@@ -55,6 +55,24 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
         self.assertIn("failing clause: exit 7", out)
         self.assertIn("not executed: clause 3", out)
 
+    def test_unterminated_clause_output_is_attributed_to_its_own_clause(self):
+        # Round-2 review blocker: `printf first` leaves no trailing newline,
+        # so the next clause marker glues onto "first" and `boom` used to be
+        # credited to clause 1 while failing clause 2 read as silent.
+        ok, out = factory.run_verify(
+            "printf first && sh -c 'echo boom; exit 7' && printf never",
+            self.cwd)
+
+        self.assertFalse(ok)
+        self.assertIn("clause 2 of 3 exited 7", out)
+        self.assertIn("--- clause 1 (ok): printf first", out)
+        self.assertIn("boom", out)
+        clause1 = out.split("--- clause 1")[1].split("--- clause 2")[0]
+        clause2 = out.split("--- clause 2")[1]
+        self.assertNotIn("boom", clause1)
+        self.assertIn("boom", clause2)
+        self.assertIn("first", clause1)
+
     def test_silent_clause_failure_is_reported_as_silence(self):
         ok, out = factory.run_verify(
             "echo starting && grep -q absent sub/value.txt", self.cwd)
