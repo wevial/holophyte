@@ -12,6 +12,8 @@ import re
 import urllib.request
 from pathlib import Path
 
+import ticket_template
+
 HERE = Path(__file__).parent
 TEAM = "Personal Projects"
 GRAPHQL = "https://api.linear.app/graphql"
@@ -109,12 +111,20 @@ def list_ready_issues(project_id=PROJECT_ID):
 
 
 def parse_task(issue):
-    """Extract task + verify command from a ticketTemplate.md description."""
+    """Extract task + verify command + literal contract checks from a
+    ticketTemplate.md description.
+
+    `contracts` is the optional `## Contract checks` fence as (relative path,
+    expected literal) pairs, parsed by ticket_template so the ticket-time rules
+    and the gate agree. A ticket without that section yields [], leaving the
+    verify gate exactly as it was.
+    """
     desc = issue.get("description", "") or ""
     m = re.search(r"## Verify command\(s\)\s*```\n(.*?)```", desc, re.S)
     verify = m.group(1).strip() if m else None
     return {"id": issue["identifier"], "title": issue["title"].strip(),
             "verify": verify,
+            "contracts": ticket_template.parse(desc).contract_checks,
             "budget_min": int(issue.get("estimate") or 20)}
 
 

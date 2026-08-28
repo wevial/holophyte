@@ -42,6 +42,20 @@ Rules:
 - Keep each command deterministic and idempotent.
 ```
 
+## Contract checks
+
+<!-- OPTIONAL: keep only if this ticket has a literal value that must not
+     drift (a port, a URL, a version). Delete the whole section otherwise. -->
+
+```
+<relative/path/to/file>: <exact literal that must appear in that file>
+
+Rules:
+- One declaration per line: a RELATIVE repo path, a colon, then the literal.
+- The literal is compared verbatim as a substring — no globs, no regex, no
+  shell. The gate fails naming the path and the literal when it is absent.
+```
+
 ## Implementation notes
 
 - <Known constraints, dependencies, risks, rollout concerns, or useful code landmarks.>
