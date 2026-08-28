@@ -719,3 +719,7 @@ VERDICT: PASS
 ## 2026-08-28T23:11:32Z — KO-120
 MERGED to main (branch task/store-v2-4-7-ticket-status-tra deleted). Verify: passed.
 actual: 13.1 min · estimate: 25 min · rounds: 2
+
+## 2026-08-28T23:15:41Z — KO-121
+MERGED to main (branch task/store-v2-5-7-pickability-predi deleted). Verify: passed.
+actual: 4.1 min · estimate: 20 min · rounds: 1
