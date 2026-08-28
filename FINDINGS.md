@@ -622,3 +622,7 @@ MERGED to main (branch task/factory-record-actual-ticket-d deleted). Verify: pas
 ## 2026-08-28T22:47:31Z — KO-117
 MERGED to main (branch task/store-v2-1-7-schema-ddl-wal-bo deleted). Verify: passed.
 actual: 5.5 min · estimate: 30 min · rounds: 1
+
+## 2026-08-28T22:52:02Z — KO-118
+MERGED to main (branch task/store-v2-2-7-claim-lease-trans deleted). Verify: passed.
+actual: 4.5 min · estimate: 25 min · rounds: 1
