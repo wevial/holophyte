@@ -652,3 +652,7 @@ at `store.py:329` on the retry's `BEGIN IMMEDIATE`, with the delivery id reserve
 **FOLLOW_UP named in the commit message:** `claim()` at `store.py:282` has the identical shape and is reachable the same way through the deferred `projects.activeRunId` FK it writes. It shipped in KO-118 with its own tests, so I left it for its own ticket rather than an unreviewed drive-by fix here — say the word if you'd rather I fold it in.
 
 One thing I did not do: AGENTS.md asks for findings and adjudications in `FINDINGS.md` and the Linear ticket ledger. `FINDINGS.md` reads as factory-appended (timestamped `Reviewer findings:` / `Implementer response:` blocks), so I left both to the runner rather than hand-editing shared append-only evidence or posting to Linear myself. The adjudication text above is ready to record if you want me to write either one.
+
+## 2026-08-28T22:58:25Z — KO-119
+MERGED to main (branch task/store-v2-3-7-webhook-delivery deleted). Verify: passed.
+actual: 6.4 min · estimate: 20 min · rounds: 2
