@@ -749,3 +749,13 @@ Nothing was declined or deferred; this was the only finding.
 ## 2026-08-28T23:25:40Z — KO-122
 MERGED to main (branch task/store-v2-6-7-resume-guidance-i deleted). Verify: passed.
 actual: 10.0 min · estimate: 20 min · rounds: 2
+
+## 2026-08-28T23:29:33Z — KO-123
+Implementer note — the ~15-min ticket canary the ticket asked for (implementation notes).
+
+Observations from this run, implementation side only (review and merge cost not yet known at write time):
+
+- **Implementation was not the cost.** Claimed 23:25:41Z, code + tests committed ~23:29Z: under 5 minutes against a 15-min estimate, in line with KO-121 (4.1 min actual / 20 min estimate). Two pure functions with no DB access have no setup to amortize.
+- **What did cost, and does not shrink with ticket size:** reading the frozen contract (`state-model.md` §2/§6 plus the `reviewRounds` DDL this chain already shipped) and re-reading the store's conventions so the new helpers match them. That is a fixed per-ticket tax, so at 15 min of work it is a larger fraction of the run than at 60.
+- **The chain made it cheap anyway.** Six prior sub-issues left the schema, the docstring voice and the test layout settled, so this ticket only had to fill a hole that was already shaped. A 15-min ticket landing *cold* would not look like this — the observation here is about a decomposed chain's last link, not about 15-min tickets in general.
+- **Suggested reading for the decomposition question:** at this size the loop overhead is real but not obviously wasteful, and the compensating win is review quality — the whole diff is two functions and a test file, which is a review a reviewer can actually complete. Worth re-checking against this ticket's own rounds/merge record once the factory appends it below.
