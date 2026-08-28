@@ -145,13 +145,10 @@ def profile_command(profile: str, prompt: str) -> list[str]:
 
 
 def validate_review_transcript(transcript: str) -> None:
-    """Reject known tool-host failures and reviews with no successful command."""
-    failure_markers = (
-        "Code Mode is unavailable",
-        "failed to spawn code-mode host",
-    )
-    if any(marker in transcript for marker in failure_markers):
-        raise ReviewBoundaryError("reviewer tool host failed; verdict is not evidence")
+    """Require observed successful local command execution from the reviewer."""
+    # Do not classify infrastructure failures from arbitrary transcript text:
+    # inspected source can contain any warning/error literal. A missing tool host
+    # is already fail-closed because it cannot produce successful exec evidence.
     has_exec = transcript.startswith("exec\n") or "\nexec\n" in transcript
     if not has_exec or " succeeded in " not in transcript:
         raise ReviewBoundaryError("reviewer produced no successful local command evidence")

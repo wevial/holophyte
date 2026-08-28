@@ -68,6 +68,10 @@ class ContainerContractTests(unittest.TestCase):
         review_runner.validate_review_transcript(
             "exec\n/bin/bash -lc 'git status' in /workspace\n succeeded in 1ms"
         )
+        review_runner.validate_review_transcript(
+            "exec\n/bin/bash -lc 'git diff' in /workspace\n succeeded in 1ms\n"
+            '+        "Code Mode is unavailable because failed to spawn code-mode host"'
+        )
 
     def test_container_contract_is_hardened_and_workspace_is_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:
