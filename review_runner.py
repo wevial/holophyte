@@ -22,6 +22,11 @@ CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 CODEX_FILES = ("codex", "codex-code-mode-host")
 
+# Verdict vocabularies. A review round argues for or against the candidate; the
+# loop's terminal adjudication round issues a bare pass/fail on the final state.
+REVIEW_VERDICTS = ("APPROVE", "REQUEST_CHANGES")
+ADJUDICATION_VERDICTS = ("PASS", "FAIL")
+
 
 class ReviewBoundaryError(RuntimeError):
     pass
@@ -181,20 +186,33 @@ exec /opt/codex/bin/codex exec --json -C /workspace \
     return command + [image, "/bin/sh", "-eu", "-c", preflight, "review", prompt]
 
 
-def terminal_verdict(message: str) -> str:
+def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) -> str:
+    """The single allowed verdict `message` ends with.
+
+    Raises when the message carries anything other than exactly one allowed
+    verdict line, in final position, so an unparseable reply is never read as
+    an approval. A caller that must turn a malformed reply into a decision of
+    its own — the loop's terminal adjudication reads one as FAIL — catches the
+    error and keeps the message it already holds.
+    """
+    allowed = [f"VERDICT: {verdict}" for verdict in verdicts]
     lines = [line.strip() for line in message.splitlines() if line.strip()]
-    verdicts = [
-        line.removeprefix("VERDICT: ")
-        for line in lines
-        if line in ("VERDICT: APPROVE", "VERDICT: REQUEST_CHANGES")
-    ]
-    if len(verdicts) != 1 or lines[-1] != f"VERDICT: {verdicts[0]}":
-        raise ReviewBoundaryError("review must end with exactly one valid verdict line")
-    return verdicts[0]
+    found = [line for line in lines if line in allowed]
+    if len(found) != 1 or lines[-1] != found[0]:
+        raise ReviewBoundaryError(
+            "review must end with exactly one of: " + ", ".join(allowed)
+        )
+    return found[0].removeprefix("VERDICT: ")
 
 
-def parse_codex_output(output: str) -> tuple[str, str]:
-    """Read trusted CLI JSONL events, not model-controlled transcript strings."""
+def parse_codex_output(
+    output: str, verdicts: Sequence[str] | None = REVIEW_VERDICTS
+) -> tuple[str, str | None]:
+    """Read trusted CLI JSONL events, not model-controlled transcript strings.
+
+    `verdicts=None` returns the final message unadjudicated, for a caller that
+    has to see a malformed reply rather than have it raised at the boundary.
+    """
     command_succeeded = False
     messages: list[str] = []
     for line in output.splitlines():
@@ -216,7 +234,9 @@ def parse_codex_output(output: str) -> tuple[str, str]:
     if not messages:
         raise ReviewBoundaryError("reviewer produced no final message event")
     message = messages[-1]
-    return message, terminal_verdict(message)
+    if verdicts is None:
+        return message, None
+    return message, terminal_verdict(message, verdicts)
 
 
 def _ensure_image() -> None:
@@ -257,6 +277,7 @@ def run_review(
     prompt: str,
     profile: str = PROFILE,
     timeout: int = 1800,
+    verdicts: Sequence[str] | None = REVIEW_VERDICTS,
 ) -> str:
     if profile != PROFILE:
         raise ReviewBoundaryError(f"unknown reviewer profile: {profile}")
@@ -289,7 +310,7 @@ def run_review(
                 raise ReviewBoundaryError("staged candidate changed during review")
         if "PREFLIGHT_OK" not in result.stderr:
             raise ReviewBoundaryError("review preflight did not complete")
-        message, _ = parse_codex_output(result.stdout)
+        message, _ = parse_codex_output(result.stdout, verdicts)
         return message
 
 

@@ -5,8 +5,11 @@ Loop:
   1. Claim the first ready ticket from Linear (project in linear_provider).
   2. Spawn an implementer agent (goal-based) on a branch.
   3. Spawn a read-only reviewer agent on the committed result.
-  4. If findings: implementer fixes, one narrow re-review. Max 2 review rounds.
-  5. On approval: merge to main, check off the task, repeat.
+  4. If findings: implementer fixes, one narrow re-review, and a fix round for
+     its findings too. Max 2 review rounds.
+  5. If neither round approved: one terminal adjudication run — PASS or FAIL on
+     the final state, no new findings, no further fixes.
+  6. On approval or a terminal PASS: merge to main, check off the task, repeat.
 """
 import re
 import subprocess
@@ -297,13 +300,20 @@ REVIEW_PROFILE = "codex-sol-medium"
 
 
 def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
-    """Run one agent turn for a role. Returns combined output text."""
+    """Run one agent turn for a role. Returns combined output text.
+
+    `adjudicate` is the terminal pass/fail round. It takes the same
+    independent reviewer route as `review` — a fresh dispatch that knows only
+    the diff and the ticket — but its verdict is not enforced at the boundary:
+    a reply that names no clean verdict has to reach the loop as text so it
+    can be recorded and read as FAIL.
+    """
     if role == "implement":
         cmd = ["claude", "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
-    elif role == "review":
+    elif role in ("review", "adjudicate"):
         if not base_sha or not candidate_sha:
-            raise ValueError("review requires exact base_sha and candidate_sha")
+            raise ValueError(f"{role} requires exact base_sha and candidate_sha")
         return review_runner.run_review(
             repo=Path(cwd),
             base_sha=base_sha,
@@ -311,6 +321,7 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
             prompt=goal,
             profile=REVIEW_PROFILE,
             timeout=1800,
+            verdicts=(review_runner.REVIEW_VERDICTS if role == "review" else None),
         )
     else:
         raise ValueError(role)
@@ -394,26 +405,31 @@ def run_task(task):
 
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
-    # 2. review loop (max 2 rounds). Verify gate runs before each review:
-    # a failing mechanical check skips the reviewer and goes straight to fixes.
+    def verify_brief(ok, out):
+        """The verify result as the reviewer sees it — omitted when the ticket
+        declares no command, so the brief never implies a gate that never ran."""
+        if not verify_cmd:
+            return ""
+        return (f"A mechanical verification command was run and "
+                f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n")
+
+    # 2. review rounds (MAX_ROUNDS). Verify runs before each review and its
+    # result goes into the brief; every round that is not a clean approval —
+    # round 2 included — gets a fix round, because a round-2 blocker is the
+    # cheapest fix in the loop and used to need a human to close it out.
     for rnd in range(1, MAX_ROUNDS + 1):
         ok, out = run_verify(verify_cmd, wt, contracts)
-        if not ok:
-            print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
-            if rnd == MAX_ROUNDS:
-                print(f"[holo2] task failed verify at max rounds; "
-                      f"leaving branch {branch} (worktree {wt}) at {sha} for a human.")
-                return False
-        else:
+        if ok:
             print(f"[holo2] verify ok before round {rnd}")
+        else:
+            print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
 
         verdict = agent("review",
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
             "the candidate "
             f"in this repo against the task: {task}\n"
-            + (f"A mechanical verification command was run and "
-               f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n" if verify_cmd else "")
+            + verify_brief(ok, out)
             + "Do not modify anything. End your reply with exactly one line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
@@ -422,29 +438,68 @@ def run_task(task):
         if ok and review_runner.terminal_verdict(verdict) == "APPROVE":
             break
 
-        if rnd == MAX_ROUNDS:
-            print(f"[holo2] task failed {MAX_ROUNDS} review rounds; "
-                  f"leaving branch {branch} at {sha} for a human. Task: {task}")
-            ledger(task_id, f"FAILED after {MAX_ROUNDS} review rounds; branch {branch} "
-                         f"preserved at {sha}\n\nLast reviewer verdict:\n{verdict}")
-            return False
-
         # 3. implementer addresses findings (same branch, new commit)
-        out = timed(f"A reviewer left findings on your work for task: {task}\n\n"
-                    f"{verdict}\n\n"
-                    "For EACH finding, adjudicate it first: ADDRESS (concrete "
-                    "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
-                    "it in the commit message), or DECLINE (invalid/out-of-scope — "
-                    "state the rationale in the commit message). Then fix only the "
-                    "ADDRESS items and commit.")
+        fixes = timed(f"A reviewer left findings on your work for task: {task}\n\n"
+                      f"{verdict}\n\n"
+                      "For EACH finding, adjudicate it first: ADDRESS (concrete "
+                      "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
+                      "it in the commit message), or DECLINE (invalid/out-of-scope — "
+                      "state the rationale in the commit message). Then fix only the "
+                      "ADDRESS items and commit.")
         ledger(task_id, f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                      f"Reviewer findings:\n{verdict}\n\n"
-                     f"Implementer response:\n{out}")
-        if out is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
+                     f"Implementer response:\n{fixes}")
+        if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
             return False
         sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    else:
+        # 3b. Terminal adjudication: both review rounds and their fixes are
+        # spent, so one fresh independent run issues a bare verdict on the
+        # final state. There is no further fix round under any outcome —
+        # anything but PASS preserves the branch and stops the loop.
+        ok, out = run_verify(verify_cmd, wt, contracts)
+        if not ok:
+            print(f"[holo2] verify FAILED before adjudication; leaving branch "
+                  f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
+            ledger(task_id, f"FAILED verify before terminal adjudication after "
+                         f"{MAX_ROUNDS} review rounds; branch {branch} preserved "
+                         f"at {sha}\n\n{out}")
+            return False
+        print("[holo2] verify ok before adjudication")
+
+        reply = agent("adjudicate",
+            f"You are a READ-ONLY final adjudicator. Judge commit {sha} using "
+            "refs/review/base as the frozen base and refs/review/candidate as "
+            "the candidate "
+            f"in this repo against the task: {task}\n"
+            + verify_brief(ok, out)
+            + "This candidate has already had its review rounds and their "
+            "fixes; no further fix round exists. Your job is a verdict on the "
+            "state as it stands, not a review.\n"
+            "Do not modify anything. Do NOT list findings, request changes, or "
+            "propose follow-up work — a reply that reads as a findings list is "
+            "not a verdict and is treated as FAIL. Give at most one short "
+            "paragraph of justification, then exactly one final line:\n"
+            "VERDICT: PASS  or  VERDICT: FAIL\n"
+            "PASS means the candidate is mergeable as it stands.", wt,
+            base_sha=base_sha, candidate_sha=sha)
+        try:
+            decision = review_runner.terminal_verdict(
+                reply, review_runner.ADJUDICATION_VERDICTS)
+        except review_runner.ReviewBoundaryError:
+            decision = "MALFORMED"  # no clean verdict — read as FAIL
+        if decision != "PASS":
+            print(f"[holo2] terminal adjudication: {decision}; leaving branch "
+                  f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
+            ledger(task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
+                         f"rounds: {decision}; branch {branch} preserved at "
+                         f"{sha}\n\nAdjudicator reply:\n{reply}")
+            return False
+        print("[holo2] terminal adjudication: PASS")
+        ledger(task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
+                     f"rounds: PASS\n\nAdjudicator reply:\n{reply}")
 
     # 4. pre-merge verify (catches fix-round regressions), then merge
     ok, out = run_verify(verify_cmd, wt, contracts)
