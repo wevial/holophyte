@@ -555,3 +555,6 @@ Tests: verify gate 21/21, full suite 72/72. Nothing deferred or declined.
 
 ## 2026-08-28T22:06:51Z — KO-115
 MERGED to main (branch task/factory-verify-gate-3-3-explic deleted). Verify: passed. Rounds used: 2.
+
+## 2026-08-28T22:23:35Z — KO-116
+MERGED to main (branch task/factory-loop-fix-round-for-rev deleted). Verify: passed. Rounds used: 1.
