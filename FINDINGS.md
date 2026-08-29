@@ -427,3 +427,7 @@ Adjudicator reply:
 The candidate safely sanitizes ledger entries at the append boundary, preserves bounded verdict evidence, and passes all 17 focused tests.
 
 VERDICT: PASS
+
+## 2026-08-29T00:11:15Z — KO-126
+MERGED to main (branch task/factory-sanitize-text-appended deleted). Verify: passed.
+actual: 11.6 min · estimate: 20 min · rounds: 2
