@@ -377,3 +377,53 @@ Nothing was declined or deferred; this was the only finding.
 ## 2026-08-28T23:36:52Z — KO-123
 MERGED to main (branch task/store-v2-7-7-findings-fingerpr deleted). Verify: passed.
 actual: 11.2 min · estimate: 15 min · rounds: 2
+
+## 2026-08-29T00:07:32Z — KO-126
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `factory.py:356`: truncation drops a trailing `VERDICT:` line for entries over 4,000 characters, contradicting the documented preservation requirement and removing key audit evidence.
+- `factory.py:337-338`: C1 ANSI/control sequences such as `\x9b31m` remain intact, so terminal output is not fully sanitized.
+- `factory.py:339`: valid indented and Setext Markdown headings survive, so agent text can still pollute the file outline.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+All three findings adjudicated **ADDRESS** and fixed in `27089be`.
+
+**1. Truncation dropped the trailing `VERDICT:` line** — confirmed. The previous docstring's claim held only for the escape and heading rules; truncation keeps a prefix and the verdict is the last line, so any entry over 4,000 chars lost its outcome. `_trailing_verdict()` now lifts it and truncation re-attaches it below the marker. I sized the tail against the budget *before* slicing the head, which also fixes a pre-existing overrun — the old code emitted 4,015 chars for a 4,000-char cap.
+
+**2. C1 escapes** — confirmed. `\x9b31m` had its introducer eaten by the control-byte pass and printed as literal `31m`. `ANSI_CSI_RE` now accepts both `\x1b[` and `\x9b`; `CONTROL_RE` extends to `\x7f-\x9f` for bare C1s.
+
+**3. Indented and Setext headings** — confirmed, both render as real headings. `ATX_RE` allows up to three spaces of indent; a new `SETEXT_RE` demotes the underlined form.
+
+The one design decision worth flagging: Setext demotion runs *first*, and its lookahead skips lines starting with `#`, `-`, `*`, `+`, `>`. Without that ordering, `## H` followed by `---` would demote twice into `**## H**`. I checked the false-positive surface — tables, 4-space-indented code, and thematic breaks after a blank line or list item are untouched, and ~3,900 chars of real FINDINGS.md prose passes through byte-identical.
+
+All four new tests were verified RED against the parent commit's `factory.py` before the fix; full suite is 172 green. The fence-unawareness follow-up from the parent commit is still open and carried forward in the message — it's the same line-based limitation, now affecting one more rule.
+
+## 2026-08-29T00:10:31Z — KO-126
+Round 2: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `factory.py:362-387`: Any trailing line starting with `VERDICT:` is preserved without a length bound. A malformed adjudicator reply such as `VERDICT: ` plus 10,000 characters produces a 10,032-character sanitized entry, defeating `MAX_ENTRY_CHARS = 4000`. Malformed adjudication replies are explicitly persisted, so this path is reachable.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Committed as `d87cf04`.
+
+**Adjudication: ADDRESS** — one finding, valid and reachable. `_trailing_verdict` matches on the `VERDICT:` prefix alone (by design — malformed replies are what a FAIL is recorded from), so the one line exempted from truncation was agent-controlled and unbounded.
+
+The overrun was bigger than reported. The reviewer's `VERDICT: ` + 10,000 chars gives a ~10,032-char tail; with a long body ahead of it, `MAX_ENTRY_CHARS - len(tail)` goes negative and `text[:-6032]` slices from the *end*, keeping nearly everything — a 17,209-char input sanitized to 17,225 chars against a 4,000 cap.
+
+Fix, in `factory.py:362-395`:
+- `MAX_VERDICT_CHARS = 200` (a real verdict is 24 chars); an over-long verdict is cut with the existing `[… truncated]` marker inline, so the outcome is still recorded rather than dropped.
+- Floored the head bound with `max(0, ...)` so a negative index can never invert the slice again — that was the amplifier, and it's now local to the expression instead of resting on the two constants' relative sizes.
+
+Verified across four shapes (long body + 10k verdict, short body + 10k verdict, the bare reviewer case, and a normal verdict): all land at or under 4,000 chars with the verdict preserved. Added `test_an_oversize_verdict_line_cannot_escape_the_budget`, which exercises both halves of the fix. Full suite: 173 tests, passing.
+
+## 2026-08-29T00:11:14Z — KO-126
+Terminal adjudication after 2 review rounds: PASS
+
+Adjudicator reply:
+The candidate safely sanitizes ledger entries at the append boundary, preserves bounded verdict evidence, and passes all 17 focused tests.
+
+VERDICT: PASS
