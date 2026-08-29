@@ -328,6 +328,20 @@ class LedgerSanitizationTests(unittest.TestCase):
 
         self.assertLessEqual(len(body.strip()), factory.MAX_ENTRY_CHARS)
 
+    def test_an_oversize_verdict_line_cannot_escape_the_budget(self):
+        # A malformed adjudicator reply is persisted verbatim, so the trailing
+        # line the truncation branch must keep is agent-written and unbounded.
+        entry = "\n".join(f"line {i} " + "x" * 80 for i in range(200))
+        entry += "\nVERDICT: " + "y" * 10_000
+
+        body = self.append(entry).split(" — KO-126\n", 1)[1]
+
+        self.assertLessEqual(len(body.strip()), factory.MAX_ENTRY_CHARS)
+        self.assertIn("[… truncated]", body)
+        self.assertNotIn("line 199 ", body)
+        # The verdict is still recorded, cut rather than dropped.
+        self.assertTrue(body.strip().splitlines()[-1].startswith("VERDICT: yyy"))
+
     def test_clean_text_is_written_through_unchanged(self):
         entry = ("Round 1: REQUEST_CHANGES -> fix round\n"
                  "- `store.py:99`: no migration, so init() leaves #42 broken\n"

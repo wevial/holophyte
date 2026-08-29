@@ -348,6 +348,12 @@ CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 SETEXT_RE = re.compile(r"^ {0,3}(?![-*+>#\s])(.+?)[ \t]*\n {0,3}(?:=+|-+)[ \t]*$", re.M)
 ATX_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t#]*$", re.M)
 MAX_ENTRY_CHARS = 4000
+# A real verdict is one short line — `VERDICT: REQUEST_CHANGES` is 24 chars.
+# The line truncation is obliged to keep is agent-written, though, and a
+# malformed reply is persisted verbatim, so cap it: otherwise `VERDICT: ` plus
+# 10k characters is one trailing "verdict" line that carries the whole entry
+# past MAX_ENTRY_CHARS.
+MAX_VERDICT_CHARS = 200
 TRUNCATION_MARKER = "[… truncated]"
 
 
@@ -356,12 +362,19 @@ def _trailing_verdict(text):
 
     `review_runner.terminal_verdict` reads a verdict only in final position,
     so that is the one line truncation may never drop: it is the outcome the
-    whole entry is evidence for.
+    whole entry is evidence for. Any line opening `VERDICT:` counts, malformed
+    ones included — those are exactly what a FAIL gets recorded from — and the
+    line is cut to `MAX_VERDICT_CHARS` so that keeping it stays an exemption
+    for one short line rather than a way around the entry budget.
     """
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if lines and lines[-1].startswith("VERDICT:"):
-        return lines[-1]
-    return None
+    if not lines or not lines[-1].startswith("VERDICT:"):
+        return None
+    verdict = lines[-1]
+    if len(verdict) > MAX_VERDICT_CHARS:
+        verdict = (verdict[:MAX_VERDICT_CHARS - len(TRUNCATION_MARKER)]
+                   + TRUNCATION_MARKER)
+    return verdict
 
 
 def sanitize_findings(text):
@@ -381,7 +394,9 @@ def sanitize_findings(text):
     if len(text) > MAX_ENTRY_CHARS:
         verdict = _trailing_verdict(text)
         tail = f"\n\n{TRUNCATION_MARKER}" + (f"\n\n{verdict}" if verdict else "")
-        head = text[:MAX_ENTRY_CHARS - len(tail)]
+        # max(): a negative bound would slice from the *end* and keep
+        # nearly all of an oversize entry.
+        head = text[:max(0, MAX_ENTRY_CHARS - len(tail))]
         if text[len(head)] != "\n" and "\n" in head:
             head = head[:head.rindex("\n")]  # never cut a line in half
         text = head.rstrip() + tail
