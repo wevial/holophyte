@@ -233,5 +233,66 @@ class ReviewLoopTests(unittest.TestCase):
         self.assertIn("2. rename the helper", self.findings())
 
 
+class LedgerSanitizationTests(unittest.TestCase):
+    """Text the factory appends to FINDINGS.md is sanitized at the append
+    boundary: asserted over the file `ledger()` actually writes, since the
+    helper is only useful if every write site goes through it."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.target = Path(tmp.name)
+        for patcher in (patch.object(factory, "TARGET", self.target),
+                        patch.dict(sys.modules, {"linear_provider": FakeLinear()})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def append(self, entry):
+        factory.ledger("KO-126", entry)
+        return (self.target / "FINDINGS.md").read_text()
+
+    def test_ansi_escapes_and_control_bytes_are_stripped(self):
+        # A coloured tool trace of the shape that reached the KO-107 entry.
+        written = self.append("\x1b[0m\x1b[32m$ \x1b[0mgit status\x07\r\n"
+                              "\x1bOn branch main\n"
+                              "VERDICT: APPROVE")
+
+        self.assertNotIn("\x1b", written)
+        self.assertNotIn("\x07", written)
+        self.assertNotIn("\r", written)
+        self.assertIn("$ git status\n", written)
+        self.assertIn("On branch main\n", written)
+        self.assertIn("VERDICT: APPROVE", written)
+
+    def test_embedded_headings_are_demoted_out_of_the_files_outline(self):
+        written = self.append("## Blockers\n\n1. the migration is missing\n\n"
+                              "### Detail\n\nVERDICT: REQUEST_CHANGES")
+
+        # Only the factory's own entry heading survives in the outline.
+        headings = [ln for ln in written.splitlines() if ln.startswith("#")]
+        self.assertEqual(len(headings), 1)
+        self.assertRegex(headings[0], r"^## \S+ — KO-126$")
+        self.assertIn("**Blockers**", written)
+        self.assertIn("**Detail**", written)
+
+    def test_an_oversize_block_is_truncated_with_a_visible_marker(self):
+        entry = "\n".join(f"line {i} " + "x" * 80 for i in range(200))
+        self.assertGreater(len(entry), 10_000)
+
+        written = self.append(entry)
+
+        self.assertIn("[… truncated]", written)
+        self.assertIn("line 0 ", written)
+        self.assertNotIn("line 199 ", written)
+        self.assertLess(len(written), 5_000)
+
+    def test_clean_text_is_written_through_unchanged(self):
+        entry = ("Round 1: REQUEST_CHANGES -> fix round\n"
+                 "- `store.py:99`: no migration, so init() leaves #42 broken\n"
+                 "\nVERDICT: REQUEST_CHANGES")
+
+        self.assertIn(f"\n{entry}\n", self.append(entry))
+
+
 if __name__ == "__main__":
     unittest.main()

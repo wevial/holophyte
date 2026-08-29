@@ -330,6 +330,37 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
     return (r.stdout + "\n" + r.stderr).strip()
 
 
+# Agent replies reach the ledger as raw terminal output — ANSI-coloured tool
+# traces — and as reviewer prose that heads its own sections. FINDINGS.md is
+# append-only evidence, so whatever lands there is permanent: sanitize at the
+# append boundary rather than cleaning the file up afterwards.
+ANSI_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f]")  # C0 controls, minus \t and \n
+HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t#]*$", re.M)
+MAX_ENTRY_CHARS = 4000
+TRUNCATION_MARKER = "[… truncated]"
+
+
+def sanitize_findings(text):
+    """Make one agent-authored block safe to append to FINDINGS.md.
+
+    Strips ANSI escape sequences and other control bytes, demotes embedded
+    Markdown headings to bold lines so the file's outline stays the factory's
+    own `## <timestamp> — <ticket>` entries, and cuts an oversize block down
+    with a visible marker. `VERDICT:` lines pass through untouched — they are
+    grepped downstream.
+    """
+    text = ANSI_CSI_RE.sub("", text)
+    text = CONTROL_RE.sub("", text)
+    text = HEADING_RE.sub(r"**\2**", text)
+    if len(text) > MAX_ENTRY_CHARS:
+        head = text[:MAX_ENTRY_CHARS]
+        if text[MAX_ENTRY_CHARS] != "\n" and "\n" in head:
+            head = head[:head.rindex("\n")]  # never cut a line in half
+        text = f"{head.rstrip()}\n\n{TRUNCATION_MARKER}"
+    return text
+
+
 def ledger(task_id, entry):
     """Persist a findings record: Linear comment (primary) + FINDINGS.md."""
     from datetime import datetime, timezone
@@ -341,7 +372,7 @@ def ledger(task_id, entry):
         print(f"[holo2] Linear comment failed ({e}); FINDINGS.md only")
     p = TARGET / "FINDINGS.md"
     with p.open("a") as f:
-        f.write(f"\n## {ts} — {task_id}\n{entry}\n")
+        f.write(f"\n## {ts} — {task_id}\n{sanitize_findings(entry)}\n")
 
 
 WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
