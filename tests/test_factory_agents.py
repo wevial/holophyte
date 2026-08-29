@@ -286,6 +286,48 @@ class LedgerSanitizationTests(unittest.TestCase):
         self.assertNotIn("line 199 ", written)
         self.assertLess(len(written), 5_000)
 
+    def test_c1_escape_sequences_are_stripped_with_their_payload(self):
+        # A CSI introduced by the single C1 byte, not by ESC-[: dropping only
+        # the introducer would leave `31m` printing as literal text.
+        written = self.append("\x9b31mred\x9b0m\x85 tail\nVERDICT: APPROVE")
+
+        self.assertNotIn("\x9b", written)
+        self.assertNotIn("31m", written)
+        self.assertNotIn("\x85", written)
+        self.assertIn("red tail\n", written)
+
+    def test_indented_and_setext_headings_are_demoted_too(self):
+        written = self.append("   ## Indented blocker\n\n"
+                              "Setext blocker\n==============\n\n"
+                              "Second one\n---\n\nVERDICT: REQUEST_CHANGES")
+
+        outline = [ln for ln in written.splitlines()
+                   if ln.lstrip().startswith("#") or set(ln.strip()) in ({"="}, {"-"})]
+        self.assertEqual(len(outline), 1)
+        self.assertRegex(outline[0], r"^## \S+ — KO-126$")
+        self.assertIn("**Indented blocker**", written)
+        self.assertIn("**Setext blocker**", written)
+        self.assertIn("**Second one**", written)
+
+    def test_truncation_keeps_the_trailing_verdict_line(self):
+        # The verdict is the outcome the entry is evidence for, and it sits at
+        # the end — exactly where a head-only truncation would drop it.
+        entry = "\n".join(f"line {i} " + "x" * 80 for i in range(200))
+        entry += "\nVERDICT: REQUEST_CHANGES"
+
+        written = self.append(entry)
+
+        self.assertIn("[… truncated]", written)
+        self.assertNotIn("line 199 ", written)
+        self.assertEqual(written.strip().splitlines()[-1], "VERDICT: REQUEST_CHANGES")
+
+    def test_truncation_stays_within_budget_when_it_keeps_a_verdict(self):
+        entry = "x" * 10_000 + "\nVERDICT: APPROVE"
+
+        body = self.append(entry).split(" — KO-126\n", 1)[1]
+
+        self.assertLessEqual(len(body.strip()), factory.MAX_ENTRY_CHARS)
+
     def test_clean_text_is_written_through_unchanged(self):
         entry = ("Round 1: REQUEST_CHANGES -> fix round\n"
                  "- `store.py:99`: no migration, so init() leaves #42 broken\n"
