@@ -66,6 +66,13 @@ class WiringClaimTests(unittest.TestCase):
         self.target = Path(tmp.name) / "repo"
         self.target.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=self.target, check=True)
+        # Close-out commits FINDINGS.md in the target, so the fixture needs an
+        # identity of its own: inheriting the developer's global one would pass
+        # here and error wherever git is unconfigured.
+        for key, value in (("user.email", "factory@example.invalid"),
+                           ("user.name", "Factory Test")):
+            subprocess.run(["git", "config", key, value],
+                           cwd=self.target, check=True)
         # Mirrors factory.STORE_PATH: a sibling of the target, not a file in it.
         self.db = Path(tmp.name) / "repo.holophyte.db"
         self.worktrees = Path(tmp.name) / "repo.worktrees"

@@ -52,8 +52,12 @@ Usage: `python3 factory.py /srv/dev/holo2test`
 - `tests/test_ticket_template.py` — stdlib unittest suite for it
   (`python3 -m unittest discover tests`).
 - `strman.py` — small string utilities.
-- `FINDINGS.md` (generated) — append-only review/merge ledger, mirrored
-  to Linear ticket comments.
+- `FINDINGS.md` (generated) — a rendered window over the store, not a log:
+  the factory regenerates it at each close-out from `runs`/`reviewRounds` as
+  the newest 25 entries below a `<!-- store-rendered below -->` marker, with
+  everything older counted in one archive line and kept in `holophyte.db`.
+  Text above the marker is frozen pre-store history and is never rewritten;
+  Linear ticket comments stay the full per-ticket archive.
 
 ## Config
 
