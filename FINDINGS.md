@@ -595,3 +595,7 @@ I chose the fixture over the reviewer's other option, isolating or mocking the c
 **Verification:** 210 tests, green both with a normal environment and with the identity stripped — the latter being the configuration that previously failed.
 
 One thing worth your attention: the underlying weakness is that a test repo inheriting ambient global git config can hide this class of break from any local run. This fixture is now sealed, but nothing structurally prevents the next new fixture from repeating it. A conftest-level or CI-level environment scrub would catch it generally — I left that out as beyond this task's scope rather than folding it in silently.
+
+## 2026-08-30T02:48:39Z — KO-131
+MERGED to main (branch task/wiring-4-6-findings-md-as-a-wi deleted). Verify: passed.
+actual: 18.0 min · estimate: 25 min · rounds: 2
