@@ -23,7 +23,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
@@ -289,7 +288,9 @@ class ReleaseTests(unittest.TestCase):
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = store.ensure_project(self.conn, "team", Path(tmp.name) / "repo")
-        ticket = store.mirror_ticket(self.conn, self.project, "iss-1", "HOL-1", "a ticket")
+        ticket = store.mirror_ticket(
+            self.conn, self.project, "iss-1", "HOL-1", "a ticket"
+        )
         self.run_id = store.claim(self.conn, self.project, ticket, now=1000)
 
     def run_row(self):
@@ -311,7 +312,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.run_row(), ("done", "merged", None, None, 3000))
         # And the ignored call left nothing in the stream either: an event
         # saying `done -> failed` would describe a transition that never was.
-        self.assertEqual(self.transitions()[-1:], ["working -> done: run ended, outcome merged"])
+        self.assertEqual(
+            self.transitions()[-1:], ["working -> done: run ended, outcome merged"]
+        )
 
     def test_re_releasing_a_failed_run_keeps_its_resume_phase(self):
         store.set_phase(self.conn, self.run_id, "working", now=2000)

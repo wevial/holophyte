@@ -61,7 +61,10 @@ def _gql(query, variables=None):
 READY_QUERY = """
 query($project: String!) {
   project(id: $project) {
-    issues(first: 50, filter: { state: { type: { nin: ["completed", "canceled", "backlog"] } } }) {
+    issues(
+      first: 50
+      filter: { state: { type: { nin: ["completed", "canceled", "backlog"] } } }
+    ) {
       nodes {
         identifier id title description
         estimate

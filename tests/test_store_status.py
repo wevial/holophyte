@@ -145,7 +145,9 @@ class TicketStatusTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.mirror(acceptance_criteria="given x, when y, then z")
 
-        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM tickets").fetchone(), (0,))
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM tickets").fetchone(), (0,)
+        )
 
     # --- §3 transitions -------------------------------------------------
 

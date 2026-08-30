@@ -585,16 +585,16 @@ def parse_findings(reply):
 
     A block the path pattern found nothing in is still a finding when the
     reviewer wrote it as a list item, filed under an `unparsed_path()`
-    placeholder with whatever severity it marked. The reviewer's own bullet is what says it filed a
-    complaint, and this parser recognizing no path in it is a fact about the
-    parser: `Dockerfile`, `Makefile` and a bare directory carry nothing to
-    match on. Keeping only the items whose paths happen to parse would leave
-    the round fingerprinted as a shorter complaint than the one that was made,
-    and §6 compares those fingerprints. Prose around the list -- an opening
-    sentence, the closing `VERDICT:` line -- is narration rather than a filed
-    item and is not stored as one; a reply that filed no item at all still
-    returns `raw_finding()` over the whole text, so a round is never recorded
-    as having said nothing.
+    placeholder with whatever severity it marked. The reviewer's own bullet is
+    what says it filed a complaint, and this parser recognizing no path in it
+    is a fact about the parser: `Dockerfile`, `Makefile` and a bare directory
+    carry nothing to match on. Keeping only the items whose paths happen to
+    parse would leave the round fingerprinted as a shorter complaint than the
+    one that was made, and §6 compares those fingerprints. Prose around the
+    list -- an opening sentence, the closing `VERDICT:` line -- is narration
+    rather than a filed item and is not stored as one; a reply that filed no
+    item at all still returns `raw_finding()` over the whole text, so a round
+    is never recorded as having said nothing.
     """
     findings = []
     for block in finding_blocks(reply):
@@ -708,7 +708,10 @@ def run_task(task, conn=None, run_id=None):
                 "Acceptance criteria are part of the task line; the task is done "
                 "only when they hold. Commit your work with a clear message. "
                 "Stay strictly on-scope; do not expand the task.")
-    if out is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sh(["git", "rev-parse", "main"], TARGET):
+    if out is None or (
+        sh(["git", "rev-parse", "HEAD"], cwd=wt)
+        == sh(["git", "rev-parse", "main"], TARGET)
+    ):
         print(f"[holo2] implementer made no commits for: {task}")
         sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
         sh(["git", "branch", "-D", branch], TARGET)

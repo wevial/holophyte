@@ -21,29 +21,57 @@ class ReviewerBoundaryTests(unittest.TestCase):
             stage = root / "stage"
             source.mkdir()
             subprocess.run(["git", "init", "-q", "-b", "main"], cwd=source, check=True)
-            subprocess.run(["git", "config", "user.name", "Test"], cwd=source, check=True)
-            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=source, check=True)
+            subprocess.run(
+                ["git", "config", "user.name", "Test"], cwd=source, check=True
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=source,
+                check=True,
+            )
             (source / "value.txt").write_text("base\n")
             subprocess.run(["git", "add", "value.txt"], cwd=source, check=True)
-            subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=source, check=True)
-            base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "base"], cwd=source, check=True
+            )
+            base = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=source, text=True
+            ).strip()
             (source / "value.txt").write_text("candidate\n")
-            subprocess.run(["git", "commit", "-qam", "candidate"], cwd=source, check=True)
-            candidate = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+            subprocess.run(
+                ["git", "commit", "-qam", "candidate"], cwd=source, check=True
+            )
+            candidate = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=source, text=True
+            ).strip()
 
             staged = review_runner.stage_candidate(source, stage, base, candidate)
 
             self.assertEqual((staged.base_sha, staged.candidate_sha), (base, candidate))
             self.assertEqual(
-                subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=stage, text=True).strip(),
+                subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], cwd=stage, text=True
+                ).strip(),
                 candidate,
             )
             self.assertNotEqual(
-                subprocess.run(["git", "symbolic-ref", "-q", "HEAD"], cwd=stage).returncode,
+                subprocess.run(
+                    ["git", "symbolic-ref", "-q", "HEAD"], cwd=stage
+                ).returncode,
                 0,
             )
-            self.assertEqual(subprocess.check_output(["git", "remote"], cwd=stage, text=True).strip(), "")
-            self.assertEqual(subprocess.check_output(["git", "status", "--porcelain"], cwd=stage, text=True).strip(), "")
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "remote"], cwd=stage, text=True
+                ).strip(),
+                "",
+            )
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "status", "--porcelain"], cwd=stage, text=True
+                ).strip(),
+                "",
+            )
 
     def test_container_is_hardened_and_mounts_only_allowlisted_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,7 +98,11 @@ class ReviewerBoundaryTests(unittest.TestCase):
         self.assertIn(f"{workspace.resolve()}:/workspace:ro", command)
         self.assertIn(f"{home.resolve()}:/home/reviewer:rw", command)
         self.assertIn(f"{toolchain.resolve()}:/opt/codex/bin:ro", command)
-        mounts = [command[index + 1] for index, value in enumerate(command) if value == "--volume"]
+        mounts = [
+            command[index + 1]
+            for index, value in enumerate(command)
+            if value == "--volume"
+        ]
         self.assertFalse(any("docker.sock" in mount for mount in mounts))
         rendered = "\n".join(command)
         self.assertIn("--json", rendered)
@@ -79,12 +111,18 @@ class ReviewerBoundaryTests(unittest.TestCase):
 
     def test_structured_events_require_command_success_and_terminal_verdict(self):
         events = [
-            {"type": "item.completed", "item": {"type": "command_execution", "exit_code": 0}},
+            {
+                "type": "item.completed",
+                "item": {"type": "command_execution", "exit_code": 0},
+            },
             {
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
-                    "text": "Expected syntax: VERDICT: APPROVE\nVERDICT: REQUEST_CHANGES",
+                    "text": (
+                        "Expected syntax: VERDICT: APPROVE\n"
+                        "VERDICT: REQUEST_CHANGES"
+                    ),
                 },
             },
         ]

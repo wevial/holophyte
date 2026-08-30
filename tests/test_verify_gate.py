@@ -9,7 +9,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports ticket_template by name
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
