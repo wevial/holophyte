@@ -25,6 +25,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -347,6 +348,59 @@ def contract_report(contracts, cwd):
     return None
 
 
+VERIFY_TIMEOUT = 300  # per-command wall-clock cap, verify and worktree setup
+REAP_GRACE = 10       # how long the cap waits for a killed tree's last output
+
+
+def reap_group(proc, expired):
+    """Kill `proc`'s whole process group and return what it printed.
+
+    `SIGKILL`, not a term-then-kill escalation: a command that ran past its
+    cap has already had every chance to finish, and the caller's next move is
+    to throw away the directory it was running in, so a graceful shutdown has
+    nothing to save.
+
+    A grandchild that put itself in a session of its own is outside the group
+    and can keep the output pipe open after the group is gone, so the wait for
+    the last output is itself capped -- reporting a timeout must not be a
+    second way to hang. That fallback keeps the partial output the cap already
+    captured and gives up on the trailing bytes such a process was still
+    writing.
+    """
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        proc.kill()
+    try:
+        out, _ = proc.communicate(timeout=REAP_GRACE)
+    except subprocess.TimeoutExpired:
+        out = expired.output or ""
+    return out
+
+
+def run_capped(cmd, cwd, timeout):
+    """Run one shell command under a hard cap. Returns `(returncode, output)`,
+    or raises `subprocess.TimeoutExpired` carrying whatever it printed first.
+
+    The process group is the point. `subprocess.run(timeout=...)` signals the
+    shell it started and nothing underneath it, so a `make` that reached the
+    cap is reported as over while its compilers keep running -- writing into a
+    worktree the caller is about to delete, against caches the next round
+    reads, with no handle left to stop them by. Starting the command in a
+    session of its own makes the tree one killable unit, so the cap can end
+    the command it timed rather than just the shell that spawned it.
+    """
+    with subprocess.Popen(cmd, shell=True, cwd=str(cwd),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, start_new_session=True) as proc:
+        try:
+            out, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as expired:
+            raise subprocess.TimeoutExpired(
+                cmd, timeout, output=reap_group(proc, expired)) from None
+        return proc.returncode, out
+
+
 def run_verify(cmd, cwd=None, contracts=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
@@ -370,16 +424,14 @@ def run_verify(cmd, cwd=None, contracts=None):
         return True, passed + "(no verify command)"
     clauses = split_and_clauses(cmd)
     marked = bool(clauses) and len(clauses) > 1
-    r = subprocess.run(instrumented_script(clauses) if marked else cmd,
-                       shell=True, cwd=str(cwd or TARGET),
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                       text=True, timeout=300)
-    per_clause, failed, cleaned = parse_clause_output(r.stdout)
-    if r.returncode == 0:
+    returncode, out = run_capped(instrumented_script(clauses) if marked else cmd,
+                                 cwd or TARGET, VERIFY_TIMEOUT)
+    per_clause, failed, cleaned = parse_clause_output(out)
+    if returncode == 0:
         vacuous = vacuous_green_report(cmd, cleaned)
         return (False, vacuous) if vacuous else (True, passed + cleaned.strip()[-2000:])
     return False, failure_report(cmd, clauses if marked else None,
-                                 per_clause, failed, r.returncode, cleaned)
+                                 per_clause, failed, returncode, cleaned)
 
 
 def sh(args, cwd=None):
@@ -597,6 +649,118 @@ ATX_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t#]*$", re.M)
 # past its budget.
 MAX_VERDICT_CHARS = 200
 TRUNCATION_MARKER = "[… truncated]"
+
+
+# --- worktree setup ----------------------------------------------------------
+# The second table a target can write. `[worktree] setup` is the list of shell
+# commands a freshly cut task worktree needs before an agent works in it: the
+# venv, module download or generated file the target's toolchain would
+# otherwise borrow from the main checkout, quietly, and get wrong the moment a
+# task changes a dependency. An absent table is today's behavior -- nothing
+# runs, and a run costs exactly what it costs now.
+
+
+def setup_commands():
+    """The target's `[worktree] setup` list, or `[]` when it names none.
+
+    Each entry is one shell command, run in order. A table that is present but
+    unusable -- not a list, an entry that is not a string, an entry that is
+    blank -- is an error rather than a skipped step, for the reason
+    `agent_command()` refuses a bad `[agents]` row: a setup command the
+    operator wrote and the loop silently dropped would hand the implementer a
+    worktree nobody prepared, and that surfaces far away from the config, as a
+    toolchain failure in the middle of a round.
+    """
+    commands = (config().get("worktree") or {}).get("setup")
+    if commands is None:
+        return []
+    if not isinstance(commands, list):
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [worktree] setup must be a list of "
+            f"command strings, got {type(commands).__name__}")
+    for command in commands:
+        if not isinstance(command, str):
+            raise SystemExit(
+                f"[holo2] {CONFIG_PATH}: [worktree] setup: every entry must be "
+                f"a command string, got {type(command).__name__}")
+        if not command.strip():
+            raise SystemExit(
+                f"[holo2] {CONFIG_PATH}: [worktree] setup: entry {command!r} "
+                "is empty")
+    return commands
+
+
+def check_worktree_setup():
+    """Parse the `[worktree] setup` table before the loop claims work.
+
+    `check_agent_commands()`'s sibling, here for the same reason: a table read
+    for the first time inside a run would abandon a claimed ticket, a cut
+    branch and a held project lease over something startup could have said in
+    one sentence. It parses through `setup_commands()`, so a table this
+    accepts is exactly a table a run would accept.
+
+    What it deliberately does not settle is the commands themselves. They are
+    shell, not argv -- `run_verify()` runs them the way it runs a ticket's
+    verify command -- and they are written against a worktree that does not
+    exist yet, so there is nothing here to resolve them against. Startup
+    settles the shape of the table; the worktree settles the rest.
+    """
+    setup_commands()
+
+
+def timeout_report(cmd, expired):
+    """Read one `subprocess.TimeoutExpired` as a failure report.
+
+    A command that hangs is a failed command, not an unhandled exception: it
+    is the cap doing its job, and the caller can only act on it if it arrives
+    as the same `(ok, report)` a non-zero exit arrives as. Whatever the
+    command printed before the cap fired is kept -- a hung build says where it
+    hung in its last line of output -- and trimmed to the same 2000 characters
+    a passing verify keeps, with silence reported as silence.
+    """
+    out = expired.output or ""
+    if isinstance(out, bytes):
+        out = out.decode("utf-8", "replace")
+    out = out.strip()[-2000:]
+    return (f"[verify] command timed out after {expired.timeout:g}s: {cmd}\n"
+            + (out or "(no output before the timeout)"))
+
+
+def run_worktree_setup(wt, conn=None, run_id=None):
+    """Run the target's setup commands in the fresh worktree `wt`.
+
+    Returns `(ok, report)`. Each command goes through `run_verify()`, so a
+    failure reads like a failed verify and not like a bare non-zero exit: the
+    command is named, its output is shown, a top-level `&&` chain is
+    attributed clause by clause, and silence is reported as silence. The same
+    machinery also means the same `VERIFY_TIMEOUT` cap per command -- setup
+    is a build step, not a round -- and the cap takes the command's whole
+    process tree with it, so a build that hangs is not still writing into the
+    worktree while the caller deletes it. A command that reaches the cap is
+    failed like any other failing command rather than raised: the caller
+    discards the branch and the worktree on a `False`, and a setup that hangs
+    is exactly the case that must not leave those behind.
+
+    Commands run in order and stop at the first failure: step two of a setup
+    assumes step one worked, so running on would only report a second failure
+    about the first one. A target that names no setup runs nothing and records
+    no phase, so an absent table leaves the run byte-identical to today's.
+    """
+    commands = setup_commands()
+    if not commands:
+        return True, ""
+    set_phase(conn, run_id, "working",
+              f"worktree setup: {len(commands)} command(s) in {wt}")
+    for n, command in enumerate(commands, 1):
+        try:
+            ok, out = run_verify(command, wt)
+        except subprocess.TimeoutExpired as e:
+            ok, out = False, timeout_report(command, e)
+        if not ok:
+            return False, (f"[holo2] worktree setup command {n} of "
+                           f"{len(commands)} FAILED: {command}\n{out}")
+        print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
+    return True, ""
 
 
 def _trailing_verdict(text):
@@ -892,6 +1056,23 @@ def run_task(task, conn=None, run_id=None, provider=None):
     else:
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
         sh(["git", "checkout", "-b", branch], cwd=wt)
+
+    # The worktree exists and nothing has been dispatched into it yet, which
+    # is the only moment the target's own setup can run: an implementer whose
+    # toolchain is missing burns its whole budget discovering that, and a
+    # worktree that silently borrows the main checkout's environment tests
+    # something other than the branch it is on. A failure here is the run's
+    # failure, and the branch is discarded rather than preserved -- no agent
+    # ran, so there is no work on it to keep, exactly like a no-commit run.
+    ok, out = run_worktree_setup(wt, conn, run_id)
+    if not ok:
+        print(out)
+        ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran and "
+                        f"branch {branch} was discarded.\n\n{out}")
+        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
+        sh(["git", "branch", "-D", branch], TARGET)
+        return False
+
     base_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     def timed(goal):
@@ -2036,6 +2217,9 @@ def cli(argv=None):
     # calls nobody, so a reviewer that is not installed on the machine reading
     # the table is not that reading's problem.
     check_agent_commands()
+    # Same window, same reason: the `[worktree]` table is read here rather
+    # than by the first run that cuts a worktree with it.
+    check_worktree_setup()
     return main()
 
 

@@ -1,4 +1,4 @@
-"""Per-target config: `<repo>.holophyte.toml` and its `[agents]` command table.
+"""Per-target config: `<repo>.holophyte.toml`, `[agents]` and `[worktree]`.
 
 Run: python3 -m unittest discover -s tests -p 'test_factory_config*' -v
 """
@@ -8,6 +8,7 @@ import io
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -278,6 +279,203 @@ class StartupCheckTests(ConfigTestCase):
         # not installed on the machine reading the table is not its problem.
         target = self.retarget(
             '[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n')
+
+        with patch.object(factory, "report") as report:
+            factory.cli([str(target), "--report"])
+
+        report.assert_called_once_with()
+
+
+class WorktreeSetupTests(ConfigTestCase):
+    """`[worktree] setup`: the commands a fresh task worktree is prepared with.
+
+    The wart these exist for is a worktree that borrows the main checkout's
+    environment -- a venv, a module cache, a generated file -- and so tests the
+    branch against somebody else's dependencies. The commands run in the
+    worktree, in order, through the same verify-gate machinery a ticket's
+    verify command runs through, before any agent turn is dispatched.
+    """
+
+    def worktree(self):
+        """A throwaway directory standing in for a freshly cut task worktree."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return Path(tmp.name)
+
+    def test_an_absent_worktree_table_runs_nothing(self):
+        self.retarget()
+
+        with patch.object(factory, "run_verify",
+                          side_effect=AssertionError("ran a setup command")):
+            self.assertEqual(factory.run_worktree_setup(self.worktree()),
+                             (True, ""))
+        self.assertEqual(factory.setup_commands(), [])
+
+    def test_the_commands_run_in_the_worktree_in_the_order_written(self):
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["pwd > where.txt", '
+                      '"cp where.txt copied.txt"]\n')
+
+        ok, report = factory.run_worktree_setup(wt)
+
+        self.assertTrue(ok)
+        self.assertEqual(report, "")
+        # `pwd` is the fresh worktree, not the main checkout the loop was
+        # pointed at -- which is the whole point of the table.
+        self.assertEqual((wt / "where.txt").read_text().strip(),
+                         str(wt.resolve()))
+        # The second command saw the first one's file, so they ran in order.
+        self.assertTrue((wt / "copied.txt").exists())
+
+    def test_a_failing_command_stops_the_setup_and_names_itself(self):
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["echo building; exit 3", '
+                      '"touch never.txt"]\n')
+
+        ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("command 1 of 2", report)
+        self.assertIn("exit 3", report)
+        self.assertIn("building", report)  # the output, not just the status
+        # Step two assumed step one worked, so it never ran.
+        self.assertFalse((wt / "never.txt").exists())
+
+    def test_a_failure_is_reported_by_the_clause_that_failed(self):
+        # The verify gate's fail-loud machinery, reused verbatim: a chain is
+        # attributed clause by clause rather than as a bare non-zero exit.
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["echo first && false && echo third"]\n')
+
+        ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("clause 2 of 3", report)
+        self.assertIn("failing clause: false", report)
+        self.assertIn("not executed: clause 3", report)
+
+    def test_a_silent_failure_is_reported_as_silence(self):
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["exit 1"]\n')
+
+        ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("failed silently", report)
+
+    def test_a_command_that_hits_the_cap_fails_instead_of_raising(self):
+        # A hung setup is the case that most needs the caller's cleanup: it
+        # must arrive as a `(False, report)` like any other failure, not as a
+        # `TimeoutExpired` past the branch-and-worktree teardown.
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["make deps", "touch never.txt"]\n')
+        expired = subprocess.TimeoutExpired("make deps", 300,
+                                            output="resolving packages\n")
+
+        with patch.object(factory, "run_verify", side_effect=expired):
+            ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("command 1 of 2", report)
+        self.assertIn("timed out after 300s", report)
+        self.assertIn("make deps", report)
+        self.assertIn("resolving packages", report)  # what it managed to say
+        self.assertFalse((wt / "never.txt").exists())
+
+    def test_the_cap_takes_the_command_s_children_down_with_it(self):
+        # A real timeout, not a mocked one: the cap has to end the process
+        # tree and not just the shell at the top of it. A background child
+        # that outlives the reported timeout goes on writing into a worktree
+        # the caller is about to delete, on a branch nobody keeps.
+        wt = self.worktree()
+        marker = wt / "escaped.txt"
+        self.retarget('[worktree]\nsetup = ["echo resolving; '
+                      '(sleep 1; touch %s) & sleep 30"]\n' % marker)
+
+        with patch.object(factory, "VERIFY_TIMEOUT", 0.3):
+            ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("timed out", report)
+        self.assertIn("resolving", report)  # what it said before the cap
+        time.sleep(1.5)  # past when the child would have touched the marker
+        self.assertFalse(marker.exists())
+
+    def test_a_silent_timeout_is_reported_as_silence(self):
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["make deps"]\n')
+
+        with patch.object(factory, "run_verify", side_effect=
+                          subprocess.TimeoutExpired("make deps", 300)):
+            ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("no output before the timeout", report)
+
+    def test_the_setup_records_a_phase_before_it_runs_anything(self):
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["true"]\n')
+        conn = object()
+
+        with patch.object(factory.store, "set_phase") as set_phase:
+            factory.run_worktree_setup(wt, conn, "run-1")
+
+        set_phase.assert_called_once()
+        self.assertEqual(set_phase.call_args.args[2], "working")
+        self.assertIn("worktree setup", set_phase.call_args.args[3])
+
+    def test_an_unusable_setup_table_is_an_error_not_a_skipped_step(self):
+        for config, expected in (
+            ('[worktree]\nsetup = "make deps"\n', "must be a list"),
+            ('[worktree]\nsetup = [7]\n', "command string"),
+            ('[worktree]\nsetup = ["make deps", ""]\n', "is empty"),
+            ('[worktree]\nsetup = ["   "]\n', "is empty"),
+        ):
+            with self.subTest(config=config):
+                self.retarget(config)
+
+                with self.assertRaises(SystemExit) as raised:
+                    factory.setup_commands()
+
+                self.assertIn("repo.holophyte.toml", str(raised.exception))
+                self.assertIn(expected, str(raised.exception))
+
+    def test_the_startup_check_reuses_the_parse_a_run_would_use(self):
+        self.retarget('[worktree]\nsetup = [7]\n')
+
+        with self.assertRaises(SystemExit) as raised:
+            factory.check_worktree_setup()
+
+        self.assertIn("command string", str(raised.exception))
+
+    def test_a_startup_check_of_a_usable_table_passes(self):
+        # Startup settles the shape of the table and deliberately not the
+        # commands: they are shell, written against a worktree that does not
+        # exist yet.
+        self.retarget('[worktree]\nsetup = ["holophyte-no-such-tool --install"]\n')
+
+        self.assertIsNone(factory.check_worktree_setup())
+
+    def test_an_absent_table_checks_nothing(self):
+        self.retarget()
+
+        self.assertIsNone(factory.check_worktree_setup())
+
+    def test_a_run_checks_the_table_before_claiming_anything(self):
+        target = self.retarget('[worktree]\nsetup = "make deps"\n')
+
+        with patch.object(factory, "main",
+                          side_effect=AssertionError("claimed work")) as main:
+            with self.assertRaises(SystemExit) as raised:
+                factory.cli([str(target)])
+
+        self.assertIn("must be a list", str(raised.exception))
+        main.assert_not_called()
+
+    def test_report_does_not_read_the_setup_table(self):
+        # `--report` cuts no worktree, so a table it would never run is not
+        # that reading's problem.
+        target = self.retarget('[worktree]\nsetup = [7]\n')
 
         with patch.object(factory, "report") as report:
             factory.cli([str(target), "--report"])

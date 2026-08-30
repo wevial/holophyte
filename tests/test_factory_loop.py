@@ -99,7 +99,14 @@ def a_task(n=1):
             "criteria": ["Given the thing, when it runs, then it works"]}
 
 
-class LoopTests(unittest.TestCase):
+class LoopFixture(unittest.TestCase):
+    """The real repo, worktree directory and store every loop test runs on.
+
+    Split from the tests so a suite with its own configuration — the
+    `[worktree]` one below — reuses the fixture without re-running the tests
+    that came with it.
+    """
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -158,6 +165,8 @@ class LoopTests(unittest.TestCase):
         return [line[2:].strip() for line in
                 self.git("branch", "--list").splitlines()]
 
+
+class LoopTests(LoopFixture):
     # --- the clean run ---------------------------------------------------
 
     def test_a_script_ending_in_approve_merges_without_spawning_an_agent(self):
@@ -381,6 +390,78 @@ class LoopTests(unittest.TestCase):
             self.read("SELECT t.linearIdentifier, r.outcome FROM runs r"
                       " JOIN tickets t ON t.id = r.ticketId ORDER BY r.id"),
             [("KO-131", "failed"), ("KO-131", "failed"), ("KO-132", "merged")])
+
+
+class WorktreeSetupLoopTests(LoopFixture):
+    """`[worktree] setup` as a whole run walks it: real repo, real worktree.
+
+    The unit tests cover the table and the report. What only a run can show is
+    where the commands land in the loop — after the branch is cut, before the
+    first agent turn — and what a failing setup does to the run around it.
+    """
+
+    def configure(self, toml):
+        """Give the fixture target a config file and point the module at it.
+
+        Through `retarget()` rather than by patching CONFIG_PATH: it derives
+        every path from the target the same way the fixture does, so a test
+        that set the config by hand could pass with the file unwired.
+        """
+        (self.target.parent / "repo.holophyte.toml").write_text(toml)
+        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET)
+        factory.retarget(self.target)
+
+    def test_setup_runs_in_the_fresh_worktree_before_the_implementer(self):
+        """The commands run in the task worktree — not the main checkout —
+        while the branch is cut and before any agent turn, and the run merges
+        as it otherwise would."""
+        marker = self.target.parent / "where.txt"
+        self.configure(f'[worktree]\nsetup = ["pwd > {marker}"]\n')
+
+        fake, guard = self.loop(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(marker.read_text().strip(),
+                         str((self.worktrees / "add-a-thing").resolve()))
+        self.assertEqual(guard.spawned, [])
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertIn("the scripted work", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_failed_setup_fails_the_run_before_any_agent_turn(self):
+        """No agent is dispatched — the script is empty, so a turn would raise
+        — main is untouched, and the branch is discarded rather than preserved:
+        nothing was implemented on it."""
+        provider = StubProvider(a_task(1), a_task(2))
+        self.configure('[worktree]\nsetup = ["echo no toolchain here; exit 3"]\n')
+
+        fake, guard = self.loop(provider=provider)
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(guard.spawned, [])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertFalse((self.worktrees / "add-a-thing").exists())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(len(provider.queue), 1)  # the loop stopped
+        # The ticket carries the reason, with the failing command and what it
+        # printed — a run that ended before anything ran leaves no other trace.
+        (_, body), = provider.comments
+        self.assertIn("worktree setup", body)
+        self.assertIn("no toolchain here", body)
+        self.assertIn("exit 3", body)
+
+    def test_the_setup_phase_is_recorded_between_cutting_and_working(self):
+        self.configure('[worktree]\nsetup = ["true"]\n')
+
+        self.loop(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.transitions()[:3],
+                         ["claimed -> working", "working -> working",
+                          "working -> verifying"])
+        (note,) = [summary for (summary,) in
+                   self.read("SELECT summary FROM runEvents ORDER BY seq")
+                   if "worktree setup" in summary]
+        self.assertIn("1 command(s)", note)
 
 
 if __name__ == "__main__":
