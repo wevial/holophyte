@@ -44,9 +44,17 @@ class StubProvider:
         return self.queue.pop(0) if self.queue else None
 
 
-def a_task(identifier="HOL-1", title="do the thing"):
-    """One parsed ticket in the shape `linear_provider.parse_task()` returns."""
-    return {"id": identifier, "title": title,
+ISSUE_UUID = "9f1c2d34-5678-4abc-9def-0123456789ab"  # Linear's canonical id
+
+
+def a_task(identifier="HOL-1", title="do the thing", issue_id=ISSUE_UUID):
+    """One parsed ticket in the shape `linear_provider.parse_task()` returns.
+
+    Two ids, as the provider gives them: the human `id` and the canonical
+    `issue_id` UUID, deliberately unequal so a test cannot pass by storing
+    whichever one is at hand.
+    """
+    return {"id": identifier, "issue_id": issue_id, "title": title,
             "verify": "python3 -m unittest discover -s tests",
             "contracts": [], "budget_min": 25}
 
@@ -115,14 +123,35 @@ class WiringClaimTests(unittest.TestCase):
         (ticket_id, ticket_project, issue_id, identifier, title,
          commands, time_box, ticket_lease), = seen["tickets"]
         (run_id, run_ticket, run_project, attempt, phase), = seen["runs"]
+        # The mirror is keyed on the canonical UUID, not on the human label:
+        # the label moves, and a webhook only ever carries the UUID.
         self.assertEqual((issue_id, identifier, title),
-                         ("HOL-1", "HOL-1", "do the thing"))
+                         (ISSUE_UUID, "HOL-1", "do the thing"))
         self.assertEqual(json.loads(commands), [a_task()["verify"]])
         self.assertEqual(time_box, 25 * 60 * 1000)
         self.assertEqual((run_ticket, run_project, attempt, phase),
                          (ticket_id, project_id, 1, "claimed"))
         self.assertEqual(ticket_project, project_id)
         self.assertEqual((project_lease, ticket_lease), (run_id, run_id))
+
+    def test_a_re_claimed_ticket_reuses_its_mirror_rather_than_adding_one(self):
+        """The UUID is the mirror's key, so the same issue mirrors once."""
+        with patch.object(factory, "run_task", return_value=True):
+            factory.main(StubProvider(a_task()))
+            factory.main(StubProvider(a_task(identifier="HOL-1-renamed")))
+
+        self.assertEqual(
+            self.read("SELECT linearIssueId, linearIdentifier FROM tickets"),
+            [(ISSUE_UUID, "HOL-1-renamed")])
+
+    def test_a_provider_without_a_uuid_still_mirrors_under_its_identifier(self):
+        """A UUID-less provider keeps working, keyed on the id it does have."""
+        with patch.object(factory, "run_task", return_value=True):
+            factory.main(StubProvider(a_task(issue_id=None)))
+
+        self.assertEqual(
+            self.read("SELECT linearIssueId, linearIdentifier FROM tickets"),
+            [("HOL-1", "HOL-1")])
 
     def test_a_second_claim_is_refused_before_any_branch_is_cut(self):
         held = self.hold_the_lease()

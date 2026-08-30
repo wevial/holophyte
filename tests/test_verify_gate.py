@@ -239,8 +239,8 @@ class TaskExtractionTests(unittest.TestCase):
         cls.provider = linear_provider
 
     def issue(self, description):
-        return {"identifier": "KO-1", "title": "t", "estimate": 30,
-                "description": description}
+        return {"identifier": "KO-1", "id": "uuid-of-ko-1", "title": "t",
+                "estimate": 30, "description": description}
 
     def test_contract_checks_section_reaches_the_task(self):
         task = self.provider.parse_task(self.issue(
@@ -249,6 +249,13 @@ class TaskExtractionTests(unittest.TestCase):
 
         self.assertEqual(task["verify"], "pytest -q")
         self.assertEqual(task["contracts"], [("config/tunnel.yml", "8622")])
+
+    def test_the_canonical_issue_uuid_reaches_the_task(self):
+        """The store keys its mirror on the UUID, so parsing may not drop it."""
+        task = self.provider.parse_task(self.issue("# T\n"))
+
+        self.assertEqual((task["id"], task["issue_id"]),
+                         ("KO-1", "uuid-of-ko-1"))
 
     def test_ticket_without_the_section_declares_no_contracts(self):
         task = self.provider.parse_task(self.issue(

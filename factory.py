@@ -654,11 +654,19 @@ def claim_run(conn, project, task):
     verify command but not its criteria, and an under-specced mirror must not
     look pickable. Nothing reads that yet — the loop still picks in Linear —
     and it becomes `ready` as soon as the mirror carries both lists.
+
+    The two ids the mirror stores are different ids: `linearIssueId` is the
+    canonical issue UUID the provider hands over as `issue_id`, and is what
+    the mirror is keyed and re-found by, while `linearIdentifier` is the human
+    "KO-123" label. Storing the label in both would key the mirror on the
+    mutable one, so a later UUID-carrying writer — webhook wiring, say — would
+    mirror the same issue a second time under its real id. A provider with no
+    UUID to give still gets a mirror, keyed on the identifier it does have.
     """
     ticket_id = store.mirror_ticket(
         conn,
         project,
-        linear_issue_id=task["id"],
+        linear_issue_id=task.get("issue_id") or task["id"],
         linear_identifier=task["id"],
         title=task["title"],
         verification_commands=[task["verify"]] if task.get("verify") else (),
