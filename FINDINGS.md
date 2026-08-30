@@ -659,3 +659,15 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-08-30T03:57:33Z — KO-139
 MERGED to main.
 actual: 7.5 min · estimate: 30 min · rounds: 1
+
+## 2026-08-30T04:21:01Z — KO-140
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:1500) returns when the blocked ticket is offered. Because it remains mapped to Linear “Todo” and `claim_next()` always select…
+
+## 2026-08-30T04:25:21Z — KO-140
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-08-30T04:25:22Z — KO-140
+MERGED to main.
+actual: 15.0 min · estimate: 25 min · rounds: 2
