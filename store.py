@@ -453,16 +453,9 @@ def set_phase(conn, run_id, phase, note=None, now=None):
             "UPDATE runs SET phase = ?, lastHeartbeat = ? WHERE id = ?",
             (phase, now, run_id),
         )
-        (seq,) = conn.execute(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents WHERE runId = ?",
-            (run_id,),
-        ).fetchone()
-        conn.execute(
-            "INSERT INTO runEvents (runId, seq, level, kind, summary, at)"
-            " VALUES (?, ?, 'narrative', 'phase_change', ?, ?)",
-            (run_id, seq,
-             f"{previous} -> {phase}" + (f": {note}" if note else ""), now),
-        )
+        _append_event(
+            conn, run_id, "narrative", "phase_change",
+            f"{previous} -> {phase}" + (f": {note}" if note else ""), now)
     return previous
 
 
@@ -479,6 +472,61 @@ def run_phase(conn, run_id):
     if row is None:
         raise ValueError(f"no run {run_id}")
     return row[0]
+
+
+# §2's two log levels. `narrative` is the run's story and drives the live
+# view; `detail` is the volume underneath it, and is the only level §2 gives a
+# payload to.
+EVENT_LEVELS = ("narrative", "detail")
+
+
+def _append_event(conn, run_id, level, kind, summary, at):
+    """Append one row to run `run_id`'s event stream; return its `seq`.
+
+    No transaction of its own, deliberately: an event describes a thing that
+    happened, so it belongs to the transaction of the write it describes —
+    `set_phase()` lands the phase, the heartbeat and this row together or not
+    at all. `seq` is `MAX(seq) + 1` read inside that transaction, so the
+    `UNIQUE (runId, seq)` index stands behind the per-run monotonicity rather
+    than a caller's counter.
+    """
+    (seq,) = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents WHERE runId = ?",
+        (run_id,),
+    ).fetchone()
+    conn.execute(
+        "INSERT INTO runEvents (runId, seq, level, kind, summary, at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (run_id, seq, level, kind, summary, at),
+    )
+    return seq
+
+
+def record_event(conn, run_id, kind, summary, level="narrative", now=None):
+    """Append one event of `kind` to run `run_id`'s stream; return its `seq`.
+
+    `set_phase()` writes the stream's `phase_change` rows and is the only
+    writer of a run's phase; this is how the loop writes the rows that are not
+    transitions — a best-effort projection that failed, say. `kind` is free
+    text because §2's column is a label rather than an enum, `level` is one of
+    §2's two, and `payload` stays NULL since that is a `detail`-row field and
+    nothing writing through here has one.
+
+    An unknown `run_id` is a caller bug and raises `ValueError`, the way
+    `set_phase()` and `run_phase()` answer the same mistake — the foreign key
+    would refuse the row anyway, but as an `IntegrityError` naming a
+    constraint rather than the run that does not exist. `now` is epoch
+    milliseconds for `at`, defaulting to the clock.
+    """
+    if level not in EVENT_LEVELS:
+        raise ValueError(f"unknown event level {level!r}")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        if conn.execute("SELECT 1 FROM runs WHERE id = ?",
+                        (run_id,)).fetchone() is None:
+            raise ValueError(f"no run {run_id}")
+        return _append_event(conn, run_id, level, kind, summary, now)
 
 
 # The `runs.phase` a run ends in for each `runs.outcome`, so `release()` cannot

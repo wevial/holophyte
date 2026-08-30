@@ -840,8 +840,11 @@ def run_task(task, conn=None, run_id=None):
         assert mr.returncode == 0, (mr.stdout, mr.stderr)
     sh(["git", "worktree", "remove", str(wt)], TARGET)
     sh(["git", "branch", "-d", branch], TARGET)
-    import linear_provider
-    linear_provider.complete(task_id)
+    # Nothing tells Linear the ticket is done here any more. The merge makes
+    # the ticket `merged` in the store, and `main()` projects that status onto
+    # the board through `mirror_push()` once the run has been released — one
+    # writer of the workflow state instead of a call from the middle of a run
+    # that has not finished ending yet.
     # One greppable line of timing data per merged ticket: the estimate stays
     # write-only otherwise, and a future burndown script reads this format.
     actual_min = (monotonic() - started) / 60
@@ -1130,17 +1133,22 @@ def refresh_findings(conn):
 
 
 def claim_run(conn, project, task):
-    """Mirror the claimed ticket and take the project's run lease; return its id.
+    """Mirror the claimed ticket and take the project's lease; return both ids.
 
     Raises `store.ClaimConflict` when the project already has an active run —
     the point of routing the claim through the store, since that is what stops
     two loops from working one project at once.
 
-    The provider's task dict carries no acceptance-criteria list, so the mirror
-    lands in `needs_spec` by the store's own routing rule: it has the ticket's
-    verify command but not its criteria, and an under-specced mirror must not
-    look pickable. Nothing reads that yet — the loop still picks in Linear —
-    and it becomes `ready` as soon as the mirror carries both lists.
+    The ticket id comes back beside the run id because the two are separate
+    subjects: the run is what phases and rounds are recorded against, and the
+    ticket is what status is projected onto Linear from.
+
+    Where the mirror lands is the store's routing rule (§2) applied to what
+    the provider parsed: a ticket carrying both acceptance criteria and a
+    verify command is `ready`, and one missing either is `needs_spec` and not
+    pickable. The loop still picks in Linear, so what that decides here is
+    whether the ticket can legally enter `in_flight` — an under-specced mirror
+    cannot, and the board simply keeps saying whatever a human last set.
 
     The two ids the mirror stores are different ids: `linearIssueId` is the
     canonical issue UUID the provider hands over as `issue_id`, and is what
@@ -1156,10 +1164,11 @@ def claim_run(conn, project, task):
         linear_issue_id=task.get("issue_id") or task["id"],
         linear_identifier=task["id"],
         title=task["title"],
+        acceptance_criteria=task.get("criteria") or (),
         verification_commands=[task["verify"]] if task.get("verify") else (),
         time_box_ms=task["budget_min"] * 60 * 1000,
     )
-    return store.claim(conn, project, ticket_id)
+    return ticket_id, store.claim(conn, project, ticket_id)
 
 
 def release_run(conn, run_id, merged):
@@ -1183,6 +1192,120 @@ def release_run(conn, run_id, merged):
                   " branch preserved for a human")
 
 
+# --- Linear as the notice board ----------------------------------------------
+# State-model §1: Holophyte owns the in-flight substate and Linear is where it
+# gets posted, so ticket status travels one way — store to Linear, never read
+# back — and `mirror_push()` is the loop's only writer of a workflow state.
+# That is what stops loop logic from depending on which column a human dragged
+# a card into: the drag is overwritten by the next push, and nothing branches
+# on it.
+#
+# The table is module-level config rather than five literals at the call sites
+# because the thing likeliest to change is the mapping, not the pushing —
+# per-project mappings and §9's team-vs-project question (does a project or a
+# team own these state names?) both land here. Neither is answered here.
+MIRROR_STATES = {
+    "ready": "Todo",
+    "in_flight": "In Progress",
+    "merged": "Done",
+    "abandoned": "Canceled",
+    # No Linear state means "waiting on an operator", so a blocked ticket goes
+    # back to the column a human picks work out of, until there is a state
+    # that says it properly. Telling the operator what is being waited on is a
+    # comment, and status comments are not this projection's business.
+    "blocked_on_operator": "Todo",
+}
+# `needs_spec` and `blocked_on_deps` are deliberately unmapped: neither is a
+# statement about the board — an unspecced ticket is wherever its author left
+# it, and a dependency-blocked one is the resolver's business — so the
+# projection leaves those tickets' Linear state alone rather than inventing a
+# column for them.
+
+
+def warn(conn, ticket_id, summary):
+    """Record a warning on the ticket's run and print it; never raise.
+
+    Best-effort work that failed is still something the run has to account
+    for, so it goes in the same event stream as the phase changes, as a
+    `warning` row a reader can pick out of the narrative. It is written
+    against the ticket's run — the active one, or the last one when the run
+    has already been released — because that is the stream a reader looking
+    at this ticket is already reading.
+    """
+    print(f"[holo2] {summary}")
+    if conn is None:
+        return
+    row = conn.execute(
+        "SELECT COALESCE(activeRunId, lastRunId) FROM tickets WHERE id = ?",
+        (ticket_id,)).fetchone()
+    if row is None or row[0] is None:
+        return  # no run to hang it on; the printed line is the whole record
+    store.record_event(conn, row[0], "warning", summary)
+
+
+def mirror_push(conn, ticket_id, provider=None):
+    """Project the ticket's stored status onto its Linear state; return it.
+
+    Last-write-wins and one-way: the store's `tickets.status` is the truth,
+    `MIRROR_STATES` says what that truth looks like on the board, and nothing
+    is read back. Returns the state pushed, or None when there was nothing to
+    push — an unmapped status, or a push that failed.
+
+    Failure is a warning, not an error. Linear being unreachable must not fail
+    a run that has already merged, so a push that raises leaves the board
+    stale, the store right, and a `warning` row in the run's stream saying
+    which projection did not land. That is the failure §1 asks for: the notice
+    board is allowed to be behind, the loop is not allowed to be wrong.
+
+    A `conn` of None makes this a no-op, like the rest of the store seam: a
+    storeless `run_task()` holds no status to project.
+    """
+    if conn is None:
+        return None
+    row = conn.execute(
+        "SELECT linearIssueId, linearIdentifier, status FROM tickets"
+        " WHERE id = ?", (ticket_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"no ticket {ticket_id}")
+    issue_id, identifier, status = row
+    state = MIRROR_STATES.get(status)
+    if state is None:
+        return None
+    if provider is None:
+        import linear_provider as provider
+    try:
+        provider.set_state(issue_id, state)
+    except Exception as e:
+        warn(conn, ticket_id, f"Linear mirror push failed for {identifier}: "
+                              f"{status} -> {state} ({e}); the store keeps"
+                              " the status and the board stays stale")
+        return None
+    return state
+
+
+def mirror_status(conn, ticket_id, status, provider=None):
+    """Move the ticket to `status` in the store, then push the move to Linear.
+
+    The pair the loop calls at a boundary that changes ticket status, in that
+    order: the store is written first because it is the truth, and Linear is
+    told afterwards because it is a copy.
+
+    A move the §3 diagram does not draw is refused by the store, and refusing
+    it is not worth stopping a run over — a ticket Linear handed back after it
+    was already merged is the ordinary case. The refusal is recorded as a
+    warning and nothing is pushed, so the board keeps showing the status the
+    ticket actually has.
+    """
+    if conn is None:
+        return None
+    try:
+        store.transition(conn, ticket_id, status)
+    except store.IllegalTransition as e:
+        warn(conn, ticket_id, f"ticket status left where it was: {e}")
+        return None
+    return mirror_push(conn, ticket_id, provider)
+
+
 def main(provider=None):
     if provider is None:
         import linear_provider as provider
@@ -1198,17 +1321,28 @@ def main(provider=None):
                 print("[holo2] Linear has no ready tickets. done.")
                 return
             try:
-                run_id = claim_run(conn, project, task)
+                ticket_id, run_id = claim_run(conn, project, task)
             except store.ClaimConflict as e:
                 # Before any branch or worktree exists: another loop holds the
                 # project, so this one stops rather than working beside it.
                 print(f"[holo2] claim refused, not starting a run: {e}")
                 return
+            # §3's `ready -> in_flight`, and the first thing the board is told
+            # about this run: the claim is the moment the ticket starts being
+            # worked, and the projection replaces the state call the provider
+            # used to make on its own.
+            mirror_status(conn, ticket_id, "in_flight", provider)
             merged = False
             try:
                 merged = run_task(task, conn, run_id)
             finally:
                 release_run(conn, run_id, merged)
+                if merged:
+                    # `in_flight -> merged`, projected as Done. A run that did
+                    # not merge leaves the ticket in flight on purpose: the
+                    # branch is preserved for a human and the board should go
+                    # on saying the work is open, so there is nothing to push.
+                    mirror_status(conn, ticket_id, "merged", provider)
                 # Close-out, and the first moment the run's own outcome is a
                 # row: the window is regenerated here rather than inside
                 # `run_task()` so the entry that ends the run is in it.
