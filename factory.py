@@ -44,10 +44,11 @@ DEFAULT_TARGET = Path("/srv/dev/holo2test")
 # `python3 -m unittest discover` retarget the factory at a directory called
 # "discover".
 TARGET = STORE_PATH = WORKTREES = CONFIG_PATH = None
-# The parsed `<target>.holophyte.toml`, or `{}` when the target has no config
-# file. Empty is the documented normal case: every knob it can set has a
-# hardcoded default, so an absent file is exactly today's behavior.
-CONFIG = {}
+# The parsed `<target>.holophyte.toml`, cached by `config()`; None until it has
+# been read. `{}` is the documented normal case once it has: every knob the
+# file can set has a hardcoded default, so an absent file is exactly today's
+# behavior.
+CONFIG = None
 
 
 def load_config(path):
@@ -94,7 +95,27 @@ def retarget(target):
     # Same sibling convention as the store and the worktree directory, for the
     # same reason: config for a target is not a file the target has to carry.
     CONFIG_PATH = TARGET.parent / f"{TARGET.name}.holophyte.toml"
-    CONFIG = load_config(CONFIG_PATH)
+    # Dropped, not read: retargeting invalidates the cache, and `config()`
+    # parses the new file the first time something asks for it.
+    CONFIG = None
+
+
+def config():
+    """The target's parsed config, read once per target.
+
+    Read on demand rather than by `retarget()`, which runs at import for the
+    default target: parsing there made a malformed
+    `/srv/dev/holo2test.holophyte.toml` an error for `--help`, for importing
+    this module at all, and for a run pointed at some entirely different
+    repository. Nothing that reads config runs before `cli()` picks a target,
+    and `cli()` reads it as soon as it has one, so the file a run actually
+    depends on is still parsed at startup: a malformed one aborts before a
+    ticket is claimed, not in the middle of a round.
+    """
+    global CONFIG
+    if CONFIG is None:
+        CONFIG = load_config(CONFIG_PATH)
+    return CONFIG
 
 
 retarget(DEFAULT_TARGET)
@@ -400,7 +421,7 @@ def agent_command(role, goal):
     operator asked for a route, and quietly running the built-in one instead
     would answer a different question than the one the config asked.
     """
-    command = (CONFIG.get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+    command = (config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
     if command is None:
         return None
     if not isinstance(command, str):
@@ -422,7 +443,47 @@ def agent_route(role):
     some other harness ran would be evidence of something that did not happen,
     and the rows are what FINDINGS.md and the fingerprint are built from.
     """
-    return (CONFIG.get("agents") or {}).get(AGENT_CONFIG_KEYS[role]) or REVIEW_PROFILE
+    return ((config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+            or REVIEW_PROFILE)
+
+
+def publish_review_refs(repo, base_sha, candidate_sha):
+    """Name this round's two commits `refs/review/base` and
+    `refs/review/candidate` inside `repo`.
+
+    The default reviewer route gets those two refs from
+    `review_runner.stage_candidate()`, which creates them in the checkout it
+    builds. A configured reviewer or adjudicator runs in the task worktree
+    instead, where nothing had ever created them — and the prompt it is handed
+    tells it to review the base and the candidate by exactly those names. So
+    the worktree gets the same two names for the same two commits, and the
+    override is asked about the frozen pair rather than about whatever HEAD
+    happens to be.
+
+    The exact-SHA requirement holds on this route too, the same way the staged
+    one enforces it: each side must be a full commit SHA that resolves here to
+    itself, and the base must be an ancestor of the candidate. A round argues
+    about one named candidate against one named base, whoever runs it.
+
+    The refs live in the target repository's ref store, shared by its
+    worktrees; that is safe because the project's run lease single-threads
+    runs, and each round overwrites both refs with its own pair before
+    dispatching. They are left behind afterwards, like the branch a finished
+    run leaves for a human to look at.
+    """
+    for sha in (base_sha, candidate_sha):
+        resolved = subprocess.run(
+            ["git", "rev-parse", "--verify", f"{sha}^{{commit}}"],
+            cwd=repo, capture_output=True, text=True)
+        if resolved.returncode or resolved.stdout.strip() != sha:
+            raise review_runner.ReviewBoundaryError(
+                f"not a full commit SHA in {repo}: {sha}")
+    if subprocess.run(["git", "merge-base", "--is-ancestor", base_sha,
+                       candidate_sha], cwd=repo).returncode:
+        raise review_runner.ReviewBoundaryError(
+            f"base {base_sha} is not an ancestor of {candidate_sha}")
+    for name, sha in (("base", base_sha), ("candidate", candidate_sha)):
+        sh(["git", "update-ref", f"refs/review/{name}", sha], cwd=repo)
 
 
 def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
@@ -436,8 +497,11 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
 
     A configured command replaces the role's route, so an `[agents] reviewer`
     override is also an opt-out of the hardened container the default reviewer
-    runs behind. The exact-SHA requirement is checked either way: a review
-    round argues about one named candidate whoever runs it.
+    runs behind. What it does not opt out of is the pair the round is about:
+    the exact-SHA requirement is enforced either way, and either way the two
+    commits reach the reviewer as `refs/review/base` and
+    `refs/review/candidate` — the names its prompt uses — the staged checkout
+    on the default route, the task worktree on the configured one.
     """
     if role not in AGENT_CONFIG_KEYS:
         raise ValueError(role)
@@ -458,6 +522,8 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
             )
         cmd = ["claude", "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
+    elif role != "implement":
+        publish_review_refs(Path(cwd), base_sha, candidate_sha)
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=1800)
     return (r.stdout + "\n" + r.stderr).strip()
 
@@ -1914,6 +1980,10 @@ def cli(argv=None):
              "reads only -- claims no ticket, cuts no worktree, calls nobody")
     args = parser.parse_args(argv)
     retarget(args.target)
+    # Read the target's config here, with the command line parsed and nothing
+    # claimed yet: a malformed file is a startup error about the repository
+    # this invocation names, and `--help` never had to touch a config at all.
+    config()
     if args.report:
         return report()
     return main()

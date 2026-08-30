@@ -136,6 +136,13 @@ container described below. **A `reviewer` or `adjudicator` override is also an
 opt-out of that container** — the configured command runs directly in the task
 worktree. Overriding the implementer has no such effect; it already runs there.
 
+What an override keeps is the pair the round is about. Before the command runs,
+the task worktree's `refs/review/base` and `refs/review/candidate` are pointed
+at the round's two commits — the same names the staged checkout uses, and the
+names the reviewer prompt tells the command to read. Both must be full commit
+SHAs the worktree has, with the base an ancestor of the candidate, or the round
+is refused rather than run against whatever `HEAD` happens to be.
+
 ## Local reviewer boundary
 
 The factory never gives a reviewer the implementation worktree directly.
