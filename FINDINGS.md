@@ -559,3 +559,7 @@ Adjudicator reply:
 The candidate correctly persists structured review and adjudication rounds, and all 31 task-focused tests pass.
 
 VERDICT: PASS
+
+## 2026-08-30T02:30:39Z — KO-130
+MERGED to main (branch task/wiring-3-6-review-rounds-as-st deleted). Verify: passed.
+actual: 18.9 min · estimate: 30 min · rounds: 2
