@@ -696,3 +696,20 @@ Round 3: pass · reviewer codex-sol-medium · verify passed
 ## 2026-08-30T17:26:42Z — KO-142
 MERGED to main.
 actual: 15.7 min · estimate: 25 min · rounds: 3
+
+## 2026-08-30T17:33:56Z — KO-143
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:680): A setup command exceeding the 300-second timeout raises `subprocess.TimeoutExpired` instead of returning `(False, repor…
+
+## 2026-08-30T17:36:37Z — KO-143
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py:350 [p2] `factory.py:350`: Setup timeouts kill only the `shell=True` wrapper, not its process group. Child commands can continue after the reported timeout and after wor…
+
+## 2026-08-30T17:40:53Z — KO-143
+Round 3: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-08-30T17:40:56Z — KO-143
+MERGED to main.
+actual: 14.2 min · estimate: 25 min · rounds: 3
