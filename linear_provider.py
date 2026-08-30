@@ -4,7 +4,8 @@
 Uses a personal API key from LINEAR_API_KEY (env var or .env next to this
 file) against the direct GraphQL API.
 
-Loop-facing API: claim_next() / set_state() / comment() / list_ready_issues().
+Loop-facing API: claim_next() / fetch_task() / set_state() / comment() /
+list_ready_issues().
 """
 import json
 import os
@@ -146,6 +147,30 @@ def parse_task(issue):
                          *parsed.acceptance_other],
             "contracts": parsed.contract_checks,
             "budget_min": int(issue.get("estimate") or 20)}
+
+
+ISSUE_QUERY = """
+query($id: String!) {
+  issue(id: $id) { identifier id title description estimate }
+}"""
+
+
+def fetch_task(issue_id):
+    """Re-read one issue by id and parse it; None when Linear has no such issue.
+
+    The read half of the merge-time drift check: `factory.run_task()` freezes
+    the ticket at the claim and asks for it again at the merge gate, so what
+    this returns has to be the *same shape* the claim was taken from — hence
+    `parse_task()` rather than a second parser that could disagree with it
+    about what the body says.
+
+    Deliberately not part of `claim_next()`'s path: nothing here decides what
+    to work on, and state-model §1 keeps Linear a notice board. This reads one
+    issue's body back, which is the one fact the board is authoritative about
+    — a human edits the contract there, not in the store.
+    """
+    issue = _gql(ISSUE_QUERY, {"id": issue_id})["issue"]
+    return parse_task(issue) if issue else None
 
 
 def _state_id(name):

@@ -10,6 +10,7 @@ Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import unittest
@@ -164,6 +165,67 @@ class ClaimLeaseTests(unittest.TestCase):
                 "SELECT activeRunId FROM projects WHERE id = ?", (other_project,)
             ).fetchone()[0]
         )
+
+
+class ContractSnapshotTests(unittest.TestCase):
+    """The claim-time freeze of a ticket's contract and the drift check on it.
+
+    The freeze is what makes a merge-time drift check possible at all: without
+    it the only readable version of the ticket is the current one, which
+    always agrees with itself.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.conn = store.open(Path(tmp.name) / "store.sqlite3")
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        self.project_id = store.ensure_project(self.conn, "team_abc", "/srv/dev/x")
+
+    def mirror(self, title, criteria, commands):
+        """Upsert the one issue these tests work with, as the loop mirrors it."""
+        return store.mirror_ticket(
+            self.conn, self.project_id, "iss_1", "HOL-1", title,
+            acceptance_criteria=criteria, verification_commands=commands)
+
+    def test_the_claim_freezes_the_contract_a_later_mirror_cannot_move(self):
+        """The run keeps the ticket as it stood when the lease was taken.
+
+        The expected document is transcribed rather than read back through
+        `contract_snapshot()`: this is the format the column holds and the
+        merge gate compares, so a change to it has to be a deliberate one.
+        """
+        ticket = self.mirror("ship the thing", ["it ships"], ["make test"])
+        run_id = store.claim(self.conn, self.project_id, ticket)
+
+        self.mirror("ship something else", ["it ships", "and logs"], ["make test"])
+
+        self.assertEqual(
+            json.loads(store.run_contract(self.conn, run_id)),
+            {"title": "ship the thing",
+             "acceptanceCriteria": ["it ships"],
+             "verificationCommands": ["make test"]})
+
+    def test_drift_names_the_fields_that_moved_and_only_those(self):
+        """The gate's actual question, asked across a real edited ticket."""
+        ticket = self.mirror("ship the thing", ["it ships"], ["make test"])
+        run_id = store.claim(self.conn, self.project_id, ticket)
+        claimed = store.run_contract(self.conn, run_id)
+
+        self.assertEqual(
+            store.contract_drift(claimed, store.contract_snapshot(
+                "ship the thing", ["it ships"], ["make test"])),
+            ())
+        self.assertEqual(
+            store.contract_drift(claimed, store.contract_snapshot(
+                "ship something else", ["it ships", "and logs"], ["make test"])),
+            ("title", "acceptanceCriteria"))
+        # An unreadable side is a comparison that did not happen, not drift:
+        # a run claimed before the column existed, or a ticket Linear would
+        # not hand back, must not block a merge that verified.
+        self.assertEqual(store.contract_drift(None, claimed), ())
+        self.assertEqual(store.contract_drift(claimed, None), ())
 
 
 if __name__ == "__main__":

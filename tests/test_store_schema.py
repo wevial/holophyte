@@ -40,6 +40,10 @@ DOCUMENTED_COLUMNS = {
         # a finished run's estimate-vs-actual does not move when the ticket's
         # own `timeBoxMs` is later re-mirrored.
         "timeBoxMs",
+        # Store-owned as well: the ticket's contract frozen at the claim, so
+        # the merge gate can tell a body edited mid-run from the one the run
+        # was worked to.
+        "ticketSnapshot",
     },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",

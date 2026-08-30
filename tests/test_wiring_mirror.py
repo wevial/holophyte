@@ -128,7 +128,7 @@ class MirrorPushTests(unittest.TestCase):
         In Progress on the board, not two."""
         seen = {}
 
-        def spy(task, conn=None, run_id=None):
+        def spy(task, conn=None, run_id=None, provider=None):
             seen["states"] = list(provider.states)
             seen["status"] = self.status()
             return True
