@@ -362,6 +362,36 @@ class WorktreeSetupTests(ConfigTestCase):
         self.assertFalse(ok)
         self.assertIn("failed silently", report)
 
+    def test_a_command_that_hits_the_cap_fails_instead_of_raising(self):
+        # A hung setup is the case that most needs the caller's cleanup: it
+        # must arrive as a `(False, report)` like any other failure, not as a
+        # `TimeoutExpired` past the branch-and-worktree teardown.
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["make deps", "touch never.txt"]\n')
+        expired = subprocess.TimeoutExpired("make deps", 300,
+                                            output="resolving packages\n")
+
+        with patch.object(factory, "run_verify", side_effect=expired):
+            ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("command 1 of 2", report)
+        self.assertIn("timed out after 300s", report)
+        self.assertIn("make deps", report)
+        self.assertIn("resolving packages", report)  # what it managed to say
+        self.assertFalse((wt / "never.txt").exists())
+
+    def test_a_silent_timeout_is_reported_as_silence(self):
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["make deps"]\n')
+
+        with patch.object(factory, "run_verify", side_effect=
+                          subprocess.TimeoutExpired("make deps", 300)):
+            ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("no output before the timeout", report)
+
     def test_the_setup_records_a_phase_before_it_runs_anything(self):
         wt = self.worktree()
         self.retarget('[worktree]\nsetup = ["true"]\n')

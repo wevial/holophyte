@@ -656,6 +656,24 @@ def check_worktree_setup():
     setup_commands()
 
 
+def timeout_report(cmd, expired):
+    """Read one `subprocess.TimeoutExpired` as a failure report.
+
+    A command that hangs is a failed command, not an unhandled exception: it
+    is the cap doing its job, and the caller can only act on it if it arrives
+    as the same `(ok, report)` a non-zero exit arrives as. Whatever the
+    command printed before the cap fired is kept -- a hung build says where it
+    hung in its last line of output -- and trimmed to the same 2000 characters
+    a passing verify keeps, with silence reported as silence.
+    """
+    out = expired.output or ""
+    if isinstance(out, bytes):
+        out = out.decode("utf-8", "replace")
+    out = out.strip()[-2000:]
+    return (f"[verify] command timed out after {expired.timeout:g}s: {cmd}\n"
+            + (out or "(no output before the timeout)"))
+
+
 def run_worktree_setup(wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
@@ -664,7 +682,10 @@ def run_worktree_setup(wt, conn=None, run_id=None):
     command is named, its output is shown, a top-level `&&` chain is
     attributed clause by clause, and silence is reported as silence. The same
     machinery also means the same 300-second cap per command -- setup is a
-    build step, not a round.
+    build step, not a round. A command that reaches the cap is failed like any
+    other failing command rather than raised: the caller discards the branch
+    and the worktree on a `False`, and a setup that hangs is exactly the case
+    that must not leave those behind.
 
     Commands run in order and stop at the first failure: step two of a setup
     assumes step one worked, so running on would only report a second failure
@@ -677,7 +698,10 @@ def run_worktree_setup(wt, conn=None, run_id=None):
     set_phase(conn, run_id, "working",
               f"worktree setup: {len(commands)} command(s) in {wt}")
     for n, command in enumerate(commands, 1):
-        ok, out = run_verify(command, wt)
+        try:
+            ok, out = run_verify(command, wt)
+        except subprocess.TimeoutExpired as e:
+            ok, out = False, timeout_report(command, e)
         if not ok:
             return False, (f"[holo2] worktree setup command {n} of "
                            f"{len(commands)} FAILED: {command}\n{out}")
