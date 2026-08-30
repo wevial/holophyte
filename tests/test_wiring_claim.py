@@ -1,0 +1,170 @@
+"""Wiring contract: the loop's store bootstrap and its claim-through-the-lease.
+
+The loop opens one WAL-mode store beside the target repo and routes every
+ticket claim through `store.claim()`, so a second loop on the same project
+loses on the lease instead of cutting a branch beside the first one. These
+tests read the tables back with their own SQL — the oracle is the stored
+state, not the factory's view of it — and drive `main()` with a stub provider
+so no Linear call and no git command is involved.
+
+Run: python3 -m unittest discover -s tests -p 'test_wiring*' -v
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
+SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
+factory = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(factory)
+
+import store  # noqa: E402 - after the sys.path insert above
+
+
+class StubProvider:
+    """The provider seam `main()` drives: a queue of task dicts, no network."""
+
+    TEAM = "team-under-test"
+
+    def __init__(self, *tasks):
+        self.queue = list(tasks)
+
+    def claim_next(self):
+        return self.queue.pop(0) if self.queue else None
+
+
+def a_task(identifier="HOL-1", title="do the thing"):
+    """One parsed ticket in the shape `linear_provider.parse_task()` returns."""
+    return {"id": identifier, "title": title,
+            "verify": "python3 -m unittest discover -s tests",
+            "contracts": [], "budget_min": 25}
+
+
+class WiringClaimTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.target = Path(tmp.name) / "repo"
+        self.target.mkdir()
+        self.db = self.target / "holophyte.db"
+        self.worktrees = Path(tmp.name) / "repo.worktrees"
+        for attr, value in (("TARGET", self.target), ("STORE_PATH", self.db),
+                            ("WORKTREES", self.worktrees)):
+            p = patch.object(factory, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def read(self, sql):
+        """Query the store over a connection the factory never touched."""
+        conn = sqlite3.connect(self.db)
+        self.addCleanup(conn.close)
+        return conn.execute(sql).fetchall()
+
+    def hold_the_lease(self):
+        """Leave the project with an active run, as a second loop would find it."""
+        conn = factory.open_store(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        ticket = store.mirror_ticket(conn, project, "HOL-0", "HOL-0", "in flight")
+        return store.claim(conn, project, ticket)
+
+    def test_loop_start_creates_a_wal_store_with_the_schema(self):
+        factory.main(StubProvider())  # no ready tickets: bootstrap and stop
+
+        self.assertTrue(self.db.exists())
+        self.assertEqual(self.read("PRAGMA journal_mode")[0][0].lower(), "wal")
+        tables = {r[0] for r in
+                  self.read("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        self.assertLessEqual({"projects", "tickets", "runs"}, tables)
+
+    def test_the_store_file_is_git_ignored(self):
+        for name in ("holophyte.db", "holophyte.db-wal", "holophyte.db-shm"):
+            with self.subTest(name):
+                r = subprocess.run(["git", "check-ignore", "-q", name], cwd=ROOT)
+                self.assertEqual(r.returncode, 0, f"{name} is not git-ignored")
+
+    def test_claim_mirrors_the_ticket_and_holds_the_lease_during_the_run(self):
+        seen = {}
+
+        def spy(task):
+            # Runs while the lease is held, and before run_task's first git
+            # command — so this is the state the branch would be cut under.
+            seen["projects"] = self.read("SELECT id, activeRunId FROM projects")
+            seen["tickets"] = self.read(
+                "SELECT id, projectId, linearIssueId, linearIdentifier, title,"
+                " verificationCommands, timeBoxMs, activeRunId FROM tickets")
+            seen["runs"] = self.read(
+                "SELECT id, ticketId, projectId, attempt, phase FROM runs")
+            return True
+
+        with patch.object(factory, "run_task", spy):
+            factory.main(StubProvider(a_task()))
+
+        (project_id, project_lease), = seen["projects"]
+        (ticket_id, ticket_project, issue_id, identifier, title,
+         commands, time_box, ticket_lease), = seen["tickets"]
+        (run_id, run_ticket, run_project, attempt, phase), = seen["runs"]
+        self.assertEqual((issue_id, identifier, title),
+                         ("HOL-1", "HOL-1", "do the thing"))
+        self.assertEqual(json.loads(commands), [a_task()["verify"]])
+        self.assertEqual(time_box, 25 * 60 * 1000)
+        self.assertEqual((run_ticket, run_project, attempt, phase),
+                         (ticket_id, project_id, 1, "claimed"))
+        self.assertEqual(ticket_project, project_id)
+        self.assertEqual((project_lease, ticket_lease), (run_id, run_id))
+
+    def test_a_second_claim_is_refused_before_any_branch_is_cut(self):
+        held = self.hold_the_lease()
+
+        with patch.object(factory, "run_task") as run_task:
+            factory.main(StubProvider(a_task()))
+
+        run_task.assert_not_called()
+        self.assertFalse(self.worktrees.exists())
+        self.assertEqual(self.read("SELECT id FROM runs"), [(held,)])
+
+    def test_a_merged_run_gives_the_lease_back(self):
+        with patch.object(factory, "run_task", return_value=True):
+            factory.main(StubProvider(a_task()))
+
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
+        (run_id, phase, outcome, ended), = self.read(
+            "SELECT id, phase, outcome, endedAt FROM runs")
+        self.assertEqual((phase, outcome), ("done", "merged"))
+        self.assertIsNotNone(ended)
+        self.assertEqual(self.read("SELECT activeRunId, lastRunId FROM tickets"),
+                         [(None, run_id)])
+
+    def test_a_failed_run_gives_the_lease_back(self):
+        with patch.object(factory, "run_task", return_value=False):
+            factory.main(StubProvider(a_task()))
+
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("failed", "failed")])
+
+    def test_a_crashed_run_does_not_leave_the_lease_held(self):
+        boom = RuntimeError("merge blew up")
+
+        with patch.object(factory, "run_task", side_effect=boom):
+            with self.assertRaises(RuntimeError):
+                factory.main(StubProvider(a_task()))
+
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("failed", "failed")])
+
+
+if __name__ == "__main__":
+    unittest.main()

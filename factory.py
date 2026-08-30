@@ -2,7 +2,10 @@
 """holo2: a minimal software factory.
 
 Loop:
-  1. Claim the first ready ticket from Linear (project in linear_provider).
+  0. Open the v2 store (holophyte.db, WAL, beside the target repo).
+  1. Claim the first ready ticket from Linear (project in linear_provider),
+     mirror it into the store and take the project's run lease before any
+     branch exists; the lease goes back when the run ends, merged or not.
   2. Spawn an implementer agent (goal-based) on a branch.
   3. Spawn a read-only reviewer agent on the committed result.
   4. If findings: implementer fixes, one narrow re-review, and a fix round for
@@ -18,11 +21,15 @@ from pathlib import Path
 from time import monotonic
 
 import review_runner
+import store
 import ticket_template
 
 TARGET = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/srv/dev/holo2test")
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
+# The loop's durable state: one WAL-mode SQLite file beside the target repo,
+# gitignored, per target repo like the worktree directory next to it.
+STORE_PATH = TARGET / "holophyte.db"
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
 BUDGET_RE = re.compile(r"\((\d+)\s*min\)\s*$")
@@ -622,15 +629,87 @@ def run_task(task):
     return True
 
 
-def main():
-    import linear_provider
-    while True:
-        task = linear_provider.claim_next()
-        if not task:
-            print("[holo2] Linear has no ready tickets. done.")
-            return
-        if not run_task(task):
-            return  # stop on first failure; ticket stays In Progress for a human
+# --- store seam --------------------------------------------------------------
+# Every store call the loop makes goes through one of the three helpers below,
+# so a later wiring ticket extends this seam instead of threading SQL through
+# run_task().
+
+
+def open_store(path=None):
+    """Open the loop's store, creating and migrating the schema if needed."""
+    conn = store.open(str(path or STORE_PATH))
+    store.init(conn)
+    return conn
+
+
+def claim_run(conn, project, task):
+    """Mirror the claimed ticket and take the project's run lease; return its id.
+
+    Raises `store.ClaimConflict` when the project already has an active run —
+    the point of routing the claim through the store, since that is what stops
+    two loops from working one project at once.
+
+    The provider's task dict carries no acceptance-criteria list, so the mirror
+    lands in `needs_spec` by the store's own routing rule: it has the ticket's
+    verify command but not its criteria, and an under-specced mirror must not
+    look pickable. Nothing reads that yet — the loop still picks in Linear —
+    and it becomes `ready` as soon as the mirror carries both lists.
+    """
+    ticket_id = store.mirror_ticket(
+        conn,
+        project,
+        linear_issue_id=task["id"],
+        linear_identifier=task["id"],
+        title=task["title"],
+        verification_commands=[task["verify"]] if task.get("verify") else (),
+        time_box_ms=task["budget_min"] * 60 * 1000,
+    )
+    return store.claim(conn, project, ticket_id)
+
+
+def release_run(conn, run_id, merged):
+    """Give the lease back when the loop is done with a run, merged or not.
+
+    Called from the loop's `finally`, because the failure paths are the ones
+    that matter: a run that dies holding the lease blocks every later claim on
+    the project, and a preserved branch is meant to wait for a human without
+    also freezing the queue.
+    """
+    store.release(conn, run_id, "merged" if merged else "failed",
+                  None if merged else
+                  "run did not merge; branch preserved for a human")
+
+
+def main(provider=None):
+    if provider is None:
+        import linear_provider as provider
+    conn = open_store()
+    try:
+        # The provider knows its team by name rather than by id; the column's
+        # contract is one row per Linear team, which the name keys just as
+        # well until the provider resolves the id.
+        project = store.ensure_project(conn, provider.TEAM, TARGET)
+        while True:
+            task = provider.claim_next()
+            if not task:
+                print("[holo2] Linear has no ready tickets. done.")
+                return
+            try:
+                run_id = claim_run(conn, project, task)
+            except store.ClaimConflict as e:
+                # Before any branch or worktree exists: another loop holds the
+                # project, so this one stops rather than working beside it.
+                print(f"[holo2] claim refused, not starting a run: {e}")
+                return
+            merged = False
+            try:
+                merged = run_task(task)
+            finally:
+                release_run(conn, run_id, merged)
+            if not merged:
+                return  # stop on first failure; ticket stays In Progress for a human
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
