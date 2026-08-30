@@ -118,11 +118,18 @@ def parse_task(issue):
     expected literal) pairs, parsed by ticket_template so the ticket-time rules
     and the gate agree. A ticket without that section yields [], leaving the
     verify gate exactly as it was.
+
+    Two ids come back, because Linear has two: `id` is the human identifier
+    ("KO-123") the loop prints and names branches after, and `issue_id` is the
+    canonical issue UUID. They are kept apart rather than collapsed because
+    the UUID is what correlates an issue across renames and what a webhook
+    payload carries, so it is the key the store mirrors a ticket under.
     """
     desc = issue.get("description", "") or ""
     m = re.search(r"## Verify command\(s\)\s*```\n(.*?)```", desc, re.S)
     verify = m.group(1).strip() if m else None
-    return {"id": issue["identifier"], "title": issue["title"].strip(),
+    return {"id": issue["identifier"], "issue_id": issue.get("id"),
+            "title": issue["title"].strip(),
             "verify": verify,
             "contracts": ticket_template.parse(desc).contract_checks,
             "budget_min": int(issue.get("estimate") or 20)}

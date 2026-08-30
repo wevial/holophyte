@@ -4,7 +4,8 @@ Local-first by resolved decision (2026-08-22): all loop state lives behind
 this one module so a hosted backend later is a driver swap, not a loop
 rewrite. Stdlib ``sqlite3`` only.
 
-The API so far is ``open()`` and ``init()`` for the schema, ``claim()``
+The API so far is ``open()`` and ``init()`` for the schema,
+``ensure_project()`` for the repo's projects row, ``claim()``/``release()``
 for the per-project lease, ``with_delivery()`` for webhook idempotency,
 ``mirror_ticket()``/``transition()`` for ticket status,
 ``pickable()``/``next_pickable()`` for the pickability predicate,
@@ -388,6 +389,99 @@ def claim(conn, project_id, ticket_id, now=None):
         raise
     conn.commit()
     return run_id
+
+
+# The `runs.phase` a run ends in for each `runs.outcome`, so `release()` cannot
+# leave a finished run parked in the phase it was working in. `killed` is its
+# own phase in §4; the other two failure outcomes share `failed`.
+TERMINAL_PHASES = {
+    "merged": "done",
+    "killed": "killed",
+    "abandoned": "failed",
+    "failed": "failed",
+}
+
+
+def release(conn, run_id, outcome, reason=None, now=None):
+    """End run `run_id` with `outcome` and give the project's lease back.
+
+    The mirror of `claim()`, and the reason a crashed loop does not brick the
+    queue: `projects.activeRunId` is the lease, so a run that ends without
+    clearing it blocks every later claim on that project forever. Callers
+    therefore release on failure paths too, not only on the happy one.
+
+    One `BEGIN IMMEDIATE`, for the same read-then-write reason `claim()` takes
+    it: stamp `endedAt`/`outcome`/`outcomeReason` and the terminal phase
+    `TERMINAL_PHASES` gives for the outcome, then clear both `activeRunId`
+    fields, moving the ticket's pointer to `lastRunId` so the finished run is
+    still reachable from the ticket.
+
+    Both lease clears are scoped to *this* run id. A second release of an
+    already-released run is therefore harmless rather than destructive: it
+    re-stamps the run's ending and clears nothing, instead of dropping a lease
+    a newer run has since taken. An unknown `run_id` is a caller bug and
+    raises `ValueError`. `now` is epoch milliseconds for `endedAt`, defaulting
+    to the clock.
+    """
+    if outcome not in TERMINAL_PHASES:
+        raise ValueError(f"unknown outcome {outcome!r}")
+    if now is None:
+        now = int(time.time() * 1000)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT ticketId, projectId FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        ticket_id, project_id = row
+        conn.execute(
+            "UPDATE runs SET phase = ?, endedAt = ?, outcome = ?,"
+            " outcomeReason = ? WHERE id = ?",
+            (TERMINAL_PHASES[outcome], now, outcome, reason, run_id),
+        )
+        conn.execute(
+            "UPDATE projects SET activeRunId = NULL"
+            " WHERE id = ? AND activeRunId = ?",
+            (project_id, run_id),
+        )
+        conn.execute(
+            "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
+            " WHERE id = ? AND activeRunId = ?",
+            (run_id, ticket_id, run_id),
+        )
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+
+
+def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
+                   autonomy_profile="personal"):
+    """Return the id of the projects row for `linear_team_id`, creating it once.
+
+    Every other write in this module needs a `projectId`, and §2 gives no
+    other way to make the first one: a loop starting against a fresh store has
+    to be able to bootstrap its own project row. `linearTeamId` is the row's
+    natural key here because it is the table's UNIQUE column, so a second call
+    for the same team returns the existing row rather than racing a duplicate.
+
+    Existing rows are returned untouched. Re-pointing a project at another repo
+    path or another autonomy profile is a policy change, not a side effect of
+    starting a loop, so it is not done here.
+    """
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT id FROM projects WHERE linearTeamId = ?", (linear_team_id,)
+        ).fetchone()
+        if row is not None:
+            return row[0]
+        return conn.execute(
+            "INSERT INTO projects"
+            " (linearTeamId, repoPath, defaultBranch, autonomyProfile)"
+            " VALUES (?, ?, ?, ?)",
+            (linear_team_id, str(repo_path), default_branch, autonomy_profile),
+        ).lastrowid
 
 
 # What `with_delivery()` hands back. A namedtuple rather than a bare value
