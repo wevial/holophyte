@@ -28,6 +28,10 @@
 - [ ] <Only meaningful success, failure, empty, or permission outcomes.>
 - [ ] <Existing behavior that must remain unchanged, when relevant.>
 
+> Every behavioral claim needs a mechanical witness: a "default X" / "sorted
+> by Y" criterion must be pinned by a test or check that asserts the observable
+> order/behavior — presence alone lets the claim silently regress (KO-138).
+
 ## Verify command(s)
 
 ```
