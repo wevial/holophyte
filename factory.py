@@ -18,7 +18,10 @@ Loop:
 table for the target and exits, so the timing the runs recorded is a query
 rather than a grep over FINDINGS.md. `--sweep` runs none of it either: it
 reads the live runs and says which have tripped a mechanical condition -- a
-dead heartbeat or a blown time box -- without touching one.
+dead heartbeat or a blown time box -- without touching one. `--sweep --act`
+adds the acting: each tripped run is failed and its leases released through
+the same close-out step 6's failures take, so a crashed run stops holding the
+queue. Its branch and worktree are left where they are, for a human.
 """
 import argparse
 import collections
@@ -1717,7 +1720,7 @@ def claim_run(conn, project, task):
     return ticket_id, store.claim(conn, project, ticket_id)
 
 
-def release_run(conn, run_id, merged):
+def release_run(conn, run_id, merged, reason=None):
     """Give the lease back when the loop is done with a run, merged or not.
 
     Called from the loop's `finally`, because the failure paths are the ones
@@ -1728,12 +1731,14 @@ def release_run(conn, run_id, merged):
     A failure reason names the phase the run stopped in, read back from the
     store rather than remembered here: on a crash the loop's own idea of where
     it was died with the exception, while the phase `set_phase()` last wrote
-    is exactly where the run got to.
+    is exactly where the run got to. A caller that knows better says so with
+    `reason` — the supervisor sweep does, because "stopped in phase working"
+    is true of a swept run and says nothing about why it was swept.
     """
     if merged:
         store.release(conn, run_id, "merged")
         return
-    store.release(conn, run_id, "failed",
+    store.release(conn, run_id, "failed", reason or
                   f"run stopped in phase {store.run_phase(conn, run_id)};"
                   " branch preserved for a human")
 
@@ -1964,6 +1969,31 @@ def escalate(conn, ticket_id, provider=None):
     return True
 
 
+def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None):
+    """End a failed run the one way the factory ends failed runs.
+
+    Three writes in a fixed order, and the order is the point. The failure
+    record goes first, inside `release()`'s transaction, which stamps the
+    outcome and only then clears both leases: a crash between them leaves a
+    failed-looking run still holding a lease, which a human or a later release
+    can free, rather than a free lease under a run that still looks alive —
+    the double-claim hazard, and the one asymmetry worth ordering for. Then
+    the escalation, which is a count over the row just written, so a failure
+    is escalated on the pass that recorded it. Then the window, regenerated
+    last so the entry that ends the run is in it.
+
+    Factored out of the loop's `finally` because the supervisor sweep fails
+    runs too, and a run failed by the sweep has to close out identically to
+    one the loop failed itself — same outcome, same lease, same escalation
+    counter, same rendered entry. The only thing the sweep supplies of its own
+    is the `reason`, and the only thing it does differently is that the
+    process being failed is not the caller.
+    """
+    release_run(conn, run_id, False, reason)
+    escalate(conn, ticket_id, provider)
+    refresh_findings(conn)
+
+
 def main(provider=None):
     if provider is None:
         import linear_provider as provider
@@ -2052,22 +2082,24 @@ def main(provider=None):
             try:
                 merged = run_task(task, conn, run_id, provider)
             finally:
-                release_run(conn, run_id, merged)
                 if merged:
+                    release_run(conn, run_id, merged)
                     # `in_flight -> merged`, projected as Done. A run that did
                     # not merge leaves the ticket in flight on purpose: the
                     # branch is preserved for a human and the board should go
                     # on saying the work is open, so there is nothing to push.
                     mirror_status(conn, ticket_id, "merged", provider)
+                    # Close-out, and the first moment the run's own outcome is
+                    # a row: the window is regenerated here rather than inside
+                    # `run_task()` so the entry that ends the run is in it.
+                    refresh_findings(conn)
                 else:
-                    # Unless this failure was one too many, in which case the
-                    # ticket stops being open work and starts being an
-                    # operator's. Below the threshold this changes nothing.
-                    escalate(conn, ticket_id, provider)
-                # Close-out, and the first moment the run's own outcome is a
-                # row: the window is regenerated here rather than inside
-                # `run_task()` so the entry that ends the run is in it.
-                refresh_findings(conn)
+                    # The failure close-out: release, escalate if this failure
+                    # was one too many, regenerate the window. Shared with the
+                    # supervisor sweep, which fails runs this loop is no
+                    # longer around to fail itself.
+                    close_out_failure(conn, run_id, ticket_id,
+                                      provider=provider)
             if not merged:
                 # The regenerated window stays uncommitted, like the preserved
                 # branch it describes: a human closes both out.
@@ -2191,11 +2223,20 @@ def report(conn=None, out=None):
 # --- the supervisor's stale-run sweep -----------------------------------------
 # The loop watches itself only while it is alive. A run whose process crashed,
 # hung, or was killed leaves a row in a work phase, a heartbeat that stopped
-# and a project lease nobody will ever give back -- and today nothing notices.
-# This is the noticing, and only the noticing: the sweep reads runs, counts
-# strikes and prints what it found. Acting on a trip (failing the run, freeing
-# the lease) is the next ticket's, which is what keeps this one read-only
-# apart from its own strike bookkeeping and its tests a matter of arithmetic.
+# and a project lease nobody will ever give back -- and nothing noticed.
+#
+# The sweep is the noticing: it reads runs, counts strikes and reports what
+# tripped. `--sweep` on its own stops there, which is what makes it safe to
+# point at a loop that is still working. `--sweep --act` goes on to do
+# something about each trip, and what it does is the loop's own failure
+# close-out (`close_out_failure()`) run from outside the run: the run is
+# failed, its leases are given back, the failure counts towards the ticket's
+# escalation threshold, and the window is regenerated. Nothing is killed and
+# nothing is deleted -- the branch and worktree wait for a human exactly as
+# they do after a failure the loop noticed itself. Detection without action
+# still needs somebody watching; action is what makes an overnight run safe,
+# because a hung run becomes a clean failure the next invocation can route
+# around instead of a zombie holding the lease forever.
 
 # How old a heartbeat has to be before a sighting counts as silent, and how
 # many consecutive silent sightings trip the run. Two, from the v1 TUI mining:
@@ -2225,10 +2266,15 @@ SWEEPABLE_PHASES = tuple(
     if phase not in store.ENDED_PHASES and phase != "blocked_on_operator")
 
 # The mechanical conditions a run can trip. `time_box` is spelled as the
-# `interventions.trigger` value the acting sweep will record it under, so the
-# name an operator reads here is the name the row will carry.
+# `interventions.trigger` value of the same name, so the name an operator
+# reads here is the name that vocabulary already uses.
 STALE_HEARTBEAT = "stale_heartbeat"
 TIME_BOX = "time_box"
+
+# The `runEvents.kind` an acted-on trip is recorded under, so the condition
+# that failed a run is in the run's own stream and not only in its outcome
+# reason: a reader following the narrative sees the supervisor arrive.
+SWEEP_EVENT = "supervisor_sweep"
 
 # One tripped run, as the sweep reports it: which run, whose ticket, what it
 # was doing, which condition, and the numbers that condition was decided on.
@@ -2236,14 +2282,48 @@ TIME_BOX = "time_box"
 # needs to agree with the verdict without opening the database.
 Trip = collections.namedtuple(
     "Trip", ("run_id", "ticket", "phase", "condition", "evidence"))
-# What one pass found: how many live runs it looked at, and the trips among
-# them. The count is carried because "nothing tripped" is only reassuring next
-# to the number of runs that were checked -- silence and health look identical
-# without it.
-Sweep = collections.namedtuple("Sweep", ("swept", "trips"))
+# What one pass found: how many live runs it looked at, the trips among them,
+# and whether it acted on them. The count is carried because "nothing tripped"
+# is only reassuring next to the number of runs that were checked -- silence
+# and health look identical without it -- and `acted` because a report of
+# tripped runs reads completely differently depending on whether they were
+# left alone or failed.
+Sweep = collections.namedtuple("Sweep", ("swept", "trips", "acted"))
 
 
-def sweep(conn, now):
+def act_on_trip(conn, trip, provider=None):
+    """Fail one tripped run: the loop's failure close-out, from outside it.
+
+    The whole of what acting means. `close_out_failure()` is the loop's own,
+    unchanged and not re-implemented here, so a swept failure is the same kind
+    of row as any other failure: the same outcome, the same released leases,
+    the same contribution to the ticket's escalation count, the same rendered
+    entry. Only two things are the sweep's own -- the reason, which names the
+    condition instead of the phase, and the event below, which puts the
+    supervisor's arrival in the run's narrative where the reason alone would
+    leave the stream ending at whatever the dead process last managed to say.
+
+    Nothing is signalled, killed or deleted. Freeing the lease and recording
+    the failure is enough to unblock the queue, and a supervisor that also
+    tried to kill things would need to be right about which process it was
+    killing. A truly-alive run that goes on writing after being swept is a
+    real hazard and deliberately out of scope here; it is the reason the
+    strike rule is two sightings rather than one.
+    """
+    (ticket_id,) = conn.execute(
+        "SELECT ticketId FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
+    store.record_event(
+        conn, trip.run_id, SWEEP_EVENT,
+        f"supervisor sweep: {trip.condition} ({trip.evidence});"
+        " failing the run and releasing its leases")
+    close_out_failure(
+        conn, trip.run_id, ticket_id,
+        f"swept by the supervisor in phase {trip.phase}: {trip.condition}"
+        f" ({trip.evidence}); branch and worktree preserved for a human",
+        provider)
+
+
+def sweep(conn, now, act=False, provider=None):
     """Check every live run for a tripped condition; return a `Sweep`.
 
     `now` is epoch milliseconds and is a parameter, not a clock read: every
@@ -2255,8 +2335,10 @@ def sweep(conn, now):
     stale-heartbeat trip is made of and a run seen alive has to clear the
     count it had. The heartbeat goes with the verdict, so a run that answered
     between two sweeps and fell quiet again starts its tally over even though
-    no sweep caught it awake. That bookkeeping is the only write this makes --
-    no phase moves, no lease is freed, no ticket is touched.
+    no sweep caught it awake. Without `act`, that bookkeeping is the only
+    write this makes -- no phase moves, no lease is freed, no ticket is
+    touched -- which is what makes a bare `--sweep` safe against a working
+    loop. With `act`, every trip is then failed by `act_on_trip()`.
 
     A run reports at most one trip. When both conditions hold the stale
     heartbeat is the one named: a dead worker explains the overrun, while the
@@ -2271,7 +2353,11 @@ def sweep(conn, now):
     `BEGIN IMMEDIATE` the read the verdict is made from and the write it is
     recorded in are the same instant, and a heartbeat arriving mid-sweep waits
     and lands cleanly on the next one. The block is arithmetic over the live
-    runs and nothing else, so the loop is held up for no longer than that.
+    runs and nothing else, so the loop is held up for no longer than that --
+    which is also why acting happens after it has committed rather than
+    inside it: failing a run releases leases, escalates a ticket and may call
+    Linear, and holding the store's write lock across a network call would
+    stall every live loop for as long as the provider takes to answer.
     """
     trips = []
     with store.transaction(conn):
@@ -2297,7 +2383,10 @@ def sweep(conn, now):
                     run_id, ticket, phase, TIME_BOX,
                     f"{elapsed / 60000:.1f} min against a"
                     f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)"))
-    return Sweep(len(swept), trips)
+    if act:
+        for trip in trips:
+            act_on_trip(conn, trip, provider)
+    return Sweep(len(swept), trips, act)
 
 
 SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence")
@@ -2330,18 +2419,30 @@ def sweep_lines(result):
         for row in table
     ]
     return lines + [
-        f"{len(result.trips)} tripped of {_runs(result.swept)} swept"]
+        f"{len(result.trips)} tripped of {_runs(result.swept)} swept"
+        + (", failed and leases released" if result.acted else "")]
 
 
-def sweep_report(conn=None, now=None, out=None):
-    """Print the target store's tripped runs. Returns nothing.
+def sweep_report(conn=None, now=None, out=None, act=False, provider=None):
+    """Print the target store's tripped runs, failing them when `act`.
 
     `--sweep`'s whole body, and a sibling of `report()` in what it refuses to
-    do: no ticket is claimed, no worktree is cut, no provider is imported, so
-    it is safe to run against the store of a loop that is still working -- the
-    case it exists for. Unlike `report()` it does write, to exactly one table:
-    the strike tally `sweep()` keeps, without which "two consecutive sweeps"
-    could not span two invocations.
+    do: no ticket is claimed and no worktree is cut, so it is safe to run
+    against the store of a loop that is still working -- the case it exists
+    for. Unlike `report()` it does write, to exactly one table: the strike
+    tally `sweep()` keeps, without which "two consecutive sweeps" could not
+    span two invocations.
+
+    `act` is what `--act` adds, and it adds it to nothing else: a pass that
+    trips no run writes exactly what a read-only pass writes, so acting costs
+    nothing on the sweeps that find everything healthy. A pass that does trip
+    something fails those runs, and only then is a provider needed -- and only
+    if a ticket has reached its escalation threshold.
+
+    The table is printed after the acting rather than before it, so it is a
+    record of what happened rather than a promise: a best-effort push that
+    warns on its way past appears above the summary claiming the runs were
+    failed, not below it.
 
     A target with no store has no runs to sweep and is reported rather than
     created, the way `--report` answers the same mistake.
@@ -2355,7 +2456,7 @@ def sweep_report(conn=None, now=None, out=None):
     try:
         if now is None:
             now = int(time() * 1000)
-        print("\n".join(sweep_lines(sweep(conn, now))), file=out)
+        print("\n".join(sweep_lines(sweep(conn, now, act, provider))), file=out)
     finally:
         if owned:
             conn.close()
@@ -2387,8 +2488,20 @@ def cli(argv=None):
     modes.add_argument(
         "--sweep", action="store_true",
         help="print the live runs that have tripped a mechanical condition "
-             "(dead heartbeat, blown time box) and exit; acts on none of them")
+             "(dead heartbeat, blown time box) and exit; acts on none of them "
+             "unless --act says to")
+    # Not a mode of its own: it says what `--sweep` does with what it finds,
+    # so it is refused rather than ignored anywhere else. Silently doing
+    # nothing would be the worse answer for the operator who typed
+    # `--act` meaning to clean up and got a read-only pass.
+    parser.add_argument(
+        "--act", action="store_true",
+        help="with --sweep: fail each tripped run and release its leases, "
+             "leaving its branch and worktree for a human")
     args = parser.parse_args(argv)
+    if args.act and not args.sweep:
+        parser.error("--act says what --sweep does with the runs it finds; "
+                     "it has nothing to act on by itself")
     retarget(args.target)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
@@ -2397,9 +2510,10 @@ def cli(argv=None):
     if args.report:
         return report()
     # Same window and the same reasons as `--report`: it reads runs and prints
-    # them, so no route has to resolve and nobody is called.
+    # them, so no route has to resolve and nobody is called. `--act` fails
+    # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
-        return sweep_report()
+        return sweep_report(act=args.act)
     # And, on the path that actually dispatches agents, every route the config
     # names resolves before the loop claims a ticket. `--report` skips this: it
     # calls nobody, so a reviewer that is not installed on the machine reading
