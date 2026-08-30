@@ -4,7 +4,8 @@ A minimal software factory. Two small Python files, no frameworks.
 
 Tickets live in a Linear project; `main` is the only integration point.
 
-Usage: `python3 factory.py /srv/dev/holo2test`
+Usage: `python3 factory.py /srv/dev/holo2test`, or
+`python3 factory.py --report /srv/dev/holo2test` for the timing table.
 
 ## The loop
 
@@ -35,7 +36,12 @@ Usage: `python3 factory.py /srv/dev/holo2test`
 
 ## Files
 
-- `factory.py` — the loop.
+- `factory.py` — the loop, and `--report`: a read-only query over the store
+  printing estimate vs actual per finished run (actual, estimate, ratio,
+  rounds, outcome) with mean and median ratio. Each run row carries the
+  estimate it was claimed under and the round count stamped at close-out, so
+  the report and FINDINGS.md read the same numbers. `--report` claims no
+  ticket, cuts no worktree and calls no one.
 - `review_runner.py` — exact-SHA staging and the model-neutral local reviewer
   boundary.
 - `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
