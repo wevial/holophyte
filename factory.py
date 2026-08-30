@@ -2259,30 +2259,42 @@ def sweep(conn, now):
     A run reports at most one trip. When both conditions hold the stale
     heartbeat is the one named: a dead worker explains the overrun, while the
     overrun says nothing about whether anything is still running.
+
+    The whole pass is one `store.transaction()`, because the loop it watches
+    is a different process writing the very columns this reads. Classifying
+    from a snapshot and then striking in a second transaction leaves a gap in
+    which the run heartbeats or finishes, and the strike lands on a state that
+    no longer holds -- a live run one sighting nearer a trip it does not
+    deserve, or a run that ended a millisecond ago reported as dead. Under one
+    `BEGIN IMMEDIATE` the read the verdict is made from and the write it is
+    recorded in are the same instant, and a heartbeat arriving mid-sweep waits
+    and lands cleanly on the next one. The block is arithmetic over the live
+    runs and nothing else, so the loop is held up for no longer than that.
     """
-    swept = conn.execute(
-        "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
-        " r.startedAt, r.timeBoxMs"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE r.endedAt IS NULL"
-        f"   AND r.phase IN ({', '.join('?' * len(SWEEPABLE_PHASES))})"
-        " ORDER BY r.id", SWEEPABLE_PHASES).fetchall()
     trips = []
-    for run_id, ticket, phase, heartbeat, started, time_box in swept:
-        silent = now - heartbeat
-        strikes = store.record_strike(
-            conn, run_id, silent > HEARTBEAT_STALE_MS, now)
-        elapsed = now - started
-        if strikes >= STALE_STRIKES:
-            trips.append(Trip(
-                run_id, ticket, phase, STALE_HEARTBEAT,
-                f"silent for {silent / 60000:.1f} min"
-                f" over {strikes} consecutive sweeps"))
-        elif time_box and elapsed > time_box * BUDGET_GRACE:
-            trips.append(Trip(
-                run_id, ticket, phase, TIME_BOX,
-                f"{elapsed / 60000:.1f} min against a"
-                f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)"))
+    with store.transaction(conn):
+        swept = conn.execute(
+            "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
+            " r.startedAt, r.timeBoxMs"
+            " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+            " WHERE r.endedAt IS NULL"
+            f"   AND r.phase IN ({', '.join('?' * len(SWEEPABLE_PHASES))})"
+            " ORDER BY r.id", SWEEPABLE_PHASES).fetchall()
+        for run_id, ticket, phase, heartbeat, started, time_box in swept:
+            silent = now - heartbeat
+            strikes = store.record_strike(
+                conn, run_id, silent > HEARTBEAT_STALE_MS, now)
+            elapsed = now - started
+            if strikes >= STALE_STRIKES:
+                trips.append(Trip(
+                    run_id, ticket, phase, STALE_HEARTBEAT,
+                    f"silent for {silent / 60000:.1f} min"
+                    f" over {strikes} consecutive sweeps"))
+            elif time_box and elapsed > time_box * BUDGET_GRACE:
+                trips.append(Trip(
+                    run_id, ticket, phase, TIME_BOX,
+                    f"{elapsed / 60000:.1f} min against a"
+                    f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)"))
     return Sweep(len(swept), trips)
 
 

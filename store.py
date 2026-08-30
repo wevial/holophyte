@@ -393,6 +393,28 @@ def _transaction(conn):
         raise
 
 
+@contextlib.contextmanager
+def transaction(conn):
+    """`_transaction()` for callers outside this module; same guarantees.
+
+    A reader that has to *decide* something from what it reads and then write
+    the decision down cannot do the two in separate statements: between them
+    another connection commits, and the write records a verdict on a state
+    that no longer holds. The supervisor sweep is exactly that shape -- it
+    reads a run's heartbeat, classifies it and records the sighting -- and it
+    lives in `factory.py`, so the module's own writers' `BEGIN IMMEDIATE`
+    needs a name that is not private to reach it.
+
+    Under it, this module's writers join instead of opening their own, so a
+    block may read, classify and call `record_strike()` (or any other writer)
+    and have the whole thing commit or roll back once. The write lock is held
+    from the first statement, so a concurrent writer waits rather than
+    interleaving -- keep the block short for that reason.
+    """
+    with _transaction(conn):
+        yield
+
+
 class ClaimConflict(Exception):
     """A claim was refused and nothing was written.
 

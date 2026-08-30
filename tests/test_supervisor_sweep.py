@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import socket
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -65,23 +66,37 @@ class SweepTestCase(unittest.TestCase):
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
+        self.projects = 1
         self.project = store.ensure_project(self.conn, "team-1", self.target)
         self.tickets = 0
 
-    def a_run(self, budget_min=25, claimed_at=T0, phase="working"):
+    def another_project(self):
+        """A second project, for the tests that need two runs live at once.
+
+        v0 single-threads a project, so `a_run()` twice over one of them is a
+        `ClaimConflict` rather than the pair of live runs the test wanted.
+        """
+        self.projects += 1
+        repo = self.root / f"repo-{self.projects}"
+        repo.mkdir()
+        return store.ensure_project(self.conn, f"team-{self.projects}", repo)
+
+    def a_run(self, budget_min=25, claimed_at=T0, phase="working",
+              project=None):
         """One live run of its own ticket, claimed at `claimed_at`.
 
         `claim()` stamps `startedAt` and `lastHeartbeat` together, so a fresh
         run's heartbeat is its claim time until a stage boundary moves it;
         `heartbeat_at()` below is how a test moves it.
         """
+        project = self.project if project is None else project
         self.tickets += 1
         n = self.tickets
         ticket = store.mirror_ticket(
-            self.conn, self.project, linear_issue_id=f"issue-{n}",
+            self.conn, project, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}",
             time_box_ms=budget_min and budget_min * MINUTE)
-        run_id = store.claim(self.conn, self.project, ticket, now=claimed_at)
+        run_id = store.claim(self.conn, project, ticket, now=claimed_at)
         if phase != "claimed":
             store.set_phase(self.conn, run_id, phase, now=claimed_at)
         return run_id
@@ -207,6 +222,92 @@ class NotSweptTests(SweepTestCase):
         self.assertEqual((first.swept, second.swept), (0, 0))
         self.assertEqual(second.trips, [])
         self.assertIsNone(self.strikes(parked))
+
+
+class AtomicityTests(SweepTestCase):
+    """The sweep watches a process that is writing the columns it reads."""
+
+    def rival(self):
+        """A second connection to the same store, as the loop's process is.
+
+        `timeout=0` so a lock it cannot take fails instantly instead of
+        waiting out the sweep -- the test wants the answer, not the wait.
+        """
+        conn = sqlite3.connect(str(self.db), timeout=0)
+        self.addCleanup(conn.close)
+        return conn
+
+    def test_a_heartbeat_cannot_land_between_the_verdict_and_the_strike(self):
+        """Classify and record are one instant, so no strike is stamped on a
+        state that stopped being true a millisecond after it was read."""
+        run_id = self.a_run()
+        loop = self.rival()
+        real = store.record_strike
+        raced = []
+
+        def strike_and_race(conn, rid, stale, now=None):
+            # The moment the finding is about: the verdict is made, the strike
+            # is about to be written, and the run answers in between.
+            try:
+                loop.execute("BEGIN IMMEDIATE")
+                loop.execute("UPDATE runs SET lastHeartbeat = ? WHERE id = ?",
+                             (now, rid))
+                loop.commit()
+                raced.append(None)
+            except sqlite3.OperationalError as refused:
+                loop.rollback()
+                raced.append(str(refused))
+            return real(conn, rid, stale, now)
+
+        with patch.object(store, "record_strike", strike_and_race):
+            result = factory.sweep(self.conn, T0 + 6 * MINUTE)
+
+        # Refused, not interleaved: the sweep holds the write lock across both
+        # halves, so the loop's heartbeat waits for a sweep that is over.
+        self.assertEqual(len(raced), 1)
+        self.assertIsNotNone(raced[0], "a heartbeat committed mid-sweep")
+        self.assertIn("locked", raced[0])
+        self.assertEqual(result.trips, [])
+        self.assertEqual(self.strikes(run_id), (1, T0 + 6 * MINUTE))
+
+    def test_the_heartbeat_the_sweep_shut_out_lands_once_it_is_over(self):
+        """The lock is held for the pass, not for the supervisor's lifetime."""
+        run_id = self.a_run()
+        loop = self.rival()
+
+        factory.sweep(self.conn, T0 + 6 * MINUTE)
+        loop.execute("BEGIN IMMEDIATE")
+        loop.execute("UPDATE runs SET lastHeartbeat = ? WHERE id = ?",
+                     (T0 + 6 * MINUTE, run_id))
+        loop.commit()
+
+        # And the next sweep sees it and clears the strike, which is the
+        # behaviour the shut-out heartbeat was queued for.
+        self.assertEqual(factory.sweep(self.conn, T0 + 7 * MINUTE).trips, [])
+        self.assertIsNone(self.strikes(run_id))
+
+    def test_a_failed_sweep_writes_no_strikes_at_all(self):
+        """One transaction, so a pass that dies half-way leaves no half-tally.
+
+        Without it the first run's strike is committed and the second's is
+        not, and the next sweep trips the one the crash happened to precede.
+        """
+        first = self.a_run()
+        second = self.a_run(project=self.another_project())
+        real = store.record_strike
+
+        def strike_then_die(conn, rid, stale, now=None):
+            strikes = real(conn, rid, stale, now)
+            if rid == second:
+                raise RuntimeError("the sweep died mid-pass")
+            return strikes
+
+        with patch.object(store, "record_strike", strike_then_die):
+            with self.assertRaises(RuntimeError):
+                factory.sweep(self.conn, T0 + 6 * MINUTE)
+
+        self.assertIsNone(self.strikes(first))
+        self.assertIsNone(self.strikes(second))
 
 
 class SweepModeTests(SweepTestCase):
