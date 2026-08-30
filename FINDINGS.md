@@ -563,3 +563,35 @@ VERDICT: PASS
 ## 2026-08-30T02:30:39Z — KO-130
 MERGED to main (branch task/wiring-3-6-review-rounds-as-st deleted). Verify: passed.
 actual: 18.9 min · estimate: 30 min · rounds: 2
+
+## 2026-08-30T02:47:12Z — KO-131
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `factory.py:1220` introduces an unaccommodated commit side effect: four existing `test_wiring_claim` tests now error because their temporary repositories have no Git author identity. Update the fixtures or isolate/mock the close-out commit; the candidate’s full suite is not green.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Fixed and committed as `26b0d0d`.
+
+**Adjudication: ADDRESS** — the finding was valid, and worth flagging that it was invisible from my side.
+
+The tests passed when I ran them, because this machine has a global git identity that the fixtures silently inherited. The four `test_wiring_claim` tests build their temp repo with a bare `git init` and no local identity. They never committed before, so it never mattered; my close-out `commit_findings()` at `factory.py:1220` made `main()` reach a real `git commit`, and the fixture had no author to attribute it to.
+
+I reproduced it rather than taking it on faith, by stripping the ambient config:
+
+```
+env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null HOME=/tmp/... \
+  python3 -m unittest tests.test_wiring_claim
+→ FAILED (errors=4)   RuntimeError: ... "Author identity unknown"
+```
+
+Exactly four errors, all at `factory.py:1220`. So this was a genuine green-on-my-machine result, not a green suite — the reviewer caught something my run could not have shown me.
+
+**The fix:** the fixture sets `user.email`/`user.name` locally right after `git init`. That's not an invented convention — `test_factory_agents`, `test_wiring_rounds`, `test_wiring_phases`, `test_wiring_findings` and `test_review_runner` all already do exactly this; `test_wiring_claim` was the sole holdout precisely because it was the one that never committed.
+
+I chose the fixture over the reviewer's other option, isolating or mocking the commit, and said so in the commit message. These four tests exist to drive the real `main()` end-to-end over a real repo; mocking out the close-out commit would hollow out the thing they're testing. The fixture change keeps the coverage and costs two lines.
+
+**Verification:** 210 tests, green both with a normal environment and with the identity stripped — the latter being the configuration that previously failed.
+
+One thing worth your attention: the underlying weakness is that a test repo inheriting ambient global git config can hide this class of break from any local run. This fixture is now sealed, but nothing structurally prevents the next new fixture from repeating it. A conftest-level or CI-level environment scrub would catch it generally — I left that out as beyond this task's scope rather than folding it in silently.
