@@ -71,6 +71,26 @@ Usage: `python3 factory.py /srv/dev/holo2test`, or
   Text above the marker is frozen pre-store history and is never rewritten;
   Linear ticket comments stay the full per-ticket archive.
 
+## Linting
+
+`ruff check .` from the repo root; it exits 0 when the tree is clean. Run it
+alongside the tests — the developer verify path is:
+
+```
+ruff check .
+python3 -m unittest discover -s tests
+```
+
+The configuration lives in `pyproject.toml` under `[tool.ruff]`: line length
+88, target `py311`, and rule sets `E`, `F`, `W`, `I` (pycodestyle errors and
+warnings, pyflakes, import ordering). Nothing is formatted, only checked.
+Every enabled rule is a promise the factory keeps forever, so the selection
+stays small, and a violation that has to stand is suppressed with a per-line
+`# noqa: <CODE>` rather than a file-level or blanket ignore.
+
+ruff is a developer tool, not a dependency: install it on the host with
+`pip install --user ruff` (or `uv tool install ruff`). It is never vendored.
+
 ## Config
 
 `LINEAR_API_KEY` and `HOLO2_PROJECT_ID` — env vars or `.env` next to

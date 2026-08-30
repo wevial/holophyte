@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-
 ROOT = Path(__file__).resolve().parent
 IMAGE = "holophyte-reviewer:ubuntu24.04-v1"
 PROFILE = "codex-sol-medium"
@@ -266,7 +265,9 @@ def _remove_container(name: str) -> None:
     if subprocess.run(
         ["docker", "inspect", name], capture_output=True, text=True, timeout=30
     ).returncode == 0:
-        raise ReviewBoundaryError(f"review container still exists after cleanup: {name}")
+        raise ReviewBoundaryError(
+            f"review container still exists after cleanup: {name}"
+        )
 
 
 def run_review(

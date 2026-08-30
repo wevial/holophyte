@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
 factory = importlib.util.module_from_spec(SPEC)

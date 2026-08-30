@@ -307,7 +307,9 @@ def validate(t):
     present = [n for n in TEMPLATE_ORDER if n in seen_first]
     for a, b in zip(present, present[1:]):
         if seen_first[a] >= seen_first[b]:
-            p.append(f"sections out of template order: '## {a}' must come before '## {b}'")
+            p.append(
+                f"sections out of template order: '## {a}' must come before '## {b}'"
+            )
     for name in TEMPLATE_ORDER:
         n = t.order.count(name)
         if n == 0 and name not in OPTIONAL_SECTIONS:

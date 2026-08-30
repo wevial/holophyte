@@ -1,0 +1,9 @@
+# Ruff is the repo's linter. Every rule enabled here is a promise the factory
+# keeps forever, so the selection stays deliberately small: pycodestyle errors
+# and warnings, pyflakes, and import ordering. No formatter enforcement.
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]

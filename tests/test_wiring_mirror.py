@@ -21,16 +21,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
 factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
-
-import store  # noqa: E402 - after the sys.path insert above
-
 
 ISSUE_UUID = "b0c1d2e3-4567-4890-abcd-ef0123456789"  # Linear's canonical id
 

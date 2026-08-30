@@ -91,12 +91,12 @@ CREATE TABLE IF NOT EXISTS tickets (
     timeBoxMs            INTEGER,                        -- from the Linear estimate
     affinity             TEXT    NOT NULL
         CHECK (affinity IN ('any', 'gui', 'headless')),
-    dependsOn            TEXT    NOT NULL DEFAULT '[]',  -- JSON string[] of linearIssueIds
+    dependsOn            TEXT    NOT NULL DEFAULT '[]',  -- JSON linearIssueId[]
     activeRunId          INTEGER
         REFERENCES runs (id) DEFERRABLE INITIALLY DEFERRED,
     lastRunId            INTEGER
         REFERENCES runs (id) DEFERRABLE INITIALLY DEFERRED,
-    blockedQuestion      TEXT,                           -- set when status = blocked_on_operator
+    blockedQuestion      TEXT,                           -- set when blocked_on_operator
     splitDepth           INTEGER NOT NULL DEFAULT 0,     -- 0 = original ticket
     mirroredAt           INTEGER NOT NULL
 );
