@@ -27,8 +27,15 @@ Usage: `python3 factory.py /srv/dev/holo2test`, or
    below;
    findings go back to the implementer for one fix round. Max 2 review
    rounds.
-6. On approval: `--no-ff` merge to `main`, worktree and branch cleaned
-   up, ticket → Done.
+6. Merge gate: the verify command passes again, and the ticket is re-read
+   from Linear and held against the snapshot the claim froze (title,
+   acceptance criteria, verify commands). A body edited while the run was
+   working refuses the merge and preserves the branch — the candidate answers
+   the ticket as it was claimed, not as it now reads. A ticket that cannot be
+   re-read (Linear down, issue gone) is *not* read as drift: the run records
+   that the check had no evidence and the merge goes ahead on the frozen
+   contract. On a clean gate: `--no-ff` merge to `main`, worktree and branch
+   cleaned up, ticket → Done.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —
@@ -54,7 +61,8 @@ Usage: `python3 factory.py /srv/dev/holo2test`, or
 - `review_runner.py` — exact-SHA staging and the model-neutral local reviewer
   boundary.
 - `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
-- `linear_provider.py` — Linear GraphQL client: claim/set_state/comment,
+- `linear_provider.py` — Linear GraphQL client: claim/fetch_task/set_state/
+  comment,
   ready-ticket and blocker resolution. Ticket status lives in the store and is
   projected onto a Linear workflow state by `factory.mirror_push()` — one way,
   last write wins, never read back — so `set_state` is the only writer of that

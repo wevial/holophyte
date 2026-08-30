@@ -640,7 +640,7 @@ def round_verdict(reply, verdicts):
         return "error"
 
 
-def run_task(task, conn=None, run_id=None):
+def run_task(task, conn=None, run_id=None, provider=None):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
     Each task works in its own git worktree (TARGET stays on main, untouched),
@@ -654,8 +654,16 @@ def run_task(task, conn=None, run_id=None):
     and what the reviewer found, instead of that living only in this frame and
     in prose. Both default to None for a direct call with no store, which runs
     the same stages and records nothing.
+
+    `provider` is the board the ticket came from, and the run needs it for one
+    question only: at the merge gate, has the ticket's contract been edited
+    since the claim froze it? A None provider — a direct call, a stub with no
+    re-read — simply skips that check, and the gate is what it was.
     """
     task_id = task["id"]
+    # The id the ticket is mirrored and re-read under, taken before `task` is
+    # rebound to the title below.
+    issue_id = mirror_key(task)
     # Claim-to-merge wall clock: run_task is entered immediately after the
     # claim, so this is the ticket's actual duration as far as the loop knows.
     started = monotonic()
@@ -846,6 +854,27 @@ def run_task(task, conn=None, run_id=None):
         return False
     print("[holo2] verify ok before merge")
 
+    # The other half of the gate, and the one a mechanical verify cannot ask:
+    # this candidate was implemented, reviewed and verified against the ticket
+    # as it stood at the claim, so a body edited since then means the work
+    # answers a contract that no longer exists. Merging it would land code
+    # nobody approved against the ticket as it now reads, and the honest
+    # answer is the one every other refusal at this gate gives — leave the
+    # branch and its worktree for a human.
+    drift = merge_drift(conn, run_id, provider, issue_id)
+    if drift:
+        warn_on_run(conn, run_id,
+                    f"{task_id} changed while the run was working "
+                    f"({', '.join(drift)}); not merging {branch} at {sha} — "
+                    "the candidate answers the ticket as it was claimed, not "
+                    "as it now reads")
+        ledger(task_id, "MERGE REFUSED: the ticket drifted from the contract "
+                        f"this run was claimed under ({', '.join(drift)}). "
+                        f"Branch {branch} preserved at {sha}. Work it again "
+                        "against the body as it now reads, or restore the "
+                        "body the run was claimed under.")
+        return False
+
     # Commit any pending FINDINGS.md changes BEFORE merging so the merge
     # never trips over a dirty index. Nothing is written to the file during a
     # run any more, so this is normally a no-op; what it still catches is a
@@ -961,6 +990,22 @@ def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                               findings=findings, verification_results=results,
                               started_at=started_at,
                               ended_at=int(time() * 1000))
+
+
+def warn_on_run(conn, run_id, summary):
+    """Print a warning and record it against `run_id`; never raise.
+
+    The half of `warn()` that a caller already holding a run id uses directly.
+    Best-effort work that failed is still part of the run's account of itself,
+    so it lands in the same event stream as the phase changes rather than only
+    on stdout. A missing store or run leaves the printed line as the whole
+    record, which is the same no-op `set_phase()` makes for a storeless
+    `run_task()`.
+    """
+    print(f"[holo2] {summary}")
+    if conn is None or run_id is None:
+        return
+    store.record_event(conn, run_id, "warning", summary)
 
 
 # --- FINDINGS.md as a window over the rows ------------------------------------
@@ -1189,6 +1234,64 @@ def mirrored_ticket(conn, project, task):
     return row[0] if row else None
 
 
+def task_contract(task):
+    """A provider task's contract as `(title, criteria, commands)`.
+
+    The one mapping from the provider's shape to the store's, used by both
+    sides of the drift check: `claim_run()` mirrors the ticket through it, so
+    the snapshot `store.claim()` freezes off that row is this contract, and
+    `merge_drift()` snapshots the live ticket the same way. Two hand-rolled
+    mappings would eventually disagree about, say, a ticket carrying no verify
+    command, and the disagreement would read as drift on a ticket nobody
+    touched. Positional, in the order `store.contract_snapshot()` takes them.
+    """
+    return (task["title"],
+            list(task.get("criteria") or ()),
+            [task["verify"]] if task.get("verify") else [])
+
+
+def merge_drift(conn, run_id, provider, issue_id):
+    """The contract fields that moved between the claim and now; () if none.
+
+    The merge gate's question: the run was implemented, reviewed and verified
+    against the ticket as it stood at the claim, so a body a human edited
+    while the run was working means the candidate answers a contract that no
+    longer exists. Asked here rather than continuously because this is the
+    last moment the answer can still change anything — before it, an edit is
+    something a fix round could absorb; after it, the branch is in main.
+
+    Best-effort in one direction only: a provider that cannot re-read a
+    ticket, a Linear that is down, an issue that has been deleted, and a run
+    claimed before the snapshot column existed all return `()`. That is not
+    the same claim as "nothing changed" — it is "this gate has no evidence",
+    and refusing a verified merge on missing evidence would turn every Linear
+    outage into a stuck queue. A failed read is a warning on the run so the
+    silence is at least recorded; drift itself is the caller's to act on.
+    """
+    if conn is None or run_id is None or provider is None:
+        return ()
+    fetch = getattr(provider, "fetch_task", None)
+    if fetch is None:
+        return ()  # a provider with no re-read; nothing to compare against
+    claimed = store.run_contract(conn, run_id)
+    if claimed is None:
+        return ()  # claimed before the snapshot existed
+    try:
+        live = fetch(issue_id)
+    except Exception as e:
+        warn_on_run(conn, run_id, f"could not re-read {issue_id} for the "
+                                  f"merge-time drift check ({e}); merging on "
+                                  "the contract frozen at the claim")
+        return ()
+    if not live:
+        warn_on_run(conn, run_id, f"{issue_id} could not be found for the "
+                                  "merge-time drift check; merging on the "
+                                  "contract frozen at the claim")
+        return ()
+    return store.contract_drift(
+        claimed, store.contract_snapshot(*task_contract(live)))
+
+
 def claim_run(conn, project, task):
     """Mirror the claimed ticket and take the project's lease; return both ids.
 
@@ -1215,14 +1318,15 @@ def claim_run(conn, project, task):
     mirror the same issue a second time under its real id. A provider with no
     UUID to give still gets a mirror, keyed on the identifier it does have.
     """
+    title, criteria, commands = task_contract(task)
     ticket_id = store.mirror_ticket(
         conn,
         project,
         linear_issue_id=mirror_key(task),
         linear_identifier=task["id"],
-        title=task["title"],
-        acceptance_criteria=task.get("criteria") or (),
-        verification_commands=[task["verify"]] if task.get("verify") else (),
+        title=title,
+        acceptance_criteria=criteria,
+        verification_commands=commands,
         time_box_ms=task["budget_min"] * 60 * 1000,
     )
     return ticket_id, store.claim(conn, project, ticket_id)
@@ -1289,15 +1393,15 @@ def warn(conn, ticket_id, summary):
     has already been released — because that is the stream a reader looking
     at this ticket is already reading.
     """
-    print(f"[holo2] {summary}")
-    if conn is None:
-        return
-    row = conn.execute(
-        "SELECT COALESCE(activeRunId, lastRunId) FROM tickets WHERE id = ?",
-        (ticket_id,)).fetchone()
-    if row is None or row[0] is None:
-        return  # no run to hang it on; the printed line is the whole record
-    store.record_event(conn, row[0], "warning", summary)
+    run_id = None
+    if conn is not None:
+        row = conn.execute(
+            "SELECT COALESCE(activeRunId, lastRunId) FROM tickets WHERE id = ?",
+            (ticket_id,)).fetchone()
+        # A ticket with no run has nothing to hang the row on; the printed
+        # line is then the whole record.
+        run_id = row[0] if row else None
+    warn_on_run(conn, run_id, summary)
 
 
 def mirror_push(conn, ticket_id, provider=None):
@@ -1561,7 +1665,7 @@ def main(provider=None):
                 return
             merged = False
             try:
-                merged = run_task(task, conn, run_id)
+                merged = run_task(task, conn, run_id, provider)
             finally:
                 release_run(conn, run_id, merged)
                 if merged:

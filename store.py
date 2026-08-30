@@ -11,7 +11,9 @@ for the per-project lease, ``with_delivery()`` for webhook idempotency,
 ``pickable()``/``next_pickable()`` for the pickability predicate,
 ``resume()`` for the resume guidance invariant,
 ``findings_fingerprint()``/``findings_overlap()`` for stuck-review
-detection, and ``record_review_round()`` for the rows they read.
+detection, ``record_review_round()`` for the rows they read, and
+``contract_snapshot()``/``run_contract()``/``contract_drift()`` for the
+claim-time freeze of a ticket's contract and the drift check against it.
 
 Conventions, fixed here for every later ticket to follow:
 
@@ -127,6 +129,15 @@ CREATE TABLE IF NOT EXISTS runs (
     -- finished run change with it. The run's snapshot is what it was actually
     -- given.
     timeBoxMs         INTEGER,
+    -- The ticket's contract as it stood at the claim: its title and the two
+    -- lists §2's pickability predicate reads, as one canonical JSON document
+    -- (`contract_snapshot()` below). A run is worked to the ticket it was
+    -- claimed under, so the freeze is what the merge gate holds the live
+    -- ticket against -- a body edited mid-run is then caught before the
+    -- branch lands rather than after. NULL is "no snapshot taken" (a run
+    -- claimed by a module older than this column), which the drift check
+    -- reads as nothing to compare rather than as no drift.
+    ticketSnapshot    TEXT,
     outcome           TEXT
         CHECK (outcome IS NULL
                OR outcome IN ('merged', 'killed', 'abandoned', 'failed')),
@@ -260,6 +271,11 @@ ADDED_COLUMNS = (
         "                    'done', 'blocked_on_operator', 'failed',"
         "                    'killed'))",
     ),
+    (
+        "runs",
+        "ticketSnapshot",
+        "ticketSnapshot TEXT",
+    ),
 )
 
 
@@ -374,6 +390,73 @@ class ClaimConflict(Exception):
     """
 
 
+# --- the claim-time contract snapshot -----------------------------------------
+# A run is worked to the ticket as it stood when the lease was taken: that
+# body is what the implementer was briefed with and what the reviewer judged
+# against. Linear keeps letting a human edit it, though, so the claim freezes
+# the contract here and the merge gate compares the live ticket against the
+# freeze before the branch lands.
+#
+# The fields are the ones a run is actually held to: the title it was briefed
+# with, and the two lists §2's pickability predicate reads. The estimate is
+# deliberately not among them — `runs.timeBoxMs` already snapshots it, and a
+# re-pointed estimate changes what the run was budgeted, not what it was
+# asked to do.
+CONTRACT_FIELDS = ("title", "acceptanceCriteria", "verificationCommands")
+
+
+def contract_snapshot(title, acceptance_criteria, verification_commands):
+    """Freeze a ticket's contract as one canonical JSON document.
+
+    Canonical so the same contract is the same bytes on both sides of a
+    comparison: keys sorted, no encoder-variable whitespace, and the lists
+    left in the order the ticket gives them — a reordered acceptance list is
+    an edited ticket, not a formatting accident. Both sides build the document
+    through this function rather than assembling their own, which is what
+    keeps a drift check from reporting the callers' formatting as drift.
+    """
+    return json.dumps(
+        {
+            "title": title,
+            "acceptanceCriteria": list(acceptance_criteria),
+            "verificationCommands": list(verification_commands),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def run_contract(conn, run_id):
+    """The snapshot run `run_id` was claimed under, or None if it has none.
+
+    None is a real answer and not an error: a run claimed before this column
+    existed has nothing frozen, and `contract_drift()` reads that as nothing
+    to compare rather than as no drift. An unknown `run_id` is a caller bug
+    and raises, the way `run_phase()` answers the same mistake.
+    """
+    row = conn.execute(
+        "SELECT ticketSnapshot FROM runs WHERE id = ?", (run_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"no run {run_id}")
+    return row[0]
+
+
+def contract_drift(before, after):
+    """The `CONTRACT_FIELDS` that differ between two snapshots, in field order.
+
+    Empty when the two agree and empty when either is None — an unreadable or
+    unrecorded side is a comparison that did not happen, and reporting it as
+    drift would block a merge on a Linear outage. The answer is field names
+    rather than a bare bool so the caller can say *what* moved: "the ticket
+    changed" sends a human to a diff they have to find themselves.
+    """
+    if before is None or after is None:
+        return ()
+    was, is_now = json.loads(before), json.loads(after)
+    return tuple(f for f in CONTRACT_FIELDS if was.get(f) != is_now.get(f))
+
+
 def claim(conn, project_id, ticket_id, now=None):
     """Take the project's lease for a new run on `ticket_id`; return its id.
 
@@ -397,6 +480,12 @@ def claim(conn, project_id, ticket_id, now=None):
     of the same Linear issue may carry a re-pointed estimate, and a run row
     that read it back through the ticket would silently restate what it was
     budgeted. A ticket with no estimate snapshots NULL, the same "unknown".
+
+    `ticketSnapshot` is frozen for the same reason and one more: the contract
+    the run is worked to is the body as it stood at the claim, so a mirror
+    that later re-points the title or either list must not be able to change
+    what this run was asked for after the fact. The merge gate reads the
+    freeze back through `run_contract()` and compares it with the live ticket.
     """
     if now is None:
         now = int(time.time() * 1000)
@@ -417,19 +506,24 @@ def claim(conn, project_id, ticket_id, now=None):
         (prior,) = conn.execute(
             "SELECT COUNT(*) FROM runs WHERE ticketId = ?", (ticket_id,)
         ).fetchone()
-        # A ticket that does not exist reads as no estimate here and is
-        # refused a moment later by the ownership check below, so this read
-        # decides nothing about whether the claim is legal.
-        estimate = conn.execute(
-            "SELECT timeBoxMs FROM tickets WHERE id = ?", (ticket_id,)
+        # A ticket that does not exist reads as no estimate and no contract
+        # here and is refused a moment later by the ownership check below, so
+        # this read decides nothing about whether the claim is legal. One
+        # SELECT for both snapshots, so the estimate and the contract a run
+        # records are the same ticket at the same instant.
+        ticket = conn.execute(
+            "SELECT timeBoxMs, title, acceptanceCriteria, verificationCommands"
+            " FROM tickets WHERE id = ?", (ticket_id,)
         ).fetchone()
+        estimate = ticket[0] if ticket else None
+        snapshot = None if ticket is None else contract_snapshot(
+            ticket[1], json.loads(ticket[2]), json.loads(ticket[3]))
         run_id = conn.execute(
             "INSERT INTO runs"
             " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
-            "  timeBoxMs)"
-            " VALUES (?, ?, ?, 'claimed', ?, ?, ?)",
-            (ticket_id, project_id, prior + 1, now, now,
-             estimate[0] if estimate else None),
+            "  timeBoxMs, ticketSnapshot)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?)",
+            (ticket_id, project_id, prior + 1, now, now, estimate, snapshot),
         ).lastrowid
         conn.execute(
             "UPDATE projects SET activeRunId = ? WHERE id = ?",

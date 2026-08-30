@@ -59,6 +59,12 @@ class StubProvider:
 
     def __init__(self, *tasks):
         self.queue = list(tasks)
+        # What `fetch_task()` hands back, kept apart from the queue so a test
+        # can leave the live ticket saying something other than the one that
+        # was claimed — the mid-run edit the merge gate exists to catch. The
+        # loop only reads it at the gate, so seeding it up front and editing
+        # it during the run are the same thing from the loop's side.
+        self.live = {task["issue_id"]: task for task in tasks}
         self.states = []
         self.comments = []
 
@@ -73,6 +79,11 @@ class StubProvider:
             if task["id"] not in skip:
                 return self.queue.pop(i)
         return None
+
+    def fetch_task(self, issue_id):
+        """The ticket as the board holds it now; None when there is no such issue."""
+        task = self.live.get(issue_id)
+        return dict(task) if task else None
 
     def set_state(self, issue_id, state):
         self.states.append((issue_id, state))
@@ -223,6 +234,52 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(
             self.read("SELECT round, verdict FROM reviewRounds ORDER BY round"),
             [(1, "changes_requested"), (2, "changes_requested"), (3, "error")])
+
+    # --- merge-time drift ------------------------------------------------
+
+    def test_a_ticket_edited_during_the_run_is_not_merged(self):
+        """The candidate was implemented, reviewed and verified against the
+        ticket as it was claimed. The board now says something else, so the
+        approved work answers a contract that no longer exists: main is left
+        untouched, the branch and worktree are preserved, and the ticket is
+        told which fields moved."""
+        provider = StubProvider(a_task())
+        provider.live["iss-131"] = dict(
+            a_task(), title="add a thing, and a second thing",
+            criteria=["Given the thing, when it runs, then it works twice"])
+
+        self.loop(Commit("the scripted work"), APPROVE, provider=provider)
+
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertIn(BRANCH, self.branches())
+        self.assertIn("the scripted work", self.subjects(BRANCH))
+        self.assertTrue((self.worktrees / "add-a-thing").exists())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        (_, body), = provider.comments
+        self.assertIn("MERGE REFUSED", body)
+        for field in ("title", "acceptanceCriteria"):
+            self.assertIn(field, body)
+
+    def test_a_ticket_that_cannot_be_re_read_still_merges(self):
+        """A Linear that will not answer is missing evidence, not drift: the
+        run says so in its event stream and merges on the contract frozen at
+        the claim, because failing closed here would make every outage a
+        stuck queue."""
+        provider = StubProvider(a_task())
+
+        def unreachable(issue_id):
+            raise RuntimeError("linear is down")
+
+        provider.fetch_task = unreachable
+
+        self.loop(Commit("the scripted work"), APPROVE, provider=provider)
+
+        self.assertIn("the scripted work", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        warnings = self.read("SELECT summary FROM runEvents"
+                             " WHERE kind = 'warning'")
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("linear is down", warnings[0][0])
 
     # --- failure-pattern escalation --------------------------------------
 
