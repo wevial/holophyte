@@ -502,3 +502,7 @@ Fix (`store.py`):
 Tests (`tests/test_wiring_phases.py`, new `ReleaseTests`): a re-released merged run keeps `done/merged`, its `endedAt` and its event stream; a re-released failed run keeps its reason and `resumePhase`; a resumed run can be released again.
 
 Full suite: 194 tests, OK. Committed as `bd1a237`.
+
+## 2026-08-30T02:11:41Z — KO-129
+MERGED to main (branch task/wiring-2-6-run-phase-tracking deleted). Verify: passed.
+actual: 14.7 min · estimate: 25 min · rounds: 2
