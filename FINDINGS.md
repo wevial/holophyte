@@ -624,3 +624,21 @@ Tests added in `tests/test_wiring_mirror.py`: a merged ticket offered a second t
 ## 2026-08-30T03:07:27Z — KO-132
 MERGED to main (branch task/wiring-5-6-linear-mirror-push deleted). Verify: passed.
 actual: 18.8 min · estimate: 25 min · rounds: 2
+
+## 2026-08-30T03:20:19Z — KO-133
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- [store.py](/workspace/store.py:266): Upgrade migration does not backfill `runs.reviewRoundCount`. Existing completed runs all retain the old default `0` despite having `reviewRounds`; both the new report and regenerated `FINDINGS.md` therefore show incorrect historical round counts. Backfill ended runs from their stored review-round rows.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+**Adjudication: ADDRESS** — the finding is a real blocker, and this task's commit is exactly what created it. `runs.reviewRoundCount` shipped in the original schema but had no writer until `release()` started stamping it; the new report and `FINDINGS.md` timing line read that column, so every run that ended before the change reports `0` rounds while its `reviewRounds` rows say otherwise. That's a confidently wrong number, not a missing one — unlike `timeBoxMs`, which is nullable and already renders `n/a` for old runs.
+
+Fix, in `d381644`:
+
+- **`store.py`** — new `BACKFILLS` tuple alongside `ADDED_COLUMNS`, applied by `init()` after the ALTERs. Its one statement recomputes `reviewRoundCount` from the run's own `reviewRounds` rows (the same expression `release()` uses) and is scoped to `endedAt IS NOT NULL AND reviewRoundCount <> <that count>`, so it is self-limiting: the second `init()` matches no rows, and in-flight runs are left to their own close-out rather than being stamped with a count they're about to add to. `init()`'s docstring no longer claims it touches no rows.
+- **`factory.py`** — `report()`'s note about the one write it can make now covers the backfill, not just the column add.
+- **`tests/test_store_schema.py`** — three tests on the existing legacy-store fixture: an ended run with two rounds backfills to 2, an in-flight run stays at 0, and a second `init()` neither re-repairs nor undoes a stamped count. `a_run()` gained an `ended_at` argument and numbered project/ticket keys so two runs can coexist in one test (`linearTeamId` and `linearIssueId` are both UNIQUE).
+
+Full suite: 227 tests, all passing.
