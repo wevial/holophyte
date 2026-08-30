@@ -9,9 +9,9 @@ The API so far is ``open()`` and ``init()`` for the schema,
 for the per-project lease, ``with_delivery()`` for webhook idempotency,
 ``mirror_ticket()``/``transition()`` for ticket status,
 ``pickable()``/``next_pickable()`` for the pickability predicate,
-``resume()`` for the resume guidance invariant, and
+``resume()`` for the resume guidance invariant,
 ``findings_fingerprint()``/``findings_overlap()`` for stuck-review
-detection.
+detection, and ``record_review_round()`` for the rows they read.
 
 Conventions, fixed here for every later ticket to follow:
 
@@ -1270,3 +1270,68 @@ def findings_overlap(earlier, later):
     if not union:
         return 1.0
     return len(earlier_keys & later_keys) / len(union)
+
+
+# §2's `reviewRounds.verdict` union, transcribed from the column's CHECK so a
+# caller can map onto it without reading the DDL. The reviewer's own
+# vocabulary is a different one (`APPROVE`/`REQUEST_CHANGES`, `PASS`/`FAIL`);
+# translating it is the loop's job, not this module's.
+ROUND_VERDICTS = ("pass", "changes_requested", "error")
+
+
+def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
+                        findings=(), verification_results=(),
+                        started_at=None, ended_at=None):
+    """Persist one review round of `run_id` as a row; return its id.
+
+    The write half of the fingerprint helpers above: `findings` is hashed
+    into `findingsFingerprint` here rather than by the caller, because §6's
+    stuck-review check compares digests across rounds recorded at different
+    times, and a caller that computed its own could hash a different
+    normalization and make two identical rounds look unlike. Hashing first
+    also validates: `findings_fingerprint()` rejects a malformed finding
+    before this opens a transaction, so a round is stored whole or not at all.
+
+    `findings` and `verification_results` are the contract's object arrays,
+    stored as the JSON documents the schema declares. A round that found
+    nothing is an ordinary `pass` and stores `[]` against
+    `EMPTY_FINGERPRINT`.
+
+    `ended_at` defaults to NULL, which is the column's "still running"; a
+    caller recording a finished round passes both stamps. `started_at`
+    defaults to the clock because the column is NOT NULL and a round being
+    recorded has certainly started.
+
+    The run is checked inside the transaction for the module's usual reason: an
+    unknown `run_id` is a caller bug and raises `ValueError` rather than a
+    foreign-key `IntegrityError` from the driver. `UNIQUE (runId, round)` is
+    left to the database — recording the same round twice is a bug this must
+    not paper over by overwriting the first record of it.
+    """
+    if verdict not in ROUND_VERDICTS:
+        raise ValueError(
+            f"round verdict must be one of {ROUND_VERDICTS}, got {verdict!r}"
+        )
+    if (isinstance(round_number, bool) or not isinstance(round_number, int)
+            or round_number < 1):
+        raise ValueError(
+            f"round must be a positive integer, got {round_number!r}"
+        )
+    findings = list(findings)
+    fingerprint = findings_fingerprint(findings)
+    if started_at is None:
+        started_at = int(time.time() * 1000)
+    with _transaction(conn):
+        if conn.execute(
+            "SELECT 1 FROM runs WHERE id = ?", (run_id,)
+        ).fetchone() is None:
+            raise ValueError(f"no run {run_id}")
+        cursor = conn.execute(
+            "INSERT INTO reviewRounds (runId, round, verificationResults,"
+            " verdict, findings, findingsFingerprint, reviewerModel,"
+            " startedAt, endedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (run_id, round_number, json.dumps(list(verification_results)),
+             verdict, json.dumps(findings), fingerprint, reviewer_model,
+             started_at, ended_at),
+        )
+    return cursor.lastrowid
