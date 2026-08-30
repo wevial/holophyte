@@ -431,11 +431,18 @@ def ledger(task_id, entry):
 WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
 
 
-def run_task(task):
+def run_task(task, conn=None, run_id=None):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
     Each task works in its own git worktree (TARGET stays on main, untouched),
     so a dirty/failed task can never block the repo or the next ticket.
+
+    `conn` and `run_id` are the store and the claimed run the loop took the
+    lease with. Every stage boundary below records its phase against them
+    through `set_phase()`, so in-flight state outlives the process: the run
+    row and its event stream say what the loop was doing, instead of that
+    living only in this frame. Both default to None for a direct call with no
+    store, which runs the same stages and records nothing.
     """
     task_id = task["id"]
     # Claim-to-merge wall clock: run_task is entered immediately after the
@@ -447,6 +454,11 @@ def run_task(task):
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
     wt = WORKTREES / slug
+    # §4's one edge out of `claimed`, taken before the first git command:
+    # cutting the worktree is already this run doing the ticket's work, so a
+    # crash in it belongs to `working` and not to a run that still looks
+    # freshly claimed.
+    set_phase(conn, run_id, "working", f"cutting {branch} and implementing")
     if wt.exists():
         # leftover from a previous failed run — reuse it as-is so preserved
         # work survives; the branch check below still gates on commits.
@@ -506,12 +518,14 @@ def run_task(task):
     # round 2 included — gets a fix round, because a round-2 blocker is the
     # cheapest fix in the loop and used to need a human to close it out.
     for rnd in range(1, MAX_ROUNDS + 1):
+        set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
         ok, out = run_verify(verify_cmd, wt, contracts)
         if ok:
             print(f"[holo2] verify ok before round {rnd}")
         else:
             print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
 
+        set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         verdict = agent("review",
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
@@ -527,6 +541,7 @@ def run_task(task):
             break
 
         # 3. implementer addresses findings (same branch, new commit)
+        set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         fixes = timed(f"A reviewer left findings on your work for task: {task}\n\n"
                       f"{verdict}\n\n"
                       "For EACH finding, adjudicate it first: ADDRESS (concrete "
@@ -547,6 +562,7 @@ def run_task(task):
         # spent, so one fresh independent run issues a bare verdict on the
         # final state. There is no further fix round under any outcome —
         # anything but PASS preserves the branch and stops the loop.
+        set_phase(conn, run_id, "verifying", "verify before terminal adjudication")
         ok, out = run_verify(verify_cmd, wt, contracts)
         if not ok:
             print(f"[holo2] verify FAILED before adjudication; leaving branch "
@@ -557,6 +573,7 @@ def run_task(task):
             return False
         print("[holo2] verify ok before adjudication")
 
+        set_phase(conn, run_id, "reviewing", "terminal adjudication")
         reply = agent("adjudicate",
             f"You are a READ-ONLY final adjudicator. Judge commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
@@ -589,7 +606,13 @@ def run_task(task):
         ledger(task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
                      f"rounds: PASS\n\nAdjudicator reply:\n{reply}")
 
-    # 4. pre-merge verify (catches fix-round regressions), then merge
+    # 4. pre-merge verify (catches fix-round regressions), then merge. Both
+    # happen under `merge_gate`: §4's gate node is the one edge out of a
+    # passing review, and this verify is the mechanical half of what the gate
+    # asks. Under the `personal` autonomy profile the human half is a no-op,
+    # so the run passes through the node rather than around it and a failed
+    # pre-merge verify is a run stopped at the gate.
+    set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     ok, out = run_verify(verify_cmd, wt, contracts)
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
@@ -605,6 +628,10 @@ def run_task(task):
         sh(["git", "add", "FINDINGS.md"], TARGET)
         sh(["git", "commit", "-m", f"FINDINGS: {task_id} review records"], TARGET)
 
+    # `squashing` is skipped, not faked: this merge is --no-ff and rewrites
+    # no history, so the run goes merging -> done and the phase §4 puts
+    # between them names an activity that never happens here.
+    set_phase(conn, run_id, "merging", f"--no-ff merge of {branch} into main")
     mr = subprocess.run(["git", "merge", "--no-ff", branch, "-m",
                          f"Merge {branch}: {task}"], cwd=TARGET,
                         capture_output=True, text=True)
@@ -644,6 +671,24 @@ def open_store(path=None):
     conn = store.open(str(path or STORE_PATH))
     store.init(conn)
     return conn
+
+
+def set_phase(conn, run_id, phase, note=None):
+    """Record a stage boundary: the run's phase, its heartbeat, one event.
+
+    The loop's single writer of `runs.phase` (state-model §6), which is why
+    every stage below calls it instead of writing its own row: phase,
+    heartbeat and narrative event move together in the store or not at all, so
+    a crashed loop leaves a run parked where it stopped rather than parked in
+    whatever phase it was last seen entering.
+
+    A `conn` of None makes this a no-op, for `run_task()` driven directly
+    without a store. That keeps one set of call sites rather than a storeless
+    copy of the loop, and the phases are then simply not recorded.
+    """
+    if conn is None:
+        return
+    store.set_phase(conn, run_id, phase, note)
 
 
 def claim_run(conn, project, task):
@@ -686,10 +731,18 @@ def release_run(conn, run_id, merged):
     that matter: a run that dies holding the lease blocks every later claim on
     the project, and a preserved branch is meant to wait for a human without
     also freezing the queue.
+
+    A failure reason names the phase the run stopped in, read back from the
+    store rather than remembered here: on a crash the loop's own idea of where
+    it was died with the exception, while the phase `set_phase()` last wrote
+    is exactly where the run got to.
     """
-    store.release(conn, run_id, "merged" if merged else "failed",
-                  None if merged else
-                  "run did not merge; branch preserved for a human")
+    if merged:
+        store.release(conn, run_id, "merged")
+        return
+    store.release(conn, run_id, "failed",
+                  f"run stopped in phase {store.run_phase(conn, run_id)};"
+                  " branch preserved for a human")
 
 
 def main(provider=None):
@@ -715,7 +768,7 @@ def main(provider=None):
                 return
             merged = False
             try:
-                merged = run_task(task)
+                merged = run_task(task, conn, run_id)
             finally:
                 release_run(conn, run_id, merged)
             if not merged:

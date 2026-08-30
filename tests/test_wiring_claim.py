@@ -132,7 +132,7 @@ class WiringClaimTests(unittest.TestCase):
     def test_claim_mirrors_the_ticket_and_holds_the_lease_during_the_run(self):
         seen = {}
 
-        def spy(task):
+        def spy(task, conn=None, run_id=None):
             # Runs while the lease is held, and before run_task's first git
             # command — so this is the state the branch would be cut under.
             seen["projects"] = self.read("SELECT id, activeRunId FROM projects")

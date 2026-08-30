@@ -391,6 +391,96 @@ def claim(conn, project_id, ticket_id, now=None):
     return run_id
 
 
+# §4's phase union, transcribed from the diagram's phase list. It duplicates
+# the `runs.phase` CHECK constraint deliberately: the constraint is the
+# enforcement, this is what a caller's typo is caught against *before* a
+# transaction opens, so a misspelled phase reads as a named ValueError rather
+# than as a bare IntegrityError from a table the caller never mentions.
+PHASES = (
+    "claimed", "working", "verifying", "reviewing", "addressing", "merge_gate",
+    "awaiting_merge_approval", "merging", "squashing", "done",
+    "blocked_on_operator", "failed", "killed",
+)
+
+
+def set_phase(conn, run_id, phase, note=None, now=None):
+    """Move run `run_id` to `phase`; return the phase it was in.
+
+    §6 gives run phase exactly one writer, and this is it for a running loop:
+    a stage boundary is three facts — the new phase, a heartbeat proving the
+    loop was alive at that boundary, and a narrative `runEvents` row saying so
+    — and any of the three landing without the others is a lie about the run.
+    A supervisor reading a phase whose heartbeat still sits at the previous
+    boundary sees a run that has been stale for a stage; an event stream
+    missing the transition its own run row shows is a stream nothing can be
+    reconstructed from. So all three go in one `_transaction()`, and a reader
+    sees either all of them or none.
+
+    The event is `narrative` level with kind `phase_change`, which is §2's
+    dual-level log read literally: transitions are low-volume and drive the
+    live view, so they are written individually rather than batched, and
+    `payload` stays NULL because §2 gives payloads to `detail` rows only.
+    The event's `summary` always opens with `"<previous> -> <phase>"`, so the
+    sequence a run walked can be read back off its own stream — a
+    `phase_change` row that does not name its phases is a transition nothing
+    can reconstruct the run from. An optional `note` is appended after a
+    colon for what the phase names alone do not say: which review round, which
+    branch.
+
+    `seq` is `MAX(seq) + 1` for the run, read inside the transaction, so the
+    `UNIQUE (runId, seq)` index stands behind the per-run monotonicity rather
+    than a caller's counter. `now` is epoch milliseconds for `lastHeartbeat`
+    and the event's `at`, defaulting to the clock.
+
+    Re-entering the phase a run is already in is allowed and logged: the loop
+    verifies once per review round, and collapsing those into one event would
+    erase the round boundary the log exists to show. `resume()` is the one
+    other phase writer and deliberately does not come through here — it moves
+    a parked run without stamping a heartbeat it has no evidence for.
+    """
+    if phase not in PHASES:
+        raise ValueError(f"unknown phase {phase!r}")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT phase FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        (previous,) = row
+        conn.execute(
+            "UPDATE runs SET phase = ?, lastHeartbeat = ? WHERE id = ?",
+            (phase, now, run_id),
+        )
+        (seq,) = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents WHERE runId = ?",
+            (run_id,),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO runEvents (runId, seq, level, kind, summary, at)"
+            " VALUES (?, ?, 'narrative', 'phase_change', ?, ?)",
+            (run_id, seq,
+             f"{previous} -> {phase}" + (f": {note}" if note else ""), now),
+        )
+    return previous
+
+
+def run_phase(conn, run_id):
+    """Return the phase run `run_id` is in.
+
+    The read half of `set_phase()`, here for the same reason every other
+    statement in this module is: a caller that needs the phase a run stopped
+    in — to name it in an outcome reason, say — must not open its own SQL
+    against `runs` to get it. An unknown `run_id` is a caller bug and raises
+    `ValueError`, as it does everywhere else here.
+    """
+    row = conn.execute("SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"no run {run_id}")
+    return row[0]
+
+
 # The `runs.phase` a run ends in for each `runs.outcome`, so `release()` cannot
 # leave a finished run parked in the phase it was working in. `killed` is its
 # own phase in §4; the other two failure outcomes share `failed`.
@@ -400,6 +490,12 @@ TERMINAL_PHASES = {
     "abandoned": "failed",
     "failed": "failed",
 }
+
+# The phases those outcomes leave behind. A run with `endedAt` stamped and
+# sitting in one of them is over, and that pair is what `release()` refuses to
+# end a second time. A resumed run is not in the set: `resume()` moves a failed
+# run back to a work phase, so the run it hands back is releasable again.
+ENDED_PHASES = frozenset(TERMINAL_PHASES.values())
 
 
 def release(conn, run_id, outcome, reason=None, now=None):
@@ -416,12 +512,26 @@ def release(conn, run_id, outcome, reason=None, now=None):
     fields, moving the ticket's pointer to `lastRunId` so the finished run is
     still reachable from the ticket.
 
-    Both lease clears are scoped to *this* run id. A second release of an
-    already-released run is therefore harmless rather than destructive: it
-    re-stamps the run's ending and clears nothing, instead of dropping a lease
-    a newer run has since taken. An unknown `run_id` is a caller bug and
-    raises `ValueError`. `now` is epoch milliseconds for `endedAt`, defaulting
-    to the clock.
+    The terminal phase moves through `set_phase()`, so ending a run stamps a
+    heartbeat and appends the transition to the run's event stream like any
+    other phase change. A failure outcome also parks the phase the run stopped
+    in as its `resumePhase`, which is the only moment that phase is still
+    known: `runs.phase` reads `failed` from here on, and §5 resumes a failed
+    run into the phase it left.
+
+    Releasing a run that has already ended — `endedAt` stamped and parked in
+    one of `ENDED_PHASES` — does nothing at all. Since this call writes phase
+    as well as outcome, an unguarded second release would be destructive
+    rather than harmless: it would re-end a `merged`/`done` run as
+    `failed`/`failed`, and a repeat of a failed release would read that run's
+    own `failed` phase back as the phase it stopped in and so wipe the
+    `resumePhase` §5 resumes into. Terminal state and the resume point are
+    written once, by the release that ended the run. Both lease clears stay
+    scoped to *this* run id for the same reason, so no release can drop a
+    lease a newer run has since taken.
+
+    An unknown `run_id` is a caller bug and raises `ValueError`. `now` is
+    epoch milliseconds for `endedAt`, defaulting to the clock.
     """
     if outcome not in TERMINAL_PHASES:
         raise ValueError(f"unknown outcome {outcome!r}")
@@ -430,15 +540,36 @@ def release(conn, run_id, outcome, reason=None, now=None):
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute(
-            "SELECT ticketId, projectId FROM runs WHERE id = ?", (run_id,)
+            "SELECT ticketId, projectId, endedAt, phase FROM runs WHERE id = ?",
+            (run_id,),
         ).fetchone()
         if row is None:
             raise ValueError(f"no run {run_id}")
-        ticket_id, project_id = row
+        ticket_id, project_id, ended_at, phase = row
+        if ended_at is not None and phase in ENDED_PHASES:
+            # Already over. Nothing to write, so the transaction ends without
+            # a write rather than re-stamping an ending over the real one.
+            conn.rollback()
+            return
+        # Through `set_phase()` like every other phase move, so the run's last
+        # transition is in its event stream too: a merged run whose log stops
+        # at `merging` reads as a run that never finished.
+        stopped_in = set_phase(conn, run_id, TERMINAL_PHASES[outcome],
+                               note=f"run ended, outcome {outcome}", now=now)
+        # §5's "it re-enters the phase it left", recorded here because
+        # `release()` is the last caller that still knows what that phase was:
+        # after this write the run says `failed` and nothing else remembers
+        # where the work had got to. Only the four phases §5 calls mechanically
+        # resumable are worth recording — a run that failed while `claimed` or
+        # mid-merge has no work phase to go back to, and `resume()` reads the
+        # NULL as §4's edge back to `working`.
+        resume_phase = (stopped_in
+                        if TERMINAL_PHASES[outcome] == "failed"
+                        and stopped_in in RESUMABLE_WORK_PHASES else None)
         conn.execute(
-            "UPDATE runs SET phase = ?, endedAt = ?, outcome = ?,"
-            " outcomeReason = ? WHERE id = ?",
-            (TERMINAL_PHASES[outcome], now, outcome, reason, run_id),
+            "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
+            " resumePhase = ? WHERE id = ?",
+            (now, outcome, reason, resume_phase, run_id),
         )
         conn.execute(
             "UPDATE projects SET activeRunId = NULL"
@@ -875,10 +1006,15 @@ def next_pickable(conn, project_id):
 # `merge_gate`, `awaiting_merge_approval`, `merging`, `squashing`, `done` and
 # `killed` are either mid-merge or over: none of them is a phase the §4
 # diagram draws a resume edge out of.
-RESUMABLE_PHASES = frozenset(
-    {"failed", "working", "verifying", "reviewing", "addressing",
-     "blocked_on_operator"}
+#
+# The set is split because the working half is also what `release()` records
+# as a failed run's `resumePhase`: `failed` and `blocked_on_operator` are
+# phases a run is parked *in*, not phases work was interrupted in, so neither
+# is a phase to send a resumed run back to.
+RESUMABLE_WORK_PHASES = frozenset(
+    {"working", "verifying", "reviewing", "addressing"}
 )
+RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {"failed", "blocked_on_operator"}
 
 
 class ResumeRefused(Exception):
