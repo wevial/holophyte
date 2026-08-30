@@ -52,12 +52,37 @@ Give configurable behavior an address before building on top of it.
 
 ### Phase 3 — Harder targets, then a second consumer
 
-- Next target: **Croton** — a genuinely complex project (real deps, env
-  setup, existing conventions) but still ours. Deliberately NOT Relos
-  yet; Croton surfaces portability gaps without a coworker watching.
+- Next target: **Croton** (`croton-mcp`, Go) — a genuinely complex project
+  (different toolchain, bridge dependency, security posture) but still
+  ours. Deliberately NOT Relos yet; Croton surfaces portability gaps
+  without a coworker watching.
+- **Before any Croton implementation work**: an audit pass (Claude Code)
+  over implementation, coding style, testing, and conventions — to learn
+  what assumptions are load-bearing and what is set in stone. Audit
+  output feeds the target's factory config and first tickets.
 - Relos comes after Croton proves the substrate. Fork-vs-contribute
   resolves itself: if Relos needs fit in a `.toml`, nothing to fork —
   Relos is just a config. Only mechanism gaps reopen the question.
+
+### Beyond — directions decided, not yet scheduled
+
+- **Board providers.** `linear_provider.py` is one implementation of an
+  implicit interface (claim/complete/comment/read-body). Eventually:
+  other kanbans (Hermes kanban out of the box or as an official plugin;
+  Jira someday), and possibly a Holophyte-native board so the factory
+  has zero external dependencies out of the box. Same discipline as all
+  seams: the interface gets extracted when the second provider is
+  actually built, not before.
+- **External review ingestion.** Review bots (CodeRabbit, Greptile) and
+  human PR comments become inputs to the loop: each comment gets
+  evaluated and dispositioned (address fully / partially / reject, with
+  reasons) rather than ignored. Where this fits in the review loop is an
+  open design question — likely a post-merge or PR-stage lane, since
+  today's loop is pre-PR by design. Needs its own design pass before
+  ticketing.
+- **North star restated**: software factories are usually hard to adopt;
+  Holophyte should be the one that mostly works out of the box — simple
+  to use, configurable, easy to make your own.
 
 ## Standing decisions
 
