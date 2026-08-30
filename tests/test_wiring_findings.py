@@ -39,8 +39,17 @@ class StubProvider:
         self.states = []
         self.comments = []
 
-    def claim_next(self):
-        return self.queue.pop(0) if self.queue else None
+    def claim_next(self, skip=()):
+        """The first queued task the loop has not already refused.
+
+        `skip` is honored rather than ignored because the real provider hands
+        back the *same* head-of-queue ticket on every ask; a stub that popped
+        blindly would let a loop that cannot skip look like one that can.
+        """
+        for i, task in enumerate(self.queue):
+            if task["id"] not in skip:
+                return self.queue.pop(i)
+        return None
 
     def set_state(self, issue_id, state):
         self.states.append((issue_id, state))

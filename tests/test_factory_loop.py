@@ -62,8 +62,17 @@ class StubProvider:
         self.states = []
         self.comments = []
 
-    def claim_next(self):
-        return self.queue.pop(0) if self.queue else None
+    def claim_next(self, skip=()):
+        """The first queued task the loop has not already refused.
+
+        `skip` is honored rather than ignored because the real provider hands
+        back the *same* head-of-queue ticket on every ask; a stub that popped
+        blindly would let a loop that cannot skip look like one that can.
+        """
+        for i, task in enumerate(self.queue):
+            if task["id"] not in skip:
+                return self.queue.pop(i)
+        return None
 
     def set_state(self, issue_id, state):
         self.states.append((issue_id, state))
@@ -288,20 +297,33 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(provider.comments, [])
         self.assertEqual(self.status(), "blocked_on_operator")
 
-    def test_a_blocked_ticket_does_not_block_a_different_one(self):
-        """The count is per ticket: the next ticket is worked and merged."""
+    def test_a_blocked_ticket_is_skipped_rather_than_stopped_on(self):
+        """The blocked ticket keeps its place at the head of the board's ready
+        set — `blocked_on_operator` projects to Todo, and the provider offers
+        the lowest identifier first — so it is offered ahead of the next
+        ticket on this pass and every later one. It is passed over, not
+        stopped on: the ticket behind it is claimed, worked and merged in the
+        same pass, which is what stops one parked ticket from starving the
+        queue behind it forever."""
         self.fail_once()
         self.offer_again()
-        other = dict(a_task(2), title="add another thing")
+        blocked, other = a_task(), dict(a_task(2), title="add another thing")
 
         self.loop(Commit("the other work"), APPROVE,
-                  provider=StubProvider(other))
+                  provider=StubProvider(blocked, other))
 
         self.assertIn("the other work", self.subjects())
         self.assertEqual(
             self.read("SELECT linearIdentifier, status FROM tickets"
                       " ORDER BY id"),
             [("KO-131", "blocked_on_operator"), ("KO-132", "merged")])
+        # And the skip is per pass, not per ticket offered: the blocked one
+        # opened no run, so every run row belongs to KO-131's two failures and
+        # KO-132's merge.
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier, r.outcome FROM runs r"
+                      " JOIN tickets t ON t.id = r.ticketId ORDER BY r.id"),
+            [("KO-131", "failed"), ("KO-131", "failed"), ("KO-132", "merged")])
 
 
 if __name__ == "__main__":

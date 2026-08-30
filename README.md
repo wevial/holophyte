@@ -38,7 +38,10 @@ Usage: `python3 factory.py /srv/dev/holo2test`, or
    `blocked_on_operator` and one Linear comment lists what each failed run
    ended on. The claim path re-reads that count before every claim, so the
    ticket is refused even when the board has been dragged back to Todo —
-   unblocking is a human's move, not the loop's.
+   unblocking is a human's move, not the loop's. A refused ticket is skipped
+   and the next one is claimed: a blocked ticket still projects to Todo and
+   still sorts where it sorts, so stopping on it would starve every ticket
+   behind it.
 
 ## Files
 

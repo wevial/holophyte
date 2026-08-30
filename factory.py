@@ -1484,8 +1484,15 @@ def main(provider=None):
         # contract is one row per Linear team, which the name keys just as
         # well until the provider resolves the id.
         project = store.ensure_project(conn, provider.TEAM, TARGET)
+        # The tickets this pass has refused to claim. A blocked ticket keeps
+        # its place in the board's ready set — `blocked_on_operator` projects
+        # to Todo, the column a human picks work out of — so it is offered
+        # again the moment it is skipped. Remembering the refusal is what
+        # turns "not this one" into "the one after it" instead of the same
+        # ticket forever.
+        skip = set()
         while True:
-            task = provider.claim_next()
+            task = provider.claim_next(skip=skip)
             if not task:
                 print("[holo2] Linear has no ready tickets. done.")
                 return
@@ -1496,11 +1503,19 @@ def main(provider=None):
             # crossed the threshold, and says so again on every later pass —
             # which is what makes a Linear state a human dragged back to Todo
             # unable to buy the ticket another run.
+            #
+            # Skipped rather than stopped on, which is not the call the rest
+            # of this loop makes: a stop here would be permanent. The ticket
+            # sorts where it sorts and is offered first on every invocation,
+            # so stopping on it would starve every ticket behind it until a
+            # human noticed — and a ticket parked *for* a human is the one
+            # case where there is nothing for this loop to wait on.
             known = mirrored_ticket(conn, project, task)
             if known is not None and escalate(conn, known, provider):
                 print(f"[holo2] {task['id']} is blocked by repeated failures;"
-                      " not claiming it. stopping for a human")
-                return
+                      " skipping it. a human owns it now")
+                skip.add(task["id"])
+                continue
             try:
                 ticket_id, run_id = claim_run(conn, project, task)
             except store.ClaimConflict as e:
