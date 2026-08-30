@@ -678,3 +678,21 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-08-30T04:35:51Z — KO-141
 MERGED to main.
 actual: 10.5 min · estimate: 30 min · rounds: 1
+
+## 2026-08-30T17:17:34Z — KO-142
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- factory.py [p2] [factory.py](/workspace/factory.py:446): Reviewer/adjudicator overrides bypass `review_runner`, which is the only code creating `refs/review/base` and `refs/rev…
+- factory.py [p2] [factory.py](/workspace/factory.py:100): Importing the module loads the default target’s config before CLI parsing. A malformed `/srv/dev/holo2test.holophyte.to…
+
+## 2026-08-30T17:22:56Z — KO-142
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py:1982 [p2] [factory.py:1982](/workspace/factory.py:1982): startup only parses TOML; it never validates or live-probes configured agent routes. A missing executable or inva…
+
+## 2026-08-30T17:26:41Z — KO-142
+Round 3: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-08-30T17:26:42Z — KO-142
+MERGED to main.
+actual: 15.7 min · estimate: 25 min · rounds: 3
