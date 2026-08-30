@@ -21,8 +21,10 @@ rather than a grep over FINDINGS.md.
 import argparse
 import hashlib
 import json
+import os
 import re
 import shlex
+import shutil
 import statistics
 import subprocess
 import sys
@@ -433,6 +435,49 @@ def agent_command(role, goal):
         raise SystemExit(
             f"[holo2] {CONFIG_PATH}: [agents] {AGENT_CONFIG_KEYS[role]} is empty")
     return argv + [goal]
+
+
+def check_agent_commands():
+    """Resolve every configured `[agents]` command before the loop claims work.
+
+    Reading the config at startup only proved the file was TOML. The commands
+    it named were first looked at when a round dispatched them, which is after
+    a ticket is claimed, its branch cut and its worktree created: a typo in a
+    program name or a stray quote in `reviewer` surfaced as a mid-run
+    `FileNotFoundError`, with a run already in flight and its lease held. The
+    same mistakes are caught here, before anything is claimed, where the only
+    cost of being wrong is an error message.
+
+    The check parses through `agent_command()` rather than re-reading the
+    table, so a string this refuses is exactly a string a round would have
+    refused, and one it accepts splits at startup into the argv the round will
+    dispatch -- no second, kinder parser to disagree with the real one.
+
+    What it can settle here is the program: it has to resolve, on this PATH,
+    to a file that is executable. What it deliberately does not do is run it.
+    A configured route is an agent turn; probing it live would dispatch a real
+    one, against no ticket, on every startup.
+
+    A relative program path with a directory in it (`./review.sh`) is refused
+    rather than guessed at. Rounds run with `cwd` set to a task worktree that
+    does not exist yet, so that name resolves somewhere this check cannot look
+    and the operator has not named. An absolute path or a PATH lookup says
+    where it means.
+    """
+    for role, key in AGENT_CONFIG_KEYS.items():
+        argv = agent_command(role, "")
+        if argv is None:
+            continue
+        program = argv[0]
+        if os.path.dirname(program) and not os.path.isabs(program):
+            raise SystemExit(
+                f"[holo2] {CONFIG_PATH}: [agents] {key}: relative command path "
+                f"{program!r} -- rounds run in a task worktree, so name the "
+                f"program by an absolute path or leave it to PATH")
+        if shutil.which(program) is None:
+            raise SystemExit(
+                f"[holo2] {CONFIG_PATH}: [agents] {key}: no executable "
+                f"{program!r} on PATH")
 
 
 def agent_route(role):
@@ -1986,6 +2031,11 @@ def cli(argv=None):
     config()
     if args.report:
         return report()
+    # And, on the path that actually dispatches agents, every route the config
+    # names resolves before the loop claims a ticket. `--report` skips this: it
+    # calls nobody, so a reviewer that is not installed on the machine reading
+    # the table is not that reading's problem.
+    check_agent_commands()
     return main()
 
 

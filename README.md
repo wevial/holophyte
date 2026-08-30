@@ -143,6 +143,16 @@ names the reviewer prompt tells the command to read. Both must be full commit
 SHAs the worktree has, with the base an ancestor of the candidate, or the round
 is refused rather than run against whatever `HEAD` happens to be.
 
+Every configured command is resolved at startup, before the run claims a
+ticket: the string has to split to an argv, and its program has to be an
+executable found on `PATH` or named by an absolute path. A name that resolves
+nowhere is an error while nothing is in flight, rather than a
+`FileNotFoundError` in the middle of a round holding the project's run lease.
+Startup does not *run* the command — a route is an agent turn, not a probe.
+Relative paths with a directory in them (`./review.sh`) are refused: rounds run
+in a task worktree that does not exist yet, so the name would resolve somewhere
+neither startup nor the operator named.
+
 ## Local reviewer boundary
 
 The factory never gives a reviewer the implementation worktree directly.

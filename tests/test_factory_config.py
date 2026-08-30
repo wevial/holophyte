@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -192,6 +193,96 @@ class AgentCommandTests(ConfigTestCase):
 
                 self.assertIn("repo.holophyte.toml", str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
+
+
+class StartupCheckTests(ConfigTestCase):
+    """Configured routes resolve before a ticket is claimed, not mid-round.
+
+    A round dispatches its command after the run holds the project lease and
+    the worktree exists, so a name that resolves nowhere used to abandon work
+    in flight. `check_agent_commands()` moves that failure to startup.
+    """
+
+    def test_a_startup_check_of_a_resolvable_command_passes(self):
+        # `sh` is on PATH everywhere the factory runs; a bare name is the
+        # documented normal way to write one of these.
+        self.retarget('[agents]\nimplementer = "sh -c"\n'
+                      f'reviewer = "{Path(sys.executable)} -c"\n')
+
+        self.assertIsNone(factory.check_agent_commands())
+
+    def test_an_absent_agents_table_checks_nothing(self):
+        self.retarget()
+
+        self.assertIsNone(factory.check_agent_commands())
+
+    def test_a_program_that_is_not_on_path_is_a_startup_error(self):
+        self.retarget('[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n')
+
+        with self.assertRaises(SystemExit) as raised:
+            factory.check_agent_commands()
+
+        message = str(raised.exception)
+        self.assertIn("repo.holophyte.toml", message)
+        # The key the operator wrote, and the word that did not resolve.
+        self.assertIn("reviewer", message)
+        self.assertIn("holophyte-no-such-reviewer", message)
+
+    def test_a_file_that_is_not_executable_is_a_startup_error(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        tool = Path(tmp.name) / "tool.sh"
+        tool.write_text("#!/bin/sh\nexit 0\n")
+        tool.chmod(0o644)
+        self.retarget(f'[agents]\nadjudicator = "{tool} --final"\n')
+
+        with self.assertRaises(SystemExit) as raised:
+            factory.check_agent_commands()
+
+        self.assertIn("adjudicator", str(raised.exception))
+
+    def test_a_relative_program_path_is_refused_rather_than_guessed_at(self):
+        # It would resolve inside a task worktree that does not exist yet, so
+        # startup cannot check the file the round would actually run.
+        self.retarget('[agents]\nreviewer = "./review.sh --diff"\n')
+
+        with self.assertRaises(SystemExit) as raised:
+            factory.check_agent_commands()
+
+        self.assertIn("relative", str(raised.exception))
+
+    def test_the_check_reuses_the_parse_a_round_would_use(self):
+        # An unquotable or wrongly-typed command is caught here too, with the
+        # same message a round would have raised -- one parser, not two.
+        self.retarget('[agents]\nimplementer = ["claude", "-p"]\n')
+
+        with self.assertRaises(SystemExit) as raised:
+            factory.check_agent_commands()
+
+        self.assertIn("command string", str(raised.exception))
+
+    def test_a_run_checks_its_commands_before_claiming_anything(self):
+        target = self.retarget(
+            '[agents]\nimplementer = "holophyte-no-such-harness -p"\n')
+
+        with patch.object(factory, "main",
+                          side_effect=AssertionError("claimed work")) as main:
+            with self.assertRaises(SystemExit) as raised:
+                factory.cli([str(target)])
+
+        self.assertIn("holophyte-no-such-harness", str(raised.exception))
+        main.assert_not_called()
+
+    def test_report_does_not_require_the_configured_commands(self):
+        # `--report` reads the store and calls nobody, so a reviewer that is
+        # not installed on the machine reading the table is not its problem.
+        target = self.retarget(
+            '[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n')
+
+        with patch.object(factory, "report") as report:
+            factory.cli([str(target), "--report"])
+
+        report.assert_called_once_with()
 
 
 class ReviewRefTests(ConfigTestCase):
