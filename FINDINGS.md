@@ -713,3 +713,20 @@ Round 3: pass · reviewer codex-sol-medium · verify passed
 ## 2026-08-30T17:40:56Z — KO-143
 MERGED to main.
 actual: 14.2 min · estimate: 25 min · rounds: 3
+
+## 2026-08-30T18:15:37Z — KO-145
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py:2263 [p2] `factory.py:2263-2276`: staleness is computed from a snapshot before `record_strike()` opens its transaction. A concurrent heartbeat or run completion can occur…
+
+## 2026-08-30T18:20:59Z — KO-145
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- store.py [p2] [store.py](/workspace/store.py:1641): A heartbeat does not reset an existing strike unless a sweep observes it while still fresh. Repro: stale sweep at T+6 reco…
+
+## 2026-08-30T18:24:16Z — KO-145
+Round 3: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-08-30T18:24:17Z — KO-145
+MERGED to main.
+actual: 17.5 min · estimate: 25 min · rounds: 3
