@@ -431,3 +431,50 @@ VERDICT: PASS
 ## 2026-08-29T00:11:15Z — KO-126
 MERGED to main (branch task/factory-sanitize-text-appended deleted). Verify: passed.
 actual: 11.6 min · estimate: 20 min · rounds: 2
+
+## 2026-08-30T01:51:37Z — KO-128
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `factory.py:655-656`: The mirror writes `task["id"]`—the human identifier such as `KO-123`—into both `linearIssueId` and `linearIdentifier`. The provider receives Linear’s canonical issue UUID but discards it in `parse_task()`. This breaks canonical issue correlation and can create a duplicate mirror when UUID-based webhook wiring arrives. Preserve and store the actual Linear issue ID separately.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+**Adjudication: ADDRESS** — the finding was correct. `READY_QUERY` already fetches the issue UUID (`identifier id title description`), but `parse_task()` returned only `issue["identifier"]`, so `claim_run()` had nothing else to write and put the label in both columns. Since `linearIssueId` is the UNIQUE key `mirror_ticket()` re-finds rows by, that keyed the mirror on the mutable human label.
+
+Fix (commit `8b5b48c`):
+- `linear_provider.py:131` — `parse_task()` returns `issue_id` (the UUID) alongside `id` (the identifier).
+- `factory.py:669` — mirrors under `task.get("issue_id") or task["id"]`, keeping the identifier as `linearIdentifier`. The fallback keeps UUID-less providers (the test stub, any non-Linear provider) working rather than hitting the NOT NULL column.
+
+Tests: the wiring stub's UUID now differs from its identifier so a test can't pass by storing either one; added cases for re-claim-under-rename reusing the single mirror row, for the UUID-less fallback, and for `parse_task()` carrying the UUID through. Full suite: 183 tests, OK.
+
+One thing I did *not* change, since it's beyond this finding: `complete()`/`comment()` are still called with `task["id"]`, the identifier. That works against Linear's API today and is unrelated to the mirror key, but it's now the only place the two ids could be conflated deliberately.
+
+## 2026-08-30T01:56:00Z — KO-128
+Round 2: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `factory.py:32` writes the database inside the target repository, but `.gitignore:6-8` belongs to the factory repository. With the documented separate target (`/srv/dev/holo2test`), the database and WAL files remain unignored and dirty the target checkout.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+**ADDRESS** — the finding was correct, and it was two mistakes with one cause.
+
+`STORE_PATH = TARGET / "holophyte.db"` put the database *inside* the repo the loop works on, while the `.gitignore` entries covering it went into the factory repo. `/srv/dev/holo2test` has no `.gitignore` at all, so the documented deployment left three untracked files in the target checkout on every run. I confirmed it directly: running the old path against a fresh git repo leaves `?? holophyte.db`.
+
+The comment on that line had already described the right design — "beside the target repo … per target repo like the worktree directory next to it" — but `WORKTREES` is a *sibling* (`TARGET.parent / f"{TARGET.name}.worktrees"`) and the store was not. So the fix is the design the comment claimed:
+
+- `STORE_PATH = TARGET.parent / f"{TARGET.name}.holophyte.db"` — `/srv/dev/holo2test` now stores to `/srv/dev/holo2test.holophyte.db`, outside any repo, so no ignore rule anywhere is load-bearing.
+- Dropped the three `.gitignore` lines, now dead letters.
+
+The test was the same mistake in test form: `test_the_store_file_is_git_ignored` ran `git check-ignore` in the *factory* repo, so it passed while asserting nothing about the target. It's replaced by two tests — one that `git init`s the target and asserts `git status --untracked-files=all` is empty after bootstrap, one that checks the sibling derivation by re-importing the module under a target argv (the path is computed at import, so patching `STORE_PATH` would only test the patch). I checked the cleanliness test is non-vacuous by running the old path through it.
+
+Full suite: 184 tests, OK. Committed as `c587a0e`. Nothing deferred or declined.
+
+## 2026-08-30T01:56:57Z — KO-128
+Terminal adjudication after 2 review rounds: PASS
+
+Adjudicator reply:
+The candidate cleanly implements store bootstrap, canonical ticket mirroring, lease enforcement before work begins, and lease release across success, failure, and crashes. Focused verification passes.
+
+VERDICT: PASS
