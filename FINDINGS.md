@@ -620,3 +620,7 @@ Both findings adjudicated **ADDRESS** and fixed; committed as `1506b66`.
 **Finding 2 — `set_state()` ignored `issueUpdate.success`**: `_gql()` only raises on an `errors` block, so a `{success: false}` returned silently and `mirror_push()` logged a projection that never happened. The mutation's verdict is now read; a false one raises, which is the signal the best-effort push already handles.
 
 Tests added in `tests/test_wiring_mirror.py`: a merged ticket offered a second time isn't run (no `run_task()`, one Done re-push, status unchanged, refusal warned) and its run returns the lease as `failed`; `set_state()` sends the resolved state id on success and raises naming issue and state on `success: false`. Full suite: 218 tests, all passing.
+
+## 2026-08-30T03:07:27Z — KO-132
+MERGED to main (branch task/wiring-5-6-linear-mirror-push deleted). Verify: passed.
+actual: 18.8 min · estimate: 25 min · rounds: 2
