@@ -22,9 +22,11 @@ import argparse
 import hashlib
 import json
 import re
+import shlex
 import statistics
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from time import monotonic, time
 
@@ -35,23 +37,50 @@ import ticket_template
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
 DEFAULT_TARGET = Path("/srv/dev/holo2test")
-# The three paths a run works against. They are set by `retarget()` below
-# rather than written out here, so the derivation lives in one place and the
-# command line is the only thing that chooses a target: importing this module
-# used to read `sys.argv[1]`, which made every `python3 -m unittest discover`
-# retarget the factory at a directory called "discover".
-TARGET = STORE_PATH = WORKTREES = None
+# The four paths a run works against, plus the config they carry. They are set
+# by `retarget()` below rather than written out here, so the derivation lives
+# in one place and the command line is the only thing that chooses a target:
+# importing this module used to read `sys.argv[1]`, which made every
+# `python3 -m unittest discover` retarget the factory at a directory called
+# "discover".
+TARGET = STORE_PATH = WORKTREES = CONFIG_PATH = None
+# The parsed `<target>.holophyte.toml`, or `{}` when the target has no config
+# file. Empty is the documented normal case: every knob it can set has a
+# hardcoded default, so an absent file is exactly today's behavior.
+CONFIG = {}
+
+
+def load_config(path):
+    """Parse the target's TOML config, or `{}` when there is no file.
+
+    An absent file is the common case and means "all defaults" — the factory
+    ships no config of its own. A file that exists but does not parse is a
+    startup error naming the file and what `tomllib` objected to: a config the
+    operator wrote and the factory silently ignored would route a run to a
+    harness nobody chose, which is the one outcome the file exists to prevent.
+    Unknown tables and keys are left alone, so a config written for a later
+    version still loads here.
+    """
+    path = Path(path)
+    try:
+        with path.open("rb") as fh:
+            return tomllib.load(fh)
+    except FileNotFoundError:
+        return {}
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(f"[holo2] malformed config {path}: {exc}") from exc
 
 
 def retarget(target):
-    """Point TARGET and the two paths derived from it at `target`.
+    """Point TARGET, the three paths derived from it and CONFIG at `target`.
 
     Called once at import for the default and again by `cli()` for whatever
     the command line names; nothing else moves these, so a caller that wants a
     different target says so here instead of patching one path and leaving the
-    other two pointing at the last one.
+    other two pointing at the last one. The config is loaded here for the same
+    reason: it is derived from the target, so it moves when the target does.
     """
-    global TARGET, STORE_PATH, WORKTREES
+    global TARGET, STORE_PATH, WORKTREES, CONFIG_PATH, CONFIG
     TARGET = Path(target)
     # The loop's durable state: one WAL-mode SQLite file per target repo, a
     # sibling of the target the way its worktree directory is. Outside the
@@ -62,6 +91,10 @@ def retarget(target):
     # commit.
     STORE_PATH = TARGET.parent / f"{TARGET.name}.holophyte.db"
     WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
+    # Same sibling convention as the store and the worktree directory, for the
+    # same reason: config for a target is not a file the target has to carry.
+    CONFIG_PATH = TARGET.parent / f"{TARGET.name}.holophyte.toml"
+    CONFIG = load_config(CONFIG_PATH)
 
 
 retarget(DEFAULT_TARGET)
@@ -337,9 +370,59 @@ def sh(args, cwd=None):
 # Role -> harness/model pins. Each gate uses a distinct, live-probed route:
 # Claude Code / Opus High implements; the local container boundary runs Codex /
 # GPT-5.6 Sol Medium against a detached, zero-remote, read-only candidate.
+# These are the defaults an absent `[agents]` table leaves in place, not
+# assumptions: a target that names its own command for a role gets that one.
 IMPL_MODEL = "opus"
 IMPL_EFFORT = "high"
 REVIEW_PROFILE = "codex-sol-medium"
+
+# The loop's internal role names, and the `[agents]` key each one reads. The
+# config speaks the job title an operator writes on a ticket; the loop speaks
+# the verb it dispatches.
+AGENT_CONFIG_KEYS = {
+    "implement": "implementer",
+    "review": "reviewer",
+    "adjudicate": "adjudicator",
+}
+
+
+def agent_command(role, goal):
+    """The configured argv for `role`, or None when the config names none.
+
+    The goal is appended as the command's last argument, which is where both
+    default harnesses take a prompt (`claude ... -p PROMPT`, `codex exec ...
+    PROMPT`). Writing it as an argv element rather than interpolating it into
+    a shell string is the same rule `sh()` follows: task text is data, and it
+    never gets to break quoting.
+
+    A key that is present but unusable — a non-string, or a string that splits
+    to nothing — is a startup error rather than a fallback to the default: the
+    operator asked for a route, and quietly running the built-in one instead
+    would answer a different question than the one the config asked.
+    """
+    command = (CONFIG.get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+    if command is None:
+        return None
+    if not isinstance(command, str):
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [agents] {AGENT_CONFIG_KEYS[role]} must be "
+            f"a command string, got {type(command).__name__}")
+    argv = shlex.split(command)
+    if not argv:
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [agents] {AGENT_CONFIG_KEYS[role]} is empty")
+    return argv + [goal]
+
+
+def agent_route(role):
+    """What ran `role`'s turn, named for the record the round leaves.
+
+    The default reviewer profile, or the configured command when the target
+    named one. A `reviewRounds` row reading `codex-sol-medium` about a round
+    some other harness ran would be evidence of something that did not happen,
+    and the rows are what FINDINGS.md and the fingerprint are built from.
+    """
+    return (CONFIG.get("agents") or {}).get(AGENT_CONFIG_KEYS[role]) or REVIEW_PROFILE
 
 
 def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
@@ -350,24 +433,31 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
     the diff and the ticket — but its verdict is not enforced at the boundary:
     a reply that names no clean verdict has to reach the loop as text so it
     can be recorded and read as FAIL.
+
+    A configured command replaces the role's route, so an `[agents] reviewer`
+    override is also an opt-out of the hardened container the default reviewer
+    runs behind. The exact-SHA requirement is checked either way: a review
+    round argues about one named candidate whoever runs it.
     """
-    if role == "implement":
+    if role not in AGENT_CONFIG_KEYS:
+        raise ValueError(role)
+    if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
+        raise ValueError(f"{role} requires exact base_sha and candidate_sha")
+    cmd = agent_command(role, goal)
+    if cmd is None:
+        if role != "implement":
+            return review_runner.run_review(
+                repo=Path(cwd),
+                base_sha=base_sha,
+                candidate_sha=candidate_sha,
+                prompt=goal,
+                profile=REVIEW_PROFILE,
+                timeout=1800,
+                verdicts=(review_runner.REVIEW_VERDICTS
+                          if role == "review" else None),
+            )
         cmd = ["claude", "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
-    elif role in ("review", "adjudicate"):
-        if not base_sha or not candidate_sha:
-            raise ValueError(f"{role} requires exact base_sha and candidate_sha")
-        return review_runner.run_review(
-            repo=Path(cwd),
-            base_sha=base_sha,
-            candidate_sha=candidate_sha,
-            prompt=goal,
-            profile=REVIEW_PROFILE,
-            timeout=1800,
-            verdicts=(review_runner.REVIEW_VERDICTS if role == "review" else None),
-        )
-    else:
-        raise ValueError(role)
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=1800)
     return (r.stdout + "\n" + r.stderr).strip()
 
@@ -986,7 +1076,7 @@ def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     # exit code stored here is that verdict, and `output` is the detail.
     results = ([{"command": verify_cmd, "exitCode": 0 if ok else 1,
                  "output": out}] if verify_cmd else [])
-    store.record_review_round(conn, run_id, rnd, verdict, REVIEW_PROFILE,
+    store.record_review_round(conn, run_id, rnd, verdict, agent_route(role),
                               findings=findings, verification_results=results,
                               started_at=started_at,
                               ended_at=int(time() * 1000))
