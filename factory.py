@@ -25,6 +25,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -347,6 +348,59 @@ def contract_report(contracts, cwd):
     return None
 
 
+VERIFY_TIMEOUT = 300  # per-command wall-clock cap, verify and worktree setup
+REAP_GRACE = 10       # how long the cap waits for a killed tree's last output
+
+
+def reap_group(proc, expired):
+    """Kill `proc`'s whole process group and return what it printed.
+
+    `SIGKILL`, not a term-then-kill escalation: a command that ran past its
+    cap has already had every chance to finish, and the caller's next move is
+    to throw away the directory it was running in, so a graceful shutdown has
+    nothing to save.
+
+    A grandchild that put itself in a session of its own is outside the group
+    and can keep the output pipe open after the group is gone, so the wait for
+    the last output is itself capped -- reporting a timeout must not be a
+    second way to hang. That fallback keeps the partial output the cap already
+    captured and gives up on the trailing bytes such a process was still
+    writing.
+    """
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        proc.kill()
+    try:
+        out, _ = proc.communicate(timeout=REAP_GRACE)
+    except subprocess.TimeoutExpired:
+        out = expired.output or ""
+    return out
+
+
+def run_capped(cmd, cwd, timeout):
+    """Run one shell command under a hard cap. Returns `(returncode, output)`,
+    or raises `subprocess.TimeoutExpired` carrying whatever it printed first.
+
+    The process group is the point. `subprocess.run(timeout=...)` signals the
+    shell it started and nothing underneath it, so a `make` that reached the
+    cap is reported as over while its compilers keep running -- writing into a
+    worktree the caller is about to delete, against caches the next round
+    reads, with no handle left to stop them by. Starting the command in a
+    session of its own makes the tree one killable unit, so the cap can end
+    the command it timed rather than just the shell that spawned it.
+    """
+    with subprocess.Popen(cmd, shell=True, cwd=str(cwd),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, start_new_session=True) as proc:
+        try:
+            out, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as expired:
+            raise subprocess.TimeoutExpired(
+                cmd, timeout, output=reap_group(proc, expired)) from None
+        return proc.returncode, out
+
+
 def run_verify(cmd, cwd=None, contracts=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
@@ -370,16 +424,14 @@ def run_verify(cmd, cwd=None, contracts=None):
         return True, passed + "(no verify command)"
     clauses = split_and_clauses(cmd)
     marked = bool(clauses) and len(clauses) > 1
-    r = subprocess.run(instrumented_script(clauses) if marked else cmd,
-                       shell=True, cwd=str(cwd or TARGET),
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                       text=True, timeout=300)
-    per_clause, failed, cleaned = parse_clause_output(r.stdout)
-    if r.returncode == 0:
+    returncode, out = run_capped(instrumented_script(clauses) if marked else cmd,
+                                 cwd or TARGET, VERIFY_TIMEOUT)
+    per_clause, failed, cleaned = parse_clause_output(out)
+    if returncode == 0:
         vacuous = vacuous_green_report(cmd, cleaned)
         return (False, vacuous) if vacuous else (True, passed + cleaned.strip()[-2000:])
     return False, failure_report(cmd, clauses if marked else None,
-                                 per_clause, failed, r.returncode, cleaned)
+                                 per_clause, failed, returncode, cleaned)
 
 
 def sh(args, cwd=None):
@@ -681,11 +733,13 @@ def run_worktree_setup(wt, conn=None, run_id=None):
     failure reads like a failed verify and not like a bare non-zero exit: the
     command is named, its output is shown, a top-level `&&` chain is
     attributed clause by clause, and silence is reported as silence. The same
-    machinery also means the same 300-second cap per command -- setup is a
-    build step, not a round. A command that reaches the cap is failed like any
-    other failing command rather than raised: the caller discards the branch
-    and the worktree on a `False`, and a setup that hangs is exactly the case
-    that must not leave those behind.
+    machinery also means the same `VERIFY_TIMEOUT` cap per command -- setup
+    is a build step, not a round -- and the cap takes the command's whole
+    process tree with it, so a build that hangs is not still writing into the
+    worktree while the caller deletes it. A command that reaches the cap is
+    failed like any other failing command rather than raised: the caller
+    discards the branch and the worktree on a `False`, and a setup that hangs
+    is exactly the case that must not leave those behind.
 
     Commands run in order and stop at the first failure: step two of a setup
     assumes step one worked, so running on would only report a second failure

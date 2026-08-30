@@ -8,6 +8,7 @@ import io
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -380,6 +381,25 @@ class WorktreeSetupTests(ConfigTestCase):
         self.assertIn("make deps", report)
         self.assertIn("resolving packages", report)  # what it managed to say
         self.assertFalse((wt / "never.txt").exists())
+
+    def test_the_cap_takes_the_command_s_children_down_with_it(self):
+        # A real timeout, not a mocked one: the cap has to end the process
+        # tree and not just the shell at the top of it. A background child
+        # that outlives the reported timeout goes on writing into a worktree
+        # the caller is about to delete, on a branch nobody keeps.
+        wt = self.worktree()
+        marker = wt / "escaped.txt"
+        self.retarget('[worktree]\nsetup = ["echo resolving; '
+                      '(sleep 1; touch %s) & sleep 30"]\n' % marker)
+
+        with patch.object(factory, "VERIFY_TIMEOUT", 0.3):
+            ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertIn("timed out", report)
+        self.assertIn("resolving", report)  # what it said before the cap
+        time.sleep(1.5)  # past when the child would have touched the marker
+        self.assertFalse(marker.exists())
 
     def test_a_silent_timeout_is_reported_as_silence(self):
         wt = self.worktree()
