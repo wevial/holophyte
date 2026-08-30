@@ -18,8 +18,9 @@ worktree and merged only after mechanical verification and independent review.
 - Commit a reviewable candidate before independent review. An implementer must
   never review or approve its own candidate.
 - Keep one independent review plus at most one narrow re-review. Record review
-  findings and their `ADDRESS`, `FOLLOW_UP`, or `DECLINE` adjudications in
-  `FINDINGS.md` and the Linear ticket ledger.
+  findings and their `ADDRESS`, `FOLLOW_UP`, or `DECLINE` adjudications in the
+  Linear ticket ledger; the factory records the round in the store and renders
+  it into `FINDINGS.md`.
 - Do not treat a worker's report as proof. Inspect the diff and reproduce the
   ticket's verification commands before reporting completion.
 
@@ -47,8 +48,10 @@ worktree and merged only after mechanical verification and independent review.
   with `ticket_template.py` when ticket-template behavior changes.
 - Keep credentials only in local environment/configuration; never commit or log
   secrets.
-- Keep `FINDINGS.md` append-only as execution evidence. Do not delete history
-  to make a run appear clean.
+- `FINDINGS.md` is regenerated from the store at each close-out: a bounded
+  window over `runs`/`reviewRounds` below the frozen pre-store preamble. The
+  execution evidence is the rows — do not hand-edit the rendered window or drop
+  rows to make a run appear clean.
 - Model/harness routing is an explicit factory policy: live-probe the exact
   configured CLI/provider/model path before dispatching a task, and do not
   silently substitute a model or harness when a route fails.

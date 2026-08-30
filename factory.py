@@ -15,6 +15,7 @@ Loop:
   6. On approval or a terminal PASS: merge to main, check off the task, repeat.
 """
 import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -359,12 +360,11 @@ CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 # and to the thematic break they actually are.
 SETEXT_RE = re.compile(r"^ {0,3}(?![-*+>#\s])(.+?)[ \t]*\n {0,3}(?:=+|-+)[ \t]*$", re.M)
 ATX_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t#]*$", re.M)
-MAX_ENTRY_CHARS = 4000
 # A real verdict is one short line — `VERDICT: REQUEST_CHANGES` is 24 chars.
 # The line truncation is obliged to keep is agent-written, though, and a
 # malformed reply is persisted verbatim, so cap it: otherwise `VERDICT: ` plus
-# 10k characters is one trailing "verdict" line that carries the whole entry
-# past MAX_ENTRY_CHARS.
+# 10k characters is one trailing "verdict" line that carries the whole record
+# past its budget.
 MAX_VERDICT_CHARS = 200
 TRUNCATION_MARKER = "[… truncated]"
 
@@ -389,8 +389,8 @@ def _trailing_verdict(text):
     return verdict
 
 
-def sanitize_findings(text):
-    """Make one agent-authored block safe to append to FINDINGS.md.
+def sanitize_findings(text, limit):
+    """Make one agent-authored block safe to keep as a findings record.
 
     Strips ANSI escape sequences and other control bytes, demotes embedded
     Markdown headings to bold lines so the file's outline stays the factory's
@@ -398,17 +398,23 @@ def sanitize_findings(text):
     with a visible marker. A trailing `VERDICT:` line survives all three: the
     escape and heading rules never match it, and truncation re-attaches it
     below the marker so an oversize entry still records its outcome.
+
+    Applied at the row write (`finding_message`) rather than at a file
+    append: FINDINGS.md is rendered from the rows now, so text a row carries
+    dirty is text every later render carries dirty. `limit` is the calling
+    boundary's own budget, and has no default — there is one boundary, and a
+    sanitizer that guesses a bound is one that silently keeps the wrong one.
     """
     text = ANSI_CSI_RE.sub("", text)
     text = CONTROL_RE.sub("", text)
     text = SETEXT_RE.sub(r"**\1**", text)
     text = ATX_RE.sub(r"**\2**", text)
-    if len(text) > MAX_ENTRY_CHARS:
+    if len(text) > limit:
         verdict = _trailing_verdict(text)
         tail = f"\n\n{TRUNCATION_MARKER}" + (f"\n\n{verdict}" if verdict else "")
         # max(): a negative bound would slice from the *end* and keep
         # nearly all of an oversize entry.
-        head = text[:max(0, MAX_ENTRY_CHARS - len(tail))]
+        head = text[:max(0, limit - len(tail))]
         if text[len(head)] != "\n" and "\n" in head:
             head = head[:head.rindex("\n")]  # never cut a line in half
         text = head.rstrip() + tail
@@ -416,17 +422,21 @@ def sanitize_findings(text):
 
 
 def ledger(task_id, entry):
-    """Persist a findings record: Linear comment (primary) + FINDINGS.md."""
+    """Archive one record as a Linear comment on the ticket.
+
+    Nothing is appended to FINDINGS.md here any more: that file is rendered
+    from the store's rows at close-out (`write_findings`), so it stays a
+    bounded window instead of growing by one full transcript per turn. Linear
+    comments are unchanged and stay the per-ticket archive of the whole prose
+    — the store keeps the structure, Linear keeps the words.
+    """
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         import linear_provider
         linear_provider.comment(task_id, f"**{ts}**\n\n{entry}")
     except Exception as e:
-        print(f"[holo2] Linear comment failed ({e}); FINDINGS.md only")
-    p = TARGET / "FINDINGS.md"
-    with p.open("a") as f:
-        f.write(f"\n## {ts} — {task_id}\n{sanitize_findings(entry)}\n")
+        print(f"[holo2] Linear comment failed ({e}); record kept in the store")
 
 
 # --- review rounds as structured findings ------------------------------------
@@ -500,12 +510,13 @@ def unparsed_path(message):
 
 
 def finding_message(text):
-    """One finding's message, safe to store: no terminal escapes, bounded."""
-    text = CONTROL_RE.sub("", ANSI_CSI_RE.sub("", text)).strip()
-    if len(text) > MAX_FINDING_CHARS:
-        text = (text[:MAX_FINDING_CHARS - len(TRUNCATION_MARKER)]
-                + TRUNCATION_MARKER)
-    return text
+    """One finding's message, safe to store: sanitized and bounded.
+
+    The row write is where `sanitize_findings()` now applies, so a message
+    carrying a terminal escape or a Markdown heading is cleaned once, here,
+    rather than on every render of the window it will appear in.
+    """
+    return sanitize_findings(text, MAX_FINDING_CHARS).strip()
 
 
 def raw_finding(reply):
@@ -807,12 +818,10 @@ def run_task(task, conn=None, run_id=None):
     print("[holo2] verify ok before merge")
 
     # Commit any pending FINDINGS.md changes BEFORE merging so the merge
-    # never trips over a dirty index.
-    r = subprocess.run(["git", "status", "--porcelain", "FINDINGS.md"],
-                       cwd=TARGET, capture_output=True, text=True)
-    if r.stdout.strip():
-        sh(["git", "add", "FINDINGS.md"], TARGET)
-        sh(["git", "commit", "-m", f"FINDINGS: {task_id} review records"], TARGET)
+    # never trips over a dirty index. Nothing is written to the file during a
+    # run any more, so this is normally a no-op; what it still catches is a
+    # window an earlier failed run regenerated and left uncommitted.
+    commit_findings(f"FINDINGS: {task_id} review records")
 
     # `squashing` is skipped, not faked: this merge is --no-ff and rewrites
     # no history, so the run goes merging -> done and the phase §4 puts
@@ -840,8 +849,9 @@ def run_task(task, conn=None, run_id=None):
                  f"Verify: {'passed' if ok else 'n/a'}.\n"
                  f"actual: {actual_min:.1f} min · estimate: {budget_min} min · "
                  f"rounds: {rnd}")
-    sh(["git", "add", "FINDINGS.md"], TARGET)
-    sh(["git", "commit", "-m", f"Complete task {task_id}: {task}"], TARGET)
+    # The task's own commit of FINDINGS.md is `main()`'s, not this frame's:
+    # the run's close-out entry exists only once the run has been released,
+    # which happens after this returns.
     print(f"[holo2] merged: {task}")
     return True
 
@@ -919,6 +929,204 @@ def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                               findings=findings, verification_results=results,
                               started_at=started_at,
                               ended_at=int(time() * 1000))
+
+
+# --- FINDINGS.md as a window over the rows ------------------------------------
+# The ledger used to be the source of truth, appended to once per agent turn,
+# and it reached 53 KB in a single day: unreadable for a human and a context
+# hazard for an agent working in the checkout. The rows are the history now --
+# complete, queryable, cheap -- and the file is a rendering of their recent
+# tail, so a reader gets the last few runs and everything older is one query
+# away rather than deleted.
+#
+# The rendering is a function of the rows and of nothing else: no clock, no
+# environment, ties in the ordering broken by row id, and the sanitizing
+# already done at the row write. That is what makes regenerating the whole file
+# at every close-out reviewable -- identical rows produce identical bytes, so
+# the diff of a regeneration is exactly the entries the run added.
+FINDINGS_WINDOW = 25  # entries kept in the file; per-project config is future work
+# What separates the frozen pre-store history from the rendered window. Every
+# regeneration reproduces the bytes above this line and replaces everything
+# below it, so a ledger written before the store existed is preserved by not
+# being rendered at all.
+FINDINGS_MARKER = "<!-- store-rendered below -->"
+FINDINGS_ARCHIVE = "[{n} earlier entries in holophyte.db — query runs/reviewRounds]"
+# One finding is one line of the window: enough to recognize the complaint by,
+# with the row holding all of it.
+FINDING_LINE_CHARS = 160
+
+
+def _stamp(ms):
+    """Epoch milliseconds as the ledger's UTC timestamp."""
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+
+
+def _entry(at, ticket, lines):
+    """One entry: the heading the file has always used, then its body."""
+    return "\n".join([f"## {_stamp(at)} — {ticket}", *lines])
+
+
+def finding_line(finding):
+    """One stored finding as one line: where, how bad, and the gist.
+
+    The message is collapsed to a single line and cut, because the window is a
+    place to notice a complaint rather than to read it: the whole message is in
+    `reviewRounds.findings`, and the alternative -- full prose per finding --
+    is the unbounded file this rendering replaces.
+    """
+    where = finding["path"]
+    if finding.get("line"):
+        where = f"{where}:{finding['line']}"
+    # The reviewer's own bullet marker opens most stored messages; the line
+    # this renders already is a bullet, so it is dropped rather than nested.
+    gist = BLOCK_BREAK_RE.sub("", " ".join(str(finding.get("message", "")).split()),
+                              count=1)
+    if len(gist) > FINDING_LINE_CHARS:
+        gist = gist[:FINDING_LINE_CHARS].rstrip() + "…"
+    return f"- {where} [{finding['severity']}] {gist}".rstrip()
+
+
+def round_entry(row):
+    """One `reviewRounds` row as an entry: the verdict and what it filed."""
+    at, ticket, number, verdict, model, results, findings = row
+    results = json.loads(results)
+    verify = ""
+    if results:
+        verify = (" · verify "
+                  + ("passed" if all(r.get("exitCode") == 0 for r in results)
+                     else "failed"))
+    findings = json.loads(findings)
+    lines = [f"Round {number}: {verdict} · reviewer {model}{verify}"]
+    if findings:
+        lines.append(f"Findings ({len(findings)}):")
+        lines.extend(finding_line(finding) for finding in findings)
+    return _entry(at, ticket, lines)
+
+
+def run_entry(row):
+    """One ended `runs` row as an entry: its outcome and the timing line.
+
+    `rounds` is the run's recorded rounds, terminal adjudication included --
+    what the store holds, rather than the loop's in-frame round counter, since
+    a rendering that needs the loop's variables is not a rendering of the rows.
+    """
+    at, ticket, outcome, reason, branch, started, time_box, rounds = row
+    if outcome == "merged":
+        head = ("MERGED to main"
+                + (f" (branch {branch} deleted)" if branch else "") + ".")
+    else:
+        head = (outcome or "ended").upper()
+        head += f": {' '.join(reason.split())}" if reason else "."
+    # Byte-stable: a burndown script greps this line.
+    estimate = f"{time_box // 60000} min" if time_box else "n/a"
+    return _entry(at, ticket, [
+        head,
+        f"actual: {(at - started) / 60000:.1f} min · "
+        f"estimate: {estimate} · rounds: {rounds}",
+    ])
+
+
+def findings_entries(conn):
+    """Every entry the store holds, oldest first.
+
+    Two row kinds are entries: a review round, and a run that ended. A run
+    still in flight has no entry -- it has no outcome yet, and an entry that
+    changed on the next render would make the file churn.
+    """
+    rounds = conn.execute(
+        "SELECT COALESCE(rr.endedAt, rr.startedAt), t.linearIdentifier,"
+        " rr.round, rr.verdict, rr.reviewerModel, rr.verificationResults,"
+        " rr.findings, rr.id"
+        " FROM reviewRounds rr JOIN runs r ON r.id = rr.runId"
+        " JOIN tickets t ON t.id = r.ticketId").fetchall()
+    runs = conn.execute(
+        "SELECT r.endedAt, t.linearIdentifier, r.outcome, r.outcomeReason,"
+        " r.branch, r.startedAt, t.timeBoxMs,"
+        " (SELECT COUNT(*) FROM reviewRounds WHERE runId = r.id), r.id"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.endedAt IS NOT NULL").fetchall()
+    entries = [(row[0], "round", row[-1], round_entry(row[:-1])) for row in rounds]
+    entries += [(row[0], "run", row[-1], run_entry(row[:-1])) for row in runs]
+    # Two rows stamped the same millisecond still have one order: kind, then
+    # the id the database gave them.
+    entries.sort(key=lambda entry: entry[:3])
+    return [entry[3] for entry in entries]
+
+
+def render_findings(conn, preamble=""):
+    """The whole of FINDINGS.md: `preamble`, the marker, then the window.
+
+    Only the newest `FINDINGS_WINDOW` entries are rendered; the rest collapse
+    into the one archive line that says how many there are and where to read
+    them. Newest last, so the file reads forwards like the append-only ledger
+    it replaces.
+    """
+    entries = findings_entries(conn)
+    hidden = max(0, len(entries) - FINDINGS_WINDOW)
+    blocks = [FINDINGS_ARCHIVE.format(n=hidden)] if hidden else []
+    blocks += entries[hidden:]
+    # The preamble is reproduced byte for byte and only padded away from the
+    # marker, which keeps this idempotent: the padded text is what the next
+    # render reads back as the preamble.
+    if preamble and not preamble.endswith("\n\n"):
+        preamble += "\n" if preamble.endswith("\n") else "\n\n"
+    body = "\n\n".join(blocks)
+    return preamble + FINDINGS_MARKER + "\n" + (f"\n{body}\n" if body else "")
+
+
+def frozen_preamble(text):
+    """The half of `text` a regeneration must reproduce: above the marker.
+
+    A file with no marker is entirely pre-store history, so all of it is
+    preamble and the window is written below it. The marker counts only as a
+    line of its own, which is what keeps a reviewer who quoted it from moving
+    the boundary: no line this module renders can be a bare marker -- every
+    one of them is a heading, a `Round`/outcome line, a `- ` finding or the
+    archive line -- so the first standalone marker line is always the real one.
+    """
+    lines = text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.strip() == FINDINGS_MARKER:
+            return "".join(lines[:i])
+    return text
+
+
+def write_findings(conn, path=None):
+    """Regenerate FINDINGS.md in place, keeping everything above the marker."""
+    path = Path(path) if path else TARGET / "FINDINGS.md"
+    existing = path.read_text() if path.exists() else ""
+    path.write_text(render_findings(conn, frozen_preamble(existing)))
+    return path
+
+
+def commit_findings(message):
+    """Commit FINDINGS.md in the target checkout, if the render changed it.
+
+    Returns whether it committed. The guard is not an optimization: a
+    regeneration that produced the same bytes has nothing to record, and
+    `git commit` on an unchanged tree fails.
+    """
+    r = subprocess.run(["git", "status", "--porcelain", "FINDINGS.md"],
+                       cwd=TARGET, capture_output=True, text=True)
+    if not r.stdout.strip():
+        return False
+    sh(["git", "add", "FINDINGS.md"], TARGET)
+    sh(["git", "commit", "-m", message], TARGET)
+    return True
+
+
+def refresh_findings(conn):
+    """Render the window over the store's rows into the target's FINDINGS.md.
+
+    A `conn` of None makes this a no-op, like `set_phase()` and
+    `record_round()`: a storeless `run_task()` has no rows to render, and the
+    file it would otherwise overwrite with an empty window is left alone.
+    """
+    if conn is None:
+        return
+    write_findings(conn)
 
 
 def claim_run(conn, project, task):
@@ -1001,8 +1209,15 @@ def main(provider=None):
                 merged = run_task(task, conn, run_id)
             finally:
                 release_run(conn, run_id, merged)
+                # Close-out, and the first moment the run's own outcome is a
+                # row: the window is regenerated here rather than inside
+                # `run_task()` so the entry that ends the run is in it.
+                refresh_findings(conn)
             if not merged:
+                # The regenerated window stays uncommitted, like the preserved
+                # branch it describes: a human closes both out.
                 return  # stop on first failure; ticket stays In Progress for a human
+            commit_findings(f"Complete task {task['id']}: {task['title']}")
     finally:
         conn.close()
 
