@@ -506,3 +506,56 @@ Full suite: 194 tests, OK. Committed as `bd1a237`.
 ## 2026-08-30T02:11:41Z — KO-129
 MERGED to main (branch task/wiring-2-6-run-phase-tracking deleted). Verify: passed.
 actual: 14.7 min · estimate: 25 min · rounds: 2
+
+## 2026-08-30T02:25:13Z — KO-130
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- [factory.py](/workspace/factory.py:519): `parse_findings()` silently discards unparseable blocks whenever another block parses. A review containing findings for both `factory.py` and `Dockerfile` stores only the former, corrupting fingerprints and overlap comparisons.
+- [store.py](/workspace/store.py:1329): Recording a round never updates `runs.reviewRoundCount`, leaving it at `0` even when `reviewRounds` rows exist and making run-level review state inconsistent.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Both findings adjudicated and the ADDRESS item is fixed and committed as `ebe581d`.
+
+**1. `factory.py:519` — findings silently dropped → ADDRESS (fixed)**
+
+Confirmed and reproduced. `parse_findings()` skipped any block the path regex missed, and the whole-reply fallback only fired when *nothing* parsed — precisely the case where loss couldn't occur. The ticket's own rule ("anything unparseable lands as one p2 finding … never dropped") was violated at block granularity.
+
+Fix: a block with no matchable path is still stored when the reviewer wrote it as a list item — under `UNPARSED_PATH`, carrying its own explicit severity marker. The bullet is the reviewer declaring it filed a complaint; whether the regex finds a path is a fact about the parser (`Dockerfile`, `Makefile`, a bare directory have nothing to match on). Narration around the list — the opening sentence, the trailing `VERDICT:` line — deliberately stays out: storing it would put an `(unparsed)` key in nearly every round's fingerprint and inflate every §6 overlap by a constant, degrading exactly the stuck-review signal these rows exist for.
+
+Residual gap, stated rather than hidden: an *unbulleted* paragraph citing an unmatchable path in a reply where something else parsed. Closing that needs the reviewer output format to change, which KO-130 puts out of scope.
+
+New test drives the loop with your exact example and reads the row back over its own connection — RED beforehand with the `Dockerfile` finding missing, GREEN now.
+
+**2. `store.py:1329` — `runs.reviewRoundCount` never updated → FOLLOW_UP**
+
+Valid inconsistency, but the column belongs to KO-133 (Wiring 6/6), whose acceptance criterion is the run row carrying `endedAt`, `reviewRoundCount` and the estimate snapshot at close-out. Writing it here would put the counter's only writer outside the close-out transaction that ticket builds. Nothing reads the column today (grep: schema DDL and its schema test only), so no reader is misled in the interim, and `SELECT COUNT(*) FROM reviewRounds` is exact meanwhile. Named in the commit message.
+
+Verification: ticket's verify command `python3 -m unittest discover -s tests -p 'test_wiring*' -v` — 28 tests, OK. Full suite — 202 tests, OK.
+
+## 2026-08-30T02:29:37Z — KO-130
+Round 2: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `factory.py:536-537`: Distinct unparsed findings receive the same `(unparsed)` path and no line. Same-severity findings about `Dockerfile` and `Makefile` therefore produce identical fingerprint keys, causing unrelated review rounds to appear identical or fully overlapping—the comparison this task is meant to enable.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+**Adjudication: ADDRESS** (the one finding) — fixed and committed as `a522dcc`.
+
+The reviewer was right, and the collision was worse than the report: `store._finding_keys()` is a *set* over `(path, line, severity)`, so every pathless finding at the same severity folded into a single key. A round complaining about `Dockerfile` and `Makefile` fingerprinted as one complaint, and any unrelated round filing one pathless p2 fingerprinted identically to it. `raw_finding()` had the same problem across rounds — two different unparseable replies hashed alike.
+
+**Fix** (`factory.py`): new `unparsed_path(message)` appends a 12-hex sha256 of the finding's own text to `UNPARSED_PATH`; both `parse_findings()` and `raw_finding()` build their placeholder through it. The message is whitespace-normalized and lowercased first, so a rewrapped or recapitalized complaint still keys to the same place. This isn't a general loosening — findings that cite a file still key on the file, with `message` excluded as before. The pathless case has nothing else identifying it, and the failure directions aren't symmetric: two complaints reading as one is a false stuck-review stop, while one complaint reworded reading as two only costs the softer overlap signal. A positional suffix (`(unparsed):1`) was the alternative, rejected because it breaks when the reviewer reorders its list.
+
+**Tests** (`tests/test_wiring_rounds.py`, +3): two pathless blockers → two distinct keys; two rounds with different pathless complaints → distinct fingerprints and 0 overlap; a rewrapped re-raise → same fingerprint. The first two fail against the bare placeholder (verified by stubbing `unparsed_path()` back to the constant). Wiring suite 31 tests OK; full suite 205 OK.
+
+Nothing declined or deferred — this was the only finding.
+
+## 2026-08-30T02:30:37Z — KO-130
+Terminal adjudication after 2 review rounds: PASS
+
+Adjudicator reply:
+The candidate correctly persists structured review and adjudication rounds, and all 31 task-focused tests pass.
+
+VERDICT: PASS
