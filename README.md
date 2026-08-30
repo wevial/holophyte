@@ -113,6 +113,46 @@ ruff is a developer tool, not a dependency: install it on the host with
 `LINEAR_API_KEY` and `HOLO2_PROJECT_ID` — env vars or `.env` next to
 `linear_provider.py`.
 
+Per-target behavior lives in `<repo>.holophyte.toml`, a sibling of the target
+the way `<repo>.holophyte.db` and `<repo>.worktrees` are. The file is optional:
+absent means every default below stays in place, which is how the factory runs
+against itself. A file that exists but does not parse is a startup error naming
+the file and the line — a config the operator wrote is never silently ignored.
+Tables this version does not know are left alone.
+
+```toml
+[agents]
+# Each role's harness command. The task goal is appended as the last argument,
+# so end the command where its prompt goes (`-p` for Claude Code, nothing for
+# `codex exec`). Omit a role to keep its default.
+implementer = "claude --model opus --effort high -p"   # default route
+reviewer    = "my-reviewer --diff"                     # see the caveat below
+adjudicator = "my-reviewer --final"
+```
+
+Defaults, in place whenever the key is absent: `claude -p <goal> --model opus
+--effort high` implements; `review` and `adjudicate` go through the hardened
+container described below. **A `reviewer` or `adjudicator` override is also an
+opt-out of that container** — the configured command runs directly in the task
+worktree. Overriding the implementer has no such effect; it already runs there.
+
+What an override keeps is the pair the round is about. Before the command runs,
+the task worktree's `refs/review/base` and `refs/review/candidate` are pointed
+at the round's two commits — the same names the staged checkout uses, and the
+names the reviewer prompt tells the command to read. Both must be full commit
+SHAs the worktree has, with the base an ancestor of the candidate, or the round
+is refused rather than run against whatever `HEAD` happens to be.
+
+Every configured command is resolved at startup, before the run claims a
+ticket: the string has to split to an argv, and its program has to be an
+executable found on `PATH` or named by an absolute path. A name that resolves
+nowhere is an error while nothing is in flight, rather than a
+`FileNotFoundError` in the middle of a round holding the project's run lease.
+Startup does not *run* the command — a route is an agent turn, not a probe.
+Relative paths with a directory in them (`./review.sh`) are refused: rounds run
+in a task worktree that does not exist yet, so the name would resolve somewhere
+neither startup nor the operator named.
+
 ## Local reviewer boundary
 
 The factory never gives a reviewer the implementation worktree directly.
