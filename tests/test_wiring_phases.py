@@ -273,5 +273,65 @@ class PhaseWriteTests(unittest.TestCase):
                          ("working", 2500, [("claimed -> working", 2500)]))
 
 
+class ReleaseTests(unittest.TestCase):
+    """`release()` writes the run's ending exactly once: it moves phase as
+    well as outcome, so a stray second call must not rewrite either."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.conn = store.open(Path(tmp.name) / "store.sqlite3")
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        self.project = store.ensure_project(self.conn, "team", Path(tmp.name) / "repo")
+        ticket = store.mirror_ticket(self.conn, self.project, "iss-1", "HOL-1", "a ticket")
+        self.run_id = store.claim(self.conn, self.project, ticket, now=1000)
+
+    def run_row(self):
+        return self.conn.execute(
+            "SELECT phase, outcome, outcomeReason, resumePhase, endedAt"
+            " FROM runs WHERE id = ?", (self.run_id,)).fetchone()
+
+    def transitions(self):
+        return [summary for (summary,) in self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? ORDER BY seq",
+            (self.run_id,))]
+
+    def test_a_merged_run_stays_merged_when_released_again(self):
+        store.set_phase(self.conn, self.run_id, "working", now=2000)
+        store.release(self.conn, self.run_id, "merged", now=3000)
+
+        store.release(self.conn, self.run_id, "failed", reason="stray", now=4000)
+
+        self.assertEqual(self.run_row(), ("done", "merged", None, None, 3000))
+        # And the ignored call left nothing in the stream either: an event
+        # saying `done -> failed` would describe a transition that never was.
+        self.assertEqual(self.transitions()[-1:], ["working -> done: run ended, outcome merged"])
+
+    def test_re_releasing_a_failed_run_keeps_its_resume_phase(self):
+        store.set_phase(self.conn, self.run_id, "working", now=2000)
+        store.set_phase(self.conn, self.run_id, "reviewing", now=2500)
+        store.release(self.conn, self.run_id, "failed", reason="reviewer died",
+                      now=3000)
+
+        store.release(self.conn, self.run_id, "failed", reason="stray", now=4000)
+
+        self.assertEqual(
+            self.run_row(),
+            ("failed", "failed", "reviewer died", "reviewing", 3000))
+
+    def test_a_resumed_run_can_be_released_again(self):
+        """The guard is about ended runs, not about run ids seen before:
+        `resume()` puts a failed run back to work, and the release that ends
+        that second stretch has to land."""
+        store.set_phase(self.conn, self.run_id, "working", now=2000)
+        store.release(self.conn, self.run_id, "failed", now=3000)
+        self.assertEqual(store.resume(self.conn, self.run_id, now=3500), "working")
+
+        store.release(self.conn, self.run_id, "merged", now=4000)
+
+        self.assertEqual(self.run_row(), ("done", "merged", None, None, 4000))
+
+
 if __name__ == "__main__":
     unittest.main()

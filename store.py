@@ -491,6 +491,12 @@ TERMINAL_PHASES = {
     "failed": "failed",
 }
 
+# The phases those outcomes leave behind. A run with `endedAt` stamped and
+# sitting in one of them is over, and that pair is what `release()` refuses to
+# end a second time. A resumed run is not in the set: `resume()` moves a failed
+# run back to a work phase, so the run it hands back is releasable again.
+ENDED_PHASES = frozenset(TERMINAL_PHASES.values())
+
 
 def release(conn, run_id, outcome, reason=None, now=None):
     """End run `run_id` with `outcome` and give the project's lease back.
@@ -513,12 +519,19 @@ def release(conn, run_id, outcome, reason=None, now=None):
     known: `runs.phase` reads `failed` from here on, and §5 resumes a failed
     run into the phase it left.
 
-    Both lease clears are scoped to *this* run id. A second release of an
-    already-released run is therefore harmless rather than destructive: it
-    re-stamps the run's ending and clears nothing, instead of dropping a lease
-    a newer run has since taken. An unknown `run_id` is a caller bug and
-    raises `ValueError`. `now` is epoch milliseconds for `endedAt`, defaulting
-    to the clock.
+    Releasing a run that has already ended — `endedAt` stamped and parked in
+    one of `ENDED_PHASES` — does nothing at all. Since this call writes phase
+    as well as outcome, an unguarded second release would be destructive
+    rather than harmless: it would re-end a `merged`/`done` run as
+    `failed`/`failed`, and a repeat of a failed release would read that run's
+    own `failed` phase back as the phase it stopped in and so wipe the
+    `resumePhase` §5 resumes into. Terminal state and the resume point are
+    written once, by the release that ended the run. Both lease clears stay
+    scoped to *this* run id for the same reason, so no release can drop a
+    lease a newer run has since taken.
+
+    An unknown `run_id` is a caller bug and raises `ValueError`. `now` is
+    epoch milliseconds for `endedAt`, defaulting to the clock.
     """
     if outcome not in TERMINAL_PHASES:
         raise ValueError(f"unknown outcome {outcome!r}")
@@ -527,11 +540,17 @@ def release(conn, run_id, outcome, reason=None, now=None):
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute(
-            "SELECT ticketId, projectId FROM runs WHERE id = ?", (run_id,)
+            "SELECT ticketId, projectId, endedAt, phase FROM runs WHERE id = ?",
+            (run_id,),
         ).fetchone()
         if row is None:
             raise ValueError(f"no run {run_id}")
-        ticket_id, project_id = row
+        ticket_id, project_id, ended_at, phase = row
+        if ended_at is not None and phase in ENDED_PHASES:
+            # Already over. Nothing to write, so the transaction ends without
+            # a write rather than re-stamping an ending over the real one.
+            conn.rollback()
+            return
         # Through `set_phase()` like every other phase move, so the run's last
         # transition is in its event stream too: a merged run whose log stops
         # at `merging` reads as a run that never finished.
