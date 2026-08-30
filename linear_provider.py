@@ -186,7 +186,7 @@ def set_state(issue_id, state_name):
             f"Linear refused to move issue {issue_id} to {state_name!r}")
 
 
-def claim_next():
+def claim_next(skip=()):
     """First ready issue (by identifier), parsed. None when there is none.
 
     Claiming no longer moves the issue to In Progress here. The claim's status
@@ -194,8 +194,15 @@ def claim_next():
     `in_flight` and projects that through `mirror_push()` — so leaving a state
     call in the provider would post the same fact twice, from a place that
     does not know whether the claim actually took the project's lease.
+
+    `skip` is the identifiers the caller has already refused on this pass, and
+    it exists because "first ready issue" is otherwise the *same* issue every
+    time it is asked. A ticket the loop will not claim — one blocked by
+    repeated failures — still projects to a column the ready query counts, so
+    without a way to ask for the next one after it, one unclaimable ticket at
+    the head of the queue starves every ticket behind it forever.
     """
-    ready = list_ready_issues()
+    ready = [i for i in list_ready_issues() if i["identifier"] not in skip]
     if not ready:
         return None
     issue = sorted(ready, key=lambda i: i["identifier"])[0]

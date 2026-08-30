@@ -43,9 +43,12 @@ class StubProvider:
         self.states = []
         self.comments = []
 
-    def claim_next(self):
+    def claim_next(self, skip=()):
         self.claims += 1
-        return self.queue.pop(0) if self.queue else None
+        for i, task in enumerate(self.queue):
+            if task["id"] not in skip:
+                return self.queue.pop(i)
+        return None
 
     def set_state(self, issue_id, state):
         self.states.append((issue_id, state))
