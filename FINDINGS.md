@@ -646,3 +646,7 @@ Full suite: 227 tests, all passing.
 ## 2026-08-30T03:22:08Z — KO-133
 MERGED to main (branch task/wiring-6-6-timing-telemetry-in deleted). Verify: passed.
 actual: 14.7 min · estimate: 25 min · rounds: 2
+
+## 2026-08-30T03:28:40Z — KO-134
+MERGED to main (branch task/tooling-ruff-lint-config-verif deleted). Verify: passed.
+actual: 6.5 min · estimate: 25 min · rounds: 1
