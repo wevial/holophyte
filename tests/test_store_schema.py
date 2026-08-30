@@ -206,24 +206,91 @@ class StoreSchemaTests(unittest.TestCase):
             ("working",),
         )
 
-    def a_run(self, conn, phase="working"):
-        """One project, ticket and run in `phase`, for the migration tests."""
+    def test_init_backfills_review_round_counts_an_older_store_never_wrote(self):
+        # `reviewRoundCount` has been in the schema since the first version,
+        # but nothing wrote it until close-out began stamping it -- so a run
+        # that ended before then holds the column's DEFAULT 0 next to the
+        # review rounds it actually took. The report and FINDINGS.md read the
+        # column, and a stale 0 there is a wrong answer rather than a missing
+        # one.
+        conn = self.legacy_store()
+        ended = self.a_run(conn, phase="done", ended_at=5_000)
+        self.a_review_round(conn, ended, round=1)
+        self.a_review_round(conn, ended, round=2)
+
+        store.init(conn)
+
+        self.assertEqual(self.review_round_count(conn, ended), 2)
+
+    def test_backfill_leaves_a_run_still_in_flight_alone(self):
+        # An unfinished run has not reached the close-out that owns this
+        # column, so its count is not final and the backfill must not
+        # pre-empt it -- the rounds it is about to file would make whatever
+        # was written here wrong again.
+        conn = self.legacy_store()
+        running = self.a_run(conn, phase="reviewing")
+        self.a_review_round(conn, running, round=1)
+
+        store.init(conn)
+
+        self.assertEqual(self.review_round_count(conn, running), 0)
+
+    def test_backfill_is_idempotent_and_does_not_undo_a_stamped_count(self):
+        # The second call has nothing left to repair, and a count already
+        # stamped by `release()` agrees with the rows it was counted from, so
+        # it survives untouched.
+        conn = self.legacy_store()
+        ended = self.a_run(conn, phase="done", ended_at=5_000)
+        self.a_review_round(conn, ended, round=1)
+
+        store.init(conn)
+        store.init(conn)
+
+        self.assertEqual(self.review_round_count(conn, ended), 1)
+
+    def review_round_count(self, conn, run_id):
+        (count,) = conn.execute(
+            "SELECT reviewRoundCount FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        return count
+
+    def a_review_round(self, conn, run_id, round):  # noqa: A002 - the column's name
+        """One `reviewRounds` row on `run_id`, for the backfill tests."""
+        conn.execute(
+            "INSERT INTO reviewRounds"
+            " (runId, round, verdict, findingsFingerprint, reviewerModel,"
+            "  startedAt)"
+            " VALUES (?, ?, 'pass', 'fp', 'a-model', 0)",
+            (run_id, round),
+        )
+        conn.commit()
+
+    def a_run(self, conn, phase="working", ended_at=None):
+        """One project, ticket and run in `phase`, for the migration tests.
+
+        Each call makes its own project and ticket, numbered so that two
+        runs in one test do not collide on `projects.linearTeamId` or
+        `tickets.linearIssueId`, both of which are UNIQUE.
+        """
         columns, values = A_PROJECT
+        nth = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0] + 1
         project_id = conn.execute(
-            f"INSERT INTO projects ({columns}) VALUES (?, ?, ?, ?)", values
+            f"INSERT INTO projects ({columns}) VALUES (?, ?, ?, ?)",
+            (f"{values[0]}_{nth}",) + values[1:],
         ).lastrowid
         ticket_id = conn.execute(
             "INSERT INTO tickets"
             " (projectId, linearIssueId, linearIdentifier, title, status,"
             "  affinity, mirroredAt)"
-            " VALUES (?, 'iss_1', 'HOL-1', 'a ticket', 'in_flight', 'any', 0)",
-            (project_id,),
+            " VALUES (?, ?, ?, 'a ticket', 'in_flight', 'any', 0)",
+            (project_id, f"iss_{nth}", f"HOL-{nth}"),
         ).lastrowid
         run_id = conn.execute(
             "INSERT INTO runs"
-            " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat)"
-            " VALUES (?, ?, 1, ?, 0, 0)",
-            (ticket_id, project_id, phase),
+            " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
+            "  endedAt)"
+            " VALUES (?, ?, 1, ?, 0, 0, ?)",
+            (ticket_id, project_id, phase, ended_at),
         ).lastrowid
         conn.commit()
         return run_id

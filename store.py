@@ -263,19 +263,51 @@ ADDED_COLUMNS = (
 )
 
 
+# Rows an older version of this module wrote without a value, as (what it
+# repairs, SQL). `ADDED_COLUMNS` carries a store forward far enough to be read
+# from; this carries it forward far enough to be read *correctly*, which is a
+# different problem: `runs.reviewRoundCount` has shipped since the first
+# schema, but nothing wrote it until close-out started stamping it, so every
+# run that ended before then still holds the column's `DEFAULT 0` while its
+# `reviewRounds` rows say otherwise. The report and FINDINGS.md read the
+# column, so left alone those runs would each claim zero rounds -- not a
+# missing reading but a confidently wrong one.
+#
+# Each statement is written to be self-limiting: it selects only the rows that
+# disagree with the truth it recomputes, so the second call matches nothing
+# and `init()` stays idempotent. Only ended runs are touched, because a run
+# still in flight has not reached the close-out that owns this column and its
+# count is not final yet.
+BACKFILLS = (
+    (
+        "runs.reviewRoundCount on runs that ended before close-out stamped it",
+        "UPDATE runs SET reviewRoundCount ="
+        "     (SELECT COUNT(*) FROM reviewRounds WHERE runId = runs.id)"
+        " WHERE endedAt IS NOT NULL"
+        "   AND reviewRoundCount <>"
+        "     (SELECT COUNT(*) FROM reviewRounds WHERE runId = runs.id)",
+    ),
+)
+
+
 def init(conn):
     """Create every table the state model defines, if absent, and migrate.
 
-    Two steps, because `CREATE TABLE IF NOT EXISTS` alone would only ever
+    Three steps, because `CREATE TABLE IF NOT EXISTS` alone would only ever
     bootstrap an empty file: the tables are created, then every `ADDED_COLUMNS`
-    entry missing from an existing table is added. That second step is what
-    carries a store created by an earlier version of this module forward
-    instead of leaving it one column short of the code that reads it.
+    entry missing from an existing table is added, then every `BACKFILLS`
+    statement repairs the rows an older version of this module left with a
+    value it never filled in. The second step is what carries a store created
+    by an earlier version forward instead of leaving it one column short of
+    the code that reads it; the third is what keeps that store's history from
+    reading as a confident zero.
 
     Idempotent: safe to call on an already-initialized database, where it
-    creates nothing, adds nothing and touches no rows. Not a downgrade path —
-    an older module opening a newer store sees columns it does not know about,
-    which is harmless, while the reverse is what this repairs.
+    creates nothing, adds nothing, and touches only rows a backfill finds
+    still disagreeing with what it recomputes — none, on the second call, and
+    none ever on a store this module wrote from the start. Not a downgrade
+    path — an older module opening a newer store sees columns it does not know
+    about, which is harmless, while the reverse is what this repairs.
     """
     conn.executescript(SCHEMA)
     for table, column, ddl in ADDED_COLUMNS:
@@ -284,6 +316,10 @@ def init(conn):
         columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+    # After the ALTERs, not before: a backfill is free to read a column the
+    # step above has only just added.
+    for _repairs, sql in BACKFILLS:
+        conn.execute(sql)
     conn.commit()
 
 

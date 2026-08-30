@@ -1507,10 +1507,12 @@ def report(conn=None, out=None):
     claimed, no worktree is cut and no provider is imported -- which is what
     makes it safe to run against the store of a loop that is still working.
 
-    The one write it can make is `open_store()`'s migration, so a store older
+    The one write it can make is `open_store()`'s migration: a store older
     than the run row's estimate column is brought up to the schema this
-    queries instead of failing on the missing column. A target with no store
-    at all is not created for the sake of an empty table; it is reported.
+    queries instead of failing on the missing column, and the round counts an
+    older module never stamped are recomputed from the rounds themselves
+    rather than reported as zero. A target with no store at all is not created
+    for the sake of an empty table; it is reported.
     """
     out = out or sys.stdout
     if conn is None and not STORE_PATH.exists():
