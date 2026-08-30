@@ -14,6 +14,7 @@ Loop:
      the final state, no new findings, no further fixes.
   6. On approval or a terminal PASS: merge to main, check off the task, repeat.
 """
+import hashlib
 import re
 import subprocess
 import sys
@@ -457,9 +458,16 @@ SEVERITY_RE = re.compile(
     r"[\[(]\s*(p0|p1|p2|nit|blocker)\s*[\])]"
     r"|^[\s\-*\d.)]*(p0|p1|p2|nit|blocker)\b\s*[:\-]", re.I | re.M)
 DEFAULT_SEVERITY = "p2"
-# The path a finding gets when the reviewer named none. Not a path any
+# The path prefix a finding gets when the reviewer named none. Not a path any
 # repository holds, so it cannot collide with a real file's findings, and
-# readable in a `path:line:severity` key.
+# readable in a `path:line:severity` key. A prefix rather than the whole path
+# because that key is all §6 compares rounds by: findings sharing one
+# placeholder would collapse into a single key, so a round complaining about
+# `Dockerfile` and about `Makefile` would fingerprint as one complaint, and an
+# unrelated round that filed one pathless p2 would fingerprint identically to
+# it -- the false "same round twice" this task exists to make detectable.
+# `unparsed_path()` appends a digest of the finding's own text to keep them
+# apart.
 UNPARSED_PATH = "(unparsed)"
 # One finding is a complaint, not a transcript. Long enough for a blocker with
 # its reasoning; short enough that a runaway reply cannot make one row the
@@ -469,6 +477,26 @@ MAX_FINDING_CHARS = 2000
 # a reviewer's findings list actually uses, so a finding keeps the lines that
 # explain it instead of being cut to the one that names the file.
 BLOCK_BREAK_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+
+
+def unparsed_path(message):
+    """`UNPARSED_PATH` made distinct per complaint, by digesting its message.
+
+    A finding with no path has only its text to say which complaint it is, so
+    that is what the placeholder carries. This is not message prose leaking
+    into the fingerprint generally -- a finding that cites a file still keys on
+    the file -- it is the pathless case having nothing else to key on.
+
+    Whitespace-normalized and lowercased before hashing, so a reviewer that
+    rewraps or recapitalizes an unchanged complaint still keys to the same
+    place. Prose it genuinely rewrote keys somewhere new, which is the
+    direction to fail in: §6 reads a fingerprint match as a stuck review, so
+    two distinct complaints reading as one is a false stop, while one complaint
+    reworded reading as two only costs the softer overlap signal.
+    """
+    normalized = " ".join(message.split()).lower()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+    return f"{UNPARSED_PATH}:{digest}"
 
 
 def finding_message(text):
@@ -488,8 +516,9 @@ def raw_finding(reply):
     it under a placeholder path is a stored round that claims the reviewer
     found nothing.
     """
-    return {"path": UNPARSED_PATH, "severity": DEFAULT_SEVERITY,
-            "message": finding_message(reply)}
+    message = finding_message(reply)
+    return {"path": unparsed_path(message), "severity": DEFAULT_SEVERITY,
+            "message": message}
 
 
 def finding_blocks(text):
@@ -515,8 +544,8 @@ def parse_findings(reply):
     as the message, so the reasoning stays with the complaint it belongs to.
 
     A block the path pattern found nothing in is still a finding when the
-    reviewer wrote it as a list item, filed under `UNPARSED_PATH` with whatever
-    severity it marked. The reviewer's own bullet is what says it filed a
+    reviewer wrote it as a list item, filed under an `unparsed_path()`
+    placeholder with whatever severity it marked. The reviewer's own bullet is what says it filed a
     complaint, and this parser recognizing no path in it is a fact about the
     parser: `Dockerfile`, `Makefile` and a bare directory carry nothing to
     match on. Keeping only the items whose paths happen to parse would leave
@@ -533,11 +562,11 @@ def parse_findings(reply):
         listed = BLOCK_BREAK_RE.match(block) is not None
         if match is None and not listed:
             continue
-        path, line = ((match.group(1), match.group(2)) if match
-                      else (UNPARSED_PATH, None))
         message = finding_message(block)
         if not message:
             continue  # a bullet with nothing after it is not a complaint
+        path, line = ((match.group(1), match.group(2)) if match
+                      else (unparsed_path(message), None))
         finding = {"path": path, "severity": finding_severity(block),
                    "message": message}
         if line and int(line) > 0:

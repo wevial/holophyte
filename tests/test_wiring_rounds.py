@@ -157,9 +157,64 @@ class ReviewRoundRowTests(unittest.TestCase):
         findings = json.loads(self.rounds()[0]["findings"])
         self.assertEqual([(f["path"], f["severity"]) for f in findings],
                          [("factory.py", "p2"),
-                          (factory.UNPARSED_PATH, "p0")])
+                          (factory.unparsed_path(findings[1]["message"]), "p0")])
+        self.assertTrue(findings[1]["path"].startswith(factory.UNPARSED_PATH))
         self.assertIn("build deps into the runtime image",
                       findings[1]["message"])
+
+    def test_two_pathless_findings_are_two_keys_not_one(self):
+        """The placeholder path carries a digest of the complaint, so a round
+        that filed two findings this parser found no path in is fingerprinted
+        as two. Sharing one placeholder would collapse them into a single
+        `path:line:severity` key and hash the round to a complaint half its
+        size."""
+        self.loop(
+            "- [BLOCKER] Dockerfile installs build deps into the runtime image.\n"
+            "- [BLOCKER] Makefile has no target for the new stage.\n"
+            "\nVERDICT: REQUEST_CHANGES",
+            "VERDICT: APPROVE")
+
+        findings = json.loads(self.rounds()[0]["findings"])
+        self.assertEqual(len(findings), 2)
+        self.assertNotEqual(findings[0]["path"], findings[1]["path"])
+        self.assertEqual(self.rounds()[0]["fingerprint"],
+                         store.findings_fingerprint(findings))
+        self.assertNotEqual(
+            store.findings_fingerprint(findings),
+            store.findings_fingerprint(findings[:1]))
+
+    def test_unrelated_pathless_rounds_do_not_fingerprint_alike(self):
+        """Two rounds complaining about different pathless things are two
+        rounds. Keying them both to a bare placeholder would make §6 read
+        unrelated rounds as the same round twice -- the stuck-review signal
+        inverted, on the comparison this task exists to enable."""
+        self.loop(
+            "- [BLOCKER] Dockerfile installs build deps into the runtime image.\n"
+            "\nVERDICT: REQUEST_CHANGES",
+            "- [BLOCKER] Makefile has no target for the new stage.\n"
+            "\nVERDICT: REQUEST_CHANGES",
+            "VERDICT: PASS")
+
+        first, second = self.rounds()[:2]
+        self.assertNotEqual(first["fingerprint"], second["fingerprint"])
+        self.assertEqual(
+            store.findings_overlap(json.loads(first["findings"]),
+                                   json.loads(second["findings"])), 0)
+
+    def test_a_re_raised_pathless_finding_still_matches_itself(self):
+        """The other half of the digest: an unchanged complaint the reviewer
+        rewrapped is the same complaint, so the two rounds overlap rather than
+        each round reading as new work."""
+        self.loop(
+            "- [BLOCKER] Dockerfile installs build deps into the runtime image.\n"
+            "\nVERDICT: REQUEST_CHANGES",
+            "- [BLOCKER] Dockerfile installs build deps\n"
+            "  into the runtime image.\n"
+            "\nVERDICT: REQUEST_CHANGES",
+            "VERDICT: PASS")
+
+        first, second = self.rounds()[:2]
+        self.assertEqual(first["fingerprint"], second["fingerprint"])
 
     def test_unparseable_reviewer_output_is_kept_as_one_raw_finding(self):
         """A reply naming no file is still a round that said something. It is
