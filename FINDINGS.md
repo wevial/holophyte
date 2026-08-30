@@ -599,3 +599,24 @@ One thing worth your attention: the underlying weakness is that a test repo inhe
 ## 2026-08-30T02:48:39Z — KO-131
 MERGED to main (branch task/wiring-4-6-findings-md-as-a-wi deleted). Verify: passed.
 actual: 18.0 min · estimate: 25 min · rounds: 2
+
+## 2026-08-30T03:05:22Z — KO-132
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- [factory.py](/workspace/factory.py:1334): `main()` ignores a refused `ready → in_flight` transition and still executes `run_task()`. A stale Linear ticket already stored as `merged` can therefore be claimed and implemented repeatedly—potentially every loop iteration after a failed Done push—instead of re-projecting Done or skipping it.
+
+- [linear_provider.py](/workspace/linear_provider.py:170): `set_state()` ignores `issueUpdate.success`. A `{success: false}` response is treated as a successful mirror push, so no warning is recorded although Linear remains stale.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+Both findings adjudicated **ADDRESS** and fixed; committed as `1506b66`.
+
+**Finding 1 — `main()` ignored the refused `ready → in_flight`** (confirmed, and worse than theoretical): `linear_provider.list_ready_issues()` treats `started` issues as ready, so a store-`merged` ticket whose Done push failed stays non-terminal in Linear and is re-offered on the very next pass — merged work re-implemented once per iteration.
+
+- `mirror_status()` now returns whether the *store* took the move (True/False) rather than the pushed state. The two failures are different in kind: a push that doesn't land is a stale board you can carry on past; a refused transition means the ticket isn't where the caller thought it was.
+- `main()` treats the refusal as "no work may start": releases the lease it just took (with a truthful reason — nothing ran, so not `release_run()`'s phase/preserved-branch wording), re-projects the ticket's real status as a best-effort attempt at unsticking the board, prints, and returns. Stopping rather than taking the next ticket mirrors the `ClaimConflict` path directly above, and prevents a spin when the re-push itself can't move the card (unmapped status, Linear down).
+
+**Finding 2 — `set_state()` ignored `issueUpdate.success`**: `_gql()` only raises on an `errors` block, so a `{success: false}` returned silently and `mirror_push()` logged a projection that never happened. The mutation's verdict is now read; a false one raises, which is the signal the best-effort push already handles.
+
+Tests added in `tests/test_wiring_mirror.py`: a merged ticket offered a second time isn't run (no `run_task()`, one Done re-push, status unchanged, refusal warned) and its run returns the lease as `failed`; `set_state()` sends the resolved state id on success and raises naming issue and state on `success: false`. Full suite: 218 tests, all passing.
