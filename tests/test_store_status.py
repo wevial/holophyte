@@ -22,18 +22,22 @@ from pathlib import Path
 
 import store
 
-# The §3 drawing, read as (from, to) pairs:
+# The §3 drawing, read as (from, to) pairs, plus Holophyte's own escalation
+# edge `in_flight → blocked_on_operator` (KO-140): a ticket the loop keeps
+# failing on is parked for an operator rather than given up on, and §3 draws
+# an in-flight ticket no other way to stop being claimed.
 #
 #     needs_spec → ready → in_flight → merged
-#                     ↕                  ↘
-#              blocked_on_deps      abandoned
-#                     ↕
-#             blocked_on_operator
+#                     ↕         ↓        ↘
+#              blocked_on_deps  │   abandoned
+#                     ↕         │
+#             blocked_on_operator ←┘
 LEGAL_EDGES = {
     ("needs_spec", "ready"),
     ("ready", "in_flight"),
     ("in_flight", "merged"),
     ("in_flight", "abandoned"),
+    ("in_flight", "blocked_on_operator"),
     ("ready", "blocked_on_deps"),
     ("blocked_on_deps", "ready"),
     ("blocked_on_deps", "blocked_on_operator"),

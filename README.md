@@ -33,6 +33,12 @@ Usage: `python3 factory.py /srv/dev/holo2test`, or
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —
    there is nothing to preserve.
+8. On the *second* failed run of the same ticket (`MAX_FAILED_RUNS`), the
+   ticket is blocked instead of left open: its stored status becomes
+   `blocked_on_operator` and one Linear comment lists what each failed run
+   ended on. The claim path re-reads that count before every claim, so the
+   ticket is refused even when the board has been dragged back to Todo —
+   unblocking is a human's move, not the loop's.
 
 ## Files
 

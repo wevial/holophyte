@@ -1164,6 +1164,31 @@ def refresh_findings(conn):
     write_findings(conn)
 
 
+def mirror_key(task):
+    """The `linearIssueId` a task's mirror is keyed by.
+
+    The canonical issue UUID when the provider has one, and the human label
+    otherwise. Written once here because two callers now have to agree on it:
+    `claim_run()` mirrors under this id, and the failure-pattern check below
+    has to find that same row *before* anything is claimed.
+    """
+    return task.get("issue_id") or task["id"]
+
+
+def mirrored_ticket(conn, project, task):
+    """The id of `task`'s existing mirror row, or None if it has never run.
+
+    Deliberately a read and not a mirror: this is asked before the claim, and
+    a ticket the store has never seen has no failure history to have an
+    opinion about. Creating the row here would only move `claim_run()`'s write
+    earlier for no gain.
+    """
+    row = conn.execute(
+        "SELECT id FROM tickets WHERE projectId = ? AND linearIssueId = ?",
+        (project, mirror_key(task))).fetchone()
+    return row[0] if row else None
+
+
 def claim_run(conn, project, task):
     """Mirror the claimed ticket and take the project's lease; return both ids.
 
@@ -1193,7 +1218,7 @@ def claim_run(conn, project, task):
     ticket_id = store.mirror_ticket(
         conn,
         project,
-        linear_issue_id=task.get("issue_id") or task["id"],
+        linear_issue_id=mirror_key(task),
         linear_identifier=task["id"],
         title=task["title"],
         acceptance_criteria=task.get("criteria") or (),
@@ -1345,6 +1370,111 @@ def mirror_status(conn, ticket_id, status, provider=None):
     return True
 
 
+# --- failure-pattern escalation ----------------------------------------------
+# A rollback catches one failure; nothing here caught a *pattern*. A ticket the
+# loop cannot finish stays non-terminal on the board, so the provider offers it
+# again on the next pass, and the pass after that, forever — the loop has no
+# memory of having already tried. The store does: one `runs` row per attempt,
+# each stamped with the outcome it ended on. So the escalation is a count over
+# rows that already exist, asked at the two moments that can act on it — when a
+# run closes out, and before the next one is claimed.
+#
+# The threshold is a module constant rather than project config on purpose:
+# per-project policy is a real question (a flaky integration suite deserves a
+# higher bar than a typo fix) and this is not the ticket that answers it. The
+# seam is here, with one name to change.
+MAX_FAILED_RUNS = 2
+
+
+def failure_history(conn, ticket_id):
+    """The ticket's failed runs, oldest first, as `(attempt, reason)` rows.
+
+    One query for both halves of the escalation: its length is what trips the
+    threshold and its reasons are what the human is told. Reading them
+    together is what stops the comment from listing a different set of runs
+    from the one that blocked the ticket.
+    """
+    return conn.execute(
+        "SELECT attempt, outcomeReason FROM runs"
+        " WHERE ticketId = ? AND outcome = 'failed' ORDER BY attempt",
+        (ticket_id,)).fetchall()
+
+
+def escalation_comment(history):
+    """The Linear comment a blocked ticket gets: one line per failed run.
+
+    The status alone says the factory gave up without saying what it kept
+    hitting, and the reasons are already written — `release()` stamps each run
+    with the phase it stopped in. So the comment is a rendering, not a new
+    account of the failures, and a run that ended with nothing recorded says
+    so rather than being left off the list.
+    """
+    lines = [f"**Blocked after {len(history)} failed runs.** The factory will"
+             " not claim this ticket again until a human moves it out of this"
+             " state. What each attempt ended on:", ""]
+    lines += [f"- attempt {attempt}: {reason or 'no reason recorded'}"
+              for attempt, reason in history]
+    return "\n".join(lines)
+
+
+def escalate(conn, ticket_id, provider=None):
+    """Park a ticket whose failed runs have reached `MAX_FAILED_RUNS`.
+
+    Returns whether the ticket *is* blocked when this call returns, not
+    whether this call is what blocked it. The two differ on every pass after
+    the first — a ticket parked yesterday is still parked today — and the
+    claim path reads the first answer, so a ticket already blocked keeps
+    refusing claims instead of being worked again the moment the escalation
+    stops being news.
+
+    Only an `in_flight` ticket is escalated, which is the same rule as the
+    edge the store draws. A ticket sitting anywhere else is not the loop's to
+    park: `merged` work the board keeps re-offering collects failed claims
+    too, and blocking that would be a lie about work that is finished — the
+    stale-board re-push in `main()` is what that case wants instead.
+
+    The block is the ordinary status move plus one comment, in that order and
+    with the same discipline as `mirror_push()`: the store is the truth and is
+    written first, Linear is a copy and is told after, and a comment that does
+    not land is a warning on the run rather than a failure of the escalation.
+    """
+    if conn is None:
+        return False
+    row = conn.execute(
+        "SELECT status, linearIssueId, linearIdentifier FROM tickets"
+        " WHERE id = ?", (ticket_id,)).fetchone()
+    if row is None:
+        return False
+    status, issue_id, identifier = row
+    if status == "blocked_on_operator":
+        return True  # already parked; the answer, not a second escalation
+    if status != "in_flight":
+        return False
+    history = failure_history(conn, ticket_id)
+    if len(history) < MAX_FAILED_RUNS:
+        return False
+    if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
+        return False
+    # The column the schema reserves for exactly this ("set when
+    # blocked_on_operator"), so a supervisor reading the store can see what is
+    # being waited on without going to Linear for it.
+    conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                 (f"{len(history)} runs failed on this ticket and the factory"
+                  " stopped claiming it; a human decides what happens next.",
+                  ticket_id))
+    conn.commit()
+    if provider is None:
+        import linear_provider as provider
+    try:
+        provider.comment(issue_id, escalation_comment(history))
+    except Exception as e:
+        warn(conn, ticket_id, f"failure history comment failed for "
+                              f"{identifier} ({e}); the store keeps the block"
+                              " and Linear is not told why")
+    print(f"[holo2] {identifier} blocked after {len(history)} failed runs")
+    return True
+
+
 def main(provider=None):
     if provider is None:
         import linear_provider as provider
@@ -1358,6 +1488,18 @@ def main(provider=None):
             task = provider.claim_next()
             if not task:
                 print("[holo2] Linear has no ready tickets. done.")
+                return
+            # Before the lease, before the mirror: a ticket that has already
+            # burned its attempts is refused here rather than claimed and then
+            # discovered to be unworkable, so the escalation costs no run row
+            # of its own. `escalate()` blocks it if this is the pass that
+            # crossed the threshold, and says so again on every later pass —
+            # which is what makes a Linear state a human dragged back to Todo
+            # unable to buy the ticket another run.
+            known = mirrored_ticket(conn, project, task)
+            if known is not None and escalate(conn, known, provider):
+                print(f"[holo2] {task['id']} is blocked by repeated failures;"
+                      " not claiming it. stopping for a human")
                 return
             try:
                 ticket_id, run_id = claim_run(conn, project, task)
@@ -1391,7 +1533,14 @@ def main(provider=None):
                 store.release(conn, run_id, "failed",
                               "ticket was not ready when the run was claimed;"
                               " no work started")
-                mirror_push(conn, ticket_id, provider)
+                # This refusal is itself a failed run, and it is the run the
+                # loop reaches when a ticket it already failed on is offered
+                # back — so the second refusal is the second failure, and the
+                # threshold is checked here as well as at close-out. A ticket
+                # the escalation just parked was pushed to the board by that
+                # move; the re-push is only for one that stayed where it was.
+                if not escalate(conn, ticket_id, provider):
+                    mirror_push(conn, ticket_id, provider)
                 print("[holo2] claimed ticket is not in a status work starts"
                       " from; stopping for a human")
                 return
@@ -1406,6 +1555,11 @@ def main(provider=None):
                     # branch is preserved for a human and the board should go
                     # on saying the work is open, so there is nothing to push.
                     mirror_status(conn, ticket_id, "merged", provider)
+                else:
+                    # Unless this failure was one too many, in which case the
+                    # ticket stops being open work and starts being an
+                    # operator's. Below the threshold this changes nothing.
+                    escalate(conn, ticket_id, provider)
                 # Close-out, and the first moment the run's own outcome is a
                 # row: the window is regenerated here rather than inside
                 # `run_task()` so the entry that ends the run is in it.

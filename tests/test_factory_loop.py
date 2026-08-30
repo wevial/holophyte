@@ -2,11 +2,12 @@
 
 The paths under test are the ones that used to need live agents to exercise:
 a clean approval that merges, both review rounds spending their findings and
-their fix rounds before a terminal PASS, and the two ways adjudication refuses
-to merge. `tests/fake_agent.py` scripts the agent turns; everything else is
-real — a real throwaway repo, real worktrees, the real verify gate, the real
-`--no-ff` merge — so what these tests assert is the loop's behavior and not a
-model of it.
+their fix rounds before a terminal PASS, the two ways adjudication refuses to
+merge, and the failure-pattern escalation that stops a ticket the loop keeps
+failing on from being claimed again. `tests/fake_agent.py` scripts the agent
+turns; everything else is real — a real throwaway repo, real worktrees, the
+real verify gate, the real `--no-ff` merge — so what these tests assert is the
+loop's behavior and not a model of it.
 
 Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 """
@@ -213,6 +214,94 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(
             self.read("SELECT round, verdict FROM reviewRounds ORDER BY round"),
             [(1, "changes_requested"), (2, "changes_requested"), (3, "error")])
+
+    # --- failure-pattern escalation --------------------------------------
+
+    def fail_once(self):
+        """Drive one whole run of the ticket that ends in a terminal FAIL."""
+        self.loop(Commit("first cut"), REQUEST_CHANGES, Commit("fix round 1"),
+                  REQUEST_CHANGES, Commit("fix round 2"), FAIL)
+
+    def offer_again(self):
+        """Offer the same ticket back, as a stale board does. No agent turns.
+
+        The loop never reaches an agent on this pass, so the empty script is
+        not laziness: a turn asked for here would be the loop re-implementing
+        a ticket it had already failed on, and `FakeAgent` fails the test
+        rather than answering one.
+        """
+        provider = StubProvider(a_task())
+        self.loop(provider=provider)
+        return provider
+
+    def status(self):
+        (status,), = self.read("SELECT status FROM tickets")
+        return status
+
+    def attempts(self):
+        return self.read("SELECT attempt FROM runs ORDER BY id")
+
+    def test_one_failed_run_leaves_the_ticket_claimable(self):
+        """One failure is not a pattern: the ticket is left in flight rather
+        than parked, and when the board offers it back the claim path lets it
+        through — a second run row is the lease being taken for a second
+        attempt, whatever that attempt then runs into."""
+        self.fail_once()
+
+        self.assertEqual(self.status(), "in_flight")
+
+        self.offer_again()
+
+        self.assertEqual(self.attempts(), [(1,), (2,)])
+
+    def test_the_second_failure_blocks_the_ticket_and_reports_both_runs(self):
+        """At the threshold the ticket stops being open work: the store parks
+        it for an operator, the board is told, and one comment accounts for
+        every failed run by the reason that run actually ended on."""
+        self.fail_once()
+
+        provider = self.offer_again()
+
+        self.assertEqual(self.status(), "blocked_on_operator")
+        self.assertEqual(provider.states, [("iss-131", "Todo")])
+        (issue_id, body), = provider.comments
+        self.assertEqual(issue_id, "iss-131")
+        reasons = self.read("SELECT attempt, outcomeReason FROM runs"
+                            " WHERE outcome = 'failed' ORDER BY attempt")
+        self.assertEqual(len(reasons), 2)
+        for attempt, reason in reasons:
+            self.assertIn(f"attempt {attempt}: {reason}", body)
+
+    def test_a_blocked_ticket_is_not_claimed_again(self):
+        """The board says Todo — that is where `blocked_on_operator` projects
+        — and offers the ticket back anyway. The claim path refuses it on the
+        store's count instead: no run is opened, so no worktree is cut and no
+        agent is paid to fail a third time."""
+        self.fail_once()
+        self.offer_again()
+        blocked_at = self.attempts()
+
+        provider = self.offer_again()
+
+        self.assertEqual(self.attempts(), blocked_at)  # nothing was claimed
+        self.assertEqual(provider.states, [])
+        self.assertEqual(provider.comments, [])
+        self.assertEqual(self.status(), "blocked_on_operator")
+
+    def test_a_blocked_ticket_does_not_block_a_different_one(self):
+        """The count is per ticket: the next ticket is worked and merged."""
+        self.fail_once()
+        self.offer_again()
+        other = dict(a_task(2), title="add another thing")
+
+        self.loop(Commit("the other work"), APPROVE,
+                  provider=StubProvider(other))
+
+        self.assertIn("the other work", self.subjects())
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, status FROM tickets"
+                      " ORDER BY id"),
+            [("KO-131", "blocked_on_operator"), ("KO-132", "merged")])
 
 
 if __name__ == "__main__":

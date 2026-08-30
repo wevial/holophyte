@@ -812,13 +812,14 @@ def with_delivery(conn, delivery_id, effect, now=None):
     return Delivery(replayed=False, result=result)
 
 
-# The §3 status diagram, transcribed edge for edge:
+# The §3 status diagram, transcribed edge for edge, plus the one edge below
+# that the diagram does not draw:
 #
 #     needs_spec → ready → in_flight → merged
-#                     ↕                  ↘
-#              blocked_on_deps      abandoned
-#                     ↕
-#             blocked_on_operator
+#                     ↕         ↓        ↘
+#              blocked_on_deps  │   abandoned
+#                     ↕         │
+#             blocked_on_operator ←┘
 #
 # Read as data so the table below can be diffed against the drawing: each key
 # is a status, each value the statuses it may move to. `merged` and
@@ -830,12 +831,22 @@ def with_delivery(conn, delivery_id, effect, now=None):
 # `merged` is done (§3's table: "done"), so it is `in_flight → abandoned`, not
 # `merged → abandoned`.
 #
+# `in_flight → blocked_on_operator` is the added edge, and it is Holophyte's
+# rather than the doc's: §3 gives an in-flight ticket only the two endings
+# above, so a ticket the loop keeps failing on had nowhere to go that says
+# "stop claiming this, a human owns it now". `abandoned` will not do — it is
+# terminal, and a repeatedly failing ticket is not a decision to give up, it is
+# a decision nobody has made yet. `blocked_on_operator` already means exactly
+# that, and already has the way back out (→ blocked_on_deps → ready) an
+# unblocking human needs, so failure-pattern escalation walks into it from
+# in_flight instead of inventing a seventh status.
+#
 # A status is not in its own set: `ready → ready` is refused like any other
 # non-edge, so a no-op status write cannot pass for a real transition.
 TICKET_TRANSITIONS = {
     "needs_spec": frozenset({"ready"}),
     "ready": frozenset({"in_flight", "blocked_on_deps"}),
-    "in_flight": frozenset({"merged", "abandoned"}),
+    "in_flight": frozenset({"merged", "abandoned", "blocked_on_operator"}),
     "blocked_on_deps": frozenset({"ready", "blocked_on_operator"}),
     "blocked_on_operator": frozenset({"blocked_on_deps"}),
     "merged": frozenset(),
