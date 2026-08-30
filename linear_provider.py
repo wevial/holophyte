@@ -166,10 +166,21 @@ def set_state(issue_id, state_name):
     and is projected here by `factory.mirror_push()`, never read back. A
     caller that changes an issue's state from anywhere else is a second
     source of truth for the same fact.
+
+    Raises when Linear says the move did not happen. `issueUpdate` reports a
+    refusal it did not treat as an error as `success: false`, with no `errors`
+    block for `_gql()` to turn into one, so an unchecked mutation returns
+    quietly while the issue stays in the state it was in. The projection's
+    whole failure story hangs on that: `factory.mirror_push()` only warns
+    about a push that says it did not land, and a silent one leaves a stale
+    board nothing in the run's event stream mentions.
     """
-    _gql('mutation($id: String!, $state: String!) { issueUpdate(id: $id, '
-         'input: { stateId: $state }) { success } }',
-         {"id": issue_id, "state": _state_id(state_name)})
+    data = _gql('mutation($id: String!, $state: String!) { issueUpdate(id: '
+                '$id, input: { stateId: $state }) { success } }',
+                {"id": issue_id, "state": _state_id(state_name)})
+    if not data["issueUpdate"]["success"]:
+        raise RuntimeError(
+            f"Linear refused to move issue {issue_id} to {state_name!r}")
 
 
 def claim_next():

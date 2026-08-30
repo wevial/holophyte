@@ -1290,20 +1290,27 @@ def mirror_status(conn, ticket_id, status, provider=None):
     order: the store is written first because it is the truth, and Linear is
     told afterwards because it is a copy.
 
-    A move the §3 diagram does not draw is refused by the store, and refusing
-    it is not worth stopping a run over — a ticket Linear handed back after it
-    was already merged is the ordinary case. The refusal is recorded as a
-    warning and nothing is pushed, so the board keeps showing the status the
-    ticket actually has.
+    Returns whether the store took the move, not what was pushed, because the
+    two failures are not the same kind of thing. A push that does not land
+    leaves a stale board and a `mirror_push()` warning, and the caller carries
+    on regardless; a move the §3 diagram does not draw means the ticket is not
+    where the caller thought it was, and only the caller knows whether its
+    next step still makes sense. So the refusal is warned about, nothing is
+    pushed — the board keeps showing the status the ticket actually has — and
+    False says the status change did not happen.
+
+    A storeless caller gets False for the same reason `mirror_push()` gets
+    None: there is no status here to move or to project.
     """
     if conn is None:
-        return None
+        return False
     try:
         store.transition(conn, ticket_id, status)
     except store.IllegalTransition as e:
         warn(conn, ticket_id, f"ticket status left where it was: {e}")
-        return None
-    return mirror_push(conn, ticket_id, provider)
+        return False
+    mirror_push(conn, ticket_id, provider)
+    return True
 
 
 def main(provider=None):
@@ -1331,7 +1338,31 @@ def main(provider=None):
             # about this run: the claim is the moment the ticket starts being
             # worked, and the projection replaces the state call the provider
             # used to make on its own.
-            mirror_status(conn, ticket_id, "in_flight", provider)
+            if not mirror_status(conn, ticket_id, "in_flight", provider):
+                # The store refused the move, so this ticket is not `ready`
+                # and no work may start on it. The ordinary cause is a board
+                # that is behind the store — a ticket already `merged` whose
+                # Done push did not land is still non-terminal in Linear and
+                # so is offered again on the next pass — and §1 is exactly
+                # that the store, not the column, decides. Running anyway
+                # would re-implement merged work, once per pass for as long
+                # as the board stays stale.
+                #
+                # So: give the lease straight back, re-project the status the
+                # ticket really has as one more best-effort attempt at
+                # unsticking the board, and stop. Stopping rather than taking
+                # the next ticket is the same call as a refused claim above —
+                # store and board disagree about what is workable, and a
+                # human wants to know — and it is also what keeps a stale
+                # ticket the re-push cannot move (an unmapped status, a Linear
+                # that is down) from being claimed round and round forever.
+                store.release(conn, run_id, "failed",
+                              "ticket was not ready when the run was claimed;"
+                              " no work started")
+                mirror_push(conn, ticket_id, provider)
+                print("[holo2] claimed ticket is not in a status work starts"
+                      " from; stopping for a human")
+                return
             merged = False
             try:
                 merged = run_task(task, conn, run_id)

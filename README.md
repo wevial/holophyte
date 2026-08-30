@@ -44,7 +44,9 @@ Usage: `python3 factory.py /srv/dev/holo2test`
   projected onto a Linear workflow state by `factory.mirror_push()` — one way,
   last write wins, never read back — so `set_state` is the only writer of that
   state, and the mapping table beside `mirror_push` says which state each
-  status shows as.
+  status shows as. The direction holds when the board is stale too: a ticket
+  whose stored status will not enter `in_flight` is refused at the claim and
+  re-projected instead of worked a second time.
 - `ticketTemplate.md` — ticket shape. Verify commands go in the
   "Verify command(s)" section (exit 0 = pass, relative paths only);
   estimate is the budget in minutes. The optional "Contract checks" section

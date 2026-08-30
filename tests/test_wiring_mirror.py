@@ -12,6 +12,7 @@ Run: python3 -m unittest discover -s tests -p 'test_wiring*' -v
 from __future__ import annotations
 
 import importlib.util
+import os
 import sqlite3
 import subprocess
 import sys
@@ -173,6 +174,82 @@ class MirrorPushTests(unittest.TestCase):
             self.assertIn("KO-132", warning)
             self.assertIn(state, warning)
             self.assertIn("linear is down", warning)
+
+    def test_a_ticket_the_store_has_finished_is_not_worked_again(self):
+        """§1 the other way round: the store decides what may be worked, so a
+        board that is behind it cannot re-open finished work. A merged ticket
+        whose Done push never landed is still non-terminal in Linear and gets
+        offered again — the claim's `ready -> in_flight` is refused, the run
+        does not happen, the lease goes straight back, and Done is pushed once
+        more at the board that missed it."""
+        self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
+        self.assertEqual(self.status(), "merged")  # and the board never heard
+
+        provider = StubProvider(a_task())
+        with patch.object(factory, "run_task") as run_task:
+            factory.main(provider)
+
+        run_task.assert_not_called()
+        self.assertEqual(provider.states, [(ISSUE_UUID, "Done")])
+        self.assertEqual(self.status(), "merged")
+        self.assertTrue(any("merged -> in_flight" in warning
+                            for warning in self.warnings()))
+
+    def test_the_run_of_a_refused_claim_does_not_keep_the_lease(self):
+        """The refusal happens after the claim, so it owes the project its
+        lease back like any other failure path — a stale ticket must not brick
+        the queue for the tickets behind it."""
+        self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
+
+        with patch.object(factory, "run_task"):
+            factory.main(StubProvider(a_task()))
+
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+        outcomes = self.read("SELECT outcome, outcomeReason FROM runs"
+                             " ORDER BY id")
+        self.assertEqual(outcomes[-1][0], "failed")
+        self.assertIn("no work started", outcomes[-1][1])
+
+
+class SetStateTests(unittest.TestCase):
+    """The push itself, at the provider seam `mirror_push()` calls.
+
+    Linear answers a mutation it refused with `success: false` and no
+    `errors`, so this is the only place that refusal can be noticed.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        # linear_provider refuses to import without a configured project.
+        os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
+        import linear_provider
+        cls.provider = linear_provider
+
+    def gql(self, success):
+        """Stand in for Linear: the state lookup, then the update's verdict."""
+        def fake(query, variables=None):
+            if "workflowStates" in query:
+                return {"workflowStates": {"nodes": [
+                    {"id": "state-uuid", "name": "Done", "type": "completed"}]}}
+            self.sent = variables
+            return {"issueUpdate": {"success": success}}
+        return patch.object(self.provider, "_gql", fake)
+
+    def test_a_successful_update_pushes_the_resolved_state_id(self):
+        with self.gql(True):
+            self.provider.set_state(ISSUE_UUID, "Done")
+
+        self.assertEqual(self.sent, {"id": ISSUE_UUID, "state": "state-uuid"})
+
+    def test_an_update_linear_did_not_apply_raises(self):
+        """`success: false` is a push that did not land, and a push that does
+        not raise is one `mirror_push()` records as a projection that did."""
+        with self.gql(False), self.assertRaises(RuntimeError) as caught:
+            self.provider.set_state(ISSUE_UUID, "Done")
+
+        self.assertIn(ISSUE_UUID, str(caught.exception))
+        self.assertIn("Done", str(caught.exception))
 
 
 if __name__ == "__main__":
