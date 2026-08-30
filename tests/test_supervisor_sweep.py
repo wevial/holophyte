@@ -165,6 +165,37 @@ class StaleHeartbeatTests(SweepTestCase):
         self.assertEqual(stale_again.trips, [])
         self.assertEqual(self.strikes(run_id), (1, T0 + 14 * MINUTE))
 
+    def test_a_heartbeat_no_sweep_saw_fresh_still_clears_the_count(self):
+        """The tally counts consecutive silence, not consecutive sweeps.
+
+        A run heartbeating a little slower than the sweep runs is caught
+        silent every time and seen fresh by none of them, and counting
+        sightings alone would trip it while it is alive and answering.
+        """
+        run_id = self.a_run()
+
+        first = factory.sweep(self.conn, T0 + 6 * MINUTE)
+        self.heartbeat_at(run_id, T0 + 7 * MINUTE)  # alive, between sweeps
+        second = factory.sweep(self.conn, T0 + 13 * MINUTE)
+
+        # Six minutes silent again, so a strike again -- but the first one,
+        # because the run answered after it was recorded.
+        self.assertEqual((first.trips, second.trips), ([], []))
+        self.assertEqual(self.strikes(run_id), (1, T0 + 13 * MINUTE))
+
+    def test_silence_unbroken_across_sweeps_still_trips(self):
+        """The recovery check is a heartbeat newer than the strike on file,
+        not a rule that every second sighting is forgiven."""
+        run_id = self.a_run()
+
+        factory.sweep(self.conn, T0 + 6 * MINUTE)
+        factory.sweep(self.conn, T0 + 12 * MINUTE)
+        trip, = factory.sweep(self.conn, T0 + 18 * MINUTE).trips
+
+        self.assertEqual((trip.run_id, trip.condition),
+                         (run_id, "stale_heartbeat"))
+        self.assertEqual(self.strikes(run_id), (3, T0 + 18 * MINUTE))
+
 
 class TimeBoxTests(SweepTestCase):
     """The budget trip: wall clock since the claim, against the run's box."""
@@ -245,7 +276,7 @@ class AtomicityTests(SweepTestCase):
         real = store.record_strike
         raced = []
 
-        def strike_and_race(conn, rid, stale, now=None):
+        def strike_and_race(conn, rid, stale, heartbeat, now=None):
             # The moment the finding is about: the verdict is made, the strike
             # is about to be written, and the run answers in between.
             try:
@@ -257,7 +288,7 @@ class AtomicityTests(SweepTestCase):
             except sqlite3.OperationalError as refused:
                 loop.rollback()
                 raced.append(str(refused))
-            return real(conn, rid, stale, now)
+            return real(conn, rid, stale, heartbeat, now)
 
         with patch.object(store, "record_strike", strike_and_race):
             result = factory.sweep(self.conn, T0 + 6 * MINUTE)
@@ -296,8 +327,8 @@ class AtomicityTests(SweepTestCase):
         second = self.a_run(project=self.another_project())
         real = store.record_strike
 
-        def strike_then_die(conn, rid, stale, now=None):
-            strikes = real(conn, rid, stale, now)
+        def strike_then_die(conn, rid, stale, heartbeat, now=None):
+            strikes = real(conn, rid, stale, heartbeat, now)
             if rid == second:
                 raise RuntimeError("the sweep died mid-pass")
             return strikes

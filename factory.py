@@ -2253,8 +2253,10 @@ def sweep(conn, now):
     Each swept run is first *sighted*: silent or not, the observation is
     counted in the store, because two consecutive silent sightings are what a
     stale-heartbeat trip is made of and a run seen alive has to clear the
-    count it had. That bookkeeping is the only write this makes -- no phase
-    moves, no lease is freed, no ticket is touched.
+    count it had. The heartbeat goes with the verdict, so a run that answered
+    between two sweeps and fell quiet again starts its tally over even though
+    no sweep caught it awake. That bookkeeping is the only write this makes --
+    no phase moves, no lease is freed, no ticket is touched.
 
     A run reports at most one trip. When both conditions hold the stale
     heartbeat is the one named: a dead worker explains the overrun, while the
@@ -2283,7 +2285,7 @@ def sweep(conn, now):
         for run_id, ticket, phase, heartbeat, started, time_box in swept:
             silent = now - heartbeat
             strikes = store.record_strike(
-                conn, run_id, silent > HEARTBEAT_STALE_MS, now)
+                conn, run_id, silent > HEARTBEAT_STALE_MS, heartbeat, now)
             elapsed = now - started
             if strikes >= STALE_STRIKES:
                 trips.append(Trip(

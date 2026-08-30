@@ -211,11 +211,13 @@ CREATE TABLE IF NOT EXISTS interventions (
 -- consecutive sweeps before it trips -- and "consecutive" needs somewhere to
 -- live between two separate sweep invocations, which are separate processes.
 -- One row per run currently under suspicion; a run seen alive has its row
--- dropped, which is what makes the count consecutive rather than cumulative.
+-- dropped, and a run whose heartbeat is newer than the strike on file starts
+-- over at one, so the count is consecutive in silence rather than in sweeps.
 CREATE TABLE IF NOT EXISTS sweepStrikes (
     runId    INTEGER PRIMARY KEY REFERENCES runs (id),
     strikes  INTEGER NOT NULL,
-    lastSeen INTEGER NOT NULL  -- the sweep that recorded the latest strike
+    lastSeen INTEGER NOT NULL  -- when the latest strike was recorded, so a
+                               -- heartbeat newer than it restarts the count
 );
 
 -- linearDeliveries: webhook idempotency (state-model §1). The delivery id is
@@ -1610,7 +1612,7 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
 # the way every other writer in this module does.
 
 
-def record_strike(conn, run_id, stale, now=None):
+def record_strike(conn, run_id, stale, heartbeat, now=None):
     """Record one sweep's liveness sighting of run `run_id`; return its strikes.
 
     `stale` is the sweep's verdict on this run's heartbeat, not a threshold
@@ -1621,6 +1623,16 @@ def record_strike(conn, run_id, stale, now=None):
     last touched it. A run seen alive drops its row and answers 0 -- the
     strikes a sweep counts are consecutive, so one heartbeat clears the count
     rather than leaving a run one old sighting away from tripping forever.
+
+    Which is why `heartbeat` -- the run's `lastHeartbeat`, the timestamp the
+    caller's verdict was reached on -- is compared against the `lastSeen` of
+    the strike already on file. A sighting is only the *next* consecutive one
+    if the run has been silent throughout; a run that answered after the last
+    strike was recorded and then went quiet again has proved itself alive in
+    between, and starts over at one however few sweeps saw it do so. Counting
+    on sightings alone makes the tally consecutive in sweeps rather than in
+    silence, and a run heartbeating just slower than the sweep interval trips
+    while alive -- exactly the false positive two strikes exist to prevent.
 
     An unknown `run_id` is a caller bug and raises `ValueError`, as everywhere
     else here. `now` is epoch milliseconds for `lastSeen`, defaulting to the
@@ -1639,9 +1651,15 @@ def record_strike(conn, run_id, stale, now=None):
             strikes = 0
         else:
             row = conn.execute(
-                "SELECT strikes FROM sweepStrikes WHERE runId = ?", (run_id,)
+                "SELECT strikes, lastSeen FROM sweepStrikes WHERE runId = ?",
+                (run_id,)
             ).fetchone()
-            strikes = (row[0] if row else 0) + 1
+            if row is None or heartbeat > row[1]:
+                # Nothing on file, or the run answered after what is: either
+                # way this is the first sighting of the silence it is in now.
+                strikes = 1
+            else:
+                strikes = row[0] + 1
             conn.execute(
                 "INSERT INTO sweepStrikes (runId, strikes, lastSeen)"
                 " VALUES (?, ?, ?)"
