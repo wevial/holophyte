@@ -205,6 +205,19 @@ CREATE TABLE IF NOT EXISTS interventions (
     at        INTEGER NOT NULL
 );
 
+-- sweepStrikes: the supervisor sweep's per-run liveness tally. Not a
+-- state-model table: a single stale-heartbeat sample false-positives on a
+-- load spike (v1 TUI mining), so a run must be seen silent by two
+-- consecutive sweeps before it trips -- and "consecutive" needs somewhere to
+-- live between two separate sweep invocations, which are separate processes.
+-- One row per run currently under suspicion; a run seen alive has its row
+-- dropped, which is what makes the count consecutive rather than cumulative.
+CREATE TABLE IF NOT EXISTS sweepStrikes (
+    runId    INTEGER PRIMARY KEY REFERENCES runs (id),
+    strikes  INTEGER NOT NULL,
+    lastSeen INTEGER NOT NULL  -- the sweep that recorded the latest strike
+);
+
 -- linearDeliveries: webhook idempotency (state-model §1). The delivery id is
 -- the primary key, so a replayed delivery collides instead of re-running its
 -- effect.
@@ -1564,3 +1577,54 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
              started_at, ended_at),
         )
     return cursor.lastrowid
+
+
+# --- the supervisor sweep's strike tally --------------------------------------
+# A run whose loop has crashed stops heartbeating, but so does one whose host
+# is briefly wedged, so liveness is not a single sample: the sweep records what
+# it saw and only the second consecutive silent sighting is evidence. The
+# counting lives here rather than in the sweep because it is a read-then-write
+# over a store table, and two sweeps racing on one target must serialize on it
+# the way every other writer in this module does.
+
+
+def record_strike(conn, run_id, stale, now=None):
+    """Record one sweep's liveness sighting of run `run_id`; return its strikes.
+
+    `stale` is the sweep's verdict on this run's heartbeat, not a threshold
+    this decides: the sweep owns how old is too old (and 5/5 will make that
+    configurable), and this owns only how many sightings in a row say so.
+
+    A silent run's tally goes up by one and the row remembers the sweep that
+    last touched it. A run seen alive drops its row and answers 0 -- the
+    strikes a sweep counts are consecutive, so one heartbeat clears the count
+    rather than leaving a run one old sighting away from tripping forever.
+
+    An unknown `run_id` is a caller bug and raises `ValueError`, as everywhere
+    else here. `now` is epoch milliseconds for `lastSeen`, defaulting to the
+    clock; a sweep passes its own so every run in one pass is stamped with the
+    one time it was taken.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        if conn.execute(
+            "SELECT 1 FROM runs WHERE id = ?", (run_id,)
+        ).fetchone() is None:
+            raise ValueError(f"no run {run_id}")
+        if not stale:
+            conn.execute("DELETE FROM sweepStrikes WHERE runId = ?", (run_id,))
+            strikes = 0
+        else:
+            row = conn.execute(
+                "SELECT strikes FROM sweepStrikes WHERE runId = ?", (run_id,)
+            ).fetchone()
+            strikes = (row[0] if row else 0) + 1
+            conn.execute(
+                "INSERT INTO sweepStrikes (runId, strikes, lastSeen)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT (runId) DO UPDATE SET strikes = excluded.strikes,"
+                " lastSeen = excluded.lastSeen",
+                (run_id, strikes, now),
+            )
+    return strikes

@@ -16,9 +16,12 @@ Loop:
 
 `--report` runs none of the above: it prints the store's estimate-vs-actual
 table for the target and exits, so the timing the runs recorded is a query
-rather than a grep over FINDINGS.md.
+rather than a grep over FINDINGS.md. `--sweep` runs none of it either: it
+reads the live runs and says which have tripped a mechanical condition -- a
+dead heartbeat or a blown time box -- without touching one.
 """
 import argparse
+import collections
 import hashlib
 import json
 import os
@@ -2185,6 +2188,165 @@ def report(conn=None, out=None):
             conn.close()
 
 
+# --- the supervisor's stale-run sweep -----------------------------------------
+# The loop watches itself only while it is alive. A run whose process crashed,
+# hung, or was killed leaves a row in a work phase, a heartbeat that stopped
+# and a project lease nobody will ever give back -- and today nothing notices.
+# This is the noticing, and only the noticing: the sweep reads runs, counts
+# strikes and prints what it found. Acting on a trip (failing the run, freeing
+# the lease) is the next ticket's, which is what keeps this one read-only
+# apart from its own strike bookkeeping and its tests a matter of arithmetic.
+
+# How old a heartbeat has to be before a sighting counts as silent, and how
+# many consecutive silent sightings trip the run. Two, from the v1 TUI mining:
+# one sample false-positives on a load spike, and a supervisor that kills live
+# runs is worse than one that notices a dead one a minute late.
+HEARTBEAT_STALE_MS = 5 * 60 * 1000
+STALE_STRIKES = 2
+# How far past its claim-time estimate a run may run before the time box is
+# considered blown. Generous on purpose: the estimate is a 15-30 minute
+# guess, and the trip is meant to catch a run that is not going to finish
+# rather than one that is merely slower than the ticket hoped.
+BUDGET_GRACE = 1.5
+
+# The phases a run can be swept in: everything the store's enum has, less the
+# three a finished run sits in and `blocked_on_operator`. Derived from
+# `store.PHASES` rather than listed, so a phase added there is swept by
+# default -- the safe direction for a check whose failure mode is a hung run
+# nobody looks at.
+#
+# `blocked_on_operator` is excluded because a parked run is *supposed* to have
+# no heartbeat: the loop wrote the question, released the process and went
+# home, and the run waits for a human for however long that takes. Sweeping it
+# would report every parked run as dead within five minutes, and 2/5 would
+# then fail the one state the design keeps open for an operator's answer.
+SWEEPABLE_PHASES = tuple(
+    phase for phase in store.PHASES
+    if phase not in store.ENDED_PHASES and phase != "blocked_on_operator")
+
+# The mechanical conditions a run can trip. `time_box` is spelled as the
+# `interventions.trigger` value the acting sweep will record it under, so the
+# name an operator reads here is the name the row will carry.
+STALE_HEARTBEAT = "stale_heartbeat"
+TIME_BOX = "time_box"
+
+# One tripped run, as the sweep reports it: which run, whose ticket, what it
+# was doing, which condition, and the numbers that condition was decided on.
+# `evidence` is prose for an operator, not a parseable field -- what a reader
+# needs to agree with the verdict without opening the database.
+Trip = collections.namedtuple(
+    "Trip", ("run_id", "ticket", "phase", "condition", "evidence"))
+# What one pass found: how many live runs it looked at, and the trips among
+# them. The count is carried because "nothing tripped" is only reassuring next
+# to the number of runs that were checked -- silence and health look identical
+# without it.
+Sweep = collections.namedtuple("Sweep", ("swept", "trips"))
+
+
+def sweep(conn, now):
+    """Check every live run for a tripped condition; return a `Sweep`.
+
+    `now` is epoch milliseconds and is a parameter, not a clock read: every
+    threshold here is an age, and a test that has to sleep to make a run look
+    stale is a test that is slow and flaky in exchange for nothing.
+
+    Each swept run is first *sighted*: silent or not, the observation is
+    counted in the store, because two consecutive silent sightings are what a
+    stale-heartbeat trip is made of and a run seen alive has to clear the
+    count it had. That bookkeeping is the only write this makes -- no phase
+    moves, no lease is freed, no ticket is touched.
+
+    A run reports at most one trip. When both conditions hold the stale
+    heartbeat is the one named: a dead worker explains the overrun, while the
+    overrun says nothing about whether anything is still running.
+    """
+    swept = conn.execute(
+        "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
+        " r.startedAt, r.timeBoxMs"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.endedAt IS NULL"
+        f"   AND r.phase IN ({', '.join('?' * len(SWEEPABLE_PHASES))})"
+        " ORDER BY r.id", SWEEPABLE_PHASES).fetchall()
+    trips = []
+    for run_id, ticket, phase, heartbeat, started, time_box in swept:
+        silent = now - heartbeat
+        strikes = store.record_strike(
+            conn, run_id, silent > HEARTBEAT_STALE_MS, now)
+        elapsed = now - started
+        if strikes >= STALE_STRIKES:
+            trips.append(Trip(
+                run_id, ticket, phase, STALE_HEARTBEAT,
+                f"silent for {silent / 60000:.1f} min"
+                f" over {strikes} consecutive sweeps"))
+        elif time_box and elapsed > time_box * BUDGET_GRACE:
+            trips.append(Trip(
+                run_id, ticket, phase, TIME_BOX,
+                f"{elapsed / 60000:.1f} min against a"
+                f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)"))
+    return Sweep(len(swept), trips)
+
+
+SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence")
+
+
+def _runs(n):
+    """`n` runs, counted in English -- the summary line reads as a sentence."""
+    return "1 run" if n == 1 else f"{n} runs"
+
+
+def sweep_lines(result):
+    """The sweep as lines: a header, one line per trip, a summary.
+
+    A clean sweep prints what it checked rather than nothing. Empty output is
+    ambiguous -- it reads the same as a crashed supervisor, a mistyped target
+    or a store with no runs in it -- so the quiet case is an assertion an
+    operator can act on, and the three quiet cases say which one they are.
+    """
+    if not result.swept:
+        return ["no runs in flight, nothing to sweep"]
+    if not result.trips:
+        return [f"{_runs(result.swept)} swept, all healthy"]
+    table = [SWEEP_HEADERS]
+    table += [(trip.ticket, f"run {trip.run_id}", trip.phase, trip.condition,
+               trip.evidence) for trip in result.trips]
+    widths = [max(len(cell) for cell in column) for column in zip(*table)]
+    lines = [
+        REPORT_GAP.join(cell.ljust(width)
+                        for cell, width in zip(row, widths)).rstrip()
+        for row in table
+    ]
+    return lines + [
+        f"{len(result.trips)} tripped of {_runs(result.swept)} swept"]
+
+
+def sweep_report(conn=None, now=None, out=None):
+    """Print the target store's tripped runs. Returns nothing.
+
+    `--sweep`'s whole body, and a sibling of `report()` in what it refuses to
+    do: no ticket is claimed, no worktree is cut, no provider is imported, so
+    it is safe to run against the store of a loop that is still working -- the
+    case it exists for. Unlike `report()` it does write, to exactly one table:
+    the strike tally `sweep()` keeps, without which "two consecutive sweeps"
+    could not span two invocations.
+
+    A target with no store has no runs to sweep and is reported rather than
+    created, the way `--report` answers the same mistake.
+    """
+    out = out or sys.stdout
+    if conn is None and not STORE_PATH.exists():
+        print(f"[holo2] no store at {STORE_PATH}", file=out)
+        return
+    owned = conn is None
+    conn = conn if conn is not None else open_store()
+    try:
+        if now is None:
+            now = int(time() * 1000)
+        print("\n".join(sweep_lines(sweep(conn, now))), file=out)
+    finally:
+        if owned:
+            conn.close()
+
+
 def cli(argv=None):
     """Parse the command line and run the mode it names.
 
@@ -2200,10 +2362,18 @@ def cli(argv=None):
     parser.add_argument(
         "target", nargs="?", default=str(DEFAULT_TARGET),
         help="repository the loop works in (default: %(default)s)")
-    parser.add_argument(
+    # The read-only modes, exclusive of each other: each one prints its table
+    # and exits, so a command line naming both is a mistake argparse should
+    # answer rather than a silent choice between them.
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--report", action="store_true",
         help="print the target store's estimate-vs-actual table and exit; "
              "reads only -- claims no ticket, cuts no worktree, calls nobody")
+    modes.add_argument(
+        "--sweep", action="store_true",
+        help="print the live runs that have tripped a mechanical condition "
+             "(dead heartbeat, blown time box) and exit; acts on none of them")
     args = parser.parse_args(argv)
     retarget(args.target)
     # Read the target's config here, with the command line parsed and nothing
@@ -2212,6 +2382,10 @@ def cli(argv=None):
     config()
     if args.report:
         return report()
+    # Same window and the same reasons as `--report`: it reads runs and prints
+    # them, so no route has to resolve and nobody is called.
+    if args.sweep:
+        return sweep_report()
     # And, on the path that actually dispatches agents, every route the config
     # names resolves before the loop claims a ticket. `--report` skips this: it
     # calls nobody, so a reviewer that is not installed on the machine reading
