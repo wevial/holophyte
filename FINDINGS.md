@@ -642,3 +642,7 @@ Fix, in `d381644`:
 - **`tests/test_store_schema.py`** — three tests on the existing legacy-store fixture: an ended run with two rounds backfills to 2, an in-flight run stays at 0, and a second `init()` neither re-repairs nor undoes a stamped count. `a_run()` gained an `ended_at` argument and numbered project/ticket keys so two runs can coexist in one test (`linearTeamId` and `linearIssueId` are both UNIQUE).
 
 Full suite: 227 tests, all passing.
+
+## 2026-08-30T03:22:08Z — KO-133
+MERGED to main (branch task/wiring-6-6-timing-telemetry-in deleted). Verify: passed.
+actual: 14.7 min · estimate: 25 min · rounds: 2
