@@ -120,6 +120,13 @@ CREATE TABLE IF NOT EXISTS runs (
     lastHeartbeat     INTEGER NOT NULL,  -- staleness detection
     endedAt           INTEGER,
     reviewRoundCount  INTEGER NOT NULL DEFAULT 0,
+    -- The ticket's time box as it stood when this run was claimed. Not a
+    -- second copy of `tickets.timeBoxMs` for its own sake: the ticket's
+    -- estimate can be re-pointed by any later mirror, and an estimate that
+    -- moves after the fact makes every estimate-vs-actual reading of a
+    -- finished run change with it. The run's snapshot is what it was actually
+    -- given.
+    timeBoxMs         INTEGER,
     outcome           TEXT
         CHECK (outcome IS NULL
                OR outcome IN ('merged', 'killed', 'abandoned', 'failed')),
@@ -239,6 +246,11 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
 ADDED_COLUMNS = (
     (
         "runs",
+        "timeBoxMs",
+        "timeBoxMs INTEGER",
+    ),
+    (
+        "runs",
         "resumePhase",
         "resumePhase TEXT"
         " CHECK (resumePhase IS NULL"
@@ -343,6 +355,12 @@ def claim(conn, project_id, ticket_id, now=None):
     Every failure path rolls back, so a lost claim leaves no orphan `runs` row.
     `attempt` is 1 + the ticket's prior runs, making it 1-based. `now` is epoch
     milliseconds for `startedAt`/`lastHeartbeat`, defaulting to the clock.
+
+    The run also takes its own copy of the ticket's `timeBoxMs`, because the
+    claim is the moment the estimate applied to this attempt: a later mirror
+    of the same Linear issue may carry a re-pointed estimate, and a run row
+    that read it back through the ticket would silently restate what it was
+    budgeted. A ticket with no estimate snapshots NULL, the same "unknown".
     """
     if now is None:
         now = int(time.time() * 1000)
@@ -363,11 +381,19 @@ def claim(conn, project_id, ticket_id, now=None):
         (prior,) = conn.execute(
             "SELECT COUNT(*) FROM runs WHERE ticketId = ?", (ticket_id,)
         ).fetchone()
+        # A ticket that does not exist reads as no estimate here and is
+        # refused a moment later by the ownership check below, so this read
+        # decides nothing about whether the claim is legal.
+        estimate = conn.execute(
+            "SELECT timeBoxMs FROM tickets WHERE id = ?", (ticket_id,)
+        ).fetchone()
         run_id = conn.execute(
             "INSERT INTO runs"
-            " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat)"
-            " VALUES (?, ?, ?, 'claimed', ?, ?)",
-            (ticket_id, project_id, prior + 1, now, now),
+            " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
+            "  timeBoxMs)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?, ?)",
+            (ticket_id, project_id, prior + 1, now, now,
+             estimate[0] if estimate else None),
         ).lastrowid
         conn.execute(
             "UPDATE projects SET activeRunId = ? WHERE id = ?",
@@ -560,6 +586,12 @@ def release(conn, run_id, outcome, reason=None, now=None):
     fields, moving the ticket's pointer to `lastRunId` so the finished run is
     still reachable from the ticket.
 
+    The run's telemetry is finalized in the same transaction: `endedAt` is
+    the other end of the elapsed time `startedAt` opened, and
+    `reviewRoundCount` is counted off the run's own `reviewRounds` rows. Both
+    are written once, here, so a finished run carries how long it took and how
+    many rounds it needed without a reader having to re-derive either.
+
     The terminal phase moves through `set_phase()`, so ending a run stamps a
     heartbeat and appends the transition to the run's event stream like any
     other phase change. A failure outcome also parks the phase the run stopped
@@ -614,10 +646,18 @@ def release(conn, run_id, outcome, reason=None, now=None):
         resume_phase = (stopped_in
                         if TERMINAL_PHASES[outcome] == "failed"
                         and stopped_in in RESUMABLE_WORK_PHASES else None)
+        # `reviewRoundCount` is stamped here, from the rows themselves, for
+        # the same reason the phase is: this is the close-out, so this is the
+        # moment the count is final. Counting the run's own `reviewRounds`
+        # rather than trusting a caller's tally keeps the column from
+        # disagreeing with the rounds it summarizes.
         conn.execute(
             "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
-            " resumePhase = ? WHERE id = ?",
-            (now, outcome, reason, resume_phase, run_id),
+            " resumePhase = ?,"
+            " reviewRoundCount = (SELECT COUNT(*) FROM reviewRounds"
+            "                     WHERE runId = ?)"
+            " WHERE id = ?",
+            (now, outcome, reason, resume_phase, run_id, run_id),
         )
         conn.execute(
             "UPDATE projects SET activeRunId = NULL"

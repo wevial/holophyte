@@ -130,13 +130,14 @@ class WiringClaimTests(unittest.TestCase):
     def test_the_store_path_is_a_sibling_of_the_target(self):
         """One store per target, named after it, beside it -- like WORKTREES.
 
-        Re-imports the module under a target argv, because the path is derived
-        once at import: patching STORE_PATH afterwards, as the other tests do,
-        would test the patch rather than the rule.
+        Retargets a module of its own, because the two paths are derived from
+        the target together: patching STORE_PATH afterwards, as the other
+        tests do, would test the patch rather than the rule.
         """
-        with patch.object(sys, "argv", ["factory.py", "/srv/dev/holo2test"]):
-            mod = importlib.util.module_from_spec(SPEC)
-            SPEC.loader.exec_module(mod)
+        mod = importlib.util.module_from_spec(SPEC)
+        SPEC.loader.exec_module(mod)
+
+        mod.retarget("/srv/dev/holo2test")
 
         self.assertEqual(mod.STORE_PATH, Path("/srv/dev/holo2test.holophyte.db"))
         self.assertEqual(mod.STORE_PATH.parent, mod.WORKTREES.parent)

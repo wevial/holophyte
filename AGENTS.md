@@ -8,9 +8,9 @@ worktree and merged only after mechanical verification and independent review.
 
 - Work one ready ticket at a time. Treat its approved Linear body as a frozen
   contract: scope may narrow, never expand.
-- Before running `factory.py`, read its argument contract. Do not pass a
-  convenience flag such as `--help` to a script that interprets its first
-  argument as a repository path.
+- `factory.py [repo]` runs the loop and `factory.py --report [repo]` prints the
+  store's estimate-vs-actual table without claiming anything. The command line
+  is parsed, not indexed, so `--help` is safe to ask for.
 - Make implementation changes only in the task worktree/branch. Keep the main
   checkout untouched until the factory's merge gate succeeds.
 - Preserve the ticket's exact relative-path, non-interactive verify commands.

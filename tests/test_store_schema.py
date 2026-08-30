@@ -36,6 +36,10 @@ DOCUMENTED_COLUMNS = {
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.
         "resumePhase",
+        # Store-owned too: the ticket's estimate as it stood at the claim, so
+        # a finished run's estimate-vs-actual does not move when the ticket's
+        # own `timeBoxMs` is later re-mirrored.
+        "timeBoxMs",
     },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",

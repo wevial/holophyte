@@ -13,10 +13,16 @@ Loop:
   5. If neither round approved: one terminal adjudication run — PASS or FAIL on
      the final state, no new findings, no further fixes.
   6. On approval or a terminal PASS: merge to main, check off the task, repeat.
+
+`--report` runs none of the above: it prints the store's estimate-vs-actual
+table for the target and exits, so the timing the runs recorded is a query
+rather than a grep over FINDINGS.md.
 """
+import argparse
 import hashlib
 import json
 import re
+import statistics
 import subprocess
 import sys
 from pathlib import Path
@@ -26,16 +32,39 @@ import review_runner
 import store
 import ticket_template
 
-TARGET = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/srv/dev/holo2test")
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
-# The loop's durable state: one WAL-mode SQLite file per target repo, a sibling
-# of the target the way its worktree directory is (see WORKTREES below).
-# Outside the repo rather than inside it: the factory's own .gitignore says
-# nothing about the target checkout, so a store written into TARGET would leave
-# the database and its two WAL sidecars untracked in whatever repo the loop is
-# working on -- dirt a task's `git add -A` could sweep into a commit.
-STORE_PATH = TARGET.parent / f"{TARGET.name}.holophyte.db"
+DEFAULT_TARGET = Path("/srv/dev/holo2test")
+# The three paths a run works against. They are set by `retarget()` below
+# rather than written out here, so the derivation lives in one place and the
+# command line is the only thing that chooses a target: importing this module
+# used to read `sys.argv[1]`, which made every `python3 -m unittest discover`
+# retarget the factory at a directory called "discover".
+TARGET = STORE_PATH = WORKTREES = None
+
+
+def retarget(target):
+    """Point TARGET and the two paths derived from it at `target`.
+
+    Called once at import for the default and again by `cli()` for whatever
+    the command line names; nothing else moves these, so a caller that wants a
+    different target says so here instead of patching one path and leaving the
+    other two pointing at the last one.
+    """
+    global TARGET, STORE_PATH, WORKTREES
+    TARGET = Path(target)
+    # The loop's durable state: one WAL-mode SQLite file per target repo, a
+    # sibling of the target the way its worktree directory is. Outside the
+    # repo rather than inside it: the factory's own .gitignore says nothing
+    # about the target checkout, so a store written into TARGET would leave
+    # the database and its two WAL sidecars untracked in whatever repo the
+    # loop is working on -- dirt a task's `git add -A` could sweep into a
+    # commit.
+    STORE_PATH = TARGET.parent / f"{TARGET.name}.holophyte.db"
+    WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
+
+
+retarget(DEFAULT_TARGET)
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
 BUDGET_RE = re.compile(r"\((\d+)\s*min\)\s*$")
@@ -611,9 +640,6 @@ def round_verdict(reply, verdicts):
         return "error"
 
 
-WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
-
-
 def run_task(task, conn=None, run_id=None):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
@@ -1011,9 +1037,13 @@ def round_entry(row):
 def run_entry(row):
     """One ended `runs` row as an entry: its outcome and the timing line.
 
-    `rounds` is the run's recorded rounds, terminal adjudication included --
-    what the store holds, rather than the loop's in-frame round counter, since
-    a rendering that needs the loop's variables is not a rendering of the rows.
+    Every number on the timing line is read off the run row itself -- the two
+    stamps, the estimate it was claimed under, and the round count stamped at
+    close-out (terminal adjudication included) -- rather than off the loop's
+    in-frame counters or the ticket's current estimate. That is what makes the
+    line and the row say the same thing: `--report` queries the same columns,
+    and a rendering that needs the loop's variables is not a rendering of the
+    rows.
     """
     at, ticket, outcome, reason, branch, started, time_box, rounds = row
     if outcome == "merged":
@@ -1046,8 +1076,7 @@ def findings_entries(conn):
         " JOIN tickets t ON t.id = r.ticketId").fetchall()
     runs = conn.execute(
         "SELECT r.endedAt, t.linearIdentifier, r.outcome, r.outcomeReason,"
-        " r.branch, r.startedAt, t.timeBoxMs,"
-        " (SELECT COUNT(*) FROM reviewRounds WHERE runId = r.id), r.id"
+        " r.branch, r.startedAt, r.timeBoxMs, r.reviewRoundCount, r.id"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NOT NULL").fetchall()
     entries = [(row[0], "round", row[-1], round_entry(row[:-1])) for row in rounds]
@@ -1387,5 +1416,140 @@ def main(provider=None):
         conn.close()
 
 
+# --- estimate vs actual ------------------------------------------------------
+# The rows already carry every number a burndown needs: when a run started and
+# ended, the estimate it was claimed under, how many rounds it took. So the
+# report is a query and an aligned print rather than a grep over FINDINGS.md --
+# the ledger line was the only reading of this data until now, and a rendering
+# of the newest 25 entries is not something a calibration question can be
+# asked of. Nothing here writes, claims or calls Linear.
+REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome")
+REPORT_GAP = "  "
+
+
+def report_rows(conn):
+    """Every ended run, oldest first, as the report's own tuple.
+
+    `(ticket, actual_min, estimate_min, ratio, rounds, outcome)`, with
+    `estimate` and `ratio` None when the run was claimed against no estimate
+    -- an older run, or a ticket Linear gave no points. None rather than zero
+    because "not comparable" is not a ratio of nothing, and the summary below
+    leaves those runs out of its averages instead of dragging them to 0.
+    """
+    rows = []
+    for ticket, started, ended, time_box, rounds, outcome in conn.execute(
+            "SELECT t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"
+            " r.reviewRoundCount, r.outcome"
+            " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+            " WHERE r.endedAt IS NOT NULL"
+            " ORDER BY r.endedAt, r.id").fetchall():
+        actual = (ended - started) / 60000
+        estimate = time_box / 60000 if time_box else None
+        rows.append((ticket, actual, estimate,
+                     actual / estimate if estimate else None,
+                     rounds, outcome or "ended"))
+    return rows
+
+
+def report_summary(rows):
+    """The last line: how many runs, and how the ratios sit.
+
+    Mean and median together, because they answer different halves of the
+    calibration question -- the mean carries the one run that blew its budget,
+    the median says what a typical ticket costs -- and the early signal worth
+    watching (actuals running several times under estimate) is a claim about
+    the middle, not about the total.
+    """
+    ratios = [row[3] for row in rows if row[3] is not None]
+    if not ratios:
+        return f"{len(rows)} runs · no estimates to compare against"
+    counted = (f"{len(rows)} runs" if len(ratios) == len(rows)
+               else f"{len(rows)} runs · {len(ratios)} with an estimate")
+    return (f"{counted} · mean ratio {statistics.fmean(ratios):.2f}"
+            f" · median ratio {statistics.median(ratios):.2f}")
+
+
+def report_lines(conn):
+    """The whole report as lines: a header, one line per ended run, a summary.
+
+    Columns are padded to the widest cell in them so the numbers line up in a
+    terminal; the ticket and the outcome read left, everything numeric reads
+    right. A store with no ended run says so rather than printing a header
+    over nothing.
+    """
+    rows = report_rows(conn)
+    if not rows:
+        return ["no completed runs yet"]
+    table = [REPORT_HEADERS]
+    for ticket, actual, estimate, ratio, rounds, outcome in rows:
+        table.append((
+            ticket,
+            f"{actual:.1f}",
+            f"{estimate:.0f}" if estimate is not None else "n/a",
+            f"{ratio:.2f}" if ratio is not None else "n/a",
+            str(rounds),
+            outcome,
+        ))
+    widths = [max(len(cell) for cell in column) for column in zip(*table)]
+    lines = [
+        REPORT_GAP.join(
+            cell.ljust(width) if i in (0, len(widths) - 1) else cell.rjust(width)
+            for i, (cell, width) in enumerate(zip(row, widths))).rstrip()
+        for row in table
+    ]
+    return lines + [report_summary(rows)]
+
+
+def report(conn=None, out=None):
+    """Print the target store's estimate-vs-actual table. Returns nothing.
+
+    `--report`'s whole body: it reads rows and prints them, so no ticket is
+    claimed, no worktree is cut and no provider is imported -- which is what
+    makes it safe to run against the store of a loop that is still working.
+
+    The one write it can make is `open_store()`'s migration, so a store older
+    than the run row's estimate column is brought up to the schema this
+    queries instead of failing on the missing column. A target with no store
+    at all is not created for the sake of an empty table; it is reported.
+    """
+    out = out or sys.stdout
+    if conn is None and not STORE_PATH.exists():
+        print(f"[holo2] no store at {STORE_PATH}", file=out)
+        return
+    owned = conn is None
+    conn = conn if conn is not None else open_store()
+    try:
+        print("\n".join(report_lines(conn)), file=out)
+    finally:
+        if owned:
+            conn.close()
+
+
+def cli(argv=None):
+    """Parse the command line and run the mode it names.
+
+    An explicit parser rather than `sys.argv[1]`, which is what the target
+    path used to be read from at import: every first argument was a repository
+    path, so `--help` named a repository called "--help" and a mistyped flag
+    started a real loop somewhere unintended. Both are now argparse errors,
+    and the module can be imported without a command line at all.
+    """
+    parser = argparse.ArgumentParser(
+        prog="factory.py",
+        description="Holophyte: a minimal Linear-driven software factory.")
+    parser.add_argument(
+        "target", nargs="?", default=str(DEFAULT_TARGET),
+        help="repository the loop works in (default: %(default)s)")
+    parser.add_argument(
+        "--report", action="store_true",
+        help="print the target store's estimate-vs-actual table and exit; "
+             "reads only -- claims no ticket, cuts no worktree, calls nobody")
+    args = parser.parse_args(argv)
+    retarget(args.target)
+    if args.report:
+        return report()
+    return main()
+
+
 if __name__ == "__main__":
-    main()
+    cli()
