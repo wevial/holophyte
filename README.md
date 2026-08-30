@@ -12,7 +12,9 @@ Usage: `python3 factory.py /srv/dev/holo2test`, or
 1. Claim the first ready ticket — non-terminal and unblocked (Linear
    `blocks` relations are the only machine-checked dependencies).
 2. Cut a per-task branch in a sibling worktree (`<repo>.worktrees/`), so
-   the main checkout stays untouched.
+   the main checkout stays untouched, and run the target's configured
+   `[worktree] setup` commands there — a worktree that borrows the main
+   checkout's environment tests something other than the branch it is on.
 3. Implementer agent (Claude Code / Opus at high effort, write access)
    implements and commits under a wall-clock budget from the ticket's estimate
    (default 20 min).
@@ -152,6 +154,36 @@ Startup does not *run* the command — a route is an agent turn, not a probe.
 Relative paths with a directory in them (`./review.sh`) are refused: rounds run
 in a task worktree that does not exist yet, so the name would resolve somewhere
 neither startup nor the operator named.
+
+```toml
+[worktree]
+# Shell commands that prepare a freshly cut task worktree, run in order.
+setup = [
+  "python3 -m venv .venv",
+  ".venv/bin/pip install -q -e '.[dev]'",
+]
+```
+
+They run in the worktree, right after its branch is cut and before the first
+agent turn — the moment that decides what the implementer and the verify gate
+have to work with. Without them a worktree silently borrows the main checkout's
+environment (its `.venv`, its module cache), so a task that changes a dependency
+is tested against the old one. Each command goes through the same machinery as a
+ticket's verify command: shell, one command per entry, a 300-second cap, and a
+fail-loud report that names the failing command and its output, attributing a
+top-level `&&` chain clause by clause.
+
+A failing command stops the setup — step two of a setup assumes step one worked
+— and fails the run before an agent turn is dispatched, so a target whose
+toolchain will not install costs no tokens. The branch and worktree are
+discarded rather than preserved: no agent ran, so there is nothing on them to
+keep, and the reason goes to the ticket as a comment. The table's shape is
+checked at startup with the `[agents]` commands; the commands themselves are not
+run there, since the worktree they are written against does not exist yet.
+
+What setup writes into the worktree is untracked, and the implementer is asked
+to commit its work: keep build artifacts (`.venv/`, caches) in the target's
+`.gitignore`, or a task's `git add -A` will sweep them into the branch.
 
 ## Local reviewer boundary
 

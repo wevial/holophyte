@@ -599,6 +599,92 @@ MAX_VERDICT_CHARS = 200
 TRUNCATION_MARKER = "[… truncated]"
 
 
+# --- worktree setup ----------------------------------------------------------
+# The second table a target can write. `[worktree] setup` is the list of shell
+# commands a freshly cut task worktree needs before an agent works in it: the
+# venv, module download or generated file the target's toolchain would
+# otherwise borrow from the main checkout, quietly, and get wrong the moment a
+# task changes a dependency. An absent table is today's behavior -- nothing
+# runs, and a run costs exactly what it costs now.
+
+
+def setup_commands():
+    """The target's `[worktree] setup` list, or `[]` when it names none.
+
+    Each entry is one shell command, run in order. A table that is present but
+    unusable -- not a list, an entry that is not a string, an entry that is
+    blank -- is an error rather than a skipped step, for the reason
+    `agent_command()` refuses a bad `[agents]` row: a setup command the
+    operator wrote and the loop silently dropped would hand the implementer a
+    worktree nobody prepared, and that surfaces far away from the config, as a
+    toolchain failure in the middle of a round.
+    """
+    commands = (config().get("worktree") or {}).get("setup")
+    if commands is None:
+        return []
+    if not isinstance(commands, list):
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [worktree] setup must be a list of "
+            f"command strings, got {type(commands).__name__}")
+    for command in commands:
+        if not isinstance(command, str):
+            raise SystemExit(
+                f"[holo2] {CONFIG_PATH}: [worktree] setup: every entry must be "
+                f"a command string, got {type(command).__name__}")
+        if not command.strip():
+            raise SystemExit(
+                f"[holo2] {CONFIG_PATH}: [worktree] setup: entry {command!r} "
+                "is empty")
+    return commands
+
+
+def check_worktree_setup():
+    """Parse the `[worktree] setup` table before the loop claims work.
+
+    `check_agent_commands()`'s sibling, here for the same reason: a table read
+    for the first time inside a run would abandon a claimed ticket, a cut
+    branch and a held project lease over something startup could have said in
+    one sentence. It parses through `setup_commands()`, so a table this
+    accepts is exactly a table a run would accept.
+
+    What it deliberately does not settle is the commands themselves. They are
+    shell, not argv -- `run_verify()` runs them the way it runs a ticket's
+    verify command -- and they are written against a worktree that does not
+    exist yet, so there is nothing here to resolve them against. Startup
+    settles the shape of the table; the worktree settles the rest.
+    """
+    setup_commands()
+
+
+def run_worktree_setup(wt, conn=None, run_id=None):
+    """Run the target's setup commands in the fresh worktree `wt`.
+
+    Returns `(ok, report)`. Each command goes through `run_verify()`, so a
+    failure reads like a failed verify and not like a bare non-zero exit: the
+    command is named, its output is shown, a top-level `&&` chain is
+    attributed clause by clause, and silence is reported as silence. The same
+    machinery also means the same 300-second cap per command -- setup is a
+    build step, not a round.
+
+    Commands run in order and stop at the first failure: step two of a setup
+    assumes step one worked, so running on would only report a second failure
+    about the first one. A target that names no setup runs nothing and records
+    no phase, so an absent table leaves the run byte-identical to today's.
+    """
+    commands = setup_commands()
+    if not commands:
+        return True, ""
+    set_phase(conn, run_id, "working",
+              f"worktree setup: {len(commands)} command(s) in {wt}")
+    for n, command in enumerate(commands, 1):
+        ok, out = run_verify(command, wt)
+        if not ok:
+            return False, (f"[holo2] worktree setup command {n} of "
+                           f"{len(commands)} FAILED: {command}\n{out}")
+        print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
+    return True, ""
+
+
 def _trailing_verdict(text):
     """The `VERDICT:` line `text` ends on, which the record must keep.
 
@@ -892,6 +978,23 @@ def run_task(task, conn=None, run_id=None, provider=None):
     else:
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
         sh(["git", "checkout", "-b", branch], cwd=wt)
+
+    # The worktree exists and nothing has been dispatched into it yet, which
+    # is the only moment the target's own setup can run: an implementer whose
+    # toolchain is missing burns its whole budget discovering that, and a
+    # worktree that silently borrows the main checkout's environment tests
+    # something other than the branch it is on. A failure here is the run's
+    # failure, and the branch is discarded rather than preserved -- no agent
+    # ran, so there is no work on it to keep, exactly like a no-commit run.
+    ok, out = run_worktree_setup(wt, conn, run_id)
+    if not ok:
+        print(out)
+        ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran and "
+                        f"branch {branch} was discarded.\n\n{out}")
+        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
+        sh(["git", "branch", "-D", branch], TARGET)
+        return False
+
     base_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     def timed(goal):
@@ -2036,6 +2139,9 @@ def cli(argv=None):
     # calls nobody, so a reviewer that is not installed on the machine reading
     # the table is not that reading's problem.
     check_agent_commands()
+    # Same window, same reason: the `[worktree]` table is read here rather
+    # than by the first run that cuts a worktree with it.
+    check_worktree_setup()
     return main()
 
 
