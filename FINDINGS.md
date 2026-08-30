@@ -478,3 +478,7 @@ Adjudicator reply:
 The candidate cleanly implements store bootstrap, canonical ticket mirroring, lease enforcement before work begins, and lease release across success, failure, and crashes. Focused verification passes.
 
 VERDICT: PASS
+
+## 2026-08-30T01:56:58Z — KO-128
+MERGED to main (branch task/wiring-1-6-store-bootstrap-cla deleted). Verify: passed.
+actual: 15.7 min · estimate: 25 min · rounds: 2
