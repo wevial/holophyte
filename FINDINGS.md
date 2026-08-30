@@ -482,3 +482,23 @@ VERDICT: PASS
 ## 2026-08-30T01:56:58Z — KO-128
 MERGED to main (branch task/wiring-1-6-store-bootstrap-cla deleted). Verify: passed.
 actual: 15.7 min · estimate: 25 min · rounds: 2
+
+## 2026-08-30T02:10:24Z — KO-129
+Round 1: REQUEST_CHANGES -> fix round
+Reviewer findings:
+- `store.py:538-553`: `release()` is no longer harmless when called twice. A second release can change a completed run from `done/merged` to `failed/failed`; repeating a failed release also clears its saved `resumePhase`. Guard already-ended runs so terminal state and resume information cannot be overwritten.
+
+VERDICT: REQUEST_CHANGES
+
+Implementer response:
+**Adjudication: ADDRESS** — the finding was real and reproducible. I confirmed it by neutering the new guard and running the sequence: a failed run released twice ended up `('failed', 'failed', 'stray', resumePhase=None, endedAt=4000)` — the reason overwritten and the resume point gone.
+
+Fix (`store.py`):
+- Added `ENDED_PHASES = frozenset(TERMINAL_PHASES.values())` (`done`/`killed`/`failed`).
+- `release()` now selects `endedAt, phase` alongside the ids under its `BEGIN IMMEDIATE`, and rolls back and returns without writing when the run is already ended (`endedAt` stamped **and** phase in `ENDED_PHASES`). No phase move, no event, no outcome/resumePhase rewrite.
+- The `endedAt`-plus-terminal-phase pair, rather than `endedAt` alone, is deliberate: `resume()` moves a failed run back to a work phase without clearing `endedAt`, so a resumed run must stay releasable. A guard on `endedAt` alone would have stranded resumed runs holding the lease.
+- Rewrote the stale docstring paragraph that claimed a second release was harmless.
+
+Tests (`tests/test_wiring_phases.py`, new `ReleaseTests`): a re-released merged run keeps `done/merged`, its `endedAt` and its event stream; a re-released failed run keeps its reason and `resumePhase`; a resumed run can be released again.
+
+Full suite: 194 tests, OK. Committed as `bd1a237`.
