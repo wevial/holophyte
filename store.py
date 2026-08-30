@@ -205,6 +205,21 @@ CREATE TABLE IF NOT EXISTS interventions (
     at        INTEGER NOT NULL
 );
 
+-- sweepStrikes: the supervisor sweep's per-run liveness tally. Not a
+-- state-model table: a single stale-heartbeat sample false-positives on a
+-- load spike (v1 TUI mining), so a run must be seen silent by two
+-- consecutive sweeps before it trips -- and "consecutive" needs somewhere to
+-- live between two separate sweep invocations, which are separate processes.
+-- One row per run currently under suspicion; a run seen alive has its row
+-- dropped, and a run whose heartbeat is newer than the strike on file starts
+-- over at one, so the count is consecutive in silence rather than in sweeps.
+CREATE TABLE IF NOT EXISTS sweepStrikes (
+    runId    INTEGER PRIMARY KEY REFERENCES runs (id),
+    strikes  INTEGER NOT NULL,
+    lastSeen INTEGER NOT NULL  -- when the latest strike was recorded, so a
+                               -- heartbeat newer than it restarts the count
+);
+
 -- linearDeliveries: webhook idempotency (state-model §1). The delivery id is
 -- the primary key, so a replayed delivery collides instead of re-running its
 -- effect.
@@ -378,6 +393,28 @@ def _transaction(conn):
     except BaseException:
         conn.rollback()
         raise
+
+
+@contextlib.contextmanager
+def transaction(conn):
+    """`_transaction()` for callers outside this module; same guarantees.
+
+    A reader that has to *decide* something from what it reads and then write
+    the decision down cannot do the two in separate statements: between them
+    another connection commits, and the write records a verdict on a state
+    that no longer holds. The supervisor sweep is exactly that shape -- it
+    reads a run's heartbeat, classifies it and records the sighting -- and it
+    lives in `factory.py`, so the module's own writers' `BEGIN IMMEDIATE`
+    needs a name that is not private to reach it.
+
+    Under it, this module's writers join instead of opening their own, so a
+    block may read, classify and call `record_strike()` (or any other writer)
+    and have the whole thing commit or roll back once. The write lock is held
+    from the first statement, so a concurrent writer waits rather than
+    interleaving -- keep the block short for that reason.
+    """
+    with _transaction(conn):
+        yield
 
 
 class ClaimConflict(Exception):
@@ -1564,3 +1601,70 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
              started_at, ended_at),
         )
     return cursor.lastrowid
+
+
+# --- the supervisor sweep's strike tally --------------------------------------
+# A run whose loop has crashed stops heartbeating, but so does one whose host
+# is briefly wedged, so liveness is not a single sample: the sweep records what
+# it saw and only the second consecutive silent sighting is evidence. The
+# counting lives here rather than in the sweep because it is a read-then-write
+# over a store table, and two sweeps racing on one target must serialize on it
+# the way every other writer in this module does.
+
+
+def record_strike(conn, run_id, stale, heartbeat, now=None):
+    """Record one sweep's liveness sighting of run `run_id`; return its strikes.
+
+    `stale` is the sweep's verdict on this run's heartbeat, not a threshold
+    this decides: the sweep owns how old is too old (and 5/5 will make that
+    configurable), and this owns only how many sightings in a row say so.
+
+    A silent run's tally goes up by one and the row remembers the sweep that
+    last touched it. A run seen alive drops its row and answers 0 -- the
+    strikes a sweep counts are consecutive, so one heartbeat clears the count
+    rather than leaving a run one old sighting away from tripping forever.
+
+    Which is why `heartbeat` -- the run's `lastHeartbeat`, the timestamp the
+    caller's verdict was reached on -- is compared against the `lastSeen` of
+    the strike already on file. A sighting is only the *next* consecutive one
+    if the run has been silent throughout; a run that answered after the last
+    strike was recorded and then went quiet again has proved itself alive in
+    between, and starts over at one however few sweeps saw it do so. Counting
+    on sightings alone makes the tally consecutive in sweeps rather than in
+    silence, and a run heartbeating just slower than the sweep interval trips
+    while alive -- exactly the false positive two strikes exist to prevent.
+
+    An unknown `run_id` is a caller bug and raises `ValueError`, as everywhere
+    else here. `now` is epoch milliseconds for `lastSeen`, defaulting to the
+    clock; a sweep passes its own so every run in one pass is stamped with the
+    one time it was taken.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        if conn.execute(
+            "SELECT 1 FROM runs WHERE id = ?", (run_id,)
+        ).fetchone() is None:
+            raise ValueError(f"no run {run_id}")
+        if not stale:
+            conn.execute("DELETE FROM sweepStrikes WHERE runId = ?", (run_id,))
+            strikes = 0
+        else:
+            row = conn.execute(
+                "SELECT strikes, lastSeen FROM sweepStrikes WHERE runId = ?",
+                (run_id,)
+            ).fetchone()
+            if row is None or heartbeat > row[1]:
+                # Nothing on file, or the run answered after what is: either
+                # way this is the first sighting of the silence it is in now.
+                strikes = 1
+            else:
+                strikes = row[0] + 1
+            conn.execute(
+                "INSERT INTO sweepStrikes (runId, strikes, lastSeen)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT (runId) DO UPDATE SET strikes = excluded.strikes,"
+                " lastSeen = excluded.lastSeen",
+                (run_id, strikes, now),
+            )
+    return strikes

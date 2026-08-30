@@ -57,6 +57,10 @@ DOCUMENTED_COLUMNS = {
         "at",
     },
     "linearDeliveries": {"deliveryId", "processedAt"},
+    # Store-owned, not a documented table: the supervisor sweep's per-run
+    # strike tally, which exists because "silent on two consecutive sweeps"
+    # has to survive between two sweep invocations.
+    "sweepStrikes": {"runId", "strikes", "lastSeen"},
 }
 
 A_PROJECT = (
@@ -109,7 +113,7 @@ class StoreSchemaTests(unittest.TestCase):
         self.addCleanup(conn.close)
         return conn
 
-    def test_init_creates_the_seven_documented_tables_and_columns(self):
+    def test_init_creates_the_documented_tables_and_columns(self):
         conn = self.open()
 
         store.init(conn)
