@@ -41,14 +41,14 @@ class StubProvider:
 
     def __init__(self, *tasks):
         self.queue = list(tasks)
-        self.completed = []
+        self.states = []
         self.comments = []
 
     def claim_next(self):
         return self.queue.pop(0) if self.queue else None
 
-    def complete(self, task_id):
-        self.completed.append(task_id)
+    def set_state(self, issue_id, state):
+        self.states.append((issue_id, state))
 
     def comment(self, task_id, body):
         self.comments.append((task_id, body))
@@ -96,7 +96,8 @@ class RunPhaseTests(unittest.TestCase):
 
         provider = provider or StubProvider(
             {"id": "KO-129", "issue_id": "iss-129", "title": "add a thing",
-             "verify": "echo ok", "budget_min": 5, "contracts": []})
+             "verify": "echo ok", "budget_min": 5, "contracts": [],
+             "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", fake_agent):
                 factory.main(provider)
@@ -139,7 +140,10 @@ class RunPhaseTests(unittest.TestCase):
         history, so it never does the thing that phase names."""
         provider = self.loop("VERDICT: APPROVE")
 
-        self.assertEqual(provider.completed, ["KO-129"])
+        # The merge's Linear side is the projection and nothing else: the
+        # claim posted In Progress, the merge posted Done.
+        self.assertEqual(provider.states,
+                         [("iss-129", "In Progress"), ("iss-129", "Done")])
         self.assertEqual(self.transitions(),
                          ["claimed -> working",
                           "working -> verifying",
@@ -206,7 +210,8 @@ class RunPhaseTests(unittest.TestCase):
 
         provider = StubProvider(
             {"id": "KO-129", "issue_id": "iss-129", "title": "add a thing",
-             "verify": "echo ok", "budget_min": 5, "contracts": []})
+             "verify": "echo ok", "budget_min": 5, "contracts": [],
+             "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", boom):
                 with self.assertRaises(RuntimeError):

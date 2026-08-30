@@ -39,9 +39,13 @@ class StubProvider:
 
     def __init__(self, *tasks):
         self.queue = list(tasks)
+        self.states = []
 
     def claim_next(self):
         return self.queue.pop(0) if self.queue else None
+
+    def set_state(self, issue_id, state):
+        self.states.append((issue_id, state))
 
 
 ISSUE_UUID = "9f1c2d34-5678-4abc-9def-0123456789ab"  # Linear's canonical id
@@ -56,6 +60,7 @@ def a_task(identifier="HOL-1", title="do the thing", issue_id=ISSUE_UUID):
     """
     return {"id": identifier, "issue_id": issue_id, "title": title,
             "verify": "python3 -m unittest discover -s tests",
+            "criteria": ["Given a claim, when it lands, then the mirror exists"],
             "contracts": [], "budget_min": 25}
 
 

@@ -4,7 +4,7 @@
 Uses a personal API key from LINEAR_API_KEY (env var or .env next to this
 file) against the direct GraphQL API.
 
-Loop-facing API: claim_next() / complete() / comment() / list_ready_issues().
+Loop-facing API: claim_next() / set_state() / comment() / list_ready_issues().
 """
 import json
 import os
@@ -124,14 +124,24 @@ def parse_task(issue):
     canonical issue UUID. They are kept apart rather than collapsed because
     the UUID is what correlates an issue across renames and what a webhook
     payload carries, so it is the key the store mirrors a ticket under.
+
+    `criteria` is the "Acceptance criteria" section's items, checked ones
+    included: the mirror routes a ticket carrying both criteria and a verify
+    command to `ready` and everything else to `needs_spec` (state-model §2),
+    so dropping them here would mirror every ticket the loop works as
+    under-specced — and an under-specced mirror cannot legally enter
+    `in_flight`, which is the status the board is a projection of.
     """
     desc = issue.get("description", "") or ""
     m = re.search(r"## Verify command\(s\)\s*```\n(.*?)```", desc, re.S)
     verify = m.group(1).strip() if m else None
+    parsed = ticket_template.parse(desc)
     return {"id": issue["identifier"], "issue_id": issue.get("id"),
             "title": issue["title"].strip(),
             "verify": verify,
-            "contracts": ticket_template.parse(desc).contract_checks,
+            "criteria": [*parsed.acceptance, *parsed.acceptance_done,
+                         *parsed.acceptance_other],
+            "contracts": parsed.contract_checks,
             "budget_min": int(issue.get("estimate") or 20)}
 
 
@@ -139,31 +149,57 @@ def _state_id(name):
     data = _gql('query($team: String!) { workflowStates(filter: { team: '
                 '{ name: { eq: $team } } }) { nodes { id name type } } }',
                 {"team": TEAM})
-    return next(s["id"] for s in data["workflowStates"]["nodes"]
-                if s["name"] == name)
+    # A name the team does not have is a mapping the caller got wrong, and it
+    # says so: the bare StopIteration `next()` would raise names neither the
+    # state nor the team it was looked for in.
+    for s in data["workflowStates"]["nodes"]:
+        if s["name"] == name:
+            return s["id"]
+    raise RuntimeError(f"team {TEAM!r} has no workflow state named {name!r}")
 
 
-def _set_state(issue_id, state_id):
-    _gql('mutation($id: String!, $state: String!) { issueUpdate(id: $id, '
-         'input: { stateId: $state }) { success } }',
-         {"id": issue_id, "state": state_id})
+def set_state(issue_id, state_name):
+    """Move an issue to the workflow state called `state_name`.
+
+    The only state-writing entry point, because state-model §1 makes Linear a
+    notice board Holophyte posts to: the loop's own status lives in the store
+    and is projected here by `factory.mirror_push()`, never read back. A
+    caller that changes an issue's state from anywhere else is a second
+    source of truth for the same fact.
+
+    Raises when Linear says the move did not happen. `issueUpdate` reports a
+    refusal it did not treat as an error as `success: false`, with no `errors`
+    block for `_gql()` to turn into one, so an unchecked mutation returns
+    quietly while the issue stays in the state it was in. The projection's
+    whole failure story hangs on that: `factory.mirror_push()` only warns
+    about a push that says it did not land, and a silent one leaves a stale
+    board nothing in the run's event stream mentions.
+    """
+    data = _gql('mutation($id: String!, $state: String!) { issueUpdate(id: '
+                '$id, input: { stateId: $state }) { success } }',
+                {"id": issue_id, "state": _state_id(state_name)})
+    if not data["issueUpdate"]["success"]:
+        raise RuntimeError(
+            f"Linear refused to move issue {issue_id} to {state_name!r}")
 
 
 def claim_next():
-    """First ready issue (by identifier) -> In Progress. Parsed task or None."""
+    """First ready issue (by identifier), parsed. None when there is none.
+
+    Claiming no longer moves the issue to In Progress here. The claim's status
+    change belongs to the store — the loop transitions its mirror to
+    `in_flight` and projects that through `mirror_push()` — so leaving a state
+    call in the provider would post the same fact twice, from a place that
+    does not know whether the claim actually took the project's lease.
+    """
     ready = list_ready_issues()
     if not ready:
         return None
     issue = sorted(ready, key=lambda i: i["identifier"])[0]
-    _set_state(issue["id"], _state_id("In Progress"))
     task = parse_task(issue)
     print(f"[holo2] claimed {task['id']}: {task['title']} "
           f"(budget {task['budget_min']} min)")
     return task
-
-
-def complete(task_id):
-    _set_state(task_id, _state_id("Done"))
 
 
 def comment(task_id, body):

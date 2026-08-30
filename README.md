@@ -39,8 +39,14 @@ Usage: `python3 factory.py /srv/dev/holo2test`
 - `review_runner.py` — exact-SHA staging and the model-neutral local reviewer
   boundary.
 - `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
-- `linear_provider.py` — Linear GraphQL client: claim/complete/comment,
-  ready-ticket and blocker resolution.
+- `linear_provider.py` — Linear GraphQL client: claim/set_state/comment,
+  ready-ticket and blocker resolution. Ticket status lives in the store and is
+  projected onto a Linear workflow state by `factory.mirror_push()` — one way,
+  last write wins, never read back — so `set_state` is the only writer of that
+  state, and the mapping table beside `mirror_push` says which state each
+  status shows as. The direction holds when the board is stale too: a ticket
+  whose stored status will not enter `in_flight` is refused at the claim and
+  re-projected instead of worked a second time.
 - `ticketTemplate.md` — ticket shape. Verify commands go in the
   "Verify command(s)" section (exit 0 = pass, relative paths only);
   estimate is the budget in minutes. The optional "Contract checks" section

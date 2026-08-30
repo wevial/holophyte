@@ -89,11 +89,11 @@ class FakeLinear:
     """Stand-in for the provider module `run_task` imports at call time."""
 
     def __init__(self):
-        self.completed = []
+        self.states = []
         self.comments = []
 
-    def complete(self, task_id):
-        self.completed.append(task_id)
+    def set_state(self, issue_id, state):
+        self.states.append((issue_id, state))
 
     def comment(self, task_id, body):
         self.comments.append((task_id, body))
@@ -189,7 +189,13 @@ class ReviewLoopTests(unittest.TestCase):
             "verify",  # pre-merge
         ])
 
-    def test_terminal_pass_merges_and_completes_the_ticket(self):
+    def test_terminal_pass_merges_and_leaves_the_linear_state_alone(self):
+        """The merge is `run_task()`'s; the ticket's Linear state is not.
+
+        Ticket status lives in the store and is projected onto Linear by
+        `main()` through `mirror_push()`, so a run that merges makes no state
+        call of its own — a direct one here would be a second writer of the
+        same fact, from a frame with no store to be right about."""
         merged = self.run_task("VERDICT: REQUEST_CHANGES",
                                "VERDICT: REQUEST_CHANGES",
                                "VERDICT: PASS")
@@ -198,7 +204,7 @@ class ReviewLoopTests(unittest.TestCase):
         self.assertIn(f"Merge {self.branch}", self.git("log", "--format=%s", "main"))
         self.assertNotIn(self.branch, self.git("branch", "--list", self.branch))
         self.assertFalse(self.wt.exists())
-        self.assertEqual(self.linear.completed, ["KO-116"])
+        self.assertEqual(self.linear.states, [])
 
     def test_close_out_records_actual_duration_estimate_and_rounds(self):
         # Claim at t=100 s, close-out 42.7 s later: 0.711 min, reported to one

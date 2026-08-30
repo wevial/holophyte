@@ -37,14 +37,14 @@ class StubProvider:
 
     def __init__(self, *tasks):
         self.queue = list(tasks)
-        self.completed = []
+        self.states = []
         self.comments = []
 
     def claim_next(self):
         return self.queue.pop(0) if self.queue else None
 
-    def complete(self, task_id):
-        self.completed.append(task_id)
+    def set_state(self, issue_id, state):
+        self.states.append((issue_id, state))
 
     def comment(self, task_id, body):
         self.comments.append((task_id, body))
@@ -203,7 +203,8 @@ class CloseOutRegenerationTests(unittest.TestCase):
 
         provider = StubProvider(
             {"id": "KO-131", "issue_id": "iss-131", "title": "add a thing",
-             "verify": "echo ok", "budget_min": 5, "contracts": []})
+             "verify": "echo ok", "budget_min": 5, "contracts": [],
+             "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", fake_agent):
                 factory.main(provider)
