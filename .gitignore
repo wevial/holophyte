@@ -3,6 +3,3 @@ __pycache__/
 *.pyc
 docs/v2/
 tmp/
-holophyte.db
-holophyte.db-shm
-holophyte.db-wal

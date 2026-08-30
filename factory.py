@@ -2,7 +2,7 @@
 """holo2: a minimal software factory.
 
 Loop:
-  0. Open the v2 store (holophyte.db, WAL, beside the target repo).
+  0. Open the v2 store (WAL-mode SQLite, a sibling file of the target repo).
   1. Claim the first ready ticket from Linear (project in linear_provider),
      mirror it into the store and take the project's run lease before any
      branch exists; the lease goes back when the run ends, merged or not.
@@ -27,9 +27,13 @@ import ticket_template
 TARGET = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/srv/dev/holo2test")
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
-# The loop's durable state: one WAL-mode SQLite file beside the target repo,
-# gitignored, per target repo like the worktree directory next to it.
-STORE_PATH = TARGET / "holophyte.db"
+# The loop's durable state: one WAL-mode SQLite file per target repo, a sibling
+# of the target the way its worktree directory is (see WORKTREES below).
+# Outside the repo rather than inside it: the factory's own .gitignore says
+# nothing about the target checkout, so a store written into TARGET would leave
+# the database and its two WAL sidecars untracked in whatever repo the loop is
+# working on -- dirt a task's `git add -A` could sweep into a commit.
+STORE_PATH = TARGET.parent / f"{TARGET.name}.holophyte.db"
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
 BUDGET_RE = re.compile(r"\((\d+)\s*min\)\s*$")

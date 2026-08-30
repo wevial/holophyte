@@ -65,7 +65,9 @@ class WiringClaimTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.target = Path(tmp.name) / "repo"
         self.target.mkdir()
-        self.db = self.target / "holophyte.db"
+        subprocess.run(["git", "init", "-q"], cwd=self.target, check=True)
+        # Mirrors factory.STORE_PATH: a sibling of the target, not a file in it.
+        self.db = Path(tmp.name) / "repo.holophyte.db"
         self.worktrees = Path(tmp.name) / "repo.worktrees"
         for attr, value in (("TARGET", self.target), ("STORE_PATH", self.db),
                             ("WORKTREES", self.worktrees)):
@@ -96,11 +98,36 @@ class WiringClaimTests(unittest.TestCase):
                   self.read("SELECT name FROM sqlite_master WHERE type = 'table'")}
         self.assertLessEqual({"projects", "tickets", "runs"}, tables)
 
-    def test_the_store_file_is_git_ignored(self):
-        for name in ("holophyte.db", "holophyte.db-wal", "holophyte.db-shm"):
-            with self.subTest(name):
-                r = subprocess.run(["git", "check-ignore", "-q", name], cwd=ROOT)
-                self.assertEqual(r.returncode, 0, f"{name} is not git-ignored")
+    def test_the_store_leaves_the_target_checkout_clean(self):
+        """The store is the loop's file, not the target repo's.
+
+        Asserted against a real `git status` rather than against a .gitignore
+        entry: the factory repo's ignore rules say nothing about the target
+        checkout, so the only thing that keeps the database and its two WAL
+        sidecars out of a task's `git add -A` is living outside the repo.
+        """
+        factory.main(StubProvider())  # bootstrap the store, no ready tickets
+
+        self.assertTrue(self.db.exists())
+        self.assertFalse(self.db.is_relative_to(self.target))
+        status = subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=self.target, capture_output=True, text=True, check=True)
+        self.assertEqual(status.stdout, "")
+
+    def test_the_store_path_is_a_sibling_of_the_target(self):
+        """One store per target, named after it, beside it -- like WORKTREES.
+
+        Re-imports the module under a target argv, because the path is derived
+        once at import: patching STORE_PATH afterwards, as the other tests do,
+        would test the patch rather than the rule.
+        """
+        with patch.object(sys, "argv", ["factory.py", "/srv/dev/holo2test"]):
+            mod = importlib.util.module_from_spec(SPEC)
+            SPEC.loader.exec_module(mod)
+
+        self.assertEqual(mod.STORE_PATH, Path("/srv/dev/holo2test.holophyte.db"))
+        self.assertEqual(mod.STORE_PATH.parent, mod.WORKTREES.parent)
 
     def test_claim_mirrors_the_ticket_and_holds_the_lease_during_the_run(self):
         seen = {}
