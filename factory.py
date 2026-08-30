@@ -433,10 +433,11 @@ def ledger(task_id, entry):
 # `{path, line?, severity, message}` objects, because a round the store holds
 # as a paragraph cannot be compared with the next one. Extraction is therefore
 # best-effort over the output format that exists today: what carries a file
-# reference becomes a structured finding, and a reply that carries none is
-# still recorded verbatim as a single finding. Nothing the reviewer said is
-# dropped — a round is evidence, and a lossy record of it would make the
-# fingerprint agree about rounds that never matched.
+# reference becomes a structured finding, an item the reviewer listed without
+# one is kept under a placeholder path, and a reply that filed nothing at all
+# is still recorded verbatim as a single finding. No complaint the reviewer
+# filed is dropped — a round is evidence, and a lossy record of it would make
+# the fingerprint agree about rounds that never matched.
 
 # A path as a reviewer cites one: a token carrying a directory separator, or
 # one whose extension is at least two characters, optionally followed by
@@ -511,17 +512,34 @@ def parse_findings(reply):
 
     Each block that cites a file becomes one finding: the cited path and line,
     an explicit severity marker if the block carries one, and the block itself
-    as the message, so the reasoning stays with the complaint it belongs to. A
-    reply no block parsed out of returns `raw_finding()` rather than nothing.
+    as the message, so the reasoning stays with the complaint it belongs to.
+
+    A block the path pattern found nothing in is still a finding when the
+    reviewer wrote it as a list item, filed under `UNPARSED_PATH` with whatever
+    severity it marked. The reviewer's own bullet is what says it filed a
+    complaint, and this parser recognizing no path in it is a fact about the
+    parser: `Dockerfile`, `Makefile` and a bare directory carry nothing to
+    match on. Keeping only the items whose paths happen to parse would leave
+    the round fingerprinted as a shorter complaint than the one that was made,
+    and §6 compares those fingerprints. Prose around the list -- an opening
+    sentence, the closing `VERDICT:` line -- is narration rather than a filed
+    item and is not stored as one; a reply that filed no item at all still
+    returns `raw_finding()` over the whole text, so a round is never recorded
+    as having said nothing.
     """
     findings = []
     for block in finding_blocks(reply):
         match = FINDING_PATH_RE.search(block)
-        if match is None:
+        listed = BLOCK_BREAK_RE.match(block) is not None
+        if match is None and not listed:
             continue
-        path, line = match.group(1), match.group(2)
+        path, line = ((match.group(1), match.group(2)) if match
+                      else (UNPARSED_PATH, None))
+        message = finding_message(block)
+        if not message:
+            continue  # a bullet with nothing after it is not a complaint
         finding = {"path": path, "severity": finding_severity(block),
-                   "message": finding_message(block)}
+                   "message": message}
         if line and int(line) > 0:
             finding["line"] = int(line)
         findings.append(finding)

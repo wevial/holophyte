@@ -143,6 +143,24 @@ class ReviewRoundRowTests(unittest.TestCase):
             {"path": "factory.py", "line": 512, "severity": "p0"},
             {"path": "store.py", "line": 1180, "severity": "p2"}]))
 
+    def test_a_listed_blocker_citing_no_path_is_kept_beside_a_parsed_one(self):
+        """A findings list is not dropped down to the items whose paths this
+        parser happens to recognize. The reviewer filed two blockers and one
+        names a file with no extension to match on; storing only the other
+        would fingerprint the round as a complaint it did not make."""
+        self.loop(
+            "- factory.py:512 the approving round is never stored.\n"
+            "- [BLOCKER] Dockerfile installs build deps into the runtime image.\n"
+            "\nVERDICT: REQUEST_CHANGES",
+            "VERDICT: APPROVE")
+
+        findings = json.loads(self.rounds()[0]["findings"])
+        self.assertEqual([(f["path"], f["severity"]) for f in findings],
+                         [("factory.py", "p2"),
+                          (factory.UNPARSED_PATH, "p0")])
+        self.assertIn("build deps into the runtime image",
+                      findings[1]["message"])
+
     def test_unparseable_reviewer_output_is_kept_as_one_raw_finding(self):
         """A reply naming no file is still a round that said something. It is
         recorded whole under a placeholder path — the alternative is a row
