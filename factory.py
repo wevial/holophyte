@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from time import monotonic
+from time import monotonic, time
 
 import review_runner
 import store
@@ -428,6 +428,131 @@ def ledger(task_id, entry):
         f.write(f"\n## {ts} — {task_id}\n{sanitize_findings(entry)}\n")
 
 
+# --- review rounds as structured findings ------------------------------------
+# The reviewer writes prose; `reviewRounds.findings` wants
+# `{path, line?, severity, message}` objects, because a round the store holds
+# as a paragraph cannot be compared with the next one. Extraction is therefore
+# best-effort over the output format that exists today: what carries a file
+# reference becomes a structured finding, and a reply that carries none is
+# still recorded verbatim as a single finding. Nothing the reviewer said is
+# dropped — a round is evidence, and a lossy record of it would make the
+# fingerprint agree about rounds that never matched.
+
+# A path as a reviewer cites one: a token carrying a directory separator, or
+# one whose extension is at least two characters, optionally followed by
+# `:line`. Deliberately narrow — a bare word is prose, and a wrong path is
+# worse than none, since the fingerprint keys on it. The two-character
+# extension is what keeps `e.g.` and `i.e.` out of the findings; a one-letter
+# extension still parses when the citation carries a directory (`src/a.c`).
+# The lookbehind makes the match start at a token boundary, so a URL in the
+# reviewer's prose is not read as the path `//linear.app`.
+FINDING_PATH_RE = re.compile(
+    r"(?<![\w:/.\-])"
+    r"([\w.\-]*/[\w.\-/]*\.\w+|[\w.\-/]*[\w\-]\.[A-Za-z]\w+)(?::(\d+))?")
+# An *explicit* severity marker, bracketed (`[P0]`, `(blocker)`) or opening the
+# line (`- BLOCKER: ...`). Only a marker moves a finding off the default: tone
+# is not severity, and a reviewer that sounds alarmed has not filed a p0.
+SEVERITY_RE = re.compile(
+    r"[\[(]\s*(p0|p1|p2|nit|blocker)\s*[\])]"
+    r"|^[\s\-*\d.)]*(p0|p1|p2|nit|blocker)\b\s*[:\-]", re.I | re.M)
+DEFAULT_SEVERITY = "p2"
+# The path a finding gets when the reviewer named none. Not a path any
+# repository holds, so it cannot collide with a real file's findings, and
+# readable in a `path:line:severity` key.
+UNPARSED_PATH = "(unparsed)"
+# One finding is a complaint, not a transcript. Long enough for a blocker with
+# its reasoning; short enough that a runaway reply cannot make one row the
+# size of the review.
+MAX_FINDING_CHARS = 2000
+# A blank line, or the bullet/number that opens the next item: the boundaries
+# a reviewer's findings list actually uses, so a finding keeps the lines that
+# explain it instead of being cut to the one that names the file.
+BLOCK_BREAK_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+
+
+def finding_message(text):
+    """One finding's message, safe to store: no terminal escapes, bounded."""
+    text = CONTROL_RE.sub("", ANSI_CSI_RE.sub("", text)).strip()
+    if len(text) > MAX_FINDING_CHARS:
+        text = (text[:MAX_FINDING_CHARS - len(TRUNCATION_MARKER)]
+                + TRUNCATION_MARKER)
+    return text
+
+
+def raw_finding(reply):
+    """The whole reply as one finding, for a round nothing parsed out of.
+
+    The fallback the extraction is allowed to have: an unparseable reviewer
+    reply is still a round that said something, and the alternative to keeping
+    it under a placeholder path is a stored round that claims the reviewer
+    found nothing.
+    """
+    return {"path": UNPARSED_PATH, "severity": DEFAULT_SEVERITY,
+            "message": finding_message(reply)}
+
+
+def finding_blocks(text):
+    """The reply split into candidate findings: bullet items and paragraphs."""
+    blocks, current = [], []
+    for line in text.splitlines():
+        if not line.strip() or BLOCK_BREAK_RE.match(line):
+            if current:
+                blocks.append("\n".join(current))
+            current = [line] if line.strip() else []
+            continue
+        current.append(line)
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def parse_findings(reply):
+    """Structured findings from one reviewer reply, best effort.
+
+    Each block that cites a file becomes one finding: the cited path and line,
+    an explicit severity marker if the block carries one, and the block itself
+    as the message, so the reasoning stays with the complaint it belongs to. A
+    reply no block parsed out of returns `raw_finding()` rather than nothing.
+    """
+    findings = []
+    for block in finding_blocks(reply):
+        match = FINDING_PATH_RE.search(block)
+        if match is None:
+            continue
+        path, line = match.group(1), match.group(2)
+        finding = {"path": path, "severity": finding_severity(block),
+                   "message": finding_message(block)}
+        if line and int(line) > 0:
+            finding["line"] = int(line)
+        findings.append(finding)
+    return findings or [raw_finding(reply)]
+
+
+def finding_severity(block):
+    """`p2` unless the block carries an explicit severity marker."""
+    match = SEVERITY_RE.search(block)
+    if match is None:
+        return DEFAULT_SEVERITY
+    marker = (match.group(1) or match.group(2)).lower()
+    return "p0" if marker == "blocker" else marker
+
+
+def round_verdict(reply, verdicts):
+    """The reply's verdict as `reviewRounds.verdict` spells it.
+
+    Both reviewer vocabularies collapse onto §2's three: an approval or a
+    terminal PASS is `pass`, findings or a terminal FAIL is
+    `changes_requested`, and a reply with no clean verdict line is `error` —
+    which is what the loop already reads a malformed adjudication as.
+    """
+    try:
+        return {"APPROVE": "pass", "REQUEST_CHANGES": "changes_requested",
+                "PASS": "pass", "FAIL": "changes_requested"}[
+                    review_runner.terminal_verdict(reply, verdicts)]
+    except review_runner.ReviewBoundaryError:
+        return "error"
+
+
 WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
 
 
@@ -439,10 +564,12 @@ def run_task(task, conn=None, run_id=None):
 
     `conn` and `run_id` are the store and the claimed run the loop took the
     lease with. Every stage boundary below records its phase against them
-    through `set_phase()`, so in-flight state outlives the process: the run
-    row and its event stream say what the loop was doing, instead of that
-    living only in this frame. Both default to None for a direct call with no
-    store, which runs the same stages and records nothing.
+    through `set_phase()`, and every review or adjudication turn records its
+    round through `record_round()`, so in-flight state outlives the process:
+    the run row, its rounds and its event stream say what the loop was doing
+    and what the reviewer found, instead of that living only in this frame and
+    in prose. Both default to None for a direct call with no store, which runs
+    the same stages and records nothing.
     """
     task_id = task["id"]
     # Claim-to-merge wall clock: run_task is entered immediately after the
@@ -526,6 +653,7 @@ def run_task(task, conn=None, run_id=None):
             print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
 
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
+        round_started = int(time() * 1000)
         verdict = agent("review",
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
@@ -536,6 +664,11 @@ def run_task(task, conn=None, run_id=None):
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
             base_sha=base_sha, candidate_sha=sha)
+        # Before the approval check, so the round that ends the loop is stored
+        # like every other one: a review the store has no row for is a round
+        # §6 cannot compare the next one against.
+        record_round(conn, run_id, rnd, "review", verdict, verify_cmd, ok, out,
+                     started_at=round_started)
 
         if ok and review_runner.terminal_verdict(verdict) == "APPROVE":
             break
@@ -574,6 +707,7 @@ def run_task(task, conn=None, run_id=None):
         print("[holo2] verify ok before adjudication")
 
         set_phase(conn, run_id, "reviewing", "terminal adjudication")
+        round_started = int(time() * 1000)
         reply = agent("adjudicate",
             f"You are a READ-ONLY final adjudicator. Judge commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
@@ -590,6 +724,11 @@ def run_task(task, conn=None, run_id=None):
             "VERDICT: PASS  or  VERDICT: FAIL\n"
             "PASS means the candidate is mergeable as it stands.", wt,
             base_sha=base_sha, candidate_sha=sha)
+        # The adjudication is a round of the run like the reviews before it —
+        # numbered after them, so the run's rounds read in the order they
+        # happened.
+        record_round(conn, run_id, MAX_ROUNDS + 1, "adjudicate", reply,
+                     verify_cmd, ok, out, started_at=round_started)
         try:
             decision = review_runner.terminal_verdict(
                 reply, review_runner.ADJUDICATION_VERDICTS)
@@ -661,8 +800,8 @@ def run_task(task, conn=None, run_id=None):
 
 
 # --- store seam --------------------------------------------------------------
-# Every store call the loop makes goes through one of the three helpers below,
-# so a later wiring ticket extends this seam instead of threading SQL through
+# Every store call the loop makes goes through one of the helpers below, so a
+# later wiring ticket extends this seam instead of threading SQL through
 # run_task().
 
 
@@ -689,6 +828,50 @@ def set_phase(conn, run_id, phase, note=None):
     if conn is None:
         return
     store.set_phase(conn, run_id, phase, note)
+
+
+def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
+                 started_at=None):
+    """Record one review or adjudication round as a `reviewRounds` row.
+
+    The round the loop just ran, as the store holds it: the verdict, the
+    reviewer route that issued it, the verify result the reviewer was briefed
+    with, and the findings — structured where the reply let them be extracted.
+    `store.record_review_round()` fingerprints them on the way in, which is
+    what makes two rounds comparable and is the whole reason the prose in
+    FINDINGS.md is not enough.
+
+    Which findings a round carries follows the round's kind. A `review` round
+    that asked for changes carries what parsed out of its reply; an approval
+    carries none, because approving prose is not a findings list. An
+    adjudication is a verdict and nothing else by its own prompt, so PASS and
+    FAIL both store an empty list — a reply that named no verdict at all is
+    the exception, and its raw text is kept as the one finding rather than
+    recorded as a round that said nothing.
+
+    A `conn` of None makes this a no-op, like `set_phase()`, so a storeless
+    `run_task()` runs the same stages and records nothing.
+    """
+    if conn is None:
+        return
+    verdicts = (review_runner.REVIEW_VERDICTS if role == "review"
+                else review_runner.ADJUDICATION_VERDICTS)
+    verdict = round_verdict(reply, verdicts)
+    if verdict == "error":
+        findings = [raw_finding(reply)]
+    elif verdict == "changes_requested" and role == "review":
+        findings = parse_findings(reply)
+    else:
+        findings = []
+    # `run_verify()` reports a pass/fail gate rather than a raw status — the
+    # failing clause and its exit code live in the output it builds — so the
+    # exit code stored here is that verdict, and `output` is the detail.
+    results = ([{"command": verify_cmd, "exitCode": 0 if ok else 1,
+                 "output": out}] if verify_cmd else [])
+    store.record_review_round(conn, run_id, rnd, verdict, REVIEW_PROFILE,
+                              findings=findings, verification_results=results,
+                              started_at=started_at,
+                              ended_at=int(time() * 1000))
 
 
 def claim_run(conn, project, task):
