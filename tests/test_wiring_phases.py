@@ -202,7 +202,8 @@ class RunPhaseTests(unittest.TestCase):
         phase, outcome, reason, resume_phase, *_ = self.run_row()
         self.assertEqual((phase, outcome, resume_phase),
                          ("failed", "failed", "reviewing"))
-        self.assertIn("reviewing", reason)
+        self.assertIn("terminal adjudication", reason)
+        self.assertIn("preserved at", reason)
 
     def test_a_crashed_run_keeps_the_phase_it_died_in(self):
         """The point of durable phases: state that outlives the process. The

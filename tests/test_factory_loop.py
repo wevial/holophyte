@@ -470,7 +470,7 @@ class WorktreeSetupLoopTests(LoopFixture):
         self.assertTrue((wt / "rescued.txt").exists())
         self.assertIn("rescued: preserved work", self.subjects(BRANCH))
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
-        self.assertIn("preserved work", reason)
+        self.assertIn("left in place", reason)
 
     def test_the_setup_phase_is_recorded_between_cutting_and_working(self):
         self.configure('[worktree]\nsetup = ["true"]\n')
@@ -506,6 +506,36 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(fake.roles, ["implement"])  # the APPROVE went unused
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        # The debris survives as the WIP commit, named in the reason.
+        self.assertIn(BRANCH, self.branches())
+        self.assertIn("WIP", self.subjects(BRANCH)[0])
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("preserved work kept on", reason)
+
+    def test_an_empty_reused_leftover_is_discarded_like_a_fresh_cut(self):
+        """A clean leftover at main holds nothing: keeping it forever and
+        calling it preserved work would be the reason lying in the safe
+        direction — and an unbounded leftover on every re-failing ticket."""
+        self.leftover()
+
+        self.loop(Idle())
+
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertFalse((self.worktrees / "add-a-thing").exists())
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("discarded", reason)
+
+    def test_a_timed_out_implementer_keeps_the_commits_it_made(self):
+        """A budget overrun is not 'no work': commits that landed before the
+        alarm survive, with the reason saying where they are."""
+        self.loop(CommitThenTimeout("late work"))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertIn(BRANCH, self.branches())
+        self.assertIn("late work", self.subjects(BRANCH))
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("budget", reason)
+        self.assertIn(BRANCH, reason)
 
     def test_the_refusal_reason_reaches_the_run_row(self):
         """The reuse refusal's whole product is an explanation for a human;
@@ -598,6 +628,14 @@ class LeftoverWorktreeTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn(BRANCH, self.branches())
+
+
+class CommitThenTimeout(Commit):
+    """An implementer turn that commits real work, then hits the budget."""
+
+    def play(self, cwd, turn):
+        super().play(cwd, turn)
+        raise TimeoutError
 
 
 class Boom:
