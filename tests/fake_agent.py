@@ -34,7 +34,16 @@ IMPLEMENT = "implement"
 REVIEW_ROLES = ("review", "adjudicate")
 
 
-class ScriptError(AssertionError):
+class HarnessViolation(BaseException):
+    """The harness's fail-loud signal, immune to the loop's containment.
+
+    BaseException on purpose: `main()` turns any Exception escaping
+    `run_task()` into an ordinary failed run, and a harness violation must
+    error the test rather than decorate a run row as one more failure.
+    """
+
+
+class ScriptError(HarnessViolation):
     """The script and the loop disagree about what turn this is."""
 
 
@@ -192,7 +201,7 @@ class SpawnGuard:
         name = Path(argv[0]).name if argv else ""
         if name in self.blocked:
             self.spawned.append(argv)
-            raise AssertionError(f"a real agent process was spawned: {argv}")
+            raise HarnessViolation(f"a real agent process was spawned: {argv}")
 
 
 @contextlib.contextmanager
