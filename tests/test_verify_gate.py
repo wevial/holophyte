@@ -126,12 +126,16 @@ class VacuousGreenTests(unittest.TestCase):
             "        self.assertTrue(True)\n")
 
     def test_unittest_discovery_that_ran_no_tests_is_red(self):
-        # Real discovery against a pattern no file matches: exits 0, "OK".
+        # Real discovery against a pattern no file matches. On Python < 3.12
+        # unittest exits 0 with "OK" and the vacuous-green detector must catch
+        # it; from 3.12 unittest itself exits 5, a plain failure. Either way
+        # the gate is RED with the zero-test evidence visible — that is the
+        # KO-107 property; the detector's report shape is pinned by the
+        # exit-0 test below.
         ok, out = factory.run_verify(
             "python3 -m unittest discover -s suite -p 'test_absent*'", self.cwd)
 
         self.assertFalse(ok)
-        self.assertIn("vacuous-green", out)
         self.assertIn("Ran 0 tests", out)
 
     def test_pytest_collecting_no_items_is_red(self):
