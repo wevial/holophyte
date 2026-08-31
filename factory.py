@@ -2197,6 +2197,17 @@ def main(provider=None):
         # contract is one row per Linear team, which the name keys just as
         # well until the provider resolves the id.
         project = store.ensure_project(conn, provider.TEAM, TARGET)
+        # Startup self-sweep, read-only: it records what it saw — a first
+        # strike on anything silent — so the *next* invocation or a
+        # `--sweep --act` can act on the second sighting. Nothing is failed
+        # from here; one sample is not evidence (STALE_STRIKES). One sweep
+        # per invocation, reused by the refused-claim diagnostic below, so a
+        # single launch never counts the same silence twice.
+        seen = sweep(conn, int(time() * 1000))
+        if seen.trips or seen.watched:
+            print("\n".join(sweep_lines(seen)))
+            if seen.trips:
+                print(SWEEP_HINT)
         # The tickets this pass has refused to claim. A blocked ticket keeps
         # its place in the board's ready set — `blocked_on_operator` projects
         # to Todo, the column a human picks work out of — so it is offered
@@ -2234,7 +2245,13 @@ def main(provider=None):
             except store.ClaimConflict as e:
                 # Before any branch or worktree exists: another loop holds the
                 # project, so this one stops rather than working beside it.
+                # The startup sweep's sighting turns the dead end into an
+                # instruction: is the holder alive, and what to type if not.
                 print(f"[holo2] claim refused, not starting a run: {e}")
+                if seen.trips or seen.watched:
+                    print("\n".join(sweep_lines(seen)))
+                    if seen.trips:
+                        print(SWEEP_HINT)
                 return
             # §3's `ready -> in_flight`, and the first thing the board is told
             # about this run: the claim is the moment the ticket starts being
@@ -2504,12 +2521,15 @@ Trip = collections.namedtuple(
     "Trip",
     ("run_id", "ticket", "phase", "condition", "evidence", "heartbeat"))
 # What one pass found: how many live runs it looked at, the trips among them,
-# and whether it acted on them. The count is carried because "nothing tripped"
-# is only reassuring next to the number of runs that were checked -- silence
-# and health look identical without it -- and `acted` because a report of
-# tripped runs reads completely differently depending on whether they were
-# left alone or failed.
-Sweep = collections.namedtuple("Sweep", ("swept", "trips", "acted"))
+# whether it acted on them, and the runs it is watching -- silent, at a strike
+# below the trip threshold. The count is carried because "nothing tripped" is
+# only reassuring next to the number of runs that were checked -- silence and
+# health look identical without it -- and `acted` because a report of tripped
+# runs reads completely differently depending on whether they were left alone
+# or failed. `watched` is carried because a first strike printed as "all
+# healthy" hides exactly the evidence the next invocation acts on.
+Sweep = collections.namedtuple("Sweep", ("swept", "trips", "acted", "watched"),
+                               defaults=((),))
 
 
 def still_tripped(conn, trip):
@@ -2628,7 +2648,7 @@ def sweep(conn, now, act=False, provider=None):
     Linear, and holding the store's write lock across a network call would
     stall every live loop for as long as the provider takes to answer.
     """
-    trips = []
+    trips, watched = [], []
     with store.transaction(conn):
         swept = conn.execute(
             "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
@@ -2653,13 +2673,28 @@ def sweep(conn, now, act=False, provider=None):
                     f"{elapsed / 60000:.1f} min against a"
                     f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)",
                     heartbeat))
+            elif strikes:
+                # Silent, but one sighting short of a trip: not evidence yet,
+                # and not "all healthy" either. Carried for rendering so the
+                # operator sees what the next sweep can act on.
+                watched.append(
+                    f"run {run_id} ({ticket}, {phase}): silent"
+                    f" {silent / 60000:.1f} min, strike {strikes} of"
+                    f" {STALE_STRIKES}")
     if act:
         for trip in trips:
             act_on_trip(conn, trip, provider)
-    return Sweep(len(swept), trips, act)
+    return Sweep(len(swept), trips, act, tuple(watched))
 
 
 SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence")
+
+# Printed under a table with trips in it wherever the reader is an operator
+# who did not ask for a sweep (startup, a refused claim): the table says what
+# is wrong, this says what to type.
+SWEEP_HINT = ("[holo2] tripped runs are failed by"
+              " `factory.py <target> --sweep --act`;"
+              " a bare --sweep re-checks first")
 
 
 def _runs(n):
@@ -2678,6 +2713,11 @@ def sweep_lines(result):
     if not result.swept:
         return ["no runs in flight, nothing to sweep"]
     if not result.trips:
+        # A first-strike sighting must not read as health: "none tripped"
+        # plus the watched lines is the honest quiet case.
+        if result.watched:
+            return [f"{_runs(result.swept)} swept, none tripped",
+                    *result.watched]
         return [f"{_runs(result.swept)} swept, all healthy"]
     table = [SWEEP_HEADERS]
     table += [(trip.ticket, f"run {trip.run_id}", trip.phase, trip.condition,
@@ -2690,7 +2730,8 @@ def sweep_lines(result):
     ]
     return lines + [
         f"{len(result.trips)} tripped of {_runs(result.swept)} swept"
-        + (", failed and leases released" if result.acted else "")]
+        + (", failed and leases released" if result.acted else "")
+    ] + list(result.watched)
 
 
 def sweep_report(conn=None, now=None, out=None, act=False, provider=None):

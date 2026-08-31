@@ -171,6 +171,23 @@ class StaleHeartbeatTests(SweepTestCase):
         self.assertEqual(result.trips, [])
         self.assertEqual(self.strikes(run_id), (1, T0 + 6 * MINUTE))
 
+    def test_a_first_strike_is_watched_and_printed_not_healthy(self):
+        """One silent sighting is not a trip — but printing 'all healthy'
+        over it hid the evidence from the operator whose relaunch reflex
+        the KO-146 incident documented. The suspicion is carried and
+        rendered, with the strike count naming what happens next."""
+        run_id = self.a_run()
+
+        result = factory.sweep(self.conn, T0 + 6 * MINUTE)
+
+        self.assertEqual(result.trips, [])
+        (line,) = result.watched
+        self.assertIn(f"run {run_id}", line)
+        self.assertIn("strike 1 of 2", line)
+        printed = factory.sweep_lines(result)
+        self.assertEqual(printed[0], "1 run swept, none tripped")
+        self.assertIn(line, printed)
+
     def test_two_consecutive_stale_sightings_trip_the_run(self):
         run_id = self.a_run(phase="reviewing")
 
@@ -596,7 +613,8 @@ class SweepModeTests(SweepTestCase):
         first = self.run_sweep(T0 + 6 * MINUTE)
         printed = self.run_sweep(T0 + 7 * MINUTE)
 
-        self.assertEqual(first, ["1 run swept, all healthy"])
+        self.assertEqual(first[0], "1 run swept, none tripped")
+        self.assertIn("strike 1 of 2", first[1])
         self.assertEqual(printed[0].split(), list(factory.SWEEP_HEADERS))
         self.assertEqual(printed[1].split()[:5],
                          ["KO-1", "run", str(run_id), "working",
