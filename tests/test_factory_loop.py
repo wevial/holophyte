@@ -138,14 +138,16 @@ class LoopFixture(unittest.TestCase):
         """Run `main()` over the queued tasks with the script answering agents.
 
         Returns the fake and the spawn guard, so a test can read both the
-        turns the loop took and the processes it did not start.
+        turns the loop took and the processes it did not start; `main()`'s
+        return code lands in `self.rc` for the tests that pin the exit
+        contract.
         """
         fake = FakeAgent(*script)
         provider = provider or StubProvider(a_task())
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
                 with patch.object(factory, "agent", fake):
-                    factory.main(provider)
+                    self.rc = factory.main(provider)
         return fake, guard
 
     def read(self, sql):
@@ -581,39 +583,32 @@ class CrashContainmentTests(LoopFixture):
     nonzero exit — never a traceback with the reason lost to the generic
     close-out default (KO-146 incident, run 9)."""
 
-    def run_main(self, *script, provider=None):
-        fake = FakeAgent(*script)
-        provider = provider or StubProvider(a_task())
-        with no_agent_processes():
-            with patch.dict(sys.modules, {"linear_provider": provider}):
-                with patch.object(factory, "agent", fake):
-                    return factory.main(provider)
-
     def leases(self):
         return self.read("SELECT p.activeRunId, t.activeRunId"
                          " FROM projects p, tickets t")
 
     def test_a_crash_fails_the_run_with_the_error_text_as_its_reason(self):
-        rc = self.run_main(Boom())
+        self.loop(Boom())
 
-        self.assertEqual(rc, 1)
+        self.assertEqual(self.rc, 1)
         ((outcome, reason),) = self.read(
             "SELECT outcome, outcomeReason FROM runs")
         self.assertEqual(outcome, "failed")
         self.assertIn("RuntimeError", reason)
         self.assertIn("fatal: scripted", reason)
+        self.assertNotIn("\n", reason)  # one line, escalation-comment safe
         self.assertEqual(self.leases(), [(None, None)])
 
     def test_a_run_failure_carries_its_exact_reason(self):
-        rc = self.run_main(Refuse())
+        self.loop(Refuse())
 
-        self.assertEqual(rc, 1)
+        self.assertEqual(self.rc, 1)
         self.assertEqual(self.read("SELECT outcome, outcomeReason FROM runs"),
                          [("failed", "some reason")])
 
     def test_a_keyboard_interrupt_still_propagates_after_the_close_out(self):
         with self.assertRaises(KeyboardInterrupt):
-            self.run_main(Interrupt())
+            self.loop(Interrupt())
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.leases(), [(None, None)])

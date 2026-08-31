@@ -1403,8 +1403,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
         sh(["git", "commit", "--no-edit"], TARGET)
     else:
         assert mr.returncode == 0, (mr.stdout, mr.stderr)
-    sh(["git", "worktree", "remove", str(wt)], TARGET)
-    sh(["git", "branch", "-d", branch], TARGET)
+    # The merge has landed: the branch holds nothing main does not, so the
+    # worktree's stray untracked files are not preserved work — and a cleanup
+    # refusal must not re-classify merged work as a failed run.
+    try:
+        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
+        sh(["git", "branch", "-d", branch], TARGET)
+    except RuntimeError as e:
+        print(f"[holo2] post-merge cleanup left debris: {e}")
     # Nothing tells Linear the ticket is done here any more. The merge makes
     # the ticket `merged` in the store, and `main()` projects that status onto
     # the board through `mirror_push()` once the run has been released — one
@@ -2231,7 +2237,10 @@ def main(provider=None):
                 # error text becomes the close-out reason — one clean line
                 # instead of a traceback with the reason lost to
                 # release_run()'s generic default (KO-146 incident, run 9).
-                reason = f"{type(e).__name__}: {e}"
+                # Collapsed to one line: sh()'s message carries the failed
+                # command's whole output, and the reason lands verbatim in an
+                # escalation comment's markdown bullet.
+                reason = " ".join(f"{type(e).__name__}: {e}".split())
                 print(f"[holo2] run crashed: {reason}")
             finally:
                 if merged:
@@ -2249,9 +2258,15 @@ def main(provider=None):
                     # The failure close-out: release, escalate if this failure
                     # was one too many, regenerate the window. Shared with the
                     # supervisor sweep, which fails runs this loop is no
-                    # longer around to fail itself.
-                    close_out_failure(conn, run_id, ticket_id, reason,
-                                      provider=provider)
+                    # longer around to fail itself. Its own failure (a locked
+                    # store, say) must not replace what was in flight — a
+                    # KeyboardInterrupt included — with a traceback of its
+                    # own; the lease stays for release() or the sweep.
+                    try:
+                        close_out_failure(conn, run_id, ticket_id, reason,
+                                          provider=provider)
+                    except Exception as close_err:  # noqa: BLE001
+                        print(f"[holo2] close-out failed: {close_err}")
             if not merged:
                 # The regenerated window stays uncommitted, like the preserved
                 # branch it describes: a human closes both out. Nonzero so the
