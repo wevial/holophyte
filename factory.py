@@ -1014,13 +1014,14 @@ def round_verdict(reply, verdicts):
 def reuse_leftover(wt, branch):
     """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
 
-    The reuse arm's promise is that preserved work survives, and the two
-    states git refuses to plough through are exactly the states with
-    something to preserve — so neither is allowed to escape as a traceback.
-    An unregistered directory is refused with a reason (deleting it would
-    destroy what reuse exists to keep; `git worktree add` onto a non-empty
-    directory dies), and a dirty tree becomes a WIP commit on the branch
-    before anything else moves. Nothing is ever deleted here.
+    The reuse rule, stated once: preserved work survives. An unregistered
+    directory is refused with a reason rather than deleted or crashed into
+    (`git worktree add` onto a non-empty directory dies); uncommitted
+    changes become a WIP commit on the branch; and the branch is reset to
+    main only when the leftover verifiably holds nothing — a clean tree
+    whose HEAD main already contains. A branch with preserved commits stays
+    exactly where it is, for the implementer to continue from and the
+    reviewer to see. Nothing is ever deleted here.
     """
     sh(["git", "worktree", "prune"], TARGET)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
@@ -1037,6 +1038,15 @@ def reuse_leftover(wt, branch):
                        " registered worktree; a human moves it aside or"
                        " removes it before this ticket is run again")
     dirty = sh(["git", "status", "--porcelain"], cwd=wt)
+    if not dirty and subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "HEAD", "main"],
+            cwd=wt, capture_output=True).returncode == 0:
+        # Verifiably empty: a clean tree holding nothing main does not
+        # already have. The one case where resetting loses no work — and the
+        # reset is what keeps the branch from starting behind a main that
+        # moved on since the leftover was cut.
+        sh(["git", "checkout", "-B", branch, "main"], cwd=wt)
+        return True, ""
     # `-B` with no start point parks `branch` at the HEAD we are on without
     # touching the tree, so it cannot die on uncommitted files the way
     # `-B branch main` does.
@@ -1136,7 +1146,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
         sh(["git", "branch", "-D", branch], TARGET)
         return False
 
-    base_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    # The review base is main, not the HEAD reuse entered on: preserved
+    # commits were never approved, so the reviewer must see them inside the
+    # diff. Identical on a fresh cut, where HEAD is main.
+    base_sha = sh(["git", "rev-parse", "main"], TARGET)
+    # Where this run started, WIP commit and preserved commits included. The
+    # no-commit gate below compares against this rather than main, so carried
+    # leftovers cannot stand in for the implementer's own progress.
+    start_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     def timed(goal):
         """Run one agent turn with a hard wall-clock cap; None on timeout."""
@@ -1161,10 +1178,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
                 "Acceptance criteria are part of the task line; the task is done "
                 "only when they hold. Commit your work with a clear message. "
                 "Stay strictly on-scope; do not expand the task.")
-    if out is None or (
-        sh(["git", "rev-parse", "HEAD"], cwd=wt)
-        == sh(["git", "rev-parse", "main"], TARGET)
-    ):
+    if out is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == start_sha:
         print(f"[holo2] implementer made no commits for: {task}")
         sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
         sh(["git", "branch", "-D", branch], TARGET)

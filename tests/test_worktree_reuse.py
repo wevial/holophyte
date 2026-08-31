@@ -137,5 +137,39 @@ class DirtyLeftoverTests(ReuseFixture):
             self.branch)
 
 
+class CarriedCommitsTests(ReuseFixture):
+    def test_preserved_commits_stay_on_the_branch_tip(self):
+        """A leftover holding commits main does not have is exactly the state
+        reuse exists to protect (KO-146: the unconditional reset to main is
+        what orphaned the rescue commits and made run 10 read as 'implementer
+        made no commits')."""
+        self.leftover_worktree()
+        (self.wt / "work.txt").write_text("preserved\n")
+        self.git("add", "-A", cwd=self.wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=self.wt)
+        tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
+
+        ok, why = factory.reuse_leftover(self.wt, self.branch)
+
+        self.assertTrue(ok, why)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
+                         tip)
+
+    def test_a_verifiably_empty_leftover_is_reset_to_main(self):
+        """Clean tree, nothing main does not already have: the one case where
+        resetting loses no work — and what keeps a reused run from starting
+        behind a main that moved on since the leftover was cut."""
+        self.leftover_worktree()
+        (self.target / "new.txt").write_text("newer main\n")
+        self.git("add", "new.txt")
+        self.git("commit", "-q", "-m", "main moved on")
+
+        ok, why = factory.reuse_leftover(self.wt, self.branch)
+
+        self.assertTrue(ok, why)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
+                         self.git("rev-parse", "main").strip())
+
+
 if __name__ == "__main__":
     unittest.main()
