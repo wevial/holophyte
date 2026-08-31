@@ -453,6 +453,25 @@ class WorktreeSetupLoopTests(LoopFixture):
         self.assertIn("no toolchain here", body)
         self.assertIn("exit 3", body)
 
+    def test_a_failing_setup_leaves_a_reused_worktree_as_found(self):
+        """A setup failure says nothing about the preserved work a reused
+        worktree may hold; only a branch the run cut fresh is discarded."""
+        wt = self.worktrees / "add-a-thing"
+        self.git("worktree", "add", "--detach", str(wt), "main")
+        self.git("checkout", "-b", BRANCH, cwd=wt)
+        (wt / "rescued.txt").write_text("rescued work\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=wt)
+        self.configure('[worktree]\nsetup = ["exit 3"]\n')
+
+        self.loop()
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertTrue((wt / "rescued.txt").exists())
+        self.assertIn("rescued: preserved work", self.subjects(BRANCH))
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("preserved work", reason)
+
     def test_the_setup_phase_is_recorded_between_cutting_and_working(self):
         self.configure('[worktree]\nsetup = ["true"]\n')
 
@@ -502,6 +521,37 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("not a registered worktree", reason)
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+
+    def test_a_no_commit_run_keeps_the_reused_worktree_and_its_commits(self):
+        """Run 10 of the KO-146 incident: the no-commit close-out
+        force-removed the reused worktree and -D'd the branch, destroying
+        exactly the preserved work the reuse path exists to protect — and
+        the run row then claimed the branch was preserved."""
+        wt = self.leftover()
+        (wt / "rescued.txt").write_text("rescued work\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=wt)
+
+        self.loop(Idle())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertIn(BRANCH, self.branches())
+        self.assertIn("rescued: preserved work", self.subjects(BRANCH))
+        self.assertTrue((wt / "rescued.txt").exists())
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("preserved work kept on", reason)
+
+    def test_a_fresh_no_commit_run_cleans_up_and_says_discarded(self):
+        """The fresh-cut behavior stays: nothing on the branch to keep, so
+        it goes — and the reason says so instead of claiming preservation."""
+        self.loop(Idle())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertFalse((self.worktrees / "add-a-thing").exists())
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("discarded", reason)
+        self.assertNotIn("preserved", reason)
 
     def test_preserved_commits_are_reviewed_and_carried_into_the_merge(self):
         """Preserved commits were never approved, so the review base must be

@@ -1162,6 +1162,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
             ledger(task_id, f"FAILED to reuse leftover worktree for: {task}\n"
                             f"{why}\nNothing was deleted.")
             raise RunFailure(f"cannot reuse leftover worktree: {why}")
+        fresh = False
     else:
         # The mirror leftover: the branch exists but its directory does not
         # (a FAIL close-out preserves both; a human may clear only the
@@ -1177,22 +1178,33 @@ def run_task(task, conn=None, run_id=None, provider=None):
             raise RunFailure(f"cannot cut a fresh worktree: {why}")
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
         sh(["git", "checkout", "-b", branch], cwd=wt)
+        fresh = True
 
     # The worktree exists and nothing has been dispatched into it yet, which
     # is the only moment the target's own setup can run: an implementer whose
     # toolchain is missing burns its whole budget discovering that, and a
     # worktree that silently borrows the main checkout's environment tests
     # something other than the branch it is on. A failure here is the run's
-    # failure, and the branch is discarded rather than preserved -- no agent
-    # ran, so there is no work on it to keep, exactly like a no-commit run.
+    # failure. A branch this run cut fresh is discarded -- no agent ran, so
+    # there is no work on it to keep -- while a reused worktree may hold
+    # preserved work the setup failure says nothing about, and is left
+    # exactly as found.
     ok, out = run_worktree_setup(wt, conn, run_id)
     if not ok:
         print(out)
-        ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran and "
-                        f"branch {branch} was discarded.\n\n{out}")
-        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
-        sh(["git", "branch", "-D", branch], TARGET)
-        return False
+        if fresh:
+            sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
+            sh(["git", "branch", "-D", branch], TARGET)
+            ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran "
+                            f"and branch {branch} was discarded.\n\n{out}")
+            raise RunFailure("worktree setup failed; no agent ran and the"
+                             " fresh branch was discarded")
+        ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
+                        f"reused worktree {wt} left as-is with its preserved "
+                        f"work.\n\n{out}")
+        raise RunFailure(f"worktree setup failed; no agent ran; reused"
+                         f" worktree and branch {branch} left as-is with"
+                         " preserved work")
 
     # The review base is main, not the HEAD reuse entered on: preserved
     # commits were never approved, so the reviewer must see them inside the
@@ -1228,9 +1240,15 @@ def run_task(task, conn=None, run_id=None, provider=None):
                 "Stay strictly on-scope; do not expand the task.")
     if out is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == start_sha:
         print(f"[holo2] implementer made no commits for: {task}")
-        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
-        sh(["git", "branch", "-D", branch], TARGET)
-        return False
+        if fresh:
+            sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
+            sh(["git", "branch", "-D", branch], TARGET)
+            raise RunFailure("implementer made no commits; the fresh branch"
+                             " and worktree were discarded")
+        # A reused worktree holds work some earlier run preserved; this
+        # run's implementer adding nothing is no reason to destroy it.
+        raise RunFailure(f"implementer made no new commits; preserved work"
+                         f" kept on {branch} at {start_sha[:12]}")
 
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
@@ -1863,9 +1881,12 @@ def release_run(conn, run_id, merged, reason=None):
     if merged:
         store.release(conn, run_id, "merged")
         return
+    # No preservation claim in the default: the paths that delete or keep a
+    # branch say so themselves in the reason they pass, and stamping
+    # "preserved" on a reason-less failure lied on every deletion path
+    # (KO-146 incident, run 10).
     store.release(conn, run_id, "failed", reason or
-                  f"run stopped in phase {store.run_phase(conn, run_id)};"
-                  " branch preserved for a human")
+                  f"run stopped in phase {store.run_phase(conn, run_id)}")
 
 
 # --- Linear as the notice board ----------------------------------------------
