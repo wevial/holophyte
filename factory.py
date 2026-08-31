@@ -1969,7 +1969,8 @@ def escalate(conn, ticket_id, provider=None):
     return True
 
 
-def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None):
+def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None,
+                      confirm=None):
     """End a failed run the one way the factory ends failed runs.
 
     Three writes in a fixed order, and the order is the point. The failure
@@ -1988,10 +1989,31 @@ def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None):
     counter, same rendered entry. The only thing the sweep supplies of its own
     is the `reason`, and the only thing it does differently is that the
     process being failed is not the caller.
+
+    Which is what `confirm` is for. A caller failing somebody else's run
+    decided that from a read, and between that read and this write the run's
+    own process may have heartbeated, changed phase or finished — so the
+    decision is re-reached here instead, inside the transaction that writes
+    the failure and under the write lock that keeps the run's process out of
+    it. Returning false abandons the close-out having written nothing, and
+    this answers false in turn; the callback may also record what it is about
+    to do, because a note of a failure that then did not happen is worse than
+    no note. The loop's own `finally` passes nothing: a process failing itself
+    cannot race itself, and there is no verdict of its own to re-reach.
+
+    Only the release is under that lock. The escalation may call Linear, and
+    a supervisor holding the store's write lock across a network call would
+    stall every live loop for as long as the provider takes to answer — so it
+    stays outside, where the failure is already committed and a push that
+    fails leaves the board stale rather than the run half-closed.
     """
-    release_run(conn, run_id, False, reason)
+    with store.transaction(conn):
+        if confirm is not None and not confirm():
+            return False
+        release_run(conn, run_id, False, reason)
     escalate(conn, ticket_id, provider)
     refresh_findings(conn)
+    return True
 
 
 def main(provider=None):
@@ -2280,8 +2302,14 @@ SWEEP_EVENT = "supervisor_sweep"
 # was doing, which condition, and the numbers that condition was decided on.
 # `evidence` is prose for an operator, not a parseable field -- what a reader
 # needs to agree with the verdict without opening the database.
+#
+# `heartbeat` is not for the report. It is the `lastHeartbeat` the verdict was
+# reached on, carried so `still_tripped()` can ask whether the run has shown
+# any sign of life since -- a verdict is only actionable against the state it
+# was made from.
 Trip = collections.namedtuple(
-    "Trip", ("run_id", "ticket", "phase", "condition", "evidence"))
+    "Trip",
+    ("run_id", "ticket", "phase", "condition", "evidence", "heartbeat"))
 # What one pass found: how many live runs it looked at, the trips among them,
 # and whether it acted on them. The count is carried because "nothing tripped"
 # is only reassuring next to the number of runs that were checked -- silence
@@ -2291,36 +2319,84 @@ Trip = collections.namedtuple(
 Sweep = collections.namedtuple("Sweep", ("swept", "trips", "acted"))
 
 
+def still_tripped(conn, trip):
+    """Does `trip`'s verdict still hold of the run it was reached on?
+
+    Asked again at the moment of acting, under the write lock, because the
+    classification that produced the trip committed and let the run's own
+    process back in. What that process may have done since is the whole
+    question: a run that ended is already closed out and must not be re-ended
+    over the top of its real outcome, and a run that moved on is doing
+    something and can wait for the sweep after this one -- the tally that
+    tripped it survives, so a run that is really gone trips again a minute
+    later, which is a cheap price for never failing a live one.
+
+    A stale heartbeat asks one thing more: that `lastHeartbeat` is still the
+    timestamp the verdict was read from. Any beat at all is the run answering
+    the only question the condition asked, and a run that answered is alive
+    however long it was quiet before. A blown time box asks the opposite --
+    an overrunning run heartbeats, that is what makes it an overrun rather
+    than a death -- so a fresh beat is no acquittal there and is not treated
+    as one.
+    """
+    row = conn.execute(
+        "SELECT endedAt, phase, lastHeartbeat FROM runs WHERE id = ?",
+        (trip.run_id,)).fetchone()
+    if row is None:
+        return False
+    ended_at, phase, heartbeat = row
+    if ended_at is not None or phase != trip.phase:
+        return False
+    return trip.condition != STALE_HEARTBEAT or heartbeat == trip.heartbeat
+
+
 def act_on_trip(conn, trip, provider=None):
-    """Fail one tripped run: the loop's failure close-out, from outside it.
+    """Fail one tripped run, if it is still tripped; say whether it was.
 
     The whole of what acting means. `close_out_failure()` is the loop's own,
     unchanged and not re-implemented here, so a swept failure is the same kind
     of row as any other failure: the same outcome, the same released leases,
     the same contribution to the ticket's escalation count, the same rendered
     entry. Only two things are the sweep's own -- the reason, which names the
-    condition instead of the phase, and the event below, which puts the
-    supervisor's arrival in the run's narrative where the reason alone would
-    leave the stream ending at whatever the dead process last managed to say.
+    condition instead of the phase, and the event, which puts the supervisor's
+    arrival in the run's narrative where the reason alone would leave the
+    stream ending at whatever the dead process last managed to say.
+
+    Both go in under `close_out_failure()`'s `confirm`, which is to say inside
+    the transaction that writes the failure, and only once `still_tripped()`
+    has agreed the verdict survives. The classification pass had to commit
+    before this ran -- failing a run may call Linear, and the store's write
+    lock must not be held across a network call -- and committing let the
+    run's process back in to heartbeat or finish. Re-checking there and
+    failing there is what keeps the two from separating: a run cannot prove
+    itself alive in the gap between being confirmed dead and having its lease
+    handed to the next worker, because under one `BEGIN IMMEDIATE` there is no
+    gap for it to do so in.
 
     Nothing is signalled, killed or deleted. Freeing the lease and recording
     the failure is enough to unblock the queue, and a supervisor that also
     tried to kill things would need to be right about which process it was
-    killing. A truly-alive run that goes on writing after being swept is a
-    real hazard and deliberately out of scope here; it is the reason the
+    killing. A wedged run that is not writing to the store but is still
+    working on disk therefore remains out of scope, and is the reason the
     strike rule is two sightings rather than one.
     """
     (ticket_id,) = conn.execute(
         "SELECT ticketId FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
-    store.record_event(
-        conn, trip.run_id, SWEEP_EVENT,
-        f"supervisor sweep: {trip.condition} ({trip.evidence});"
-        " failing the run and releasing its leases")
-    close_out_failure(
+
+    def confirm():
+        if not still_tripped(conn, trip):
+            return False
+        store.record_event(
+            conn, trip.run_id, SWEEP_EVENT,
+            f"supervisor sweep: {trip.condition} ({trip.evidence});"
+            " failing the run and releasing its leases")
+        return True
+
+    return close_out_failure(
         conn, trip.run_id, ticket_id,
         f"swept by the supervisor in phase {trip.phase}: {trip.condition}"
         f" ({trip.evidence}); branch and worktree preserved for a human",
-        provider)
+        provider, confirm)
 
 
 def sweep(conn, now, act=False, provider=None):
@@ -2377,12 +2453,13 @@ def sweep(conn, now, act=False, provider=None):
                 trips.append(Trip(
                     run_id, ticket, phase, STALE_HEARTBEAT,
                     f"silent for {silent / 60000:.1f} min"
-                    f" over {strikes} consecutive sweeps"))
+                    f" over {strikes} consecutive sweeps", heartbeat))
             elif time_box and elapsed > time_box * BUDGET_GRACE:
                 trips.append(Trip(
                     run_id, ticket, phase, TIME_BOX,
                     f"{elapsed / 60000:.1f} min against a"
-                    f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)"))
+                    f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)",
+                    heartbeat))
     if act:
         for trip in trips:
             act_on_trip(conn, trip, provider)

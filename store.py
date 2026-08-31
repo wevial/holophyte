@@ -753,6 +753,15 @@ def release(conn, run_id, outcome, reason=None, now=None):
     fields, moving the ticket's pointer to `lastRunId` so the finished run is
     still reachable from the ticket.
 
+    Through `_transaction()` rather than a `BEGIN` of its own, so a caller
+    that has already opened one joins instead of raising. A process failing
+    *itself* has nothing to join for -- it is the only writer of its own run
+    -- but a process failing somebody else's run has to re-read the state it
+    decided on and clear the lease under one lock, or the run heartbeats in
+    between and the lease is handed to a second worker while the first is
+    still writing. That is the supervisor sweep, and this is where its
+    re-check has to be able to sit.
+
     The run's telemetry is finalized in the same transaction: `endedAt` is
     the other end of the elapsed time `startedAt` opened, and
     `reviewRoundCount` is counted off the run's own `reviewRounds` rows. Both
@@ -784,8 +793,7 @@ def release(conn, run_id, outcome, reason=None, now=None):
         raise ValueError(f"unknown outcome {outcome!r}")
     if now is None:
         now = int(time.time() * 1000)
-    conn.execute("BEGIN IMMEDIATE")
-    try:
+    with _transaction(conn):
         row = conn.execute(
             "SELECT ticketId, projectId, endedAt, phase FROM runs WHERE id = ?",
             (run_id,),
@@ -794,9 +802,10 @@ def release(conn, run_id, outcome, reason=None, now=None):
             raise ValueError(f"no run {run_id}")
         ticket_id, project_id, ended_at, phase = row
         if ended_at is not None and phase in ENDED_PHASES:
-            # Already over. Nothing to write, so the transaction ends without
-            # a write rather than re-stamping an ending over the real one.
-            conn.rollback()
+            # Already over. Returning leaves the block having written nothing
+            # rather than re-stamping an ending over the real one; an owned
+            # transaction commits empty, and a joined one is the caller's to
+            # end either way.
             return
         # Through `set_phase()` like every other phase move, so the run's last
         # transition is in its event stream too: a merged run whose log stops
@@ -836,10 +845,6 @@ def release(conn, run_id, outcome, reason=None, now=None):
             " WHERE id = ? AND activeRunId = ?",
             (run_id, ticket_id, run_id),
         )
-    except BaseException:
-        conn.rollback()
-        raise
-    conn.commit()
 
 
 def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
