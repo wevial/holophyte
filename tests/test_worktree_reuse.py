@@ -170,6 +170,65 @@ class CarriedCommitsTests(ReuseFixture):
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
                          self.git("rev-parse", "main").strip())
 
+    def test_a_carried_branch_under_a_moved_on_main_absorbs_main(self):
+        """The review routes and the merge require main to be an ancestor of
+        the candidate; a carried branch that predates the current main would
+        raise out of every review dispatch and stall the ticket on each
+        rerun. Reuse merges main in, keeping the preserved commits."""
+        self.leftover_worktree()
+        (self.wt / "work.txt").write_text("preserved\n")
+        self.git("add", "-A", cwd=self.wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=self.wt)
+        (self.target / "new.txt").write_text("newer main\n")
+        self.git("add", "new.txt")
+        self.git("commit", "-q", "-m", "main moved on")
+
+        ok, why = factory.reuse_leftover(self.wt, self.branch)
+
+        self.assertTrue(ok, why)
+        # The ancestor invariant both review routes enforce, asked of git
+        # itself: raises if main is not contained in the reused HEAD.
+        self.git("merge-base", "--is-ancestor", "main", "HEAD", cwd=self.wt)
+        self.assertIn("rescued: preserved work",
+                      self.git("log", "--format=%s", cwd=self.wt))
+
+    def test_conflicting_preserved_commits_are_refused_with_the_tree_intact(self):
+        self.leftover_worktree()
+        (self.wt / "README.md").write_text("preserved line\n")
+        self.git("add", "-A", cwd=self.wt)
+        self.git("commit", "-q", "-m", "rescued: conflicting work", cwd=self.wt)
+        tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
+        (self.target / "README.md").write_text("main's line\n")
+        self.git("add", "README.md")
+        self.git("commit", "-q", "-m", "main moved on")
+
+        ok, why = factory.reuse_leftover(self.wt, self.branch)
+
+        self.assertFalse(ok)
+        self.assertIn("conflict", why)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
+                         tip)
+        self.assertEqual((self.wt / "README.md").read_text(),
+                         "preserved line\n")
+
+    def test_a_detached_worktree_over_a_diverged_branch_is_refused(self):
+        """`checkout -B` moves the branch to HEAD, so a worktree a human
+        detached — to compare the leftover against main, say — must not
+        silently orphan the branch's preserved commits."""
+        self.leftover_worktree()
+        (self.wt / "work.txt").write_text("preserved\n")
+        self.git("add", "-A", cwd=self.wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=self.wt)
+        tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
+        self.git("checkout", "-q", "--detach", "main", cwd=self.wt)
+
+        ok, why = factory.reuse_leftover(self.wt, self.branch)
+
+        self.assertFalse(ok)
+        self.assertIn(self.branch, why)
+        self.assertEqual(
+            self.git("rev-parse", self.branch, cwd=self.wt).strip(), tip)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1018,10 +1018,15 @@ def reuse_leftover(wt, branch):
     directory is refused with a reason rather than deleted or crashed into
     (`git worktree add` onto a non-empty directory dies); uncommitted
     changes become a WIP commit on the branch; and the branch is reset to
-    main only when the leftover verifiably holds nothing — a clean tree
-    whose HEAD main already contains. A branch with preserved commits stays
-    exactly where it is, for the implementer to continue from and the
-    reviewer to see. Nothing is ever deleted here.
+    main only when the leftover verifiably holds nothing — a clean tree and
+    a branch whose tips main already contains. A branch with preserved
+    commits keeps them, with main merged in when it has moved on: the
+    review routes and the merge both require main to be an ancestor of the
+    candidate, so a carried branch predating the current main would
+    otherwise stall the ticket on every rerun. A merge conflict, and a
+    worktree sitting off the branch while the branch holds commits of its
+    own, are a human's calls and are refused with the state named. Nothing
+    is ever deleted here.
     """
     sh(["git", "worktree", "prune"], TARGET)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
@@ -1038,13 +1043,29 @@ def reuse_leftover(wt, branch):
                        " registered worktree; a human moves it aside or"
                        " removes it before this ticket is run again")
     dirty = sh(["git", "status", "--porcelain"], cwd=wt)
-    if not dirty and subprocess.run(
-            ["git", "merge-base", "--is-ancestor", "HEAD", "main"],
-            cwd=wt, capture_output=True).returncode == 0:
-        # Verifiably empty: a clean tree holding nothing main does not
-        # already have. The one case where resetting loses no work — and the
-        # reset is what keeps the branch from starting behind a main that
-        # moved on since the leftover was cut.
+
+    def is_ancestor(a, b):
+        return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                              cwd=wt, capture_output=True).returncode == 0
+
+    # `checkout -B` below moves `branch` to wherever HEAD is, so a worktree
+    # sitting off the branch — detached for a human's comparison, say —
+    # while the branch holds commits of its own would silently orphan them.
+    # Whose tip is the work is not this function's call to make.
+    head_ref = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=wt)
+    branch_held = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=wt, capture_output=True).returncode == 0
+    if head_ref != branch and branch_held and not is_ancestor(branch, "HEAD"):
+        return False, (f"worktree {wt} is on {head_ref} while branch"
+                       f" {branch} holds commits it does not; a human"
+                       " reconciles them before this ticket is run again")
+    if (not dirty and is_ancestor("HEAD", "main")
+            and (not branch_held or is_ancestor(branch, "main"))):
+        # Verifiably empty: a clean tree, and neither tip holding anything
+        # main does not already have. The one case where resetting loses no
+        # work — and the reset is what keeps the branch from starting behind
+        # a main that moved on since the leftover was cut.
         sh(["git", "checkout", "-B", branch, "main"], cwd=wt)
         return True, ""
     # `-B` with no start point parks `branch` at the HEAD we are on without
@@ -1063,6 +1084,25 @@ def reuse_leftover(wt, branch):
            cwd=wt)
         print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
               f" on {branch}")
+    if not is_ancestor("main", "HEAD"):
+        # Preserved commits under a main that moved on: the review routes
+        # and the merge gate both require main to be an ancestor of the
+        # candidate, so left diverged the branch would raise out of every
+        # review dispatch and stall the ticket on each rerun. Bringing main
+        # in preserves the commits and restores the invariant; a conflict is
+        # a human's merge to resolve, refused with the tree put back.
+        r = subprocess.run(["git", "-c", "user.name=holophyte",
+                            "-c", "user.email=holophyte@factory.invalid",
+                            "merge", "--no-edit", "main"],
+                           cwd=wt, capture_output=True, text=True)
+        if r.returncode != 0:
+            subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                           capture_output=True)
+            return False, (f"preserved commits on {branch} conflict with a"
+                           " main that moved on; a human resolves the merge"
+                           " before this ticket is run again")
+        print(f"[holo2] merged the moved-on main into preserved branch"
+              f" {branch}")
     return True, ""
 
 

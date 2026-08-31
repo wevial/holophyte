@@ -480,8 +480,9 @@ class LeftoverWorktreeTests(LoopFixture):
         wt = self.leftover()
         (wt / "debris.bin").write_text("build junk\n")
 
-        self.loop(Idle(), APPROVE)  # the APPROVE must go unused
+        fake, _ = self.loop(Idle(), APPROVE)
 
+        self.assertEqual(fake.roles, ["implement"])  # the APPROVE went unused
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
 
