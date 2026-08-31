@@ -43,6 +43,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     REQUEST_CHANGES,
     Commit,
     FakeAgent,
+    Idle,
     no_agent_processes,
 )
 
@@ -465,6 +466,41 @@ class WorktreeSetupLoopTests(LoopFixture):
 
 
 class LeftoverWorktreeTests(LoopFixture):
+    def leftover(self):
+        """A registered leftover worktree on BRANCH, as a failed run leaves it."""
+        wt = self.worktrees / "add-a-thing"
+        self.git("worktree", "add", "--detach", str(wt), "main")
+        self.git("checkout", "-b", BRANCH, cwd=wt)
+        return wt
+
+    def test_an_idle_implementer_on_a_dirty_leftover_does_not_merge_debris(self):
+        """The WIP commit reuse makes must not defeat the no-commit gate: an
+        implementer that does nothing on a reused worktree is still a failed
+        run, and the leftover's uncommitted debris never reaches main."""
+        wt = self.leftover()
+        (wt / "debris.bin").write_text("build junk\n")
+
+        fake, _ = self.loop(Idle(), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement"])  # the APPROVE went unused
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+
+    def test_preserved_commits_are_reviewed_and_carried_into_the_merge(self):
+        """Preserved commits were never approved, so the review base must be
+        main — putting them inside the reviewed diff — and the merge must
+        carry them into main's history."""
+        wt = self.leftover()
+        (wt / "rescued.txt").write_text("rescued work\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=wt)
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE)
+
+        self.assertIn("rescued: preserved work", self.subjects())
+        review = next(t for t in fake.turns if t.role == "review")
+        self.assertEqual(review.base_sha, self.base)
+
     def test_an_unregistered_leftover_directory_fails_the_run_cleanly(self):
         """A leftover directory that is not a registered worktree can be
         neither reused nor safely deleted, so the run fails with nothing
