@@ -1011,6 +1011,51 @@ def round_verdict(reply, verdicts):
         return "error"
 
 
+def reuse_leftover(wt, branch):
+    """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
+
+    The reuse arm's promise is that preserved work survives, and the two
+    states git refuses to plough through are exactly the states with
+    something to preserve — so neither is allowed to escape as a traceback.
+    An unregistered directory is refused with a reason (deleting it would
+    destroy what reuse exists to keep; `git worktree add` onto a non-empty
+    directory dies), and a dirty tree becomes a WIP commit on the branch
+    before anything else moves. Nothing is ever deleted here.
+    """
+    sh(["git", "worktree", "prune"], TARGET)
+    r = subprocess.run(["git", "worktree", "list", "--porcelain"],
+                       cwd=TARGET, capture_output=True, text=True)
+    # Exact resolved paths, not a substring test: slugs are truncated titles,
+    # so a registered `.../add-a-thing-later` must not vouch for an
+    # unregistered `.../add-a-thing` — and git prints resolved paths, so a
+    # target reached through a symlink must not read as unregistered.
+    registered = {str(Path(line[len("worktree "):]).resolve())
+                  for line in r.stdout.splitlines()
+                  if line.startswith("worktree ")}
+    if str(Path(wt).resolve()) not in registered:
+        return False, (f"leftover directory {wt} exists but is not a"
+                       " registered worktree; a human moves it aside or"
+                       " removes it before this ticket is run again")
+    dirty = sh(["git", "status", "--porcelain"], cwd=wt)
+    # `-B` with no start point parks `branch` at the HEAD we are on without
+    # touching the tree, so it cannot die on uncommitted files the way
+    # `-B branch main` does.
+    sh(["git", "checkout", "-B", branch], cwd=wt)
+    if dirty:
+        sh(["git", "add", "-A"], cwd=wt)
+        # The identity is pinned so a target with no committer configured
+        # cannot make the one function whose contract is "no traceback
+        # escapes" raise — and a rescue commit is the factory's, not a
+        # person's.
+        sh(["git", "-c", "user.name=holophyte",
+            "-c", "user.email=holophyte@factory.invalid", "commit", "-m",
+            f"WIP: uncommitted leftovers preserved on reuse of {branch}"],
+           cwd=wt)
+        print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
+              f" on {branch}")
+    return True, ""
+
+
 def run_task(task, conn=None, run_id=None, provider=None):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
@@ -1050,16 +1095,28 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # freshly claimed.
     set_phase(conn, run_id, "working", f"cutting {branch} and implementing")
     if wt.exists():
-        # leftover from a previous failed run — reuse it as-is so preserved
-        # work survives; the branch check below still gates on commits.
-        sh(["git", "worktree", "prune"], TARGET)
-        r = subprocess.run(["git", "worktree", "list", "--porcelain"],
-                           cwd=TARGET, capture_output=True, text=True)
-        registered = str(wt) in r.stdout
-        if not registered:
-            sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
-        sh(["git", "checkout", "-B", branch, "main"], cwd=wt)
+        # leftover from a previous failed run — reuse it so preserved work
+        # survives; the branch check below still gates on commits.
+        ok, why = reuse_leftover(wt, branch)
+        if not ok:
+            print(f"[holo2] cannot reuse leftover worktree: {why}")
+            ledger(task_id, f"FAILED to reuse leftover worktree for: {task}\n"
+                            f"{why}\nNothing was deleted.")
+            return False
     else:
+        # The mirror leftover: the branch exists but its directory does not
+        # (a FAIL close-out preserves both; a human may clear only the
+        # directory). `checkout -b` would die on it, and deleting the branch
+        # could destroy preserved commits — so the run fails cleanly, the
+        # same answer as the unregistered directory.
+        if sh(["git", "branch", "--list", branch], TARGET):
+            why = (f"branch {branch} already exists with no worktree; a"
+                   " human moves it aside or deletes it before this ticket"
+                   " is run again")
+            print(f"[holo2] cannot cut a fresh worktree: {why}")
+            ledger(task_id, f"FAILED to cut a fresh worktree for: {task}\n"
+                            f"{why}\nNothing was deleted.")
+            return False
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
         sh(["git", "checkout", "-b", branch], cwd=wt)
 
