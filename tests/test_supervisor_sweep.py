@@ -188,19 +188,34 @@ class StaleHeartbeatTests(SweepTestCase):
         self.assertEqual(printed[0], "1 run swept, none tripped")
         self.assertIn(line, printed)
 
+    def test_a_second_sighting_seconds_later_is_the_same_sample(self):
+        """Two launches in a minute are one observation of one silence: a
+        healthy implementer turn is routinely 'silent' past the stale
+        threshold, and rapid relaunches must not manufacture the second
+        strike that lets --sweep --act fail a live run."""
+        run_id = self.a_run()
+
+        factory.sweep(self.conn, T0 + 6 * MINUTE)
+        result = factory.sweep(self.conn, T0 + 6 * MINUTE + 20_000)
+
+        self.assertEqual(result.trips, [])
+        (line,) = result.watched
+        self.assertIn("strike 1 of 2", line)
+        self.assertEqual(self.strikes(run_id), (1, T0 + 6 * MINUTE))
+
     def test_two_consecutive_stale_sightings_trip_the_run(self):
         run_id = self.a_run(phase="reviewing")
 
         factory.sweep(self.conn, T0 + 6 * MINUTE)
-        result = factory.sweep(self.conn, T0 + 7 * MINUTE)
+        result = factory.sweep(self.conn, T0 + 12 * MINUTE)
 
         trip, = result.trips
         self.assertEqual(
             (trip.run_id, trip.ticket, trip.phase, trip.condition),
             (run_id, "KO-1", "reviewing", "stale_heartbeat"))
         # The age the verdict was reached on, so a reader can agree with it:
-        # seven minutes of silence, seen twice.
-        self.assertIn("7.0 min", trip.evidence)
+        # twelve minutes of silence, seen twice a proper interval apart.
+        self.assertIn("12.0 min", trip.evidence)
         self.assertIn("2 consecutive sweeps", trip.evidence)
 
     def test_a_heartbeat_between_sweeps_clears_the_count(self):
@@ -434,11 +449,13 @@ class ActingSweepTests(SweepTestCase):
     def trip(self):
         """Take the first strike, and return the time the second one trips.
 
-        Two consecutive silent sightings are what a stale heartbeat is, so
-        every acting test needs a read-only sweep before the acting one.
+        Two consecutive silent sightings, a proper interval apart, are what
+        a stale heartbeat is -- so every acting test needs a read-only sweep
+        before the acting one, and the second sighting sits beyond the
+        minimum spacing.
         """
         factory.sweep(self.conn, T0 + 6 * MINUTE)
-        return T0 + 7 * MINUTE
+        return T0 + 12 * MINUTE
 
     def run_row(self, run_id):
         return self.conn.execute(
@@ -534,7 +551,7 @@ class ActingSweepTests(SweepTestCase):
         factory.sweep(self.conn, T0 + 8 * MINUTE)
         provider = StubProvider()
 
-        self.act(T0 + 9 * MINUTE, provider)
+        self.act(T0 + 14 * MINUTE, provider)
 
         self.assertEqual(self.status(second), "blocked_on_operator")
         self.assertEqual(provider.states, [("issue-1", "Todo")])
@@ -564,7 +581,7 @@ class ActingSweepTests(SweepTestCase):
 
         provider.set_state = refuse
 
-        self.act(T0 + 9 * MINUTE, provider)
+        self.act(T0 + 14 * MINUTE, provider)
 
         self.assertEqual(self.run_row(second)[:2], ("failed", "failed"))
         self.assertEqual(self.leases(second), (None, None, second))
@@ -611,7 +628,7 @@ class SweepModeTests(SweepTestCase):
         self.conn.commit()
 
         first = self.run_sweep(T0 + 6 * MINUTE)
-        printed = self.run_sweep(T0 + 7 * MINUTE)
+        printed = self.run_sweep(T0 + 12 * MINUTE)
 
         self.assertEqual(first[0], "1 run swept, none tripped")
         self.assertIn("strike 1 of 2", first[1])
@@ -665,7 +682,7 @@ class SweepModeTests(SweepTestCase):
         self.conn.commit()
 
         self.run_sweep(T0 + 6 * MINUTE, "--act")
-        printed = self.run_sweep(T0 + 7 * MINUTE, "--act")
+        printed = self.run_sweep(T0 + 12 * MINUTE, "--act")
 
         self.assertEqual(printed[-1],
                          "1 tripped of 1 run swept, failed and leases released")

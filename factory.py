@@ -2200,14 +2200,16 @@ def main(provider=None):
         # Startup self-sweep, read-only: it records what it saw — a first
         # strike on anything silent — so the *next* invocation or a
         # `--sweep --act` can act on the second sighting. Nothing is failed
-        # from here; one sample is not evidence (STALE_STRIKES). One sweep
-        # per invocation, reused by the refused-claim diagnostic below, so a
-        # single launch never counts the same silence twice.
+        # from here; one sample is not evidence (STALE_STRIKES). One sweep,
+        # printed once, per invocation: the refused-claim handler below
+        # points back at these lines rather than re-sweeping (which would
+        # count one silence twice) or reprinting (which would look like it
+        # had).
         seen = sweep(conn, int(time() * 1000))
         if seen.trips or seen.watched:
             print("\n".join(sweep_lines(seen)))
             if seen.trips:
-                print(SWEEP_HINT)
+                print(SWEEP_HINT.format(target=TARGET))
         # The tickets this pass has refused to claim. A blocked ticket keeps
         # its place in the board's ready set — `blocked_on_operator` projects
         # to Todo, the column a human picks work out of — so it is offered
@@ -2249,9 +2251,8 @@ def main(provider=None):
                 # instruction: is the holder alive, and what to type if not.
                 print(f"[holo2] claim refused, not starting a run: {e}")
                 if seen.trips or seen.watched:
-                    print("\n".join(sweep_lines(seen)))
-                    if seen.trips:
-                        print(SWEEP_HINT)
+                    print("[holo2] the sweep above shows the lease holder's"
+                          " last signs of life")
                 return
             # §3's `ready -> in_flight`, and the first thing the board is told
             # about this run: the claim is the moment the ticket starts being
@@ -2528,8 +2529,8 @@ Trip = collections.namedtuple(
 # runs reads completely differently depending on whether they were left alone
 # or failed. `watched` is carried because a first strike printed as "all
 # healthy" hides exactly the evidence the next invocation acts on.
-Sweep = collections.namedtuple("Sweep", ("swept", "trips", "acted", "watched"),
-                               defaults=((),))
+Sweep = collections.namedtuple("Sweep",
+                               ("swept", "trips", "acted", "watched"))
 
 
 def still_tripped(conn, trip):
@@ -2633,6 +2634,14 @@ def sweep(conn, now, act=False, provider=None):
     heartbeat is the one named: a dead worker explains the overrun, while the
     overrun says nothing about whether anything is still running.
 
+    Sightings have a minimum spacing: a silent run whose strike on file is
+    younger than `HEARTBEAT_STALE_MS` is not struck again — the tally it has
+    is used as it stands. Two sweeps seconds apart (an operator relaunching,
+    a launch straight after a --sweep) are one observation of one silence,
+    and counting them separately would let two launches in a minute
+    manufacture the second strike the two-strike rule exists to demand of
+    two separate silences.
+
     The whole pass is one `store.transaction()`, because the loop it watches
     is a different process writing the very columns this reads. Classifying
     from a snapshot and then striking in a second transaction leaves a gap in
@@ -2659,8 +2668,20 @@ def sweep(conn, now, act=False, provider=None):
             " ORDER BY r.id", SWEEPABLE_PHASES).fetchall()
         for run_id, ticket, phase, heartbeat, started, time_box in swept:
             silent = now - heartbeat
-            strikes = store.record_strike(
-                conn, run_id, silent > HEARTBEAT_STALE_MS, heartbeat, now)
+            stale = silent > HEARTBEAT_STALE_MS
+            on_file = conn.execute(
+                "SELECT strikes, lastSeen FROM sweepStrikes WHERE runId = ?",
+                (run_id,)).fetchone()
+            if (stale and on_file is not None and heartbeat <= on_file[1]
+                    and now - on_file[1] < HEARTBEAT_STALE_MS):
+                # A sighting within one stale-threshold of the last is the
+                # same sample: two launches seconds apart must not
+                # manufacture the second strike the two-strike rule exists
+                # to require of two separate silences. The tally stands.
+                strikes = on_file[0]
+            else:
+                strikes = store.record_strike(
+                    conn, run_id, stale, heartbeat, now)
             elapsed = now - started
             if strikes >= STALE_STRIKES:
                 trips.append(Trip(
@@ -2691,9 +2712,10 @@ SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence")
 
 # Printed under a table with trips in it wherever the reader is an operator
 # who did not ask for a sweep (startup, a refused claim): the table says what
-# is wrong, this says what to type.
+# is wrong, this says what to type. `{target}` is filled at the print site so
+# the line is copy-pasteable for a non-default target.
 SWEEP_HINT = ("[holo2] tripped runs are failed by"
-              " `factory.py <target> --sweep --act`;"
+              " `factory.py {target} --sweep --act`;"
               " a bare --sweep re-checks first")
 
 
@@ -2728,10 +2750,10 @@ def sweep_lines(result):
                         for cell, width in zip(row, widths)).rstrip()
         for row in table
     ]
+    lines += list(result.watched)
     return lines + [
         f"{len(result.trips)} tripped of {_runs(result.swept)} swept"
-        + (", failed and leases released" if result.acted else "")
-    ] + list(result.watched)
+        + (", failed and leases released" if result.acted else "")]
 
 
 def sweep_report(conn=None, now=None, out=None, act=False, provider=None):

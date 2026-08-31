@@ -679,22 +679,35 @@ class SweepDiagnosticsTests(LoopFixture):
 
         self.assertIn("claim refused", printed)
         self.assertIn(f"run {run_id}", printed)
-        self.assertIn("strike 1 of 2", printed)
+        # One sweep, printed once: the refusal points back at it rather than
+        # re-sweeping (double-counting the silence) or reprinting.
+        self.assertEqual(printed.count("strike 1 of 2"), 1)
+        self.assertLess(printed.index("strike 1 of 2"),
+                        printed.index("claim refused"))
+        self.assertIn("the sweep above", printed)
         self.assertEqual(self.read("SELECT strikes FROM sweepStrikes"),
                          [(1,)])
 
     def test_a_startup_sighting_of_a_tripped_run_names_the_acting_sweep(self):
-        self.stale_holder(strikes=1)
+        self.stale_holder(minutes_silent=12, strikes=1)
 
         printed = self.main_output()
 
-        self.assertIn("--sweep --act", printed)
+        self.assertEqual(printed.count("--sweep --act"), 1)
+        self.assertIn(str(self.target), printed)  # copy-pasteable hint
 
-    def test_a_healthy_startup_prints_no_sweep_lines(self):
-        printed = self.main_output(Commit("the scripted work"), APPROVE)
+    def test_a_healthy_holder_prints_a_refusal_and_no_sweep_lines(self):
+        """A live run at a fresh heartbeat is swept and found healthy: the
+        refusal prints alone, with no strike recorded and no table."""
+        self.stale_holder(minutes_silent=0)
 
+        printed = self.main_output()
+
+        self.assertIn("claim refused", printed)
         self.assertNotIn("swept", printed)
         self.assertNotIn("strike", printed)
+        self.assertNotIn("the sweep above", printed)
+        self.assertEqual(self.read("SELECT strikes FROM sweepStrikes"), [])
 
 
 class CommitThenTimeout(Commit):
