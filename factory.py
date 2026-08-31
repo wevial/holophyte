@@ -753,9 +753,10 @@ def run_worktree_setup(wt, conn=None, run_id=None):
     is a build step, not a round -- and the cap takes the command's whole
     process tree with it, so a build that hangs is not still writing into the
     worktree while the caller deletes it. A command that reaches the cap is
-    failed like any other failing command rather than raised: the caller
-    discards the branch and the worktree on a `False`, and a setup that hangs
-    is exactly the case that must not leave those behind.
+    failed like any other failing command rather than raised: on a `False`
+    the caller discards a branch it cut fresh (a reused worktree, which may
+    hold preserved work, is left in place), and a setup that hangs is exactly
+    the case that must not leave a fresh cut behind.
 
     Commands run in order and stop at the first failure: step two of a setup
     assumes step one worked, so running on would only report a second failure
@@ -1162,6 +1163,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
             ledger(task_id, f"FAILED to reuse leftover worktree for: {task}\n"
                             f"{why}\nNothing was deleted.")
             raise RunFailure(f"cannot reuse leftover worktree: {why}")
+        # Whether the leftover actually holds anything, decided from content
+        # rather than from which arm ran: an empty reuse was reset to main by
+        # reuse_leftover() and is indistinguishable from a fresh cut, so the
+        # close-outs below must neither claim preservation over nothing nor
+        # keep an empty leftover alive forever.
+        fresh = (not sh(["git", "status", "--porcelain"], cwd=wt)
+                 and sh(["git", "rev-parse", "HEAD"], cwd=wt)
+                 == sh(["git", "rev-parse", "main"], TARGET))
     else:
         # The mirror leftover: the branch exists but its directory does not
         # (a FAIL close-out preserves both; a human may clear only the
@@ -1177,22 +1186,36 @@ def run_task(task, conn=None, run_id=None, provider=None):
             raise RunFailure(f"cannot cut a fresh worktree: {why}")
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
         sh(["git", "checkout", "-b", branch], cwd=wt)
+        fresh = True
 
     # The worktree exists and nothing has been dispatched into it yet, which
     # is the only moment the target's own setup can run: an implementer whose
     # toolchain is missing burns its whole budget discovering that, and a
     # worktree that silently borrows the main checkout's environment tests
     # something other than the branch it is on. A failure here is the run's
-    # failure, and the branch is discarded rather than preserved -- no agent
-    # ran, so there is no work on it to keep, exactly like a no-commit run.
+    # failure. A branch this run cut fresh is discarded -- no agent ran, so
+    # there is no work on it to keep -- while a reused worktree may hold
+    # preserved work the setup failure says nothing about, and is left
+    # exactly as found.
     ok, out = run_worktree_setup(wt, conn, run_id)
     if not ok:
         print(out)
-        ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran and "
-                        f"branch {branch} was discarded.\n\n{out}")
-        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
-        sh(["git", "branch", "-D", branch], TARGET)
-        return False
+        # Ledger first: a deletion that itself fails must not also cost the
+        # durable record of why the run stopped.
+        if fresh:
+            ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran;"
+                            f" branch {branch} holds nothing and is"
+                            f" discarded.\n\n{out}")
+            sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
+            sh(["git", "branch", "-D", branch], TARGET)
+            raise RunFailure("worktree setup failed; no agent ran and the"
+                             " empty branch was discarded")
+        ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
+                        f"reused worktree {wt} left in place with its "
+                        f"work.\n\n{out}")
+        raise RunFailure(f"worktree setup failed; no agent ran; reused"
+                         f" worktree and branch {branch} left in place with"
+                         " their work")
 
     # The review base is main, not the HEAD reuse entered on: preserved
     # commits were never approved, so the reviewer must see them inside the
@@ -1226,11 +1249,24 @@ def run_task(task, conn=None, run_id=None, provider=None):
                 "Acceptance criteria are part of the task line; the task is done "
                 "only when they hold. Commit your work with a clear message. "
                 "Stay strictly on-scope; do not expand the task.")
-    if out is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == start_sha:
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if head == start_sha:
         print(f"[holo2] implementer made no commits for: {task}")
-        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
-        sh(["git", "branch", "-D", branch], TARGET)
-        return False
+        if fresh:
+            sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
+            sh(["git", "branch", "-D", branch], TARGET)
+            raise RunFailure("implementer made no commits; the empty branch"
+                             " and worktree were discarded")
+        # A reused worktree holds work some earlier run preserved; this
+        # run's implementer adding nothing is no reason to destroy it.
+        raise RunFailure(f"implementer made no new commits; preserved work"
+                         f" kept on {branch} at {start_sha[:12]}")
+    if out is None:
+        # The budget alarm fired *after* real commits landed. A timeout is
+        # not "no work": destroying the commits here would repeat the
+        # incident this path exists to prevent.
+        raise RunFailure(f"implementer exceeded the {budget_min} min budget;"
+                         f" work kept on {branch} at {head[:12]}")
 
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
@@ -1290,7 +1326,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
         if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
-            return False
+            raise RunFailure(f"fix round {rnd} timed out or made no progress;"
+                             f" branch {branch} preserved at {sha[:12]}")
         sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     else:
         # 3b. Terminal adjudication: both review rounds and their fixes are
@@ -1305,7 +1342,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
             ledger(task_id, f"FAILED verify before terminal adjudication after "
                          f"{MAX_ROUNDS} review rounds; branch {branch} preserved "
                          f"at {sha}\n\n{out}")
-            return False
+            raise RunFailure(f"verify failed before terminal adjudication;"
+                             f" branch {branch} preserved at {sha[:12]}")
         print("[holo2] verify ok before adjudication")
 
         set_phase(conn, run_id, "reviewing", "terminal adjudication")
@@ -1342,7 +1380,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
             ledger(task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
                          f"rounds: {decision}; branch {branch} preserved at "
                          f"{sha}\n\nAdjudicator reply:\n{reply}")
-            return False
+            raise RunFailure(f"terminal adjudication: {decision};"
+                             f" branch {branch} preserved at {sha[:12]}")
         print("[holo2] terminal adjudication: PASS")
         ledger(task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
                      f"rounds: PASS\n\nAdjudicator reply:\n{reply}")
@@ -1358,7 +1397,10 @@ def run_task(task, conn=None, run_id=None, provider=None):
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
-        return False
+        ledger(task_id, f"FAILED verify before merge; branch {branch} "
+                        f"preserved at {sha}\n\n{out}")
+        raise RunFailure(f"verify failed before merge; branch {branch}"
+                         f" preserved at {sha[:12]}")
     print("[holo2] verify ok before merge")
 
     # The other half of the gate, and the one a mechanical verify cannot ask:
@@ -1380,7 +1422,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
                         f"Branch {branch} preserved at {sha}. Work it again "
                         "against the body as it now reads, or restore the "
                         "body the run was claimed under.")
-        return False
+        raise RunFailure(f"ticket drifted from the claimed contract"
+                         f" ({', '.join(drift)}); branch {branch} preserved"
+                         f" at {sha[:12]}")
 
     # Commit any pending FINDINGS.md changes BEFORE merging so the merge
     # never trips over a dirty index. Nothing is written to the file during a
@@ -1863,9 +1907,12 @@ def release_run(conn, run_id, merged, reason=None):
     if merged:
         store.release(conn, run_id, "merged")
         return
+    # No preservation claim in the default: the paths that delete or keep a
+    # branch say so themselves in the reason they pass, and stamping
+    # "preserved" on a reason-less failure lied on every deletion path
+    # (KO-146 incident, run 10).
     store.release(conn, run_id, "failed", reason or
-                  f"run stopped in phase {store.run_phase(conn, run_id)};"
-                  " branch preserved for a human")
+                  f"run stopped in phase {store.run_phase(conn, run_id)}")
 
 
 # --- Linear as the notice board ----------------------------------------------

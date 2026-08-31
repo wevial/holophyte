@@ -158,10 +158,16 @@ class ReviewLoopTests(unittest.TestCase):
             return f"committed work {n}"
 
         with patch.object(factory, "agent", fake_agent):
-            return factory.run_task({
-                "id": "KO-116", "title": "add a thing",
-                "verify": "echo ok", "budget_min": budget_min, "contracts": [],
-            })
+            try:
+                return factory.run_task({
+                    "id": "KO-116", "title": "add a thing",
+                    "verify": "echo ok", "budget_min": budget_min,
+                    "contracts": [],
+                })
+            except factory.RunFailure:
+                # run_task's failure exits raise so their reasons reach the
+                # close-out; a direct call answers False the way main() does.
+                return False
 
     def records(self):
         """The run's records as the ticket archive holds them.
