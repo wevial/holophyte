@@ -14,10 +14,12 @@ Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 from __future__ import annotations
 
 import importlib.util
+import io
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -46,6 +48,8 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     no_agent_processes,
 )
+
+import store  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
@@ -628,6 +632,82 @@ class LeftoverWorktreeTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn(BRANCH, self.branches())
+
+
+class SweepDiagnosticsTests(LoopFixture):
+    """A refused claim and the startup preamble surface the read-only sweep.
+
+    The KO-146 incident's dead end: "lease already held by run 7" with
+    nothing about whether run 7 was alive, and no strike recorded, so the
+    relaunch reflex never accumulated evidence. One read-only sweep per
+    invocation turns the relaunch into the evidence — the second launch can
+    act.
+    """
+
+    MINUTE = 60 * 1000
+
+    def stale_holder(self, minutes_silent=6, strikes=0):
+        """A run some other loop claimed and went silent on, lease held."""
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        store.init(conn)
+        project = store.ensure_project(conn, StubProvider.TEAM,
+                                       str(self.target))
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="iss-stale",
+            linear_identifier="KO-9", title="stalled elsewhere",
+            acceptance_criteria=["Given a run, then it heartbeats"],
+            verification_commands=["echo ok"], time_box_ms=25 * self.MINUTE)
+        store.transition(conn, ticket, "in_flight")
+        then = int(time.time() * 1000) - minutes_silent * self.MINUTE
+        run_id = store.claim(conn, project, ticket, now=then)
+        store.set_phase(conn, run_id, "working", now=then)
+        if strikes:
+            store.record_strike(conn, run_id, True, then, now=then + 1)
+        return run_id
+
+    def main_output(self, *script, provider=None):
+        out = io.StringIO()
+        with patch.object(sys, "stdout", out):
+            self.loop(*script, provider=provider)
+        return out.getvalue()
+
+    def test_a_refused_claim_prints_the_silence_and_records_a_strike(self):
+        run_id = self.stale_holder()
+
+        printed = self.main_output()
+
+        self.assertIn("claim refused", printed)
+        self.assertIn(f"run {run_id}", printed)
+        # One sweep, printed once: the refusal points back at it rather than
+        # re-sweeping (double-counting the silence) or reprinting.
+        self.assertEqual(printed.count("strike 1 of 2"), 1)
+        self.assertLess(printed.index("strike 1 of 2"),
+                        printed.index("claim refused"))
+        self.assertIn("the sweep above", printed)
+        self.assertEqual(self.read("SELECT strikes FROM sweepStrikes"),
+                         [(1,)])
+
+    def test_a_startup_sighting_of_a_tripped_run_names_the_acting_sweep(self):
+        self.stale_holder(minutes_silent=12, strikes=1)
+
+        printed = self.main_output()
+
+        self.assertEqual(printed.count("--sweep --act"), 1)
+        self.assertIn(str(self.target), printed)  # copy-pasteable hint
+
+    def test_a_healthy_holder_prints_a_refusal_and_no_sweep_lines(self):
+        """A live run at a fresh heartbeat is swept and found healthy: the
+        refusal prints alone, with no strike recorded and no table."""
+        self.stale_holder(minutes_silent=0)
+
+        printed = self.main_output()
+
+        self.assertIn("claim refused", printed)
+        self.assertNotIn("swept", printed)
+        self.assertNotIn("strike", printed)
+        self.assertNotIn("the sweep above", printed)
+        self.assertEqual(self.read("SELECT strikes FROM sweepStrikes"), [])
 
 
 class CommitThenTimeout(Commit):
