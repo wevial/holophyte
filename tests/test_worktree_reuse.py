@@ -80,6 +80,34 @@ class UnregisteredLeftoverTests(ReuseFixture):
         self.assertEqual((self.wt / "precious.txt").read_text(),
                          "rescued work\n")
 
+    def test_a_registered_prefix_sibling_does_not_vouch_for_the_directory(self):
+        """Slugs are truncated titles, so `add-a-thing` and
+        `add-a-thing-later` coexist; a substring test over `worktree list`
+        would read the registered sibling as covering the unregistered
+        directory and then crash on `git status` inside it."""
+        self.git("worktree", "add", "--detach",
+                 str(self.worktrees / "add-a-thing-later"), "main")
+        self.wt.mkdir(parents=True)
+        (self.wt / "precious.txt").write_text("rescued work\n")
+
+        ok, why = factory.reuse_leftover(self.wt, self.branch)
+
+        self.assertFalse(ok)
+        self.assertIn("not a registered worktree", why)
+        self.assertEqual((self.wt / "precious.txt").read_text(),
+                         "rescued work\n")
+
+    def test_a_worktree_reached_through_a_symlink_is_recognized(self):
+        """`git worktree list` prints resolved paths; a target configured
+        through a symlink must not have every healthy leftover refused."""
+        self.leftover_worktree()
+        alias = self.worktrees.parent / "alias"
+        alias.symlink_to(self.worktrees)
+
+        ok, why = factory.reuse_leftover(alias / "add-a-thing", self.branch)
+
+        self.assertTrue(ok, why)
+
 
 class DirtyLeftoverTests(ReuseFixture):
     def test_uncommitted_changes_become_a_wip_commit_on_the_branch(self):

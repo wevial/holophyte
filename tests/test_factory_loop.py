@@ -475,10 +475,26 @@ class LeftoverWorktreeTests(LoopFixture):
         wt.mkdir(parents=True)
         (wt / "precious.txt").write_text("rescued work\n")
 
-        self.loop()  # no agent turns: the run fails before dispatch
+        provider = StubProvider(a_task())
+        self.loop(provider=provider)  # no agent turns: fails before dispatch
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual((wt / "precious.txt").read_text(), "rescued work\n")
+        (body,) = [body for _task_id, body in provider.comments
+                   if "not a registered worktree" in body]
+        self.assertIn(str(wt), body)
+
+    def test_a_leftover_branch_with_no_directory_fails_the_run_cleanly(self):
+        """The mirror leftover: a preserved branch whose directory a human
+        cleared away. `checkout -b` dies on the existing branch, so before
+        the fix the RuntimeError escaped `main()`; deleting the branch
+        instead could destroy preserved commits."""
+        self.git("branch", BRANCH, "main")
+
+        self.loop()  # no agent turns: the run fails before dispatch
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertIn(BRANCH, self.branches())
 
 
 if __name__ == "__main__":
