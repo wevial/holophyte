@@ -464,5 +464,22 @@ class WorktreeSetupLoopTests(LoopFixture):
         self.assertIn("1 command(s)", note)
 
 
+class LeftoverWorktreeTests(LoopFixture):
+    def test_an_unregistered_leftover_directory_fails_the_run_cleanly(self):
+        """A leftover directory that is not a registered worktree can be
+        neither reused nor safely deleted, so the run fails with nothing
+        under the directory touched — before the fix `git worktree add`
+        died on the non-empty directory and the RuntimeError escaped
+        `main()` as a traceback (KO-146 incident, run 9's sibling)."""
+        wt = self.worktrees / "add-a-thing"
+        wt.mkdir(parents=True)
+        (wt / "precious.txt").write_text("rescued work\n")
+
+        self.loop()  # no agent turns: the run fails before dispatch
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual((wt / "precious.txt").read_text(), "rescued work\n")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1011,6 +1011,39 @@ def round_verdict(reply, verdicts):
         return "error"
 
 
+def reuse_leftover(wt, branch):
+    """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
+
+    The reuse arm's promise is that preserved work survives, and the two
+    states git refuses to plough through are exactly the states with
+    something to preserve — so neither is allowed to escape as a traceback.
+    An unregistered directory is refused with a reason (deleting it would
+    destroy what reuse exists to keep; `git worktree add` onto a non-empty
+    directory dies), and a dirty tree becomes a WIP commit on the branch
+    before anything else moves. Nothing is ever deleted here.
+    """
+    sh(["git", "worktree", "prune"], TARGET)
+    r = subprocess.run(["git", "worktree", "list", "--porcelain"],
+                       cwd=TARGET, capture_output=True, text=True)
+    if str(wt) not in r.stdout:
+        return False, (f"leftover directory {wt} exists but is not a"
+                       " registered worktree; a human moves it aside or"
+                       " removes it before this ticket is run again")
+    dirty = sh(["git", "status", "--porcelain"], cwd=wt)
+    # `-B` with no start point parks `branch` at the HEAD we are on without
+    # touching the tree, so it cannot die on uncommitted files the way
+    # `-B branch main` does.
+    sh(["git", "checkout", "-B", branch], cwd=wt)
+    if dirty:
+        sh(["git", "add", "-A"], cwd=wt)
+        sh(["git", "commit", "-m",
+            f"WIP: uncommitted leftovers preserved on reuse of {branch}"],
+           cwd=wt)
+        print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
+              f" on {branch}")
+    return True, ""
+
+
 def run_task(task, conn=None, run_id=None, provider=None):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
@@ -1050,15 +1083,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # freshly claimed.
     set_phase(conn, run_id, "working", f"cutting {branch} and implementing")
     if wt.exists():
-        # leftover from a previous failed run — reuse it as-is so preserved
-        # work survives; the branch check below still gates on commits.
-        sh(["git", "worktree", "prune"], TARGET)
-        r = subprocess.run(["git", "worktree", "list", "--porcelain"],
-                           cwd=TARGET, capture_output=True, text=True)
-        registered = str(wt) in r.stdout
-        if not registered:
-            sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
-        sh(["git", "checkout", "-B", branch, "main"], cwd=wt)
+        # leftover from a previous failed run — reuse it so preserved work
+        # survives; the branch check below still gates on commits.
+        ok, why = reuse_leftover(wt, branch)
+        if not ok:
+            print(f"[holo2] cannot reuse leftover worktree: {why}")
+            ledger(task_id, f"FAILED to reuse leftover worktree for: {task}\n"
+                            f"{why}\nNothing was deleted.")
+            return False
     else:
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
         sh(["git", "checkout", "-b", branch], cwd=wt)
