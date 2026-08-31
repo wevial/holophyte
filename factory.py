@@ -440,6 +440,16 @@ def run_verify(cmd, cwd=None, contracts=None):
                                  per_clause, failed, returncode, cleaned)
 
 
+class RunFailure(Exception):
+    """A run failing on purpose: the message is the close-out reason.
+
+    Raised inside `run_task()` where the code knows *why* the run cannot
+    continue, and caught in `main()` beside the crash handler — the
+    difference is only the log line; both end as the same failed run with
+    the text as its `outcomeReason`.
+    """
+
+
 def sh(args, cwd=None):
     """Run an argv list — no shell, so task text can't break quoting."""
     r = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
@@ -1149,10 +1159,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
         # survives; the branch check below still gates on commits.
         ok, why = reuse_leftover(wt, branch)
         if not ok:
-            print(f"[holo2] cannot reuse leftover worktree: {why}")
             ledger(task_id, f"FAILED to reuse leftover worktree for: {task}\n"
                             f"{why}\nNothing was deleted.")
-            return False
+            raise RunFailure(f"cannot reuse leftover worktree: {why}")
     else:
         # The mirror leftover: the branch exists but its directory does not
         # (a FAIL close-out preserves both; a human may clear only the
@@ -1163,10 +1172,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
             why = (f"branch {branch} already exists with no worktree; a"
                    " human moves it aside or deletes it before this ticket"
                    " is run again")
-            print(f"[holo2] cannot cut a fresh worktree: {why}")
             ledger(task_id, f"FAILED to cut a fresh worktree for: {task}\n"
                             f"{why}\nNothing was deleted.")
-            return False
+            raise RunFailure(f"cannot cut a fresh worktree: {why}")
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
         sh(["git", "checkout", "-b", branch], cwd=wt)
 
@@ -2212,8 +2220,19 @@ def main(provider=None):
                       " from; stopping for a human")
                 return
             merged = False
+            reason = None
             try:
                 merged = run_task(task, conn, run_id, provider)
+            except RunFailure as e:
+                reason = str(e)
+                print(f"[holo2] run failed: {reason}")
+            except Exception as e:  # noqa: BLE001 - crash containment
+                # Anything that escapes run_task is this run's failure. The
+                # error text becomes the close-out reason — one clean line
+                # instead of a traceback with the reason lost to
+                # release_run()'s generic default (KO-146 incident, run 9).
+                reason = f"{type(e).__name__}: {e}"
+                print(f"[holo2] run crashed: {reason}")
             finally:
                 if merged:
                     release_run(conn, run_id, merged)
@@ -2231,12 +2250,13 @@ def main(provider=None):
                     # was one too many, regenerate the window. Shared with the
                     # supervisor sweep, which fails runs this loop is no
                     # longer around to fail itself.
-                    close_out_failure(conn, run_id, ticket_id,
+                    close_out_failure(conn, run_id, ticket_id, reason,
                                       provider=provider)
             if not merged:
                 # The regenerated window stays uncommitted, like the preserved
-                # branch it describes: a human closes both out.
-                return  # stop on first failure; ticket stays In Progress for a human
+                # branch it describes: a human closes both out. Nonzero so the
+                # shell — and anything supervising it — sees the failure.
+                return 1  # stop on first failure; ticket stays In Progress
             commit_findings(f"Complete task {task['id']}: {task['title']}")
     finally:
         conn.close()
@@ -2714,4 +2734,4 @@ def cli(argv=None):
 
 
 if __name__ == "__main__":
-    cli()
+    sys.exit(cli())

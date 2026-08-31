@@ -486,6 +486,21 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
 
+    def test_the_refusal_reason_reaches_the_run_row(self):
+        """The reuse refusal's whole product is an explanation for a human;
+        it must land on the run row, not only in a Linear comment a provider
+        outage can swallow."""
+        wt = self.worktrees / "add-a-thing"
+        wt.mkdir(parents=True)
+        (wt / "precious.txt").write_text("rescued work\n")
+
+        self.loop()
+
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("not a registered worktree", reason)
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+
     def test_preserved_commits_are_reviewed_and_carried_into_the_merge(self):
         """Preserved commits were never approved, so the review base must be
         main — putting them inside the reviewed diff — and the merge must
@@ -531,6 +546,77 @@ class LeftoverWorktreeTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn(BRANCH, self.branches())
+
+
+class Boom:
+    """An implementer turn that dies the way a failed `sh()` does."""
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        raise RuntimeError("`['git', 'checkout']` failed:\nfatal: scripted")
+
+
+class Refuse:
+    """An implementer turn that fails the run on purpose, reason attached."""
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        raise factory.RunFailure("some reason")
+
+
+class Interrupt:
+    """An implementer turn hit by Ctrl-C."""
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        raise KeyboardInterrupt
+
+
+class CrashContainmentTests(LoopFixture):
+    """Any exception out of `run_task()` is that run's failure: closed out
+    with the error text as its reason, both leases released, one clean line,
+    nonzero exit — never a traceback with the reason lost to the generic
+    close-out default (KO-146 incident, run 9)."""
+
+    def run_main(self, *script, provider=None):
+        fake = FakeAgent(*script)
+        provider = provider or StubProvider(a_task())
+        with no_agent_processes():
+            with patch.dict(sys.modules, {"linear_provider": provider}):
+                with patch.object(factory, "agent", fake):
+                    return factory.main(provider)
+
+    def leases(self):
+        return self.read("SELECT p.activeRunId, t.activeRunId"
+                         " FROM projects p, tickets t")
+
+    def test_a_crash_fails_the_run_with_the_error_text_as_its_reason(self):
+        rc = self.run_main(Boom())
+
+        self.assertEqual(rc, 1)
+        ((outcome, reason),) = self.read(
+            "SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("RuntimeError", reason)
+        self.assertIn("fatal: scripted", reason)
+        self.assertEqual(self.leases(), [(None, None)])
+
+    def test_a_run_failure_carries_its_exact_reason(self):
+        rc = self.run_main(Refuse())
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.read("SELECT outcome, outcomeReason FROM runs"),
+                         [("failed", "some reason")])
+
+    def test_a_keyboard_interrupt_still_propagates_after_the_close_out(self):
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_main(Interrupt())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.leases(), [(None, None)])
 
 
 if __name__ == "__main__":

@@ -222,15 +222,17 @@ class RunPhaseTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", boom):
-                with self.assertRaises(RuntimeError):
-                    factory.main(provider)
+                rc = factory.main(provider)
 
+        # Contained, not propagated — and the run row still says the work
+        # stopped under review, with the error text as the reason.
+        self.assertEqual(rc, 1)
         self.assertEqual(self.transitions()[-2:],
                          ["verifying -> reviewing", "reviewing -> failed"])
         phase, outcome, reason, resume_phase, *_ = self.run_row()
         self.assertEqual((phase, outcome, resume_phase),
                          ("failed", "failed", "reviewing"))
-        self.assertIn("reviewing", reason)
+        self.assertIn("reviewer host went away", reason)
 
     # --- heartbeats ------------------------------------------------------
 

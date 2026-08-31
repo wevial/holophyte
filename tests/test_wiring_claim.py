@@ -235,9 +235,10 @@ class WiringClaimTests(unittest.TestCase):
         boom = RuntimeError("merge blew up")
 
         with patch.object(factory, "run_task", side_effect=boom):
-            with self.assertRaises(RuntimeError):
-                factory.main(StubProvider(a_task()))
+            rc = factory.main(StubProvider(a_task()))
 
+        # Contained, not propagated: the crash is this run's failure, exit 1.
+        self.assertEqual(rc, 1)
         self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("failed", "failed")])
