@@ -736,10 +736,6 @@ Round 1: changes_requested · reviewer codex-sol-medium · verify passed
 Findings (1):
 - factory.py [p2] [factory.py](/workspace/factory.py:2386): Acting occurs after the classification transaction without revalidating the heartbeat, phase, or `endedAt`. A worker c…
 
-## 2026-08-30T22:02:54Z — KO-146
-FAILED.
-actual: 218.6 min · estimate: 25 min · rounds: 1
-
 ## 2026-08-30T22:03:05Z — KO-146
 FAILED: ticket was not ready when the run was claimed; no work started
 actual: 0.0 min · estimate: 25 min · rounds: 0
@@ -751,3 +747,7 @@ actual: 0.0 min · estimate: 25 min · rounds: 0
 ## 2026-08-30T22:06:01Z — KO-146
 FAILED: run stopped in phase working; branch preserved for a human
 actual: 0.0 min · estimate: 25 min · rounds: 0
+
+## 2026-08-31T16:43:32Z — KO-146
+FAILED: orphaned: host process reaped externally during round-2 fixes on 2026-08-30; worktree was preserved with uncommitted round-2 work, rescued and merged by hand as 6d68ec4; run closed out by operator repair via store.release() on 2026-08-31
+actual: 1339.2 min · estimate: 25 min · rounds: 1
