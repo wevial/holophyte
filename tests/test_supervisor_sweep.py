@@ -1117,5 +1117,112 @@ class SuperviseTests(SweepTestCase):
         self.assertEqual(self.heartbeats(), [(pid, T0 + 12 * MINUTE, 2)])
 
 
+class SupervisorConfigTests(SweepTestCase):
+    """`[supervisor]` in `<repo>.holophyte.toml`: the thresholds have an address.
+
+    An absent table is the constants the tests above were written against; a
+    key that is present moves exactly the trip it names; a key outside its
+    constraint is refused at startup, before anything is swept.
+    """
+
+    def configure(self, text):
+        """Write the target's config and point the module at it."""
+        (self.root / "repo.holophyte.toml").write_text(text)
+        self.retarget_factory()
+
+    def test_an_absent_table_is_the_documented_defaults(self):
+        self.retarget_factory()
+
+        self.assertEqual(factory.sweep_config(),
+                         (5 * MINUTE, 2, 1.5, 0.5, 60))
+
+    def test_heartbeat_stale_min_moves_the_silence_a_trip_needs(self):
+        """A heartbeat two and three minutes old on two consecutive sweeps:
+        not even a strike under the default five, a trip under one."""
+        run_id = self.a_run()
+        self.retarget_factory()
+        factory.sweep(self.conn, T0 + 2 * MINUTE)
+        default = factory.sweep(self.conn, T0 + 3 * MINUTE)
+        self.assertEqual(default.trips, [])
+        self.assertIsNone(self.strikes(run_id))
+
+        self.configure("[supervisor]\nheartbeat_stale_min = 1\n")
+        factory.sweep(self.conn, T0 + 2 * MINUTE)
+        result = factory.sweep(self.conn, T0 + 3 * MINUTE)
+
+        trip, = result.trips
+        self.assertEqual((trip.run_id, trip.condition),
+                         (run_id, factory.STALE_HEARTBEAT))
+        self.assertIn("over 2 consecutive sweeps", trip.evidence)
+
+    def test_stale_strikes_moves_how_many_sightings_a_trip_needs(self):
+        run_id = self.a_run()
+        self.configure("[supervisor]\nstale_strikes = 3\n")
+
+        factory.sweep(self.conn, T0 + 6 * MINUTE)
+        second = factory.sweep(self.conn, T0 + 12 * MINUTE)
+        third = factory.sweep(self.conn, T0 + 18 * MINUTE)
+
+        self.assertEqual(second.trips, [])
+        (line,) = second.watched
+        self.assertIn("strike 2 of 3", line)
+        self.assertEqual([t.run_id for t in third.trips], [run_id])
+
+    def test_unknown_keys_in_the_table_are_left_alone(self):
+        self.configure("[supervisor]\nstale_heartbeat_min = 7\n")
+
+        self.assertEqual(factory.sweep_config().heartbeat_stale_ms,
+                         5 * MINUTE)
+
+    def test_a_value_outside_its_constraint_is_refused_at_startup(self):
+        """Named key, named constraint, and no sweep: the strike table is
+        as empty afterwards as it was before."""
+        self.a_run()
+        self.conn.commit()
+        for line, key, constraint in (
+                ("heartbeat_stale_min = -1", "heartbeat_stale_min",
+                 "a positive number"),
+                ("review_overlap_threshold = 1.5", "review_overlap_threshold",
+                 "a number in (0, 1]"),
+                ("review_overlap_threshold = 0", "review_overlap_threshold",
+                 "a number in (0, 1]"),
+                ("stale_strikes = 1.5", "stale_strikes",
+                 "a positive integer"),
+                ("budget_grace = true", "budget_grace", "a positive number"),
+                ('sweep_interval_sec = "60"', "sweep_interval_sec",
+                 "a positive number")):
+            with self.subTest(line=line):
+                self.configure(f"[supervisor]\n{line}\n")
+                with self.assertRaises(SystemExit) as raised, \
+                        patch.object(factory, "time",
+                                     lambda: (T0 + 6 * MINUTE) / 1000):
+                    factory.cli(["--sweep", str(self.target)])
+                message = str(raised.exception)
+                self.assertIn(f"[supervisor] {key}", message)
+                self.assertIn(constraint, message)
+                self.assertIn("repo.holophyte.toml", message)
+        self.assertEqual(
+            self.conn.execute("SELECT count(*) FROM sweepStrikes").fetchone(),
+            (0,))
+
+    def test_sweep_interval_sec_is_the_supervisor_s_sleep(self):
+        self.configure("[supervisor]\nsweep_interval_sec = 7\n")
+        slept = []
+
+        def stop_after_one(interval):
+            slept.append(interval)
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        out = io.StringIO()
+        with patch.dict(sys.modules,
+                        {"linear_provider": Tripwire("linear_provider")}):
+            with no_network():
+                code = factory.supervise(wait=stop_after_one, out=out)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(slept, [7])
+        self.assertIn("every 7s", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

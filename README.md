@@ -103,7 +103,8 @@ a row in a work phase and a lease nobody gives back, and the supervisor is
 what notices: an acting sweep (`--sweep --act`) that fails any run with a
 dead heartbeat, a blown time box or a stuck review, releases its leases and
 leaves its branch and worktree for a human. `--supervise` runs that sweep
-every 60 seconds as a long-lived process:
+every 60 seconds by default (`[supervisor] sweep_interval_sec`) as a
+long-lived process:
 
 ```
 python3 factory.py --supervise /srv/dev/holo2test
@@ -219,6 +220,27 @@ run there, since the worktree they are written against does not exist yet.
 What setup writes into the worktree is untracked, and the implementer is asked
 to commit its work: keep build artifacts (`.venv/`, caches) in the target's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
+
+```toml
+[supervisor]
+# The sweep's thresholds. Every key is optional; the values shown are the
+# defaults, in place whenever the key (or the whole table) is absent.
+heartbeat_stale_min      = 5    # a heartbeat older than this is a silent sighting
+stale_strikes            = 2    # consecutive silent sightings that trip a run
+budget_grace             = 1.5  # multiple of the ticket's estimate that blows the box
+review_overlap_threshold = 0.5  # findings shared by two rounds that reads as stuck
+sweep_interval_sec       = 60   # sleep between two --supervise passes
+```
+
+Different targets want different patience — a Go build's worktree setup is
+slower than stdlib Python's — and these are the knobs `--sweep` and
+`--supervise` read. Each value is checked at startup, for every mode: the
+thresholds and the interval must be positive numbers, `stale_strikes` a
+positive integer, and the overlap a fraction in (0, 1]. A value outside its
+constraint is an error naming the key and the constraint, like malformed TOML,
+rather than a default quietly used in its place. Keys this version does not
+know are left alone. The config is read once at startup; a running supervisor
+does not pick up an edit.
 
 ## Local reviewer boundary
 

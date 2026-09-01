@@ -2527,12 +2527,85 @@ BUDGET_GRACE = 1.5
 # it is the terminal adjudication -- a doomed one is cheaper failed now than
 # paid for. Two rounds are compared and never one: a healthy run sits in
 # `reviewing` with a single round on file, and there is nothing to compare
-# it against. (5/5 makes this configurable.)
+# it against.
 REVIEW_OVERLAP_THRESHOLD = 0.5
+# How long the supervisor sleeps between two acting sweeps. A minute: fine
+# enough that a dead run is noticed within `HEARTBEAT_STALE_MS` plus one
+# interval of dying, coarse enough that the store's write lock is taken for
+# the sweep's arithmetic sixty times an hour and not six hundred.
+SUPERVISE_INTERVAL_SEC = 60
 # The phases the review-stuck check applies in: the ones a run is in between
 # a review round ending and the next one starting. Anywhere else the rounds on
 # file are history the run has moved past, not a review it is still inside.
 REVIEW_PHASES = ("reviewing", "addressing")
+
+# The five knobs above have an address: the optional `[supervisor]` table of
+# `<repo>.holophyte.toml`. Different targets legitimately want different
+# patience -- a Go build's setup is slower than stdlib Python's -- and the
+# constants are the defaults, not the lookup sites: an absent table is
+# exactly the numbers above. The keys are named in the units an operator
+# thinks in (minutes, seconds, a multiplier, a fraction) and `sweep_config()`
+# converts them to the units the sweep computes in.
+SUPERVISOR_KEYS = {
+    "heartbeat_stale_min": HEARTBEAT_STALE_MS / 60000,
+    "stale_strikes": STALE_STRIKES,
+    "budget_grace": BUDGET_GRACE,
+    "review_overlap_threshold": REVIEW_OVERLAP_THRESHOLD,
+    "sweep_interval_sec": SUPERVISE_INTERVAL_SEC,
+}
+# The knobs as the sweep reads them: the same five, with the heartbeat
+# threshold already in milliseconds, so the arithmetic in `sweep()` is the
+# arithmetic it always was.
+SweepConfig = collections.namedtuple(
+    "SweepConfig",
+    ("heartbeat_stale_ms", "stale_strikes", "budget_grace",
+     "review_overlap_threshold", "sweep_interval_sec"))
+
+
+def sweep_config():
+    """The target's sweep thresholds: `[supervisor]` over the defaults.
+
+    Every key is optional and an absent table is the module constants exactly.
+    A key that is present is checked here, the way `agent_command()` checks a
+    route: a threshold is a number, thresholds and intervals are positive,
+    the strike requirement is a whole number of sightings, and the overlap is
+    a fraction in (0, 1] -- a share of findings above one is unreachable, and
+    a share of zero trips every review that found anything at all. A value
+    outside its constraint is a startup error naming the key and the
+    constraint, like malformed TOML: a negative threshold the factory quietly
+    replaced with its default would sweep with numbers nobody chose. Booleans
+    are refused as numbers, because `true` is a 1 TOML never meant.
+
+    Keys the table names that this version does not know are left alone,
+    the way `load_config()` leaves unknown tables alone.
+    """
+    table = config().get("supervisor") or {}
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [supervisor] must be a table, got "
+            f"{type(table).__name__}")
+    values = {}
+    for key, default in SUPERVISOR_KEYS.items():
+        value = table.get(key, default)
+        number = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if key == "stale_strikes":
+            constraint, ok = "a positive integer", number and (
+                isinstance(value, int) and value > 0)
+        elif key == "review_overlap_threshold":
+            constraint, ok = "a number in (0, 1]", number and 0 < value <= 1
+        else:
+            constraint, ok = "a positive number", number and value > 0
+        if not ok:
+            raise SystemExit(
+                f"[holo2] {CONFIG_PATH}: [supervisor] {key} must be "
+                f"{constraint}, got {value!r}")
+        values[key] = value
+    return SweepConfig(
+        heartbeat_stale_ms=values["heartbeat_stale_min"] * 60000,
+        stale_strikes=values["stale_strikes"],
+        budget_grace=values["budget_grace"],
+        review_overlap_threshold=values["review_overlap_threshold"],
+        sweep_interval_sec=values["sweep_interval_sec"])
 
 # The phases a run can be swept in: everything the store's enum has, less the
 # three a finished run sits in and `blocked_on_operator`. Derived from
@@ -2617,7 +2690,7 @@ def review_overlap(conn, run_id):
                                                   later_findings)
 
 
-def still_tripped(conn, trip):
+def still_tripped(conn, trip, knobs=None):
     """Does `trip`'s verdict still hold of the run it was reached on?
 
     Asked again at the moment of acting, under the write lock, because the
@@ -2648,7 +2721,11 @@ def still_tripped(conn, trip):
     adjudication -- is exactly the run the condition names: the adjudication
     is what the trip is meant to spare paying for, and a sweep arriving
     fresh at that moment would trip it on the same two rounds.
+
+    `knobs` is the `SweepConfig` the verdict was reached under, so the
+    overlap is re-asked against the threshold that tripped it.
     """
+    knobs = sweep_config() if knobs is None else knobs
     row = conn.execute(
         "SELECT endedAt, phase, lastHeartbeat FROM runs WHERE id = ?",
         (trip.run_id,)).fetchone()
@@ -2662,11 +2739,11 @@ def still_tripped(conn, trip):
     if trip.condition == REVIEW_STUCK:
         overlap = review_overlap(conn, trip.run_id)
         return (overlap is not None
-                and overlap[2] >= REVIEW_OVERLAP_THRESHOLD)
+                and overlap[2] >= knobs.review_overlap_threshold)
     return True
 
 
-def act_on_trip(conn, trip, provider=None):
+def act_on_trip(conn, trip, provider=None, knobs=None):
     """Fail one tripped run, if it is still tripped; say whether it was.
 
     The whole of what acting means. `close_out_failure()` is the loop's own,
@@ -2696,11 +2773,12 @@ def act_on_trip(conn, trip, provider=None):
     working on disk therefore remains out of scope, and is the reason the
     strike rule is two sightings rather than one.
     """
+    knobs = sweep_config() if knobs is None else knobs
     (ticket_id,) = conn.execute(
         "SELECT ticketId FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
 
     def confirm():
-        if not still_tripped(conn, trip):
+        if not still_tripped(conn, trip, knobs):
             return False
         store.record_event(
             conn, trip.run_id, SWEEP_EVENT,
@@ -2715,7 +2793,7 @@ def act_on_trip(conn, trip, provider=None):
         provider, confirm)
 
 
-def sweep(conn, now, act=False, provider=None):
+def sweep(conn, now, act=False, provider=None, knobs=None):
     """Check every live run for a tripped condition; return a `Sweep`.
 
     `now` is epoch milliseconds and is a parameter, not a clock read: every
@@ -2738,12 +2816,12 @@ def sweep(conn, now, act=False, provider=None):
     anything about whether a process is still running. A blown time box
     comes before a stuck review because it is the older and broader budget,
     and a stuck review -- the latest two finished rounds of a run in
-    `REVIEW_PHASES` sharing `REVIEW_OVERLAP_THRESHOLD` or more of their
+    `REVIEW_PHASES` sharing the overlap threshold or more of their
     findings -- is the narrowest: a live run inside its budget whose fix
     round left the reviewer's complaints standing.
 
     Sightings have a minimum spacing: a silent run whose strike on file is
-    younger than `HEARTBEAT_STALE_MS` is not struck again — the tally it has
+    younger than the stale threshold is not struck again — the tally it has
     is used as it stands. Two sweeps seconds apart (an operator relaunching,
     a launch straight after a --sweep) are one observation of one silence,
     and counting them separately would let two launches in a minute
@@ -2764,7 +2842,13 @@ def sweep(conn, now, act=False, provider=None):
     inside it: failing a run releases leases, escalates a ticket and may call
     Linear, and holding the store's write lock across a network call would
     stall every live loop for as long as the provider takes to answer.
+
+    `knobs` is the target's `SweepConfig`; the default is `sweep_config()`,
+    the `[supervisor]` table over the module constants.
     """
+    knobs = sweep_config() if knobs is None else knobs
+    stale_ms, strikes_needed = knobs.heartbeat_stale_ms, knobs.stale_strikes
+    grace, overlap_threshold = knobs.budget_grace, knobs.review_overlap_threshold
     trips, watched = [], []
     with store.transaction(conn):
         swept = conn.execute(
@@ -2776,12 +2860,12 @@ def sweep(conn, now, act=False, provider=None):
             " ORDER BY r.id", SWEEPABLE_PHASES).fetchall()
         for run_id, ticket, phase, heartbeat, started, time_box in swept:
             silent = now - heartbeat
-            stale = silent > HEARTBEAT_STALE_MS
+            stale = silent > stale_ms
             on_file = conn.execute(
                 "SELECT strikes, lastSeen FROM sweepStrikes WHERE runId = ?",
                 (run_id,)).fetchone()
             if (stale and on_file is not None and heartbeat <= on_file[1]
-                    and now - on_file[1] < HEARTBEAT_STALE_MS):
+                    and now - on_file[1] < stale_ms):
                 # A sighting within one stale-threshold of the last is the
                 # same sample: two launches seconds apart must not
                 # manufacture the second strike the two-strike rule exists
@@ -2791,25 +2875,25 @@ def sweep(conn, now, act=False, provider=None):
                 strikes = store.record_strike(
                     conn, run_id, stale, heartbeat, now)
             elapsed = now - started
-            if strikes >= STALE_STRIKES:
+            if strikes >= strikes_needed:
                 trips.append(Trip(
                     run_id, ticket, phase, STALE_HEARTBEAT,
                     f"silent for {silent / 60000:.1f} min"
                     f" over {strikes} consecutive sweeps", heartbeat))
-            elif time_box and elapsed > time_box * BUDGET_GRACE:
+            elif time_box and elapsed > time_box * grace:
                 trips.append(Trip(
                     run_id, ticket, phase, TIME_BOX,
                     f"{elapsed / 60000:.1f} min against a"
-                    f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)",
+                    f" {time_box / 60000:.0f} min box ({grace}x grace)",
                     heartbeat))
             elif (phase in REVIEW_PHASES
                     and (overlap := review_overlap(conn, run_id)) is not None
-                    and overlap[2] >= REVIEW_OVERLAP_THRESHOLD):
+                    and overlap[2] >= overlap_threshold):
                 earlier, later, shared = overlap
                 trips.append(Trip(
                     run_id, ticket, phase, REVIEW_STUCK,
                     f"rounds {earlier} and {later} share {shared:.2f} of"
-                    f" their findings ({REVIEW_OVERLAP_THRESHOLD} threshold)",
+                    f" their findings ({overlap_threshold} threshold)",
                     heartbeat))
             elif strikes:
                 # Silent, but one sighting short of a trip: not evidence yet,
@@ -2818,10 +2902,10 @@ def sweep(conn, now, act=False, provider=None):
                 watched.append(
                     f"run {run_id} ({ticket}, {phase}): silent"
                     f" {silent / 60000:.1f} min, strike {strikes} of"
-                    f" {STALE_STRIKES}")
+                    f" {strikes_needed}")
     if act:
         for trip in trips:
-            act_on_trip(conn, trip, provider)
+            act_on_trip(conn, trip, provider, knobs)
     return Sweep(len(swept), trips, act, tuple(watched))
 
 
@@ -2930,12 +3014,9 @@ def sweep_report(conn=None, now=None, out=None, act=False, provider=None):
 # says neither -- empty, half-written, not ours to parse -- is ambiguous, and
 # an ambiguous probe never spawns a rival. It aborts and says what it saw.
 
-# How long the supervisor sleeps between two acting sweeps. A minute: fine
-# enough that a dead run is noticed within `HEARTBEAT_STALE_MS` plus one
-# interval of dying, coarse enough that the store's write lock is taken for
-# the sweep's arithmetic sixty times an hour and not six hundred. (5/5 makes
-# this configurable.)
-SUPERVISE_INTERVAL_SEC = 60
+# The interval between two acting sweeps is `SUPERVISE_INTERVAL_SEC`, or the
+# target's `[supervisor] sweep_interval_sec`, read with the other thresholds
+# by `sweep_config()`.
 # The signals a supervisor stops on. Both mean the same thing here -- finish
 # the pass in hand, give the lock back, exit clean -- because an operator's
 # Ctrl-C and a service manager's stop are the same request.
@@ -3124,8 +3205,7 @@ def supervise_pass(pid, started_at, now=None, provider=None, out=None):
     return seen
 
 
-def supervise(provider=None, interval=SUPERVISE_INTERVAL_SEC, wait=None,
-              out=None):
+def supervise(provider=None, interval=None, wait=None, out=None):
     """`--supervise`'s whole body: lock, sweep, sleep, repeat until a signal.
 
     The lock is taken before the first pass and given back on every way out
@@ -3142,9 +3222,11 @@ def supervise(provider=None, interval=SUPERVISE_INTERVAL_SEC, wait=None,
     `wait` is the sleep, injectable so a test can drive the loop without
     one; it is called with the interval and its result is ignored. The
     default waits on the stop flag itself, so a signal ends the sleep at
-    once instead of a minute later.
+    once instead of a minute later. `interval` defaults to the target's
+    `[supervisor] sweep_interval_sec`.
     """
     out = out or sys.stdout
+    interval = sweep_config().sweep_interval_sec if interval is None else interval
     pid = os.getpid()
     started_at = int(time() * 1000)
     path = acquire_supervisor_lock(supervisor_lock_path(), pid, started_at)
@@ -3201,7 +3283,8 @@ def cli(argv=None):
              "on none of them unless --act says to")
     modes.add_argument(
         "--supervise", action="store_true",
-        help="run the acting sweep every %ds until SIGINT/SIGTERM, as the "
+        help="run the acting sweep on an interval ([supervisor] "
+             "sweep_interval_sec, default %ds) until SIGINT/SIGTERM, as the "
              "target's one supervisor: a second one for the same target "
              "exits naming the first" % SUPERVISE_INTERVAL_SEC)
     # Not a mode of its own: it says what `--sweep` does with what it finds,
@@ -3221,6 +3304,13 @@ def cli(argv=None):
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.
     config()
+    # And the `[supervisor]` table is checked in the same breath, for every
+    # mode: the loop's startup self-sweep, `--sweep` and `--supervise` all
+    # read it, and a threshold outside its constraint is the same kind of
+    # mistake as a file that does not parse -- an error about the config,
+    # before anything is claimed, rather than a sweep with numbers nobody
+    # chose.
+    sweep_config()
     if args.report:
         return report()
     # Same window and the same reasons as `--report`: it reads runs and prints
