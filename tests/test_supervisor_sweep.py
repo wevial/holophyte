@@ -1205,6 +1205,22 @@ class SupervisorConfigTests(SweepTestCase):
             self.conn.execute("SELECT count(*) FROM sweepStrikes").fetchone(),
             (0,))
 
+    def test_a_non_table_supervisor_value_is_refused_even_when_falsy(self):
+        """`supervisor = false` is not "no table": it is a wrong-typed key,
+        and gets the same startup refusal a string or list would."""
+        for line, kind in (("supervisor = false", "bool"),
+                           ("supervisor = 0", "int"),
+                           ('supervisor = ""', "str"),
+                           ("supervisor = []", "list"),
+                           ('supervisor = "table"', "str")):
+            with self.subTest(line=line):
+                self.configure(line + "\n")
+                with self.assertRaises(SystemExit) as raised:
+                    factory.sweep_config()
+                message = str(raised.exception)
+                self.assertIn("[supervisor] must be a table", message)
+                self.assertIn(f"got {kind}", message)
+
     def test_sweep_interval_sec_is_the_supervisor_s_sleep(self):
         self.configure("[supervisor]\nsweep_interval_sec = 7\n")
         slept = []

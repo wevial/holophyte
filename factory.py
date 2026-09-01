@@ -2579,7 +2579,7 @@ def sweep_config():
     Keys the table names that this version does not know are left alone,
     the way `load_config()` leaves unknown tables alone.
     """
-    table = config().get("supervisor") or {}
+    table = config().get("supervisor", {})
     if not isinstance(table, dict):
         raise SystemExit(
             f"[holo2] {CONFIG_PATH}: [supervisor] must be a table, got "
