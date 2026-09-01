@@ -19,11 +19,14 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
+import signal
 import socket
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -923,6 +926,195 @@ class SweepModeTests(SweepTestCase):
 
         self.assertIn("no store at", out.getvalue())
         self.assertFalse((self.root / "elsewhere.holophyte.db").exists())
+
+
+def a_dead_pid():
+    """A pid the kernel no longer knows: a child that has already been reaped.
+
+    Reuse is possible in principle and negligible in a test's lifetime; the
+    alternative, a pid guessed to be free, is a guess.
+    """
+    child = subprocess.Popen(["true"])
+    child.wait()
+    return child.pid
+
+
+class SuperviseTests(SweepTestCase):
+    """`factory.py --supervise <target>`: one watcher per target, on a timer.
+
+    The loop body is driven with the clock as a parameter, like the sweep it
+    wraps; the lock is exercised with real files in this test's directory;
+    the signal is a real SIGTERM delivered to this process, because a handler
+    that is never invoked proves nothing about clean exit.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.retarget_factory()
+        self.lock = factory.supervisor_lock_path(self.target)
+
+    def supervise(self, wait):
+        """The mode with an injected sleep, and the provider as a tripwire."""
+        out = io.StringIO()
+        with patch.dict(sys.modules,
+                        {"linear_provider": Tripwire("linear_provider")}):
+            with no_network():
+                code = factory.supervise(wait=wait, out=out)
+        return code, out.getvalue()
+
+    def heartbeats(self):
+        return self.conn.execute(
+            "SELECT pid, lastBeat, passes FROM supervisorHeartbeats"
+            " ORDER BY startedAt").fetchall()
+
+    def test_a_second_supervisor_exits_nonzero_naming_the_live_pid(self):
+        """The first holder is a live child of this process -- a process of
+        its own, as a running supervisor is -- and the second start is the
+        mode end to end, as an operator (or a service manager retrying)
+        would run it."""
+        holder = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        factory.acquire_supervisor_lock(self.lock, pid=holder.pid, now=T0)
+        complaint = io.StringIO()
+
+        with patch.object(sys, "stderr", complaint), \
+                self.assertRaises(SystemExit) as exited:
+            factory.cli(["--supervise", str(self.target)])
+
+        self.assertNotEqual(exited.exception.code, 0)
+        self.assertIn(str(holder.pid), str(exited.exception))
+        # And the holder's lock is untouched: a refused starter must not
+        # take the file out from under the supervisor it deferred to.
+        self.assertEqual(factory.read_supervisor_lock(self.lock),
+                         (holder.pid, T0))
+
+    def test_a_lock_naming_no_pid_is_refused_rather_than_guessed_about(self):
+        """Never spawn a rival on one ambiguous probe: an empty lock is a
+        starter that crashed between its create and its write, or something
+        else entirely -- either way not this starter's to remove."""
+        self.lock.write_text("")
+
+        with self.assertRaises(factory.SupervisorHeld) as refused:
+            factory.acquire_supervisor_lock(self.lock, pid=os.getpid(), now=T0)
+
+        self.assertIsNone(refused.exception.pid)
+        self.assertIn(str(self.lock), str(refused.exception))
+        self.assertTrue(self.lock.exists())
+
+    def test_a_stale_lock_is_reclaimed_and_the_supervisor_runs(self):
+        """A dead pid in the lock is a supervisor killed without the chance
+        to clean up. The proof of "runs" is a pass on file under this
+        process's pid, made while the lock named this process."""
+        self.lock.write_text(f"{a_dead_pid()} {T0}\n")
+        held_during_pass = []
+
+        def stop_after_one_pass(_interval):
+            held_during_pass.append(factory.read_supervisor_lock(self.lock))
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        code, printed = self.supervise(stop_after_one_pass)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(held_during_pass[0][0], os.getpid())
+        self.assertEqual([(pid, passes) for pid, _at, passes
+                          in self.heartbeats()], [(os.getpid(), 1)])
+        self.assertIn(f"pid {os.getpid()}", printed)
+
+    def test_two_starters_reclaiming_one_stale_lock_admit_only_one(self):
+        """Both starters read the same dead pid; the rival gets its reclaim
+        and its new lock in *between* this starter's last look at the stale
+        file and its unlink -- the widest window the old inode guard left
+        open. The rival's live lock must survive, and this starter must
+        lose to it, or two supervisors run side by side."""
+        self.lock.write_text(f"{a_dead_pid()} {T0}\n")
+        us, rival = os.getpid(), os.getpid() + 1
+        real_unlink, real_alive = os.unlink, factory.pid_alive
+        rival_outcome, fired = [], []
+
+        def rival_starts():
+            try:
+                rival_outcome.append(
+                    factory.acquire_supervisor_lock(self.lock, pid=rival,
+                                                    now=T0 + 1))
+            except factory.SupervisorHeld as held:
+                rival_outcome.append(held)
+
+        def unlink_with_a_rival_in_the_gap(path, *args, **kwargs):
+            if not fired and Path(path) == self.lock:
+                fired.append(threading.Thread(target=rival_starts))
+                fired[0].start()
+                fired[0].join(0.5)
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(factory, "pid_alive",
+                          lambda pid: pid in (us, rival) or real_alive(pid)), \
+                patch.object(os, "unlink", unlink_with_a_rival_in_the_gap):
+            try:
+                ours = factory.acquire_supervisor_lock(self.lock, pid=us,
+                                                       now=T0)
+            except factory.SupervisorHeld as held:
+                ours = held
+            fired[0].join(5)
+
+        self.assertTrue(fired, "the rival never got its turn in the gap")
+        outcomes = {us: ours, rival: rival_outcome[0]}
+        admitted = [who for who, got in outcomes.items()
+                    if not isinstance(got, Exception)]
+        self.assertEqual(len(admitted), 1, outcomes)
+        # The lock on disk names the one starter that was admitted, and the
+        # other was refused naming exactly that pid.
+        self.assertEqual(factory.read_supervisor_lock(self.lock)[0],
+                         admitted[0])
+        refused = outcomes[rival if admitted == [us] else us]
+        self.assertEqual(refused.pid, admitted[0])
+
+    def test_sigterm_ends_the_loop_cleanly_and_releases_the_lock(self):
+        """A real SIGTERM to this process, delivered while the supervisor is
+        between passes: the loop returns rather than raising, the lock is
+        gone for the next starter, and the handler this process had before
+        is back in place."""
+        before = signal.getsignal(signal.SIGTERM)
+        passes = []
+
+        def stop_on_second_sleep(_interval):
+            passes.append(len(self.heartbeats()))
+            if len(passes) == 2:
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        code, printed = self.supervise(stop_on_second_sleep)
+
+        self.assertEqual(code, 0)
+        self.assertFalse(self.lock.exists())
+        self.assertIs(signal.getsignal(signal.SIGTERM), before)
+        # Two sleeps, two passes, and none after the signal: the flag is read
+        # before each pass, so a signal ends the loop at the next check
+        # rather than one more sweep later.
+        self.assertEqual(self.heartbeats()[0][2], 2)
+        self.assertIn("stopping on signal", printed)
+
+    def test_the_loop_body_sweeps_with_action_and_records_a_heartbeat(self):
+        """The body is `--sweep --act` plus a beat: a run silent across two
+        passes is failed with its lease released, and each pass bumps the
+        supervisor's own row to the instant it swept at."""
+        run_id = self.a_run()
+        self.conn.commit()
+        pid = os.getpid()
+
+        with patch.dict(sys.modules,
+                        {"linear_provider": Tripwire("linear_provider")}):
+            with no_network(), patch.object(sys, "stdout", io.StringIO()):
+                factory.supervise_pass(pid, T0, now=T0 + 6 * MINUTE)
+                factory.supervise_pass(pid, T0, now=T0 + 12 * MINUTE)
+
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT phase, outcome FROM runs WHERE id = ?",
+                (run_id,)).fetchone(), ("failed", "failed"))
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT activeRunId FROM projects").fetchone()[0])
+        self.assertEqual(self.heartbeats(), [(pid, T0 + 12 * MINUTE, 2)])
 
 
 if __name__ == "__main__":
