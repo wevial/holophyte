@@ -295,6 +295,137 @@ class TimeBoxTests(SweepTestCase):
         self.assertEqual(factory.sweep(self.conn, at).trips, [])
 
 
+def finding(path, severity="p1", line=1):
+    return {"path": path, "line": line, "severity": severity,
+            "message": f"something about {path}"}
+
+
+class ReviewStuckTests(SweepTestCase):
+    """The review-stuck trip: two finished rounds whose findings overlap.
+
+    Rounds go in through `store.record_review_round()`, the writer the loop
+    uses, so what is compared is the store's own row and not a fixture's idea
+    of one. Every run here heartbeats at the sweep and sits inside its budget:
+    a stuck review is a trip on a run that is alive and on time.
+    """
+
+    def round(self, run_id, number, findings, at=T0 + MINUTE, ended=True):
+        verdict = "changes_requested" if findings else "pass"
+        store.record_review_round(
+            self.conn, run_id, number, verdict, "reviewer",
+            findings=findings, started_at=at,
+            ended_at=at + MINUTE if ended else None)
+
+    def sweep(self, run_id, at=T0 + 10 * MINUTE):
+        """A sweep at `at` of a run alive at `at`."""
+        self.heartbeat_at(run_id, at)
+        return factory.sweep(self.conn, at)
+
+    def test_two_rounds_sharing_no_findings_do_not_trip(self):
+        """A fix round that cleared every complaint and drew new ones is a
+        review moving, however many findings it has on file."""
+        run_id = self.a_run(phase="addressing")
+        self.round(run_id, 1, [finding("a.py"), finding("b.py")])
+        self.round(run_id, 2, [finding("c.py"), finding("d.py")])
+
+        self.assertEqual(self.sweep(run_id).trips, [])
+
+    def test_two_rounds_with_identical_findings_trip_with_the_overlap(self):
+        run_id = self.a_run(phase="addressing")
+        same = [finding("a.py"), finding("b.py", "p2", line=7)]
+        self.round(run_id, 1, same)
+        self.round(run_id, 2, list(reversed(same)), at=T0 + 3 * MINUTE)
+
+        trip, = self.sweep(run_id).trips
+
+        self.assertEqual(
+            (trip.run_id, trip.ticket, trip.phase, trip.condition),
+            (run_id, "KO-1", "addressing", "review_stuck"))
+        # Both round numbers and the overlap value, so a reader can agree.
+        self.assertIn("rounds 1 and 2", trip.evidence)
+        self.assertIn("1.00", trip.evidence)
+
+    def test_overlap_at_the_threshold_trips_and_below_it_does_not(self):
+        """The threshold is on the Jaccard measure: two of three findings
+        kept is 2/4, which is the line; one of three kept is 1/5, under it."""
+        at_line = self.a_run(phase="reviewing")
+        self.round(at_line, 1, [finding("a.py"), finding("b.py"), finding("c.py")])
+        self.round(at_line, 2, [finding("a.py"), finding("b.py"), finding("d.py")])
+        under = self.a_run(phase="reviewing", project=self.another_project())
+        self.round(under, 1, [finding("a.py"), finding("b.py"), finding("c.py")])
+        self.round(under, 2, [finding("a.py"), finding("d.py"), finding("e.py")])
+        self.heartbeat_at(at_line, T0 + 10 * MINUTE)
+
+        result = self.sweep(under)
+
+        self.assertEqual([(t.run_id, t.condition) for t in result.trips],
+                         [(at_line, "review_stuck")])
+        self.assertIn("0.50", result.trips[0].evidence)
+
+    def test_rounds_with_empty_findings_never_trip(self):
+        """Equal empty sets measure 1.0, and must not read as repetition: a
+        pass after a pass is a review with nothing left to say."""
+        run_id = self.a_run(phase="reviewing")
+        self.round(run_id, 1, [])
+        self.round(run_id, 2, [])
+        one_sided = self.a_run(phase="reviewing", project=self.another_project())
+        self.round(one_sided, 1, [finding("a.py")])
+        self.round(one_sided, 2, [])
+        self.heartbeat_at(run_id, T0 + 10 * MINUTE)
+
+        self.assertEqual(self.sweep(one_sided).trips, [])
+
+    def test_one_round_is_not_compared_against_anything(self):
+        """A healthy run legitimately sits in `reviewing` with round 1 on
+        file, and an unfinished round 2 is not a round yet."""
+        run_id = self.a_run(phase="reviewing")
+        self.round(run_id, 1, [finding("a.py")])
+        self.round(run_id, 2, [finding("a.py")], at=T0 + 3 * MINUTE,
+                   ended=False)
+
+        self.assertEqual(self.sweep(run_id).trips, [])
+
+    def test_a_run_past_its_review_is_not_tripped_by_its_history(self):
+        """Two overlapping rounds are only a stuck review while the run is
+        still in one: a run that got through to merging is not circling."""
+        run_id = self.a_run(phase="merging")
+        self.round(run_id, 1, [finding("a.py")])
+        self.round(run_id, 2, [finding("a.py")], at=T0 + 3 * MINUTE)
+
+        self.assertEqual(self.sweep(run_id).trips, [])
+
+    def test_an_acting_sweep_fails_a_stuck_review_like_any_other_trip(self):
+        """The trip flows through 2/5's close-out unchanged: failed run,
+        released leases, the condition in the run's own stream."""
+        self.retarget_factory()
+        run_id = self.a_run(phase="addressing")
+        self.round(run_id, 1, [finding("a.py")])
+        self.round(run_id, 2, [finding("a.py")], at=T0 + 3 * MINUTE)
+        self.heartbeat_at(run_id, T0 + 10 * MINUTE)
+
+        result = factory.sweep(self.conn, T0 + 10 * MINUTE, act=True)
+
+        self.assertEqual(len(result.trips), 1)
+        phase, outcome, ended, reason = self.conn.execute(
+            "SELECT phase, outcome, endedAt, outcomeReason FROM runs"
+            " WHERE id = ?", (run_id,)).fetchone()
+        self.assertEqual((phase, outcome), ("failed", "failed"))
+        self.assertIsNotNone(ended)
+        self.assertIn("review_stuck", reason)
+        self.assertIn("addressing", reason)
+        (project,) = self.conn.execute(
+            "SELECT activeRunId FROM projects WHERE id = ?",
+            (self.project,)).fetchone()
+        self.assertIsNone(project)
+        self.assertEqual(self.conn.execute(
+            "SELECT activeRunId, lastRunId FROM tickets WHERE id = ?",
+            (self.ticket_of[run_id],)).fetchone(), (None, run_id))
+        (event,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
+            (run_id, factory.SWEEP_EVENT)).fetchall()
+        self.assertIn("rounds 1 and 2", event[0])
+
+
 class NotSweptTests(SweepTestCase):
     """Rows the sweep must leave alone, however old their heartbeats are."""
 
