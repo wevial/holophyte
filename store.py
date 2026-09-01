@@ -347,19 +347,29 @@ def init(conn):
     about, which is harmless, while the reverse is what this repairs.
     """
     conn.executescript(SCHEMA)
-    conn.execute(_INTERVENTIONS_DDL)
-    for table, column, ddl in ADDED_COLUMNS:
-        # A misspelled table name leaves `columns` empty and the ALTER then
-        # raises `no such table`, which is the loud failure this should be.
-        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-        if column not in columns:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
-    # After the ALTERs, not before: a backfill is free to read a column the
-    # step above has only just added.
-    for _repairs, sql in BACKFILLS:
-        conn.execute(sql)
-    _widen_interventions_action(conn)
-    conn.commit()
+    # Everything after the executescript rolls back together on failure: a
+    # migration that died must not leave an open transaction holding its
+    # half-done work, because the next caller's `executescript` would issue
+    # an implicit COMMIT and make the half-state durable — the exact hazard
+    # `_transaction()`'s docstring warns joined writers about.
+    try:
+        conn.execute(_INTERVENTIONS_DDL)
+        for table, column, ddl in ADDED_COLUMNS:
+            # A misspelled table name leaves `columns` empty and the ALTER
+            # then raises `no such table`, the loud failure this should be.
+            columns = {row[1]
+                       for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+        # After the ALTERs, not before: a backfill is free to read a column
+        # the step above has only just added.
+        for _repairs, sql in BACKFILLS:
+            conn.execute(sql)
+        _widen_interventions_action(conn)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 def _widen_interventions_action(conn):
@@ -376,11 +386,28 @@ def _widen_interventions_action(conn):
     the copy, which only re-checks rows against `runs` — rows that were valid
     stay valid.
     """
-    (ddl,) = conn.execute(
+    row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table'"
         " AND name = 'interventions'").fetchone()
-    if "'close_out'" in ddl:
+    if row is None:
+        return  # nothing to widen; the DDL step in init() creates it
+    # Scoped to the action CHECK's own value list, not the whole DDL: the
+    # literal appearing anywhere else (a future comment, a default) must not
+    # skip a rebuild that is still needed.
+    (ddl,) = row
+    if "'close_out'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
         return
+    # The copy runs with foreign keys enforced, so an orphaned row — a
+    # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
+    # would abort the rebuild at the INSERT. Refusing up front instead names
+    # the problem and the fix, and means the copy below cannot half-fail.
+    (orphans,) = conn.execute(
+        "SELECT COUNT(*) FROM interventions i LEFT JOIN runs r"
+        " ON r.id = i.runId WHERE r.id IS NULL").fetchone()
+    if orphans:
+        raise sqlite3.IntegrityError(
+            f"{orphans} interventions row(s) reference runs that do not"
+            " exist; repair them before this store can migrate")
     with _transaction(conn):
         conn.execute("ALTER TABLE interventions RENAME TO interventions_old")
         conn.execute(_INTERVENTIONS_DDL)
@@ -1115,8 +1142,11 @@ def walk_ticket(conn, ticket_id, to_status):
     here that the diagram does not draw — and the KO-146-style repair
     ("ready but the work is merged") is one call instead of a hand-found
     path taken in raw SQL. Already there returns `()`; no path raises
-    `IllegalTransition` and writes nothing (the transaction rolls any
-    partial walk back).
+    `IllegalTransition` before any edge is taken, so nothing is written.
+    A path may transit blocked statuses where the diagram routes through
+    them (`in_flight -> ready` passes `blocked_on_operator`): the walk is
+    §3 legality, and what a transit status *means* stays the caller's
+    judgment.
     """
     if to_status not in TICKET_TRANSITIONS:
         raise IllegalTransition(f"unknown status {to_status!r}")
@@ -1485,7 +1515,8 @@ INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
 
 
 def record_intervention(conn, run_id, action, note, source="human",
-                        trigger="manual", now=None):
+                        trigger="manual", question=None, guidance=None,
+                        now=None):
     """Record one operator/supervisor decision on `run_id`; return its id.
 
     §2 keeps interventions out of runEvents because they are queryable
@@ -1496,6 +1527,12 @@ def record_intervention(conn, run_id, action, note, source="human",
     record-before-acting discipline is one call — and a caller that wants the
     record atomic with the change it describes opens `transaction()` around
     both, which this joins.
+
+    `question` is required for a redirect (§2 pairs the two; a redirect row
+    with nothing asked would be semantically invalid with no way to repair
+    it) and `guidance` carries a human's answer where one exists. `note` is
+    the narrative and deliberately lands in the event stream, not the row:
+    the columns keep their §2 meanings instead of doubling as a notes field.
     """
     if action not in INTERVENTION_ACTIONS:
         raise ValueError(f"unknown intervention action {action!r}")
@@ -1505,6 +1542,10 @@ def record_intervention(conn, run_id, action, note, source="human",
         raise ValueError(f"unknown intervention trigger {trigger!r}")
     if not isinstance(note, str) or not note.strip():
         raise ValueError(f"note must be non-empty text, got {note!r}")
+    if action == "redirect" and (
+            not isinstance(question, str) or not question.strip()):
+        raise ValueError("a redirect records the question it asked;"
+                         f" got {question!r}")
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -1512,9 +1553,10 @@ def record_intervention(conn, run_id, action, note, source="human",
                         (run_id,)).fetchone() is None:
             raise ValueError(f"no run {run_id}")
         cursor = conn.execute(
-            'INSERT INTO interventions (runId, source, "trigger", "action", at)'
-            " VALUES (?, ?, ?, ?, ?)",
-            (run_id, source, trigger, action, now))
+            'INSERT INTO interventions'
+            ' (runId, source, "trigger", "action", question, guidance, at)'
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (run_id, source, trigger, action, question, guidance, now))
         _append_event(conn, run_id, "narrative", "intervention",
                       f"{source} {action}: {note}", now)
     return cursor.lastrowid

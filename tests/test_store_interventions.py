@@ -12,6 +12,7 @@ Run: python3 -m unittest discover -s tests -p 'test_store_interventions*' -v
 """
 from __future__ import annotations
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -78,7 +79,9 @@ class RecordInterventionTests(InterventionFixture):
             'SELECT runId, source, "trigger", "action", at FROM interventions')
         self.assertEqual(row, (self.run, "human", "manual", "close_out",
                                T0 + MINUTE))
-        self.assertIsInstance(rid, int)
+        # The id handed back is the interventions row's, not the runEvent's
+        # — the hazard of reading lastrowid after a second INSERT.
+        self.assertEqual(self.rows("SELECT id FROM interventions"), [(rid,)])
         (summary,) = [s for (s,) in self.rows(
             "SELECT summary FROM runEvents WHERE kind = 'intervention'")]
         self.assertIn("human close_out", summary)
@@ -108,6 +111,31 @@ class RecordInterventionTests(InterventionFixture):
         self.assertEqual(self.rows("SELECT source FROM interventions"),
                          [("supervisor",)])
 
+    def test_a_redirect_requires_and_records_its_question(self):
+        """§2 pairs a redirect with the question it asked; the general
+        writer must not mint a redirect row that cannot say what it asked."""
+        with self.assertRaises(ValueError):
+            store.record_intervention(self.conn, self.run, "redirect",
+                                      "asked without a question")
+        store.record_intervention(
+            self.conn, self.run, "redirect", "asked about scope",
+            trigger="off_criteria", question="is this in scope?")
+
+        self.assertEqual(
+            self.rows('SELECT "action", question FROM interventions'),
+            [("redirect", "is this in scope?")])
+
+    def test_the_python_unions_match_the_database_checks(self):
+        """The constants are a second transcription of the DDL's CHECKs;
+        this holds the two against each other so neither can drift."""
+        (ddl,) = self.rows("SELECT sql FROM sqlite_master"
+                           " WHERE name = 'interventions'")[0]
+        values = [tuple(re.findall(r"'([^']*)'", group)) for group in
+                  re.findall(r"IN \(([^)]*)\)", ddl)]
+        self.assertEqual(values, [store.INTERVENTION_SOURCES,
+                                  store.INTERVENTION_TRIGGERS,
+                                  store.INTERVENTION_ACTIONS])
+
 
 class MigrationTests(InterventionFixture):
     def test_an_older_store_is_rebuilt_to_accept_close_out(self):
@@ -132,6 +160,12 @@ class MigrationTests(InterventionFixture):
             [("resume",), ("close_out",)])
 
     def test_a_second_init_leaves_the_rebuilt_table_alone(self):
+        # On a genuinely *rebuilt* table, not the fresh one setUp made: the
+        # skip must key off the migrated DDL, not off never having migrated.
+        self.conn.execute("DROP TABLE interventions")
+        self.conn.executescript(LEGACY_INTERVENTIONS_TABLE)
+        self.conn.commit()
+        store.init(self.conn)
         before = self.rows("SELECT sql FROM sqlite_master"
                            " WHERE name = 'interventions'")
 
@@ -140,6 +174,32 @@ class MigrationTests(InterventionFixture):
         self.assertEqual(
             self.rows("SELECT sql FROM sqlite_master"
                       " WHERE name = 'interventions'"), before)
+
+    def test_an_orphaned_row_refuses_the_rebuild_and_loses_nothing(self):
+        """A raw-SQL session with foreign keys off (the sqlite3 CLI default,
+        and how the incident's rows were written) can leave an interventions
+        row whose run does not exist. The rebuild must refuse it loudly —
+        and a retry must still see every original row, not a half-migrated
+        table an implicit commit made durable."""
+        self.conn.execute("DROP TABLE interventions")
+        self.conn.executescript(LEGACY_INTERVENTIONS_TABLE)
+        self.conn.execute("PRAGMA foreign_keys = OFF")
+        self.conn.execute(
+            'INSERT INTO interventions (runId, source, "trigger", "action", at)'
+            " VALUES (999, 'human', 'manual', 'resume', ?)", (T0,))
+        self.conn.commit()
+        self.conn.execute("PRAGMA foreign_keys = ON")
+
+        with self.assertRaises(Exception) as caught:
+            store.init(self.conn)
+        with self.assertRaises(Exception):
+            store.init(self.conn)  # the retry fails the same way
+
+        self.assertIn("reference runs", str(caught.exception))
+        self.assertEqual(self.rows('SELECT runId, "action" FROM interventions'),
+                         [(999, "resume")])
+        self.assertEqual(self.rows("SELECT name FROM sqlite_master"
+                                   " WHERE name = 'interventions_old'"), [])
 
 
 class WalkTicketTests(InterventionFixture):
