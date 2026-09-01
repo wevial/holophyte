@@ -469,6 +469,38 @@ class ReviewStuckTests(SweepTestCase):
             "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
             ("failed",))
 
+    def test_reaching_terminal_adjudication_on_the_same_rounds_does_not_acquit(self):
+        """The verdict was reached in `reviewing` on rounds 1 and 2; by the
+        time the sweep acts, the run has been through `addressing` and
+        `verifying` and is back in `reviewing` for its terminal adjudication,
+        with no new round on file because that one has not ended. The
+        adjudication is what the trip exists to spare: the evidence is the
+        same two rounds a fresh sweep would trip on, and the verdict stands."""
+        self.retarget_factory()
+        run_id = self.a_run(phase="reviewing")
+        self.round(run_id, 1, [finding("a.py"), finding("b.py")])
+        self.round(run_id, 2, [finding("a.py"), finding("b.py")],
+                   at=T0 + 3 * MINUTE)
+        self.heartbeat_at(run_id, T0 + 10 * MINUTE)
+        trip, = factory.sweep(self.conn, T0 + 10 * MINUTE).trips
+        self.assertEqual(trip.condition, "review_stuck")
+        for phase in ("addressing", "verifying", "reviewing"):
+            store.set_phase(self.conn, run_id, phase, now=T0 + 11 * MINUTE)
+
+        self.assertTrue(factory.act_on_trip(self.conn, trip))
+        self.assertEqual(self.conn.execute(
+            "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
+            ("failed",))
+        # And a sweep arriving fresh at that moment reads the same run the
+        # same way, so the confirmed verdict changed nothing but the timing.
+        fresh = self.a_run(phase="reviewing", project=self.another_project())
+        self.round(fresh, 1, [finding("a.py"), finding("b.py")])
+        self.round(fresh, 2, [finding("a.py"), finding("b.py")],
+                   at=T0 + 3 * MINUTE)
+        self.heartbeat_at(fresh, T0 + 12 * MINUTE)
+        trip, = factory.sweep(self.conn, T0 + 12 * MINUTE).trips
+        self.assertEqual((trip.run_id, trip.condition), (fresh, "review_stuck"))
+
 
 class NotSweptTests(SweepTestCase):
     """Rows the sweep must leave alone, however old their heartbeats are."""

@@ -2637,7 +2637,11 @@ def still_tripped(conn, trip):
     review has moved and the run is acquitted. If it repeats them, the run
     is the same stuck review with one more round on file, and the verdict
     stands even though the rounds it now rests on are later than the ones
-    the evidence names.
+    the evidence names. And a run that left the phase and came back with no
+    new round -- through `addressing` and `verifying` into its terminal
+    adjudication -- is exactly the run the condition names: the adjudication
+    is what the trip is meant to spare paying for, and a sweep arriving
+    fresh at that moment would trip it on the same two rounds.
     """
     row = conn.execute(
         "SELECT endedAt, phase, lastHeartbeat FROM runs WHERE id = ?",
