@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[3 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-08-30T04:25:21Z — KO-140
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-08-30T04:25:22Z — KO-140
-MERGED to main.
-actual: 15.0 min · estimate: 25 min · rounds: 2
-
-## 2026-08-30T04:35:50Z — KO-141
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[6 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-08-30T04:35:51Z — KO-141
 MERGED to main.
@@ -758,3 +748,15 @@ Round 3: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-01T20:52:51Z — KO-147
 MERGED to main.
 actual: 10.7 min · estimate: 25 min · rounds: 3
+
+## 2026-09-01T21:02:37Z — KO-148
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:3042): Stale-lock reclamation has a TOCTOU race. Two starters can both validate the stale inode; one can unlink it and acquir…
+
+## 2026-09-01T21:07:59Z — KO-148
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-01T21:08:00Z — KO-148
+MERGED to main.
+actual: 15.1 min · estimate: 30 min · rounds: 2
