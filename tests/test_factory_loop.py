@@ -407,6 +407,28 @@ class LoopTests(LoopFixture):
 
         self.assertEqual(self.status(), "blocked_on_operator")
 
+    def test_a_hand_closed_run_is_dispositioned_not_a_carried_strike(self):
+        """The canonical repair records the close_out first and releases the
+        run a clock-read later; whether the run's endedAt lands before or
+        after the row's `at` is jitter, and a run the human dispositioned by
+        hand must not be the strike that re-parks the ticket next time."""
+        self.fail_once()
+        self.offer_again()  # second failure parks it
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        ((last_run,),) = self.read("SELECT MAX(id) FROM runs")
+        t1 = int(time.time() * 1000)
+        store.record_intervention(conn, last_run, "close_out",
+                                  "operator dispositioned the failure",
+                                  now=t1)
+        # The unlucky ordering, pinned explicitly: the release stamped one
+        # millisecond after the intervention's record.
+        conn.execute("UPDATE runs SET endedAt = ? WHERE id = ?",
+                     (t1 + 1, last_run))
+        conn.commit()
+
+        self.assertEqual(factory.failure_history(conn, 1), [])
+
     def test_a_supervisor_intervention_grants_no_amnesty(self):
         """Only a human's recorded touch resets the count: a supervisor
         close-out is the machine talking to itself, and one unblock after
