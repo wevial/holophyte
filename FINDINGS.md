@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-## 2026-08-30T03:57:32Z — KO-139
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-08-30T03:57:33Z — KO-139
-MERGED to main.
-actual: 7.5 min · estimate: 30 min · rounds: 1
-
-## 2026-08-30T04:21:01Z — KO-140
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:1500) returns when the blocked ticket is offered. Because it remains mapped to Linear “Todo” and `claim_next()` always select…
+[3 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-08-30T04:25:21Z — KO-140
 Round 2: pass · reviewer codex-sol-medium · verify passed
@@ -751,3 +741,20 @@ actual: 0.0 min · estimate: 25 min · rounds: 0
 ## 2026-08-31T16:43:32Z — KO-146
 FAILED: orphaned: host process reaped externally during round-2 fixes on 2026-08-30; worktree was preserved with uncommitted round-2 work, rescued and merged by hand as 6d68ec4; run closed out by operator repair via store.release() on 2026-08-31
 actual: 1339.2 min · estimate: 25 min · rounds: 1
+
+## 2026-09-01T20:46:47Z — KO-147
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py:2632 [p2] [factory.py:2632](/workspace/factory.py:2632): `still_tripped()` does not re-evaluate `review_stuck`. If a new completed round clears the overlap while the run…
+
+## 2026-09-01T20:49:33Z — KO-147
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:2648): `still_tripped()` can fail a progressing run that returns to the same `reviewing` phase. After classification on round…
+
+## 2026-09-01T20:52:50Z — KO-147
+Round 3: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-01T20:52:51Z — KO-147
+MERGED to main.
+actual: 10.7 min · estimate: 25 min · rounds: 3
