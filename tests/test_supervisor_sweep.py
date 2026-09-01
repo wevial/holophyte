@@ -26,6 +26,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -1019,6 +1020,54 @@ class SuperviseTests(SweepTestCase):
         self.assertEqual([(pid, passes) for pid, _at, passes
                           in self.heartbeats()], [(os.getpid(), 1)])
         self.assertIn(f"pid {os.getpid()}", printed)
+
+    def test_two_starters_reclaiming_one_stale_lock_admit_only_one(self):
+        """Both starters read the same dead pid; the rival gets its reclaim
+        and its new lock in *between* this starter's last look at the stale
+        file and its unlink -- the widest window the old inode guard left
+        open. The rival's live lock must survive, and this starter must
+        lose to it, or two supervisors run side by side."""
+        self.lock.write_text(f"{a_dead_pid()} {T0}\n")
+        us, rival = os.getpid(), os.getpid() + 1
+        real_unlink, real_alive = os.unlink, factory.pid_alive
+        rival_outcome, fired = [], []
+
+        def rival_starts():
+            try:
+                rival_outcome.append(
+                    factory.acquire_supervisor_lock(self.lock, pid=rival,
+                                                    now=T0 + 1))
+            except factory.SupervisorHeld as held:
+                rival_outcome.append(held)
+
+        def unlink_with_a_rival_in_the_gap(path, *args, **kwargs):
+            if not fired and Path(path) == self.lock:
+                fired.append(threading.Thread(target=rival_starts))
+                fired[0].start()
+                fired[0].join(0.5)
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(factory, "pid_alive",
+                          lambda pid: pid in (us, rival) or real_alive(pid)), \
+                patch.object(os, "unlink", unlink_with_a_rival_in_the_gap):
+            try:
+                ours = factory.acquire_supervisor_lock(self.lock, pid=us,
+                                                       now=T0)
+            except factory.SupervisorHeld as held:
+                ours = held
+            fired[0].join(5)
+
+        self.assertTrue(fired, "the rival never got its turn in the gap")
+        outcomes = {us: ours, rival: rival_outcome[0]}
+        admitted = [who for who, got in outcomes.items()
+                    if not isinstance(got, Exception)]
+        self.assertEqual(len(admitted), 1, outcomes)
+        # The lock on disk names the one starter that was admitted, and the
+        # other was refused naming exactly that pid.
+        self.assertEqual(factory.read_supervisor_lock(self.lock)[0],
+                         admitted[0])
+        refused = outcomes[rival if admitted == [us] else us]
+        self.assertEqual(refused.pid, admitted[0])
 
     def test_sigterm_ends_the_loop_cleanly_and_releases_the_lock(self):
         """A real SIGTERM to this process, delivered while the supervisor is

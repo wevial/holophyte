@@ -28,6 +28,8 @@ stop.
 """
 import argparse
 import collections
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -3005,6 +3007,23 @@ def read_supervisor_lock(path):
     return pid, started_at
 
 
+@contextlib.contextmanager
+def reclaim_turn(path):
+    """Hold the reclaim sidecar of the lock at `path` for the block's span.
+
+    A blocking flock on `<path>.reclaim`, which is never unlinked so every
+    starter locks the same inode. It orders reclaims only; the lock itself
+    stays the exclusive create, so a starter that never has to reclaim never
+    touches the sidecar.
+    """
+    fd = os.open(f"{path}.reclaim", os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def acquire_supervisor_lock(path, pid=None, now=None):
     """Take the supervisor lock at `path` for `pid`; raise `SupervisorHeld`.
 
@@ -3013,40 +3032,49 @@ def acquire_supervisor_lock(path, pid=None, now=None):
     reads the lock the winner wrote and finds a live pid. A lock left by a
     dead supervisor is reclaimed -- unlinked, then created again through the
     same exclusive door, so a reclaim that loses a race to another starter
-    loses the way any second starter does -- and the unlink is guarded by the
-    inode read from, so a lock a rival has just created in the same place is
-    not removed by a starter that read the stale one a moment earlier. A lock
-    naming this very pid is the stale case too: a supervisor is not its own
-    rival, and a pid comes round again. Only one reclaim is attempted,
-    because a second failure is a second starter, not a second stale lock.
+    loses the way any second starter does. The reclaim itself -- read the
+    holder, judge it dead, unlink -- runs under an flock on a sidecar beside
+    the lock, so two starters that both read the same dead pid take turns:
+    the second finds, once its turn comes, the live lock the first has just
+    written, and is refused by it. (An inode compared before the unlink is
+    not that guard: between the comparison and the unlink a rival can have
+    reclaimed and re-created the file, and the unlink then takes the rival's
+    live lock.) A lock naming this very pid is the stale case too: a
+    supervisor is not its own rival, and a pid comes round again. Only one
+    reclaim is attempted, because a create that fails after it is a starter
+    that never needed a turn, not a second stale lock.
     """
     path = Path(path)
     pid = os.getpid() if pid is None else pid
     now = int(time() * 1000) if now is None else now
-    for _attempt in range(2):
+
+    def created():
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
-            try:
-                seen = os.stat(path).st_ino
-            except FileNotFoundError:
-                # Gone between the create and the stat: whoever held it
-                # released it, and the next create is the arbitration again.
-                continue
-            holder = read_supervisor_lock(path)
-            if holder is None:
-                raise SupervisorHeld(path)
+            return False
+        with os.fdopen(fd, "w") as fh:
+            fh.write(f"{pid} {now}\n")
+        return True
+
+    if created():
+        return path
+    with reclaim_turn(path):
+        holder = read_supervisor_lock(path)
+        if holder is None and path.exists():
+            raise SupervisorHeld(path)
+        if holder is not None:
             if holder[0] != pid and pid_alive(holder[0]):
                 raise SupervisorHeld(path, *holder)
             try:
-                if os.stat(path).st_ino == seen:
-                    os.unlink(path)
+                os.unlink(path)
             except FileNotFoundError:
                 pass
-            continue
-        with os.fdopen(fd, "w") as fh:
-            fh.write(f"{pid} {now}\n")
-        return path
+        # Created (and written) before the turn is given up, so the starter
+        # waiting for it reads a whole lock, never the empty file between a
+        # create and its write.
+        if created():
+            return path
     holder = read_supervisor_lock(path)
     raise SupervisorHeld(path, *(holder or ()))
 

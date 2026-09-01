@@ -115,8 +115,10 @@ clean. One supervisor per target: the first takes
 exclusive create and writes its pid into it; a second `--supervise` for the
 same target exits non-zero naming that pid. A lock whose pid is dead is a
 supervisor that was killed without the chance to clean up, and is reclaimed
-on the next start. A lock that names no pid at all is not guessed about:
-the start refuses and says which file to look at.
+on the next start; reclaims take turns under an flock on the sidecar
+`<repo>.holophyte.supervisor.lock.reclaim`, which is left in place. A lock
+that names no pid at all is not guessed about: the start refuses and says
+which file to look at.
 
 Each pass bumps the process's row in the store's `supervisorHeartbeats`
 table, so whether the watcher is still watching is a query rather than a
