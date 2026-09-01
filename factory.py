@@ -2053,17 +2053,45 @@ MAX_FAILED_RUNS = 2
 
 
 def failure_history(conn, ticket_id):
-    """The ticket's failed runs, oldest first, as `(attempt, reason)` rows.
+    """The ticket's failed runs since a human last intervened, oldest first.
 
-    One query for both halves of the escalation: its length is what trips the
-    threshold and its reasons are what the human is told. Reading them
-    together is what stops the comment from listing a different set of runs
-    from the one that blocked the ticket.
+    One query for both halves of the escalation, as `(attempt, reason)` rows:
+    its length is what trips the threshold and its reasons are what the human
+    is told. Reading them together is what stops the comment from listing a
+    different set of runs from the one that blocked the ticket.
+
+    Bounded on the left by the newest `source='human'` interventions row on
+    any of the ticket's runs. A recorded human action (a resume, an operator
+    close-out) is a human taking the ticket back: the failures before it are
+    that human's accepted history, not evidence the loop should keep
+    re-parking on — so one unblock buys a fresh MAX_FAILED_RUNS rather than
+    exactly one attempt forever. A board drag writes no interventions row
+    and so — deliberately, per the escalation's original rule (69fe923) —
+    forgives nothing; a `source='supervisor'` row grants no amnesty either
+    (none is written today — the exclusion is a deliberate boundary, not a
+    description of existing rows).
+
+    Two bounds, because timestamps alone cannot draw this line. Failures are
+    bounded by `endedAt` against the newest human row's `at`, so a failure
+    after the human acted counts. And a failed run carrying a human
+    `close_out` row of its own is excluded *by identity*: the canonical
+    repair records the close-out first and releases the run a clock-read
+    later, so whether that run's `endedAt` lands before or after the row's
+    `at` is jitter — and a run the human has dispositioned by hand must not
+    be the strike that re-parks the ticket on its next failure.
     """
+    (since,) = conn.execute(
+        "SELECT COALESCE(MAX(i.at), 0) FROM interventions i"
+        " JOIN runs r ON r.id = i.runId"
+        " WHERE r.ticketId = ? AND i.source = 'human'",
+        (ticket_id,)).fetchone()
     return conn.execute(
-        "SELECT attempt, outcomeReason FROM runs"
-        " WHERE ticketId = ? AND outcome = 'failed' ORDER BY attempt",
-        (ticket_id,)).fetchall()
+        "SELECT attempt, outcomeReason FROM runs r"
+        " WHERE ticketId = ? AND outcome = 'failed' AND endedAt > ?"
+        " AND NOT EXISTS (SELECT 1 FROM interventions i"
+        "                 WHERE i.runId = r.id AND i.source = 'human'"
+        "                 AND i.\"action\" = 'close_out')"
+        " ORDER BY attempt", (ticket_id, since)).fetchall()
 
 
 def escalation_comment(history):
@@ -2075,9 +2103,11 @@ def escalation_comment(history):
     account of the failures, and a run that ended with nothing recorded says
     so rather than being left off the list.
     """
-    lines = [f"**Blocked after {len(history)} failed runs.** The factory will"
-             " not claim this ticket again until a human moves it out of this"
-             " state. What each attempt ended on:", ""]
+    lines = [f"**Blocked after {len(history)} failed runs.** Counted since"
+             " the last recorded human intervention, if any; attempt numbers"
+             " are lifetime. The factory will not claim this ticket again"
+             " until a human moves it out of this state. What each counted"
+             " attempt ended on:", ""]
     lines += [f"- attempt {attempt}: {reason or 'no reason recorded'}"
               for attempt, reason in history]
     return "\n".join(lines)
@@ -2125,8 +2155,9 @@ def escalate(conn, ticket_id, provider=None):
     # blocked_on_operator"), so a supervisor reading the store can see what is
     # being waited on without going to Linear for it.
     conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
-                 (f"{len(history)} runs failed on this ticket and the factory"
-                  " stopped claiming it; a human decides what happens next.",
+                 (f"{len(history)} runs failed on this ticket since the last"
+                  " recorded human intervention and the factory stopped"
+                  " claiming it; a human decides what happens next.",
                   ticket_id))
     conn.commit()
     if provider is None:

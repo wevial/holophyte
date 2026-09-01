@@ -299,10 +299,16 @@ class LoopTests(LoopFixture):
 
     # --- failure-pattern escalation --------------------------------------
 
-    def fail_once(self):
-        """Drive one whole run of the ticket that ends in a terminal FAIL."""
-        self.loop(Commit("first cut"), REQUEST_CHANGES, Commit("fix round 1"),
-                  REQUEST_CHANGES, Commit("fix round 2"), FAIL)
+    def fail_once(self, tag="first"):
+        """Drive one whole run of the ticket that ends in a terminal FAIL.
+
+        `tag` keeps a rerun's scripted commits distinct: a run after an
+        unblock reuses the preserved worktree, and re-writing identical
+        files would leave the scripted `git commit` nothing to commit.
+        """
+        self.loop(Commit(f"{tag} cut"), REQUEST_CHANGES,
+                  Commit(f"{tag} fix round 1"), REQUEST_CHANGES,
+                  Commit(f"{tag} fix round 2"), FAIL)
 
     def offer_again(self):
         """Offer the same ticket back, as a stale board does. No agent turns.
@@ -368,6 +374,71 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.attempts(), blocked_at)  # nothing was claimed
         self.assertEqual(provider.states, [])
         self.assertEqual(provider.comments, [])
+        self.assertEqual(self.status(), "blocked_on_operator")
+
+    def intervene(self, source):
+        """A recorded intervention on the ticket's newest run, then the §3
+        walk back to claimable — the in-band unblock, as an operator does it
+        through the store API."""
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        ((last_run,),) = self.read("SELECT MAX(id) FROM runs")
+        store.record_intervention(
+            conn, last_run, "close_out",
+            "reviewed the failures and released the ticket", source=source)
+        store.walk_ticket(conn, 1, "ready")
+
+    def test_a_recorded_human_intervention_grants_a_fresh_count(self):
+        """69fe923's rule stands for board drags — they write no rows and
+        forgive nothing — but a *recorded* human intervention is a human
+        taking the ticket back: the failures before it are that human's
+        accepted history, so one unblock buys a fresh MAX_FAILED_RUNS
+        rather than exactly one attempt forever (the KO-146 incident left
+        the ticket carrying 4 permanent strikes, none its own fault)."""
+        self.fail_once()
+        self.offer_again()  # second failure parks it
+        self.intervene("human")
+
+        self.fail_once("retry")  # first failure since the human acted
+
+        self.assertEqual(self.status(), "in_flight")  # not re-parked
+
+        self.offer_again()  # second failure since: the pattern is back
+
+        self.assertEqual(self.status(), "blocked_on_operator")
+
+    def test_a_hand_closed_run_is_dispositioned_not_a_carried_strike(self):
+        """The canonical repair records the close_out first and releases the
+        run a clock-read later; whether the run's endedAt lands before or
+        after the row's `at` is jitter, and a run the human dispositioned by
+        hand must not be the strike that re-parks the ticket next time."""
+        self.fail_once()
+        self.offer_again()  # second failure parks it
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        ((last_run,),) = self.read("SELECT MAX(id) FROM runs")
+        t1 = int(time.time() * 1000)
+        store.record_intervention(conn, last_run, "close_out",
+                                  "operator dispositioned the failure",
+                                  now=t1)
+        # The unlucky ordering, pinned explicitly: the release stamped one
+        # millisecond after the intervention's record.
+        conn.execute("UPDATE runs SET endedAt = ? WHERE id = ?",
+                     (t1 + 1, last_run))
+        conn.commit()
+
+        self.assertEqual(factory.failure_history(conn, 1), [])
+
+    def test_a_supervisor_intervention_grants_no_amnesty(self):
+        """Only a human's recorded touch resets the count: a supervisor
+        close-out is the machine talking to itself, and one unblock after
+        it still buys exactly one attempt."""
+        self.fail_once()
+        self.offer_again()
+        self.intervene("supervisor")
+
+        self.fail_once("retry")
+
         self.assertEqual(self.status(), "blocked_on_operator")
 
     def test_a_blocked_ticket_is_skipped_rather_than_stopped_on(self):
