@@ -189,22 +189,6 @@ CREATE TABLE IF NOT EXISTS runEvents (
     UNIQUE (runId, seq)
 );
 
--- interventions: supervisor/human actions on a run (state-model §2). Kept
--- out of runEvents because these are queryable decisions, not log lines.
-CREATE TABLE IF NOT EXISTS interventions (
-    id        INTEGER PRIMARY KEY,
-    runId     INTEGER NOT NULL REFERENCES runs (id),
-    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human')),
-    "trigger" TEXT    NOT NULL
-        CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
-                             'review_stuck', 'linear_cancelled', 'manual')),
-    "action"  TEXT    NOT NULL
-        CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume')),
-    question  TEXT,  -- for redirect
-    guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
-    at        INTEGER NOT NULL
-);
-
 -- sweepStrikes: the supervisor sweep's per-run liveness tally. Not a
 -- state-model table: a single stale-heartbeat sample false-positives on a
 -- load spike (v1 TUI mining), so a run must be seen silent by two
@@ -228,6 +212,28 @@ CREATE TABLE IF NOT EXISTS linearDeliveries (
     processedAt INTEGER NOT NULL
 );
 """
+
+# interventions: supervisor/human actions on a run (state-model §2). Kept out
+# of runEvents because these are queryable decisions, not log lines. Defined
+# outside SCHEMA because `_widen_interventions_action()` below rebuilds an
+# older store's table from this exact DDL — a rebuild transcribed by hand
+# could drift from the schema, and then a migrated store and a fresh one
+# would disagree about what the table accepts.
+_INTERVENTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS interventions (
+    id        INTEGER PRIMARY KEY,
+    runId     INTEGER NOT NULL REFERENCES runs (id),
+    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human')),
+    "trigger" TEXT    NOT NULL
+        CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
+                             'review_stuck', 'linear_cancelled', 'manual')),
+    "action"  TEXT    NOT NULL
+        CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
+                            'close_out')),
+    question  TEXT,  -- for redirect
+    guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
+    at        INTEGER NOT NULL
+)"""
 
 
 def open(path):  # noqa: A001 - the ticket names this entry point open()
@@ -341,17 +347,73 @@ def init(conn):
     about, which is harmless, while the reverse is what this repairs.
     """
     conn.executescript(SCHEMA)
-    for table, column, ddl in ADDED_COLUMNS:
-        # A misspelled table name leaves `columns` empty and the ALTER then
-        # raises `no such table`, which is the loud failure this should be.
-        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-        if column not in columns:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
-    # After the ALTERs, not before: a backfill is free to read a column the
-    # step above has only just added.
-    for _repairs, sql in BACKFILLS:
-        conn.execute(sql)
-    conn.commit()
+    # Everything after the executescript rolls back together on failure: a
+    # migration that died must not leave an open transaction holding its
+    # half-done work, because the next caller's `executescript` would issue
+    # an implicit COMMIT and make the half-state durable — the exact hazard
+    # `_transaction()`'s docstring warns joined writers about.
+    try:
+        conn.execute(_INTERVENTIONS_DDL)
+        for table, column, ddl in ADDED_COLUMNS:
+            # A misspelled table name leaves `columns` empty and the ALTER
+            # then raises `no such table`, the loud failure this should be.
+            columns = {row[1]
+                       for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+        # After the ALTERs, not before: a backfill is free to read a column
+        # the step above has only just added.
+        for _repairs, sql in BACKFILLS:
+            conn.execute(sql)
+        _widen_interventions_action(conn)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+
+
+def _widen_interventions_action(conn):
+    """Rebuild `interventions` when its action CHECK predates 'close_out'.
+
+    `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
+    cannot ALTER a CHECK, so a store initialized before the value shipped
+    would refuse the row forever — which is how the KO-146 incident ended in
+    raw SQL and four falsely-labeled 'resume' rows. The stored DDL says which
+    world this store is from; the rebuild is the standard rename-copy-drop
+    from `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store
+    and a second call both skip it. The column list is unchanged, so existing
+    rows are carried verbatim; `runId`'s foreign key stays enforced through
+    the copy, which only re-checks rows against `runs` — rows that were valid
+    stay valid.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table'"
+        " AND name = 'interventions'").fetchone()
+    if row is None:
+        return  # nothing to widen; the DDL step in init() creates it
+    # Scoped to the action CHECK's own value list, not the whole DDL: the
+    # literal appearing anywhere else (a future comment, a default) must not
+    # skip a rebuild that is still needed.
+    (ddl,) = row
+    if "'close_out'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
+        return
+    # The copy runs with foreign keys enforced, so an orphaned row — a
+    # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
+    # would abort the rebuild at the INSERT. Refusing up front instead names
+    # the problem and the fix, and means the copy below cannot half-fail.
+    (orphans,) = conn.execute(
+        "SELECT COUNT(*) FROM interventions i LEFT JOIN runs r"
+        " ON r.id = i.runId WHERE r.id IS NULL").fetchone()
+    if orphans:
+        raise sqlite3.IntegrityError(
+            f"{orphans} interventions row(s) reference runs that do not"
+            " exist; repair them before this store can migrate")
+    with _transaction(conn):
+        conn.execute("ALTER TABLE interventions RENAME TO interventions_old")
+        conn.execute(_INTERVENTIONS_DDL)
+        conn.execute(
+            "INSERT INTO interventions SELECT * FROM interventions_old")
+        conn.execute("DROP TABLE interventions_old")
 
 
 @contextlib.contextmanager
@@ -1057,6 +1119,55 @@ def transition(conn, ticket_id, to_status):
     return from_status
 
 
+def _status_path(from_status, to_status):
+    """Shortest §3 path as the statuses to walk through, or None."""
+    frontier, seen = [(from_status, ())], {from_status}
+    while frontier:
+        status, path = frontier.pop(0)
+        for nxt in sorted(TICKET_TRANSITIONS[status]):
+            if nxt == to_status:
+                return (*path, nxt)
+            if nxt not in seen:
+                seen.add(nxt)
+                frontier.append((nxt, (*path, nxt)))
+    return None
+
+
+def walk_ticket(conn, ticket_id, to_status):
+    """Move `ticket_id` to `to_status` along §3 edges; return the path taken.
+
+    The operator's `transition()`. The diagram stays the only authority: the
+    walk is a shortest path over `TICKET_TRANSITIONS` taken edge by edge
+    through `transition()` inside one `_transaction()`, so no edge exists
+    here that the diagram does not draw — and the KO-146-style repair
+    ("ready but the work is merged") is one call instead of a hand-found
+    path taken in raw SQL. Already there returns `()`; no path raises
+    `IllegalTransition` before any edge is taken, so nothing is written.
+    A path may transit blocked statuses where the diagram routes through
+    them (`in_flight -> ready` passes `blocked_on_operator`): the walk is
+    §3 legality, and what a transit status *means* stays the caller's
+    judgment.
+    """
+    if to_status not in TICKET_TRANSITIONS:
+        raise IllegalTransition(f"unknown status {to_status!r}")
+    with _transaction(conn):
+        row = conn.execute("SELECT status FROM tickets WHERE id = ?",
+                           (ticket_id,)).fetchone()
+        if row is None:
+            raise IllegalTransition(f"ticket {ticket_id} does not exist")
+        (from_status,) = row
+        if from_status == to_status:
+            return ()
+        path = _status_path(from_status, to_status)
+        if path is None:
+            raise IllegalTransition(
+                f"ticket {ticket_id}: no §3 path from {from_status}"
+                f" to {to_status}")
+        for status in path:
+            transition(conn, ticket_id, status)
+    return path
+
+
 def mirror_ticket(
     conn,
     project_id,
@@ -1391,6 +1502,64 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
             (run_id, source, guidance, now),
         )
     return target
+
+
+# §2's intervention unions, transcribed from `_INTERVENTIONS_DDL` so a caller
+# can validate before the INSERT answers with a constraint name instead of
+# the value that was wrong. The schema test holds these against the database.
+INTERVENTION_SOURCES = ("supervisor", "human")
+INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
+                         "review_stuck", "linear_cancelled", "manual")
+INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
+                        "close_out")
+
+
+def record_intervention(conn, run_id, action, note, source="human",
+                        trigger="manual", question=None, guidance=None,
+                        now=None):
+    """Record one operator/supervisor decision on `run_id`; return its id.
+
+    §2 keeps interventions out of runEvents because they are queryable
+    decisions — but the only writer was `resume()`, so every other human
+    action was either unrecorded or falsely recorded as a resume (the KO-146
+    incident's four mislabeled rows). This is the general writer: the row and
+    a narrative runEvent carrying `note` land in one `_transaction()`, so the
+    record-before-acting discipline is one call — and a caller that wants the
+    record atomic with the change it describes opens `transaction()` around
+    both, which this joins.
+
+    `question` is required for a redirect (§2 pairs the two; a redirect row
+    with nothing asked would be semantically invalid with no way to repair
+    it) and `guidance` carries a human's answer where one exists. `note` is
+    the narrative and deliberately lands in the event stream, not the row:
+    the columns keep their §2 meanings instead of doubling as a notes field.
+    """
+    if action not in INTERVENTION_ACTIONS:
+        raise ValueError(f"unknown intervention action {action!r}")
+    if source not in INTERVENTION_SOURCES:
+        raise ValueError(f"unknown intervention source {source!r}")
+    if trigger not in INTERVENTION_TRIGGERS:
+        raise ValueError(f"unknown intervention trigger {trigger!r}")
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError(f"note must be non-empty text, got {note!r}")
+    if action == "redirect" and (
+            not isinstance(question, str) or not question.strip()):
+        raise ValueError("a redirect records the question it asked;"
+                         f" got {question!r}")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        if conn.execute("SELECT 1 FROM runs WHERE id = ?",
+                        (run_id,)).fetchone() is None:
+            raise ValueError(f"no run {run_id}")
+        cursor = conn.execute(
+            'INSERT INTO interventions'
+            ' (runId, source, "trigger", "action", question, guidance, at)'
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (run_id, source, trigger, action, question, guidance, now))
+        _append_event(conn, run_id, "narrative", "intervention",
+                      f"{source} {action}: {note}", now)
+    return cursor.lastrowid
 
 
 # §2's severity union, transcribed. Checked here because `reviewRounds.findings`
