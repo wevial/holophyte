@@ -425,6 +425,50 @@ class ReviewStuckTests(SweepTestCase):
             (run_id, factory.SWEEP_EVENT)).fetchall()
         self.assertIn("rounds 1 and 2", event[0])
 
+    def test_a_round_that_converged_since_the_verdict_acquits_the_run(self):
+        """The verdict was reached on rounds 1 and 2; by the time the sweep
+        acts, round 3 has ended and cleared the overlap. The run went through
+        `addressing` and back, so it sits in the phase the trip named -- the
+        phase check alone would fail a review that has just moved."""
+        self.retarget_factory()
+        run_id = self.a_run(phase="reviewing")
+        self.round(run_id, 1, [finding("a.py"), finding("b.py")])
+        self.round(run_id, 2, [finding("a.py"), finding("b.py")],
+                   at=T0 + 3 * MINUTE)
+        self.heartbeat_at(run_id, T0 + 10 * MINUTE)
+        trip, = factory.sweep(self.conn, T0 + 10 * MINUTE).trips
+        self.assertEqual(trip.condition, "review_stuck")
+        # The loop's own process, in the gap after the verdict committed.
+        self.round(run_id, 3, [finding("c.py")], at=T0 + 11 * MINUTE)
+
+        acted = factory.act_on_trip(self.conn, trip)
+
+        self.assertFalse(acted)
+        self.assertEqual(self.conn.execute(
+            "SELECT phase, endedAt FROM runs WHERE id = ?",
+            (run_id,)).fetchone(), ("reviewing", None))
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM runEvents WHERE runId = ? AND kind = ?",
+            (run_id, factory.SWEEP_EVENT)).fetchone(), (0,))
+
+    def test_a_round_that_still_overlaps_since_the_verdict_does_not_acquit(self):
+        """The converse: a round 3 that repeats round 2 is the same stuck
+        review with one more round on file, and the verdict stands."""
+        self.retarget_factory()
+        run_id = self.a_run(phase="reviewing")
+        self.round(run_id, 1, [finding("a.py"), finding("b.py")])
+        self.round(run_id, 2, [finding("a.py"), finding("b.py")],
+                   at=T0 + 3 * MINUTE)
+        self.heartbeat_at(run_id, T0 + 10 * MINUTE)
+        trip, = factory.sweep(self.conn, T0 + 10 * MINUTE).trips
+        self.round(run_id, 3, [finding("a.py"), finding("b.py")],
+                   at=T0 + 11 * MINUTE)
+
+        self.assertTrue(factory.act_on_trip(self.conn, trip))
+        self.assertEqual(self.conn.execute(
+            "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
+            ("failed",))
+
 
 class NotSweptTests(SweepTestCase):
     """Rows the sweep must leave alone, however old their heartbeats are."""

@@ -2629,10 +2629,15 @@ def still_tripped(conn, trip):
     however long it was quiet before. A blown time box asks the opposite --
     an overrunning run heartbeats, that is what makes it an overrun rather
     than a death -- so a fresh beat is no acquittal there and is not treated
-    as one. A stuck review is the same kind: the run is alive and circling,
-    and only the phase check matters -- a run that has moved on to another
-    phase since the verdict is compared again by the next sweep, against
-    whatever rounds it has by then.
+    as one. A stuck review is alive too, so its heartbeat says nothing; what
+    it asks instead is that the overlap still holds, recomputed over whatever
+    rounds are on file now. The phase alone cannot tell: a run that went
+    through `addressing` and back has a new finished round and the phase the
+    verdict named, and if that round cleared the reviewer's complaints the
+    review has moved and the run is acquitted. If it repeats them, the run
+    is the same stuck review with one more round on file, and the verdict
+    stands even though the rounds it now rests on are later than the ones
+    the evidence names.
     """
     row = conn.execute(
         "SELECT endedAt, phase, lastHeartbeat FROM runs WHERE id = ?",
@@ -2642,7 +2647,13 @@ def still_tripped(conn, trip):
     ended_at, phase, heartbeat = row
     if ended_at is not None or phase != trip.phase:
         return False
-    return trip.condition != STALE_HEARTBEAT or heartbeat == trip.heartbeat
+    if trip.condition == STALE_HEARTBEAT:
+        return heartbeat == trip.heartbeat
+    if trip.condition == REVIEW_STUCK:
+        overlap = review_overlap(conn, trip.run_id)
+        return (overlap is not None
+                and overlap[2] >= REVIEW_OVERLAP_THRESHOLD)
+    return True
 
 
 def act_on_trip(conn, trip, provider=None):
