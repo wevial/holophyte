@@ -55,3 +55,44 @@ worktree and merged only after mechanical verification and independent review.
 - Model/harness routing is an explicit factory policy: live-probe the exact
   configured CLI/provider/model path before dispatching a task, and do not
   silently substitute a model or harness when a route fails.
+
+## Operator protocol
+
+- **Escalation ladder, in order.** When the factory is stuck: (1)
+  relaunch/unblock through the factory's legal paths; (2) `factory.py
+  <repo> --sweep`, then `--sweep --act` once a trip is confirmed; (3)
+  store *API* calls from a Python REPL (`release`, `resume`,
+  `transition`, `record_intervention`, `walk_ticket`); (4) raw SQL only
+  where no API exists — and then only paired with a ticket for the
+  missing API, filed the same day. Never skip a rung downward.
+- **A stuck or refused lease is a `--sweep` question, not a SQL
+  question.** The first response to "lease already held by run N" is a
+  read-only `--sweep` (the loop now runs one at startup and prints it);
+  the second, after the strike interval confirms silence, is
+  `--sweep --act`. Hand-editing `runs`/`projects` to free a lease is
+  prohibited now that the sweep exists.
+- **Two relaunches, then diagnose.** At most two relaunches against the
+  same infrastructure failure. The third response is a written diagnosis
+  and plan, not another relaunch.
+- **Record before acting.** Every out-of-band state change gets its
+  interventions row (`store.record_intervention()`, action `close_out`
+  for a close-out — never a mislabeled `resume`) or at minimum a
+  runEvent *before* the write, in the same transaction where possible,
+  with truthful action semantics and real timestamps — `act_on_trip()`'s
+  confirm-callback is the house style. Backdating or mislabeling a
+  record is worse than no record.
+- **Manual merge to main is a named event with a gate — and an
+  ask-first boundary.** Requirements: suite green, ruff clean, an
+  independent review pass over the final branch state (the loop's gate
+  is verify *and* approve — substitute the reviewer, never skip it),
+  `--no-ff` with a message naming the why, and store + Linear walked to
+  their terminal states in the same sitting (`store.walk_ticket()`),
+  FINDINGS window committed. When the human is present or watching: ask
+  before the first out-of-band state edit and always before a manual
+  merge to main. When absent: freeing a work-blocking lease and
+  preserving at-risk work (stash rescue) are authorized — reversible,
+  additive — with the merge question parked `blocked_on_operator` until
+  they return.
+- **Close the loop afterwards.** Reconcile every touched surface (store
+  status, board status, FINDINGS, branches/stashes) before ending the
+  incident, and file one ticket per gap the incident revealed.
