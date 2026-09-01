@@ -2053,17 +2053,33 @@ MAX_FAILED_RUNS = 2
 
 
 def failure_history(conn, ticket_id):
-    """The ticket's failed runs, oldest first, as `(attempt, reason)` rows.
+    """The ticket's failed runs since a human last intervened, oldest first.
 
-    One query for both halves of the escalation: its length is what trips the
-    threshold and its reasons are what the human is told. Reading them
-    together is what stops the comment from listing a different set of runs
-    from the one that blocked the ticket.
+    One query for both halves of the escalation, as `(attempt, reason)` rows:
+    its length is what trips the threshold and its reasons are what the human
+    is told. Reading them together is what stops the comment from listing a
+    different set of runs from the one that blocked the ticket.
+
+    Bounded on the left by the newest `source='human'` interventions row on
+    any of the ticket's runs. A recorded human action (a resume, an operator
+    close-out) is a human taking the ticket back: the failures before it are
+    that human's accepted history, not evidence the loop should keep
+    re-parking on — so one unblock buys a fresh MAX_FAILED_RUNS rather than
+    exactly one attempt forever. A board drag writes no interventions row
+    and so — deliberately, per the escalation's original rule (69fe923) —
+    forgives nothing; a supervisor's rows are the machine talking to itself
+    and grant no amnesty either. Failures are bounded by `endedAt`: a
+    resumed run that fails again failed *after* the human acted, and counts.
     """
+    (since,) = conn.execute(
+        "SELECT COALESCE(MAX(i.at), 0) FROM interventions i"
+        " JOIN runs r ON r.id = i.runId"
+        " WHERE r.ticketId = ? AND i.source = 'human'",
+        (ticket_id,)).fetchone()
     return conn.execute(
         "SELECT attempt, outcomeReason FROM runs"
-        " WHERE ticketId = ? AND outcome = 'failed' ORDER BY attempt",
-        (ticket_id,)).fetchall()
+        " WHERE ticketId = ? AND outcome = 'failed' AND endedAt > ?"
+        " ORDER BY attempt", (ticket_id, since)).fetchall()
 
 
 def escalation_comment(history):
