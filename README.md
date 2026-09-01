@@ -6,6 +6,9 @@ Tickets live in a Linear project; `main` is the only integration point.
 
 Usage: `python3 factory.py /srv/dev/holo2test`, or
 `python3 factory.py --report /srv/dev/holo2test` for the timing table.
+`--sweep` reports the runs that have tripped a mechanical condition,
+`--sweep --act` fails them, and `--supervise` keeps doing that on a timer
+(see [Supervising](#supervising)).
 
 ## The loop
 
@@ -92,6 +95,33 @@ Usage: `python3 factory.py /srv/dev/holo2test`, or
   everything older counted in one archive line and kept in `holophyte.db`.
   Text above the marker is frozen pre-store history and is never rewritten;
   Linear ticket comments stay the full per-ticket archive.
+
+## Supervising
+
+The loop watches itself only while it is alive. A crashed or hung run leaves
+a row in a work phase and a lease nobody gives back, and the supervisor is
+what notices: an acting sweep (`--sweep --act`) that fails any run with a
+dead heartbeat, a blown time box or a stuck review, releases its leases and
+leaves its branch and worktree for a human. `--supervise` runs that sweep
+every 60 seconds as a long-lived process:
+
+```
+python3 factory.py --supervise /srv/dev/holo2test
+```
+
+It runs until SIGINT or SIGTERM, finishing the pass in hand and exiting
+clean. One supervisor per target: the first takes
+`<repo>.holophyte.supervisor.lock` (a sibling of the store) with an
+exclusive create and writes its pid into it; a second `--supervise` for the
+same target exits non-zero naming that pid. A lock whose pid is dead is a
+supervisor that was killed without the chance to clean up, and is reclaimed
+on the next start. A lock that names no pid at all is not guessed about:
+the start refuses and says which file to look at.
+
+Each pass bumps the process's row in the store's `supervisorHeartbeats`
+table, so whether the watcher is still watching is a query rather than a
+`ps`. Process management (systemd, a tmux pane, `nohup`) is the operator's;
+the factory ships the invocation and nothing around it.
 
 ## Linting
 

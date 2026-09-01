@@ -204,6 +204,21 @@ CREATE TABLE IF NOT EXISTS sweepStrikes (
                                -- heartbeat newer than it restarts the count
 );
 
+-- supervisorHeartbeats: one row per supervisor process (`--supervise`),
+-- bumped on every pass it makes. Not a state-model table either: it exists
+-- so a reader of the store -- `--report`, a dashboard, an operator wondering
+-- whether the overnight watcher is still watching -- can tell a supervisor
+-- that is alive from one that died, the same question the sweep asks of a
+-- run. Keyed by the process, not the pass: a row per pass would grow by the
+-- minute and answer nothing a row per process does not.
+CREATE TABLE IF NOT EXISTS supervisorHeartbeats (
+    pid       INTEGER NOT NULL,
+    startedAt INTEGER NOT NULL,  -- when this supervisor process took the lock
+    lastBeat  INTEGER NOT NULL,  -- when it last completed a pass
+    passes    INTEGER NOT NULL,  -- how many passes it has completed
+    PRIMARY KEY (pid, startedAt)
+);
+
 -- linearDeliveries: webhook idempotency (state-model §1). The delivery id is
 -- the primary key, so a replayed delivery collides instead of re-running its
 -- effect.
@@ -1842,3 +1857,29 @@ def record_strike(conn, run_id, stale, heartbeat, now=None):
                 (run_id, strikes, now),
             )
     return strikes
+
+
+def record_supervisor_heartbeat(conn, pid, started_at, now=None):
+    """Record one completed pass of the supervisor `pid`; return its passes.
+
+    The supervisor is identified by `(pid, started_at)` rather than pid alone
+    because pids are reused: a supervisor started tomorrow with yesterday's
+    pid is a different watcher, and folding its passes into the old row would
+    make the old one look like it never died. The first call inserts the row
+    with one pass; every later call bumps `lastBeat` and the count. `now` is
+    epoch milliseconds, defaulting to the clock; the loop passes the instant
+    its sweep ran so the beat and the sweep it vouches for agree.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        conn.execute(
+            "INSERT INTO supervisorHeartbeats (pid, startedAt, lastBeat, passes)"
+            " VALUES (?, ?, ?, 1)"
+            " ON CONFLICT (pid, startedAt) DO UPDATE SET"
+            "   lastBeat = excluded.lastBeat, passes = passes + 1",
+            (pid, started_at, now),
+        )
+        return conn.execute(
+            "SELECT passes FROM supervisorHeartbeats"
+            " WHERE pid = ? AND startedAt = ?", (pid, started_at)).fetchone()[0]

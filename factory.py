@@ -22,6 +22,9 @@ dead heartbeat or a blown time box -- without touching one. `--sweep --act`
 adds the acting: each tripped run is failed and its leases released through
 the same close-out step 6's failures take, so a crashed run stops holding the
 queue. Its branch and worktree are left where they are, for a human.
+`--supervise` is that acting sweep on a timer: one long-lived process per
+target, held to one by a lockfile, sweeping every minute until it is told to
+stop.
 """
 import argparse
 import collections
@@ -35,6 +38,7 @@ import signal
 import statistics
 import subprocess
 import sys
+import threading
 import tomllib
 from pathlib import Path
 from time import monotonic, time
@@ -2906,6 +2910,239 @@ def sweep_report(conn=None, now=None, out=None, act=False, provider=None):
             conn.close()
 
 
+# --- the supervisor loop --------------------------------------------------------
+# A sweep only helps if something runs it. `--supervise` is the something: one
+# process per target that runs the acting sweep, sleeps, and runs it again
+# until a signal tells it to stop -- the smallest thing that makes "the
+# factory runs overnight and the supervisor watches" true.
+#
+# One per target, because two supervisors sweeping one store would each take
+# their own sighting of every silence and manufacture between them the second
+# strike the two-strike rule exists to demand of two separate silences. The
+# arbitration is a lockfile beside the store, taken with an exclusive create
+# (v1 TUI mining, server.ts:111-160): create-then-check, never check-then-
+# create, because the gap between a check and a create is exactly where a
+# second starter slips through. A lock that exists is then read: a live pid
+# means a rival and this starter aborts naming it; a dead pid is a supervisor
+# that crashed without cleaning up, and its lock is reclaimed; a lock that
+# says neither -- empty, half-written, not ours to parse -- is ambiguous, and
+# an ambiguous probe never spawns a rival. It aborts and says what it saw.
+
+# How long the supervisor sleeps between two acting sweeps. A minute: fine
+# enough that a dead run is noticed within `HEARTBEAT_STALE_MS` plus one
+# interval of dying, coarse enough that the store's write lock is taken for
+# the sweep's arithmetic sixty times an hour and not six hundred. (5/5 makes
+# this configurable.)
+SUPERVISE_INTERVAL_SEC = 60
+# The signals a supervisor stops on. Both mean the same thing here -- finish
+# the pass in hand, give the lock back, exit clean -- because an operator's
+# Ctrl-C and a service manager's stop are the same request.
+STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
+
+
+def supervisor_lock_path(target=None):
+    """The lockfile for `target`'s supervisor: a sibling, like the store.
+
+    Beside the store rather than inside the target for the store's own
+    reason: nothing about the target checkout should have to know the factory
+    exists, and a lock inside it is dirt a task's `git add -A` could commit.
+    """
+    target = TARGET if target is None else Path(target)
+    return target.parent / f"{target.name}.holophyte.supervisor.lock"
+
+
+class SupervisorHeld(Exception):
+    """The target already has a supervisor, or a lock this one will not take.
+
+    `pid` is the live holder when there is one, and None when the lock could
+    not be read -- the two cases the message tells apart, because the first
+    is answered by doing nothing and the second by an operator looking at the
+    file.
+    """
+
+    def __init__(self, path, pid=None, started_at=None):
+        self.path, self.pid, self.started_at = path, pid, started_at
+        if pid is None:
+            what = (f"[holo2] supervisor lock {path} exists but names no"
+                    " process; refusing to guess. remove it if no supervisor"
+                    " is running")
+        else:
+            since = (f" since {started_at}" if started_at is not None else "")
+            what = (f"[holo2] a supervisor is already running for {TARGET}:"
+                    f" pid {pid}{since} holds {path}; not starting another")
+        super().__init__(what)
+
+
+def pid_alive(pid):
+    """Whether `pid` names a process that exists, by asking the kernel.
+
+    Signal 0 delivers nothing and answers only whether it could have: a
+    process that is gone is ESRCH, one that belongs to someone else is EPERM
+    -- and EPERM is still alive, which is the answer that matters here.
+    """
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def read_supervisor_lock(path):
+    """The `(pid, started_at)` a lockfile names, or None if it names none.
+
+    Written as two integers on one line by `acquire_supervisor_lock()`;
+    anything else -- an empty file a crashed starter left between its create
+    and its write, a file somebody else wrote -- is None, and the caller
+    treats None as a lock it must not remove.
+    """
+    try:
+        fields = Path(path).read_text().split()
+        pid, started_at = int(fields[0]), int(fields[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return pid, started_at
+
+
+def acquire_supervisor_lock(path, pid=None, now=None):
+    """Take the supervisor lock at `path` for `pid`; raise `SupervisorHeld`.
+
+    The exclusive create is the arbitration: two starters racing here both
+    reach the kernel, and the kernel lets one of them through. The loser
+    reads the lock the winner wrote and finds a live pid. A lock left by a
+    dead supervisor is reclaimed -- unlinked, then created again through the
+    same exclusive door, so a reclaim that loses a race to another starter
+    loses the way any second starter does -- and the unlink is guarded by the
+    inode read from, so a lock a rival has just created in the same place is
+    not removed by a starter that read the stale one a moment earlier. A lock
+    naming this very pid is the stale case too: a supervisor is not its own
+    rival, and a pid comes round again. Only one reclaim is attempted,
+    because a second failure is a second starter, not a second stale lock.
+    """
+    path = Path(path)
+    pid = os.getpid() if pid is None else pid
+    now = int(time() * 1000) if now is None else now
+    for _attempt in range(2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            try:
+                seen = os.stat(path).st_ino
+            except FileNotFoundError:
+                # Gone between the create and the stat: whoever held it
+                # released it, and the next create is the arbitration again.
+                continue
+            holder = read_supervisor_lock(path)
+            if holder is None:
+                raise SupervisorHeld(path)
+            if holder[0] != pid and pid_alive(holder[0]):
+                raise SupervisorHeld(path, *holder)
+            try:
+                if os.stat(path).st_ino == seen:
+                    os.unlink(path)
+            except FileNotFoundError:
+                pass
+            continue
+        with os.fdopen(fd, "w") as fh:
+            fh.write(f"{pid} {now}\n")
+        return path
+    holder = read_supervisor_lock(path)
+    raise SupervisorHeld(path, *(holder or ()))
+
+
+def release_supervisor_lock(path, pid=None):
+    """Remove the lock at `path` if it is `pid`'s; leave anyone else's alone.
+
+    Checked before it is removed because the lock may not be ours any more: a
+    supervisor that was wrongly judged dead has had its lock reclaimed, and
+    removing the reclaimer's lock on the way out would let a third starter
+    in beside it.
+    """
+    pid = os.getpid() if pid is None else pid
+    holder = read_supervisor_lock(path)
+    if holder is not None and holder[0] == pid:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+
+
+def supervise_pass(pid, started_at, now=None, provider=None, out=None):
+    """One pass: an acting sweep of the target's store, then a heartbeat.
+
+    The store is opened and closed here rather than held by the loop: a
+    connection kept open across a minute's sleep is a reader the WAL cannot
+    checkpoint past, and the loop it watches would pay for the supervisor's
+    idleness. The heartbeat goes in after the sweep, stamped with the same
+    instant, so a reader of `supervisorHeartbeats` who finds a fresh beat
+    knows the sweep it vouches for actually ran.
+
+    Prints what `--sweep` would when there is something to say -- a trip or a
+    run one strike from one -- and nothing on a healthy pass: a watcher that
+    prints "all healthy" once a minute all night has buried the one line
+    that mattered by morning.
+    """
+    out = out or sys.stdout
+    now = int(time() * 1000) if now is None else now
+    conn = open_store()
+    try:
+        seen = sweep(conn, now, act=True, provider=provider)
+        if seen.trips or seen.watched:
+            print("\n".join(sweep_lines(seen)), file=out)
+        store.record_supervisor_heartbeat(conn, pid, started_at, now)
+    finally:
+        conn.close()
+    return seen
+
+
+def supervise(provider=None, interval=SUPERVISE_INTERVAL_SEC, wait=None,
+              out=None):
+    """`--supervise`'s whole body: lock, sweep, sleep, repeat until a signal.
+
+    The lock is taken before the first pass and given back on every way out
+    -- a signal, a pass that raised -- so a supervisor that dies leaves the
+    target free for the next one, and the one case the lock stays behind is
+    a process killed without the chance, which `acquire_supervisor_lock()`'s
+    dead-pid reclaim is for. The signal handlers set a flag the loop reads
+    rather than raising into whatever the pass was doing, so a signal that
+    lands mid-sweep lets the sweep's transaction finish and the pass that
+    was in hand is a whole pass or none. The previous handlers are put back
+    afterwards for the same reason `retarget()` is undone in tests: this is
+    a mode of a module other code imports.
+
+    `wait` is the sleep, injectable so a test can drive the loop without
+    one; it is called with the interval and its result is ignored. The
+    default waits on the stop flag itself, so a signal ends the sleep at
+    once instead of a minute later.
+    """
+    out = out or sys.stdout
+    pid = os.getpid()
+    started_at = int(time() * 1000)
+    path = acquire_supervisor_lock(supervisor_lock_path(), pid, started_at)
+    stop = threading.Event()
+    wait = stop.wait if wait is None else wait
+
+    def on_signal(signum, _frame):
+        stop.set()
+
+    previous = {signum: signal.signal(signum, on_signal)
+                for signum in STOP_SIGNALS}
+    try:
+        print(f"[holo2] supervising {TARGET} as pid {pid}: acting sweep"
+              f" every {interval}s, lock at {path}", file=out)
+        while not stop.is_set():
+            supervise_pass(pid, started_at, provider=provider, out=out)
+            wait(interval)
+        print("[holo2] supervisor stopping on signal; lock released",
+              file=out)
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+        release_supervisor_lock(path, pid)
+    return 0
+
+
 def cli(argv=None):
     """Parse the command line and run the mode it names.
 
@@ -2934,6 +3171,11 @@ def cli(argv=None):
         help="print the live runs that have tripped a mechanical condition "
              "(dead heartbeat, blown time box, stuck review) and exit; acts "
              "on none of them unless --act says to")
+    modes.add_argument(
+        "--supervise", action="store_true",
+        help="run the acting sweep every %ds until SIGINT/SIGTERM, as the "
+             "target's one supervisor: a second one for the same target "
+             "exits naming the first" % SUPERVISE_INTERVAL_SEC)
     # Not a mode of its own: it says what `--sweep` does with what it finds,
     # so it is refused rather than ignored anywhere else. Silently doing
     # nothing would be the worse answer for the operator who typed
@@ -2958,6 +3200,14 @@ def cli(argv=None):
     # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
         return sweep_report(act=args.act)
+    # The acting sweep on a timer. Like `--sweep --act` it dispatches nothing
+    # and so resolves no route; unlike it, it takes the target's supervisor
+    # lock first, and a target that already has one is an exit, not a loop.
+    if args.supervise:
+        try:
+            return supervise()
+        except SupervisorHeld as held:
+            raise SystemExit(str(held)) from None
     # And, on the path that actually dispatches agents, every route the config
     # names resolves before the loop claims a ticket. `--report` skips this: it
     # calls nobody, so a reviewer that is not installed on the machine reading

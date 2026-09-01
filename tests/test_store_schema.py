@@ -61,6 +61,9 @@ DOCUMENTED_COLUMNS = {
     # strike tally, which exists because "silent on two consecutive sweeps"
     # has to survive between two sweep invocations.
     "sweepStrikes": {"runId", "strikes", "lastSeen"},
+    # Store-owned as well: one row per `--supervise` process, bumped on every
+    # pass, so a reader can tell a live watcher from a dead one.
+    "supervisorHeartbeats": {"pid", "startedAt", "lastBeat", "passes"},
 }
 
 A_PROJECT = (
