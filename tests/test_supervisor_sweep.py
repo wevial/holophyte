@@ -1181,16 +1181,26 @@ class SupervisorConfigTests(SweepTestCase):
         self.conn.commit()
         for line, key, constraint in (
                 ("heartbeat_stale_min = -1", "heartbeat_stale_min",
-                 "a positive number"),
+                 "a finite positive number"),
+                # TOML spells infinity; `inf > 0` holds, and an infinite
+                # threshold never trips while an infinite interval crashes
+                # `sleep()` with OverflowError. Both are refused up front.
+                ("heartbeat_stale_min = inf", "heartbeat_stale_min",
+                 "a finite positive number"),
+                ("sweep_interval_sec = inf", "sweep_interval_sec",
+                 "a finite positive number"),
+                ("budget_grace = nan", "budget_grace",
+                 "a finite positive number"),
                 ("review_overlap_threshold = 1.5", "review_overlap_threshold",
                  "a number in (0, 1]"),
                 ("review_overlap_threshold = 0", "review_overlap_threshold",
                  "a number in (0, 1]"),
                 ("stale_strikes = 1.5", "stale_strikes",
                  "a positive integer"),
-                ("budget_grace = true", "budget_grace", "a positive number"),
+                ("budget_grace = true", "budget_grace",
+                 "a finite positive number"),
                 ('sweep_interval_sec = "60"', "sweep_interval_sec",
-                 "a positive number")):
+                 "a finite positive number")):
             with self.subTest(line=line):
                 self.configure(f"[supervisor]\n{line}\n")
                 with self.assertRaises(SystemExit) as raised, \

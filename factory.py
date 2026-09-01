@@ -32,6 +32,7 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -2574,7 +2575,10 @@ def sweep_config():
     outside its constraint is a startup error naming the key and the
     constraint, like malformed TOML: a negative threshold the factory quietly
     replaced with its default would sweep with numbers nobody chose. Booleans
-    are refused as numbers, because `true` is a 1 TOML never meant.
+    are refused as numbers, because `true` is a 1 TOML never meant, and so
+    are `inf` and `nan`, which TOML also spells: an infinite threshold is a
+    trip that silently never fires, and an infinite interval is a `sleep()`
+    that raises OverflowError instead of sleeping.
 
     Keys the table names that this version does not know are left alone,
     the way `load_config()` leaves unknown tables alone.
@@ -2587,14 +2591,15 @@ def sweep_config():
     values = {}
     for key, default in SUPERVISOR_KEYS.items():
         value = table.get(key, default)
-        number = isinstance(value, (int, float)) and not isinstance(value, bool)
+        number = (isinstance(value, (int, float))
+                  and not isinstance(value, bool) and math.isfinite(value))
         if key == "stale_strikes":
             constraint, ok = "a positive integer", number and (
                 isinstance(value, int) and value > 0)
         elif key == "review_overlap_threshold":
             constraint, ok = "a number in (0, 1]", number and 0 < value <= 1
         else:
-            constraint, ok = "a positive number", number and value > 0
+            constraint, ok = "a finite positive number", number and value > 0
         if not ok:
             raise SystemExit(
                 f"[holo2] {CONFIG_PATH}: [supervisor] {key} must be "
