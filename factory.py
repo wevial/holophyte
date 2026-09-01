@@ -2513,6 +2513,20 @@ STALE_STRIKES = 2
 # guess, and the trip is meant to catch a run that is not going to finish
 # rather than one that is merely slower than the ticket hoped.
 BUDGET_GRACE = 1.5
+# How much of their findings two consecutive review rounds may share before
+# the review is read as circling rather than converging: the Jaccard overlap
+# `store.findings_overlap()` measures, over the `(path, line, severity)` keys
+# the fingerprint hashes. Half, because a fix round that leaves half of the
+# reviewer's complaints standing has not moved the review, and the round after
+# it is the terminal adjudication -- a doomed one is cheaper failed now than
+# paid for. Two rounds are compared and never one: a healthy run sits in
+# `reviewing` with a single round on file, and there is nothing to compare
+# it against. (5/5 makes this configurable.)
+REVIEW_OVERLAP_THRESHOLD = 0.5
+# The phases the review-stuck check applies in: the ones a run is in between
+# a review round ending and the next one starting. Anywhere else the rounds on
+# file are history the run has moved past, not a review it is still inside.
+REVIEW_PHASES = ("reviewing", "addressing")
 
 # The phases a run can be swept in: everything the store's enum has, less the
 # three a finished run sits in and `blocked_on_operator`. Derived from
@@ -2534,6 +2548,7 @@ SWEEPABLE_PHASES = tuple(
 # reads here is the name that vocabulary already uses.
 STALE_HEARTBEAT = "stale_heartbeat"
 TIME_BOX = "time_box"
+REVIEW_STUCK = "review_stuck"
 
 # The `runEvents.kind` an acted-on trip is recorded under, so the condition
 # that failed a run is in the run's own stream and not only in its outcome
@@ -2564,6 +2579,38 @@ Sweep = collections.namedtuple("Sweep",
                                ("swept", "trips", "acted", "watched"))
 
 
+def review_overlap(conn, run_id):
+    """How much `run_id`'s latest two finished review rounds share, or None.
+
+    `(earlier_round, later_round, overlap)` from `store.findings_overlap()`
+    over the two most recent rounds with an `endedAt` -- a round still being
+    reviewed has no findings to compare yet. None when there are fewer than
+    two such rounds, or when either round found nothing: two empty rounds
+    score 1.0 by the measure's definition (equal sets), but a `pass` after a
+    `pass`, or a round after an approval, is a review that has nothing left
+    to say rather than one repeating itself, and reading the sentinel
+    fingerprint as overlap would trip every run whose review went well.
+
+    The findings are the store's own JSON, written by
+    `store.record_review_round()` after it validated them, so a row that
+    fails to compare here is a corrupted store rather than a reviewer's bad
+    day -- and the `ValueError` is left to surface as one.
+    """
+    rounds = conn.execute(
+        "SELECT round, findings FROM reviewRounds"
+        " WHERE runId = ? AND endedAt IS NOT NULL"
+        " ORDER BY round DESC LIMIT 2", (run_id,)).fetchall()
+    if len(rounds) < 2:
+        return None
+    (later, later_findings), (earlier, earlier_findings) = rounds
+    earlier_findings = json.loads(earlier_findings)
+    later_findings = json.loads(later_findings)
+    if not earlier_findings or not later_findings:
+        return None
+    return earlier, later, store.findings_overlap(earlier_findings,
+                                                  later_findings)
+
+
 def still_tripped(conn, trip):
     """Does `trip`'s verdict still hold of the run it was reached on?
 
@@ -2582,7 +2629,19 @@ def still_tripped(conn, trip):
     however long it was quiet before. A blown time box asks the opposite --
     an overrunning run heartbeats, that is what makes it an overrun rather
     than a death -- so a fresh beat is no acquittal there and is not treated
-    as one.
+    as one. A stuck review is alive too, so its heartbeat says nothing; what
+    it asks instead is that the overlap still holds, recomputed over whatever
+    rounds are on file now. The phase alone cannot tell: a run that went
+    through `addressing` and back has a new finished round and the phase the
+    verdict named, and if that round cleared the reviewer's complaints the
+    review has moved and the run is acquitted. If it repeats them, the run
+    is the same stuck review with one more round on file, and the verdict
+    stands even though the rounds it now rests on are later than the ones
+    the evidence names. And a run that left the phase and came back with no
+    new round -- through `addressing` and `verifying` into its terminal
+    adjudication -- is exactly the run the condition names: the adjudication
+    is what the trip is meant to spare paying for, and a sweep arriving
+    fresh at that moment would trip it on the same two rounds.
     """
     row = conn.execute(
         "SELECT endedAt, phase, lastHeartbeat FROM runs WHERE id = ?",
@@ -2592,7 +2651,13 @@ def still_tripped(conn, trip):
     ended_at, phase, heartbeat = row
     if ended_at is not None or phase != trip.phase:
         return False
-    return trip.condition != STALE_HEARTBEAT or heartbeat == trip.heartbeat
+    if trip.condition == STALE_HEARTBEAT:
+        return heartbeat == trip.heartbeat
+    if trip.condition == REVIEW_STUCK:
+        overlap = review_overlap(conn, trip.run_id)
+        return (overlap is not None
+                and overlap[2] >= REVIEW_OVERLAP_THRESHOLD)
+    return True
 
 
 def act_on_trip(conn, trip, provider=None):
@@ -2661,9 +2726,15 @@ def sweep(conn, now, act=False, provider=None):
     touched -- which is what makes a bare `--sweep` safe against a working
     loop. With `act`, every trip is then failed by `act_on_trip()`.
 
-    A run reports at most one trip. When both conditions hold the stale
-    heartbeat is the one named: a dead worker explains the overrun, while the
-    overrun says nothing about whether anything is still running.
+    A run reports at most one trip, and the conditions are asked in the order
+    of what they explain. A stale heartbeat comes first: a dead worker
+    explains an overrun and a stalled review both, while neither says
+    anything about whether a process is still running. A blown time box
+    comes before a stuck review because it is the older and broader budget,
+    and a stuck review -- the latest two finished rounds of a run in
+    `REVIEW_PHASES` sharing `REVIEW_OVERLAP_THRESHOLD` or more of their
+    findings -- is the narrowest: a live run inside its budget whose fix
+    round left the reviewer's complaints standing.
 
     Sightings have a minimum spacing: a silent run whose strike on file is
     younger than `HEARTBEAT_STALE_MS` is not struck again — the tally it has
@@ -2724,6 +2795,15 @@ def sweep(conn, now, act=False, provider=None):
                     run_id, ticket, phase, TIME_BOX,
                     f"{elapsed / 60000:.1f} min against a"
                     f" {time_box / 60000:.0f} min box ({BUDGET_GRACE}x grace)",
+                    heartbeat))
+            elif (phase in REVIEW_PHASES
+                    and (overlap := review_overlap(conn, run_id)) is not None
+                    and overlap[2] >= REVIEW_OVERLAP_THRESHOLD):
+                earlier, later, shared = overlap
+                trips.append(Trip(
+                    run_id, ticket, phase, REVIEW_STUCK,
+                    f"rounds {earlier} and {later} share {shared:.2f} of"
+                    f" their findings ({REVIEW_OVERLAP_THRESHOLD} threshold)",
                     heartbeat))
             elif strikes:
                 # Silent, but one sighting short of a trip: not evidence yet,
@@ -2852,8 +2932,8 @@ def cli(argv=None):
     modes.add_argument(
         "--sweep", action="store_true",
         help="print the live runs that have tripped a mechanical condition "
-             "(dead heartbeat, blown time box) and exit; acts on none of them "
-             "unless --act says to")
+             "(dead heartbeat, blown time box, stuck review) and exit; acts "
+             "on none of them unless --act says to")
     # Not a mode of its own: it says what `--sweep` does with what it finds,
     # so it is refused rather than ignored anywhere else. Silently doing
     # nothing would be the worse answer for the operator who typed
