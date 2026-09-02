@@ -1274,7 +1274,16 @@ def run_task(task, conn=None, run_id=None, provider=None):
                 "work with a clear message. Stay strictly on-scope; do not "
                 "expand the task.")
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    if head == start_sha:
+    # A reused branch whose tip already differs from main carries a candidate
+    # an earlier run left behind. An implementer handed finished work
+    # correctly adds nothing to it, so reading that as "no progress" failed
+    # the ticket on every relaunch and left operator surgery or destroying the
+    # work as the only exits (holophyte-bugs #3). The carried tip is the
+    # candidate instead, and it still owes verify and review below.
+    carried = not fresh and bool(
+        subprocess.run(["git", "diff", "--quiet", "main", "HEAD"],
+                       cwd=wt, capture_output=True).returncode)
+    if head == start_sha and not carried:
         print(f"[holo2] implementer made no commits for: {task}")
         if fresh:
             sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
@@ -1285,6 +1294,12 @@ def run_task(task, conn=None, run_id=None, provider=None):
         # run's implementer adding nothing is no reason to destroy it.
         raise RunFailure(f"implementer made no new commits; preserved work"
                          f" kept on {branch} at {start_sha[:12]}")
+    if head == start_sha:
+        note = (f"candidate carried from a prior run; implementer added"
+                f" nothing to {branch} at {start_sha[:12]}")
+        print(f"[holo2] {note}")
+        if conn is not None and run_id is not None:
+            store.record_event(conn, run_id, "carried_candidate", note)
     if out is None:
         # The budget alarm fired *after* real commits landed. A timeout is
         # not "no work": destroying the commits here would repeat the

@@ -572,22 +572,21 @@ class LeftoverWorktreeTests(LoopFixture):
         return wt
 
     def test_an_idle_implementer_on_a_dirty_leftover_does_not_merge_debris(self):
-        """The WIP commit reuse makes must not defeat the no-commit gate: an
-        implementer that does nothing on a reused worktree is still a failed
-        run, and the leftover's uncommitted debris never reaches main."""
+        """The WIP commit reuse makes is a candidate for review, not a free
+        pass to main: an implementer that does nothing on a reused worktree
+        sends the carried tip to the reviewer, and only an approval there can
+        put the leftover's debris on main."""
         wt = self.leftover()
         (wt / "debris.bin").write_text("build junk\n")
 
-        fake, _ = self.loop(Idle(), APPROVE)
+        fake, _ = self.loop(Idle(), REQUEST_CHANGES, Idle())
 
-        self.assertEqual(fake.roles, ["implement"])  # the APPROVE went unused
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
-        # The debris survives as the WIP commit, named in the reason.
+        # The debris survives as the WIP commit, on a branch nothing merged.
         self.assertIn(BRANCH, self.branches())
         self.assertIn("WIP", self.subjects(BRANCH)[0])
-        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
-        self.assertIn("preserved work kept on", reason)
 
     def test_an_empty_reused_leftover_is_discarded_like_a_fresh_cut(self):
         """A clean leftover at main holds nothing: keeping it forever and
@@ -633,20 +632,51 @@ class LeftoverWorktreeTests(LoopFixture):
         """Run 10 of the KO-146 incident: the no-commit close-out
         force-removed the reused worktree and -D'd the branch, destroying
         exactly the preserved work the reuse path exists to protect — and
-        the run row then claimed the branch was preserved."""
+        the run row then claimed the branch was preserved.
+
+        The branch here is ahead of main in history but identical to it in
+        content, so there is no carried candidate to review (KO-172) and the
+        no-commit gate is still what closes the run out."""
         wt = self.leftover()
         (wt / "rescued.txt").write_text("rescued work\n")
         self.git("add", "-A", cwd=wt)
         self.git("commit", "-q", "-m", "rescued: preserved work", cwd=wt)
+        self.git("rm", "-q", "rescued.txt", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: and taken back out", cwd=wt)
 
-        self.loop(Idle())
+        fake, _ = self.loop(Idle())
 
+        self.assertEqual(fake.roles, ["implement"])  # no review turn
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn(BRANCH, self.branches())
         self.assertIn("rescued: preserved work", self.subjects(BRANCH))
-        self.assertTrue((wt / "rescued.txt").exists())
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("preserved work kept on", reason)
+
+    def test_a_carried_candidate_reaches_review_without_a_new_commit(self):
+        """A preserved branch ahead of main is a candidate, not a dead run:
+        the implementer that correctly no-ops on finished work used to fail
+        the no-commit gate forever, so the only exits were operator surgery
+        or destroying the work (holophyte-bugs #3)."""
+        wt = self.leftover()
+        (wt / "carried.txt").write_text("a complete candidate\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "carried: a complete candidate", cwd=wt)
+        carried = self.git("rev-parse", "HEAD", cwd=wt).strip()
+
+        fake, _ = self.loop(Idle(), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        review = next(t for t in fake.turns if t.role == "review")
+        self.assertEqual((review.base_sha, review.candidate_sha),
+                         (self.base, carried))
+        self.assertIn("carried: a complete candidate", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertTrue(
+            [summary for (summary,) in
+             self.read("SELECT summary FROM runEvents ORDER BY seq")
+             if "candidate carried from a prior run" in summary],
+            "no event names the candidate as carried")
 
     def test_a_fresh_no_commit_run_cleans_up_and_says_discarded(self):
         """The fresh-cut behavior stays: nothing on the branch to keep, so
