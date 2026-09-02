@@ -1159,6 +1159,11 @@ def run_task(task, conn=None, run_id=None, provider=None):
     started = monotonic()
     verify_cmd, budget_min = task.get("verify"), task["budget_min"]
     contracts = task.get("contracts")
+    # The approved ticket body, kept before `task` collapses to its title: it
+    # is the contract the implementer is held to at review, so the implementer
+    # turn has to be given it verbatim rather than the one-line title the
+    # branch is named after.
+    body = (task.get("body") or "").strip()
     task = task["title"]
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     branch = f"task/{slug}"
@@ -1257,11 +1262,17 @@ def run_task(task, conn=None, run_id=None, provider=None):
             signal.alarm(0)
             signal.signal(signal.SIGALRM, old)
 
-    # 1. implement
-    out = timed(f"Implement this task in this repo: {task}\n"
-                "Acceptance criteria are part of the task line; the task is done "
-                "only when they hold. Commit your work with a clear message. "
-                "Stay strictly on-scope; do not expand the task.")
+    # 1. implement — the ticket verbatim: title, then the approved body, then
+    # the verify commands the gate will actually run. A ticket with no body
+    # (a file-backed task line, a stub provider) degrades to the title alone.
+    ticket = f"{task}\n\n{body}" if body else task
+    commands = (f"\n\nThese verify commands must pass before review and again "
+                f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
+    out = timed(f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+                "The ticket above is the contract, acceptance criteria "
+                "included; the task is done only when they hold. Commit your "
+                "work with a clear message. Stay strictly on-scope; do not "
+                "expand the task.")
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if head == start_sha:
         print(f"[holo2] implementer made no commits for: {task}")

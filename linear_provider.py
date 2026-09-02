@@ -129,6 +129,12 @@ def parse_task(issue):
     the UUID is what correlates an issue across renames and what a webhook
     payload carries, so it is the key the store mirrors a ticket under.
 
+    `body` is the description as approved, verbatim: it is the contract the
+    implementer turn is given and the reviewer holds the candidate to, so
+    parsing hands it through untouched rather than reducing the ticket to the
+    fields the loop happens to branch on. It is prompt input only — the store
+    mirrors named fields, never this one.
+
     `criteria` is the "Acceptance criteria" section's items, checked ones
     included: the mirror routes a ticket carrying both criteria and a verify
     command to `ready` and everything else to `needs_spec` (state-model §2),
@@ -146,6 +152,7 @@ def parse_task(issue):
             "criteria": [*parsed.acceptance, *parsed.acceptance_done,
                          *parsed.acceptance_other],
             "contracts": parsed.contract_checks,
+            "body": desc,
             "budget_min": int(issue.get("estimate") or 20)}
 
 

@@ -129,6 +129,7 @@ class ReviewLoopTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
         self.events = []
+        self.goals = []
         real_verify = factory.run_verify
 
         def spy(*args, **kwargs):
@@ -143,12 +144,17 @@ class ReviewLoopTests(unittest.TestCase):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
                               check=True, capture_output=True, text=True).stdout
 
-    def run_task(self, *replies, budget_min=1):
-        """Drive one task, answering each review/adjudicate turn in order."""
+    def run_task(self, *replies, budget_min=1, **task):
+        """Drive one task, answering each review/adjudicate turn in order.
+
+        Extra keyword arguments override fields of the task dict, so a test
+        can hand the loop a ticket whose body carries its own contract.
+        """
         replies = list(replies)
 
         def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
             self.events.append(role)
+            self.goals.append((role, goal))
             if role != "implement":
                 return replies.pop(0)
             n = sum(1 for event in self.events if event == "implement")
@@ -162,7 +168,7 @@ class ReviewLoopTests(unittest.TestCase):
                 return factory.run_task({
                     "id": "KO-116", "title": "add a thing",
                     "verify": "echo ok", "budget_min": budget_min,
-                    "contracts": [],
+                    "contracts": [], **task,
                 })
             except factory.RunFailure:
                 # run_task's failure exits raise so their reasons reach the
@@ -177,6 +183,25 @@ class ReviewLoopTests(unittest.TestCase):
         `run_task()` without a store.
         """
         return "\n".join(body for _, body in self.linear.comments)
+
+    def test_implementer_goal_carries_the_ticket_body_and_verify_commands(self):
+        """The implementer works from the approved body, not from the title.
+
+        The phrase asserted on lives only in the body, so a goal built from
+        the title alone cannot contain it — the reviewer holds the candidate
+        to criteria the implementer would never have seen.
+        """
+        body = ("## Acceptance criteria\n\n"
+                "- [ ] The word used is `unparseable`, never `unreadable`.\n")
+
+        merged = self.run_task("VERDICT: APPROVE", body=body)
+
+        self.assertTrue(merged)
+        goal = next(g for role, g in self.goals if role == "implement")
+        self.assertIn("The word used is `unparseable`, never `unreadable`.",
+                      goal)
+        self.assertIn("add a thing", goal)
+        self.assertIn("echo ok", goal)
 
     def test_round_two_findings_get_a_fix_round_then_adjudication(self):
         merged = self.run_task("VERDICT: REQUEST_CHANGES",
