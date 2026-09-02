@@ -29,7 +29,9 @@ stop.
 import argparse
 import collections
 import contextlib
+import dataclasses
 import fcntl
+import functools
 import hashlib
 import json
 import math
@@ -54,18 +56,13 @@ import ticket_template
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
 DEFAULT_TARGET = Path("/srv/dev/holo2test")
-# The paths a run works against, plus the config they carry. They are set by
-# `retarget()` below rather than written out here, so the derivation lives in
-# one place and the command line is the only thing that chooses a target:
-# importing this module used to read `sys.argv[1]`, which made every
-# `python3 -m unittest discover` retarget the factory at a directory called
-# "discover".
-TARGET = HOLO_DIR = STORE_PATH = WORKTREES = CONFIG_PATH = None
-# The parsed `HOLOPHYTE_HOME/SLUG/config.toml`, cached by `config()`; None until it has
-# been read. `{}` is the documented normal case once it has: every knob the
-# file can set has a hardcoded default, so an absent file is exactly today's
-# behavior.
-CONFIG = None
+# The paths a run works against, plus the config they carry, are a `Target`
+# (below): built once by `cli()` from the command line and passed to every
+# function that needs one, so the derivation lives in one place and the
+# command line is the only thing that chooses a target. Importing this module
+# used to read `sys.argv[1]`, which made every `python3 -m unittest discover`
+# retarget the factory at a directory called "discover"; now importing it
+# chooses no target at all.
 # How the loop restarts itself after merging a change to its own code: the
 # process image is replaced, never a module reloaded. A seam so tests can
 # see the decision without exec-ing the test runner.
@@ -213,69 +210,90 @@ def adopt_legacy_state(target, destination, out=None):
     return adopted
 
 
-def retarget(target, adopt=True):
-    """Point TARGET, the paths derived from it and CONFIG at `target`.
+@dataclasses.dataclass
+class Target:
+    """The repository a run works against, and the paths derived from it.
 
-    Called once at import for the default and again by `cli()` for whatever
-    the command line names; nothing else moves these, so a caller that wants a
-    different target says so here instead of patching one path and leaving the
-    other two pointing at the last one. The config is loaded here for the same
-    reason: it is derived from the target, so it moves when the target does.
-
-    `adopt=False` derives the paths and nothing else, which is what the
-    import-time call for `DEFAULT_TARGET` uses. Adopting there would move
-    some unrelated target's state as a side effect of importing this module,
-    and -- where that target has two stores -- would make `import factory`
-    and `factory.py --help` exit, the same rule `config()` follows: nothing
-    target-specific happens before `cli()` has picked a target.
+    Built once by `cli()` for whatever the command line names and passed to
+    every function that needs one; nothing in this module remembers a target
+    between calls, so two targets can live in one process (the `serve` daemon
+    and the supervisor both want that) and importing this module has no
+    target-specific side effect. The fields are plain paths; `config()` is the
+    one accessor that does I/O, and it parses `config_path` once per instance.
+    `{}` is the documented normal case for a config: every knob the file can
+    set has a hardcoded default, so an absent file is exactly the default
+    behavior.
     """
-    global TARGET, HOLO_DIR, STORE_PATH, WORKTREES, CONFIG_PATH, CONFIG
-    TARGET = Path(target)
-    # Everything the factory keeps about a target lives in one directory
-    # under the host's home, `HOLOPHYTE_HOME/SLUG/`, created the first time
-    # something has to write there. Not inside the target: the factory's own
-    # .gitignore says nothing about the target checkout, so a store written
-    # into TARGET would leave the database and its two WAL sidecars untracked
-    # in whatever repo the loop is working on -- dirt a task's `git add -A`
-    # could sweep into a commit. Not beside it either: see `state_dir()`.
-    HOLO_DIR = state_dir(TARGET)
-    # Whatever a previous layout left beside the checkout moves in here now,
-    # before anything opens a store at the new address and finds it empty.
-    if adopt:
-        adopt_legacy_state(TARGET, HOLO_DIR)
-    # The loop's durable state: one WAL-mode SQLite file per target repo.
-    STORE_PATH = HOLO_DIR / "store.db"
-    # Config for a target is not a file the target has to carry either.
-    CONFIG_PATH = HOLO_DIR / "config.toml"
-    # The worktree directory predates the state directory and is heavy git
-    # state rather than factory state; it keeps its own sibling address.
-    WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
-    # Dropped, not read: retargeting invalidates the cache, and `config()`
-    # parses the new file the first time something asks for it.
-    CONFIG = None
 
+    path: Path
+    holo_dir: Path
+    store_path: Path
+    config_path: Path
+    worktrees: Path
+    _config: dict | None = dataclasses.field(
+        default=None, repr=False, compare=False)
 
-def config():
-    """The target's parsed config, read once per target.
+    @classmethod
+    def locate(cls, path, adopt=True):
+        """The `Target` for the repository at `path`, with its state located.
 
-    Read on demand rather than by `retarget()`, which runs at import for the
-    default target: parsing there made a malformed
-    `~/.holophyte/holo2test-*/config.toml` an error for `--help`, for importing
-    this module at all, and for a run pointed at some entirely different
-    repository. Nothing that reads config runs before `cli()` picks a target,
-    and `cli()` reads it as soon as it has one, so the file a run actually
-    depends on is still parsed at startup: a malformed one aborts before a
-    ticket is claimed, not in the middle of a round.
-    """
-    global CONFIG
-    if CONFIG is None:
-        CONFIG = load_config(CONFIG_PATH)
-    return CONFIG
+        Called by `cli()` for whatever the command line names; nothing else
+        derives these paths, so a caller that wants a different target builds
+        another `Target` here instead of patching one path and leaving the
+        other two pointing at the last one. The config is derived from the
+        target too, so it lives on the value and moves with it.
 
+        `adopt=False` derives the paths and nothing else. Adoption is a side
+        effect the caller asks for: a value built for a target nobody is about
+        to run against -- a daemon enumerating a host's targets, a test naming
+        a directory -- must not move that target's state, and where the target
+        has two stores must not exit. The same rule `config()` follows, and
+        the reason importing this module builds no `Target` at all: nothing
+        target-specific happens before `cli()` has picked a target.
+        """
+        path = Path(path)
+        # Everything the factory keeps about a target lives in one directory
+        # under the host's home, `HOLOPHYTE_HOME/SLUG/`, created the first
+        # time something has to write there. Not inside the target: the
+        # factory's own .gitignore says nothing about the target checkout, so
+        # a store written into the target would leave the database and its
+        # two WAL sidecars untracked in whatever repo the loop is working on
+        # -- dirt a task's `git add -A` could sweep into a commit. Not beside
+        # it either: see `state_dir()`.
+        holo_dir = state_dir(path)
+        # Whatever a previous layout left beside the checkout moves in here
+        # now, before anything opens a store at the new address and finds it
+        # empty.
+        if adopt:
+            adopt_legacy_state(path, holo_dir)
+        return cls(
+            path=path,
+            holo_dir=holo_dir,
+            # The loop's durable state: one WAL-mode SQLite file per target.
+            store_path=holo_dir / "store.db",
+            # Config for a target is not a file the target has to carry
+            # either.
+            config_path=holo_dir / "config.toml",
+            # The worktree directory predates the state directory and is
+            # heavy git state rather than factory state; it keeps its own
+            # sibling address.
+            worktrees=path.parent / f"{path.name}.worktrees")
 
-# Paths only: see `retarget()`. The default target's state is adopted when
-# `cli()` names it, not because somebody imported this module.
-retarget(DEFAULT_TARGET, adopt=False)
+    def config(self):
+        """The target's parsed config, read once per `Target`.
+
+        Read on demand rather than by `locate()`: parsing there would make a
+        malformed `config.toml` an error for every value built, including one
+        built for a target the run is not pointed at. Nothing that reads
+        config runs before `cli()` picks a target, and `cli()` reads it as
+        soon as it has one, so the file a run actually depends on is still
+        parsed at startup: a malformed one aborts before a ticket is claimed,
+        not in the middle of a round.
+        """
+        if self._config is None:
+            self._config = load_config(self.config_path)
+        return self._config
+
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
 BUDGET_RE = re.compile(r"\((\d+)\s*min\)\s*$")
@@ -596,7 +614,7 @@ def run_capped(cmd, cwd, timeout):
         return proc.returncode, out
 
 
-def run_verify(cmd, cwd=None, contracts=None, timeout=None):
+def run_verify(cmd, cwd, contracts=None, timeout=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
 
@@ -613,7 +631,7 @@ def run_verify(cmd, cwd=None, contracts=None, timeout=None):
     deterministic, need no subprocess, and a drifted literal is a RED result
     even when the command itself passes. A ticket declaring none is unaffected.
     """
-    drifted = contract_report(contracts, cwd or TARGET)
+    drifted = contract_report(contracts, cwd)
     if drifted:
         return False, drifted
     passed = (f"[verify] contract checks passed: {len(contracts)}\n"
@@ -625,7 +643,7 @@ def run_verify(cmd, cwd=None, contracts=None, timeout=None):
     try:
         returncode, out = run_capped(
             instrumented_script(clauses) if marked else cmd,
-            cwd or TARGET, VERIFY_TIMEOUT if timeout is None else timeout)
+            cwd, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
         # The cap is a failed verify, not a crash: `run_capped` has already
         # reaped the process group, and what the command printed before the
@@ -723,7 +741,7 @@ KNOWN_KEYS = {
 # `[loop]`'s entry is filled in beside `LOOP_KEYS`, with `[supervisor]`'s.
 
 
-def check_config_keys():
+def check_config_keys(target):
     """Refuse a key the factory does not read inside a table it does.
 
     Runs at startup for every mode, in the same breath as `sweep_config()`
@@ -736,17 +754,17 @@ def check_config_keys():
     already says so in its own words.
     """
     for table, known in KNOWN_KEYS.items():
-        section = config().get(table)
+        section = target.config().get(table)
         if not isinstance(section, dict):
             continue
         for key in section:
             if key not in known:
                 raise SystemExit(
-                    f"[holo2] {CONFIG_PATH}: [{table}] {key}: unknown key; "
+                    f"[holo2] {target.config_path}: [{table}] {key}: unknown key; "
                     f"[{table}] accepts: {', '.join(sorted(known))}")
 
 
-def agent_command(role, goal):
+def agent_command(target, role, goal):
     """The configured argv for `role`, or None when the config names none.
 
     The goal is appended as the command's last argument, which is where both
@@ -760,21 +778,22 @@ def agent_command(role, goal):
     operator asked for a route, and quietly running the built-in one instead
     would answer a different question than the one the config asked.
     """
-    command = (config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+    command = (target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
     if command is None:
         return None
     if not isinstance(command, str):
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [agents] {AGENT_CONFIG_KEYS[role]} must be "
+            f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]} must be "
             f"a command string, got {type(command).__name__}")
     argv = shlex.split(command)
     if not argv:
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [agents] {AGENT_CONFIG_KEYS[role]} is empty")
+            f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]}"
+            " is empty")
     return argv + [goal]
 
 
-def check_agent_commands():
+def check_agent_commands(target):
     """Resolve every configured `[agents]` command before the loop claims work.
 
     Reading the config at startup only proved the file was TOML. The commands
@@ -813,38 +832,38 @@ def check_agent_commands():
     """
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
-        argv = agent_command(role, "")
+        argv = agent_command(target, role, "")
         if argv is None:
             if role == "implement":
-                check_default_implementer()
+                check_default_implementer(target)
             else:
                 default_container_keys.append(key)
             continue
         program = argv[0]
         if os.path.dirname(program) and not os.path.isabs(program):
             raise SystemExit(
-                f"[holo2] {CONFIG_PATH}: [agents] {key}: relative command path "
+                f"[holo2] {target.config_path}: [agents] {key}: relative command path "
                 f"{program!r} -- rounds run in a task worktree, so name the "
                 f"program by an absolute path or leave it to PATH")
         if shutil.which(program) is None:
             raise SystemExit(
-                f"[holo2] {CONFIG_PATH}: [agents] {key}: no executable "
+                f"[holo2] {target.config_path}: [agents] {key}: no executable "
                 f"{program!r} on PATH")
     if default_container_keys:
-        check_default_reviewer(default_container_keys)
+        check_default_reviewer(target, default_container_keys)
 
 
-def check_default_implementer():
+def check_default_implementer(target):
     """The default implementer route is `claude` on PATH; nothing else."""
     if shutil.which(DEFAULT_IMPLEMENTER) is None:
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [agents] implementer is not set, so the "
+            f"[holo2] {target.config_path}: [agents] implementer is not set, so the "
             f"implementer runs `{DEFAULT_IMPLEMENTER}`, and there is no "
             f"executable {DEFAULT_IMPLEMENTER!r} on PATH -- install the Claude "
             f"CLI or set [agents] implementer to the command to run instead")
 
 
-def check_default_reviewer(keys):
+def check_default_reviewer(target, keys):
     """The default container route needs `docker` and a daemon that answers.
 
     `keys` are the `[agents]` keys whose roles fall to that route, named in
@@ -865,27 +884,28 @@ def check_default_reviewer(keys):
               f"command to run instead")
     if shutil.which(DEFAULT_REVIEWER) is None:
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
+            f"[holo2] {target.config_path}: [agents] {unset} not set, so the review "
             f"runs in a `{DEFAULT_REVIEWER}` container ({review_runner.IMAGE}), "
             f"and there is no executable {DEFAULT_REVIEWER!r} on PATH -- "
             f"install Docker or set [agents] {unset} to the command to run "
             f"instead")
-    probe = docker_probe(["info"], unset, remedy)
+    probe = docker_probe(target, ["info"], unset, remedy)
     if probe.returncode:
         detail = (probe.stderr or probe.stdout).strip().splitlines()
         reason = detail[-1] if detail else f"exit {probe.returncode}"
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
+            f"[holo2] {target.config_path}: [agents] {unset} not set, so the review "
             f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
             f"did not answer `{DEFAULT_REVIEWER} info`: {reason} -- {remedy}")
-    image = docker_probe(["image", "inspect", review_runner.IMAGE], unset, remedy)
+    image = docker_probe(target, ["image", "inspect", review_runner.IMAGE],
+                         unset, remedy)
     if image.returncode:
         print(f"[holo2] review image {review_runner.IMAGE} is not built on this "
               f"host; the first review round builds it from "
               f"{review_runner.DOCKERFILE}")
 
 
-def docker_probe(args, unset, remedy):
+def docker_probe(target, args, unset, remedy):
     """Ask the daemon `docker <args>` under `DOCKER_PROBE_TIMEOUT`.
 
     A daemon that does not answer in time is a startup error naming the
@@ -898,13 +918,13 @@ def docker_probe(args, unset, remedy):
                               timeout=DOCKER_PROBE_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
+            f"[holo2] {target.config_path}: [agents] {unset} not set, so the review "
             f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
             f"did not answer `{' '.join(argv)}` within "
             f"{DOCKER_PROBE_TIMEOUT}s -- {remedy}") from None
 
 
-def agent_route(role):
+def agent_route(target, role):
     """What ran `role`'s turn, named for the record the round leaves.
 
     The default reviewer profile, or the configured command when the target
@@ -912,7 +932,7 @@ def agent_route(role):
     some other harness ran would be evidence of something that did not happen,
     and the rows are what FINDINGS.md and the fingerprint are built from.
     """
-    return ((config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+    return ((target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
             or REVIEW_PROFILE)
 
 
@@ -955,7 +975,7 @@ def publish_review_refs(repo, base_sha, candidate_sha):
         sh(["git", "update-ref", f"refs/review/{name}", sha], cwd=repo)
 
 
-def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
+def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None):
     """Run one agent turn for a role. Returns combined output text.
 
@@ -984,7 +1004,7 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
         raise ValueError(role)
     if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
         raise ValueError(f"{role} requires exact base_sha and candidate_sha")
-    cmd = agent_command(role, goal)
+    cmd = agent_command(target, role, goal)
     if cmd is None:
         if role != "implement":
             try:
@@ -1053,7 +1073,7 @@ TRUNCATION_MARKER = "[… truncated]"
 # runs, and a run costs exactly what it costs now.
 
 
-def setup_commands():
+def setup_commands(target):
     """The target's `[worktree] setup` list, or `[]` when it names none.
 
     Each entry is one shell command, run in order. A table that is present but
@@ -1064,26 +1084,26 @@ def setup_commands():
     worktree nobody prepared, and that surfaces far away from the config, as a
     toolchain failure in the middle of a round.
     """
-    commands = (config().get("worktree") or {}).get("setup")
+    commands = (target.config().get("worktree") or {}).get("setup")
     if commands is None:
         return []
     if not isinstance(commands, list):
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [worktree] setup must be a list of "
+            f"[holo2] {target.config_path}: [worktree] setup must be a list of "
             f"command strings, got {type(commands).__name__}")
     for command in commands:
         if not isinstance(command, str):
             raise SystemExit(
-                f"[holo2] {CONFIG_PATH}: [worktree] setup: every entry must be "
+                f"[holo2] {target.config_path}: [worktree] setup: every entry must be "
                 f"a command string, got {type(command).__name__}")
         if not command.strip():
             raise SystemExit(
-                f"[holo2] {CONFIG_PATH}: [worktree] setup: entry {command!r} "
+                f"[holo2] {target.config_path}: [worktree] setup: entry {command!r} "
                 "is empty")
     return commands
 
 
-def setup_timeout():
+def setup_timeout(target):
     """The per-command cap on `[worktree] setup`, in seconds.
 
     `[worktree] setup_timeout_sec` when the target names one, else the same
@@ -1096,18 +1116,18 @@ def setup_timeout():
     factory quietly replaced with its default would bound the setup with a
     number nobody chose.
     """
-    value = (config().get("worktree") or {}).get("setup_timeout_sec")
+    value = (target.config().get("worktree") or {}).get("setup_timeout_sec")
     if value is None:
         return VERIFY_TIMEOUT
     if (isinstance(value, bool) or not isinstance(value, (int, float))
             or not math.isfinite(value) or value <= 0):
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [worktree] setup_timeout_sec must be a "
+            f"[holo2] {target.config_path}: [worktree] setup_timeout_sec must be a "
             f"finite positive number of seconds, got {value!r}")
     return value
 
 
-def check_worktree_setup():
+def check_worktree_setup(target):
     """Parse the `[worktree] setup` table before the loop claims work.
 
     `check_agent_commands()`'s sibling, here for the same reason: a table read
@@ -1123,8 +1143,8 @@ def check_worktree_setup():
     settles the shape of the table; the worktree settles the rest. The cap
     the commands run under is checked here too, for the same reason.
     """
-    setup_commands()
-    setup_timeout()
+    setup_commands(target)
+    setup_timeout(target)
 
 
 def timeout_report(cmd, expired):
@@ -1145,7 +1165,7 @@ def timeout_report(cmd, expired):
             + (out or "(no output before the timeout)"))
 
 
-def run_worktree_setup(wt, conn=None, run_id=None):
+def run_worktree_setup(target, wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
     Returns `(ok, report)`. Each command goes through `run_verify()`, so a
@@ -1167,10 +1187,10 @@ def run_worktree_setup(wt, conn=None, run_id=None):
     about the first one. A target that names no setup runs nothing and records
     no phase, so an absent table leaves the run byte-identical to today's.
     """
-    commands = setup_commands()
+    commands = setup_commands(target)
     if not commands:
         return True, ""
-    timeout = setup_timeout()
+    timeout = setup_timeout(target)
     set_phase(conn, run_id, "working",
               f"worktree setup: {len(commands)} command(s) in {wt}")
     for n, command in enumerate(commands, 1):
@@ -1502,7 +1522,7 @@ def round_verdict(reply, verdicts):
         return "error"
 
 
-def reuse_leftover(wt, branch):
+def reuse_leftover(target, wt, branch):
     """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
 
     The reuse rule, stated once: preserved work survives. An unregistered
@@ -1519,9 +1539,9 @@ def reuse_leftover(wt, branch):
     own, are a human's calls and are refused with the state named. Nothing
     is ever deleted here.
     """
-    sh(["git", "worktree", "prune"], TARGET)
+    sh(["git", "worktree", "prune"], target.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
-                       cwd=TARGET, capture_output=True, text=True)
+                       cwd=target.path, capture_output=True, text=True)
     # Exact resolved paths, not a substring test: slugs are truncated titles,
     # so a registered `.../add-a-thing-later` must not vouch for an
     # unregistered `.../add-a-thing` — and git prints resolved paths, so a
@@ -1597,10 +1617,10 @@ def reuse_leftover(wt, branch):
     return True, ""
 
 
-def run_task(task, conn=None, run_id=None, provider=None):
+def run_task(target, task, conn=None, run_id=None, provider=None):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
-    Each task works in its own git worktree (TARGET stays on main, untouched),
+    Each task works in its own git worktree (the target stays on main, untouched),
     so a dirty/failed task can never block the repo or the next ticket.
 
     `conn` and `run_id` are the store and the claimed run the loop took the
@@ -1644,7 +1664,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     slug = f"{ident}-{slug}"
     branch = f"task/{slug}"
-    wt = WORKTREES / slug
+    wt = target.worktrees / slug
     # §4's one edge out of `claimed`, taken before the first git command:
     # cutting the worktree is already this run doing the ticket's work, so a
     # crash in it belongs to `working` and not to a run that still looks
@@ -1653,7 +1673,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
     if wt.exists():
         # leftover from a previous failed run — reuse it so preserved work
         # survives; the branch check below still gates on commits.
-        ok, why = reuse_leftover(wt, branch)
+        ok, why = reuse_leftover(target, wt, branch)
         if not ok:
             ledger(task_id, f"FAILED to reuse leftover worktree for: {task}\n"
                             f"{why}\nNothing was deleted.")
@@ -1665,21 +1685,21 @@ def run_task(task, conn=None, run_id=None, provider=None):
         # keep an empty leftover alive forever.
         fresh = (not sh(["git", "status", "--porcelain"], cwd=wt)
                  and sh(["git", "rev-parse", "HEAD"], cwd=wt)
-                 == sh(["git", "rev-parse", "main"], TARGET))
+                 == sh(["git", "rev-parse", "main"], target.path))
     else:
         # The mirror leftover: the branch exists but its directory does not
         # (a FAIL close-out preserves both; a human may clear only the
         # directory). `checkout -b` would die on it, and deleting the branch
         # could destroy preserved commits — so the run fails cleanly, the
         # same answer as the unregistered directory.
-        if sh(["git", "branch", "--list", branch], TARGET):
+        if sh(["git", "branch", "--list", branch], target.path):
             why = (f"branch {branch} already exists with no worktree; a"
                    " human moves it aside or deletes it before this ticket"
                    " is run again")
             ledger(task_id, f"FAILED to cut a fresh worktree for: {task}\n"
                             f"{why}\nNothing was deleted.")
             raise RunFailure(f"cannot cut a fresh worktree: {why}")
-        sh(["git", "worktree", "add", "--detach", str(wt), "main"], TARGET)
+        sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
         sh(["git", "checkout", "-b", branch], cwd=wt)
         fresh = True
 
@@ -1694,7 +1714,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # exactly as found. Either way no agent ran, so the failure is the
     # factory's plumbing, not evidence about the ticket: it closes out as
     # `InfraFailure` and does not spend one of the ticket's strikes.
-    ok, out = run_worktree_setup(wt, conn, run_id)
+    ok, out = run_worktree_setup(target, wt, conn, run_id)
     if not ok:
         print(out)
         # Ledger first: a deletion that itself fails must not also cost the
@@ -1703,8 +1723,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
             ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran;"
                             f" branch {branch} holds nothing and is"
                             f" discarded.\n\n{out}")
-            sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
-            sh(["git", "branch", "-D", branch], TARGET)
+            sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
+            sh(["git", "branch", "-D", branch], target.path)
             raise InfraFailure("worktree setup failed; no agent ran and the"
                                " empty branch was discarded")
         ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
@@ -1717,13 +1737,13 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # The review base is main, not the HEAD reuse entered on: preserved
     # commits were never approved, so the reviewer must see them inside the
     # diff. Identical on a fresh cut, where HEAD is main.
-    base_sha = sh(["git", "rev-parse", "main"], TARGET)
+    base_sha = sh(["git", "rev-parse", "main"], target.path)
     # Where this run started, WIP commit and preserved commits included. The
     # no-commit gate below compares against this rather than main, so carried
     # leftovers cannot stand in for the implementer's own progress.
     start_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
-    def timed(goal):
+    def timed(target, goal):
         """Run one agent turn with the budget as its wall-clock cap; None on
         timeout.
 
@@ -1734,7 +1754,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
         the turn printed before the kill is kept in the log.
         """
         try:
-            return agent("implement", goal, wt, timeout=budget_min * 60)
+            return agent(target, "implement", goal, wt,
+                         timeout=budget_min * 60)
         except subprocess.TimeoutExpired as expired:
             print(f"[holo2] task exceeded {budget_min} min budget")
             partial = expired.output or ""
@@ -1753,7 +1774,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
     ticket = f"{task}\n\n{body}" if body else task
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
-    out = timed(f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+    out = timed(target,
+                f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
                 "The ticket above is the contract, acceptance criteria "
                 "included; the task is done only when they hold. Commit your "
                 "work with a clear message. Stay strictly on-scope; do not "
@@ -1771,8 +1793,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
     if head == start_sha and not carried:
         print(f"[holo2] implementer made no commits for: {task}")
         if fresh:
-            sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
-            sh(["git", "branch", "-D", branch], TARGET)
+            sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
+            sh(["git", "branch", "-D", branch], target.path)
             raise RunFailure("implementer made no commits; the empty branch"
                              " and worktree were discarded")
         # A reused worktree holds work some earlier run preserved; this
@@ -1816,7 +1838,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
 
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         round_started = int(time() * 1000)
-        verdict = agent("review",
+        verdict = agent(target, "review",
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
             "the candidate "
@@ -1833,7 +1855,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
         # Before the approval check, so the round that ends the loop is stored
         # like every other one: a review the store has no row for is a round
         # §6 cannot compare the next one against.
-        record_round(conn, run_id, rnd, "review", verdict, verify_cmd, ok, out,
+        record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
+                     ok, out,
                      started_at=round_started, criteria=criteria)
 
         # A criterion the reviewer left not met or unwitnessed is a blocker
@@ -1848,7 +1871,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
 
         # 3. implementer addresses findings (same branch, new commit)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        fixes = timed("A reviewer left findings on your work. The ticket you "
+        fixes = timed(target,
+                      "A reviewer left findings on your work. The ticket you "
                       "are held to, acceptance criteria included:\n\n"
                       f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
                       "For EACH finding, adjudicate it first: ADDRESS (concrete "
@@ -1884,7 +1908,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
 
         set_phase(conn, run_id, "reviewing", "terminal adjudication")
         round_started = int(time() * 1000)
-        reply = agent("adjudicate",
+        reply = agent(target, "adjudicate",
             f"You are a READ-ONLY final adjudicator. Judge commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
             "the candidate "
@@ -1906,7 +1930,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
         # The adjudication is a round of the run like the reviews before it —
         # numbered after them, so the run's rounds read in the order they
         # happened.
-        record_round(conn, run_id, MAX_ROUNDS + 1, "adjudicate", reply,
+        record_round(target, conn, run_id, MAX_ROUNDS + 1, "adjudicate", reply,
                      verify_cmd, ok, out, started_at=round_started)
         try:
             decision = review_runner.terminal_verdict(
@@ -1969,14 +1993,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # never trips over a dirty index. Nothing is written to the file during a
     # run any more, so this is normally a no-op; what it still catches is a
     # window an earlier failed run regenerated and left uncommitted.
-    commit_findings(f"FINDINGS: {task_id} review records")
+    commit_findings(target, f"FINDINGS: {task_id} review records")
 
     # `squashing` is skipped, not faked: this merge is --no-ff and rewrites
     # no history, so the run goes merging -> done and the phase §4 puts
     # between them names an activity that never happens here.
     set_phase(conn, run_id, "merging", f"--no-ff merge of {branch} into main")
     mr = subprocess.run(["git", "merge", "--no-ff", branch, "-m",
-                         f"Merge {branch}: {task}"], cwd=TARGET,
+                         f"Merge {branch}: {task}"], cwd=target.path,
                         capture_output=True, text=True)
     if mr.returncode != 0:
         # What conflicted is the index's answer, not the merge output's: a
@@ -1985,14 +2009,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
         # the file, and would then "resolve" a conflict nobody looked at.
         conflicted = sorted(
             p for p in subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=U"], cwd=TARGET,
+                ["git", "diff", "--name-only", "--diff-filter=U"], cwd=target.path,
                 capture_output=True, text=True).stdout.splitlines() if p.strip())
         if conflicted == ["FINDINGS.md"]:
             # conflict limited to FINDINGS.md — prefer the branch side (fuller log)
             subprocess.run(["git", "checkout", "--theirs", "FINDINGS.md"],
-                           cwd=TARGET, capture_output=True, text=True)
-            sh(["git", "add", "FINDINGS.md"], TARGET)
-            sh(["git", "commit", "--no-edit"], TARGET)
+                           cwd=target.path, capture_output=True, text=True)
+            sh(["git", "add", "FINDINGS.md"], target.path)
+            sh(["git", "commit", "--no-edit"], target.path)
         else:
             # Anything else is a human's merge to make. An `assert` here was
             # both stripped under `python -O` and, when it did fire, left main
@@ -2001,9 +2025,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
             # point it was before the attempt, and fail the run through the
             # same close-out every other refusal at this gate uses — branch
             # and worktree preserved.
-            subprocess.run(["git", "merge", "--abort"], cwd=TARGET,
+            subprocess.run(["git", "merge", "--abort"], cwd=target.path,
                            capture_output=True, text=True)
-            dirty = subprocess.run(["git", "status", "--porcelain"], cwd=TARGET,
+            dirty = subprocess.run(["git", "status", "--porcelain"], cwd=target.path,
                                    capture_output=True, text=True).stdout.strip()
             paths = ", ".join(conflicted) or "(no unmerged paths reported)"
             why = (f"merge of {branch} into main conflicted on: {paths};"
@@ -2022,8 +2046,8 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # worktree's stray untracked files are not preserved work — and a cleanup
     # refusal must not re-classify merged work as a failed run.
     try:
-        sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
-        sh(["git", "branch", "-d", branch], TARGET)
+        sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
+        sh(["git", "branch", "-d", branch], target.path)
     except RuntimeError as e:
         print(f"[holo2] post-merge cleanup left debris: {e}")
     # Nothing tells Linear the ticket is done here any more. The merge makes
@@ -2051,14 +2075,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
 # run_task().
 
 
-def open_store(path=None):
+def open_store(target, path=None):
     """Open the loop's store, creating and migrating the schema if needed.
 
-    The store's directory is made here, on first need: `retarget()` only
+    The store's directory is made here, on first need: `Target.locate()` only
     derives paths, and a `--report` against a target that has no store says
     so without leaving an empty directory behind.
     """
-    path = Path(path or STORE_PATH)
+    path = Path(path or target.store_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = store.open(str(path))
     store.init(conn)
@@ -2083,7 +2107,7 @@ def set_phase(conn, run_id, phase, note=None):
     store.set_phase(conn, run_id, phase, note)
 
 
-def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
+def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  started_at=None, criteria=()):
     """Record one review or adjudication round as a `reviewRounds` row.
 
@@ -2135,7 +2159,8 @@ def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     # exit code stored here is that verdict, and `output` is the detail.
     results = ([{"command": verify_cmd, "exitCode": 0 if ok else 1,
                  "output": out}] if verify_cmd else [])
-    store.record_review_round(conn, run_id, rnd, verdict, agent_route(role),
+    store.record_review_round(conn, run_id, rnd, verdict,
+                              agent_route(target, role),
                               findings=findings, verification_results=results,
                               started_at=started_at,
                               ended_at=int(time() * 1000))
@@ -2406,15 +2431,15 @@ def frozen_preamble(text):
     return text
 
 
-def write_findings(conn, path=None):
+def write_findings(target, conn, path=None):
     """Regenerate FINDINGS.md in place, keeping everything above the marker."""
-    path = Path(path) if path else TARGET / "FINDINGS.md"
+    path = Path(path) if path else target.path / "FINDINGS.md"
     existing = path.read_text() if path.exists() else ""
     path.write_text(render_findings(conn, frozen_preamble(existing)))
     return path
 
 
-def commit_findings(message):
+def commit_findings(target, message):
     """Commit FINDINGS.md in the target checkout, if the render changed it.
 
     Returns whether it committed. The guard is not an optimization: a
@@ -2422,15 +2447,15 @@ def commit_findings(message):
     `git commit` on an unchanged tree fails.
     """
     r = subprocess.run(["git", "status", "--porcelain", "FINDINGS.md"],
-                       cwd=TARGET, capture_output=True, text=True)
+                       cwd=target.path, capture_output=True, text=True)
     if not r.stdout.strip():
         return False
-    sh(["git", "add", "FINDINGS.md"], TARGET)
-    sh(["git", "commit", "-m", message], TARGET)
+    sh(["git", "add", "FINDINGS.md"], target.path)
+    sh(["git", "commit", "-m", message], target.path)
     return True
 
 
-def refresh_findings(conn):
+def refresh_findings(target, conn):
     """Render the window over the store's rows into the target's FINDINGS.md.
 
     A `conn` of None makes this a no-op, like `set_phase()` and
@@ -2439,7 +2464,7 @@ def refresh_findings(conn):
     """
     if conn is None:
         return
-    write_findings(conn)
+    write_findings(target, conn)
 
 
 def mirror_key(task):
@@ -2893,7 +2918,7 @@ def escalate(conn, ticket_id, provider=None):
     return True
 
 
-def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None,
+def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=None,
                       confirm=None, outcome_class="work"):
     """End a failed run the one way the factory ends failed runs.
 
@@ -2942,12 +2967,12 @@ def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None,
             return False
         release_run(conn, run_id, False, reason, outcome_class)
     escalate(conn, ticket_id, provider)
-    refresh_findings(conn)
+    refresh_findings(target, conn)
     return True
 
 
-def self_hosted():
-    """Whether TARGET is the repository this very module was imported from.
+def self_hosted(target):
+    """Whether `target` is the repository this very module was imported from.
 
     Decided once at startup by `main()`: a loop working on the factory's own
     checkout keeps running the pre-merge code after every merge, so each
@@ -2955,24 +2980,24 @@ def self_hosted():
     restarts it (gembox 2026-09-02, run 17 cut a worktree without the
     ticket id run 16 had just merged support for).
     """
-    return Path(__file__).resolve().parent == Path(TARGET).resolve()
+    return Path(__file__).resolve().parent == target.path.resolve()
 
 
-def main(provider=None):
+def main(target, provider=None):
     if provider is None:
         import linear_provider as provider
-    restart_after_merge = self_hosted()
-    stop_on_failure = loop_config().stop_on_failure
+    restart_after_merge = self_hosted(target)
+    stop_on_failure = loop_config(target).stop_on_failure
     # Whether any run this pass failed, for the exit code when the loop was
     # told to go on past failures: the shell still sees a nonzero status for
     # a night that was not clean.
     failed = False
-    conn = open_store()
+    conn = open_store(target)
     try:
         # The provider knows its team by name rather than by id; the column's
         # contract is one row per Linear team, which the name keys just as
         # well until the provider resolves the id.
-        project = store.ensure_project(conn, provider.TEAM, TARGET)
+        project = store.ensure_project(conn, provider.TEAM, target.path)
         # Startup self-sweep, read-only: it records what it saw — a first
         # strike on anything silent — so the *next* invocation or a
         # `--sweep --act` can act on the second sighting. Nothing is failed
@@ -2981,11 +3006,11 @@ def main(provider=None):
         # points back at these lines rather than re-sweeping (which would
         # count one silence twice) or reprinting (which would look like it
         # had).
-        seen = sweep(conn, int(time() * 1000))
+        seen = sweep(target, conn, int(time() * 1000))
         if seen.trips or seen.watched or seen.restarts:
             print("\n".join(sweep_lines(seen)))
             if seen.trips:
-                print(SWEEP_HINT.format(target=TARGET))
+                print(SWEEP_HINT.format(target=target.path))
         # The tickets this pass has refused to claim. A blocked ticket keeps
         # its place in the board's ready set — `blocked_on_operator` projects
         # to Todo, the column a human picks work out of — so it is offered
@@ -3126,7 +3151,7 @@ def main(provider=None):
             reason = None
             outcome_class = "work"
             try:
-                merged = run_task(task, conn, run_id, provider)
+                merged = run_task(target, task, conn, run_id, provider)
             except RunFailure as e:
                 reason = str(e)
                 outcome_class = outcome_class_of(e)
@@ -3152,7 +3177,7 @@ def main(provider=None):
                     # Close-out, and the first moment the run's own outcome is
                     # a row: the window is regenerated here rather than inside
                     # `run_task()` so the entry that ends the run is in it.
-                    refresh_findings(conn)
+                    refresh_findings(target, conn)
                 else:
                     # The failure close-out: release, escalate if this failure
                     # was one too many, regenerate the window. Shared with the
@@ -3162,7 +3187,8 @@ def main(provider=None):
                     # KeyboardInterrupt included — with a traceback of its
                     # own; the lease stays for release() or the sweep.
                     try:
-                        close_out_failure(conn, run_id, ticket_id, reason,
+                        close_out_failure(target, conn, run_id, ticket_id,
+                                          reason,
                                           provider=provider,
                                           outcome_class=outcome_class)
                     except Exception as close_err:  # noqa: BLE001
@@ -3185,14 +3211,15 @@ def main(provider=None):
                 print(f"[holo2] {task['id']} failed; continuing to the next"
                       " ready ticket (stop_on_failure = false)")
                 continue
-            commit_findings(f"Complete task {task['id']}: {task['title']}")
+            commit_findings(target,
+                            f"Complete task {task['id']}: {task['title']}")
             if restart_after_merge:
                 # Store and Linear are terminal for this run, the lease is
                 # released and no worktree is open: the re-exec starts
                 # exactly where the next pass would, from the merged code.
                 # Only after a merge -- a failure returned above, which is
                 # the intended stop.
-                sha = sh(["git", "rev-parse", "--short", "HEAD"], TARGET)
+                sha = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
                 # sys.orig_argv is the exact original command line, so
                 # interpreter flags (-u above all: without it a tee'd log
                 # goes block-buffered and looks hung) survive the restart.
@@ -3309,7 +3336,7 @@ def report_lines(conn):
     return lines + [report_summary(rows)]
 
 
-def report(conn=None, out=None, now=None):
+def report(target, conn=None, out=None, now=None):
     """Print the target store's estimate-vs-actual table. Returns nothing.
 
     `--report`'s whole body: it reads rows and prints them, so no ticket is
@@ -3328,14 +3355,14 @@ def report(conn=None, out=None, now=None):
     taken against, injectable so a test can place a beat in time.
     """
     out = out or sys.stdout
-    if conn is None and not STORE_PATH.exists():
-        print(f"[holo2] no store at {STORE_PATH}", file=out)
+    if conn is None and not target.store_path.exists():
+        print(f"[holo2] no store at {target.store_path}", file=out)
         return
     owned = conn is None
-    conn = conn if conn is not None else open_store()
+    conn = conn if conn is not None else open_store(target)
     try:
         print("\n".join(report_lines(conn)), file=out)
-        print(supervisor_liveness_line(conn, now), file=out)
+        print(supervisor_liveness_line(target, conn, now), file=out)
     finally:
         if owned:
             conn.close()
@@ -3356,7 +3383,7 @@ def format_age(ms):
     return f"{seconds // 3600}h"
 
 
-def supervisor_liveness_line(conn=None, now=None):
+def supervisor_liveness_line(target, conn=None, now=None):
     """One line saying whether a supervisor is live for the target.
 
     `supervisor: live, last heartbeat 12s ago (pid N on HOST)` when the
@@ -3371,9 +3398,9 @@ def supervisor_liveness_line(conn=None, now=None):
     now = int(time() * 1000) if now is None else now
     owned = conn is None
     if owned:
-        if not STORE_PATH.exists():
+        if not target.store_path.exists():
             return "supervisor: none recorded"
-        conn = open_store()
+        conn = open_store(target)
     try:
         beat = store.latest_supervisor_heartbeat(conn)
     finally:
@@ -3383,7 +3410,8 @@ def supervisor_liveness_line(conn=None, now=None):
         return "supervisor: none recorded"
     pid, _started_at, last_beat, _passes, host = beat
     age = now - last_beat
-    state = "live" if age < sweep_config().heartbeat_stale_ms else "stale"
+    state = ("live" if age < sweep_config(target).heartbeat_stale_ms
+             else "stale")
     return (f"supervisor: {state}, last heartbeat {format_age(age)} ago"
             f" (pid {pid} on {host_name(host)})")
 
@@ -3472,7 +3500,7 @@ SweepConfig = collections.namedtuple(
      "review_overlap_threshold", "sweep_interval_sec", "restart_grace_ms"))
 
 
-def sweep_config():
+def sweep_config(target):
     """The target's sweep thresholds: `[supervisor]` over the defaults.
 
     Every key is optional and an absent table is the module constants exactly.
@@ -3492,10 +3520,10 @@ def sweep_config():
     Keys the table names that this version does not know are refused by
     `check_config_keys()`, which startup runs beside this.
     """
-    table = config().get("supervisor", {})
+    table = target.config().get("supervisor", {})
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [supervisor] must be a table, got "
+            f"[holo2] {target.config_path}: [supervisor] must be a table, got "
             f"{type(table).__name__}")
     values = {}
     for key, default in SUPERVISOR_KEYS.items():
@@ -3511,7 +3539,7 @@ def sweep_config():
             constraint, ok = "a finite positive number", number and value > 0
         if not ok:
             raise SystemExit(
-                f"[holo2] {CONFIG_PATH}: [supervisor] {key} must be "
+                f"[holo2] {target.config_path}: [supervisor] {key} must be "
                 f"{constraint}, got {value!r}")
         values[key] = value
     return SweepConfig(
@@ -3537,7 +3565,7 @@ KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
 LoopConfig = collections.namedtuple("LoopConfig", ("stop_on_failure",))
 
 
-def loop_config():
+def loop_config(target):
     """The target's `[loop]` knobs over the defaults.
 
     Checked at startup beside `sweep_config()`, the same way: an absent table
@@ -3549,17 +3577,17 @@ def loop_config():
     constraint, like a bad `[supervisor]` threshold. Keys this version does
     not know are refused by `check_config_keys()`.
     """
-    table = config().get("loop", {})
+    table = target.config().get("loop", {})
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [loop] must be a table, got "
+            f"[holo2] {target.config_path}: [loop] must be a table, got "
             f"{type(table).__name__}")
     values = {}
     for key, default in LOOP_KEYS.items():
         value = table.get(key, default)
         if not isinstance(value, bool):
             raise SystemExit(
-                f"[holo2] {CONFIG_PATH}: [loop] {key} must be a boolean "
+                f"[holo2] {target.config_path}: [loop] {key} must be a boolean "
                 f"(true or false), got {value!r}")
         values[key] = value
     return LoopConfig(**values)
@@ -3667,7 +3695,7 @@ def review_overlap(conn, run_id):
                                                   later_findings)
 
 
-def still_tripped(conn, trip, knobs=None):
+def still_tripped(target, conn, trip, knobs=None):
     """Does `trip`'s verdict still hold of the run it was reached on?
 
     Asked again at the moment of acting, under the write lock, because the
@@ -3702,7 +3730,7 @@ def still_tripped(conn, trip, knobs=None):
     `knobs` is the `SweepConfig` the verdict was reached under, so the
     overlap is re-asked against the threshold that tripped it.
     """
-    knobs = sweep_config() if knobs is None else knobs
+    knobs = sweep_config(target) if knobs is None else knobs
     row = conn.execute(
         "SELECT endedAt, phase, lastHeartbeat FROM runs WHERE id = ?",
         (trip.run_id,)).fetchone()
@@ -3720,7 +3748,7 @@ def still_tripped(conn, trip, knobs=None):
     return True
 
 
-def act_on_trip(conn, trip, provider=None, knobs=None):
+def act_on_trip(target, conn, trip, provider=None, knobs=None):
     """Fail one tripped run, if it is still tripped; return an `Outcome`.
 
     The whole of what acting means. `close_out_failure()` is the loop's own,
@@ -3757,18 +3785,18 @@ def act_on_trip(conn, trip, provider=None, knobs=None):
     working on disk therefore remains out of scope, and is the reason the
     strike rule is two sightings rather than one.
     """
-    knobs = sweep_config() if knobs is None else knobs
+    knobs = sweep_config(target) if knobs is None else knobs
     (ticket_id,) = conn.execute(
         "SELECT ticketId FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
     seen = {"phase": None}
 
-    def confirm():
+    def confirm(target):
         # Read under the same lock the verdict is re-reached under, so the
         # phase the outcome names is the one the decision was made on.
         row = conn.execute(
             "SELECT phase FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
         seen["phase"] = row[0] if row is not None else None
-        if not still_tripped(conn, trip, knobs):
+        if not still_tripped(target, conn, trip, knobs):
             if row is not None:
                 store.record_event(
                     conn, trip.run_id, SWEEP_EVENT,
@@ -3783,14 +3811,17 @@ def act_on_trip(conn, trip, provider=None, knobs=None):
         return True
 
     acted = close_out_failure(
-        conn, trip.run_id, ticket_id,
+        target, conn, trip.run_id, ticket_id,
         f"swept by the supervisor in phase {trip.phase}: {trip.condition}"
         f" ({trip.evidence}); branch and worktree preserved for a human",
-        provider, confirm)
+        # `close_out_failure()` calls its `confirm` with no arguments, so
+        # the target is bound here, where the dependency is visible,
+        # rather than captured from this scope.
+        provider, functools.partial(confirm, target))
     return Outcome(trip, acted, seen["phase"])
 
 
-def sweep(conn, now, act=False, provider=None, knobs=None):
+def sweep(target, conn, now, act=False, provider=None, knobs=None):
     """Check every live run for a tripped condition; return a `Sweep`.
 
     `now` is epoch milliseconds and is a parameter, not a clock read: every
@@ -3853,7 +3884,7 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
     `knobs` is the target's `SweepConfig`; the default is `sweep_config()`,
     the `[supervisor]` table over the module constants.
     """
-    knobs = sweep_config() if knobs is None else knobs
+    knobs = sweep_config(target) if knobs is None else knobs
     stale_ms, strikes_needed = knobs.heartbeat_stale_ms, knobs.stale_strikes
     grace, overlap_threshold = knobs.budget_grace, knobs.review_overlap_threshold
     trips, watched = [], []
@@ -3915,7 +3946,8 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
                     f" {strikes_needed} on {host_name(host)}")
     outcomes = []
     if act:
-        outcomes = [act_on_trip(conn, trip, provider, knobs) for trip in trips]
+        outcomes = [act_on_trip(target, conn, trip, provider, knobs)
+                    for trip in trips]
     return Sweep(len(swept), trips, act, tuple(watched), tuple(outcomes),
                  restarts)
 
@@ -4019,7 +4051,7 @@ def run_lines(result):
     return lines + [summary]
 
 
-def sweep_report(conn=None, now=None, out=None, act=False, provider=None):
+def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None):
     """Print the target store's tripped runs, failing them when `act`.
 
     `--sweep`'s whole body, and a sibling of `report()` in what it refuses to
@@ -4044,15 +4076,16 @@ def sweep_report(conn=None, now=None, out=None, act=False, provider=None):
     created, the way `--report` answers the same mistake.
     """
     out = out or sys.stdout
-    if conn is None and not STORE_PATH.exists():
-        print(f"[holo2] no store at {STORE_PATH}", file=out)
+    if conn is None and not target.store_path.exists():
+        print(f"[holo2] no store at {target.store_path}", file=out)
         return
     owned = conn is None
-    conn = conn if conn is not None else open_store()
+    conn = conn if conn is not None else open_store(target)
     try:
         if now is None:
             now = int(time() * 1000)
-        print("\n".join(sweep_lines(sweep(conn, now, act, provider))), file=out)
+        print("\n".join(sweep_lines(sweep(target, conn, now, act, provider))),
+              file=out)
     finally:
         if owned:
             conn.close()
@@ -4085,16 +4118,16 @@ def sweep_report(conn=None, now=None, out=None, act=False, provider=None):
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
 
-def supervisor_lock_path(target=None):
+def supervisor_lock_path(target):
     """The lockfile for `target`'s supervisor, in its state directory.
 
     Beside the store rather than inside the target for the store's own
     reason: nothing about the target checkout should have to know the factory
     exists, and a lock inside it is dirt a task's `git add -A` could commit.
-    Derived through `state_dir()` so the lock cannot end up addressing a
-    different directory from the store it guards.
+    Taken from the `Target`'s state directory so the lock cannot end up
+    addressing a different directory from the store it guards.
     """
-    return state_dir(TARGET if target is None else target) / "supervisor.lock"
+    return target.holo_dir / "supervisor.lock"
 
 
 class SupervisorHeld(Exception):
@@ -4106,16 +4139,16 @@ class SupervisorHeld(Exception):
     file.
     """
 
-    def __init__(self, path, pid=None, started_at=None, host=None):
-        self.path, self.pid, self.started_at = path, pid, started_at
-        self.host = host
+    def __init__(self, path, repo, pid=None, started_at=None, host=None):
+        self.path, self.repo, self.pid = path, repo, pid
+        self.started_at, self.host = started_at, host
         if pid is None:
             what = (f"[holo2] supervisor lock {path} exists but names no"
                     " process; refusing to guess. remove it if no supervisor"
                     " is running")
         else:
             since = (f" since {started_at}" if started_at is not None else "")
-            what = (f"[holo2] a supervisor is already running for {TARGET}:"
+            what = (f"[holo2] a supervisor is already running for {repo}:"
                     f" pid {pid} on {host_name(host)}{since} holds {path};"
                     " not starting another")
         super().__init__(what)
@@ -4176,8 +4209,11 @@ def reclaim_turn(path):
         os.close(fd)
 
 
-def acquire_supervisor_lock(path, pid=None, now=None, host=None):
+def acquire_supervisor_lock(path, repo, pid=None, now=None, host=None):
     """Take the supervisor lock at `path` for `pid`; raise `SupervisorHeld`.
+
+    `repo` is the repository the lock guards, named in the refusal so the
+    operator reading it knows which target already has its supervisor.
 
     The lock's content is `host pid started_at`, `host` defaulting to this
     machine's hostname: a target's state directory can be read from another
@@ -4223,10 +4259,10 @@ def acquire_supervisor_lock(path, pid=None, now=None, host=None):
     with reclaim_turn(path):
         holder = read_supervisor_lock(path)
         if holder is None and path.exists():
-            raise SupervisorHeld(path)
+            raise SupervisorHeld(path, repo)
         if holder is not None:
             if holder[0] != pid and pid_alive(holder[0]):
-                raise SupervisorHeld(path, *holder)
+                raise SupervisorHeld(path, repo, *holder)
             try:
                 os.unlink(path)
             except FileNotFoundError:
@@ -4237,7 +4273,7 @@ def acquire_supervisor_lock(path, pid=None, now=None, host=None):
         if created():
             return path
     holder = read_supervisor_lock(path)
-    raise SupervisorHeld(path, *(holder or ()))
+    raise SupervisorHeld(path, repo, *(holder or ()))
 
 
 def release_supervisor_lock(path, pid=None):
@@ -4257,7 +4293,7 @@ def release_supervisor_lock(path, pid=None):
             pass
 
 
-def supervise_pass(pid, started_at, now=None, provider=None, out=None):
+def supervise_pass(target, pid, started_at, now=None, provider=None, out=None):
     """One pass: an acting sweep of the target's store, then a heartbeat.
 
     The store is opened and closed here rather than held by the loop: a
@@ -4274,9 +4310,9 @@ def supervise_pass(pid, started_at, now=None, provider=None, out=None):
     """
     out = out or sys.stdout
     now = int(time() * 1000) if now is None else now
-    conn = open_store()
+    conn = open_store(target)
     try:
-        seen = sweep(conn, now, act=True, provider=provider)
+        seen = sweep(target, conn, now, act=True, provider=provider)
         if seen.trips or seen.watched or seen.restarts:
             print("\n".join(sweep_lines(seen)), file=out)
         store.record_supervisor_heartbeat(conn, pid, started_at, now)
@@ -4285,7 +4321,7 @@ def supervise_pass(pid, started_at, now=None, provider=None, out=None):
     return seen
 
 
-def supervise(provider=None, interval=None, wait=None, out=None):
+def supervise(target, provider=None, interval=None, wait=None, out=None):
     """`--supervise`'s whole body: lock, sweep, sleep, repeat until a signal.
 
     The lock is taken before the first pass and given back on every way out
@@ -4296,8 +4332,8 @@ def supervise(provider=None, interval=None, wait=None, out=None):
     rather than raising into whatever the pass was doing, so a signal that
     lands mid-sweep lets the sweep's transaction finish and the pass that
     was in hand is a whole pass or none. The previous handlers are put back
-    afterwards for the same reason `retarget()` is undone in tests: this is
-    a mode of a module other code imports.
+    afterwards because this is a mode of a module other code imports, not
+    the process's only occupant.
 
     `wait` is the sleep, injectable so a test can drive the loop without
     one; it is called with the interval and its result is ignored. The
@@ -4306,10 +4342,12 @@ def supervise(provider=None, interval=None, wait=None, out=None):
     `[supervisor] sweep_interval_sec`.
     """
     out = out or sys.stdout
-    interval = sweep_config().sweep_interval_sec if interval is None else interval
+    interval = (sweep_config(target).sweep_interval_sec if interval is None
+                else interval)
     pid = os.getpid()
     started_at = int(time() * 1000)
-    path = acquire_supervisor_lock(supervisor_lock_path(), pid, started_at)
+    path = acquire_supervisor_lock(supervisor_lock_path(target), target.path,
+                                   pid, started_at)
     stop = threading.Event()
     wait = stop.wait if wait is None else wait
 
@@ -4319,11 +4357,11 @@ def supervise(provider=None, interval=None, wait=None, out=None):
     previous = {signum: signal.signal(signum, on_signal)
                 for signum in STOP_SIGNALS}
     try:
-        print(f"[holo2] supervising {TARGET} as pid {pid} on"
+        print(f"[holo2] supervising {target.path} as pid {pid} on"
               f" {socket.gethostname()}: acting sweep every {interval}s,"
               f" lock at {path}", file=out)
         while not stop.is_set():
-            supervise_pass(pid, started_at, provider=provider, out=out)
+            supervise_pass(target, pid, started_at, provider=provider, out=out)
             wait(interval)
         print("[holo2] supervisor stopping on signal; lock released",
               file=out)
@@ -4380,11 +4418,11 @@ def cli(argv=None):
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
-    retarget(args.target)
+    target = Target.locate(args.target)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.
-    config()
+    target.config()
     # And the `[supervisor]` table is checked in the same breath, for every
     # mode: the loop's startup self-sweep, `--sweep` and `--supervise` all
     # read it, and a threshold outside its constraint is the same kind of
@@ -4393,37 +4431,37 @@ def cli(argv=None):
     # chose. Unknown keys in any table the factory reads are refused in the
     # same window: a typo the factory ignored would leave the operator
     # believing a knob is set that is not.
-    check_config_keys()
-    sweep_config()
-    loop_config()
+    check_config_keys(target)
+    sweep_config(target)
+    loop_config(target)
     if args.report:
-        return report()
+        return report(target)
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails
     # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
-        return sweep_report(act=args.act)
+        return sweep_report(target, act=args.act)
     # The acting sweep on a timer. Like `--sweep --act` it dispatches nothing
     # and so resolves no route; unlike it, it takes the target's supervisor
     # lock first, and a target that already has one is an exit, not a loop.
     if args.supervise:
         try:
-            return supervise()
+            return supervise(target)
         except SupervisorHeld as held:
             # With the liveness line, so the refusal is actionable: a held
             # lock and a fresh heartbeat is a watcher doing its job; a held
             # lock and a stale one is a watcher to go and look at.
             raise SystemExit(
-                f"{held}\n{supervisor_liveness_line()}") from None
+                f"{held}\n{supervisor_liveness_line(target)}") from None
     # And, on the path that actually dispatches agents, every route the config
     # names resolves before the loop claims a ticket. `--report` skips this: it
     # calls nobody, so a reviewer that is not installed on the machine reading
     # the table is not that reading's problem.
-    check_agent_commands()
+    check_agent_commands(target)
     # Same window, same reason: the `[worktree]` table is read here rather
     # than by the first run that cuts a worktree with it.
-    check_worktree_setup()
-    return main()
+    check_worktree_setup(target)
+    return main(target)
 
 
 if __name__ == "__main__":

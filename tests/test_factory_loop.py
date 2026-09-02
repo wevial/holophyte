@@ -130,35 +130,32 @@ class LoopFixture(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
         self.base = self.git("rev-parse", "main").strip()
 
-        # Where `retarget(self.target)` will look: the target's directory under
-        # a HOLOPHYTE_HOME of this test's own, never the operator's real one.
+        # Where `Target.locate(self.target)` will look: the target's directory
+        # under a HOLOPHYTE_HOME of this test's own, never the operator's real
+        # one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
         self.db = factory.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
-        for name, value in (("TARGET", self.target), ("STORE_PATH", self.db),
-                            ("WORKTREES", self.worktrees)):
-            patcher = patch.object(factory, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        self.tgt = factory.Target.locate(self.target)
+        assert self.tgt.store_path == self.db
+        assert self.tgt.worktrees == self.worktrees
 
     def git(self, *args, cwd=None):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
                               check=True, capture_output=True, text=True).stdout
 
     def configure(self, toml):
-        """Give the fixture target a config file and point the module at it.
+        """Give the fixture target a config file and a `Target` that reads it.
 
-        Through `retarget()` rather than by patching CONFIG_PATH: it derives
-        every path from the target the same way the fixture does, so a test
-        that set the config by hand could pass with the file unwired.
+        Through `Target.locate()` rather than by writing `config_path` by
+        hand: it derives every path from the target the same way the fixture
+        does, so a test that set the config by hand could pass with the file
+        unwired. A fresh value, too: a `Target` parses its config once.
         """
         (self.db.parent / "config.toml").write_text(toml)
-        # Paths only (adopt=False): restoring the default target at
-        # teardown must not move a real host's state around.
-        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
-        factory.retarget(self.target)
+        self.tgt = factory.Target.locate(self.target)
 
     def loop(self, *script, provider=None):
         """Run `main()` over the queued tasks with the script answering agents.
@@ -175,7 +172,7 @@ class LoopFixture(unittest.TestCase):
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
                 with patch.object(factory, "agent", fake):
-                    self.rc = factory.main(provider)
+                    self.rc = factory.main(self.tgt, provider)
         return fake, guard
 
     def main_output(self, *script, provider=None):

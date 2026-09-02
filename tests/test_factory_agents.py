@@ -4,6 +4,7 @@ loop's control flow.
 Run: python3 -m unittest discover -s tests -p 'test_factory_agents*' -v
 """
 import importlib.util
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -18,15 +19,33 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
 
+def bare_target(case, path):
+    """A `Target` at `path` whose state directory holds no config.
+
+    The routes these tests pin are the defaults, so the config the value
+    would read has to be absent -- in a directory of the test's own, not
+    wherever `HOLOPHYTE_HOME` happens to point on this host. The directory
+    is removed when `case` finishes.
+    """
+    path = Path(path)
+    holo = Path(tempfile.mkdtemp())
+    case.addCleanup(shutil.rmtree, holo, ignore_errors=True)
+    return factory.Target(path=path, holo_dir=holo, store_path=holo / "store.db",
+                          config_path=holo / "config.toml",
+                          worktrees=path.parent / f"{path.name}.worktrees")
+
+
 class AgentRouteTests(unittest.TestCase):
     def setUp(self):
         self.worktree = Path("/tmp/holophyte-agent-contract")
+        self.tgt = bare_target(self, self.worktree)
 
     @patch.object(factory, "run_capped")
     def test_implementer_uses_claude_opus_at_high_effort(self, run_capped):
         run_capped.return_value = (0, "implemented\n")
 
-        result = factory.agent("implement", "make the focused change", self.worktree)
+        result = factory.agent(self.tgt, "implement", "make the focused change",
+                               self.worktree)
 
         self.assertEqual(result, "implemented")
         run_capped.assert_called_once_with(
@@ -43,8 +62,8 @@ class AgentRouteTests(unittest.TestCase):
     ):
         run_capped.return_value = (0, "")
 
-        factory.agent("implement", "goal", self.worktree, timeout=300)
-        factory.agent("implement", "goal", self.worktree, timeout=7200)
+        factory.agent(self.tgt, "implement", "goal", self.worktree, timeout=300)
+        factory.agent(self.tgt, "implement", "goal", self.worktree, timeout=7200)
 
         self.assertEqual([c.args[2] for c in run_capped.call_args_list],
                          [300, 1800])
@@ -57,7 +76,7 @@ class AgentRouteTests(unittest.TestCase):
         candidate = "2" * 40
 
         result = factory.agent(
-            "review",
+            self.tgt, "review",
             "review the candidate",
             self.worktree,
             base_sha=base,
@@ -84,7 +103,7 @@ class AgentRouteTests(unittest.TestCase):
             "Codex CLI is not installed")
 
         with self.assertRaises(factory.InfraFailure) as raised:
-            factory.agent("review", "review the candidate", self.worktree,
+            factory.agent(self.tgt, "review", "review the candidate", self.worktree,
                           base_sha="1" * 40, candidate_sha="2" * 40)
 
         self.assertIn("Codex CLI is not installed", str(raised.exception))
@@ -98,7 +117,7 @@ class AgentRouteTests(unittest.TestCase):
         run_review.return_value = "no verdict here"
 
         result = factory.agent(
-            "adjudicate",
+            self.tgt, "adjudicate",
             "adjudicate the candidate",
             self.worktree,
             base_sha="1" * 40,
@@ -149,9 +168,11 @@ class ImplementerProcessGroupTests(unittest.TestCase):
         argv = [sys.executable, "-u", "-c", SPAWNING_IMPLEMENTER]
         with tempfile.TemporaryDirectory() as cwd, \
                 patch.object(factory, "agent_command",
-                             lambda role, goal: argv):
+                             lambda target, role, goal: argv):
             with self.assertRaises(subprocess.TimeoutExpired) as raised:
-                factory.agent("implement", "spawn and stall", Path(cwd),
+                factory.agent(bare_target(self, cwd), "implement",
+                              "spawn and stall",
+                              Path(cwd),
                               timeout=1)
 
         # Partial output survives the kill and names the two processes.
@@ -200,10 +221,9 @@ class ReviewLoopTests(unittest.TestCase):
         self.worktrees = root / "repo.worktrees"
         self.branch = "task/ko-116-add-a-thing"
         self.wt = self.worktrees / "ko-116-add-a-thing"
-        for name, value in (("TARGET", self.target), ("WORKTREES", self.worktrees)):
-            patcher = patch.object(factory, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        self.tgt = factory.Target(
+            path=self.target, holo_dir=root, store_path=root / "store.db",
+            config_path=root / "config.toml", worktrees=self.worktrees)
         self.linear = FakeLinear()
         patcher = patch.dict(sys.modules, {"linear_provider": self.linear})
         patcher.start()
@@ -233,8 +253,8 @@ class ReviewLoopTests(unittest.TestCase):
         """
         replies = list(replies)
 
-        def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
-                       timeout=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None,
+                       candidate_sha=None, timeout=None):
             self.events.append(role)
             self.goals.append((role, goal))
             if role != "implement":
@@ -247,7 +267,7 @@ class ReviewLoopTests(unittest.TestCase):
 
         with patch.object(factory, "agent", fake_agent):
             try:
-                return factory.run_task({
+                return factory.run_task(self.tgt, {
                     "id": "KO-116", "title": "add a thing",
                     "verify": "echo ok", "budget_min": budget_min,
                     "contracts": [], **task,

@@ -1,7 +1,7 @@
 """A scripted stand-in for the loop's agent turns — zero real agent calls.
 
 `factory.run_task()` reaches the outside world at exactly one point: the
-module-level `agent(role, goal, cwd, ...)` call it makes for every implement,
+module-level `agent(target, role, goal, cwd, ...)` call it makes for every implement,
 review and adjudicate turn. Everything else the loop does — cutting the
 worktree, the verify gate, the fix commits, the `--no-ff` merge — is real git
 against a real repo. So a test can drive the whole control flow honestly by
@@ -159,8 +159,8 @@ class FakeAgent:
         self.turns: list[Turn] = []
         self.replies: list[str] = []
 
-    def __call__(self, role, goal, cwd, *, base_sha=None, candidate_sha=None,
-                 timeout=None):
+    def __call__(self, target, role, goal, cwd, *, base_sha=None,
+                 candidate_sha=None, timeout=None):
         n = len(self.turns) + 1
         if not self.script:
             raise ScriptError(f"script exhausted: the loop asked for a {role!r}"

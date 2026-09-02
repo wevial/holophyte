@@ -94,11 +94,12 @@ class MirrorPushTests(unittest.TestCase):
             subprocess.run(["git", "config", key, value],
                            cwd=self.target, check=True)
         self.db = root / "repo.holophyte.db"
-        for name, value in (("TARGET", self.target), ("STORE_PATH", self.db),
-                            ("WORKTREES", root / "repo.worktrees")):
-            patcher = patch.object(factory, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        # The `Target` the loop is handed, with the store and the worktrees
+        # placed by hand: outside the target, never a file in it.
+        self.tgt = factory.Target(
+            path=self.target, holo_dir=root, store_path=self.db,
+            config_path=root / "config.toml",
+            worktrees=root / "repo.worktrees")
 
     def read(self, sql):
         """Query the store over a connection the factory never touched."""
@@ -118,7 +119,7 @@ class MirrorPushTests(unittest.TestCase):
         """Run the loop over one task, with the run itself stubbed out."""
         provider = provider or StubProvider(a_task())
         with patch.object(factory, "run_task", return_value=merged):
-            factory.main(provider)
+            factory.main(self.tgt, provider)
         return provider
 
     def test_the_claim_pushes_in_progress_exactly_once(self):
@@ -128,14 +129,14 @@ class MirrorPushTests(unittest.TestCase):
         In Progress on the board, not two."""
         seen = {}
 
-        def spy(task, conn=None, run_id=None, provider=None):
+        def spy(target, task, conn=None, run_id=None, provider=None):
             seen["states"] = list(provider.states)
             seen["status"] = self.status()
             return True
 
         provider = StubProvider(a_task())
         with patch.object(factory, "run_task", spy):
-            factory.main(provider)
+            factory.main(self.tgt, provider)
 
         self.assertEqual(seen["states"], [(ISSUE_UUID, "In Progress")])
         self.assertEqual(seen["status"], "in_flight")
@@ -195,7 +196,7 @@ class MirrorPushTests(unittest.TestCase):
         provider = StubProvider(a_task())
         with patch.object(factory, "run_task") as run_task, \
                 patch("builtins.print") as printed:
-            factory.main(provider)
+            factory.main(self.tgt, provider)
 
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), runs)
@@ -218,7 +219,7 @@ class MirrorPushTests(unittest.TestCase):
         with patch.object(factory, "run_task"), \
                 patch.object(factory.store, "pickable",
                              return_value=factory.store.Pickability(True, None)):
-            factory.main(StubProvider(a_task()))
+            factory.main(self.tgt, StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),
                          [(None,)])

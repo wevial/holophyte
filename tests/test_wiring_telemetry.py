@@ -95,11 +95,12 @@ class CloseOutTelemetryTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
-        for name, value in (("TARGET", self.target), ("STORE_PATH", self.db),
-                            ("WORKTREES", root / "repo.worktrees")):
-            patcher = patch.object(factory, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        # The `Target` the loop is handed, with the store and the worktrees
+        # placed by hand: outside the target, never a file in it.
+        self.tgt = factory.Target(
+            path=self.target, holo_dir=root, store_path=self.db,
+            config_path=root / "config.toml",
+            worktrees=root / "repo.worktrees")
 
     def git(self, *args, cwd=None):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
@@ -116,8 +117,8 @@ class CloseOutTelemetryTests(unittest.TestCase):
         replies = list(replies)
         turns = []
 
-        def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
-                       timeout=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None,
+                       candidate_sha=None, timeout=None):
             turns.append(role)
             if role != "implement":
                 return replies.pop(0)
@@ -134,7 +135,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
                           "then the run row carries its timing"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", fake_agent):
-                factory.main(provider)
+                factory.main(self.tgt, provider)
         return provider
 
     def test_close_out_stamps_the_run_row_and_the_window_reads_it_back(self):
@@ -207,7 +208,7 @@ class ReportTests(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        # Where `cli()`'s retarget will look: the target's directory under a
+        # Where `cli()`'s `Target` will look: the target's directory under a
         # HOLOPHYTE_HOME of this test's own, never the operator's real one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
@@ -219,16 +220,6 @@ class ReportTests(unittest.TestCase):
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = store.ensure_project(self.conn, "team-1", self.target)
-        # `cli()` retargets the module for real, so what it overwrites is put
-        # back rather than left pointing at this test's temporary directory.
-        original = {name: getattr(factory, name)
-                    for name in ("TARGET", "STORE_PATH", "WORKTREES")}
-
-        def restore():
-            for name, value in original.items():
-                setattr(factory, name, value)
-
-        self.addCleanup(restore)
 
     def completed_run(self, n, actual_min, estimate_min, rounds, outcome):
         """One ended run of its own ticket, with the timing the test chose."""
@@ -318,7 +309,6 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(printed[:5], factory.report_lines(self.conn))
         self.assertEqual(printed[5], "supervisor: none recorded")
         self.assertEqual(len(printed), 6)
-        self.assertEqual(factory.STORE_PATH, self.db)
         # Nothing was claimed: three runs went in, three are there, all ended,
         # and the lease the loop would have taken is free.
         self.assertEqual(

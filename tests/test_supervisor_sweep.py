@@ -71,13 +71,18 @@ class SweepTestCase(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        # Where `retarget(self.target)` will look: the target's directory under
-        # a HOLOPHYTE_HOME of this test's own, never the operator's real one.
+        # Where `Target.locate(self.target)` will look: the target's directory
+        # under a HOLOPHYTE_HOME of this test's own, never the operator's real
+        # one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
         self.db = factory.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
+        # The `Target` every sweep here is handed. The acting sweep writes
+        # FINDINGS.md into whichever target it names, so it is this test's
+        # repository and never the one this suite is running in.
+        self.tgt = factory.Target.locate(self.target)
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
@@ -85,23 +90,6 @@ class SweepTestCase(unittest.TestCase):
         self.project = store.ensure_project(self.conn, "team-1", self.target)
         self.tickets = 0
         self.ticket_of = {}
-
-    def retarget_factory(self, target=None):
-        """Point the module at this test's target, and put it back after.
-
-        `retarget()` moves five module globals, and the acting sweep writes
-        FINDINGS.md into whichever target they name -- which is the repository
-        this suite is running in until a test says otherwise.
-        """
-        moved = ("TARGET", "STORE_PATH", "WORKTREES", "CONFIG_PATH", "CONFIG")
-        original = {name: getattr(factory, name) for name in moved}
-
-        def restore():
-            for name, value in original.items():
-                setattr(factory, name, value)
-
-        self.addCleanup(restore)
-        factory.retarget(str(self.target if target is None else target))
 
     def another_project(self):
         """A second project, for the tests that need two runs live at once.
@@ -165,7 +153,7 @@ class StaleHeartbeatTests(SweepTestCase):
     def test_a_fresh_heartbeat_inside_its_budget_does_not_trip(self):
         run_id = self.a_run(budget_min=25)
 
-        result = factory.sweep(self.conn, T0 + 2 * MINUTE)
+        result = factory.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
 
         self.assertEqual(result.trips, [])
         self.assertEqual(result.swept, 1)
@@ -175,7 +163,7 @@ class StaleHeartbeatTests(SweepTestCase):
         """The two-strike rule's whole point: a load spike is not a death."""
         run_id = self.a_run()
 
-        result = factory.sweep(self.conn, T0 + 6 * MINUTE)
+        result = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
 
         self.assertEqual(result.trips, [])
         self.assertEqual(self.strikes(run_id), (1, T0 + 6 * MINUTE))
@@ -187,7 +175,7 @@ class StaleHeartbeatTests(SweepTestCase):
         rendered, with the strike count naming what happens next."""
         run_id = self.a_run()
 
-        result = factory.sweep(self.conn, T0 + 6 * MINUTE)
+        result = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
 
         self.assertEqual(result.trips, [])
         (line,) = result.watched
@@ -204,8 +192,8 @@ class StaleHeartbeatTests(SweepTestCase):
         strike that lets --sweep --act fail a live run."""
         run_id = self.a_run()
 
-        factory.sweep(self.conn, T0 + 6 * MINUTE)
-        result = factory.sweep(self.conn, T0 + 6 * MINUTE + 20_000)
+        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        result = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE + 20_000)
 
         self.assertEqual(result.trips, [])
         (line,) = result.watched
@@ -215,8 +203,8 @@ class StaleHeartbeatTests(SweepTestCase):
     def test_two_consecutive_stale_sightings_trip_the_run(self):
         run_id = self.a_run(phase="reviewing")
 
-        factory.sweep(self.conn, T0 + 6 * MINUTE)
-        result = factory.sweep(self.conn, T0 + 12 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        result = factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
 
         trip, = result.trips
         self.assertEqual(
@@ -231,10 +219,10 @@ class StaleHeartbeatTests(SweepTestCase):
         """Consecutive, not cumulative: a run that answers starts over."""
         run_id = self.a_run()
 
-        factory.sweep(self.conn, T0 + 6 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
         self.heartbeat_at(run_id, T0 + 7 * MINUTE)
-        alive = factory.sweep(self.conn, T0 + 8 * MINUTE)
-        stale_again = factory.sweep(self.conn, T0 + 14 * MINUTE)
+        alive = factory.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
+        stale_again = factory.sweep(self.tgt, self.conn, T0 + 14 * MINUTE)
 
         self.assertEqual(alive.trips, [])
         # Silent again six minutes later, and back to a first strike rather
@@ -251,9 +239,9 @@ class StaleHeartbeatTests(SweepTestCase):
         """
         run_id = self.a_run()
 
-        first = factory.sweep(self.conn, T0 + 6 * MINUTE)
+        first = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
         self.heartbeat_at(run_id, T0 + 7 * MINUTE)  # alive, between sweeps
-        second = factory.sweep(self.conn, T0 + 13 * MINUTE)
+        second = factory.sweep(self.tgt, self.conn, T0 + 13 * MINUTE)
 
         # Six minutes silent again, so a strike again -- but the first one,
         # because the run answered after it was recorded.
@@ -265,9 +253,9 @@ class StaleHeartbeatTests(SweepTestCase):
         not a rule that every second sighting is forgiven."""
         run_id = self.a_run()
 
-        factory.sweep(self.conn, T0 + 6 * MINUTE)
-        factory.sweep(self.conn, T0 + 12 * MINUTE)
-        trip, = factory.sweep(self.conn, T0 + 18 * MINUTE).trips
+        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
+        trip, = factory.sweep(self.tgt, self.conn, T0 + 18 * MINUTE).trips
 
         self.assertEqual((trip.run_id, trip.condition),
                          (run_id, "stale_heartbeat"))
@@ -282,7 +270,7 @@ class TimeBoxTests(SweepTestCase):
         at = T0 + 31 * MINUTE  # 1.55x of 20 min
         self.heartbeat_at(run_id, at)  # alive, and still overdue
 
-        trip, = factory.sweep(self.conn, at).trips
+        trip, = factory.sweep(self.tgt, self.conn, at).trips
 
         self.assertEqual((trip.run_id, trip.condition), (run_id, "time_box"))
         self.assertIn("31.0 min", trip.evidence)
@@ -294,14 +282,14 @@ class TimeBoxTests(SweepTestCase):
         at = T0 + 29 * MINUTE  # 1.45x of 20 min
         self.heartbeat_at(run_id, at)
 
-        self.assertEqual(factory.sweep(self.conn, at).trips, [])
+        self.assertEqual(factory.sweep(self.tgt, self.conn, at).trips, [])
 
     def test_a_run_claimed_against_no_estimate_has_no_box_to_blow(self):
         run_id = self.a_run(budget_min=None)
         at = T0 + 600 * MINUTE
         self.heartbeat_at(run_id, at)
 
-        self.assertEqual(factory.sweep(self.conn, at).trips, [])
+        self.assertEqual(factory.sweep(self.tgt, self.conn, at).trips, [])
 
 
 def finding(path, severity="p1", line=1):
@@ -328,7 +316,7 @@ class ReviewStuckTests(SweepTestCase):
     def sweep(self, run_id, at=T0 + 10 * MINUTE):
         """A sweep at `at` of a run alive at `at`."""
         self.heartbeat_at(run_id, at)
-        return factory.sweep(self.conn, at)
+        return factory.sweep(self.tgt, self.conn, at)
 
     def test_two_rounds_sharing_no_findings_do_not_trip(self):
         """A fix round that cleared every complaint and drew new ones is a
@@ -406,13 +394,12 @@ class ReviewStuckTests(SweepTestCase):
     def test_an_acting_sweep_fails_a_stuck_review_like_any_other_trip(self):
         """The trip flows through 2/5's close-out unchanged: failed run,
         released leases, the condition in the run's own stream."""
-        self.retarget_factory()
         run_id = self.a_run(phase="addressing")
         self.round(run_id, 1, [finding("a.py")])
         self.round(run_id, 2, [finding("a.py")], at=T0 + 3 * MINUTE)
         self.heartbeat_at(run_id, T0 + 10 * MINUTE)
 
-        result = factory.sweep(self.conn, T0 + 10 * MINUTE, act=True)
+        result = factory.sweep(self.tgt, self.conn, T0 + 10 * MINUTE, act=True)
 
         self.assertEqual(len(result.trips), 1)
         phase, outcome, ended, reason = self.conn.execute(
@@ -439,18 +426,17 @@ class ReviewStuckTests(SweepTestCase):
         acts, round 3 has ended and cleared the overlap. The run went through
         `addressing` and back, so it sits in the phase the trip named -- the
         phase check alone would fail a review that has just moved."""
-        self.retarget_factory()
         run_id = self.a_run(phase="reviewing")
         self.round(run_id, 1, [finding("a.py"), finding("b.py")])
         self.round(run_id, 2, [finding("a.py"), finding("b.py")],
                    at=T0 + 3 * MINUTE)
         self.heartbeat_at(run_id, T0 + 10 * MINUTE)
-        trip, = factory.sweep(self.conn, T0 + 10 * MINUTE).trips
+        trip, = factory.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
         self.assertEqual(trip.condition, "review_stuck")
         # The loop's own process, in the gap after the verdict committed.
         self.round(run_id, 3, [finding("c.py")], at=T0 + 11 * MINUTE)
 
-        outcome = factory.act_on_trip(self.conn, trip)
+        outcome = factory.act_on_trip(self.tgt, self.conn, trip)
 
         self.assertFalse(outcome.acted)
         self.assertEqual(outcome.phase, "reviewing")
@@ -468,17 +454,16 @@ class ReviewStuckTests(SweepTestCase):
     def test_a_round_that_still_overlaps_since_the_verdict_does_not_acquit(self):
         """The converse: a round 3 that repeats round 2 is the same stuck
         review with one more round on file, and the verdict stands."""
-        self.retarget_factory()
         run_id = self.a_run(phase="reviewing")
         self.round(run_id, 1, [finding("a.py"), finding("b.py")])
         self.round(run_id, 2, [finding("a.py"), finding("b.py")],
                    at=T0 + 3 * MINUTE)
         self.heartbeat_at(run_id, T0 + 10 * MINUTE)
-        trip, = factory.sweep(self.conn, T0 + 10 * MINUTE).trips
+        trip, = factory.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
         self.round(run_id, 3, [finding("a.py"), finding("b.py")],
                    at=T0 + 11 * MINUTE)
 
-        self.assertTrue(factory.act_on_trip(self.conn, trip).acted)
+        self.assertTrue(factory.act_on_trip(self.tgt, self.conn, trip).acted)
         self.assertEqual(self.conn.execute(
             "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
             ("failed",))
@@ -490,18 +475,17 @@ class ReviewStuckTests(SweepTestCase):
         with no new round on file because that one has not ended. The
         adjudication is what the trip exists to spare: the evidence is the
         same two rounds a fresh sweep would trip on, and the verdict stands."""
-        self.retarget_factory()
         run_id = self.a_run(phase="reviewing")
         self.round(run_id, 1, [finding("a.py"), finding("b.py")])
         self.round(run_id, 2, [finding("a.py"), finding("b.py")],
                    at=T0 + 3 * MINUTE)
         self.heartbeat_at(run_id, T0 + 10 * MINUTE)
-        trip, = factory.sweep(self.conn, T0 + 10 * MINUTE).trips
+        trip, = factory.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
         self.assertEqual(trip.condition, "review_stuck")
         for phase in ("addressing", "verifying", "reviewing"):
             store.set_phase(self.conn, run_id, phase, now=T0 + 11 * MINUTE)
 
-        self.assertTrue(factory.act_on_trip(self.conn, trip).acted)
+        self.assertTrue(factory.act_on_trip(self.tgt, self.conn, trip).acted)
         self.assertEqual(self.conn.execute(
             "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
             ("failed",))
@@ -512,7 +496,7 @@ class ReviewStuckTests(SweepTestCase):
         self.round(fresh, 2, [finding("a.py"), finding("b.py")],
                    at=T0 + 3 * MINUTE)
         self.heartbeat_at(fresh, T0 + 12 * MINUTE)
-        trip, = factory.sweep(self.conn, T0 + 12 * MINUTE).trips
+        trip, = factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE).trips
         self.assertEqual((trip.run_id, trip.condition), (fresh, "review_stuck"))
 
 
@@ -525,7 +509,7 @@ class NotSweptTests(SweepTestCase):
         store.release(self.conn, done, "merged", now=T0 + MINUTE)
         live = self.a_run(claimed_at=T0 + 2 * MINUTE)
 
-        result = factory.sweep(self.conn, T0 + 20 * MINUTE)
+        result = factory.sweep(self.tgt, self.conn, T0 + 20 * MINUTE)
 
         self.assertEqual(result.swept, 1)
         self.assertEqual([trip.run_id for trip in result.trips], [])
@@ -536,8 +520,8 @@ class NotSweptTests(SweepTestCase):
         """It has no heartbeat by design: it is waiting for a human answer."""
         parked = self.a_run(phase="blocked_on_operator")
 
-        first = factory.sweep(self.conn, T0 + 6 * MINUTE)
-        second = factory.sweep(self.conn, T0 + 12 * MINUTE)
+        first = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        second = factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
 
         self.assertEqual((first.swept, second.swept), (0, 0))
         self.assertEqual(second.trips, [])
@@ -580,7 +564,7 @@ class AtomicityTests(SweepTestCase):
             return real(conn, rid, stale, heartbeat, now)
 
         with patch.object(store, "record_strike", strike_and_race):
-            result = factory.sweep(self.conn, T0 + 6 * MINUTE)
+            result = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
 
         # Refused, not interleaved: the sweep holds the write lock across both
         # halves, so the loop's heartbeat waits for a sweep that is over.
@@ -595,7 +579,7 @@ class AtomicityTests(SweepTestCase):
         run_id = self.a_run()
         loop = self.rival()
 
-        factory.sweep(self.conn, T0 + 6 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
         loop.execute("BEGIN IMMEDIATE")
         loop.execute("UPDATE runs SET lastHeartbeat = ? WHERE id = ?",
                      (T0 + 6 * MINUTE, run_id))
@@ -603,7 +587,7 @@ class AtomicityTests(SweepTestCase):
 
         # And the next sweep sees it and clears the strike, which is the
         # behaviour the shut-out heartbeat was queued for.
-        self.assertEqual(factory.sweep(self.conn, T0 + 7 * MINUTE).trips, [])
+        self.assertEqual(factory.sweep(self.tgt, self.conn, T0 + 7 * MINUTE).trips, [])
         self.assertIsNone(self.strikes(run_id))
 
     def test_a_failed_sweep_writes_no_strikes_at_all(self):
@@ -624,7 +608,7 @@ class AtomicityTests(SweepTestCase):
 
         with patch.object(store, "record_strike", strike_then_die):
             with self.assertRaises(RuntimeError):
-                factory.sweep(self.conn, T0 + 6 * MINUTE)
+                factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
 
         self.assertIsNone(self.strikes(first))
         self.assertIsNone(self.strikes(second))
@@ -661,11 +645,10 @@ class ActingSweepTests(SweepTestCase):
         super().setUp()
         # The acting close-out renders FINDINGS.md into the module's target,
         # which is the repository this suite runs in until it is moved.
-        self.retarget_factory()
 
     def act(self, at, provider=None):
         """One acting sweep at `at`, as `--sweep --act` runs it."""
-        return factory.sweep(self.conn, at, act=True, provider=provider)
+        return factory.sweep(self.tgt, self.conn, at, act=True, provider=provider)
 
     def trip(self):
         """Take the first strike, and return the time the second one trips.
@@ -675,7 +658,7 @@ class ActingSweepTests(SweepTestCase):
         before the acting one, and the second sighting sits beyond the
         minimum spacing.
         """
-        factory.sweep(self.conn, T0 + 6 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
         return T0 + 12 * MINUTE
 
     def run_row(self, run_id):
@@ -771,10 +754,10 @@ class ActingSweepTests(SweepTestCase):
         at = self.trip()
         original_act = factory.act_on_trip
 
-        def finish_then_act(conn, trip, provider=None, knobs=None):
+        def finish_then_act(target, conn, trip, provider=None, knobs=None):
             # The run's own process, landing after the verdict committed.
             store.release(conn, trip.run_id, "merged", now=at)
-            return original_act(conn, trip, provider, knobs)
+            return original_act(target, conn, trip, provider, knobs)
 
         with patch.object(factory, "act_on_trip", finish_then_act):
             result = self.act(at)
@@ -802,10 +785,10 @@ class ActingSweepTests(SweepTestCase):
         at = self.trip()
         original_act = factory.act_on_trip
 
-        def finish_one_then_act(conn, trip, provider=None, knobs=None):
+        def finish_one_then_act(target, conn, trip, provider=None, knobs=None):
             if trip.run_id == finished:
                 store.release(conn, trip.run_id, "merged", now=at)
-            return original_act(conn, trip, provider, knobs)
+            return original_act(target, conn, trip, provider, knobs)
 
         with patch.object(factory, "act_on_trip", finish_one_then_act):
             lines = factory.sweep_lines(self.act(at))
@@ -829,7 +812,7 @@ class ActingSweepTests(SweepTestCase):
                       now=T0 + MINUTE)
         second = self.a_run(claimed_at=T0 + 2 * MINUTE,
                             ticket=self.ticket_of[first])
-        factory.sweep(self.conn, T0 + 8 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
         provider = StubProvider()
 
         self.act(T0 + 14 * MINUTE, provider)
@@ -854,7 +837,7 @@ class ActingSweepTests(SweepTestCase):
                       now=T0 + MINUTE)
         second = self.a_run(claimed_at=T0 + 2 * MINUTE,
                             ticket=self.ticket_of[first])
-        factory.sweep(self.conn, T0 + 8 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
         provider = StubProvider()
 
         def refuse(issue_id, state):
@@ -873,12 +856,6 @@ class ActingSweepTests(SweepTestCase):
 
 class SweepModeTests(SweepTestCase):
     """`factory.py --sweep <target>` as an operator runs it."""
-
-    def setUp(self):
-        super().setUp()
-        # `cli()` retargets the module for real, so what it overwrites is put
-        # back rather than left pointing at this test's temporary directory.
-        self.retarget_factory()
 
     def run_sweep(self, at, *flags):
         """The mode end to end, with the provider and the network as tripwires.
@@ -947,7 +924,7 @@ class SweepModeTests(SweepTestCase):
         subprocess.run(git + ["add", "-A"], cwd=self.target, check=True)
         subprocess.run(git + ["commit", "-qm", "first"], cwd=self.target,
                        check=True)
-        wt = factory.WORKTREES / "ko-1"
+        wt = self.tgt.worktrees / "ko-1"
         subprocess.run(["git", "worktree", "add", "-q", "-b", branch, str(wt)],
                        cwd=self.target, check=True)
         (wt / "work.txt").write_text("half-finished\n")
@@ -1028,8 +1005,7 @@ class SuperviseTests(SweepTestCase):
 
     def setUp(self):
         super().setUp()
-        self.retarget_factory()
-        self.lock = factory.supervisor_lock_path(self.target)
+        self.lock = factory.supervisor_lock_path(self.tgt)
 
     def supervise(self, wait):
         """The mode with an injected sleep, and the provider as a tripwire."""
@@ -1037,7 +1013,7 @@ class SuperviseTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                code = factory.supervise(wait=wait, out=out)
+                code = factory.supervise(self.tgt, wait=wait, out=out)
         return code, out.getvalue()
 
     def heartbeats(self):
@@ -1053,7 +1029,8 @@ class SuperviseTests(SweepTestCase):
         holder = subprocess.Popen(["sleep", "60"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
-        factory.acquire_supervisor_lock(self.lock, pid=holder.pid, now=T0)
+        factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                        pid=holder.pid, now=T0)
         complaint = io.StringIO()
 
         with patch.object(sys, "stderr", complaint), \
@@ -1063,6 +1040,9 @@ class SuperviseTests(SweepTestCase):
         self.assertNotEqual(exited.exception.code, 0)
         self.assertIn(f"pid {holder.pid} on {socket.gethostname()}",
                       str(exited.exception))
+        # The refusal names the repository as well as the lock: an operator
+        # supervising several targets has to know which one is already taken.
+        self.assertIn(f"for {self.tgt.path}:", str(exited.exception))
         # And the holder's lock is untouched: a refused starter must not
         # take the file out from under the supervisor it deferred to.
         self.assertEqual(factory.read_supervisor_lock(self.lock),
@@ -1077,7 +1057,8 @@ class SuperviseTests(SweepTestCase):
         holder = subprocess.Popen(["sleep", "60"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
-        factory.acquire_supervisor_lock(self.lock, pid=holder.pid, now=T0)
+        factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                        pid=holder.pid, now=T0)
         now = int(factory.time() * 1000)
         store.record_supervisor_heartbeat(self.conn, holder.pid, T0,
                                           now=now - 12_000)
@@ -1101,7 +1082,8 @@ class SuperviseTests(SweepTestCase):
         self.lock.write_text("")
 
         with self.assertRaises(factory.SupervisorHeld) as refused:
-            factory.acquire_supervisor_lock(self.lock, pid=os.getpid(), now=T0)
+            factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                            pid=os.getpid(), now=T0)
 
         self.assertIsNone(refused.exception.pid)
         self.assertIn(str(self.lock), str(refused.exception))
@@ -1140,8 +1122,8 @@ class SuperviseTests(SweepTestCase):
         def rival_starts():
             try:
                 rival_outcome.append(
-                    factory.acquire_supervisor_lock(self.lock, pid=rival,
-                                                    now=T0 + 1))
+                    factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                                    pid=rival, now=T0 + 1))
             except factory.SupervisorHeld as held:
                 rival_outcome.append(held)
 
@@ -1156,8 +1138,8 @@ class SuperviseTests(SweepTestCase):
                           lambda pid: pid in (us, rival) or real_alive(pid)), \
                 patch.object(os, "unlink", unlink_with_a_rival_in_the_gap):
             try:
-                ours = factory.acquire_supervisor_lock(self.lock, pid=us,
-                                                       now=T0)
+                ours = factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                                       pid=us, now=T0)
             except factory.SupervisorHeld as held:
                 ours = held
             fired[0].join(5)
@@ -1209,8 +1191,8 @@ class SuperviseTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", io.StringIO()):
-                factory.supervise_pass(pid, T0, now=T0 + 6 * MINUTE)
-                factory.supervise_pass(pid, T0, now=T0 + 12 * MINUTE)
+                factory.supervise_pass(self.tgt, pid, T0, now=T0 + 6 * MINUTE)
+                factory.supervise_pass(self.tgt, pid, T0, now=T0 + 12 * MINUTE)
 
         self.assertEqual(
             self.conn.execute(
@@ -1235,7 +1217,7 @@ class LoopRestartTests(SweepTestCase):
     SECOND = 1000
 
     def lines(self, now):
-        return factory.sweep_lines(factory.sweep(self.conn, now))
+        return factory.sweep_lines(factory.sweep(self.tgt, self.conn, now))
 
     def restart_lines(self, now):
         return [line for line in self.lines(now) if "re-exec" in line]
@@ -1305,7 +1287,6 @@ class LoopRestartTests(SweepTestCase):
     def test_the_supervisor_pass_prints_the_line_on_an_otherwise_quiet_pass(self):
         """`--supervise` prints nothing on a healthy pass; an unreturned
         restart is not a healthy pass."""
-        self.retarget_factory()
         store.record_loop_restart(self.conn, self.project, self.SHA, now=T0)
         self.conn.commit()
         out = io.StringIO()
@@ -1313,9 +1294,9 @@ class LoopRestartTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                factory.supervise_pass(os.getpid(), T0,
+                factory.supervise_pass(self.tgt, os.getpid(), T0,
                                        now=T0 + 200 * self.SECOND, out=out)
-                factory.supervise_pass(os.getpid(), T0,
+                factory.supervise_pass(self.tgt, os.getpid(), T0,
                                        now=T0 + 260 * self.SECOND, out=out)
 
         self.assertEqual(
@@ -1332,29 +1313,31 @@ class SupervisorConfigTests(SweepTestCase):
     """
 
     def configure(self, text):
-        """Write the target's config and point the module at it."""
+        """Write the target's config and build the `Target` that reads it.
+
+        A fresh value rather than the fixture's: a `Target` parses its config
+        once, and this test wants the file it just wrote.
+        """
         (self.db.parent / "config.toml").write_text(text)
-        self.retarget_factory()
+        self.tgt = factory.Target.locate(self.target)
 
     def test_an_absent_table_is_the_documented_defaults(self):
-        self.retarget_factory()
 
-        self.assertEqual(factory.sweep_config(),
+        self.assertEqual(factory.sweep_config(self.tgt),
                          (5 * MINUTE, 2, 1.5, 0.5, 60, 2 * MINUTE))
 
     def test_heartbeat_stale_min_moves_the_silence_a_trip_needs(self):
         """A heartbeat two and three minutes old on two consecutive sweeps:
         not even a strike under the default five, a trip under one."""
         run_id = self.a_run()
-        self.retarget_factory()
-        factory.sweep(self.conn, T0 + 2 * MINUTE)
-        default = factory.sweep(self.conn, T0 + 3 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
+        default = factory.sweep(self.tgt, self.conn, T0 + 3 * MINUTE)
         self.assertEqual(default.trips, [])
         self.assertIsNone(self.strikes(run_id))
 
         self.configure("[supervisor]\nheartbeat_stale_min = 1\n")
-        factory.sweep(self.conn, T0 + 2 * MINUTE)
-        result = factory.sweep(self.conn, T0 + 3 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
+        result = factory.sweep(self.tgt, self.conn, T0 + 3 * MINUTE)
 
         trip, = result.trips
         self.assertEqual((trip.run_id, trip.condition),
@@ -1365,9 +1348,9 @@ class SupervisorConfigTests(SweepTestCase):
         run_id = self.a_run()
         self.configure("[supervisor]\nstale_strikes = 3\n")
 
-        factory.sweep(self.conn, T0 + 6 * MINUTE)
-        second = factory.sweep(self.conn, T0 + 12 * MINUTE)
-        third = factory.sweep(self.conn, T0 + 18 * MINUTE)
+        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        second = factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
+        third = factory.sweep(self.tgt, self.conn, T0 + 18 * MINUTE)
 
         self.assertEqual(second.trips, [])
         (line,) = second.watched
@@ -1377,7 +1360,7 @@ class SupervisorConfigTests(SweepTestCase):
     def test_unknown_keys_in_the_table_are_left_alone(self):
         self.configure("[supervisor]\nstale_heartbeat_min = 7\n")
 
-        self.assertEqual(factory.sweep_config().heartbeat_stale_ms,
+        self.assertEqual(factory.sweep_config(self.tgt).heartbeat_stale_ms,
                          5 * MINUTE)
 
     def test_a_value_outside_its_constraint_is_refused_at_startup(self):
@@ -1434,7 +1417,7 @@ class SupervisorConfigTests(SweepTestCase):
             with self.subTest(line=line):
                 self.configure(line + "\n")
                 with self.assertRaises(SystemExit) as raised:
-                    factory.sweep_config()
+                    factory.sweep_config(self.tgt)
                 message = str(raised.exception)
                 self.assertIn("[supervisor] must be a table", message)
                 self.assertIn(f"got {kind}", message)
@@ -1445,11 +1428,11 @@ class SupervisorConfigTests(SweepTestCase):
         store.record_loop_restart(self.conn, self.project, "abc1234", now=T0)
         self.configure("[supervisor]\nrestart_grace_sec = 300\n")
 
-        patient = factory.sweep(self.conn, T0 + 200_000)
+        patient = factory.sweep(self.tgt, self.conn, T0 + 200_000)
         self.assertEqual(patient.restarts, ())
 
         self.configure("[supervisor]\nrestart_grace_sec = 120\n")
-        default = factory.sweep(self.conn, T0 + 200_000)
+        default = factory.sweep(self.tgt, self.conn, T0 + 200_000)
         self.assertEqual(default.restarts, (("abc1234", 200_000),))
 
     def test_sweep_interval_sec_is_the_supervisor_s_sleep(self):
@@ -1464,7 +1447,7 @@ class SupervisorConfigTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                code = factory.supervise(wait=stop_after_one, out=out)
+                code = factory.supervise(self.tgt, wait=stop_after_one, out=out)
 
         self.assertEqual(code, 0)
         self.assertEqual(slept, [7])
