@@ -896,15 +896,20 @@ class MergeConflictTests(LoopFixture):
         self.assertIn(path, reason)
 
     def test_a_conflict_only_in_findings_md_still_takes_the_branch_side(self):
-        """The kept resolution: the loop's own close-out rewrites main's
-        FINDINGS.md while the branch edited it too, and the branch's fuller
-        window wins so the merge lands."""
+        """The kept resolution: main's FINDINGS.md window moves while the run
+        is under review and the branch wrote its own, so the merge really
+        conflicts there — and the branch's fuller window wins, merge lands."""
         self.loop(Commit("branch window", path="FINDINGS.md",
-                         body="branch window\n"), APPROVE)
+                         body="branch window\n"),
+                  MainDiverges(lambda: self.commit_on_main("FINDINGS.md",
+                                                           "main window\n")))
 
         self.assertEqual(self.main_status(), "")
+        self.assertFalse(self.mid_merge())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertIn("branch window", (self.target / "FINDINGS.md").read_text())
+        self.assertNotIn("main window", (self.target / "FINDINGS.md").read_text())
+        self.assertNotIn(BRANCH, self.branches())  # merged, so cleaned up
 
 
 class CrashContainmentTests(LoopFixture):
