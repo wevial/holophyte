@@ -1493,8 +1493,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
 
         # 3. implementer addresses findings (same branch, new commit)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        fixes = timed(f"A reviewer left findings on your work for task: {task}\n\n"
-                      f"{verdict}\n\n"
+        fixes = timed("A reviewer left findings on your work. The ticket you "
+                      "are held to, acceptance criteria included:\n\n"
+                      f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
                       "For EACH finding, adjudicate it first: ADDRESS (concrete "
                       "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
                       "it in the commit message), or DECLINE (invalid/out-of-scope — "

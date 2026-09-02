@@ -222,7 +222,11 @@ class ReviewLoopTests(unittest.TestCase):
                   if role in ("review", "adjudicate")]
         self.assertEqual([role for role, _ in judged],
                          ["review", "review", "adjudicate"])
-        for role, goal in judged:
+        # The two fix rounds are implement turns too: an implementer addressing
+        # findings is a fresh process and needs the contract just as much.
+        fix_rounds = [g for role, g in self.goals if role == "implement"][1:]
+        self.assertEqual(len(fix_rounds), 2)
+        for role, goal in judged + [("fix round", g) for g in fix_rounds]:
             with self.subTest(role=role):
                 self.assertIn("The rendered line contains `unparseable`.", goal)
                 self.assertIn("add a thing", goal)
