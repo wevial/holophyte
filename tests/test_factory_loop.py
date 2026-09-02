@@ -52,6 +52,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     no_agent_processes,
 )
 
+import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
@@ -137,7 +138,7 @@ class LoopFixture(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = factory.state_dir(self.target) / "store.db"
+        self.db = holophyte.target.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
         self.tgt = factory.Target.locate(self.target)
         assert self.tgt.store_path == self.db

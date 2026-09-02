@@ -4,6 +4,8 @@ loop's control flow.
 Run: python3 -m unittest discover -s tests -p 'test_factory_agents*' -v
 """
 import importlib.util
+import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -166,14 +168,16 @@ class ImplementerProcessGroupTests(unittest.TestCase):
 
     def test_a_timed_out_implementer_and_its_child_are_both_reaped(self):
         argv = [sys.executable, "-u", "-c", SPAWNING_IMPLEMENTER]
-        with tempfile.TemporaryDirectory() as cwd, \
-                patch.object(factory, "agent_command",
-                             lambda target, role, goal: argv):
+        with tempfile.TemporaryDirectory() as cwd:
+            # The route is named the way an operator names one, through
+            # `[agents] implementer`: `agent_command()` reads it from the
+            # target's config, which is where `agent()` looks it up.
+            target = bare_target(self, cwd)
+            target.config_path.write_text(
+                "[agents]\nimplementer = %s\n" % json.dumps(shlex.join(argv)))
             with self.assertRaises(subprocess.TimeoutExpired) as raised:
-                factory.agent(bare_target(self, cwd), "implement",
-                              "spawn and stall",
-                              Path(cwd),
-                              timeout=1)
+                factory.agent(target, "implement", "spawn and stall",
+                              Path(cwd), timeout=1)
 
         # Partial output survives the kill and names the two processes.
         output = raised.exception.output

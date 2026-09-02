@@ -15,6 +15,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
+import holophyte.config
+import holophyte.target
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 # `waiting` is a helper, not a test module: discovery never imports it, and
@@ -77,7 +80,7 @@ class ConfigLoadingTests(ConfigTestCase):
         target = self.locate().path
 
         self.assertEqual(self.tgt.config_path,
-                         factory.state_dir(target) / "config.toml")
+                         holophyte.target.state_dir(target) / "config.toml")
         self.assertFalse(self.tgt.config_path.exists())
         self.assertEqual(self.tgt.config(), {})
 
@@ -158,10 +161,10 @@ class ConfigLoadingTests(ConfigTestCase):
         home = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, home)
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}), \
-                patch.object(factory, "load_config",
+                patch.object(holophyte.target, "load_config",
                              side_effect=AssertionError("config read")) as load, \
                 patch.object(factory.Target, "locate", autospec=True) as locate, \
-                patch.object(factory, "adopt_legacy_state",
+                patch.object(holophyte.target, "adopt_legacy_state",
                              autospec=True) as adopt:
             with contextlib.redirect_stdout(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:
@@ -410,7 +413,7 @@ class LegacyAdoptionTests(ConfigTestCase):
 
     def test_two_stores_are_refused_rather_than_one_shadowing_the_other(self):
         holo = self.legacy_directory()
-        new = factory.state_dir(self.target)
+        new = holophyte.target.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "store.db").write_bytes(b"new store\n")
 
@@ -435,7 +438,7 @@ class LegacyAdoptionTests(ConfigTestCase):
         """
         holo = self.legacy_directory()
         (holo / "config.toml").unlink()
-        new = factory.state_dir(self.target)
+        new = holophyte.target.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "config.toml").write_text("[agents]\n")
 
@@ -447,7 +450,7 @@ class LegacyAdoptionTests(ConfigTestCase):
 
     def test_a_file_already_at_the_new_address_is_refused_not_overwritten(self):
         holo = self.legacy_directory()
-        new = factory.state_dir(self.target)
+        new = holophyte.target.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "config.toml").write_text("[agents]\nimplementer = \"new\"\n")
 
@@ -473,7 +476,7 @@ class LegacyAdoptionTests(ConfigTestCase):
         `cli()` asks; nothing else does.
         """
         holo = self.legacy_directory()
-        new = factory.state_dir(self.target)
+        new = holophyte.target.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "store.db").write_bytes(b"new store\n")
 
@@ -725,7 +728,7 @@ class StartupCheckTests(ConfigTestCase):
         self.stub_path(docker="hang")
         self.locate()
 
-        with patch.object(factory, "DOCKER_PROBE_TIMEOUT", 1):
+        with patch.object(holophyte.config, "DOCKER_PROBE_TIMEOUT", 1):
             start = time.monotonic()
             with self.assertRaises(SystemExit) as raised:
                 factory.check_agent_commands(self.tgt)
@@ -962,7 +965,7 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = ["echo resolving; touch %s; '
                       '(sleep 3; touch %s) & sleep 30"]\n' % (started, escaped))
 
-        with patch.object(factory, "VERIFY_TIMEOUT", 1.0):
+        with patch.object(holophyte.config, "VERIFY_TIMEOUT", 1.0):
             ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
@@ -1003,7 +1006,8 @@ class WorktreeSetupTests(ConfigTestCase):
                 target = self.locate(f'[worktree]\nsetup_timeout_sec = {value}\n').path
 
                 # The default routes are this host's business, not the table's.
-                with patch.object(factory, "check_agent_commands"), \
+                with patch.object(holophyte.config, "check_default_implementer"), \
+                        patch.object(holophyte.config, "check_default_reviewer"), \
                         patch.object(factory, "main",
                                      side_effect=AssertionError("claimed work")):
                     with self.assertRaises(SystemExit) as raised:
@@ -1077,7 +1081,8 @@ class WorktreeSetupTests(ConfigTestCase):
     def test_a_run_checks_the_table_before_claiming_anything(self):
         target = self.locate('[worktree]\nsetup = "make deps"\n').path
 
-        with patch.object(factory, "check_agent_commands"), \
+        with patch.object(holophyte.config, "check_default_implementer"), \
+                patch.object(holophyte.config, "check_default_reviewer"), \
                 patch.object(factory, "main",
                              side_effect=AssertionError("claimed work")) as main:
             with self.assertRaises(SystemExit) as raised:
