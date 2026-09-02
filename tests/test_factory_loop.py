@@ -56,7 +56,7 @@ import store  # noqa: E402 - after the sys.path insert above
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
 # is not an expectation.
-BRANCH = "task/add-a-thing"
+BRANCH = "task/ko-131-add-a-thing"
 
 
 class StubProvider:
@@ -240,7 +240,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertIn(BRANCH, self.branches())
         self.assertIn("fix round 2", self.subjects(BRANCH))
-        self.assertTrue((self.worktrees / "add-a-thing").exists())
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(len(provider.queue), 1)  # the loop stopped
 
@@ -277,7 +277,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertIn(BRANCH, self.branches())
         self.assertIn("the scripted work", self.subjects(BRANCH))
-        self.assertTrue((self.worktrees / "add-a-thing").exists())
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         (_, body), = provider.comments
         self.assertIn("MERGE REFUSED", body)
@@ -509,7 +509,7 @@ class WorktreeSetupLoopTests(LoopFixture):
         fake, guard = self.loop(Commit("the scripted work"), APPROVE)
 
         self.assertEqual(marker.read_text().strip(),
-                         str((self.worktrees / "add-a-thing").resolve()))
+                         str((self.worktrees / "ko-131-add-a-thing").resolve()))
         self.assertEqual(guard.spawned, [])
         self.assertEqual(fake.roles, ["implement", "review"])
         self.assertIn("the scripted work", self.subjects())
@@ -528,7 +528,7 @@ class WorktreeSetupLoopTests(LoopFixture):
         self.assertEqual(guard.spawned, [])
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertNotIn(BRANCH, self.branches())
-        self.assertFalse((self.worktrees / "add-a-thing").exists())
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(len(provider.queue), 1)  # the loop stopped
         # The ticket carries the reason, with the failing command and what it
@@ -541,7 +541,7 @@ class WorktreeSetupLoopTests(LoopFixture):
     def test_a_failing_setup_leaves_a_reused_worktree_as_found(self):
         """A setup failure says nothing about the preserved work a reused
         worktree may hold; only a branch the run cut fresh is discarded."""
-        wt = self.worktrees / "add-a-thing"
+        wt = self.worktrees / "ko-131-add-a-thing"
         self.git("worktree", "add", "--detach", str(wt), "main")
         self.git("checkout", "-b", BRANCH, cwd=wt)
         (wt / "rescued.txt").write_text("rescued work\n")
@@ -571,10 +571,55 @@ class WorktreeSetupLoopTests(LoopFixture):
         self.assertIn("1 command(s)", note)
 
 
+class TicketNameTests(LoopFixture):
+    """The branch and worktree a run cuts are named after the ticket, not the
+    title alone: the identifier leads, so an operator can map any preserved
+    `task/*` branch back to its ticket from `git branch`, and two titles that
+    truncate to the same slug never land in the same worktree."""
+
+    def merges(self):
+        return [s for s in self.subjects() if s.startswith("Merge task/")]
+
+    def test_the_branch_and_worktree_carry_the_lowercased_identifier(self):
+        provider = StubProvider({**a_task(), "id": "KO-150",
+                                 "title": "Supervisor 5/5: config"})
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=provider)
+
+        self.assertEqual(fake.turns[0].cwd.name, "ko-150-supervisor-5-5-config")
+        self.assertEqual(self.merges(),
+                         ["Merge task/ko-150-supervisor-5-5-config: "
+                          "Supervisor 5/5: config"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_titles_sharing_a_thirty_character_prefix_get_distinct_names(self):
+        """Both titles truncate to `supervisor-worktree-reuse-on-a`; without
+        the identifier the second run would land in the first's worktree."""
+        shared = "Supervisor: worktree reuse on "
+        self.assertEqual(len(shared), 30)
+        provider = StubProvider(
+            {**a_task(1), "title": shared + "a clean failure"},
+            {**a_task(2), "title": shared + "a dirty failure"})
+
+        fake, _ = self.loop(Commit("first ticket"), APPROVE,
+                            Commit("second ticket"), APPROVE,
+                            provider=provider)
+
+        cut = [turn.cwd.name for turn in fake.turns if turn.role == "implement"]
+        self.assertEqual(len(cut), 2)
+        self.assertNotEqual(cut[0], cut[1])
+        merged = self.merges()
+        self.assertEqual(len(merged), 2)
+        self.assertNotEqual(merged[0].split(":")[0], merged[1].split(":")[0])
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("merged",), ("merged",)])
+
+
 class LeftoverWorktreeTests(LoopFixture):
     def leftover(self):
         """A registered leftover worktree on BRANCH, as a failed run leaves it."""
-        wt = self.worktrees / "add-a-thing"
+        wt = self.worktrees / "ko-131-add-a-thing"
         self.git("worktree", "add", "--detach", str(wt), "main")
         self.git("checkout", "-b", BRANCH, cwd=wt)
         return wt
@@ -605,7 +650,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.loop(Idle())
 
         self.assertNotIn(BRANCH, self.branches())
-        self.assertFalse((self.worktrees / "add-a-thing").exists())
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("discarded", reason)
 
@@ -625,7 +670,7 @@ class LeftoverWorktreeTests(LoopFixture):
         """The reuse refusal's whole product is an explanation for a human;
         it must land on the run row, not only in a Linear comment a provider
         outage can swallow."""
-        wt = self.worktrees / "add-a-thing"
+        wt = self.worktrees / "ko-131-add-a-thing"
         wt.mkdir(parents=True)
         (wt / "precious.txt").write_text("rescued work\n")
 
@@ -693,7 +738,7 @@ class LeftoverWorktreeTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertNotIn(BRANCH, self.branches())
-        self.assertFalse((self.worktrees / "add-a-thing").exists())
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("discarded", reason)
         self.assertNotIn("preserved", reason)
@@ -719,7 +764,7 @@ class LeftoverWorktreeTests(LoopFixture):
         under the directory touched — before the fix `git worktree add`
         died on the non-empty directory and the RuntimeError escaped
         `main()` as a traceback (KO-146 incident, run 9's sibling)."""
-        wt = self.worktrees / "add-a-thing"
+        wt = self.worktrees / "ko-131-add-a-thing"
         wt.mkdir(parents=True)
         (wt / "precious.txt").write_text("rescued work\n")
 

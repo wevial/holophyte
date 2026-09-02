@@ -1294,7 +1294,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # branch is named after.
     body = (task.get("body") or "").strip()
     task = task["title"]
+    # The name carries the ticket identifier ahead of the title slug: two
+    # tickets whose titles agree for 30 characters must not share a branch or
+    # a worktree, and a preserved `task/*` branch has to be traceable to its
+    # ticket from `git branch` alone. The title portion keeps its own cap; the
+    # identifier is added on top of it rather than eating into it.
+    ident = re.sub(r"[^a-z0-9]+", "-", task_id.lower()).strip("-")
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
+    slug = f"{ident}-{slug}"
     branch = f"task/{slug}"
     wt = WORKTREES / slug
     # §4's one edge out of `claimed`, taken before the first git command:

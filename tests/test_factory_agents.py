@@ -117,8 +117,8 @@ class ReviewLoopTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.worktrees = root / "repo.worktrees"
-        self.branch = "task/add-a-thing"
-        self.wt = self.worktrees / "add-a-thing"
+        self.branch = "task/ko-116-add-a-thing"
+        self.wt = self.worktrees / "ko-116-add-a-thing"
         for name, value in (("TARGET", self.target), ("WORKTREES", self.worktrees)):
             patcher = patch.object(factory, name, value)
             patcher.start()
