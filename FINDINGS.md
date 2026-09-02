@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[41 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T05:12:22Z — KO-170
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T05:12:26Z — KO-170
-MERGED to main.
-actual: 4.0 min · estimate: 20 min · rounds: 1
-
-## 2026-09-02T05:15:23Z — KO-173
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py:619 [p2] `factory.py:619`: `expired.output` can be `bytes` when `reap_group()` itself times out waiting on a detached descendant holding the output pipe. Passing it to…
+[44 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T05:18:11Z — KO-173
 Round 2: pass · reviewer codex-sol-medium · verify passed
@@ -751,3 +739,15 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T15:12:15Z — KO-181
 MERGED to main.
 actual: 5.6 min · estimate: 20 min · rounds: 1
+
+## 2026-09-02T15:19:19Z — KO-182
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:3003): `--report` still renders completed runs without their `host`, leaving the ticket’s required report output unmet and…
+
+## 2026-09-02T15:22:44Z — KO-182
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T15:22:45Z — KO-182
+MERGED to main.
+actual: 10.5 min · estimate: 25 min · rounds: 2
