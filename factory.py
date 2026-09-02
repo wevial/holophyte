@@ -3192,13 +3192,20 @@ def main(provider=None):
                 # interpreter flags (-u above all: without it a tee'd log
                 # goes block-buffered and looks hung) survive the restart.
                 argv = list(sys.orig_argv) or [sys.executable, *sys.argv]
+                # `os.execv` does not search PATH, and `orig_argv[0]` is
+                # whatever the operator typed -- usually the bare `python3`.
+                # Resolve it the way the shell did; a name PATH cannot find
+                # falls back to the interpreter actually running this code.
+                program = argv[0]
+                if os.sep not in program:
+                    program = shutil.which(program) or sys.executable
                 # flush=True: execv replaces the process image without
                 # running Python's buffered-stdout flush, so under a
                 # redirected (block-buffered) stdout the line would be lost.
                 print("[holo2] merged a change to the factory itself;"
                       f" re-executing from {sha}: {argv}", flush=True)
                 conn.close()
-                EXEC(argv[0], argv)
+                EXEC(program, argv)
                 return  # only a test's EXEC returns
     finally:
         conn.close()

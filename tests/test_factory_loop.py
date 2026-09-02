@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -1223,6 +1224,21 @@ class SelfHostingTests(LoopFixture):
         self.assertIn("merged a change to the factory itself;"
                       f" re-executing from {head}: {orig}", out)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_re_exec_resolves_a_bare_interpreter_name_on_path(self):
+        """`sys.orig_argv[0]` is whatever the operator typed -- usually the
+        bare `python3` -- and `os.execv` does not search PATH: the first live
+        re-exec on gembox died with FileNotFoundError on exactly that. The
+        program handed to the exec must be a real path; argv stays verbatim."""
+        orig = ["python3", "-u", "factory.py", "/srv/dev/holophyte"]
+        with patch.object(sys, "orig_argv", orig):
+            self.host_the_factory_in(self.target)
+            self.loop(Commit("the scripted work"), APPROVE)
+
+        ((program, argv),) = self.execs
+        self.assertEqual(program, shutil.which("python3"))
+        self.assertTrue(os.path.isabs(program), program)
+        self.assertEqual(argv, orig)
 
     def test_re_exec_falls_back_to_executable_and_argv_without_orig_argv(self):
         self.host_the_factory_in(self.target)
