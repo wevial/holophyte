@@ -1964,3 +1964,17 @@ def record_supervisor_heartbeat(conn, pid, started_at, now=None):
         return conn.execute(
             "SELECT passes FROM supervisorHeartbeats"
             " WHERE pid = ? AND startedAt = ?", (pid, started_at)).fetchone()[0]
+
+
+def latest_supervisor_heartbeat(conn):
+    """The newest supervisor heartbeat, or None when no supervisor has beaten.
+
+    `(pid, started_at, last_beat, passes)` for the row whose `lastBeat` is
+    most recent: the one supervisor that could still be alive, since any
+    other process's row stopped moving before it. Read-only, so `--report`
+    can ask it of a store a live supervisor is writing to.
+    """
+    row = conn.execute(
+        "SELECT pid, startedAt, lastBeat, passes FROM supervisorHeartbeats"
+        " ORDER BY lastBeat DESC, startedAt DESC LIMIT 1").fetchone()
+    return tuple(row) if row is not None else None
