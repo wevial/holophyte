@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
 import sqlite3
 import subprocess
 import sys
@@ -128,9 +129,13 @@ class LoopFixture(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
         self.base = self.git("rev-parse", "main").strip()
 
-        # Where `retarget(self.target)` will look: the target's state directory.
-        (root / "repo.holophyte").mkdir()
-        self.db = root / "repo.holophyte" / "store.db"
+        # Where `retarget(self.target)` will look: the target's directory under
+        # a HOLOPHYTE_HOME of this test's own, never the operator's real one.
+        home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
+        home.start()
+        self.addCleanup(home.stop)
+        self.db = factory.state_dir(self.target) / "store.db"
+        self.db.parent.mkdir(parents=True)
         for name, value in (("TARGET", self.target), ("STORE_PATH", self.db),
                             ("WORKTREES", self.worktrees)):
             patcher = patch.object(factory, name, value)
@@ -488,8 +493,10 @@ class WorktreeSetupLoopTests(LoopFixture):
         every path from the target the same way the fixture does, so a test
         that set the config by hand could pass with the file unwired.
         """
-        (self.target.parent / "repo.holophyte" / "config.toml").write_text(toml)
-        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET)
+        (self.db.parent / "config.toml").write_text(toml)
+        # Paths only (adopt=False): restoring the default target at
+        # teardown must not move a real host's state around.
+        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
         factory.retarget(self.target)
 
     def test_setup_runs_in_the_fresh_worktree_before_the_implementer(self):

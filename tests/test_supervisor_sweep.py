@@ -71,9 +71,13 @@ class SweepTestCase(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        # Where `retarget(self.target)` will look: the target's state directory.
-        (self.root / "repo.holophyte").mkdir()
-        self.db = self.root / "repo.holophyte" / "store.db"
+        # Where `retarget(self.target)` will look: the target's directory under
+        # a HOLOPHYTE_HOME of this test's own, never the operator's real one.
+        home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
+        home.start()
+        self.addCleanup(home.stop)
+        self.db = factory.state_dir(self.target) / "store.db"
+        self.db.parent.mkdir(parents=True)
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
@@ -927,7 +931,7 @@ class SweepModeTests(SweepTestCase):
             factory.cli(["--sweep", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse((self.root / "elsewhere.holophyte").exists())
+        self.assertFalse(factory.state_dir(self.root / "elsewhere").exists())
 
 
 def a_dead_pid():
@@ -1120,7 +1124,7 @@ class SuperviseTests(SweepTestCase):
 
 
 class SupervisorConfigTests(SweepTestCase):
-    """`[supervisor]` in `<repo>.holophyte/config.toml`: the thresholds have an address.
+    """`[supervisor]` in the target's `config.toml`: the thresholds have an address.
 
     An absent table is the constants the tests above were written against; a
     key that is present moves exactly the trip it names; a key outside its
@@ -1129,7 +1133,7 @@ class SupervisorConfigTests(SweepTestCase):
 
     def configure(self, text):
         """Write the target's config and point the module at it."""
-        (self.root / "repo.holophyte" / "config.toml").write_text(text)
+        (self.db.parent / "config.toml").write_text(text)
         self.retarget_factory()
 
     def test_an_absent_table_is_the_documented_defaults(self):
@@ -1212,7 +1216,7 @@ class SupervisorConfigTests(SweepTestCase):
                 message = str(raised.exception)
                 self.assertIn(f"[supervisor] {key}", message)
                 self.assertIn(constraint, message)
-                self.assertIn("repo.holophyte/config.toml", message)
+                self.assertIn(str(self.db.parent / "config.toml"), message)
         self.assertEqual(
             self.conn.execute("SELECT count(*) FROM sweepStrikes").fetchone(),
             (0,))

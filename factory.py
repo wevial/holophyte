@@ -60,7 +60,7 @@ DEFAULT_TARGET = Path("/srv/dev/holo2test")
 # `python3 -m unittest discover` retarget the factory at a directory called
 # "discover".
 TARGET = HOLO_DIR = STORE_PATH = WORKTREES = CONFIG_PATH = None
-# The parsed `<target>.holophyte/config.toml`, cached by `config()`; None until it has
+# The parsed `HOLOPHYTE_HOME/SLUG/config.toml`, cached by `config()`; None until it has
 # been read. `{}` is the documented normal case once it has: every knob the
 # file can set has a hardcoded default, so an absent file is exactly today's
 # behavior.
@@ -88,7 +88,126 @@ def load_config(path):
         raise SystemExit(f"[holo2] malformed config {path}: {exc}") from exc
 
 
-def retarget(target):
+DEFAULT_HOLOPHYTE_HOME = "~/.holophyte"
+# The sidecars SQLite keeps beside a WAL-mode database. They are part of the
+# store, so a move that left them behind would move a truncated history.
+STORE_SIDECARS = ("-wal", "-shm")
+
+
+def state_dir(target):
+    """Where everything the factory knows about `target` lives.
+
+    `HOLOPHYTE_HOME/<basename>-<hash>`, defaulting to `~/.holophyte`. Host
+    state, not repo state: what is kept here is this host's agent routes,
+    leases and heartbeats, so it belongs to the host rather than to a
+    checkout that gets cloned, moved and deleted. One home also gives
+    `--serve` and the drawer a single place to enumerate a host's targets,
+    leaves project parents such as `/srv/dev` free of dotted artifacts, and
+    works when that parent is not writable. The hash of the absolute path is
+    what keeps `/a/repo` and `/b/repo` -- two repositories, two histories --
+    out of each other's store.
+    """
+    target = Path(target)
+    home = Path(os.environ.get("HOLOPHYTE_HOME") or DEFAULT_HOLOPHYTE_HOME)
+    digest = hashlib.sha1(str(target.resolve()).encode()).hexdigest()[:8]
+    return home.expanduser() / f"{target.name}-{digest}"
+
+
+def legacy_state_layouts(target):
+    """The pre-home addresses for `target`'s state, as moves into a new dir.
+
+    Two of them ever existed: KO-165's `<target>.holophyte/` directory, and
+    before it a family of dotted siblings (`<target>.holophyte.db` with its
+    WAL sidecars, `<target>.holophyte.toml`). Each layout is returned as
+    `(directory_to_remove, [(source, name_in_state_dir), ...])`.
+    """
+    target = Path(target)
+    stem = target.parent / f"{target.name}.holophyte"
+    layouts = []
+    if stem.is_dir():
+        moves = [(path, path.name) for path in sorted(stem.iterdir())
+                 if path.is_file()]
+        if moves:
+            layouts.append((stem, moves))
+    moves = []
+    for suffix in ("", *STORE_SIDECARS):
+        sibling = stem.with_name(f"{stem.name}.db{suffix}")
+        if sibling.is_file():
+            moves.append((sibling, f"store.db{suffix}"))
+    toml = stem.with_name(f"{stem.name}.toml")
+    if toml.is_file():
+        moves.append((toml, "config.toml"))
+    if moves:
+        layouts.append((None, moves))
+    return layouts
+
+
+def adopt_legacy_state(target, destination, out=None):
+    """Move `target`'s legacy state into `destination`, once, loudly.
+
+    KO-165 moved the store's address and shipped no migration with it: the
+    next run on gembox opened an empty database at the new path and shadowed
+    fifteen runs, the ticket's failure count, every intervention row and the
+    `[agents] implementer` route the old config carried. Nothing was lost and
+    nothing said so, which is the failure this function exists to make
+    impossible -- either the history moves with the address, or the factory
+    refuses to start against half of it.
+
+    What makes it a one-time event is the store at the new address, not the
+    directory holding it: an operator who writes `config.toml` at the new
+    address first -- which the README tells them to do -- creates that
+    directory without adopting anything, and gating on the directory would
+    leave the legacy history for the empty store `open_store()` writes a
+    moment later to shadow. So adoption runs whenever `destination` has no
+    store, merging into the directory if it is already there, and a file
+    already sitting at a landing address stops the whole move rather than
+    being overwritten. Once the store has moved, whatever else is lying
+    beside the checkout is somebody's backup, not this run's state.
+    """
+    out = sys.stdout if out is None else out
+    destination = Path(destination)
+    layouts = legacy_state_layouts(target)
+    stores = [source for _, moves in layouts for source, name in moves
+              if name == "store.db"]
+    new_store = destination / "store.db"
+    if len(stores) > 1 or (stores and new_store.exists()):
+        standing = [str(new_store)] if new_store.exists() else []
+        raise SystemExit(
+            f"[holo2] {target} has more than one store: "
+            + ", ".join(standing + [str(path) for path in stores])
+            + "; refusing to start against one and shadow the rest -- move"
+            " or remove all but the history you want to keep")
+    if new_store.exists() or len(layouts) != 1:
+        return []
+    stem, moves = layouts[0]
+    # Every landing address is checked before the first move, so a refusal
+    # leaves both layouts whole rather than half of one in each place.
+    for source, name in moves:
+        landing = destination / name
+        if landing.exists():
+            raise SystemExit(
+                f"[holo2] cannot adopt {source}: {landing} is already there;"
+                " refusing to overwrite it -- move or remove one of the two")
+    destination.mkdir(parents=True, exist_ok=True)
+    adopted = []
+    for source, name in moves:
+        landing = destination / name
+        try:
+            os.replace(source, landing)
+        except OSError:
+            # A home on a different filesystem from the project parent is
+            # ordinary; `os.replace` cannot cross that line and `shutil.move`
+            # can.
+            shutil.move(str(source), str(landing))
+        print(f"[holo2] adopted {source} -> {landing}", file=out)
+        adopted.append(landing)
+    if stem is not None:
+        with contextlib.suppress(OSError):
+            stem.rmdir()
+    return adopted
+
+
+def retarget(target, adopt=True):
     """Point TARGET, the paths derived from it and CONFIG at `target`.
 
     Called once at import for the default and again by `cli()` for whatever
@@ -96,20 +215,28 @@ def retarget(target):
     different target says so here instead of patching one path and leaving the
     other two pointing at the last one. The config is loaded here for the same
     reason: it is derived from the target, so it moves when the target does.
+
+    `adopt=False` derives the paths and nothing else, which is what the
+    import-time call for `DEFAULT_TARGET` uses. Adopting there would move
+    some unrelated target's state as a side effect of importing this module,
+    and -- where that target has two stores -- would make `import factory`
+    and `factory.py --help` exit, the same rule `config()` follows: nothing
+    target-specific happens before `cli()` has picked a target.
     """
     global TARGET, HOLO_DIR, STORE_PATH, WORKTREES, CONFIG_PATH, CONFIG
     TARGET = Path(target)
     # Everything the factory keeps about a target lives in one directory
-    # beside it, `<target>.holophyte/`, created the first time something has
-    # to write there. Beside the target rather than inside it: the factory's
-    # own .gitignore says nothing about the target checkout, so a store
-    # written into TARGET would leave the database and its two WAL sidecars
-    # untracked in whatever repo the loop is working on -- dirt a task's
-    # `git add -A` could sweep into a commit. One directory rather than a
-    # family of dotted siblings, so the artifacts a target accrues (the
-    # supervisor's lock today, its logs and strike tables later) have an
-    # obvious home and the parent listing stays readable.
-    HOLO_DIR = TARGET.parent / f"{TARGET.name}.holophyte"
+    # under the host's home, `HOLOPHYTE_HOME/SLUG/`, created the first time
+    # something has to write there. Not inside the target: the factory's own
+    # .gitignore says nothing about the target checkout, so a store written
+    # into TARGET would leave the database and its two WAL sidecars untracked
+    # in whatever repo the loop is working on -- dirt a task's `git add -A`
+    # could sweep into a commit. Not beside it either: see `state_dir()`.
+    HOLO_DIR = state_dir(TARGET)
+    # Whatever a previous layout left beside the checkout moves in here now,
+    # before anything opens a store at the new address and finds it empty.
+    if adopt:
+        adopt_legacy_state(TARGET, HOLO_DIR)
     # The loop's durable state: one WAL-mode SQLite file per target repo.
     STORE_PATH = HOLO_DIR / "store.db"
     # Config for a target is not a file the target has to carry either.
@@ -127,7 +254,7 @@ def config():
 
     Read on demand rather than by `retarget()`, which runs at import for the
     default target: parsing there made a malformed
-    `/srv/dev/holo2test.holophyte/config.toml` an error for `--help`, for importing
+    `~/.holophyte/holo2test-*/config.toml` an error for `--help`, for importing
     this module at all, and for a run pointed at some entirely different
     repository. Nothing that reads config runs before `cli()` picks a target,
     and `cli()` reads it as soon as it has one, so the file a run actually
@@ -140,7 +267,9 @@ def config():
     return CONFIG
 
 
-retarget(DEFAULT_TARGET)
+# Paths only: see `retarget()`. The default target's state is adopted when
+# `cli()` names it, not because somebody imported this module.
+retarget(DEFAULT_TARGET, adopt=False)
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
 BUDGET_RE = re.compile(r"\((\d+)\s*min\)\s*$")
@@ -3184,14 +3313,15 @@ STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
 
 def supervisor_lock_path(target=None):
-    """The lockfile for `target`'s supervisor, in its `<target>.holophyte/`.
+    """The lockfile for `target`'s supervisor, in its state directory.
 
     Beside the store rather than inside the target for the store's own
     reason: nothing about the target checkout should have to know the factory
     exists, and a lock inside it is dirt a task's `git add -A` could commit.
+    Derived through `state_dir()` so the lock cannot end up addressing a
+    different directory from the store it guards.
     """
-    target = TARGET if target is None else Path(target)
-    return target.parent / f"{target.name}.holophyte" / "supervisor.lock"
+    return state_dir(TARGET if target is None else target) / "supervisor.lock"
 
 
 class SupervisorHeld(Exception):

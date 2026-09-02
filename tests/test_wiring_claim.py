@@ -1,6 +1,6 @@
 """Wiring contract: the loop's store bootstrap and its claim-through-the-lease.
 
-The loop opens one WAL-mode store beside the target repo and routes every
+The loop opens one WAL-mode store in the target's state directory and routes every
 ticket claim through `store.claim()`, so a second loop on the same project
 loses on the lease instead of cutting a branch beside the first one. These
 tests read the tables back with their own SQL — the oracle is the stored
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -86,8 +87,8 @@ class WiringClaimTests(unittest.TestCase):
                            ("user.name", "Factory Test")):
             subprocess.run(["git", "config", key, value],
                            cwd=self.target, check=True)
-        # Mirrors factory.STORE_PATH: a sibling of the target, not a file in it.
-        self.db = Path(tmp.name) / "repo.holophyte.db"
+        # Stands in for factory.STORE_PATH: outside the target, never a file in it.
+        self.db = Path(tmp.name) / "store.db"
         self.worktrees = Path(tmp.name) / "repo.worktrees"
         for attr, value in (("TARGET", self.target), ("STORE_PATH", self.db),
                             ("WORKTREES", self.worktrees)):
@@ -136,20 +137,24 @@ class WiringClaimTests(unittest.TestCase):
         self.assertEqual(status.stdout, "")
 
     def test_the_store_path_is_in_the_targets_state_directory(self):
-        """One store per target, in `<target>.holophyte/` beside it.
+        """One store per target, in its directory under `HOLOPHYTE_HOME`.
 
-        Retargets a module of its own, because the two paths are derived from
-        the target together: patching STORE_PATH afterwards, as the other
-        tests do, would test the patch rather than the rule.
+        Retargets a module of its own, because the paths are derived from the
+        target together: patching STORE_PATH afterwards, as the other tests
+        do, would test the patch rather than the rule.
         """
-        mod = importlib.util.module_from_spec(SPEC)
-        SPEC.loader.exec_module(mod)
+        home = Path(tempfile.mkdtemp()) / "home"
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}):
+            mod = importlib.util.module_from_spec(SPEC)
+            SPEC.loader.exec_module(mod)
 
-        mod.retarget("/srv/dev/holo2test")
+            mod.retarget("/srv/dev/holo2test", adopt=False)
 
-        self.assertEqual(mod.STORE_PATH,
-                         Path("/srv/dev/holo2test.holophyte/store.db"))
-        self.assertEqual(mod.STORE_PATH.parent.parent, mod.WORKTREES.parent)
+        self.assertEqual(mod.STORE_PATH.parent.parent, home)
+        self.assertEqual(mod.STORE_PATH.name, "store.db")
+        self.assertEqual(mod.CONFIG_PATH.parent, mod.STORE_PATH.parent)
+        # The worktrees keep their sibling address beside the checkout.
+        self.assertEqual(mod.WORKTREES, Path("/srv/dev/holo2test.worktrees"))
 
     def test_claim_mirrors_the_ticket_and_holds_the_lease_during_the_run(self):
         seen = {}

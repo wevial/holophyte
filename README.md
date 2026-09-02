@@ -112,12 +112,12 @@ python3 factory.py --supervise /srv/dev/holo2test
 
 It runs until SIGINT or SIGTERM, finishing the pass in hand and exiting
 clean. One supervisor per target: the first takes
-`<repo>.holophyte/supervisor.lock` (beside the store) with an
+`supervisor.lock` in the target's state directory (beside the store) with an
 exclusive create and writes its pid into it; a second `--supervise` for the
 same target exits non-zero naming that pid. A lock whose pid is dead is a
 supervisor that was killed without the chance to clean up, and is reclaimed
 on the next start; reclaims take turns under an flock on the sidecar
-`<repo>.holophyte/supervisor.lock.reclaim`, which is left in place. A lock
+`supervisor.lock.reclaim` beside it, which is left in place. A lock
 that names no pid at all is not guessed about: the start refuses and says
 which file to look at.
 
@@ -151,11 +151,39 @@ ruff is a developer tool, not a dependency: install it on the host with
 `LINEAR_API_KEY` and `HOLO2_PROJECT_ID` — env vars or `.env` next to
 `linear_provider.py`.
 
-Per-target behavior lives in `<repo>.holophyte/config.toml`. Everything the
-factory keeps about a target sits in that one `<repo>.holophyte/` directory
-beside it — the store at `store.db`, the supervisor lock — created on first
-need; only `<repo>.worktrees` keeps a sibling address of its own. The file is
-optional:
+Per-target behavior lives in `~/.holophyte/<slug>/config.toml`. Everything the
+factory keeps about a target sits in that one directory — the store at
+`store.db`, the supervisor lock — created on first need; only
+`<repo>.worktrees` keeps a sibling address of its own.
+
+The directory is host state, not repo state: it holds this host's agent
+routes, leases and heartbeats, so it belongs to the host rather than to a
+checkout that gets cloned, moved and deleted. `<slug>` is the target's
+basename plus the first eight hex digits of the SHA-1 of its absolute path,
+so `/a/repo` and `/b/repo` — two repositories with two histories — never
+share a store. Set `HOLOPHYTE_HOME` to put the whole tree somewhere other
+than `~/.holophyte`; the tests use it, and nothing else reads a home path.
+
+Older layouts are adopted once, on the first retarget that finds them: a
+`<repo>.holophyte/` directory beside the checkout, or the dotted siblings
+that preceded it (`<repo>.holophyte.db` with its `-wal`/`-shm` sidecars and
+`<repo>.holophyte.toml`), are moved into the state directory with one
+`[holo2] adopted <from> -> <to>` line per file. What ends adoption is the
+store at the new address, not the directory holding it, so writing
+`config.toml` there by hand first does not strand a legacy history — the move
+merges into the directory that is already there. If a store is already at the
+new address and another is still at an old one, the factory exits non-zero
+naming both and moves nothing: which history is the real one is an operator's
+decision, not a guess. A single file already sitting at a landing address —
+that hand-written `config.toml`, say, with a legacy `<repo>.holophyte.toml`
+still beside the checkout — stops the move the same way rather than being
+overwritten.
+
+Adoption runs for the target the command line names, once `cli()` has named
+it. Importing the module or asking for `--help` derives paths and moves
+nothing.
+
+The file is optional:
 absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
