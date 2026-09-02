@@ -115,7 +115,8 @@ class CloseOutTelemetryTests(unittest.TestCase):
         replies = list(replies)
         turns = []
 
-        def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
+        def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
+                       timeout=None):
             turns.append(role)
             if role != "implement":
                 return replies.pop(0)

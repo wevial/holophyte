@@ -565,8 +565,12 @@ def reap_group(proc, expired):
 
 
 def run_capped(cmd, cwd, timeout):
-    """Run one shell command under a hard cap. Returns `(returncode, output)`,
+    """Run one command under a hard cap. Returns `(returncode, output)`,
     or raises `subprocess.TimeoutExpired` carrying whatever it printed first.
+
+    `cmd` is a shell string (a ticket's verify command, a setup command) or an
+    argv list (an agent dispatch, where the prompt is data and must never
+    reach a shell); either way the tree underneath it runs as one group.
 
     The process group is the point. `subprocess.run(timeout=...)` signals the
     shell it started and nothing underneath it, so a `make` that reached the
@@ -576,7 +580,7 @@ def run_capped(cmd, cwd, timeout):
     session of its own makes the tree one killable unit, so the cap can end
     the command it timed rather than just the shell that spawned it.
     """
-    with subprocess.Popen(cmd, shell=True, cwd=str(cwd),
+    with subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=str(cwd),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           text=True, start_new_session=True) as proc:
         try:
@@ -680,6 +684,7 @@ def sh(args, cwd=None):
 # assumptions: a target that names its own command for a role gets that one.
 IMPL_MODEL = "opus"
 IMPL_EFFORT = "high"
+IMPL_TIMEOUT = 1800  # hard wall-clock cap on one implementer turn, seconds
 REVIEW_PROFILE = "codex-sol-medium"
 
 # The loop's internal role names, and the `[agents]` key each one reads. The
@@ -850,8 +855,16 @@ def publish_review_refs(repo, base_sha, candidate_sha):
         sh(["git", "update-ref", f"refs/review/{name}", sha], cwd=repo)
 
 
-def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
+def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
+          timeout=None):
     """Run one agent turn for a role. Returns combined output text.
+
+    An `implement` turn runs in a process group of its own under `timeout`
+    seconds (`IMPL_TIMEOUT` when the caller names none, and never more): a
+    `claude -p` that reaches the cap is killed with every subagent and Bash
+    child it started, and the turn raises `subprocess.TimeoutExpired` carrying
+    what it printed first. Signalling only the CLI left its children
+    committing into a worktree the loop had already given up on.
 
     `adjudicate` is the terminal pass/fail round. It takes the same
     independent reviewer route as `review` — a fresh dispatch that knows only
@@ -896,8 +909,13 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
                "--effort", IMPL_EFFORT]
     elif role != "implement":
         publish_review_refs(Path(cwd), base_sha, candidate_sha)
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=1800)
-    return (r.stdout + "\n" + r.stderr).strip()
+    if role != "implement":
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                           timeout=1800)
+        return (r.stdout + "\n" + r.stderr).strip()
+    cap = IMPL_TIMEOUT if timeout is None else min(timeout, IMPL_TIMEOUT)
+    _, out = run_capped(cmd, cwd, cap)
+    return out.strip()
 
 
 # Agent replies reach the ledger as raw terminal output — ANSI-coloured tool
@@ -1528,22 +1546,26 @@ def run_task(task, conn=None, run_id=None, provider=None):
     start_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     def timed(goal):
-        """Run one agent turn with a hard wall-clock cap; None on timeout."""
-        import signal
+        """Run one agent turn with the budget as its wall-clock cap; None on
+        timeout.
 
-        def handler(signum, frame):
-            raise TimeoutError()
-
-        old = signal.signal(signal.SIGALRM, handler)
-        signal.alarm(budget_min * 60)
+        The budget is the dispatch's own timeout, not an alarm around it: an
+        alarm interrupted the wait but left the implementer and its children
+        running, so a run recorded as over budget kept committing into the
+        worktree. `agent()` kills the whole group before raising, and what
+        the turn printed before the kill is kept in the log.
+        """
         try:
-            return agent("implement", goal, wt)
-        except TimeoutError:
+            return agent("implement", goal, wt, timeout=budget_min * 60)
+        except subprocess.TimeoutExpired as expired:
             print(f"[holo2] task exceeded {budget_min} min budget")
+            partial = expired.output or ""
+            if isinstance(partial, bytes):
+                partial = partial.decode("utf-8", "replace")
+            partial = partial.strip()[-2000:]
+            print("[holo2] implementer output before the budget fired:\n"
+                  + (partial or "(no output before the budget fired)"))
             return None
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old)
 
     # 1. implement — the ticket verbatim: title, then the approved body, then
     # the verify commands the gate will actually run. The same `ticket` text is

@@ -406,9 +406,8 @@ class AgentCommandTests(ConfigTestCase):
     def test_an_absent_config_leaves_todays_routes_byte_identical(self):
         self.retarget()
 
-        with patch.object(factory.subprocess, "run") as run:
-            run.return_value.stdout = "implemented"
-            run.return_value.stderr = ""
+        with patch.object(factory, "run_capped") as run:
+            run.return_value = (0, "implemented")
             factory.agent("implement", "make the change", self.WORKTREE)
         with patch.object(factory.review_runner, "run_review") as run_review:
             run_review.return_value = "VERDICT: APPROVE"
@@ -419,7 +418,7 @@ class AgentCommandTests(ConfigTestCase):
         run.assert_called_once_with(
             ["claude", "-p", "make the change",
              "--model", "opus", "--effort", "high"],
-            cwd=self.WORKTREE, capture_output=True, text=True, timeout=1800,
+            self.WORKTREE, 1800,
         )
         # The reviewer still goes through the hardened container, not argv.
         self.assertEqual(run_review.call_args.kwargs["profile"],
@@ -429,9 +428,8 @@ class AgentCommandTests(ConfigTestCase):
         self.retarget('[agents]\n'
                       'implementer = "claude --model sonnet --effort medium -p"\n')
 
-        with patch.object(factory.subprocess, "run") as run:
-            run.return_value.stdout = "implemented"
-            run.return_value.stderr = ""
+        with patch.object(factory, "run_capped") as run:
+            run.return_value = (0, "implemented")
             result = factory.agent("implement", "make the change", self.WORKTREE)
 
         self.assertEqual(result, "implemented")
@@ -440,7 +438,7 @@ class AgentCommandTests(ConfigTestCase):
         run.assert_called_once_with(
             ["claude", "--model", "sonnet", "--effort", "medium", "-p",
              "make the change"],
-            cwd=self.WORKTREE, capture_output=True, text=True, timeout=1800,
+            self.WORKTREE, 1800,
         )
 
     def test_a_reviewer_override_replaces_the_container_route(self):

@@ -137,6 +137,7 @@ class Turn:
     cwd: Path
     base_sha: str | None = None
     candidate_sha: str | None = None
+    timeout: float | None = None
 
 
 class FakeAgent:
@@ -153,7 +154,8 @@ class FakeAgent:
         self.turns: list[Turn] = []
         self.replies: list[str] = []
 
-    def __call__(self, role, goal, cwd, *, base_sha=None, candidate_sha=None):
+    def __call__(self, role, goal, cwd, *, base_sha=None, candidate_sha=None,
+                 timeout=None):
         n = len(self.turns) + 1
         if not self.script:
             raise ScriptError(f"script exhausted: the loop asked for a {role!r}"
@@ -169,7 +171,8 @@ class FakeAgent:
             # that stopped passing them would otherwise only break in prod.
             raise ScriptError(f"{role!r} turn #{n} arrived without an exact"
                               f" base_sha and candidate_sha")
-        self.turns.append(Turn(role, goal, Path(cwd), base_sha, candidate_sha))
+        self.turns.append(Turn(role, goal, Path(cwd), base_sha, candidate_sha,
+                               timeout))
         reply = step.play(Path(cwd), n)
         self.replies.append(reply)
         return reply
