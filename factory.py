@@ -1622,6 +1622,30 @@ def _entry(at, ticket, lines):
     return "\n".join([f"## {_stamp(at)} — {ticket}", *lines])
 
 
+def _gist(text):
+    """`text` collapsed to one line and cut to the window's width."""
+    gist = " ".join(str(text).split())
+    if len(gist) > FINDING_LINE_CHARS:
+        gist = gist[:FINDING_LINE_CHARS].rstrip() + "…"
+    return gist
+
+
+def _document(text):
+    """A stored JSON document column decoded to its list, or None.
+
+    None for anything the schema's `[]` comment does not describe: text that
+    is not JSON, or JSON that is not an array. The writer refuses both, so a
+    row like this was written past it -- by hand, by an earlier release, or by
+    corruption -- and the renderer's job is to show that, not to crash the
+    close-out that regenerates every other entry in the window.
+    """
+    try:
+        decoded = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    return decoded if isinstance(decoded, list) else None
+
+
 def finding_line(finding):
     """One stored finding as one line: where, how bad, and the gist.
 
@@ -1629,31 +1653,47 @@ def finding_line(finding):
     place to notice a complaint rather than to read it: the whole message is in
     `reviewRounds.findings`, and the alternative -- full prose per finding --
     is the unbounded file this rendering replaces.
+
+    Never raises. A finding that is not a mapping with a `path` and a
+    `severity` is rendered as a marked line carrying its compact repr, so the
+    row's shape is visible in the window rather than fatal to it.
     """
-    where = finding["path"]
+    if (not isinstance(finding, dict) or "path" not in finding
+            or "severity" not in finding):
+        return f"- (malformed finding) {_gist(repr(finding))}"
+    where = str(finding["path"])
     if finding.get("line"):
         where = f"{where}:{finding['line']}"
     # The reviewer's own bullet marker opens most stored messages; the line
     # this renders already is a bullet, so it is dropped rather than nested.
-    gist = BLOCK_BREAK_RE.sub("", " ".join(str(finding.get("message", "")).split()),
-                              count=1)
-    if len(gist) > FINDING_LINE_CHARS:
-        gist = gist[:FINDING_LINE_CHARS].rstrip() + "…"
+    gist = BLOCK_BREAK_RE.sub("", _gist(finding.get("message", "")), count=1)
     return f"- {where} [{finding['severity']}] {gist}".rstrip()
 
 
 def round_entry(row):
-    """One `reviewRounds` row as an entry: the verdict and what it filed."""
+    """One `reviewRounds` row as an entry: the verdict and what it filed.
+
+    Never raises on the row's two JSON columns. A `verificationResults` or
+    `findings` document that does not decode to the schema's array, or an
+    array holding a result that is not a mapping, renders as `unreadable`
+    rather than as a verdict the row does not actually carry: the writer
+    refuses such rows, so one that exists is evidence to show, and a render
+    that died on it would leave the file stale for every good row after it.
+    """
     at, ticket, number, verdict, model, results, findings = row
-    results = json.loads(results)
+    results = _document(results)
     verify = ""
-    if results:
+    if results is None or not all(isinstance(r, dict) for r in results):
+        verify = " · verify unreadable"
+    elif results:
         verify = (" · verify "
                   + ("passed" if all(r.get("exitCode") == 0 for r in results)
                      else "failed"))
-    findings = json.loads(findings)
+    findings = _document(findings)
     lines = [f"Round {number}: {verdict} · reviewer {model}{verify}"]
-    if findings:
+    if findings is None:
+        lines.append("Findings: unreadable (not a JSON array; see the row)")
+    elif findings:
         lines.append(f"Findings ({len(findings)}):")
         lines.extend(finding_line(finding) for finding in findings)
     return _entry(at, ticket, lines)

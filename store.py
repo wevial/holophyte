@@ -1734,6 +1734,22 @@ def findings_overlap(earlier, later):
 ROUND_VERDICTS = ("pass", "changes_requested", "error")
 
 
+def _json_document(label, value):
+    """`value` as the JSON text a `reviewRounds` document column stores.
+
+    Strict on both sides of the encoder: a Python value it cannot serialize
+    raises `TypeError`, and `allow_nan=False` turns the non-JSON floats it
+    would otherwise emit into a `ValueError`. Both become the `ValueError`
+    the caller's other refusals are, named for `label`, so a round that
+    cannot be written as valid JSON is refused whole rather than stored as
+    text the renderer cannot read back.
+    """
+    try:
+        return json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a JSON document: {exc}") from exc
+
+
 def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
                         findings=(), verification_results=(),
                         started_at=None, ended_at=None):
@@ -1748,8 +1764,13 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
     before this opens a transaction, so a round is stored whole or not at all.
 
     `findings` and `verification_results` are the contract's object arrays,
-    stored as the JSON documents the schema declares. A round that found
-    nothing is an ordinary `pass` and stores `[]` against
+    stored as the JSON documents the schema declares. Both are encoded here,
+    before the transaction, for the same reason the fingerprint is: a value
+    `json` cannot write (bytes, a set) or writes as something no reader can
+    decode back (`NaN`, `Infinity` — legal to the encoder, not to JSON) is a
+    `ValueError`, and nothing is stored. The renderer reads these columns
+    back with `json.loads()`; refusing here is what lets it trust them. A
+    round that found nothing is an ordinary `pass` and stores `[]` against
     `EMPTY_FINGERPRINT`.
 
     `ended_at` defaults to NULL, which is the column's "still running"; a
@@ -1774,6 +1795,9 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
         )
     findings = list(findings)
     fingerprint = findings_fingerprint(findings)
+    findings_json = _json_document("findings", findings)
+    results_json = _json_document("verification results",
+                                  list(verification_results))
     if started_at is None:
         started_at = int(time.time() * 1000)
     with _transaction(conn):
@@ -1785,9 +1809,8 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
             "INSERT INTO reviewRounds (runId, round, verificationResults,"
             " verdict, findings, findingsFingerprint, reviewerModel,"
             " startedAt, endedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (run_id, round_number, json.dumps(list(verification_results)),
-             verdict, json.dumps(findings), fingerprint, reviewer_model,
-             started_at, ended_at),
+            (run_id, round_number, results_json, verdict, findings_json,
+             fingerprint, reviewer_model, started_at, ended_at),
         )
     return cursor.lastrowid
 

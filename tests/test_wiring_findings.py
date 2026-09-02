@@ -246,3 +246,65 @@ class CloseOutRegenerationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MalformedRoundRowTests(unittest.TestCase):
+    """The renderer never raises on a row the writer would not have written.
+
+    The rows are the history and the file is a rendering of them; a close-out
+    that crashes on one bad row leaves FINDINGS.md stale for every good row
+    after it. So a `reviewRounds` row carrying junk -- hand-edited, written by
+    an earlier release, or corrupted -- renders as a visible placeholder and
+    the window around it renders as usual.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.conn = store.open(str(self.root / "holophyte.db"))
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        project = store.ensure_project(self.conn, "team-1", self.root / "repo")
+        ticket = store.mirror_ticket(
+            self.conn, project, linear_issue_id="issue-1",
+            linear_identifier="KO-1", title="ticket 1",
+            time_box_ms=25 * 60 * 1000)
+        self.run_id = store.claim(self.conn, project, ticket,
+                                  now=1_700_000_000_000)
+
+    def raw_round(self, number, findings, results="[]"):
+        """A row written past the writer: the columns as the schema holds them."""
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO reviewRounds (runId, round, verificationResults,"
+                " verdict, findings, findingsFingerprint, reviewerModel,"
+                " startedAt, endedAt) VALUES (?, ?, ?, 'changes_requested',"
+                " ?, ?, 'codex-sol-medium', ?, ?)",
+                (self.run_id, number, results, findings,
+                 store.EMPTY_FINGERPRINT, 1_700_000_000_000 + number * 60_000,
+                 1_700_000_030_000 + number * 60_000))
+
+    def test_malformed_round_rows_render_as_placeholders(self):
+        self.raw_round(1, "not json at all")
+        self.raw_round(2, '{"path": "store.py"}')  # JSON, but not a list
+        self.raw_round(3, '[1, {"message": "no path or severity"},'
+                          ' {"path": "a.py", "severity": "p0",'
+                          ' "line": {"x": 1}, "message": ["not", "text"]}]')
+        self.raw_round(4, "[]", results="[4, 5]")
+        self.raw_round(5, "[]", results="{broken")
+        store.record_review_round(
+            self.conn, self.run_id, 6, "pass", "codex-sol-medium",
+            started_at=1_700_000_360_000, ended_at=1_700_000_390_000)
+
+        rendered = factory.render_findings(self.conn)
+
+        for number in range(1, 7):
+            self.assertIn(f"Round {number}:", rendered)
+        self.assertIn("Round 6: pass", rendered)
+        self.assertEqual(rendered.count("Findings: unreadable"), 2)
+        self.assertIn("- a.py:{'x': 1} [p0] ['not', 'text']", rendered)
+        self.assertEqual(rendered.count("- (malformed finding)"), 2)
+        self.assertEqual(rendered.count("verify unreadable"), 2)
+        # Still a function of the rows alone.
+        self.assertEqual(rendered, factory.render_findings(self.conn))

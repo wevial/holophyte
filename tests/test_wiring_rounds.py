@@ -329,6 +329,29 @@ class RoundWriteTests(unittest.TestCase):
             self.conn.execute("SELECT COUNT(*) FROM reviewRounds").fetchone(),
             (0,))
 
+    def test_findings_that_are_not_json_store_no_round_at_all(self):
+        """`findings` and `verificationResults` are JSON columns: a value the
+        encoder cannot write, or writes as something no reader can decode,
+        is refused as a `ValueError` before the transaction opens."""
+        keyed = {"path": "factory.py", "severity": "p0"}
+        for label, kwargs in (
+            ("bytes message", dict(findings=[{**keyed, "message": b"raw"}])),
+            ("set criterion", dict(findings=[{**keyed, "criterion": {"a"}}])),
+            ("nan line", dict(findings=[{**keyed, "line": 1,
+                                         "message": float("nan")}])),
+            ("bytes verify output", dict(verification_results=[
+                {"command": "pytest", "exitCode": 1, "output": b"\xff"}])),
+        ):
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError):
+                    store.record_review_round(
+                        self.conn, self.run_id, 1, "changes_requested",
+                        "a-reviewer", **kwargs)
+
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM reviewRounds").fetchone(),
+            (0,))
+
 
 if __name__ == "__main__":
     unittest.main()
