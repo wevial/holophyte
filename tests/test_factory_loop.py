@@ -127,7 +127,9 @@ class LoopFixture(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
         self.base = self.git("rev-parse", "main").strip()
 
-        self.db = root / "repo.holophyte.db"
+        # Where `retarget(self.target)` will look: the target's state directory.
+        (root / "repo.holophyte").mkdir()
+        self.db = root / "repo.holophyte" / "store.db"
         for name, value in (("TARGET", self.target), ("STORE_PATH", self.db),
                             ("WORKTREES", self.worktrees)):
             patcher = patch.object(factory, name, value)
@@ -485,7 +487,7 @@ class WorktreeSetupLoopTests(LoopFixture):
         every path from the target the same way the fixture does, so a test
         that set the config by hand could pass with the file unwired.
         """
-        (self.target.parent / "repo.holophyte.toml").write_text(toml)
+        (self.target.parent / "repo.holophyte" / "config.toml").write_text(toml)
         self.addCleanup(factory.retarget, factory.DEFAULT_TARGET)
         factory.retarget(self.target)
 

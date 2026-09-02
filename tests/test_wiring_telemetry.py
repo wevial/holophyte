@@ -203,7 +203,9 @@ class ReportTests(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        self.db = self.root / "repo.holophyte.db"
+        # Where `cli()`'s retarget will look: the target's state directory.
+        (self.root / "repo.holophyte").mkdir()
+        self.db = self.root / "repo.holophyte" / "store.db"
         self.worktrees = self.root / "repo.worktrees"
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
@@ -311,7 +313,7 @@ class ReportTests(unittest.TestCase):
             factory.cli(["--report", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse((self.root / "elsewhere.holophyte.db").exists())
+        self.assertFalse((self.root / "elsewhere.holophyte").exists())
 
 
 if __name__ == "__main__":

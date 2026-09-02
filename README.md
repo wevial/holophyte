@@ -112,12 +112,12 @@ python3 factory.py --supervise /srv/dev/holo2test
 
 It runs until SIGINT or SIGTERM, finishing the pass in hand and exiting
 clean. One supervisor per target: the first takes
-`<repo>.holophyte.supervisor.lock` (a sibling of the store) with an
+`<repo>.holophyte/supervisor.lock` (beside the store) with an
 exclusive create and writes its pid into it; a second `--supervise` for the
 same target exits non-zero naming that pid. A lock whose pid is dead is a
 supervisor that was killed without the chance to clean up, and is reclaimed
 on the next start; reclaims take turns under an flock on the sidecar
-`<repo>.holophyte.supervisor.lock.reclaim`, which is left in place. A lock
+`<repo>.holophyte/supervisor.lock.reclaim`, which is left in place. A lock
 that names no pid at all is not guessed about: the start refuses and says
 which file to look at.
 
@@ -151,8 +151,11 @@ ruff is a developer tool, not a dependency: install it on the host with
 `LINEAR_API_KEY` and `HOLO2_PROJECT_ID` — env vars or `.env` next to
 `linear_provider.py`.
 
-Per-target behavior lives in `<repo>.holophyte.toml`, a sibling of the target
-the way `<repo>.holophyte.db` and `<repo>.worktrees` are. The file is optional:
+Per-target behavior lives in `<repo>.holophyte/config.toml`. Everything the
+factory keeps about a target sits in that one `<repo>.holophyte/` directory
+beside it — the store at `store.db`, the supervisor lock — created on first
+need; only `<repo>.worktrees` keeps a sibling address of its own. The file is
+optional:
 absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.

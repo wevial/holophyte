@@ -1,4 +1,4 @@
-"""Per-target config: `<repo>.holophyte.toml`, `[agents]` and `[worktree]`.
+"""Per-target config: `<repo>.holophyte/config.toml`, `[agents]`, `[worktree]`.
 
 Run: python3 -m unittest discover -s tests -p 'test_factory_config*' -v
 """
@@ -36,9 +36,16 @@ class ConfigTestCase(unittest.TestCase):
         target = Path(tmp.name) / "repo"
         target.mkdir()
         if config is not None:
-            (target.parent / "repo.holophyte.toml").write_text(config)
+            self.write_config(target, config)
         factory.retarget(target)
         return target
+
+    @staticmethod
+    def write_config(target, config):
+        """Put `config` where `retarget(target)` will look for it."""
+        holo = target.parent / f"{target.name}.holophyte"
+        holo.mkdir(exist_ok=True)
+        (holo / "config.toml").write_text(config)
 
 
 class ConfigLoadingTests(ConfigTestCase):
@@ -46,7 +53,7 @@ class ConfigLoadingTests(ConfigTestCase):
         target = self.retarget()
 
         self.assertEqual(factory.CONFIG_PATH,
-                         target.parent / "repo.holophyte.toml")
+                         target.parent / "repo.holophyte" / "config.toml")
         self.assertFalse(factory.CONFIG_PATH.exists())
         self.assertEqual(factory.config(), {})
 
@@ -57,7 +64,7 @@ class ConfigLoadingTests(ConfigTestCase):
             factory.config()
 
         message = str(raised.exception)
-        self.assertIn("repo.holophyte.toml", message)
+        self.assertIn("repo.holophyte/config.toml", message)
         # The parser's own complaint, not just "could not read config": the
         # operator has to be told which line to go fix.
         self.assertIn("line 2", message)
@@ -67,12 +74,12 @@ class ConfigLoadingTests(ConfigTestCase):
         # sitting next to some other repository is that repository's problem.
         # `cli()` reads the one the run named, before it claims anything.
         target = self.retarget()
-        (target.parent / "repo.holophyte.toml").write_text("[agents\n")
+        self.write_config(target, "[agents\n")
 
         with self.assertRaises(SystemExit) as raised:
             factory.cli([str(target), "--report"])
 
-        self.assertIn("repo.holophyte.toml", str(raised.exception))
+        self.assertIn("repo.holophyte/config.toml", str(raised.exception))
 
     def test_help_does_not_read_any_config(self):
         # `--help` exits before a target is worked with at all, so a malformed
@@ -97,6 +104,52 @@ class ConfigLoadingTests(ConfigTestCase):
                          {"stale_heartbeat_min": 7})
         self.assertEqual(factory.agent_command("implement", "do it"),
                          ["harness", "run", "do it"])
+
+
+class StateDirectoryTests(ConfigTestCase):
+    """Every per-target artifact lives under one `<target>.holophyte/`.
+
+    Retargeting derives the directory and the three paths in it together, so
+    the tests go through `retarget()` and look at what the module derived.
+    """
+
+    def test_config_store_and_lock_share_the_target_directory(self):
+        target = self.retarget()
+        holo = target.parent / "repo.holophyte"
+
+        self.assertEqual(factory.HOLO_DIR, holo)
+        self.assertEqual(factory.CONFIG_PATH, holo / "config.toml")
+        self.assertEqual(factory.STORE_PATH, holo / "store.db")
+        self.assertEqual(factory.supervisor_lock_path(), holo / "supervisor.lock")
+        self.assertEqual(factory.supervisor_lock_path(target),
+                         holo / "supervisor.lock")
+        # The worktree directory is heavy git state, not factory state, and
+        # keeps its own sibling address.
+        self.assertEqual(factory.WORKTREES, target.parent / "repo.worktrees")
+
+    def test_the_directory_is_created_on_first_need_and_nothing_else_is(self):
+        target = self.retarget()
+        holo = target.parent / "repo.holophyte"
+        self.assertFalse(holo.exists())
+
+        conn = factory.open_store()
+        self.addCleanup(conn.close)
+        lock = factory.acquire_supervisor_lock(factory.supervisor_lock_path())
+        self.addCleanup(factory.release_supervisor_lock, lock)
+
+        self.assertTrue((holo / "store.db").exists())
+        self.assertTrue((holo / "supervisor.lock").exists())
+        beside = sorted(p.name for p in target.parent.iterdir())
+        self.assertEqual(beside, ["repo", "repo.holophyte"])
+
+    def test_a_target_with_no_store_gets_no_directory_either(self):
+        target = self.retarget()
+        out = io.StringIO()
+
+        factory.report(out=out)
+
+        self.assertIn("no store at", out.getvalue())
+        self.assertFalse((target.parent / "repo.holophyte").exists())
 
 
 class AgentCommandTests(ConfigTestCase):
@@ -192,7 +245,7 @@ class AgentCommandTests(ConfigTestCase):
                 with self.assertRaises(SystemExit) as raised:
                     factory.agent_command("implement", "make the change")
 
-                self.assertIn("repo.holophyte.toml", str(raised.exception))
+                self.assertIn("repo.holophyte/config.toml", str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
 
 
@@ -224,7 +277,7 @@ class StartupCheckTests(ConfigTestCase):
             factory.check_agent_commands()
 
         message = str(raised.exception)
-        self.assertIn("repo.holophyte.toml", message)
+        self.assertIn("repo.holophyte/config.toml", message)
         # The key the operator wrote, and the word that did not resolve.
         self.assertIn("reviewer", message)
         self.assertIn("holophyte-no-such-reviewer", message)
@@ -437,7 +490,7 @@ class WorktreeSetupTests(ConfigTestCase):
                 with self.assertRaises(SystemExit) as raised:
                     factory.setup_commands()
 
-                self.assertIn("repo.holophyte.toml", str(raised.exception))
+                self.assertIn("repo.holophyte/config.toml", str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
 
     def test_the_startup_check_reuses_the_parse_a_run_would_use(self):

@@ -135,8 +135,8 @@ class WiringClaimTests(unittest.TestCase):
             cwd=self.target, capture_output=True, text=True, check=True)
         self.assertEqual(status.stdout, "")
 
-    def test_the_store_path_is_a_sibling_of_the_target(self):
-        """One store per target, named after it, beside it -- like WORKTREES.
+    def test_the_store_path_is_in_the_targets_state_directory(self):
+        """One store per target, in `<target>.holophyte/` beside it.
 
         Retargets a module of its own, because the two paths are derived from
         the target together: patching STORE_PATH afterwards, as the other
@@ -147,8 +147,9 @@ class WiringClaimTests(unittest.TestCase):
 
         mod.retarget("/srv/dev/holo2test")
 
-        self.assertEqual(mod.STORE_PATH, Path("/srv/dev/holo2test.holophyte.db"))
-        self.assertEqual(mod.STORE_PATH.parent, mod.WORKTREES.parent)
+        self.assertEqual(mod.STORE_PATH,
+                         Path("/srv/dev/holo2test.holophyte/store.db"))
+        self.assertEqual(mod.STORE_PATH.parent.parent, mod.WORKTREES.parent)
 
     def test_claim_mirrors_the_ticket_and_holds_the_lease_during_the_run(self):
         seen = {}
