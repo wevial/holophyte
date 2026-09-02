@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[47 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T05:27:52Z — KO-174
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T05:27:56Z — KO-174
-MERGED to main.
-actual: 9.7 min · estimate: 30 min · rounds: 2
-
-## 2026-09-02T05:35:20Z — KO-175
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- factory.py:2688 [p2] [factory.py:2688](/workspace/factory.py:2688): Pickability is checked against the stale mirror before `claim_run()` refreshes it. A previously `ready` ticket…
-- factory.py:2691 [p2] [factory.py:2691](/workspace/factory.py:2691): Early-skipping a merged ticket removes the existing retry that projected its store status back to Linear. After…
+[50 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T05:40:16Z — KO-175
 Round 2: changes_requested · reviewer codex-sol-medium · verify passed
@@ -751,3 +738,15 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T15:29:08Z — KO-187
 MERGED to main.
 actual: 6.4 min · estimate: 25 min · rounds: 2
+
+## 2026-09-02T15:34:30Z — KO-188
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:2926) does not route an existing `ready` mirror to `needs_spec`. `specced=False` clears its criteria/commands, but [store.p…
+
+## 2026-09-02T15:38:26Z — KO-188
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T15:38:27Z — KO-188
+MERGED to main.
+actual: 8.1 min · estimate: 25 min · rounds: 2
