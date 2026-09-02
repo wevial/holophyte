@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[18 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-08-30T18:24:17Z — KO-145
-MERGED to main.
-actual: 17.5 min · estimate: 25 min · rounds: 3
-
-## 2026-08-30T18:35:11Z — KO-146
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:2386): Acting occurs after the classification transaction without revalidating the heartbeat, phase, or `endedAt`. A worker…
-
-## 2026-08-30T22:03:05Z — KO-146
-FAILED: ticket was not ready when the run was claimed; no work started
-actual: 0.0 min · estimate: 25 min · rounds: 0
+[21 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-08-30T22:04:45Z — KO-146
 FAILED: run stopped in phase working; branch preserved for a human
@@ -756,3 +743,15 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T05:12:26Z — KO-170
 MERGED to main.
 actual: 4.0 min · estimate: 20 min · rounds: 1
+
+## 2026-09-02T05:15:23Z — KO-173
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py:619 [p2] `factory.py:619`: `expired.output` can be `bytes` when `reap_group()` itself times out waiting on a detached descendant holding the output pipe. Passing it to…
+
+## 2026-09-02T05:18:11Z — KO-173
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T05:18:14Z — KO-173
+MERGED to main.
+actual: 5.8 min · estimate: 20 min · rounds: 2
