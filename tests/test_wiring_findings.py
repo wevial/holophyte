@@ -27,6 +27,7 @@ factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
+import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
 
@@ -89,11 +90,11 @@ class RenderedWindowTests(unittest.TestCase):
         for n in range(1, 31):
             self.complete_run(n)
 
-        rendered = factory.render_findings(self.conn)
+        rendered = holophyte.findings.render_findings(self.conn)
 
         headings = [line for line in rendered.splitlines()
                     if line.startswith("## ")]
-        self.assertEqual(len(headings), factory.FINDINGS_WINDOW)
+        self.assertEqual(len(headings), holophyte.findings.FINDINGS_WINDOW)
         self.assertIn(
             "[5 earlier entries in holophyte.db — query runs/reviewRounds]",
             rendered)
@@ -115,15 +116,15 @@ class RenderedWindowTests(unittest.TestCase):
                        "message": "the migration is missing"}],
             started_at=1_700_000_100_000, ended_at=1_700_000_160_000)
 
-        first = factory.render_findings(self.conn)
-        second = factory.render_findings(self.conn)
+        first = holophyte.findings.render_findings(self.conn)
+        second = holophyte.findings.render_findings(self.conn)
 
         self.assertEqual(first, second)
         # And identical read back over a connection of its own, so the answer
         # cannot depend on anything this one accumulated.
         other = store.open(str(self.root / "holophyte.db"))
         self.addCleanup(other.close)
-        self.assertEqual(first, factory.render_findings(other))
+        self.assertEqual(first, holophyte.findings.render_findings(other))
 
     def test_regeneration_preserves_the_frozen_preamble(self):
         preamble = ("## 2026-08-22T06:21:20Z — KO-105\n"
@@ -132,17 +133,17 @@ class RenderedWindowTests(unittest.TestCase):
         path.write_text(preamble)
         self.complete_run(1)
 
-        factory.write_findings(self.tgt, self.conn, path)
+        holophyte.findings.write_findings(self.tgt, self.conn, path)
         first = path.read_text()
         self.complete_run(2)
-        factory.write_findings(self.tgt, self.conn, path)
+        holophyte.findings.write_findings(self.tgt, self.conn, path)
         second = path.read_text()
 
         # Untouched, and still the top of the file after a second pass that
         # had a marker to find rather than a bare ledger.
         self.assertTrue(first.startswith(preamble), first[:200])
         self.assertTrue(second.startswith(preamble), second[:200])
-        self.assertEqual(second.count(factory.FINDINGS_MARKER), 1)
+        self.assertEqual(second.count(holophyte.findings.FINDINGS_MARKER), 1)
         self.assertEqual(second.count("MERGED to main. Verify: passed."), 1)
         self.assertIn("KO-2", second)
 
@@ -161,13 +162,14 @@ class RenderedWindowTests(unittest.TestCase):
         path.write_text(preamble)
         self.complete_run(1)
 
-        factory.write_findings(self.tgt, self.conn, path)
-        factory.write_findings(self.tgt, self.conn, path)
+        holophyte.findings.write_findings(self.tgt, self.conn, path)
+        holophyte.findings.write_findings(self.tgt, self.conn, path)
 
         rendered = path.read_text()
         self.assertTrue(rendered.startswith(preamble), rendered[:300])
+        marker = holophyte.findings.FINDINGS_MARKER
         self.assertEqual(len([line for line in rendered.splitlines()
-                              if line.strip() == factory.FINDINGS_MARKER]), 1)
+                              if line.strip() == marker]), 1)
 
 
 class CloseOutRegenerationTests(unittest.TestCase):
@@ -229,7 +231,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
             "VERDICT: APPROVE")
 
         findings = (self.target / "FINDINGS.md").read_text()
-        self.assertIn(factory.FINDINGS_MARKER, findings)
+        self.assertIn(holophyte.findings.FINDINGS_MARKER, findings)
         # The round the reviewer filed, the approval that ended the loop, and
         # the merged run's own close-out entry -- which only exists because the
         # window is rendered after the run is released.
@@ -306,7 +308,7 @@ class MalformedRoundRowTests(unittest.TestCase):
             (1_700_000_500_000, self.run_id))
         self.conn.commit()
 
-        rendered = factory.render_findings(self.conn)
+        rendered = holophyte.findings.render_findings(self.conn)
 
         for number in range(1, 4):
             self.assertIn(f"Round {number}:", rendered)
@@ -316,7 +318,7 @@ class MalformedRoundRowTests(unittest.TestCase):
         self.assertLess(rendered.index("Round 1:"), rendered.index("Round 3:"))
         self.assertIn("MERGED to main", rendered)
         self.assertIn("actual: n/a", rendered)
-        self.assertEqual(rendered, factory.render_findings(self.conn))
+        self.assertEqual(rendered, holophyte.findings.render_findings(self.conn))
 
     def test_malformed_round_rows_render_as_placeholders(self):
         self.raw_round(1, "not json at all")
@@ -330,7 +332,7 @@ class MalformedRoundRowTests(unittest.TestCase):
             self.conn, self.run_id, 6, "pass", "codex-sol-medium",
             started_at=1_700_000_360_000, ended_at=1_700_000_390_000)
 
-        rendered = factory.render_findings(self.conn)
+        rendered = holophyte.findings.render_findings(self.conn)
 
         for number in range(1, 7):
             self.assertIn(f"Round {number}:", rendered)
@@ -341,7 +343,7 @@ class MalformedRoundRowTests(unittest.TestCase):
         self.assertEqual(rendered.count("- (malformed finding)"), 2)
         self.assertEqual(rendered.count("verify unreadable"), 2)
         # Still a function of the rows alone.
-        self.assertEqual(rendered, factory.render_findings(self.conn))
+        self.assertEqual(rendered, holophyte.findings.render_findings(self.conn))
 
     def test_pathologically_nested_findings_do_not_overflow_the_render(self):
         """Depth, not syntax, is the other way a JSON column refuses to decode.
@@ -356,7 +358,7 @@ class MalformedRoundRowTests(unittest.TestCase):
         self.raw_round(1, nested)
         self.raw_round(2, "[]", results=nested)
 
-        rendered = factory.render_findings(self.conn)
+        rendered = holophyte.findings.render_findings(self.conn)
 
         self.assertIn("Round 1: changes_requested", rendered)
         self.assertIn("Findings: unparseable", rendered)

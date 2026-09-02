@@ -31,6 +31,7 @@ factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
+import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -248,7 +249,7 @@ class ReportTests(unittest.TestCase):
     def test_a_line_per_run_with_its_ratio_and_a_summary(self):
         self.three_runs()
 
-        lines = factory.report_lines(self.conn)
+        lines = holophyte.report.report_lines(self.conn)
 
         # The host column is this machine's own name: the claim stamped it.
         host = socket.gethostname()
@@ -271,7 +272,7 @@ class ReportTests(unittest.TestCase):
         self.completed_run(4, actual_min=7, estimate_min=None, rounds=0,
                            outcome="merged")
 
-        lines = factory.report_lines(self.conn)
+        lines = holophyte.report.report_lines(self.conn)
 
         self.assertEqual(lines[4].split(), ["KO-4", "7.0", "n/a", "n/a", "0",
                                             "merged", socket.gethostname()])
@@ -283,7 +284,7 @@ class ReportTests(unittest.TestCase):
         self.three_runs()
         self.conn.execute("UPDATE runs SET host = NULL WHERE id = 2")
 
-        lines = factory.report_lines(self.conn)
+        lines = holophyte.report.report_lines(self.conn)
 
         self.assertEqual(lines[2].split()[-1], "?")
         self.assertEqual(lines[1].split()[-1], socket.gethostname())
@@ -308,7 +309,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(printed[0].split()[0], "ticket")
         # The table is the five lines it always was, and below it the one
         # line on the supervisor: none has ever beaten in this store.
-        self.assertEqual(printed[:5], factory.report_lines(self.conn))
+        self.assertEqual(printed[:5], holophyte.report.report_lines(self.conn))
         self.assertEqual(printed[5], "supervisor: none recorded")
         self.assertEqual(len(printed), 6)
         # Nothing was claimed: three runs went in, three are there, all ended,
