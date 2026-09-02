@@ -71,7 +71,9 @@ class SweepTestCase(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        self.db = self.root / "repo.holophyte.db"
+        # Where `retarget(self.target)` will look: the target's state directory.
+        (self.root / "repo.holophyte").mkdir()
+        self.db = self.root / "repo.holophyte" / "store.db"
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
@@ -925,7 +927,7 @@ class SweepModeTests(SweepTestCase):
             factory.cli(["--sweep", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse((self.root / "elsewhere.holophyte.db").exists())
+        self.assertFalse((self.root / "elsewhere.holophyte").exists())
 
 
 def a_dead_pid():
@@ -1118,7 +1120,7 @@ class SuperviseTests(SweepTestCase):
 
 
 class SupervisorConfigTests(SweepTestCase):
-    """`[supervisor]` in `<repo>.holophyte.toml`: the thresholds have an address.
+    """`[supervisor]` in `<repo>.holophyte/config.toml`: the thresholds have an address.
 
     An absent table is the constants the tests above were written against; a
     key that is present moves exactly the trip it names; a key outside its
@@ -1127,7 +1129,7 @@ class SupervisorConfigTests(SweepTestCase):
 
     def configure(self, text):
         """Write the target's config and point the module at it."""
-        (self.root / "repo.holophyte.toml").write_text(text)
+        (self.root / "repo.holophyte" / "config.toml").write_text(text)
         self.retarget_factory()
 
     def test_an_absent_table_is_the_documented_defaults(self):
@@ -1210,7 +1212,7 @@ class SupervisorConfigTests(SweepTestCase):
                 message = str(raised.exception)
                 self.assertIn(f"[supervisor] {key}", message)
                 self.assertIn(constraint, message)
-                self.assertIn("repo.holophyte.toml", message)
+                self.assertIn("repo.holophyte/config.toml", message)
         self.assertEqual(
             self.conn.execute("SELECT count(*) FROM sweepStrikes").fetchone(),
             (0,))

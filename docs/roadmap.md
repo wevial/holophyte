@@ -21,8 +21,9 @@ check.
 
 Give configurable behavior an address before building on top of it.
 
-- Per-target config file: `<repo>.holophyte.toml`, sibling of the target
-  (same convention as `<repo>.holophyte.db` / `<repo>.worktrees`).
+- Per-target config file: `<repo>.holophyte/config.toml`, in the target's
+  state directory beside it (with `store.db` and `supervisor.lock`;
+  `<repo>.worktrees` stays a sibling of its own).
   Parsed with stdlib `tomllib`. **Absent file = current behavior.**
 - `[agents]` table: implementer/reviewer/adjudicator commands become
   config. Long term no harness is hardcoded — claude/codex are defaults,

@@ -53,14 +53,14 @@ import ticket_template
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
 DEFAULT_TARGET = Path("/srv/dev/holo2test")
-# The four paths a run works against, plus the config they carry. They are set
-# by `retarget()` below rather than written out here, so the derivation lives
-# in one place and the command line is the only thing that chooses a target:
+# The paths a run works against, plus the config they carry. They are set by
+# `retarget()` below rather than written out here, so the derivation lives in
+# one place and the command line is the only thing that chooses a target:
 # importing this module used to read `sys.argv[1]`, which made every
 # `python3 -m unittest discover` retarget the factory at a directory called
 # "discover".
-TARGET = STORE_PATH = WORKTREES = CONFIG_PATH = None
-# The parsed `<target>.holophyte.toml`, cached by `config()`; None until it has
+TARGET = HOLO_DIR = STORE_PATH = WORKTREES = CONFIG_PATH = None
+# The parsed `<target>.holophyte/config.toml`, cached by `config()`; None until it has
 # been read. `{}` is the documented normal case once it has: every knob the
 # file can set has a hardcoded default, so an absent file is exactly today's
 # behavior.
@@ -89,7 +89,7 @@ def load_config(path):
 
 
 def retarget(target):
-    """Point TARGET, the three paths derived from it and CONFIG at `target`.
+    """Point TARGET, the paths derived from it and CONFIG at `target`.
 
     Called once at import for the default and again by `cli()` for whatever
     the command line names; nothing else moves these, so a caller that wants a
@@ -97,20 +97,26 @@ def retarget(target):
     other two pointing at the last one. The config is loaded here for the same
     reason: it is derived from the target, so it moves when the target does.
     """
-    global TARGET, STORE_PATH, WORKTREES, CONFIG_PATH, CONFIG
+    global TARGET, HOLO_DIR, STORE_PATH, WORKTREES, CONFIG_PATH, CONFIG
     TARGET = Path(target)
-    # The loop's durable state: one WAL-mode SQLite file per target repo, a
-    # sibling of the target the way its worktree directory is. Outside the
-    # repo rather than inside it: the factory's own .gitignore says nothing
-    # about the target checkout, so a store written into TARGET would leave
-    # the database and its two WAL sidecars untracked in whatever repo the
-    # loop is working on -- dirt a task's `git add -A` could sweep into a
-    # commit.
-    STORE_PATH = TARGET.parent / f"{TARGET.name}.holophyte.db"
+    # Everything the factory keeps about a target lives in one directory
+    # beside it, `<target>.holophyte/`, created the first time something has
+    # to write there. Beside the target rather than inside it: the factory's
+    # own .gitignore says nothing about the target checkout, so a store
+    # written into TARGET would leave the database and its two WAL sidecars
+    # untracked in whatever repo the loop is working on -- dirt a task's
+    # `git add -A` could sweep into a commit. One directory rather than a
+    # family of dotted siblings, so the artifacts a target accrues (the
+    # supervisor's lock today, its logs and strike tables later) have an
+    # obvious home and the parent listing stays readable.
+    HOLO_DIR = TARGET.parent / f"{TARGET.name}.holophyte"
+    # The loop's durable state: one WAL-mode SQLite file per target repo.
+    STORE_PATH = HOLO_DIR / "store.db"
+    # Config for a target is not a file the target has to carry either.
+    CONFIG_PATH = HOLO_DIR / "config.toml"
+    # The worktree directory predates the state directory and is heavy git
+    # state rather than factory state; it keeps its own sibling address.
     WORKTREES = TARGET.parent / f"{TARGET.name}.worktrees"
-    # Same sibling convention as the store and the worktree directory, for the
-    # same reason: config for a target is not a file the target has to carry.
-    CONFIG_PATH = TARGET.parent / f"{TARGET.name}.holophyte.toml"
     # Dropped, not read: retargeting invalidates the cache, and `config()`
     # parses the new file the first time something asks for it.
     CONFIG = None
@@ -121,7 +127,7 @@ def config():
 
     Read on demand rather than by `retarget()`, which runs at import for the
     default target: parsing there made a malformed
-    `/srv/dev/holo2test.holophyte.toml` an error for `--help`, for importing
+    `/srv/dev/holo2test.holophyte/config.toml` an error for `--help`, for importing
     this module at all, and for a run pointed at some entirely different
     repository. Nothing that reads config runs before `cli()` picks a target,
     and `cli()` reads it as soon as it has one, so the file a run actually
@@ -1488,8 +1494,15 @@ def run_task(task, conn=None, run_id=None, provider=None):
 
 
 def open_store(path=None):
-    """Open the loop's store, creating and migrating the schema if needed."""
-    conn = store.open(str(path or STORE_PATH))
+    """Open the loop's store, creating and migrating the schema if needed.
+
+    The store's directory is made here, on first need: `retarget()` only
+    derives paths, and a `--report` against a target that has no store says
+    so without leaving an empty directory behind.
+    """
+    path = Path(path or STORE_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = store.open(str(path))
     store.init(conn)
     return conn
 
@@ -3029,14 +3042,14 @@ STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
 
 def supervisor_lock_path(target=None):
-    """The lockfile for `target`'s supervisor: a sibling, like the store.
+    """The lockfile for `target`'s supervisor, in its `<target>.holophyte/`.
 
     Beside the store rather than inside the target for the store's own
     reason: nothing about the target checkout should have to know the factory
     exists, and a lock inside it is dirt a task's `git add -A` could commit.
     """
     target = TARGET if target is None else Path(target)
-    return target.parent / f"{target.name}.holophyte.supervisor.lock"
+    return target.parent / f"{target.name}.holophyte" / "supervisor.lock"
 
 
 class SupervisorHeld(Exception):
@@ -3133,6 +3146,9 @@ def acquire_supervisor_lock(path, pid=None, now=None):
     path = Path(path)
     pid = os.getpid() if pid is None else pid
     now = int(time() * 1000) if now is None else now
+    # The target's state directory, on first need: a supervisor can be the
+    # first thing to run against a target.
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     def created():
         try:
