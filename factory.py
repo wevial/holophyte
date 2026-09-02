@@ -447,6 +447,39 @@ def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
     return f"{head}\n" + "\n".join(lines)[-2000:]
 
 
+def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
+    """Name the cap a command ran past and, for a marked chain, the clause
+    that was running when it fired. Same shape as `failure_report()`, so a
+    hung verify reads like any other failed verify: the earlier clauses are
+    listed with their output, the running one is marked as timed out, and
+    the ones the cap short-circuited are named as not executed.
+
+    The running clause is the last one that announced itself: the chain
+    stops at the first failure, so the highest marker seen is the one that
+    never finished."""
+    running = max(per_clause) if per_clause else None
+    head = f"[verify] FAILED: verify timed out after {timeout:g}s"
+    if not (clauses and running and 1 <= running <= len(clauses)):
+        body = cleaned.strip() or "(no output before the timeout)"
+        return (f"{head}\n"
+                f"[verify]   full command: {cmd}\n"
+                f"[verify]   output:\n{body[-2000:]}")
+    head += (f" in clause {running} of {len(clauses)}\n"
+             f"[verify]   full command: {cmd}\n"
+             f"[verify]   running clause: {clauses[running - 1]}")
+    lines = []
+    for n in range(1, running + 1):
+        status = "timed out" if n == running else "ok"
+        lines.append(f"[verify]   --- clause {n} ({status}): {clauses[n - 1]}")
+        lines.append(per_clause.get(n, "").strip() or (
+            "(no output before the timeout)" if n == running
+            else "(no output)"))
+    if running < len(clauses):
+        lines.append("[verify]   not executed: clause " + ", ".join(
+            str(n) for n in range(running + 1, len(clauses) + 1)))
+    return f"{head}\n" + "\n".join(lines)[-2000:]
+
+
 def vacuous_green_report(cmd, cleaned):
     """A test command that exits 0 having collected no tests verified nothing,
     so it is RED. Returns the report naming `vacuous-green`, quoting the
@@ -522,7 +555,11 @@ def reap_group(proc, expired):
     try:
         out, _ = proc.communicate(timeout=REAP_GRACE)
     except subprocess.TimeoutExpired:
+        # CPython attaches the partial output as `bytes` even under
+        # `text=True`; hand back the text the caller was promised.
         out = expired.output or ""
+        if isinstance(out, bytes):
+            out = out.decode(errors="replace")
     return out
 
 
@@ -557,7 +594,9 @@ def run_verify(cmd, cwd=None, contracts=None):
     by clause inside one shell, and the report points at the clause that
     exited non-zero, including when that clause failed without printing
     anything. An exit-0 run that reports zero collected tests is failed as
-    `vacuous-green` rather than passed.
+    `vacuous-green` rather than passed. A command that runs past
+    `VERIFY_TIMEOUT` is RED too, naming the cap and the clause that was
+    running; it never raises `TimeoutExpired` at the caller.
 
     Literal contract checks declared on the ticket run first: they are
     deterministic, need no subprocess, and a drifted literal is a RED result
@@ -572,8 +611,18 @@ def run_verify(cmd, cwd=None, contracts=None):
         return True, passed + "(no verify command)"
     clauses = split_and_clauses(cmd)
     marked = bool(clauses) and len(clauses) > 1
-    returncode, out = run_capped(instrumented_script(clauses) if marked else cmd,
-                                 cwd or TARGET, VERIFY_TIMEOUT)
+    try:
+        returncode, out = run_capped(
+            instrumented_script(clauses) if marked else cmd,
+            cwd or TARGET, VERIFY_TIMEOUT)
+    except subprocess.TimeoutExpired as expired:
+        # The cap is a failed verify, not a crash: `run_capped` has already
+        # reaped the process group, and what the command printed before the
+        # kill says which clause was running when it fired.
+        per_clause, _, cleaned = parse_clause_output(expired.output or "")
+        return False, timeout_failure_report(cmd, clauses if marked else None,
+                                             per_clause, cleaned,
+                                             expired.timeout)
     per_clause, failed, cleaned = parse_clause_output(out)
     if returncode == 0:
         vacuous = vacuous_green_report(cmd, cleaned)
