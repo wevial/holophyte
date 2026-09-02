@@ -607,7 +607,10 @@ class WorktreeSetupLoopTests(LoopFixture):
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertNotIn(BRANCH, self.branches())
         self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        # A toolchain outage says nothing about the ticket: no agent ran, so
+        # the failure must not spend one of its escalation strikes.
+        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
+                         [("failed", "infra")])
         self.assertEqual(len(provider.queue), 1)  # the loop stopped
         # The ticket carries the reason, with the failing command and what it
         # printed — a run that ended before anything ran leaves no other trace.
@@ -629,7 +632,8 @@ class WorktreeSetupLoopTests(LoopFixture):
 
         self.loop()
 
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
+                         [("failed", "infra")])
         self.assertTrue((wt / "rescued.txt").exists())
         self.assertIn("rescued: preserved work", self.subjects(BRANCH))
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")

@@ -1429,7 +1429,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # failure. A branch this run cut fresh is discarded -- no agent ran, so
     # there is no work on it to keep -- while a reused worktree may hold
     # preserved work the setup failure says nothing about, and is left
-    # exactly as found.
+    # exactly as found. Either way no agent ran, so the failure is the
+    # factory's plumbing, not evidence about the ticket: it closes out as
+    # `InfraFailure` and does not spend one of the ticket's strikes.
     ok, out = run_worktree_setup(wt, conn, run_id)
     if not ok:
         print(out)
@@ -1441,14 +1443,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
                             f" discarded.\n\n{out}")
             sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
             sh(["git", "branch", "-D", branch], TARGET)
-            raise RunFailure("worktree setup failed; no agent ran and the"
-                             " empty branch was discarded")
+            raise InfraFailure("worktree setup failed; no agent ran and the"
+                               " empty branch was discarded")
         ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
                         f"reused worktree {wt} left in place with its "
                         f"work.\n\n{out}")
-        raise RunFailure(f"worktree setup failed; no agent ran; reused"
-                         f" worktree and branch {branch} left in place with"
-                         " their work")
+        raise InfraFailure(f"worktree setup failed; no agent ran; reused"
+                           f" worktree and branch {branch} left in place with"
+                           " their work")
 
     # The review base is main, not the HEAD reuse entered on: preserved
     # commits were never approved, so the reviewer must see them inside the
