@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[44 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T05:18:11Z — KO-173
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T05:18:14Z — KO-173
-MERGED to main.
-actual: 5.8 min · estimate: 20 min · rounds: 2
-
-## 2026-09-02T05:24:48Z — KO-174
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:1444): Both worktree-setup failure paths still raise `RunFailure`, despite explicitly stating “no agent ran.” They are stor…
+[47 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T05:27:52Z — KO-174
 Round 2: pass · reviewer codex-sol-medium · verify passed
@@ -751,3 +739,15 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T15:22:45Z — KO-182
 MERGED to main.
 actual: 10.5 min · estimate: 25 min · rounds: 2
+
+## 2026-09-02T15:26:55Z — KO-187
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py:3016 [p2] [factory.py:3016](/workspace/factory.py:3016): The required restart log is not flushed before `os.execv`. With redirected/block-buffered stdout, `execv` repla…
+
+## 2026-09-02T15:29:04Z — KO-187
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T15:29:08Z — KO-187
+MERGED to main.
+actual: 6.4 min · estimate: 25 min · rounds: 2
