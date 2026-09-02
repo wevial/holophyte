@@ -155,6 +155,20 @@ class TicketStatusTests(unittest.TestCase):
         self.assertEqual(again, ticket_id)  # upsert, not a second row
         self.assertEqual(self.status_of(ticket_id), "ready")
 
+    def test_re_mirroring_demotes_a_ready_ticket_whose_body_lost_its_spec(self):
+        # §2 is a data invariant: `ready` means the row carries both lists.
+        # A ready ticket is nobody's work yet, so an edit that empties the
+        # body in Linear follows the body back to `needs_spec` rather than
+        # leaving a row that says ready about a contract it no longer holds.
+        ticket_id = self.mirror()
+        self.assertEqual(self.status_of(ticket_id), "ready")
+
+        again = self.mirror(title="edited", acceptance_criteria=[],
+                            verification_commands=[])
+
+        self.assertEqual(again, ticket_id)
+        self.assertEqual(self.status_of(ticket_id), "needs_spec")
+
     def test_re_mirroring_does_not_drag_a_running_ticket_backwards(self):
         # §1: Holophyte owns the in-flight substate. An edit that empties the
         # body in Linear must not demote a ticket a run is working on.

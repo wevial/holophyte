@@ -406,6 +406,40 @@ class WiringClaimTests(unittest.TestCase):
                       " JOIN tickets t ON t.id = r.ticketId"),
             [("HOL-2",)])
 
+    def test_a_ticket_mirrored_ready_last_pass_is_parked_when_its_body_goes_bad(self):
+        """The gate judges the live body, not the row a previous pass left:
+        a ticket the store already holds as `ready` whose description has
+        since been edited into an unfilled template is refused and its
+        mirror follows the body to `needs_spec`, with no run row."""
+        conn = factory.open_store(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        was_valid = a_task(identifier="HOL-1", issue_id=ISSUE_UUID)
+        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+                            linear_identifier=was_valid["id"],
+                            title=was_valid["title"],
+                            acceptance_criteria=was_valid["criteria"],
+                            verification_commands=[was_valid["verify"]])
+        conn.commit()
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"), [("ready",)])
+        now_invalid = dict(was_valid, body=INVALID_BODY)
+
+        with patch.object(factory, "run_task", return_value=True) as run_task, \
+                patch("builtins.print") as printed:
+            factory.main(StubProvider(now_invalid))
+
+        run_task.assert_not_called()
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, status FROM tickets"),
+            [("HOL-1", "needs_spec")])
+        self.assertEqual(self.read("SELECT id FROM runs"), [])
+        lines = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipped" in str(c.args[0])]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("HOL-1", lines[0])
+        self.assertIn("placeholder", lines[0])
+
     def test_a_body_the_template_validator_refuses_is_skipped_for_the_next(self):
         """The contract itself is gated, not just the row: a body carrying
         criteria and a verify command but an unfilled template placeholder

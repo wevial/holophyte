@@ -1252,12 +1252,17 @@ def mirror_ticket(
     that forgets to pass them gets the unpickable answer, not the pickable one.
 
     On re-mirror the Linear-owned fields are refreshed and the status is left
-    alone, with one exception: `needs_spec → ready` once the body finally
-    carries both lists. §1 gives Holophyte the in-flight substate, so a mirror
-    push may not drag a running ticket backwards, and the promotion is the one
-    edge of the §3 diagram a mirror can walk on its own — every other status
-    change is somebody's decision and goes through `transition()`. In
-    particular `blocked_on_deps → ready` is *not* taken here: it is the
+    alone, with one exception: between `needs_spec` and `ready` the status
+    follows the body, in both directions. Those two are the statuses §2
+    derives from the body alone — `ready` *means* the row carries both lists
+    — so a ticket promoted once the body finally carries them is demoted
+    again if an edit empties them, or if the caller withholds them because
+    the body failed the template (KO-188): a row that says `ready` about a
+    contract it no longer holds is the invariant broken. Neither ticket is
+    anybody's work yet. §1 gives Holophyte the in-flight substate, so a
+    mirror push may not drag a running ticket backwards, and every other
+    status change is somebody's decision and goes through `transition()`.
+    In particular `blocked_on_deps → ready` is *not* taken here: it is the
     dependency resolver's call, not a side effect of a body edit.
 
     `depends_on=None` (the default) means the caller has no opinion about the
@@ -1309,8 +1314,8 @@ def mirror_ticket(
             ).lastrowid
         else:
             ticket_id, status = row
-            if status == "needs_spec" and derived == "ready":
-                status = "ready"
+            if status in ("needs_spec", "ready"):
+                status = derived
             conn.execute(
                 "UPDATE tickets SET linearIdentifier = ?, title = ?,"
                 " status = ?, acceptanceCriteria = ?, verificationCommands = ?,"
