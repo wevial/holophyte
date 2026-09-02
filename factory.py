@@ -720,6 +720,7 @@ KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()),
     "worktree": frozenset({"setup", "setup_timeout_sec"}),
 }
+# `[loop]`'s entry is filled in beside `LOOP_KEYS`, with `[supervisor]`'s.
 
 
 def check_config_keys():
@@ -2961,6 +2962,11 @@ def main(provider=None):
     if provider is None:
         import linear_provider as provider
     restart_after_merge = self_hosted()
+    stop_on_failure = loop_config().stop_on_failure
+    # Whether any run this pass failed, for the exit code when the loop was
+    # told to go on past failures: the shell still sees a nonzero status for
+    # a night that was not clean.
+    failed = False
     conn = open_store()
     try:
         # The provider knows its team by name rather than by id; the column's
@@ -2991,7 +2997,7 @@ def main(provider=None):
             task = provider.claim_next(skip=skip)
             if not task:
                 print("[holo2] Linear has no ready tickets. done.")
-                return
+                return 1 if failed else None
             # Before the lease, before the mirror: a ticket that has already
             # burned its attempts is refused here rather than claimed and then
             # discovered to be unworkable, so the escalation costs no run row
@@ -3160,7 +3166,20 @@ def main(provider=None):
                 # The regenerated window stays uncommitted, like the preserved
                 # branch it describes: a human closes both out. Nonzero so the
                 # shell — and anything supervising it — sees the failure.
-                return 1  # stop on first failure; ticket stays In Progress
+                if stop_on_failure:
+                    return 1  # stop on first failure; ticket stays In Progress
+                # `[loop] stop_on_failure = false`: the run is closed out
+                # exactly as above, and the loop goes on to the next ready
+                # ticket. The failed one is skipped for the rest of this
+                # pass -- its mirror is `in_flight`, so the claim path would
+                # refuse it anyway, but not offering it again is cheaper than
+                # refusing it and the print is one line about the failure
+                # rather than two.
+                failed = True
+                skip.add(task["id"])
+                print(f"[holo2] {task['id']} failed; continuing to the next"
+                      " ready ticket (stop_on_failure = false)")
+                continue
             commit_findings(f"Complete task {task['id']}: {task['title']}")
             if restart_after_merge:
                 # Store and Linear are terminal for this run, the lease is
@@ -3469,6 +3488,49 @@ def sweep_config():
         budget_grace=values["budget_grace"],
         review_overlap_threshold=values["review_overlap_threshold"],
         sweep_interval_sec=values["sweep_interval_sec"])
+
+# What the claim loop does after a run it closed out as failed. The default
+# is the loop as it has always been: one failure ends the process, and an
+# operator relaunches it. `stop_on_failure = false` is for the unattended
+# night once escalation is trusted -- the failed run is recorded exactly as
+# today, and the loop goes on to the next ready ticket instead of exiting.
+# Escalation (`MAX_FAILED_RUNS`) is untouched: a ticket that keeps failing
+# still parks itself; this knob only decides whether one failure stops the
+# whole queue.
+LOOP_KEYS = {
+    "stop_on_failure": True,
+}
+KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
+LoopConfig = collections.namedtuple("LoopConfig", ("stop_on_failure",))
+
+
+def loop_config():
+    """The target's `[loop]` knobs over the defaults.
+
+    Checked at startup beside `sweep_config()`, the same way: an absent table
+    is the defaults exactly, and a present value has to be the type the key
+    means. `stop_on_failure` is a boolean, and only a boolean -- `"yes"`,
+    `1` and `"false"` are all truthy strings or numbers TOML never meant as
+    the answer, and a value the factory quietly read as one would run a
+    night nobody chose. The refusal names the table, the key and the
+    constraint, like a bad `[supervisor]` threshold. Keys this version does
+    not know are refused by `check_config_keys()`.
+    """
+    table = config().get("loop", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [loop] must be a table, got "
+            f"{type(table).__name__}")
+    values = {}
+    for key, default in LOOP_KEYS.items():
+        value = table.get(key, default)
+        if not isinstance(value, bool):
+            raise SystemExit(
+                f"[holo2] {CONFIG_PATH}: [loop] {key} must be a boolean "
+                f"(true or false), got {value!r}")
+        values[key] = value
+    return LoopConfig(**values)
+
 
 # The phases a run can be swept in: everything the store's enum has, less the
 # three a finished run sits in and `blocked_on_operator`. Derived from
@@ -4264,6 +4326,7 @@ def cli(argv=None):
     # believing a knob is set that is not.
     check_config_keys()
     sweep_config()
+    loop_config()
     if args.report:
         return report()
     # Same window and the same reasons as `--report`: it reads runs and prints
