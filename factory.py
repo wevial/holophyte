@@ -696,6 +696,13 @@ AGENT_CONFIG_KEYS = {
     "adjudicate": "adjudicator",
 }
 
+# The programs the default routes stand on, and how long the startup probe
+# waits for the Docker daemon to answer. A daemon that takes longer than this
+# to say hello is not one a review round is going to get anywhere with.
+DEFAULT_IMPLEMENTER = "claude"
+DEFAULT_REVIEWER = "docker"
+DOCKER_PROBE_TIMEOUT = 5
+
 # Every key the factory reads, per table it reads. `check_config_keys()` holds
 # a config to this at startup: a key inside one of these tables that is not
 # listed here is a typo (`setup_timeout_min` for `setup_timeout_sec`), and a
@@ -787,10 +794,24 @@ def check_agent_commands():
     does not exist yet, so that name resolves somewhere this check cannot look
     and the operator has not named. An absolute path or a PATH lookup says
     where it means.
+
+    A role the table does not name takes its default route, and that route is
+    held to the same bar as a configured one: the default implementer is
+    `claude` on PATH, and the default reviewer and adjudicator run inside a
+    container, so `docker` has to be on PATH and its daemon has to answer. A
+    host with Docker stopped used to claim a ticket, cut a branch and fail at
+    the first review with the lease held. `docker info` is a liveness probe of
+    the daemon, not an agent turn -- no review is staged and the image is
+    neither pulled nor built, since the runner builds it on first use.
     """
+    default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
         argv = agent_command(role, "")
         if argv is None:
+            if role == "implement":
+                check_default_implementer()
+            else:
+                default_container_keys.append(key)
             continue
         program = argv[0]
         if os.path.dirname(program) and not os.path.isabs(program):
@@ -802,6 +823,55 @@ def check_agent_commands():
             raise SystemExit(
                 f"[holo2] {CONFIG_PATH}: [agents] {key}: no executable "
                 f"{program!r} on PATH")
+    if default_container_keys:
+        check_default_reviewer(default_container_keys)
+
+
+def check_default_implementer():
+    """The default implementer route is `claude` on PATH; nothing else."""
+    if shutil.which(DEFAULT_IMPLEMENTER) is None:
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [agents] implementer is not set, so the "
+            f"implementer runs `{DEFAULT_IMPLEMENTER}`, and there is no "
+            f"executable {DEFAULT_IMPLEMENTER!r} on PATH -- install the Claude "
+            f"CLI or set [agents] implementer to the command to run instead")
+
+
+def check_default_reviewer(keys):
+    """The default container route needs `docker` and a daemon that answers.
+
+    `keys` are the `[agents]` keys whose roles fall to that route, named in
+    the message so the operator knows which line to write to route around it.
+    The daemon is asked `docker info` under `DOCKER_PROBE_TIMEOUT`: a daemon
+    that is stopped answers at once with a connection error, and one that is
+    wedged does not answer at all, and both are the same startup error.
+    """
+    unset = " and ".join(keys)
+    remedy = (f"start the Docker daemon or set [agents] {unset} to the "
+              f"command to run instead")
+    if shutil.which(DEFAULT_REVIEWER) is None:
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
+            f"runs in a `{DEFAULT_REVIEWER}` container ({review_runner.IMAGE}), "
+            f"and there is no executable {DEFAULT_REVIEWER!r} on PATH -- "
+            f"install Docker or set [agents] {unset} to the command to run "
+            f"instead")
+    try:
+        probe = subprocess.run([DEFAULT_REVIEWER, "info"], capture_output=True,
+                               text=True, timeout=DOCKER_PROBE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
+            f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
+            f"did not answer `{DEFAULT_REVIEWER} info` within "
+            f"{DOCKER_PROBE_TIMEOUT}s -- {remedy}") from None
+    if probe.returncode:
+        detail = (probe.stderr or probe.stdout).strip().splitlines()
+        reason = detail[-1] if detail else f"exit {probe.returncode}"
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
+            f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
+            f"did not answer `{DEFAULT_REVIEWER} info`: {reason} -- {remedy}")
 
 
 def agent_route(role):
@@ -905,7 +975,7 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 # so the failure is the factory's, not the ticket's.
                 raise InfraFailure(f"reviewer route failed for {role}:"
                                    f" {e}") from e
-        cmd = ["claude", "-p", goal, "--model", IMPL_MODEL,
+        cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role != "implement":
         publish_review_refs(Path(cwd), base_sha, candidate_sha)
