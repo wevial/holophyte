@@ -59,13 +59,38 @@ def _gql(query, variables=None):
 
 # --- Loop-facing provider API -------------------------------------------------
 
+def _paginate(query, variables, path):
+    """Every node of the connection at `path`, walked with Linear's cursors.
+
+    `query` must declare `$after: String` and pass it as the connection's
+    `after:`; `path` is the key path from the response root to the
+    connection. Linear caps a page at fifty issues by default, and a project
+    that has passed fifty would otherwise have its second page silently
+    invisible: a ready ticket there is never claimed, and a blocks relation
+    whose source sits there is never seen.
+    """
+    nodes = []
+    after = None
+    while True:
+        data = _gql(query, {**variables, "after": after})
+        for key in path:
+            data = data[key]
+        nodes.extend(data["nodes"])
+        page = data.get("pageInfo") or {}
+        if not page.get("hasNextPage"):
+            return nodes
+        after = page["endCursor"]
+
+
 READY_QUERY = """
-query($project: String!) {
+query($project: String!, $after: String) {
   project(id: $project) {
     issues(
       first: 50
+      after: $after
       filter: { state: { type: { nin: ["completed", "canceled", "backlog"] } } }
     ) {
+      pageInfo { hasNextPage endCursor }
       nodes {
         identifier id title description
         estimate
@@ -76,42 +101,46 @@ query($project: String!) {
   }
 }"""
 
+RELATIONS_QUERY = """
+query($project: String!, $after: String) {
+  project(id: $project) {
+    issues(first: 50, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        identifier state { type }
+        relations { nodes { type relatedIssue { identifier } } }
+      }
+    }
+  }
+}"""
+
+# A blocker in any state but these still blocks: Backlog and Triage are open.
+CLOSED_STATE_TYPES = {"completed", "canceled"}
+
 
 def list_ready_issues(project_id=PROJECT_ID):
     """Triaged (Todo/started), non-terminal, unblocked issues in the project.
 
     Note: Linear stores a blocker as an edge with type=blocks whose SOURCE is
     the blocking issue; the target issue's own relations list does not include
-    it. So we fetch the whole project's relations once and invert.
+    it. So we fetch the whole project's relations once and invert. A blocker
+    gates by its own state type — anything not completed/canceled, Backlog
+    included — rather than by whether it happens to be in the ready set.
     """
-    data = _gql(READY_QUERY, {"project": project_id})
-    issues = data["project"]["issues"]["nodes"]
+    path = ("project", "issues")
+    issues = _paginate(READY_QUERY, {"project": project_id}, path)
+    all_nodes = _paginate(RELATIONS_QUERY, {"project": project_id}, path)
 
-    all_q = """query($project: String!) {
-      project(id: $project) { issues(first: 50) {
-        nodes { identifier relations { nodes { type relatedIssue { identifier } } } }
-      } }
-    }"""
-    all_nodes = _gql(all_q, {"project": project_id})["project"]["issues"]["nodes"]
     blocked_by = {}
     for n in all_nodes:
+        if (n.get("state") or {}).get("type") in CLOSED_STATE_TYPES:
+            continue
         for rel in n["relations"]["nodes"]:
             if rel["type"] == "blocks":
                 blocked_by.setdefault(rel["relatedIssue"]["identifier"],
                                       []).append(n["identifier"])
 
-    ready = []
-    for i in issues:
-        my_blockers = blocked_by.get(i["identifier"], [])
-        # blockers only gate while they are themselves open — but any issue
-        # still in the ready query's non-terminal set is open by definition,
-        # and completed ones are absent from blocked_by sources only if done;
-        # be explicit: check each blocker's state via the map we already have.
-        open_blockers = [b for b in my_blockers
-                         if b in {x["identifier"] for x in issues}]
-        if not open_blockers:
-            ready.append(i)
-    return ready
+    return [i for i in issues if not blocked_by.get(i["identifier"])]
 
 
 def parse_task(issue):
