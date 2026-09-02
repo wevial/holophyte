@@ -496,15 +496,22 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.assertEqual(self.user_version(), newer)
 
     def test_the_hot_foreign_keys_are_indexed_after_open(self):
+        # The UNIQUE constraints already give every hot column an automatic
+        # index, so asserting "some index covers the column" would pass
+        # without the ticket's DDL. Assert the three named indexes exist and
+        # each leads on its foreign key.
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        indexed = set()
+        named = {}
         for (name, table) in conn.execute(
                 "SELECT name, tbl_name FROM sqlite_master"
-                " WHERE type = 'index'").fetchall():
-            for column in conn.execute(f"PRAGMA index_info({name})"):
-                indexed.add((table, column[2]))
+                " WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex%'"
+                ).fetchall():
+            columns = [row[2] for row in
+                       conn.execute(f"PRAGMA index_info({name})")]
+            named[name] = (table, columns[0])
 
-        self.assertTrue(HOT_FOREIGN_KEYS <= indexed,
-                        HOT_FOREIGN_KEYS - indexed)
+        expected = {f"{table}_{column}": (table, column)
+                    for (table, column) in HOT_FOREIGN_KEYS}
+        self.assertEqual({k: named.get(k) for k in expected}, expected)
