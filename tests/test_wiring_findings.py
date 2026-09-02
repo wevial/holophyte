@@ -222,7 +222,8 @@ class CloseOutRegenerationTests(unittest.TestCase):
     def test_a_close_out_renders_and_commits_the_runs_entries(self):
         self.loop("- store.py:7: the migration is missing\n"
                   "VERDICT: REQUEST_CHANGES",
-                  "VERDICT: APPROVE")
+                  "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+            "VERDICT: APPROVE")
 
         findings = (self.target / "FINDINGS.md").read_text()
         self.assertIn(factory.FINDINGS_MARKER, findings)

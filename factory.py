@@ -1383,7 +1383,11 @@ def parse_findings(reply):
     is never recorded as having said nothing.
     """
     findings = []
-    for block in finding_blocks(reply):
+    # The per-criterion checklist is the reviewer's account of the contract,
+    # not a complaint: a `met` line naming its witnessing test cites a path,
+    # and read as a finding it would file the test as a blocker. Its lines
+    # are dropped before the split; `criteria_findings()` reads them.
+    for block in finding_blocks(CRITERION_LINE_RE.sub("", reply)):
         match = FINDING_PATH_RE.search(block)
         listed = BLOCK_BREAK_RE.match(block) is not None
         if match is None and not listed:
@@ -1408,6 +1412,77 @@ def finding_severity(block):
         return DEFAULT_SEVERITY
     marker = (match.group(1) or match.group(2)).lower()
     return "p0" if marker == "blocker" else marker
+
+
+# One line of the reviewer's per-criterion checklist: `CRITERION n: met —
+# TEST_OR_CHECK`, `not met — WHY` or `unwitnessed — WHAT_IS_MISSING`. The
+# separator is loose (dash, em dash or colon) because a reviewer paraphrasing
+# the prompt's punctuation has still answered the question; the status word is
+# not, because `met` is the only answer that clears the gate.
+CRITERION_LINE_RE = re.compile(
+    r"^\s*CRITERION\s+(\d+)\s*:\s*(met|not met|unwitnessed)\b"
+    r"\s*(?:[-\u2013\u2014:]+\s*)?(.*?)\s*$", re.I | re.M)
+# The `path` a per-criterion finding is keyed under, with the criterion's
+# number as its `line`: not a file any repository holds, and distinct per
+# criterion so two unwitnessed criteria fingerprint as two complaints.
+CRITERIA_PATH = "criteria"
+UNWITNESSED_NOTE = "no CRITERION line in the reply"
+
+
+def criteria_block(reply):
+    """`{n: (status, note)}` for every CRITERION line in `reply`.
+
+    A number the reviewer wrote twice keeps its last line, which is the one
+    a reviewer correcting itself meant.
+    """
+    block = {}
+    for match in CRITERION_LINE_RE.finditer(reply):
+        block[int(match.group(1))] = (match.group(2).lower(), match.group(3))
+    return block
+
+
+def criteria_findings(reply, criteria):
+    """One finding per criterion `reply` did not witness; `[]` when all met.
+
+    The gate KO-165 lacked: a reviewer that approves while a criterion is
+    `not met` or `unwitnessed` — or that never answered for it at all — has
+    filed a complaint against the candidate whatever its verdict line says,
+    and this is that complaint in the findings shape the round stores. A
+    task with no criteria has nothing to witness and always answers `[]`.
+    """
+    block = criteria_block(reply)
+    findings = []
+    for n, criterion in enumerate(criteria or (), 1):
+        status, note = block.get(n, ("unwitnessed", UNWITNESSED_NOTE))
+        if status == "met" and note:
+            continue
+        if status == "met":  # claimed, with nothing named to witness it
+            status, note = "unwitnessed", "met claimed but no test or check named"
+        message = (f"CRITERION {n}: {status} \u2014 {note or '(no reason given)'}"
+                   f"\n{criterion}")
+        findings.append({"path": CRITERIA_PATH, "line": n,
+                         "severity": DEFAULT_SEVERITY,
+                         "message": finding_message(message)})
+    return findings
+
+
+def criteria_brief(criteria):
+    """The numbered criteria and the reply contract the reviewer is held to;
+    empty for a task with none, so the prompt never asks for a block the
+    loop would not read."""
+    if not criteria:
+        return ""
+    numbered = "\n".join(f"{n}. {c}" for n, c in enumerate(criteria, 1))
+    return (f"Acceptance criteria, numbered:\n{numbered}\n\n"
+            "Before the VERDICT line, account for every criterion with "
+            "exactly one line each, in this form:\n"
+            "CRITERION n: met \u2014 TEST_OR_CHECK  (name the test or check "
+            "that witnesses it)\n"
+            "CRITERION n: not met \u2014 WHY\n"
+            "CRITERION n: unwitnessed \u2014 WHAT_IS_MISSING\n"
+            "A criterion marked not met or unwitnessed, or left out of this "
+            "list, is a blocker: the round is REQUEST_CHANGES regardless of "
+            "the verdict line.\n\n")
 
 
 def round_verdict(reply, verdicts):
@@ -1555,6 +1630,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # turn has to be given it verbatim rather than the one-line title the
     # branch is named after.
     body = (task.get("body") or "").strip()
+    # The criteria the reviewer must account for one by one, numbered in the
+    # order the body lists them.
+    criteria = list(task.get("criteria") or ())
     task = task["title"]
     # The name carries the ticket identifier ahead of the title slug: two
     # tickets whose titles agree for 30 characters must not share a branch or
@@ -1746,6 +1824,7 @@ def run_task(task, conn=None, run_id=None, provider=None):
             "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
             f"{ticket}\n\n"
             + verify_brief(ok, out)
+            + criteria_brief(criteria)
             + "Do not modify anything. End your reply with exactly one line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
@@ -1754,9 +1833,16 @@ def run_task(task, conn=None, run_id=None, provider=None):
         # like every other one: a review the store has no row for is a round
         # §6 cannot compare the next one against.
         record_round(conn, run_id, rnd, "review", verdict, verify_cmd, ok, out,
-                     started_at=round_started)
+                     started_at=round_started, criteria=criteria)
 
-        if ok and review_runner.terminal_verdict(verdict) == "APPROVE":
+        # A criterion the reviewer left not met or unwitnessed is a blocker
+        # whatever the verdict line says (KO-165 was approved with one unmet).
+        unwitnessed = criteria_findings(verdict, criteria)
+        if unwitnessed:
+            print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
+                  "witnessed; treating as REQUEST_CHANGES")
+        if (ok and not unwitnessed
+                and review_runner.terminal_verdict(verdict) == "APPROVE"):
             break
 
         # 3. implementer addresses findings (same branch, new commit)
@@ -1997,7 +2083,7 @@ def set_phase(conn, run_id, phase, note=None):
 
 
 def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
-                 started_at=None):
+                 started_at=None, criteria=()):
     """Record one review or adjudication round as a `reviewRounds` row.
 
     The round the loop just ran, as the store holds it: the verdict, the
@@ -2015,6 +2101,15 @@ def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     the exception, and its raw text is kept as the one finding rather than
     recorded as a round that said nothing.
 
+    `criteria` are the ticket's acceptance criteria, in the order the
+    reviewer was given them. A `review` round that leaves any of them `not
+    met` or `unwitnessed` — or omits the checklist for a ticket that has
+    criteria — is recorded as `changes_requested` with one finding per such
+    criterion, even when its verdict line says APPROVE: the verdict line is
+    still read as before, and the override is applied after it. The
+    adjudicator keeps its bare PASS/FAIL contract and is not held to the
+    checklist.
+
     A `conn` of None makes this a no-op, like `set_phase()`, so a storeless
     `run_task()` runs the same stages and records nothing.
     """
@@ -2029,6 +2124,11 @@ def record_round(conn, run_id, rnd, role, reply, verify_cmd, ok, out,
         findings = parse_findings(reply)
     else:
         findings = []
+    if role == "review" and verdict != "error":
+        unwitnessed = criteria_findings(reply, criteria)
+        if unwitnessed:
+            verdict = "changes_requested"
+            findings = findings + unwitnessed
     # `run_verify()` reports a pass/fail gate rather than a raw status — the
     # failing clause and its exit code live in the output it builds — so the
     # exit code stored here is that verdict, and `output` is the detail.
