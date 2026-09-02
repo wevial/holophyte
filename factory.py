@@ -555,7 +555,11 @@ def reap_group(proc, expired):
     try:
         out, _ = proc.communicate(timeout=REAP_GRACE)
     except subprocess.TimeoutExpired:
+        # CPython attaches the partial output as `bytes` even under
+        # `text=True`; hand back the text the caller was promised.
         out = expired.output or ""
+        if isinstance(out, bytes):
+            out = out.decode(errors="replace")
     return out
 
 

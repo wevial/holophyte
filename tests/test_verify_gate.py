@@ -143,6 +143,22 @@ class VerifyTimeoutTests(unittest.TestCase):
         time.sleep(1.5)  # past when the child would have touched the marker
         self.assertFalse(marker.exists())
 
+    def test_a_detached_descendant_holding_the_pipe_still_yields_a_report(self):
+        # Review finding on the cap: a grandchild in its own session survives
+        # the group kill and holds the output pipe, so `reap_group` falls back
+        # to the partial output CPython attached to `TimeoutExpired` -- which
+        # is `bytes` even under `text=True`. That must not turn the timeout
+        # report into a `TypeError`.
+        cmd = "echo before; setsid sh -c 'sleep 1' & sleep 5"
+
+        with patch.object(factory, "VERIFY_TIMEOUT", 0.3), \
+                patch.object(factory, "REAP_GRACE", 0.1):
+            ok, out = factory.run_verify(cmd, self.cwd)
+
+        self.assertFalse(ok)
+        self.assertIn("timed out after 0.3s", out)
+        self.assertIn("before", out)
+
 
 class VacuousGreenTests(unittest.TestCase):
     """An exit-0 test command that collected no tests verified nothing (KO-107:
