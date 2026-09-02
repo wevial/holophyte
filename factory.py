@@ -1480,7 +1480,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
             signal.signal(signal.SIGALRM, old)
 
     # 1. implement — the ticket verbatim: title, then the approved body, then
-    # the verify commands the gate will actually run. A ticket with no body
+    # the verify commands the gate will actually run. The same `ticket` text is
+    # what the reviewer and the adjudicator below judge against, so all three
+    # turns are held to one contract. A ticket with no body
     # (a file-backed task line, a stub provider) degrades to the title alone.
     ticket = f"{task}\n\n{body}" if body else task
     commands = (f"\n\nThese verify commands must pass before review and again "
@@ -1552,7 +1554,10 @@ def run_task(task, conn=None, run_id=None, provider=None):
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
             "the candidate "
-            f"in this repo against the task: {task}\n"
+            "in this repo against the ticket below. The ticket is the "
+            "contract, acceptance criteria included: a candidate that "
+            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
+            f"{ticket}\n\n"
             + verify_brief(ok, out)
             + "Do not modify anything. End your reply with exactly one line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
@@ -1569,8 +1574,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
 
         # 3. implementer addresses findings (same branch, new commit)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        fixes = timed(f"A reviewer left findings on your work for task: {task}\n\n"
-                      f"{verdict}\n\n"
+        fixes = timed("A reviewer left findings on your work. The ticket you "
+                      "are held to, acceptance criteria included:\n\n"
+                      f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
                       "For EACH finding, adjudicate it first: ADDRESS (concrete "
                       "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
                       "it in the commit message), or DECLINE (invalid/out-of-scope — "
@@ -1608,7 +1614,10 @@ def run_task(task, conn=None, run_id=None, provider=None):
             f"You are a READ-ONLY final adjudicator. Judge commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate as "
             "the candidate "
-            f"in this repo against the task: {task}\n"
+            "in this repo against the ticket below. The ticket is the "
+            "contract, acceptance criteria included: a candidate that "
+            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
+            f"{ticket}\n\n"
             + verify_brief(ok, out)
             + "This candidate has already had its review rounds and their "
             "fixes; no further fix round exists. Your job is a verdict on the "
