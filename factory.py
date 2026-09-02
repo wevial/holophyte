@@ -641,6 +641,28 @@ class RunFailure(Exception):
     """
 
 
+class InfraFailure(RunFailure):
+    """A run failing for a reason that says nothing about the ticket.
+
+    The factory's own plumbing gave out — a reviewer container that would not
+    start, a route that did not answer — or the run ended before any work
+    began. Caught exactly where `RunFailure` is and closed out the same way,
+    with one difference: the row is written with `outcomeClass = 'infra'`, and
+    `failure_history()` leaves it out of the count that parks a ticket for a
+    human. A Docker outage is not evidence about the ticket, and two of them
+    must not spend its attempts (holophyte-bugs #4 and #6: a spurious
+    post-claim failure was KO-150's second strike).
+
+    A subclass rather than a flag on the message so every existing raise site
+    keeps its meaning: nothing that raises `RunFailure` today is reclassified.
+    """
+
+
+def outcome_class_of(exc):
+    """The `runs.outcomeClass` a failure that ended in `exc` is written with."""
+    return "infra" if isinstance(exc, InfraFailure) else "work"
+
+
 def sh(args, cwd=None):
     """Run an argv list — no shell, so task text can't break quoting."""
     r = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
@@ -814,16 +836,24 @@ def agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
     cmd = agent_command(role, goal)
     if cmd is None:
         if role != "implement":
-            return review_runner.run_review(
-                repo=Path(cwd),
-                base_sha=base_sha,
-                candidate_sha=candidate_sha,
-                prompt=goal,
-                profile=REVIEW_PROFILE,
-                timeout=1800,
-                verdicts=(review_runner.REVIEW_VERDICTS
-                          if role == "review" else None),
-            )
+            try:
+                return review_runner.run_review(
+                    repo=Path(cwd),
+                    base_sha=base_sha,
+                    candidate_sha=candidate_sha,
+                    prompt=goal,
+                    profile=REVIEW_PROFILE,
+                    timeout=1800,
+                    verdicts=(review_runner.REVIEW_VERDICTS
+                              if role == "review" else None),
+                )
+            except review_runner.ReviewBoundaryError as e:
+                # The runner could not stage, start or read the reviewer —
+                # a missing CLI, an image that will not build, a container
+                # that produced no events. The candidate was never judged,
+                # so the failure is the factory's, not the ticket's.
+                raise InfraFailure(f"reviewer route failed for {role}:"
+                                   f" {e}") from e
         cmd = ["claude", "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role != "implement":
@@ -1399,7 +1429,9 @@ def run_task(task, conn=None, run_id=None, provider=None):
     # failure. A branch this run cut fresh is discarded -- no agent ran, so
     # there is no work on it to keep -- while a reused worktree may hold
     # preserved work the setup failure says nothing about, and is left
-    # exactly as found.
+    # exactly as found. Either way no agent ran, so the failure is the
+    # factory's plumbing, not evidence about the ticket: it closes out as
+    # `InfraFailure` and does not spend one of the ticket's strikes.
     ok, out = run_worktree_setup(wt, conn, run_id)
     if not ok:
         print(out)
@@ -1411,14 +1443,14 @@ def run_task(task, conn=None, run_id=None, provider=None):
                             f" discarded.\n\n{out}")
             sh(["git", "worktree", "remove", "--force", str(wt)], TARGET)
             sh(["git", "branch", "-D", branch], TARGET)
-            raise RunFailure("worktree setup failed; no agent ran and the"
-                             " empty branch was discarded")
+            raise InfraFailure("worktree setup failed; no agent ran and the"
+                               " empty branch was discarded")
         ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
                         f"reused worktree {wt} left in place with its "
                         f"work.\n\n{out}")
-        raise RunFailure(f"worktree setup failed; no agent ran; reused"
-                         f" worktree and branch {branch} left in place with"
-                         " their work")
+        raise InfraFailure(f"worktree setup failed; no agent ran; reused"
+                           f" worktree and branch {branch} left in place with"
+                           " their work")
 
     # The review base is main, not the HEAD reuse entered on: preserved
     # commits were never approved, so the reviewer must see them inside the
@@ -2236,7 +2268,7 @@ def claim_run(conn, project, task):
     return ticket_id, store.claim(conn, project, ticket_id)
 
 
-def release_run(conn, run_id, merged, reason=None):
+def release_run(conn, run_id, merged, reason=None, outcome_class="work"):
     """Give the lease back when the loop is done with a run, merged or not.
 
     Called from the loop's `finally`, because the failure paths are the ones
@@ -2259,7 +2291,8 @@ def release_run(conn, run_id, merged, reason=None):
     # "preserved" on a reason-less failure lied on every deletion path
     # (KO-146 incident, run 10).
     store.release(conn, run_id, "failed", reason or
-                  f"run stopped in phase {store.run_phase(conn, run_id)}")
+                  f"run stopped in phase {store.run_phase(conn, run_id)}",
+                  outcome_class=outcome_class)
 
 
 # --- Linear as the notice board ----------------------------------------------
@@ -2426,6 +2459,11 @@ def failure_history(conn, ticket_id):
     later, so whether that run's `endedAt` lands before or after the row's
     `at` is jitter — and a run the human has dispositioned by hand must not
     be the strike that re-parks the ticket on its next failure.
+
+    Only `outcomeClass = 'work'` rows count. An `infra` failure — a claim
+    race, a reviewer container that would not start — is the factory
+    failing, not the ticket, and is neither a strike nor a line in the
+    comment; `--report` still lists it.
     """
     (since,) = conn.execute(
         "SELECT COALESCE(MAX(i.at), 0) FROM interventions i"
@@ -2435,6 +2473,7 @@ def failure_history(conn, ticket_id):
     return conn.execute(
         "SELECT attempt, outcomeReason FROM runs r"
         " WHERE ticketId = ? AND outcome = 'failed' AND endedAt > ?"
+        " AND outcomeClass = 'work'"
         " AND NOT EXISTS (SELECT 1 FROM interventions i"
         "                 WHERE i.runId = r.id AND i.source = 'human'"
         "                 AND i.\"action\" = 'close_out')"
@@ -2520,7 +2559,7 @@ def escalate(conn, ticket_id, provider=None):
 
 
 def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None,
-                      confirm=None):
+                      confirm=None, outcome_class="work"):
     """End a failed run the one way the factory ends failed runs.
 
     Three writes in a fixed order, and the order is the point. The failure
@@ -2556,11 +2595,15 @@ def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None,
     stall every live loop for as long as the provider takes to answer — so it
     stays outside, where the failure is already committed and a push that
     fails leaves the board stale rather than the run half-closed.
+
+    `outcome_class` is the row's `outcomeClass`: `work` unless the failure
+    was an `InfraFailure`, in which case the escalation that follows does
+    not count it.
     """
     with store.transaction(conn):
         if confirm is not None and not confirm():
             return False
-        release_run(conn, run_id, False, reason)
+        release_run(conn, run_id, False, reason, outcome_class)
     escalate(conn, ticket_id, provider)
     refresh_findings(conn)
     return True
@@ -2654,15 +2697,17 @@ def main(provider=None):
                 # human wants to know — and it is also what keeps a stale
                 # ticket the re-push cannot move (an unmapped status, a Linear
                 # that is down) from being claimed round and round forever.
-                store.release(conn, run_id, "failed",
-                              "ticket was not ready when the run was claimed;"
-                              " no work started")
-                # This refusal is itself a failed run, and it is the run the
-                # loop reaches when a ticket it already failed on is offered
-                # back — so the second refusal is the second failure, and the
-                # threshold is checked here as well as at close-out. A ticket
-                # the escalation just parked was pushed to the board by that
-                # move; the re-push is only for one that stayed where it was.
+                refused = InfraFailure("ticket was not ready when the run"
+                                       " was claimed; no work started")
+                store.release(conn, run_id, "failed", str(refused),
+                              outcome_class=outcome_class_of(refused))
+                # This refusal is a failed run, but an `infra` one: no work
+                # started, so it says nothing about the ticket and does not
+                # count towards parking it. The threshold is still checked
+                # here, for the `work` failures already on the ticket. A
+                # ticket the escalation just parked was pushed to the board
+                # by that move; the re-push is only for one that stayed where
+                # it was.
                 if not escalate(conn, ticket_id, provider):
                     mirror_push(conn, ticket_id, provider)
                 print("[holo2] claimed ticket is not in a status work starts"
@@ -2670,10 +2715,12 @@ def main(provider=None):
                 return
             merged = False
             reason = None
+            outcome_class = "work"
             try:
                 merged = run_task(task, conn, run_id, provider)
             except RunFailure as e:
                 reason = str(e)
+                outcome_class = outcome_class_of(e)
                 print(f"[holo2] run failed: {reason}")
             except Exception as e:  # noqa: BLE001 - crash containment
                 # Anything that escapes run_task is this run's failure. The
@@ -2707,7 +2754,8 @@ def main(provider=None):
                     # own; the lease stays for release() or the sweep.
                     try:
                         close_out_failure(conn, run_id, ticket_id, reason,
-                                          provider=provider)
+                                          provider=provider,
+                                          outcome_class=outcome_class)
                     except Exception as close_err:  # noqa: BLE001
                         print(f"[holo2] close-out failed: {close_err}")
             if not merged:

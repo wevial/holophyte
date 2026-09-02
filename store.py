@@ -142,6 +142,15 @@ CREATE TABLE IF NOT EXISTS runs (
         CHECK (outcome IS NULL
                OR outcome IN ('merged', 'killed', 'abandoned', 'failed')),
     outcomeReason     TEXT,
+    -- Whether a failure says anything about the ticket. `work` is the
+    -- default and the ordinary case: the run got as far as the work and the
+    -- work is what failed. `infra` is a run that ended before any work
+    -- started (a claim race) or because the factory's own plumbing gave out
+    -- (a reviewer container that would not start): true about the factory,
+    -- silent about the ticket, and so left out of the escalation count that
+    -- parks a ticket for a human. The report still shows both.
+    outcomeClass      TEXT    NOT NULL DEFAULT 'work'
+        CHECK (outcomeClass IN ('work', 'infra')),
     -- §5's "re-enters the phase it left": the phase a parked run goes back
     -- to, written by whoever parks it and consumed by `resume()`. Not a
     -- state-model field — the doc states the rule and leaves the mechanism
@@ -311,6 +320,12 @@ ADDED_COLUMNS = (
         "runs",
         "ticketSnapshot",
         "ticketSnapshot TEXT",
+    ),
+    (
+        "runs",
+        "outcomeClass",
+        "outcomeClass TEXT NOT NULL DEFAULT 'work'"
+        " CHECK (outcomeClass IN ('work', 'infra'))",
     ),
 )
 
@@ -815,8 +830,12 @@ TERMINAL_PHASES = {
 # run back to a work phase, so the run it hands back is releasable again.
 ENDED_PHASES = frozenset(TERMINAL_PHASES.values())
 
+# `runs.outcomeClass`: what a failure is evidence about. Mirrors the CHECK.
+OUTCOME_CLASSES = frozenset({"work", "infra"})
 
-def release(conn, run_id, outcome, reason=None, now=None):
+
+def release(conn, run_id, outcome, reason=None, now=None,
+            outcome_class="work"):
     """End run `run_id` with `outcome` and give the project's lease back.
 
     The mirror of `claim()`, and the reason a crashed loop does not brick the
@@ -865,9 +884,16 @@ def release(conn, run_id, outcome, reason=None, now=None):
 
     An unknown `run_id` is a caller bug and raises `ValueError`. `now` is
     epoch milliseconds for `endedAt`, defaulting to the clock.
+
+    `outcome_class` is `runs.outcomeClass`: `work` unless the caller knows
+    the failure was the factory's own (`infra`), in which case the row is
+    kept out of the escalation count. An unknown class raises before any
+    write, the same as an unknown outcome.
     """
     if outcome not in TERMINAL_PHASES:
         raise ValueError(f"unknown outcome {outcome!r}")
+    if outcome_class not in OUTCOME_CLASSES:
+        raise ValueError(f"unknown outcome class {outcome_class!r}")
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -906,11 +932,12 @@ def release(conn, run_id, outcome, reason=None, now=None):
         # disagreeing with the rounds it summarizes.
         conn.execute(
             "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
-            " resumePhase = ?,"
+            " outcomeClass = ?, resumePhase = ?,"
             " reviewRoundCount = (SELECT COUNT(*) FROM reviewRounds"
             "                     WHERE runId = ?)"
             " WHERE id = ?",
-            (now, outcome, reason, resume_phase, run_id, run_id),
+            (now, outcome, reason, outcome_class, resume_phase, run_id,
+             run_id),
         )
         conn.execute(
             "UPDATE projects SET activeRunId = NULL"
