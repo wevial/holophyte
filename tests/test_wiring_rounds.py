@@ -352,6 +352,27 @@ class RoundWriteTests(unittest.TestCase):
             self.conn.execute("SELECT COUNT(*) FROM reviewRounds").fetchone(),
             (0,))
 
+    def test_a_document_column_given_prose_stores_no_round_at_all(self):
+        """The two document arguments are the schema's object arrays, not any
+        iterable: a string or a mapping is refused rather than exploded into
+        its characters or its keys and stored as a document nothing wrote."""
+        for label, kwargs in (
+            ("prose findings", dict(findings="prose")),
+            ("prose verification results", dict(verification_results="prose")),
+            ("mapping verification results",
+             dict(verification_results={"pytest": 0})),
+        ):
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError):
+                    store.record_review_round(
+                        self.conn, self.run_id, 1, "changes_requested",
+                        "a-reviewer", **kwargs)
+
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM reviewRounds").fetchone(),
+            (0,))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1668,9 +1668,12 @@ def _document(text):
     the renderer's job is to show that, not to crash the close-out that
     regenerates every other entry in the window.
 
-    `RecursionError` is caught alongside the decode errors because it is the
-    one a pathologically nested document raises, and it is not a `ValueError`:
-    without it the "never raises" contract holds only for bad syntax.
+    The caught set is wider than `json.JSONDecodeError` on purpose. A column
+    SQLite hands back as a BLOB decodes through `UnicodeDecodeError`, which is
+    a `ValueError` but not a `JSONDecodeError`, so catching the base class is
+    what makes "never raises" hold for a bytes column rather than only for bad
+    syntax; `TypeError` covers a column that is not text at all, and
+    `RecursionError` — not a `ValueError` — the pathologically nested document.
     """
     try:
         decoded = json.loads(text)

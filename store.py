@@ -1734,6 +1734,23 @@ def findings_overlap(earlier, later):
 ROUND_VERDICTS = ("pass", "changes_requested", "error")
 
 
+def _document_argument(label, value):
+    """`value` as the list a `reviewRounds` document column is written from.
+
+    The contract's arguments are object *arrays*, and `list()` alone does not
+    say so: it accepts any iterable, so `findings="prose"` becomes a document
+    of five one-character findings and a mapping becomes a document of its
+    keys. Both were written past the refusal they were supposed to hit, and
+    the renderer can only show them as a row nothing should have stored. So
+    the shape is checked before the coercion, and a string, a mapping, or
+    anything that is not a sequence is a `ValueError` named for `label`.
+    """
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    raise ValueError(
+        f"{label} must be a list of objects, got {type(value).__name__}")
+
+
 def _json_document(label, value):
     """`value` as the JSON text a `reviewRounds` document column stores.
 
@@ -1768,7 +1785,10 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
     before the transaction, for the same reason the fingerprint is: a value
     `json` cannot write (bytes, a set) or writes as something no reader can
     decode back (`NaN`, `Infinity` — legal to the encoder, not to JSON) is a
-    `ValueError`, and nothing is stored. The renderer reads these columns
+    `ValueError`, and nothing is stored. So is a value that is not a list at
+    all: `"prose"` and `{...}` are iterable, and coercing them would store a
+    document of characters or of keys instead of refusing the caller's
+    mistake. The renderer reads these columns
     back with `json.loads()`; refusing here is what lets it trust them. A
     round that found nothing is an ordinary `pass` and stores `[]` against
     `EMPTY_FINGERPRINT`.
@@ -1793,11 +1813,12 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
         raise ValueError(
             f"round must be a positive integer, got {round_number!r}"
         )
-    findings = list(findings)
+    findings = _document_argument("findings", findings)
     fingerprint = findings_fingerprint(findings)
     findings_json = _json_document("findings", findings)
-    results_json = _json_document("verification results",
-                                  list(verification_results))
+    results_json = _json_document(
+        "verification results",
+        _document_argument("verification results", verification_results))
     if started_at is None:
         started_at = int(time.time() * 1000)
     with _transaction(conn):
