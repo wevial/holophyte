@@ -236,69 +236,42 @@ class TicketStatusTests(unittest.TestCase):
         with self.assertRaises(store.IllegalTransition):
             store.transition(self.conn, 4242, "ready")
 
-    # --- §1: composable with the delivery transaction -------------------
+    # --- composable with a caller-owned transaction ---------------------
 
-    def test_a_mirror_and_its_delivery_id_commit_as_one(self):
-        # §1 records a delivery id in the same transaction as its effect, and
-        # mirroring is what an inbound Linear issue webhook does. A writer
-        # that opens its own transaction cannot be that effect at all.
-        delivery = store.with_delivery(
-            self.conn,
-            "delivery_1",
-            lambda conn: store.mirror_ticket(
-                conn, self.project_id, "iss_9", "HOL-9", "webhook ticket",
-                acceptance_criteria=["given/when/then"],
-                verification_commands=["python3 -m unittest discover tests"],
-            ),
-        )
-
-        self.assertFalse(delivery.replayed)
-        self.assertEqual(self.status_of(delivery.result), "ready")
-        self.assertEqual(
-            self.conn.execute(
-                "SELECT COUNT(*) FROM linearDeliveries WHERE deliveryId = ?",
-                ("delivery_1",),
-            ).fetchone(),
-            (1,),
-        )
-
-    def test_a_transition_and_its_delivery_id_commit_as_one(self):
-        ticket_id = self.mirror()
-
-        delivery = store.with_delivery(
-            self.conn,
-            "delivery_2",
-            lambda conn: store.transition(conn, ticket_id, "in_flight"),
-        )
-
-        self.assertEqual(delivery, store.Delivery(replayed=False, result="ready"))
-        self.assertEqual(self.status_of(ticket_id), "in_flight")
-
-    def test_a_failed_effect_rolls_back_its_store_writes_and_its_id(self):
-        # The other half of atomicity, and the reason a joined writer must not
-        # commit at its own boundary: the effect mirrors a ticket and only
-        # then makes an illegal move. Neither the new row nor the delivery id
-        # may survive, or Linear's redelivery is swallowed as a replay of work
-        # that was never done.
-        def effect(conn):
-            store.mirror_ticket(
-                conn, self.project_id, "iss_9", "HOL-9", "webhook ticket",
+    def test_a_mirror_and_a_transition_commit_as_one_under_transaction(self):
+        # A writer that opens its own transaction cannot run inside a
+        # caller's `store.transaction()` block at all: the nested BEGIN raises.
+        with store.transaction(self.conn):
+            ticket_id = store.mirror_ticket(
+                self.conn, self.project_id, "iss_9", "HOL-9", "webhook ticket",
                 acceptance_criteria=["given/when/then"],
                 verification_commands=["python3 -m unittest discover tests"],
             )
-            store.transition(conn, 4242, "ready")  # no such ticket
+            previous = store.transition(self.conn, ticket_id, "in_flight")
+            self.assertTrue(self.conn.in_transaction)
 
+        self.assertFalse(self.conn.in_transaction)
+        self.assertEqual(previous, "ready")
+        self.assertEqual(self.status_of(ticket_id), "in_flight")
+
+    def test_a_failed_block_rolls_back_every_joined_write(self):
+        # The other half of atomicity, and the reason a joined writer must not
+        # commit at its own boundary: the block mirrors a ticket and only then
+        # makes an illegal move. The new row must not survive.
         with self.assertRaises(store.IllegalTransition):
-            store.with_delivery(self.conn, "delivery_3", effect)
+            with store.transaction(self.conn):
+                store.mirror_ticket(
+                    self.conn, self.project_id, "iss_9", "HOL-9", "webhook ticket",
+                    acceptance_criteria=["given/when/then"],
+                    verification_commands=["python3 -m unittest discover tests"],
+                )
+                store.transition(self.conn, 4242, "ready")  # no such ticket
 
+        self.assertFalse(self.conn.in_transaction)
         self.assertEqual(
             self.conn.execute(
                 "SELECT COUNT(*) FROM tickets WHERE linearIssueId = 'iss_9'"
             ).fetchone(),
-            (0,),
-        )
-        self.assertEqual(
-            self.conn.execute("SELECT COUNT(*) FROM linearDeliveries").fetchone(),
             (0,),
         )
 

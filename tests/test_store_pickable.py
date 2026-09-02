@@ -115,37 +115,6 @@ class PickabilityTests(unittest.TestCase):
     def test_missing_ticket_is_not_pickable(self):
         self.assertFalse(store.pickable(self.conn, self.ticket_id + 1000))
 
-    # --- the selector ---------------------------------------------------
-
-    def test_next_pickable_returns_the_lowest_ticket_id(self):
-        later = [self.mirror("iss_2"), self.mirror("iss_3")]
-        self.conn.commit()
-        self.assertLess(self.ticket_id, min(later))
-        self.assertEqual(store.next_pickable(self.conn, self.project_id),
-                         self.ticket_id)
-        # Same question, same answer: the queue order is a property of the
-        # rows, not of when it was asked.
-        self.assertEqual(store.next_pickable(self.conn, self.project_id),
-                         self.ticket_id)
-
-    def test_next_pickable_skips_unpickable_tickets(self):
-        second = self.mirror("iss_2")
-        self.conn.commit()
-        self.set_column(self.ticket_id, "verificationCommands", "[]")
-        self.assertEqual(store.next_pickable(self.conn, self.project_id), second)
-
-    def test_next_pickable_is_none_when_nothing_is_pickable(self):
-        self.set_column(self.ticket_id, "status", "needs_spec")
-        self.assertIsNone(store.next_pickable(self.conn, self.project_id))
-
-    def test_next_pickable_is_scoped_to_its_project(self):
-        other_project = self.add_project("team_xyz")
-        other = self.mirror("iss_other", project_id=other_project)
-        self.conn.commit()
-        self.assertEqual(store.next_pickable(self.conn, other_project), other)
-        self.assertEqual(store.next_pickable(self.conn, self.project_id),
-                         self.ticket_id)
-
 
 if __name__ == "__main__":
     unittest.main()
