@@ -25,6 +25,7 @@ import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
+import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 
 # The functions and classes each module owns after the slices so far; constants
@@ -134,6 +135,32 @@ DEFINED = {
         "store_status",
         "task_contract",
         "warn",
+    ],
+    # The three namedtuples are classes made in the module, so they carry a
+    # `__module__` like any `class` statement and are listed with the rest.
+    holophyte.supervisor: [
+        "Outcome",
+        "SupervisorHeld",
+        "Sweep",
+        "Trip",
+        "_runs",
+        "acquire_supervisor_lock",
+        "act_on_trip",
+        "pid_alive",
+        "read_supervisor_lock",
+        "reclaim_turn",
+        "release_supervisor_lock",
+        "restart_lines",
+        "review_overlap",
+        "run_lines",
+        "still_tripped",
+        "supervise",
+        "supervise_pass",
+        "supervisor_liveness_line",
+        "supervisor_lock_path",
+        "sweep",
+        "sweep_lines",
+        "sweep_report",
     ],
 }
 

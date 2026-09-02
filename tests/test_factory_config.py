@@ -18,6 +18,7 @@ from unittest.mock import ANY, patch
 import holophyte.agents
 import holophyte.config
 import holophyte.gates
+import holophyte.supervisor
 import holophyte.target
 
 HERE = Path(__file__).resolve().parent
@@ -293,7 +294,7 @@ class StateDirectoryTests(ConfigTestCase):
         self.assertTrue(holo.name.startswith("repo-"), holo)
         self.assertEqual(self.tgt.config_path, holo / "config.toml")
         self.assertEqual(self.tgt.store_path, holo / "store.db")
-        self.assertEqual(factory.supervisor_lock_path(self.tgt),
+        self.assertEqual(holophyte.supervisor.supervisor_lock_path(self.tgt),
                          holo / "supervisor.lock")
         # The worktree directory is heavy git state, not factory state, and
         # keeps its own sibling address.
@@ -321,9 +322,9 @@ class StateDirectoryTests(ConfigTestCase):
 
         conn = factory.open_store(self.tgt)
         self.addCleanup(conn.close)
-        lock = factory.acquire_supervisor_lock(
-            factory.supervisor_lock_path(self.tgt), self.tgt.path)
-        self.addCleanup(factory.release_supervisor_lock, lock)
+        lock = holophyte.supervisor.acquire_supervisor_lock(
+            holophyte.supervisor.supervisor_lock_path(self.tgt), self.tgt.path)
+        self.addCleanup(holophyte.supervisor.release_supervisor_lock, lock)
 
         self.assertTrue((holo / "store.db").exists())
         self.assertTrue((holo / "supervisor.lock").exists())
