@@ -15,9 +15,10 @@ rejected — scope rules kept only in prose get skipped. Every list entry
 counts toward those caps, whatever its marker ("-", "*", "+", "1."), and an
 acceptance criterion that is not a "- [ ]" checkbox is rejected on its own,
 so extra scope cannot hide behind list syntax the parser might skip. A
-"What:" line that chains deliverables instead yields an
-ADVISORY_PREFIX-marked note, which does not affect validity; blocking() drops
-advisories for callers that gate on the result.
+"What:" line that chains deliverables, or a verify command running a bare
+"python"/"python3"/"pip" without activating a venv or using its interpreter
+path, instead yields an ADVISORY_PREFIX-marked note, which does not affect
+validity; blocking() drops advisories for callers that gate on the result.
 
 Markdown that Linear has normalized round-trips: "**What: **" for "**What:**"
 is the same structure as the plain form, and any bullet marker ("-", "*",
@@ -50,6 +51,12 @@ ADVISORY_PREFIX = "advisory: "
 # Advisory only: "read and write the cache" is one deliverable, so a human
 # decides — the caps above are what actually gate.
 SCOPE_CHAINING = (" and ", ";", ", then ")
+# A bare interpreter/pip token in a verify command: not attached to a path
+# (so ".venv/bin/python" does not match) and not glued to a longer word.
+# Advisory only: stdlib-only targets legitimately run bare "python3", while
+# a project with a venv wants it activated or addressed by path first.
+BARE_INTERPRETER_RE = re.compile(r"(?<![\w./-])(python3?|pip)(?![\w.-])")
+VENV_ACTIVATE_RE = re.compile(r"(?:^|[\s;&|])(?:\.|source)\s+\.venv/bin/activate\b")
 H1_RE = re.compile(r"^#\s+(.*?)\s*$")
 H2_RE = re.compile(r"^##\s+(.*?)\s*$")
 # Markdown's three bullet markers. All of them render identically, so a cap
@@ -274,6 +281,15 @@ def _has_nonrelative_path(cmd):
     return False
 
 
+def _bare_interpreter(cmd):
+    """The first bare "python"/"python3"/"pip" token in `cmd` that no earlier
+    ". .venv/bin/activate" / "source .venv/bin/activate" covers, or None."""
+    for m in BARE_INTERPRETER_RE.finditer(cmd):
+        if not VENV_ACTIVATE_RE.search(cmd[:m.start()]):
+            return m.group(1)
+    return None
+
+
 def contract_path_problem(path):
     """Why `path` is unusable as a contract-check target, or None if it is a
     plain relative repository path. Shared with the factory's verify gate so
@@ -391,6 +407,12 @@ def validate(t):
     if chained:
         p.append(f"{ADVISORY_PREFIX}'**What:**' chains scope on {chained!r}; "
                  f"consider splitting it into one ticket per deliverable")
+    for cmd in t.verify_commands:
+        token = _bare_interpreter(cmd)
+        if token:
+            p.append(f"{ADVISORY_PREFIX}verify command uses bare {token!r} "
+                     f"(template rule: activate the venv or use "
+                     f".venv/bin/{token} if the project has one): {cmd}")
     return p
 
 

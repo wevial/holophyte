@@ -45,7 +45,7 @@ Add a CSV export endpoint for the orders list.
 ## Verify command(s)
 
 ```
-python3 -m unittest test_orders_export
+.venv/bin/python -m unittest test_orders_export
 ```
 
 ## Implementation notes
@@ -119,7 +119,7 @@ class ParseTests(unittest.TestCase):
 
     def test_verify_commands_from_fence(self):
         self.assertEqual(self.t.verify_commands,
-                         ["python3 -m unittest test_orders_export"])
+                         [".venv/bin/python -m unittest test_orders_export"])
 
     def test_estimate_and_dependencies(self):
         self.assertEqual(self.t.estimate_min, 30)
@@ -230,7 +230,7 @@ class ValidateTests(unittest.TestCase):
 
     def test_empty_verify_fence(self):
         self.assert_problems_contain(
-            FILLED.replace("python3 -m unittest test_orders_export\n", ""),
+            FILLED.replace(".venv/bin/python -m unittest test_orders_export\n", ""),
             "no runnable command lines")
 
     def test_absolute_path_in_verify_command(self):
@@ -238,12 +238,12 @@ class ValidateTests(unittest.TestCase):
                     "cd ~/other && pytest",
                     "git -C C:\\repo status"):
             self.assert_problems_contain(
-                FILLED.replace("python3 -m unittest test_orders_export", bad),
+                FILLED.replace(".venv/bin/python -m unittest test_orders_export", bad),
                 "non-relative path")
 
     def test_relative_flag_argument_is_not_flagged(self):
-        text = FILLED.replace("python3 -m unittest test_orders_export",
-                              "ruff check . && python3 -m pytest tests/ -q")
+        text = FILLED.replace(".venv/bin/python -m unittest test_orders_export",
+                              "ruff check . && .venv/bin/python -m pytest tests/ -q")
         self.assertEqual(tt.validate(tt.parse(text)), [])
 
     def test_bad_estimate_line(self):
@@ -532,3 +532,38 @@ class ScopeAdvisoryTests(unittest.TestCase):
             "GET /orders.csv streams the current user's orders as CSV.",
             self.CHAINED[" and "]).replace("- None", "- Which CSV dialect?")
         self.assertTrue(tt.blocking(tt.validate(tt.parse(text))))
+
+
+class InterpreterAdvisoryTests(unittest.TestCase):
+    """A verify command must not assume an ambient python/pip (bugs.md #5)."""
+
+    def advisories(self, command):
+        text = FILLED.replace(
+            ".venv/bin/python -m unittest test_orders_export", command)
+        problems = tt.validate(tt.parse(text))
+        self.assertEqual(tt.blocking(problems), [], problems)
+        return [p for p in problems
+                if p.startswith(tt.ADVISORY_PREFIX) and "verify command" in p]
+
+    def test_bare_interpreter_or_pip_is_advised_but_stays_valid(self):
+        for cmd in ("python3 -m lotuspod --help",
+                    "python -m unittest",
+                    "pip install -e . && .venv/bin/python -m unittest"):
+            with self.subTest(cmd=cmd):
+                advisories = self.advisories(cmd)
+                self.assertEqual(len(advisories), 1, advisories)
+                self.assertIn(cmd, advisories[0])
+                self.assertIn(".venv", advisories[0])
+
+    def test_activated_or_venv_path_interpreter_is_not_advised(self):
+        for cmd in (". .venv/bin/activate && python3 -m unittest",
+                    "source .venv/bin/activate && pip install -e .",
+                    ".venv/bin/python -m unittest",
+                    ".venv/bin/pip install -e .",
+                    "ruff check ."):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.advisories(cmd), [])
+
+    def test_activation_must_precede_the_bare_token(self):
+        self.assertEqual(
+            len(self.advisories("python3 -m build && . .venv/bin/activate")), 1)

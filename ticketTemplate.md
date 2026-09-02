@@ -46,6 +46,11 @@ Rules:
   implementation details (specific filenames, internal structure). Where the
   code lives is the implementer's call if behavior holds.
 - Keep each command deterministic and idempotent.
+- Never assume an ambient interpreter: bare `python`, `python3`, or `pip`
+  resolve to whatever is on PATH, which on a factory host may be another
+  project's venv (holophyte-bugs.md #5). A command that needs the project
+  venv must activate it first (`. .venv/bin/activate && ...`) or use the
+  venv's interpreter path (`.venv/bin/python -m ...`).
 ```
 
 ## Contract checks
