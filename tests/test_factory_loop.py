@@ -157,11 +157,18 @@ class LoopFixture(unittest.TestCase):
         fake = FakeAgent(*script)
         provider = provider or StubProvider(a_task())
         self.last_provider = provider
+        self.last_fake = fake
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
                 with patch.object(factory, "agent", fake):
                     self.rc = factory.main(provider)
         return fake, guard
+
+    def main_output(self, *script, provider=None):
+        out = io.StringIO()
+        with patch.object(sys, "stdout", out):
+            self.loop(*script, provider=provider)
+        return out.getvalue()
 
     def read(self, sql):
         """Query the store over a connection the factory never touched."""
@@ -737,7 +744,7 @@ class LeftoverWorktreeTests(LoopFixture):
     def test_a_timed_out_implementer_keeps_the_commits_it_made(self):
         """A budget overrun is not 'no work': commits that landed before the
         alarm survive, with the reason saying where they are."""
-        self.loop(CommitThenTimeout("late work"))
+        printed = self.main_output(CommitThenTimeout("late work"))
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn(BRANCH, self.branches())
@@ -745,6 +752,10 @@ class LeftoverWorktreeTests(LoopFixture):
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("budget", reason)
         self.assertIn(BRANCH, reason)
+        # The cap, not an alarm: the budget reaches the dispatch as its
+        # timeout, and what the turn printed before the kill is not lost.
+        self.assertEqual(self.last_fake.turns[0].timeout, 5 * 60)
+        self.assertIn("partial progress before cap", printed)
 
     def test_the_refusal_reason_reaches_the_run_row(self):
         """The reuse refusal's whole product is an explanation for a human;
@@ -902,12 +913,6 @@ class SweepDiagnosticsTests(LoopFixture):
             store.record_strike(conn, run_id, True, then, now=then + 1)
         return run_id
 
-    def main_output(self, *script, provider=None):
-        out = io.StringIO()
-        with patch.object(sys, "stdout", out):
-            self.loop(*script, provider=provider)
-        return out.getvalue()
-
     def test_a_refused_claim_prints_the_silence_and_records_a_strike(self):
         run_id = self.stale_holder()
 
@@ -947,11 +952,16 @@ class SweepDiagnosticsTests(LoopFixture):
 
 
 class CommitThenTimeout(Commit):
-    """An implementer turn that commits real work, then hits the budget."""
+    """An implementer turn that commits real work, then hits the budget.
+
+    Raises what `factory.agent()` raises once the cap has reaped the turn:
+    `TimeoutExpired` carrying the output captured before the kill.
+    """
 
     def play(self, cwd, turn):
         super().play(cwd, turn)
-        raise TimeoutError
+        raise subprocess.TimeoutExpired("claude", 300,
+                                        output="partial progress before cap")
 
 
 class Boom:

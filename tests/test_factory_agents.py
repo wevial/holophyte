@@ -22,21 +22,33 @@ class AgentRouteTests(unittest.TestCase):
     def setUp(self):
         self.worktree = Path("/tmp/holophyte-agent-contract")
 
-    @patch.object(factory.subprocess, "run")
-    def test_implementer_uses_claude_opus_at_high_effort(self, run):
-        run.return_value.stdout = "implemented"
-        run.return_value.stderr = ""
+    @patch.object(factory, "run_capped")
+    def test_implementer_uses_claude_opus_at_high_effort(self, run_capped):
+        run_capped.return_value = (0, "implemented\n")
 
         result = factory.agent("implement", "make the focused change", self.worktree)
 
         self.assertEqual(result, "implemented")
-        run.assert_called_once_with(
+        run_capped.assert_called_once_with(
             [
                 "claude", "-p", "make the focused change",
                 "--model", "opus", "--effort", "high",
             ],
-            cwd=self.worktree, capture_output=True, text=True, timeout=1800,
+            self.worktree, 1800,
         )
+
+    @patch.object(factory, "run_capped")
+    def test_implementer_budget_is_the_dispatch_timeout_under_the_hard_cap(
+        self, run_capped
+    ):
+        run_capped.return_value = (0, "")
+
+        factory.agent("implement", "goal", self.worktree, timeout=300)
+        factory.agent("implement", "goal", self.worktree, timeout=7200)
+
+        self.assertEqual([c.args[2] for c in run_capped.call_args_list],
+                         [300, 1800])
+
 
     @patch.object(factory.review_runner, "run_review")
     def test_reviewer_uses_containerized_codex_sol(self, run_review):
@@ -96,6 +108,61 @@ class AgentRouteTests(unittest.TestCase):
         self.assertEqual(result, "no verdict here")
         self.assertEqual(run_review.call_args.kwargs["profile"], "codex-sol-medium")
         self.assertIsNone(run_review.call_args.kwargs["verdicts"])
+
+
+# An implementer stand-in that behaves like a real `claude -p` session under
+# the cap: it starts a child of its own, reports both pids, then outlives any
+# budget it is given. Whether the child survives the budget is the whole
+# question, so it is read from the process table, not from the stand-in.
+SPAWNING_IMPLEMENTER = """\
+import os, subprocess, sys, time
+child = subprocess.Popen(["sleep", "300"])
+print("implementer", os.getpid(), "child", child.pid, flush=True)
+time.sleep(300)
+"""
+
+
+def process_gone(pid, wait=5.0):
+    """True once `pid` is no longer a live process (a reaped or zombie one is
+    gone for this purpose: it can write nothing). Polls up to `wait` seconds
+    because an orphaned grandchild is reaped by init a moment after the
+    group kill, not in the same instant."""
+    import time
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                state = f.read().rsplit(")", 1)[1].split()[0]
+        except (FileNotFoundError, ProcessLookupError):
+            return True
+        if state == "Z":
+            return True
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.05)
+
+
+class ImplementerProcessGroupTests(unittest.TestCase):
+    """The budget ends the implementer's whole process tree, not just the CLI."""
+
+    def test_a_timed_out_implementer_and_its_child_are_both_reaped(self):
+        argv = [sys.executable, "-u", "-c", SPAWNING_IMPLEMENTER]
+        with tempfile.TemporaryDirectory() as cwd, \
+                patch.object(factory, "agent_command",
+                             lambda role, goal: argv):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                factory.agent("implement", "spawn and stall", Path(cwd),
+                              timeout=1)
+
+        # Partial output survives the kill and names the two processes.
+        output = raised.exception.output
+        self.assertIn("implementer", output)
+        words = output.split()
+        impl_pid = int(words[words.index("implementer") + 1])
+        child_pid = int(words[words.index("child") + 1])
+
+        self.assertTrue(process_gone(impl_pid), f"implementer {impl_pid} alive")
+        self.assertTrue(process_gone(child_pid), f"child {child_pid} alive")
 
 
 class FakeLinear:
@@ -166,7 +233,8 @@ class ReviewLoopTests(unittest.TestCase):
         """
         replies = list(replies)
 
-        def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None):
+        def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
+                       timeout=None):
             self.events.append(role)
             self.goals.append((role, goal))
             if role != "implement":
