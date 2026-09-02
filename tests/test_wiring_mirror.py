@@ -184,29 +184,40 @@ class MirrorPushTests(unittest.TestCase):
         """§1 the other way round: the store decides what may be worked, so a
         board that is behind it cannot re-open finished work. A merged ticket
         whose Done push never landed is still non-terminal in Linear and gets
-        offered again — the claim's `ready -> in_flight` is refused, the run
-        does not happen, the lease goes straight back, and Done is pushed once
-        more at the board that missed it."""
+        offered again — `store.pickable()` refuses it before the claim, so no
+        run is opened for it, the loop says why it moved on, and Done is
+        pushed once more at the board that missed it: a skip that left the
+        board alone would leave the ticket offered forever."""
         self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
         self.assertEqual(self.status(), "merged")  # and the board never heard
+        runs = self.read("SELECT id FROM runs")
 
         provider = StubProvider(a_task())
-        with patch.object(factory, "run_task") as run_task:
+        with patch.object(factory, "run_task") as run_task, \
+                patch("builtins.print") as printed:
             factory.main(provider)
 
         run_task.assert_not_called()
-        self.assertEqual(provider.states, [(ISSUE_UUID, "Done")])
+        self.assertEqual(self.read("SELECT id FROM runs"), runs)
         self.assertEqual(self.status(), "merged")
-        self.assertTrue(any("merged -> in_flight" in warning
-                            for warning in self.warnings()))
+        self.assertEqual(provider.states, [(ISSUE_UUID, "Done")])
+        notes = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipping" in str(c.args[0])]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("merged", notes[0])
 
     def test_the_run_of_a_refused_claim_does_not_keep_the_lease(self):
-        """The refusal happens after the claim, so it owes the project its
-        lease back like any other failure path — a stale ticket must not brick
-        the queue for the tickets behind it."""
+        """The second line of defense, for a ticket that stops being pickable
+        between the pre-claim check and the claim: the refusal happens after
+        the claim, so it owes the project its lease back like any other
+        failure path — a stale ticket must not brick the queue for the
+        tickets behind it. The race is staged by answering the pre-claim
+        question with a yes the store would not give."""
         self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
 
-        with patch.object(factory, "run_task"):
+        with patch.object(factory, "run_task"), \
+                patch.object(factory.store, "pickable",
+                             return_value=factory.store.Pickability(True, None)):
             factory.main(StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),

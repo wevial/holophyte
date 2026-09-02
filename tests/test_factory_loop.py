@@ -325,8 +325,8 @@ class LoopTests(LoopFixture):
         The loop never reaches an agent on this pass, so the empty script is
         not laziness: a turn asked for here would be the loop re-implementing
         a ticket it had already failed on, and `FakeAgent` fails the test
-        rather than answering one. The run this opens is refused before any
-        work starts, which is an `infra` failure: it spends no attempt.
+        rather than answering one. The store still says `in_flight`, so the
+        claim path skips the offer before any run is opened.
         """
         provider = StubProvider(a_task())
         self.loop(provider=provider)
@@ -354,14 +354,14 @@ class LoopTests(LoopFixture):
 
     def test_one_failed_run_leaves_the_ticket_claimable(self):
         """One failure is not a pattern: the ticket is left in flight rather
-        than parked, and when the board offers it back the claim path lets it
-        through — a second run row is the lease being taken for a second
-        attempt, whatever that attempt then runs into."""
+        than parked, and once a human walks it back to `ready` the claim path
+        lets it through — a second run row is the lease being taken for a
+        second attempt, whatever that attempt then runs into."""
         self.fail_once()
 
         self.assertEqual(self.status(), "in_flight")
 
-        self.offer_again()
+        self.fail_again()
 
         self.assertEqual(self.attempts(), [(1,), (2,)])
 
@@ -371,11 +371,11 @@ class LoopTests(LoopFixture):
         every failed run by the reason that run actually ended on."""
         self.fail_once()
 
-        provider = self.offer_again()  # infra: refused, no work started
+        provider = self.offer_again()  # skipped: the store says in_flight
         self.assertEqual(self.status(), "in_flight")
         self.assertEqual(provider.comments, [])
 
-        provider = self.offer_again()  # a second infra refusal: still none
+        provider = self.offer_again()  # and again: still nothing to say
         self.assertEqual(self.status(), "in_flight")
         self.assertEqual(provider.comments, [])
 
@@ -390,34 +390,32 @@ class LoopTests(LoopFixture):
         counted = self.read("SELECT attempt, outcomeReason FROM runs"
                             " WHERE outcome = 'failed'"
                             " AND outcomeClass = 'work' ORDER BY attempt")
-        self.assertEqual([a for a, _ in counted], [1, 4])
+        self.assertEqual([a for a, _ in counted], [1, 2])
         self.assertIn("Blocked after 2 failed runs", body)
         for attempt, reason in counted:
             self.assertIn(f"attempt {attempt}: {reason}", body)
-        # The two refusals are on the record as failed runs, so `--report`
-        # still shows them, but they are not in the comment: nothing they say
-        # is about the ticket.
-        infra = self.read("SELECT attempt, outcome FROM runs"
-                          " WHERE outcomeClass = 'infra' ORDER BY attempt")
-        self.assertEqual(infra, [(2, "failed"), (3, "failed")])
-        self.assertNotIn("attempt 2:", body)
-        self.assertNotIn("attempt 3:", body)
+        # The two skipped offers left no run row behind: they are not on the
+        # record as failed runs, so neither `--report` nor the comment can
+        # mistake them for attempts.
+        self.assertEqual(self.attempts(), [(1,), (2,)])
 
-    def test_a_claim_refusal_is_recorded_as_an_infra_failure(self):
-        """The run opened for a ticket the store refuses to start work on is
-        failed with the reason it always had, classed `infra`: no work
-        started, so the failure is the factory's and the ticket keeps its
-        attempts (holophyte-bugs #4/#6, the KO-150 spurious second strike)."""
+    def test_an_offered_back_ticket_the_store_holds_in_flight_is_skipped(self):
+        """A ticket the store still says is `in_flight` is refused before the
+        claim, so no run row is opened for it and no failure is recorded —
+        the KO-150 spurious second strike (holophyte-bugs #4) cannot recur.
+        The skip is printed with the store status that refused it."""
         self.fail_once()
 
-        self.offer_again()
+        with patch("builtins.print") as printed:
+            self.offer_again()
 
-        self.assertEqual(
-            self.read("SELECT attempt, outcome, outcomeClass, outcomeReason"
-                      " FROM runs WHERE attempt = 2"),
-            [(2, "failed", "infra",
-              "ticket was not ready when the run was claimed;"
-              " no work started")])
+        self.assertEqual(self.attempts(), [(1,)])
+        self.assertEqual(self.status(), "in_flight")
+        notes = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipping" in str(c.args[0])]
+        self.assertEqual(len(notes), 1)
+        self.assertIn(a_task()["id"], notes[0])
+        self.assertIn("in_flight", notes[0])
 
     def test_an_infra_failure_raised_by_the_run_is_closed_out_as_infra(self):
         self.loop(InfraRefuse())

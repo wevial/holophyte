@@ -189,14 +189,19 @@ class WiringClaimTests(unittest.TestCase):
         self.assertEqual((project_lease, ticket_lease), (run_id, run_id))
 
     def test_a_re_claimed_ticket_reuses_its_mirror_rather_than_adding_one(self):
-        """The UUID is the mirror's key, so the same issue mirrors once."""
+        """The UUID is the mirror's key, so the same issue mirrors once.
+
+        The second offer arrives under a renamed label; a mirror keyed on the
+        label would add a second row for it. The store already says `merged`,
+        so the loop refuses the re-claim before it mirrors anything — the
+        row count is the assertion, not a refreshed label.
+        """
         with patch.object(factory, "run_task", return_value=True):
             factory.main(StubProvider(a_task()))
             factory.main(StubProvider(a_task(identifier="HOL-1-renamed")))
 
-        self.assertEqual(
-            self.read("SELECT linearIssueId, linearIdentifier FROM tickets"),
-            [(ISSUE_UUID, "HOL-1-renamed")])
+        self.assertEqual(self.read("SELECT linearIssueId, status FROM tickets"),
+                         [(ISSUE_UUID, "merged")])
 
     def test_a_provider_without_a_uuid_still_mirrors_under_its_identifier(self):
         """A UUID-less provider keeps working, keyed on the id it does have."""
@@ -216,6 +221,137 @@ class WiringClaimTests(unittest.TestCase):
         run_task.assert_not_called()
         self.assertFalse(self.worktrees.exists())
         self.assertEqual(self.read("SELECT id FROM runs"), [(held,)])
+
+    def test_a_ticket_the_store_says_is_in_flight_is_skipped_for_the_next(self):
+        """The store, not the board, decides what is claimable.
+
+        A failed run leaves its ticket `in_flight` in the store while the
+        board offers it again; claiming it anyway produced a run row that
+        existed only to be refused. So the loop asks `store.pickable()` first
+        and moves on to the next ready ticket, and the skipped one gets no
+        run row at all.
+        """
+        first = a_task(identifier="HOL-1", issue_id=ISSUE_UUID)
+        second = a_task(identifier="HOL-2", title="the other thing",
+                        issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
+        with patch.object(factory, "run_task", return_value=False):
+            factory.main(StubProvider(first))  # fails: mirror stays in_flight
+        self.assertEqual(self.read("SELECT linearIdentifier, status FROM tickets"),
+                         [("HOL-1", "in_flight")])
+        before = self.read("SELECT id, ticketId FROM runs")
+
+        with patch.object(factory, "run_task", return_value=True) as run_task, \
+                patch("builtins.print") as printed:
+            factory.main(StubProvider(first, second))
+
+        run_task.assert_called_once()
+        self.assertEqual(run_task.call_args.args[0]["id"], "HOL-2")
+        (skipped_id,), = self.read(
+            "SELECT id FROM tickets WHERE linearIdentifier = 'HOL-1'")
+        self.assertEqual(
+            self.read(f"SELECT id, ticketId FROM runs WHERE ticketId = {skipped_id}"),
+            [r for r in before if r[1] == skipped_id])
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier FROM runs r"
+                      " JOIN tickets t ON t.id = r.ticketId"
+                      " WHERE r.id NOT IN (%s)" % ",".join(str(r[0]) for r in before)),
+            [("HOL-2",)])
+        lines = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipping" in str(c.args[0])]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("HOL-1", lines[0])
+        self.assertIn("in_flight", lines[0])
+
+    def test_a_ready_mirror_whose_live_body_lost_its_contract_is_not_run(self):
+        """The gate reads the body the run would work from, not the row a
+        previous pass left. The store already says `ready` with both lists;
+        the offer arrives with the verify command edited out. Claiming on the
+        stale row would open a run and hand `run_task()` an empty contract."""
+        stale = a_task()
+        conn = factory.open_store(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+                            linear_identifier=stale["id"], title=stale["title"],
+                            acceptance_criteria=stale["criteria"],
+                            verification_commands=[stale["verify"]])
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
+        live = dict(stale, verify="")
+
+        with patch.object(factory, "run_task", return_value=True) as run_task, \
+                patch("builtins.print") as printed:
+            factory.main(StubProvider(live))
+
+        run_task.assert_not_called()
+        self.assertEqual(self.read("SELECT id FROM runs"), [])
+        self.assertEqual(
+            self.read("SELECT verificationCommands FROM tickets"), [("[]",)])
+        lines = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipping" in str(c.args[0])]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("HOL-1", lines[0])
+
+    def test_a_ready_mirror_with_an_unmerged_dependency_is_not_run(self):
+        """The claim-time re-mirror carries the live body, not the dependency
+        list: the provider does not parse one, so the store's is the only
+        copy. A re-mirror that reset it to `[]` would make a blocked ticket
+        pickable in the very row the gate reads next."""
+        conn = factory.open_store(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        dep = a_task(identifier="HOL-0", title="the prerequisite",
+                     issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
+        store.mirror_ticket(conn, project, linear_issue_id=dep["issue_id"],
+                            linear_identifier=dep["id"], title=dep["title"],
+                            acceptance_criteria=dep["criteria"],
+                            verification_commands=[dep["verify"]])
+        offered = a_task()
+        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+                            linear_identifier=offered["id"],
+                            title=offered["title"],
+                            acceptance_criteria=offered["criteria"],
+                            verification_commands=[offered["verify"]],
+                            depends_on=[dep["issue_id"]])
+        conn.commit()
+
+        with patch.object(factory, "run_task", return_value=True) as run_task, \
+                patch("builtins.print") as printed:
+            factory.main(StubProvider(offered))
+
+        run_task.assert_not_called()
+        self.assertEqual(self.read("SELECT id FROM runs"), [])
+        self.assertEqual(
+            self.read("SELECT dependsOn FROM tickets"
+                      f" WHERE linearIssueId = '{ISSUE_UUID}'"),
+            [(json.dumps([dep["issue_id"]]),)])
+        lines = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipping" in str(c.args[0])]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("HOL-1", lines[0])
+        self.assertIn(dep["issue_id"], lines[0])
+
+    def test_an_under_specced_ticket_the_store_has_never_seen_is_skipped(self):
+        """A new ticket is judged on the same gate as a known one: it is
+        mirrored, found `needs_spec`, and passed over for the next ready
+        ticket without a run row of its own."""
+        unspecced = a_task(identifier="HOL-1", issue_id=ISSUE_UUID)
+        unspecced["criteria"] = []
+        second = a_task(identifier="HOL-2", title="the other thing",
+                        issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
+
+        with patch.object(factory, "run_task", return_value=True) as run_task:
+            factory.main(StubProvider(unspecced, second))
+
+        run_task.assert_called_once()
+        self.assertEqual(run_task.call_args.args[0]["id"], "HOL-2")
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, status FROM tickets"
+                      " ORDER BY linearIdentifier"),
+            [("HOL-1", "needs_spec"), ("HOL-2", "merged")])
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier FROM runs r"
+                      " JOIN tickets t ON t.id = r.ticketId"),
+            [("HOL-2",)])
 
     def test_a_merged_run_gives_the_lease_back(self):
         with patch.object(factory, "run_task", return_value=True):

@@ -78,6 +78,11 @@ class TicketStatusTests(unittest.TestCase):
             "SELECT status FROM tickets WHERE id = ?", (ticket_id,)
         ).fetchone()[0]
 
+    def dependencies_of(self, ticket_id):
+        return json.loads(self.conn.execute(
+            "SELECT dependsOn FROM tickets WHERE id = ?", (ticket_id,)
+        ).fetchone()[0])
+
     def force_status(self, ticket_id, status):
         self.conn.execute(
             "UPDATE tickets SET status = ? WHERE id = ?", (status, ticket_id)
@@ -95,6 +100,23 @@ class TicketStatusTests(unittest.TestCase):
         ticket_id = self.mirror(acceptance_criteria=[])
 
         self.assertEqual(self.status_of(ticket_id), "needs_spec")
+
+    def test_a_re_mirror_that_says_nothing_about_dependencies_keeps_them(self):
+        """`depends_on` omitted means "no opinion", not "none": the loop's
+        claim-time re-mirror carries only the body, and the dependency list
+        it does not carry must survive it or the gate reads an empty one."""
+        ticket_id = self.mirror(depends_on=["iss_0"])
+
+        self.mirror(title="edited body")
+
+        self.assertEqual(self.dependencies_of(ticket_id), ["iss_0"])
+
+    def test_a_re_mirror_that_names_dependencies_replaces_them(self):
+        ticket_id = self.mirror(depends_on=["iss_0"])
+
+        self.mirror(depends_on=[])
+
+        self.assertEqual(self.dependencies_of(ticket_id), [])
 
     def test_a_fully_specced_ticket_is_ready_and_mirrors_its_fields(self):
         ticket_id = self.mirror(

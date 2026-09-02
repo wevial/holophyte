@@ -1220,7 +1220,7 @@ def mirror_ticket(
     verification_commands=(),
     time_box_ms=None,
     affinity="any",
-    depends_on=(),
+    depends_on=None,
     now=None,
 ):
     """Upsert the Holophyte mirror of a Linear issue; return its ticket id.
@@ -1242,6 +1242,15 @@ def mirror_ticket(
     particular `blocked_on_deps → ready` is *not* taken here: it is the
     dependency resolver's call, not a side effect of a body edit.
 
+    `depends_on=None` (the default) means the caller has no opinion about the
+    dependency list, not that the list is empty: a new ticket gets `[]`, and a
+    re-mirror keeps whatever the row already holds. The loop's claim-time
+    re-mirror carries the live body and nothing about dependencies — the
+    provider does not parse them — so a default that wrote `[]` would clear a
+    blocked ticket's list in the very row `pickable()` reads next, and the
+    gate would let it through. A caller that does know the list passes it,
+    `[]` included, and that replaces the stored one.
+
     Lookups are scoped to `project_id`, so re-mirroring another project's
     issue does not overwrite it — it fails on the `linearIssueId` uniqueness
     constraint instead. `now` is epoch milliseconds for `mirroredAt`,
@@ -1256,7 +1265,7 @@ def mirror_ticket(
     """
     criteria = _json_list("acceptance_criteria", acceptance_criteria)
     commands = _json_list("verification_commands", verification_commands)
-    depends = _json_list("depends_on", depends_on)
+    depends = None if depends_on is None else _json_list("depends_on", depends_on)
     specced = bool(json.loads(criteria)) and bool(json.loads(commands))
     derived = "ready" if specced else "needs_spec"
     if now is None:
@@ -1277,7 +1286,7 @@ def mirror_ticket(
                 (
                     project_id, linear_issue_id, linear_identifier, title,
                     derived, criteria, commands, time_box_ms, affinity,
-                    depends, now,
+                    "[]" if depends is None else depends, now,
                 ),
             ).lastrowid
         else:
@@ -1287,7 +1296,8 @@ def mirror_ticket(
             conn.execute(
                 "UPDATE tickets SET linearIdentifier = ?, title = ?,"
                 " status = ?, acceptanceCriteria = ?, verificationCommands = ?,"
-                " timeBoxMs = ?, affinity = ?, dependsOn = ?, mirroredAt = ?"
+                " timeBoxMs = ?, affinity = ?,"
+                " dependsOn = COALESCE(?, dependsOn), mirroredAt = ?"
                 " WHERE id = ?",
                 (
                     linear_identifier, title, status, criteria, commands,
