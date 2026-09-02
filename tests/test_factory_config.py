@@ -114,13 +114,65 @@ class ConfigLoadingTests(ConfigTestCase):
     def test_unknown_tables_are_left_alone(self):
         # A config written against a later version still loads, and the table
         # this version does read keeps working beside the ones it does not.
-        self.retarget('[supervisor]\nstale_heartbeat_min = 7\n\n'
-                      '[agents]\nimplementer = "harness run"\n')
+        target = self.retarget('[notifier]\nchannel = "#factory"\n\n'
+                               '[agents]\nimplementer = "harness run"\n')
 
-        self.assertEqual(factory.config()["supervisor"],
-                         {"stale_heartbeat_min": 7})
+        self.assertEqual(factory.config()["notifier"], {"channel": "#factory"})
         self.assertEqual(factory.agent_command("implement", "do it"),
                          ["harness", "run", "do it"])
+        # And startup tolerates the table: a report against this config runs.
+        with patch.object(factory, "report") as report:
+            factory.cli([str(target), "--report"])
+        report.assert_called_once_with()
+
+
+class KnownKeyTests(ConfigTestCase):
+    """A key the factory does not read inside a table it does is a typo.
+
+    The case these exist for is `[worktree] setup_timeout_min = 10`: a key
+    that does not exist, which the factory used to ignore while the operator
+    believed a timeout was in force. Startup names the file, the table, the
+    key and what the table does accept, for every mode, before anything is
+    claimed.
+    """
+
+    def test_an_unknown_key_in_a_known_table_is_a_startup_error(self):
+        target = self.retarget('[worktree]\nsetup_timeout_min = 10\n')
+
+        with patch.object(factory, "report") as report:
+            with self.assertRaises(SystemExit) as raised:
+                factory.cli([str(target), "--report"])
+
+        message = str(raised.exception)
+        self.assertIn(str(factory.CONFIG_PATH), message)
+        self.assertIn("[worktree]", message)
+        self.assertIn("setup_timeout_min", message)
+        # The accepted keys, so the operator can see the one they meant.
+        self.assertIn("setup_timeout_sec", message)
+        self.assertIn("setup", message)
+        report.assert_not_called()
+
+    def test_every_known_table_is_checked(self):
+        for config in ('[agents]\nimplementor = "harness run"\n',
+                       '[supervisor]\nstale_heartbeat_min = 7\n'):
+            with self.subTest(config=config):
+                self.retarget(config)
+
+                with self.assertRaises(SystemExit) as raised:
+                    factory.check_config_keys()
+
+                self.assertIn(str(factory.CONFIG_PATH), str(raised.exception))
+
+    def test_a_config_of_only_known_keys_passes(self):
+        target = self.retarget(
+            '[agents]\nimplementer = "harness run"\n'
+            '[worktree]\nsetup = ["true"]\nsetup_timeout_sec = 30\n'
+            '[supervisor]\nheartbeat_stale_min = 7\n')
+
+        with patch.object(factory, "report") as report:
+            factory.cli([str(target), "--report"])
+
+        report.assert_called_once_with()
 
 
 class StateDirectoryTests(ConfigTestCase):
@@ -649,6 +701,42 @@ class WorktreeSetupTests(ConfigTestCase):
         self.assertIn("resolving", report)  # what it said before the cap
         time.sleep(1.5)  # past when the child would have touched the marker
         self.assertFalse(marker.exists())
+
+    def test_setup_timeout_sec_bounds_the_setup_commands(self):
+        # A real timeout again, against the configured cap rather than the
+        # module constant: a one-second cap and a command that sleeps longer
+        # fails the run naming the timeout.
+        wt = self.worktree()
+        self.retarget('[worktree]\nsetup = ["echo installing; sleep 30"]\n'
+                      'setup_timeout_sec = 1\n')
+
+        start = time.monotonic()
+        ok, report = factory.run_worktree_setup(wt)
+
+        self.assertFalse(ok)
+        self.assertLess(time.monotonic() - start, 10)
+        self.assertIn("timed out after 1s", report)
+        self.assertIn("sleep 30", report)
+
+    def test_the_default_setup_cap_is_the_verify_cap(self):
+        self.retarget('[worktree]\nsetup = ["make deps"]\n')
+
+        self.assertEqual(factory.setup_timeout(), factory.VERIFY_TIMEOUT)
+
+    def test_an_unusable_setup_timeout_is_a_startup_error(self):
+        for value in ("0", "-5", "true", '"10"', "inf"):
+            with self.subTest(value=value):
+                target = self.retarget(f'[worktree]\nsetup_timeout_sec = {value}\n')
+
+                with patch.object(factory, "main",
+                                  side_effect=AssertionError("claimed work")):
+                    with self.assertRaises(SystemExit) as raised:
+                        factory.cli([str(target)])
+
+                message = str(raised.exception)
+                self.assertIn(str(factory.CONFIG_PATH), message)
+                self.assertIn("setup_timeout_sec", message)
+                self.assertIn("positive number", message)
 
     def test_a_silent_timeout_is_reported_as_silence(self):
         wt = self.worktree()
