@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[37 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T01:33:46Z — KO-169
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:1613): A malformed timestamp still raises `TypeError` in `_stamp()` (for example, `startedAt = 'not-a-timestamp'`). Thus a…
-
-## 2026-09-02T01:37:31Z — KO-169
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- tests/test_wiring_findings.py:297 [p2] [tests/test_wiring_findings.py:297](/workspace/tests/test_wiring_findings.py:297): The new test embeds `1_700_000_500_000` directly in SQL. SQLite rejects the…
+[39 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T01:39:21Z — KO-169
 Round 3: changes_requested · reviewer codex-sol-medium · verify passed
@@ -754,3 +744,10 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T15:02:33Z — KO-179
 MERGED to main.
 actual: 13.0 min · estimate: 25 min · rounds: 2
+
+## 2026-09-02T15:06:41Z — KO-180
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T15:06:41Z — KO-180
+MERGED to main.
+actual: 4.1 min · estimate: 20 min · rounds: 1
