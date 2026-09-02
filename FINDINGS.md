@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[21 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-08-30T22:04:45Z — KO-146
-FAILED: run stopped in phase working; branch preserved for a human
-actual: 0.0 min · estimate: 25 min · rounds: 0
-
-## 2026-08-30T22:06:01Z — KO-146
-FAILED: run stopped in phase working; branch preserved for a human
-actual: 0.0 min · estimate: 25 min · rounds: 0
-
-## 2026-08-31T16:43:32Z — KO-146
-FAILED: orphaned: host process reaped externally during round-2 fixes on 2026-08-30; worktree was preserved with uncommitted round-2 work, rescued and merged by hand as 6d68ec4; run closed out by operator repair via store.release() on 2026-08-31
-actual: 1339.2 min · estimate: 25 min · rounds: 1
+[24 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-01T20:46:47Z — KO-147
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -755,3 +743,15 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T05:18:14Z — KO-173
 MERGED to main.
 actual: 5.8 min · estimate: 20 min · rounds: 2
+
+## 2026-09-02T05:24:48Z — KO-174
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:1444): Both worktree-setup failure paths still raise `RunFailure`, despite explicitly stating “no agent ran.” They are stor…
+
+## 2026-09-02T05:27:52Z — KO-174
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T05:27:56Z — KO-174
+MERGED to main.
+actual: 9.7 min · estimate: 30 min · rounds: 2
