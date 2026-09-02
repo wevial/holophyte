@@ -64,6 +64,20 @@ class AgentRouteTests(unittest.TestCase):
         )
 
     @patch.object(factory.review_runner, "run_review")
+    def test_a_reviewer_runner_failure_is_an_infra_failure(self, run_review):
+        # The container did not start, so no candidate was judged: the run
+        # fails, and fails as the factory's own failure rather than one the
+        # ticket is charged for.
+        run_review.side_effect = factory.review_runner.ReviewBoundaryError(
+            "Codex CLI is not installed")
+
+        with self.assertRaises(factory.InfraFailure) as raised:
+            factory.agent("review", "review the candidate", self.worktree,
+                          base_sha="1" * 40, candidate_sha="2" * 40)
+
+        self.assertIn("Codex CLI is not installed", str(raised.exception))
+
+    @patch.object(factory.review_runner, "run_review")
     def test_adjudicator_shares_the_reviewer_route_without_verdict_enforcement(
         self, run_review
     ):

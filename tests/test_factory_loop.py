@@ -156,6 +156,7 @@ class LoopFixture(unittest.TestCase):
         """
         fake = FakeAgent(*script)
         provider = provider or StubProvider(a_task())
+        self.last_provider = provider
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
                 with patch.object(factory, "agent", fake):
@@ -324,11 +325,25 @@ class LoopTests(LoopFixture):
         The loop never reaches an agent on this pass, so the empty script is
         not laziness: a turn asked for here would be the loop re-implementing
         a ticket it had already failed on, and `FakeAgent` fails the test
-        rather than answering one.
+        rather than answering one. The run this opens is refused before any
+        work starts, which is an `infra` failure: it spends no attempt.
         """
         provider = StubProvider(a_task())
         self.loop(provider=provider)
         return provider
+
+    def drag_back(self):
+        """The ticket walked back to `ready` with nothing recorded — the
+        store's view of a board drag, which forgives nothing — so the next
+        offer opens a run that does the work again."""
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        store.walk_ticket(conn, 1, "ready")
+
+    def fail_again(self, tag="retry"):
+        """A second run that fails on the work: the second `work` strike."""
+        self.drag_back()
+        self.fail_once(tag)
 
     def status(self):
         (status,), = self.read("SELECT status FROM tickets")
@@ -356,17 +371,80 @@ class LoopTests(LoopFixture):
         every failed run by the reason that run actually ended on."""
         self.fail_once()
 
-        provider = self.offer_again()
+        provider = self.offer_again()  # infra: refused, no work started
+        self.assertEqual(self.status(), "in_flight")
+        self.assertEqual(provider.comments, [])
+
+        provider = self.offer_again()  # a second infra refusal: still none
+        self.assertEqual(self.status(), "in_flight")
+        self.assertEqual(provider.comments, [])
+
+        self.fail_again()
 
         self.assertEqual(self.status(), "blocked_on_operator")
-        self.assertEqual(provider.states, [("iss-131", "Todo")])
-        (issue_id, body), = provider.comments
+        self.assertIn(("iss-131", "Todo"), self.last_provider.states)
+        (issue_id, body), = [(issue, body) for issue, body
+                             in self.last_provider.comments
+                             if body.startswith("**Blocked after")]
         self.assertEqual(issue_id, "iss-131")
-        reasons = self.read("SELECT attempt, outcomeReason FROM runs"
-                            " WHERE outcome = 'failed' ORDER BY attempt")
-        self.assertEqual(len(reasons), 2)
-        for attempt, reason in reasons:
+        counted = self.read("SELECT attempt, outcomeReason FROM runs"
+                            " WHERE outcome = 'failed'"
+                            " AND outcomeClass = 'work' ORDER BY attempt")
+        self.assertEqual([a for a, _ in counted], [1, 4])
+        self.assertIn("Blocked after 2 failed runs", body)
+        for attempt, reason in counted:
             self.assertIn(f"attempt {attempt}: {reason}", body)
+        # The two refusals are on the record as failed runs, so `--report`
+        # still shows them, but they are not in the comment: nothing they say
+        # is about the ticket.
+        infra = self.read("SELECT attempt, outcome FROM runs"
+                          " WHERE outcomeClass = 'infra' ORDER BY attempt")
+        self.assertEqual(infra, [(2, "failed"), (3, "failed")])
+        self.assertNotIn("attempt 2:", body)
+        self.assertNotIn("attempt 3:", body)
+
+    def test_a_claim_refusal_is_recorded_as_an_infra_failure(self):
+        """The run opened for a ticket the store refuses to start work on is
+        failed with the reason it always had, classed `infra`: no work
+        started, so the failure is the factory's and the ticket keeps its
+        attempts (holophyte-bugs #4/#6, the KO-150 spurious second strike)."""
+        self.fail_once()
+
+        self.offer_again()
+
+        self.assertEqual(
+            self.read("SELECT attempt, outcome, outcomeClass, outcomeReason"
+                      " FROM runs WHERE attempt = 2"),
+            [(2, "failed", "infra",
+              "ticket was not ready when the run was claimed;"
+              " no work started")])
+
+    def test_an_infra_failure_raised_by_the_run_is_closed_out_as_infra(self):
+        self.loop(InfraRefuse())
+
+        self.assertEqual(self.rc, 1)
+        self.assertEqual(
+            self.read("SELECT outcome, outcomeClass, outcomeReason FROM runs"),
+            [("failed", "infra", "the reviewer container did not start")])
+        self.assertEqual(self.status(), "in_flight")
+
+    def test_infra_failures_alone_never_block_the_ticket(self):
+        """Two runs the factory lost on its own are not a pattern about the
+        ticket: MAX_FAILED_RUNS of them park nothing."""
+        self.loop(InfraRefuse())
+        self.drag_back()
+        provider = StubProvider(a_task())
+        self.loop(InfraRefuse(), provider=provider)
+
+        self.assertEqual(
+            self.read("SELECT outcomeClass FROM runs WHERE outcome = 'failed'"),
+            [("infra",), ("infra",)])
+        self.assertEqual(self.status(), "in_flight")
+        self.assertEqual(provider.comments, [])
+        # And a third, real attempt is still let through.
+        self.drag_back()
+        self.loop(Commit("third time"), APPROVE)
+        self.assertEqual(self.status(), "merged")
 
     def test_a_blocked_ticket_is_not_claimed_again(self):
         """The board says Todo — that is where `blocked_on_operator` projects
@@ -374,7 +452,7 @@ class LoopTests(LoopFixture):
         store's count instead: no run is opened, so no worktree is cut and no
         agent is paid to fail a third time."""
         self.fail_once()
-        self.offer_again()
+        self.fail_again()
         blocked_at = self.attempts()
 
         provider = self.offer_again()
@@ -404,14 +482,14 @@ class LoopTests(LoopFixture):
         rather than exactly one attempt forever (the KO-146 incident left
         the ticket carrying 4 permanent strikes, none its own fault)."""
         self.fail_once()
-        self.offer_again()  # second failure parks it
+        self.fail_again()  # second failure parks it
         self.intervene("human")
 
-        self.fail_once("retry")  # first failure since the human acted
+        self.fail_once("third")  # first failure since the human acted
 
         self.assertEqual(self.status(), "in_flight")  # not re-parked
 
-        self.offer_again()  # second failure since: the pattern is back
+        self.fail_again("fourth")  # second failure since: the pattern is back
 
         self.assertEqual(self.status(), "blocked_on_operator")
 
@@ -421,7 +499,7 @@ class LoopTests(LoopFixture):
         after the row's `at` is jitter, and a run the human dispositioned by
         hand must not be the strike that re-parks the ticket next time."""
         self.fail_once()
-        self.offer_again()  # second failure parks it
+        self.fail_again()  # second failure parks it
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         ((last_run,),) = self.read("SELECT MAX(id) FROM runs")
@@ -442,10 +520,10 @@ class LoopTests(LoopFixture):
         close-out is the machine talking to itself, and one unblock after
         it still buys exactly one attempt."""
         self.fail_once()
-        self.offer_again()
+        self.fail_again()
         self.intervene("supervisor")
 
-        self.fail_once("retry")
+        self.fail_once("third")
 
         self.assertEqual(self.status(), "blocked_on_operator")
 
@@ -458,7 +536,7 @@ class LoopTests(LoopFixture):
         same pass, which is what stops one parked ticket from starving the
         queue behind it forever."""
         self.fail_once()
-        self.offer_again()
+        self.fail_again()
         blocked, other = a_task(), dict(a_task(2), title="add another thing")
 
         self.loop(Commit("the other work"), APPROVE,
@@ -890,6 +968,16 @@ class Refuse:
 
     def play(self, cwd, turn):
         raise factory.RunFailure("some reason")
+
+
+class InfraRefuse:
+    """A turn lost to the factory's own plumbing, as the reviewer route
+    raises it when its container will not start."""
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        raise factory.InfraFailure("the reviewer container did not start")
 
 
 class Interrupt:

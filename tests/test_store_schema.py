@@ -44,6 +44,10 @@ DOCUMENTED_COLUMNS = {
         # the merge gate can tell a body edited mid-run from the one the run
         # was worked to.
         "ticketSnapshot",
+        # Store-owned: whether a failure is evidence about the ticket
+        # (`work`) or about the factory's own plumbing (`infra`), so the
+        # escalation count can leave the second kind out.
+        "outcomeClass",
     },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",
@@ -201,6 +205,32 @@ class StoreSchemaTests(unittest.TestCase):
             conn.execute(
                 "UPDATE runs SET resumePhase = 'nonsense' WHERE id = ?", (run_id,)
             )
+
+    def test_a_migrated_outcome_class_defaults_to_work_and_is_checked(self):
+        # A run that ended before the column existed is a `work` failure —
+        # what every failure was until then — so an upgraded store escalates
+        # exactly as it did. And the CHECK travels with the ALTER, so a class
+        # nobody defined is refused at write time on an old store too.
+        conn = self.open()
+        conn.executescript(LEGACY_RUNS_TABLE)
+        # The legacy fixture is the `runs` table alone; the row's parent
+        # tables arrive with init(), so the foreign keys are off while the
+        # old row is written the way the old module wrote it.
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute(
+            "INSERT INTO runs (id, ticketId, projectId, attempt, phase,"
+            " startedAt, lastHeartbeat, endedAt, outcome)"
+            " VALUES (1, 1, 1, 1, 'failed', 0, 0, 1, 'failed')")
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys = ON")
+
+        store.init(conn)
+
+        self.assertEqual(
+            conn.execute("SELECT outcomeClass FROM runs").fetchall(),
+            [("work",)])
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute("UPDATE runs SET outcomeClass = 'nonsense'")
 
     def test_resume_works_on_a_migrated_store(self):
         # The end-to-end version: before the migration this raised
