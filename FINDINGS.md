@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[71 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T15:29:08Z — KO-187
-MERGED to main.
-actual: 6.4 min · estimate: 25 min · rounds: 2
-
-## 2026-09-02T15:34:30Z — KO-188
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:2926) does not route an existing `ready` mirror to `needs_spec`. `specced=False` clears its criteria/commands, but [store.p…
+[73 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T15:38:26Z — KO-188
 Round 2: pass · reviewer codex-sol-medium · verify passed
@@ -755,3 +746,10 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T17:37:39Z — KO-195
 MERGED to main.
 actual: 9.2 min · estimate: 30 min · rounds: 2
+
+## 2026-09-02T17:45:14Z — KO-197
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T17:45:15Z — KO-197
+MERGED to main.
+actual: 7.6 min · estimate: 30 min · rounds: 1
