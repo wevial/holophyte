@@ -203,6 +203,30 @@ class ReviewLoopTests(unittest.TestCase):
         self.assertIn("add a thing", goal)
         self.assertIn("echo ok", goal)
 
+    def test_review_and_adjudication_goals_carry_the_ticket_body(self):
+        """The reviewer and the adjudicator judge against the approved body.
+
+        Both turns used to be told "against the task: <title>", so a criterion
+        the implementer had to meet was never in front of the reviewer who was
+        meant to hold the candidate to it. The phrase lives only in the body.
+        """
+        body = ("## Acceptance criteria\n\n"
+                "- [ ] The rendered line contains `unparseable`.\n")
+
+        merged = self.run_task("VERDICT: REQUEST_CHANGES",
+                               "VERDICT: REQUEST_CHANGES",
+                               "Small and complete.\nVERDICT: PASS", body=body)
+
+        self.assertTrue(merged)
+        judged = [(role, g) for role, g in self.goals
+                  if role in ("review", "adjudicate")]
+        self.assertEqual([role for role, _ in judged],
+                         ["review", "review", "adjudicate"])
+        for role, goal in judged:
+            with self.subTest(role=role):
+                self.assertIn("The rendered line contains `unparseable`.", goal)
+                self.assertIn("add a thing", goal)
+
     def test_round_two_findings_get_a_fix_round_then_adjudication(self):
         merged = self.run_task("VERDICT: REQUEST_CHANGES",
                                "VERDICT: REQUEST_CHANGES",
