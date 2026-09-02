@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def open_readonly(path):
+def open_readonly(path) -> sqlite3.Connection:
     """Open the store at `path` read-only and return the connection.
 
     A `mode=ro` URI open: the file is never created, and any write through
