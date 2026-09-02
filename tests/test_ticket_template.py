@@ -252,6 +252,30 @@ class ValidateTests(unittest.TestCase):
                            "Estimate: half a day"),
             "'Estimate & dependencies' must read")
 
+    def test_autolinked_file_name_is_not_a_placeholder(self):
+        # Linear rewrites a bare "factory.py:1632" into this exact link.
+        linked = FILLED.replace(
+            "- Endpoint lives beside the other order routes.",
+            "- Landmark: [factory.py:1632](<http://factory.py:1632>) "
+            "in the loop.")
+        self.assertEqual(tt.validate(tt.parse(linked)), [])
+
+    def test_linked_depends_on_id_is_accepted(self):
+        linked = FILLED.replace(
+            "Depends on: none",
+            "Depends on: [KO-182](https://linear.app/relos/issue/KO-182/x)")
+        t = tt.parse(linked)
+        self.assertEqual(t.depends_on, ["KO-182"])
+        self.assertEqual(tt.validate(t), [])
+
+    def test_genuine_angle_bracket_placeholder_still_fails(self):
+        self.assert_problems_contain(
+            FILLED.replace(
+                "- Endpoint lives beside the other order routes.",
+                "- [factory.py:1632](<http://factory.py:1632>) and "
+                "<name the landmark here>"),
+            "placeholder")
+
     def test_bad_dependency_id(self):
         self.assert_problems_contain(
             FILLED.replace("Depends on: none", "Depends on: fix auth"),

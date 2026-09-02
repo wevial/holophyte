@@ -21,9 +21,11 @@ path, instead yields an ADVISORY_PREFIX-marked note, which does not affect
 validity; blocking() drops advisories for callers that gate on the result.
 
 Markdown that Linear has normalized round-trips: "**What: **" for "**What:**"
-is the same structure as the plain form, and any bullet marker ("-", "*",
-"+") reads the same, so those variants are accepted. Loose formatting beyond
-those equivalences still fails.
+is the same structure as the plain form, any bullet marker ("-", "*", "+")
+reads the same, and a markdown link "[text](url)" -- Linear autolinks bare
+file names to "[factory.py:1](<http://factory.py:1>)" and ticket ids to
+"[KO-1](https://linear.app/...)" -- reads as its text, so those variants are
+accepted. Loose formatting beyond those equivalences still fails.
 
 CLI: python3 ticket_template.py TICKET.md [...]  ->  exit 0 iff all valid.
 """
@@ -74,6 +76,12 @@ BOLD_KEY_RE = re.compile(r"^\*\*(What|Why|How):[ \t]*\*\*\s*(.*)$")
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
 LINEAR_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|<[^<>\n\s][^<>\n]*>")
+# A markdown link, "[text](url)" or "[text](<url>)". Linear wraps bare file
+# names and ticket ids in these on save; parse() unwraps each to its text so
+# the angle-bracketed target does not read as a placeholder and a linked
+# ticket id still matches LINEAR_ID_RE. Only the link shape is unwrapped —
+# angle-bracket text outside a link target is still a placeholder.
+MD_LINK_RE = re.compile(r"\[([^\[\]\n]*)\]\((?:<[^<>\n]*>|[^()\s]*)\)")
 COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 FENCE_RE = re.compile(r"^```\w*\s*$")
 # One literal contract declaration: a relative path, a colon, and the exact
@@ -198,7 +206,7 @@ def parse(text):
     """Parse markdown text into a Ticket. Lenient: malformed input yields a
     sparsely-filled Ticket; validate() reports what's wrong."""
     t = Ticket()
-    lines = text.splitlines()
+    lines = MD_LINK_RE.sub(r"\1", text).splitlines()
     first_h1 = next((i for i, ln in enumerate(lines) if H1_RE.match(ln)), None)
     if first_h1 is None:
         body_start = 0
