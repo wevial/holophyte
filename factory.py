@@ -1662,14 +1662,19 @@ def _document(text):
     """A stored JSON document column decoded to its list, or None.
 
     None for anything the schema's `[]` comment does not describe: text that
-    is not JSON, or JSON that is not an array. The writer refuses both, so a
-    row like this was written past it -- by hand, by an earlier release, or by
-    corruption -- and the renderer's job is to show that, not to crash the
-    close-out that regenerates every other entry in the window.
+    is not JSON, JSON nested past what the decoder's stack can walk, or JSON
+    that is not an array. The writer refuses all three, so a row like this was
+    written past it -- by hand, by an earlier release, or by corruption -- and
+    the renderer's job is to show that, not to crash the close-out that
+    regenerates every other entry in the window.
+
+    `RecursionError` is caught alongside the decode errors because it is the
+    one a pathologically nested document raises, and it is not a `ValueError`:
+    without it the "never raises" contract holds only for bad syntax.
     """
     try:
         decoded = json.loads(text)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         return None
     return decoded if isinstance(decoded, list) else None
 
@@ -1703,7 +1708,8 @@ def round_entry(row):
 
     Never raises on the row's two JSON columns. A `verificationResults` or
     `findings` document that does not decode to the schema's array, or an
-    array holding a result that is not a mapping, renders as `unreadable`
+    array holding a result that is not a mapping, renders as an `unreadable`
+    verify note or an `unparseable` findings line quoting the raw column,
     rather than as a verdict the row does not actually carry: the writer
     refuses such rows, so one that exists is evidence to show, and a render
     that died on it would leave the file stale for every good row after it.
@@ -1717,10 +1723,10 @@ def round_entry(row):
         verify = (" · verify "
                   + ("passed" if all(r.get("exitCode") == 0 for r in results)
                      else "failed"))
-    findings = _document(findings)
+    raw_findings, findings = findings, _document(findings)
     lines = [f"Round {number}: {verdict} · reviewer {model}{verify}"]
     if findings is None:
-        lines.append("Findings: unreadable (not a JSON array; see the row)")
+        lines.append(f"Findings: unparseable — {_gist(raw_findings)}")
     elif findings:
         lines.append(f"Findings ({len(findings)}):")
         lines.extend(finding_line(finding) for finding in findings)

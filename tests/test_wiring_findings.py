@@ -12,6 +12,7 @@ Run: python3 -m unittest discover -s tests -p 'test_wiring*' -v
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
@@ -329,9 +330,30 @@ class MalformedRoundRowTests(unittest.TestCase):
         for number in range(1, 7):
             self.assertIn(f"Round {number}:", rendered)
         self.assertIn("Round 6: pass", rendered)
-        self.assertEqual(rendered.count("Findings: unreadable"), 2)
+        self.assertEqual(rendered.count("Findings: unparseable"), 2)
+        self.assertIn("not json at all", rendered)  # the raw column value
         self.assertIn("- a.py:{'x': 1} [p0] ['not', 'text']", rendered)
         self.assertEqual(rendered.count("- (malformed finding)"), 2)
         self.assertEqual(rendered.count("verify unreadable"), 2)
         # Still a function of the rows alone.
         self.assertEqual(rendered, factory.render_findings(self.conn))
+
+    def test_pathologically_nested_findings_do_not_overflow_the_render(self):
+        """Depth, not syntax, is the other way a JSON column refuses to decode.
+
+        `json.loads` answers a document nested past the interpreter's C stack
+        with `RecursionError`, which is not a `ValueError`; a close-out that let
+        it out would be exactly the crash this renderer exists to prevent.
+        """
+        nested = "[" * 400_000 + "]" * 400_000
+        with self.assertRaises(RecursionError):
+            json.loads(nested)  # the column really is undecodable, not just odd
+        self.raw_round(1, nested)
+        self.raw_round(2, "[]", results=nested)
+
+        rendered = factory.render_findings(self.conn)
+
+        self.assertIn("Round 1: changes_requested", rendered)
+        self.assertIn("Findings: unparseable", rendered)
+        self.assertIn("Round 2: changes_requested · reviewer codex-sol-medium"
+                      " · verify unreadable", rendered)
