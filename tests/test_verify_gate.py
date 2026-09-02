@@ -260,6 +260,16 @@ class TaskExtractionTests(unittest.TestCase):
         self.assertEqual((task["id"], task["issue_id"]),
                          ("KO-1", "uuid-of-ko-1"))
 
+    def test_the_full_description_reaches_the_task_as_its_body(self):
+        """The implementer's contract is the body, so parsing may not drop it."""
+        description = ("# T\n\n## Acceptance criteria\n\n"
+                       "- [ ] The word used is `unparseable`.\n\n"
+                       "## Verify command(s)\n\n```\npytest -q\n```\n")
+
+        task = self.provider.parse_task(self.issue(description))
+
+        self.assertEqual(task["body"], description)
+
     def test_ticket_without_the_section_declares_no_contracts(self):
         task = self.provider.parse_task(self.issue(
             "# T\n\n## Verify command(s)\n\n```\npytest -q\n```\n"))
