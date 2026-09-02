@@ -295,9 +295,9 @@ class MalformedRoundRowTests(unittest.TestCase):
             "UPDATE reviewRounds SET endedAt = 1e300 WHERE round = 2")
         self.raw_round(3, "[]")
         self.conn.execute(
-            "UPDATE runs SET startedAt = 'later', endedAt = 1_700_000_500_000,"
+            "UPDATE runs SET startedAt = 'later', endedAt = ?,"
             " outcome = 'merged', phase = 'done' WHERE id = ?",
-            (self.run_id,))
+            (1_700_000_500_000, self.run_id))
         self.conn.commit()
 
         rendered = factory.render_findings(self.conn)
