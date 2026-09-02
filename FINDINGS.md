@@ -653,15 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[32 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-01T21:14:36Z — KO-149
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py:2590 [p2] [factory.py:2590](/workspace/factory.py:2590): TOML `inf` passes the “positive number” validation. `sweep_interval_sec = inf` then crashes `--supervise` with…
-
-## 2026-09-01T21:16:44Z — KO-149
-Round 3: pass · reviewer codex-sol-medium · verify passed
+[34 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-01T21:16:46Z — KO-149
 MERGED to main.
@@ -753,3 +745,10 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T14:41:38Z — KO-177
 MERGED to main.
 actual: 6.4 min · estimate: 30 min · rounds: 1
+
+## 2026-09-02T14:49:25Z — KO-178
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T14:49:31Z — KO-178
+MERGED to main.
+actual: 7.9 min · estimate: 30 min · rounds: 1
