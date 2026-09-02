@@ -503,6 +503,54 @@ class StartupCheckTests(ConfigTestCase):
     in flight. `check_agent_commands()` moves that failure to startup.
     """
 
+    def setUp(self):
+        # Every test starts on a PATH where both default routes answer and
+        # the host's own `claude` and `docker` are shadowed: what these tests
+        # say about a configured route must not depend on what the machine
+        # running them happens to have installed. A test about a default
+        # route that is missing or down calls `stub_path()` again.
+        self.stub_path()
+
+    def stub_path(self, *, claude=True, docker="ok", image=True, system=True):
+        """Put a PATH in place holding stubs for the default routes.
+
+        `claude` is a no-op script or absent; `docker` is a script whose
+        `info` answers as a live daemon ("ok"), as a stopped one ("down"),
+        as one that never answers ("hang"), or is absent (None). A live
+        daemon reports the review image as built (`image`) or not. `system`
+        keeps /usr/bin and /bin behind the stubs for the tests that also name
+        a real program; the stubs shadow any real `docker` there.
+        """
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        bindir = Path(tmp.name)
+        if claude:
+            self.stub(bindir / "claude", "exit 0\n")
+        if docker == "ok":
+            self.stub(bindir / "docker",
+                      'if [ "$1" = info ]; then echo "Server Version: 27"; '
+                      'exit 0; fi\n'
+                      'if [ "$1" = image ] && [ "$2" = inspect ]; then '
+                      f'exit {0 if image else 1}; fi\n'
+                      'exit 1\n')
+        elif docker == "down":
+            self.stub(bindir / "docker",
+                      'echo "Cannot connect to the Docker daemon at '
+                      'unix:///var/run/docker.sock. Is the docker daemon '
+                      'running?" >&2\nexit 1\n')
+        elif docker == "hang":
+            self.stub(bindir / "docker", "sleep 30\n")
+        path = str(bindir) + (":/usr/bin:/bin" if system else "")
+        patcher = patch.dict(os.environ, {"PATH": path})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return bindir
+
+    @staticmethod
+    def stub(script, body):
+        script.write_text("#!/bin/sh\n" + body)
+        script.chmod(0o755)
+
     def test_a_startup_check_of_a_resolvable_command_passes(self):
         # `sh` is on PATH everywhere the factory runs; a bare name is the
         # documented normal way to write one of these.
@@ -511,8 +559,101 @@ class StartupCheckTests(ConfigTestCase):
 
         self.assertIsNone(factory.check_agent_commands())
 
-    def test_an_absent_agents_table_checks_nothing(self):
+    def test_an_absent_agents_table_passes_when_the_default_routes_answer(self):
         self.retarget()
+
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            self.assertIsNone(factory.check_agent_commands())
+
+        # A built image is nothing to remark on.
+        self.assertEqual(printed.getvalue(), "")
+
+    def test_an_unbuilt_review_image_is_reported_not_refused(self):
+        # The runner builds the image on the first review that finds it
+        # missing, so a fresh host is told what to expect and proceeds.
+        self.stub_path(image=False)
+        self.retarget()
+
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            self.assertIsNone(factory.check_agent_commands())
+
+        self.assertIn(factory.review_runner.IMAGE, printed.getvalue())
+        self.assertIn(str(factory.review_runner.DOCKERFILE), printed.getvalue())
+
+    def test_a_missing_claude_is_a_startup_error_naming_the_override_key(self):
+        self.stub_path(claude=False, system=False)
+        target = self.retarget()
+
+        with patch.object(factory, "main",
+                          side_effect=AssertionError("claimed work")) as main:
+            with self.assertRaises(SystemExit) as raised:
+                factory.cli([str(target)])
+
+        message = str(raised.exception)
+        self.assertIn("claude", message)
+        self.assertIn("[agents] implementer", message)
+        main.assert_not_called()
+
+    def test_a_missing_docker_is_a_startup_error_naming_the_override_key(self):
+        self.stub_path(docker=None, system=False)
+        self.retarget()
+
+        with self.assertRaises(SystemExit) as raised:
+            factory.check_agent_commands()
+
+        message = str(raised.exception)
+        self.assertIn("docker", message)
+        self.assertIn("[agents] reviewer and adjudicator", message)
+
+    def test_a_stopped_docker_daemon_is_a_startup_error_before_any_claim(self):
+        self.stub_path(docker="down")
+        target = self.retarget()
+
+        with patch.object(factory, "main",
+                          side_effect=AssertionError("claimed work")) as main:
+            with self.assertRaises(SystemExit) as raised:
+                factory.cli([str(target)])
+
+        message = str(raised.exception)
+        self.assertIn("Docker daemon", message)
+        self.assertIn("Is the docker daemon running?", message)
+        self.assertIn("[agents] reviewer", message)
+        main.assert_not_called()
+
+    def test_a_docker_daemon_that_never_answers_is_capped(self):
+        self.stub_path(docker="hang")
+        self.retarget()
+
+        with patch.object(factory, "DOCKER_PROBE_TIMEOUT", 1):
+            start = time.monotonic()
+            with self.assertRaises(SystemExit) as raised:
+                factory.check_agent_commands()
+
+        self.assertLess(time.monotonic() - start, 10)
+        self.assertIn("did not answer `docker info` within 1s",
+                      str(raised.exception))
+
+    def test_a_configured_reviewer_still_probes_docker_for_the_adjudicator(self):
+        # The adjudicator is its own key and falls to the container route
+        # when only the reviewer is overridden.
+        self.stub_path(docker="down")
+        self.retarget('[agents]\nreviewer = "sh -c"\n')
+
+        with self.assertRaises(SystemExit) as raised:
+            factory.check_agent_commands()
+
+        message = str(raised.exception)
+        self.assertIn("[agents] adjudicator not set", message)
+        self.assertNotIn("reviewer and adjudicator", message)
+
+    def test_a_configured_route_is_resolved_and_not_probed(self):
+        # A docker that is down is not the problem of a target that routes
+        # every role somewhere else.
+        self.stub_path(claude=False, docker="down")
+        self.retarget('[agents]\nimplementer = "sh -c"\n'
+                      'reviewer = "sh -c"\nadjudicator = "sh -c"\n')
 
         self.assertIsNone(factory.check_agent_commands())
 
@@ -583,6 +724,20 @@ class StartupCheckTests(ConfigTestCase):
             factory.cli([str(target), "--report"])
 
         report.assert_called_once_with()
+
+    def test_read_only_modes_do_not_probe_the_default_routes(self):
+        # `--report` and `--sweep` dispatch nobody, so a host with no `claude`
+        # and Docker stopped can still read the store.
+        self.stub_path(claude=False, docker="down", system=False)
+        target = self.retarget()
+
+        with patch.object(factory, "report") as report:
+            factory.cli([str(target), "--report"])
+        with patch.object(factory, "sweep_report") as sweep_report:
+            factory.cli([str(target), "--sweep"])
+
+        report.assert_called_once_with()
+        sweep_report.assert_called_once_with(act=False)
 
 
 class WorktreeSetupTests(ConfigTestCase):
@@ -726,8 +881,10 @@ class WorktreeSetupTests(ConfigTestCase):
             with self.subTest(value=value):
                 target = self.retarget(f'[worktree]\nsetup_timeout_sec = {value}\n')
 
-                with patch.object(factory, "main",
-                                  side_effect=AssertionError("claimed work")):
+                # The default routes are this host's business, not the table's.
+                with patch.object(factory, "check_agent_commands"), \
+                        patch.object(factory, "main",
+                                     side_effect=AssertionError("claimed work")):
                     with self.assertRaises(SystemExit) as raised:
                         factory.cli([str(target)])
 
@@ -799,8 +956,9 @@ class WorktreeSetupTests(ConfigTestCase):
     def test_a_run_checks_the_table_before_claiming_anything(self):
         target = self.retarget('[worktree]\nsetup = "make deps"\n')
 
-        with patch.object(factory, "main",
-                          side_effect=AssertionError("claimed work")) as main:
+        with patch.object(factory, "check_agent_commands"), \
+                patch.object(factory, "main",
+                             side_effect=AssertionError("claimed work")) as main:
             with self.assertRaises(SystemExit) as raised:
                 factory.cli([str(target)])
 
