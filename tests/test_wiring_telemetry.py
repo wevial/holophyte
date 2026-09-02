@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
 import socket
 import sqlite3
 import subprocess
@@ -203,9 +204,13 @@ class ReportTests(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        # Where `cli()`'s retarget will look: the target's state directory.
-        (self.root / "repo.holophyte").mkdir()
-        self.db = self.root / "repo.holophyte" / "store.db"
+        # Where `cli()`'s retarget will look: the target's directory under a
+        # HOLOPHYTE_HOME of this test's own, never the operator's real one.
+        home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
+        home.start()
+        self.addCleanup(home.stop)
+        self.db = factory.state_dir(self.target) / "store.db"
+        self.db.parent.mkdir(parents=True)
         self.worktrees = self.root / "repo.worktrees"
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
@@ -313,7 +318,7 @@ class ReportTests(unittest.TestCase):
             factory.cli(["--report", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse((self.root / "elsewhere.holophyte").exists())
+        self.assertFalse(factory.state_dir(self.root / "elsewhere").exists())
 
 
 if __name__ == "__main__":

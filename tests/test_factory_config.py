@@ -1,10 +1,11 @@
-"""Per-target config: `<repo>.holophyte/config.toml`, `[agents]`, `[worktree]`.
+"""Per-target config: `~/.holophyte/SLUG/config.toml`, `[agents]`, `[worktree]`.
 
 Run: python3 -m unittest discover -s tests -p 'test_factory_config*' -v
 """
 import contextlib
 import importlib.util
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -33,19 +34,33 @@ class ConfigTestCase(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.addCleanup(factory.retarget, factory.DEFAULT_TARGET)
-        target = Path(tmp.name) / "repo"
+        self.root = Path(tmp.name)
+        self.home = self.root / "home"
+        self.set_home(self.home)
+        target = self.root / "repo"
         target.mkdir()
-        if config is not None:
-            self.write_config(target, config)
         factory.retarget(target)
+        if config is not None:
+            self.write_config(config)
         return target
 
+    def set_home(self, home):
+        """Point HOLOPHYTE_HOME at a throwaway directory for this test.
+
+        Every test in this file goes through here: state now lives under a
+        home directory, and a test that let the real `~/.holophyte` stand
+        would read and write the operator's own stores.
+        """
+        patcher = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @staticmethod
-    def write_config(target, config):
-        """Put `config` where `retarget(target)` will look for it."""
-        holo = target.parent / f"{target.name}.holophyte"
-        holo.mkdir(exist_ok=True)
-        (holo / "config.toml").write_text(config)
+    def write_config(config):
+        """Put `config` where the retargeted module will look for it."""
+        factory.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        factory.CONFIG_PATH.write_text(config)
+        factory.CONFIG = None
 
 
 class ConfigLoadingTests(ConfigTestCase):
@@ -53,7 +68,7 @@ class ConfigLoadingTests(ConfigTestCase):
         target = self.retarget()
 
         self.assertEqual(factory.CONFIG_PATH,
-                         target.parent / "repo.holophyte" / "config.toml")
+                         factory.state_dir(target) / "config.toml")
         self.assertFalse(factory.CONFIG_PATH.exists())
         self.assertEqual(factory.config(), {})
 
@@ -64,7 +79,7 @@ class ConfigLoadingTests(ConfigTestCase):
             factory.config()
 
         message = str(raised.exception)
-        self.assertIn("repo.holophyte/config.toml", message)
+        self.assertIn(str(factory.CONFIG_PATH), message)
         # The parser's own complaint, not just "could not read config": the
         # operator has to be told which line to go fix.
         self.assertIn("line 2", message)
@@ -74,12 +89,12 @@ class ConfigLoadingTests(ConfigTestCase):
         # sitting next to some other repository is that repository's problem.
         # `cli()` reads the one the run named, before it claims anything.
         target = self.retarget()
-        self.write_config(target, "[agents\n")
+        self.write_config("[agents\n")
 
         with self.assertRaises(SystemExit) as raised:
             factory.cli([str(target), "--report"])
 
-        self.assertIn("repo.holophyte/config.toml", str(raised.exception))
+        self.assertIn(str(factory.CONFIG_PATH), str(raised.exception))
 
     def test_help_does_not_read_any_config(self):
         # `--help` exits before a target is worked with at all, so a malformed
@@ -107,7 +122,7 @@ class ConfigLoadingTests(ConfigTestCase):
 
 
 class StateDirectoryTests(ConfigTestCase):
-    """Every per-target artifact lives under one `<target>.holophyte/`.
+    """Every per-target artifact lives under one `HOLOPHYTE_HOME/SLUG/`.
 
     Retargeting derives the directory and the three paths in it together, so
     the tests go through `retarget()` and look at what the module derived.
@@ -115,9 +130,10 @@ class StateDirectoryTests(ConfigTestCase):
 
     def test_config_store_and_lock_share_the_target_directory(self):
         target = self.retarget()
-        holo = target.parent / "repo.holophyte"
+        holo = factory.HOLO_DIR
 
-        self.assertEqual(factory.HOLO_DIR, holo)
+        self.assertEqual(holo.parent, self.home)
+        self.assertTrue(holo.name.startswith("repo-"), holo)
         self.assertEqual(factory.CONFIG_PATH, holo / "config.toml")
         self.assertEqual(factory.STORE_PATH, holo / "store.db")
         self.assertEqual(factory.supervisor_lock_path(), holo / "supervisor.lock")
@@ -127,9 +143,25 @@ class StateDirectoryTests(ConfigTestCase):
         # keeps its own sibling address.
         self.assertEqual(factory.WORKTREES, target.parent / "repo.worktrees")
 
+    def test_two_targets_with_one_basename_get_two_state_directories(self):
+        # The whole reason the directory carries a hash: `/a/repo` and
+        # `/b/repo` are different repositories with different histories.
+        self.retarget()
+        one = (self.root / "one" / "repo")
+        two = (self.root / "two" / "repo")
+        one.parent.mkdir()
+        two.parent.mkdir()
+
+        factory.retarget(one)
+        first = factory.HOLO_DIR
+        factory.retarget(two)
+
+        self.assertNotEqual(first, factory.HOLO_DIR)
+        self.assertEqual(first.parent, factory.HOLO_DIR.parent)
+
     def test_the_directory_is_created_on_first_need_and_nothing_else_is(self):
         target = self.retarget()
-        holo = target.parent / "repo.holophyte"
+        holo = factory.HOLO_DIR
         self.assertFalse(holo.exists())
 
         conn = factory.open_store()
@@ -139,17 +171,120 @@ class StateDirectoryTests(ConfigTestCase):
 
         self.assertTrue((holo / "store.db").exists())
         self.assertTrue((holo / "supervisor.lock").exists())
+        # Nothing dotted is left beside the target any more.
         beside = sorted(p.name for p in target.parent.iterdir())
-        self.assertEqual(beside, ["repo", "repo.holophyte"])
+        self.assertEqual(beside, ["home", "repo"])
 
     def test_a_target_with_no_store_gets_no_directory_either(self):
-        target = self.retarget()
+        self.retarget()
         out = io.StringIO()
 
         factory.report(out=out)
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse((target.parent / "repo.holophyte").exists())
+        self.assertFalse(factory.HOLO_DIR.exists())
+
+
+class LegacyAdoptionTests(ConfigTestCase):
+    """The one-time move of pre-`~/.holophyte` state into the new directory.
+
+    KO-165 changed the address without moving what was at the old one, and a
+    run against the new empty store shadowed fifteen runs and the target's
+    agent routes. These go through `retarget()` for that reason: adoption
+    that is not wired into the path a run takes is adoption that never runs.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET)
+        self.root = Path(tmp.name)
+        self.home = self.root / "home"
+        self.set_home(self.home)
+        self.target = self.root / "repo"
+        self.target.mkdir()
+
+    def retarget(self, config=None):
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            factory.retarget(self.target)
+        self.printed = printed.getvalue()
+        return self.target
+
+    def legacy_directory(self):
+        """KO-165's layout: `<target>.holophyte/` holding the state files."""
+        holo = self.root / "repo.holophyte"
+        holo.mkdir()
+        (holo / "store.db").write_bytes(b"legacy store\n")
+        (holo / "config.toml").write_text('[agents]\nimplementer = "harness run"\n')
+        return holo
+
+    def legacy_siblings(self):
+        """The older layout: dotted files beside the target, db with sidecars."""
+        db = self.root / "repo.holophyte.db"
+        db.write_bytes(b"legacy store\n")
+        (self.root / "repo.holophyte.db-wal").write_bytes(b"wal\n")
+        (self.root / "repo.holophyte.db-shm").write_bytes(b"shm\n")
+        (self.root / "repo.holophyte.toml").write_text(
+            '[agents]\nimplementer = "harness run"\n')
+        return db
+
+    def test_the_ko165_directory_is_adopted_whole(self):
+        holo = self.legacy_directory()
+
+        self.retarget()
+
+        self.assertEqual(factory.STORE_PATH.read_bytes(), b"legacy store\n")
+        self.assertEqual(factory.config()["agents"]["implementer"],
+                         "harness run")
+        self.assertFalse(holo.exists())
+        self.assertIn(str(holo / "store.db"), self.printed)
+        self.assertIn(str(factory.STORE_PATH), self.printed)
+
+    def test_the_dotted_siblings_are_adopted_with_their_sidecars(self):
+        db = self.legacy_siblings()
+
+        self.retarget()
+
+        self.assertEqual(factory.STORE_PATH.read_bytes(), b"legacy store\n")
+        self.assertEqual(
+            factory.HOLO_DIR.joinpath("store.db-wal").read_bytes(), b"wal\n")
+        self.assertEqual(
+            factory.HOLO_DIR.joinpath("store.db-shm").read_bytes(), b"shm\n")
+        self.assertEqual(factory.config()["agents"]["implementer"],
+                         "harness run")
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()),
+                         ["home", "repo"])
+        self.assertIn(str(db), self.printed)
+
+    def test_two_stores_are_refused_rather_than_one_shadowing_the_other(self):
+        holo = self.legacy_directory()
+        new = factory.state_dir(self.target)
+        new.mkdir(parents=True)
+        (new / "store.db").write_bytes(b"new store\n")
+
+        with self.assertRaises(SystemExit) as raised:
+            self.retarget()
+
+        message = str(raised.exception)
+        self.assertIn(str(holo / "store.db"), message)
+        self.assertIn(str(new / "store.db"), message)
+        # Neither store is touched: an operator decides which history wins.
+        self.assertEqual((holo / "store.db").read_bytes(), b"legacy store\n")
+        self.assertEqual((new / "store.db").read_bytes(), b"new store\n")
+
+    def test_adoption_happens_once_and_a_later_run_leaves_the_target_alone(self):
+        self.legacy_directory()
+        self.retarget()
+
+        # A second target's worth of legacy state appearing later must not be
+        # swept in on top of a state directory that is already the real one.
+        (self.root / "repo.holophyte.toml").write_text("[agents]\n")
+        self.retarget()
+
+        self.assertEqual(factory.STORE_PATH.read_bytes(), b"legacy store\n")
+        self.assertTrue((self.root / "repo.holophyte.toml").exists())
+        self.assertEqual(self.printed, "")
 
 
 class AgentCommandTests(ConfigTestCase):
@@ -245,7 +380,7 @@ class AgentCommandTests(ConfigTestCase):
                 with self.assertRaises(SystemExit) as raised:
                     factory.agent_command("implement", "make the change")
 
-                self.assertIn("repo.holophyte/config.toml", str(raised.exception))
+                self.assertIn(str(factory.CONFIG_PATH), str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
 
 
@@ -277,7 +412,7 @@ class StartupCheckTests(ConfigTestCase):
             factory.check_agent_commands()
 
         message = str(raised.exception)
-        self.assertIn("repo.holophyte/config.toml", message)
+        self.assertIn(str(factory.CONFIG_PATH), message)
         # The key the operator wrote, and the word that did not resolve.
         self.assertIn("reviewer", message)
         self.assertIn("holophyte-no-such-reviewer", message)
@@ -490,7 +625,7 @@ class WorktreeSetupTests(ConfigTestCase):
                 with self.assertRaises(SystemExit) as raised:
                     factory.setup_commands()
 
-                self.assertIn("repo.holophyte/config.toml", str(raised.exception))
+                self.assertIn(str(factory.CONFIG_PATH), str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
 
     def test_the_startup_check_reuses_the_parse_a_run_would_use(self):
