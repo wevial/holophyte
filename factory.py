@@ -3000,23 +3000,26 @@ def main(provider=None):
 # the ledger line was the only reading of this data until now, and a rendering
 # of the newest 25 entries is not something a calibration question can be
 # asked of. Nothing here writes, claims or calls Linear.
-REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome")
+REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome",
+                  "host")
 REPORT_GAP = "  "
 
 
 def report_rows(conn):
     """Every ended run, oldest first, as the report's own tuple.
 
-    `(ticket, actual_min, estimate_min, ratio, rounds, outcome)`, with
+    `(ticket, actual_min, estimate_min, ratio, rounds, outcome, host)`, with
     `estimate` and `ratio` None when the run was claimed against no estimate
     -- an older run, or a ticket Linear gave no points. None rather than zero
     because "not comparable" is not a ratio of nothing, and the summary below
     leaves those runs out of its averages instead of dragging them to 0.
+    `host` is the machine the run was claimed on, None for a row older than
+    the column: a store read from another machine says where each run ran.
     """
     rows = []
-    for ticket, started, ended, time_box, rounds, outcome in conn.execute(
+    for ticket, started, ended, time_box, rounds, outcome, host in conn.execute(
             "SELECT t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"
-            " r.reviewRoundCount, r.outcome"
+            " r.reviewRoundCount, r.outcome, r.host"
             " FROM runs r JOIN tickets t ON t.id = r.ticketId"
             " WHERE r.endedAt IS NOT NULL"
             " ORDER BY r.endedAt, r.id").fetchall():
@@ -3024,7 +3027,7 @@ def report_rows(conn):
         estimate = time_box / 60000 if time_box else None
         rows.append((ticket, actual, estimate,
                      actual / estimate if estimate else None,
-                     rounds, outcome or "ended"))
+                     rounds, outcome or "ended", host))
     return rows
 
 
@@ -3050,15 +3053,15 @@ def report_lines(conn):
     """The whole report as lines: a header, one line per ended run, a summary.
 
     Columns are padded to the widest cell in them so the numbers line up in a
-    terminal; the ticket and the outcome read left, everything numeric reads
-    right. A store with no ended run says so rather than printing a header
+    terminal; the ticket, the outcome and the host read left, everything
+    numeric reads right. A store with no ended run says so rather than printing a header
     over nothing.
     """
     rows = report_rows(conn)
     if not rows:
         return ["no completed runs yet"]
     table = [REPORT_HEADERS]
-    for ticket, actual, estimate, ratio, rounds, outcome in rows:
+    for ticket, actual, estimate, ratio, rounds, outcome, host in rows:
         table.append((
             ticket,
             f"{actual:.1f}",
@@ -3066,11 +3069,12 @@ def report_lines(conn):
             f"{ratio:.2f}" if ratio is not None else "n/a",
             str(rounds),
             outcome,
+            host_name(host),
         ))
     widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
         REPORT_GAP.join(
-            cell.ljust(width) if i in (0, len(widths) - 1) else cell.rjust(width)
+            cell.ljust(width) if i in (0, 5, 6) else cell.rjust(width)
             for i, (cell, width) in enumerate(zip(row, widths))).rstrip()
         for row in table
     ]

@@ -256,11 +256,14 @@ class ReportTests(unittest.TestCase):
 
         lines = factory.report_lines(self.conn)
 
+        # The host column is this machine's own name: the claim stamped it.
+        host = socket.gethostname()
         self.assertEqual([line.split() for line in lines[:4]], [
-            ["ticket", "actual", "estimate", "ratio", "rounds", "outcome"],
-            ["KO-1", "5.0", "25", "0.20", "2", "merged"],
-            ["KO-2", "40.0", "20", "2.00", "1", "failed"],
-            ["KO-3", "3.0", "25", "0.12", "0", "merged"],
+            ["ticket", "actual", "estimate", "ratio", "rounds", "outcome",
+             "host"],
+            ["KO-1", "5.0", "25", "0.20", "2", "merged", host],
+            ["KO-2", "40.0", "20", "2.00", "1", "failed", host],
+            ["KO-3", "3.0", "25", "0.12", "0", "merged", host],
         ])
         # 0.20, 2.00 and 0.12: a mean the one blown budget carries, and a
         # median that says what a typical ticket actually costs.
@@ -277,9 +280,19 @@ class ReportTests(unittest.TestCase):
         lines = factory.report_lines(self.conn)
 
         self.assertEqual(lines[4].split(), ["KO-4", "7.0", "n/a", "n/a", "0",
-                                            "merged"])
+                                            "merged", socket.gethostname()])
         self.assertEqual(lines[5], "4 runs · 3 with an estimate · "
                                    "mean ratio 0.77 · median ratio 0.20")
+
+    def test_a_run_older_than_the_host_column_reads_as_unknown(self):
+        """A row the migration left NULL: `?`, not the reader's own hostname."""
+        self.three_runs()
+        self.conn.execute("UPDATE runs SET host = NULL WHERE id = 2")
+
+        lines = factory.report_lines(self.conn)
+
+        self.assertEqual(lines[2].split()[-1], "?")
+        self.assertEqual(lines[1].split()[-1], socket.gethostname())
 
     def test_report_prints_the_table_and_claims_nothing(self):
         """The mode as an operator runs it: `factory.py --report <target>`.
