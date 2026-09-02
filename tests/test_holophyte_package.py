@@ -18,11 +18,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
+import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 
 # The functions and classes each module owns after the slices so far; constants
@@ -109,6 +111,29 @@ DEFINED = {
         "round_verdict",
         "sanitize_findings",
         "unparsed_path",
+    ],
+    holophyte.runs: [
+        "open_store",
+        "record_round",
+        "set_phase",
+        "warn_on_run",
+    ],
+    holophyte.board: [
+        "body_problem",
+        "close_out_failure",
+        "escalate",
+        "escalation_comment",
+        "failure_history",
+        "ledger",
+        "merge_drift",
+        "mirror_key",
+        "mirror_push",
+        "mirror_status",
+        "mirror_task",
+        "release_run",
+        "store_status",
+        "task_contract",
+        "warn",
     ],
 }
 
