@@ -51,6 +51,7 @@ from time import monotonic, time
 
 import review_runner
 import store
+import store.read
 import ticket_template
 
 MAX_ROUNDS = 2
@@ -2303,8 +2304,17 @@ def finding_line(finding):
     return f"- {where} [{finding['severity']}] {gist}".rstrip()
 
 
+def round_at(row):
+    """When a `store.read.ReviewRound` is dated: its end, or its start if open.
+
+    `COALESCE(endedAt, startedAt)` as the entry's stamp -- a round still being
+    reviewed is placed by when it began rather than left undated.
+    """
+    return row.endedAt if row.endedAt is not None else row.startedAt
+
+
 def round_entry(row):
-    """One `reviewRounds` row as an entry: the verdict and what it filed.
+    """One `store.read.ReviewRound` as an entry: the verdict and what it filed.
 
     Never raises on the row's two JSON columns. A `verificationResults` or
     `findings` document that does not decode to the schema's array, or an
@@ -2314,7 +2324,9 @@ def round_entry(row):
     refuses such rows, so one that exists is evidence to show, and a render
     that died on it would leave the file stale for every good row after it.
     """
-    at, ticket, number, verdict, model, results, findings = row
+    at, ticket, number = round_at(row), row.linearIdentifier, row.round
+    verdict, model = row.verdict, row.reviewerModel
+    results, findings = row.verificationResults, row.findings
     results = _document(results)
     verify = ""
     if results is None or not all(isinstance(r, dict) for r in results):
@@ -2334,7 +2346,7 @@ def round_entry(row):
 
 
 def run_entry(row):
-    """One ended `runs` row as an entry: its outcome and the timing line.
+    """One `store.read.EndedRun` as an entry: its outcome and the timing line.
 
     Every number on the timing line is read off the run row itself -- the two
     stamps, the estimate it was claimed under, and the round count stamped at
@@ -2344,7 +2356,9 @@ def run_entry(row):
     and a rendering that needs the loop's variables is not a rendering of the
     rows.
     """
-    at, ticket, outcome, reason, branch, started, time_box, rounds = row
+    at, ticket, outcome = row.endedAt, row.linearIdentifier, row.outcome
+    reason, branch, started = row.outcomeReason, row.branch, row.startedAt
+    time_box, rounds = row.timeBoxMs, row.reviewRoundCount
     if outcome == "merged":
         head = ("MERGED to main"
                 + (f" (branch {branch} deleted)" if branch else "") + ".")
@@ -2369,19 +2383,11 @@ def findings_entries(conn):
     still in flight has no entry -- it has no outcome yet, and an entry that
     changed on the next render would make the file churn.
     """
-    rounds = conn.execute(
-        "SELECT COALESCE(rr.endedAt, rr.startedAt), t.linearIdentifier,"
-        " rr.round, rr.verdict, rr.reviewerModel, rr.verificationResults,"
-        " rr.findings, rr.id"
-        " FROM reviewRounds rr JOIN runs r ON r.id = rr.runId"
-        " JOIN tickets t ON t.id = r.ticketId").fetchall()
-    runs = conn.execute(
-        "SELECT r.endedAt, t.linearIdentifier, r.outcome, r.outcomeReason,"
-        " r.branch, r.startedAt, r.timeBoxMs, r.reviewRoundCount, r.id"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE r.endedAt IS NOT NULL").fetchall()
-    entries = [(row[0], "round", row[-1], round_entry(row[:-1])) for row in rounds]
-    entries += [(row[0], "run", row[-1], run_entry(row[:-1])) for row in runs]
+    rounds = store.read.review_rounds(conn)
+    runs = store.read.ended_runs(conn)
+    entries = [(round_at(row), "round", row.id, round_entry(row))
+               for row in rounds]
+    entries += [(row.endedAt, "run", row.id, run_entry(row)) for row in runs]
     # Two rows stamped the same millisecond still have one order: kind, then
     # the id the database gave them. A row with no readable stamp cannot be
     # placed in time, so it sorts ahead of every dated one -- deterministic,
@@ -2480,8 +2486,7 @@ def mirror_key(task):
 
 def store_status(conn, ticket_id):
     """The store's status column for `ticket_id`, for a printed decision."""
-    return conn.execute("SELECT status FROM tickets WHERE id = ?",
-                        (ticket_id,)).fetchone()[0]
+    return store.read.ticket_by_id(conn, ticket_id).status
 
 
 def task_contract(task):
@@ -2697,12 +2702,12 @@ def warn(conn, ticket_id, summary):
     """
     run_id = None
     if conn is not None:
-        row = conn.execute(
-            "SELECT COALESCE(activeRunId, lastRunId) FROM tickets WHERE id = ?",
-            (ticket_id,)).fetchone()
+        ticket = store.read.ticket_by_id(conn, ticket_id)
         # A ticket with no run has nothing to hang the row on; the printed
         # line is then the whole record.
-        run_id = row[0] if row else None
+        if ticket is not None:
+            run_id = (ticket.activeRunId if ticket.activeRunId is not None
+                      else ticket.lastRunId)
     warn_on_run(conn, run_id, summary)
 
 
@@ -2725,12 +2730,11 @@ def mirror_push(conn, ticket_id, provider=None):
     """
     if conn is None:
         return None
-    row = conn.execute(
-        "SELECT linearIssueId, linearIdentifier, status FROM tickets"
-        " WHERE id = ?", (ticket_id,)).fetchone()
-    if row is None:
+    ticket = store.read.ticket_by_id(conn, ticket_id)
+    if ticket is None:
         raise ValueError(f"no ticket {ticket_id}")
-    issue_id, identifier, status = row
+    issue_id, identifier = ticket.linearIssueId, ticket.linearIdentifier
+    status = ticket.status
     state = MIRROR_STATES.get(status)
     if state is None:
         return None
@@ -2825,19 +2829,9 @@ def failure_history(conn, ticket_id):
     failing, not the ticket, and is neither a strike nor a line in the
     comment; `--report` still lists it.
     """
-    (since,) = conn.execute(
-        "SELECT COALESCE(MAX(i.at), 0) FROM interventions i"
-        " JOIN runs r ON r.id = i.runId"
-        " WHERE r.ticketId = ? AND i.source = 'human'",
-        (ticket_id,)).fetchone()
-    return conn.execute(
-        "SELECT attempt, outcomeReason FROM runs r"
-        " WHERE ticketId = ? AND outcome = 'failed' AND endedAt > ?"
-        " AND outcomeClass = 'work'"
-        " AND NOT EXISTS (SELECT 1 FROM interventions i"
-        "                 WHERE i.runId = r.id AND i.source = 'human'"
-        "                 AND i.\"action\" = 'close_out')"
-        " ORDER BY attempt", (ticket_id, since)).fetchall()
+    since = store.read.latest_human_intervention_at(conn, ticket_id)
+    return [(run.attempt, run.outcomeReason) for run
+            in store.read.failed_attempts_since(conn, ticket_id, since)]
 
 
 def escalation_comment(history):
@@ -2882,12 +2876,11 @@ def escalate(conn, ticket_id, provider=None):
     """
     if conn is None:
         return False
-    row = conn.execute(
-        "SELECT status, linearIssueId, linearIdentifier FROM tickets"
-        " WHERE id = ?", (ticket_id,)).fetchone()
-    if row is None:
+    ticket = store.read.ticket_by_id(conn, ticket_id)
+    if ticket is None:
         return False
-    status, issue_id, identifier = row
+    status, issue_id = ticket.status, ticket.linearIssueId
+    identifier = ticket.linearIdentifier
     if status == "blocked_on_operator":
         return True  # already parked; the answer, not a second escalation
     if status != "in_flight":
@@ -3272,17 +3265,12 @@ def report_rows(conn):
     the column: a store read from another machine says where each run ran.
     """
     rows = []
-    for ticket, started, ended, time_box, rounds, outcome, host in conn.execute(
-            "SELECT t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"
-            " r.reviewRoundCount, r.outcome, r.host"
-            " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-            " WHERE r.endedAt IS NOT NULL"
-            " ORDER BY r.endedAt, r.id").fetchall():
-        actual = (ended - started) / 60000
-        estimate = time_box / 60000 if time_box else None
-        rows.append((ticket, actual, estimate,
+    for run in store.read.ended_runs(conn):
+        actual = (run.endedAt - run.startedAt) / 60000
+        estimate = run.timeBoxMs / 60000 if run.timeBoxMs else None
+        rows.append((run.linearIdentifier, actual, estimate,
                      actual / estimate if estimate else None,
-                     rounds, outcome or "ended", host))
+                     run.reviewRoundCount, run.outcome or "ended", run.host))
     return rows
 
 
@@ -3680,15 +3668,12 @@ def review_overlap(conn, run_id):
     fails to compare here is a corrupted store rather than a reviewer's bad
     day -- and the `ValueError` is left to surface as one.
     """
-    rounds = conn.execute(
-        "SELECT round, findings FROM reviewRounds"
-        " WHERE runId = ? AND endedAt IS NOT NULL"
-        " ORDER BY round DESC LIMIT 2", (run_id,)).fetchall()
+    rounds = store.read.newest_ended_rounds(conn, run_id)
     if len(rounds) < 2:
         return None
-    (later, later_findings), (earlier, earlier_findings) = rounds
-    earlier_findings = json.loads(earlier_findings)
-    later_findings = json.loads(later_findings)
+    later, earlier = rounds[0].round, rounds[1].round
+    earlier_findings = json.loads(rounds[1].findings)
+    later_findings = json.loads(rounds[0].findings)
     if not earlier_findings or not later_findings:
         return None
     return earlier, later, store.findings_overlap(earlier_findings,
@@ -3731,16 +3716,13 @@ def still_tripped(target, conn, trip, knobs=None):
     overlap is re-asked against the threshold that tripped it.
     """
     knobs = sweep_config(target) if knobs is None else knobs
-    row = conn.execute(
-        "SELECT endedAt, phase, lastHeartbeat FROM runs WHERE id = ?",
-        (trip.run_id,)).fetchone()
-    if row is None:
+    run = store.read.run_snapshot(conn, trip.run_id)
+    if run is None:
         return False
-    ended_at, phase, heartbeat = row
-    if ended_at is not None or phase != trip.phase:
+    if run.endedAt is not None or run.phase != trip.phase:
         return False
     if trip.condition == STALE_HEARTBEAT:
-        return heartbeat == trip.heartbeat
+        return run.lastHeartbeat == trip.heartbeat
     if trip.condition == REVIEW_STUCK:
         overlap = review_overlap(conn, trip.run_id)
         return (overlap is not None
@@ -3786,22 +3768,20 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
     strike rule is two sightings rather than one.
     """
     knobs = sweep_config(target) if knobs is None else knobs
-    (ticket_id,) = conn.execute(
-        "SELECT ticketId FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
+    ticket_id = store.read.run_snapshot(conn, trip.run_id).ticketId
     seen = {"phase": None}
 
     def confirm(target):
         # Read under the same lock the verdict is re-reached under, so the
         # phase the outcome names is the one the decision was made on.
-        row = conn.execute(
-            "SELECT phase FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
-        seen["phase"] = row[0] if row is not None else None
+        run = store.read.run_snapshot(conn, trip.run_id)
+        seen["phase"] = run.phase if run is not None else None
         if not still_tripped(target, conn, trip, knobs):
-            if row is not None:
+            if run is not None:
                 store.record_event(
                     conn, trip.run_id, SWEEP_EVENT,
                     f"supervisor sweep: {trip.condition} ({trip.evidence})"
-                    f" no longer held at re-check; run is now {row[0]};"
+                    f" no longer held at re-check; run is now {run.phase};"
                     " no action")
             return False
         store.record_event(
@@ -3892,26 +3872,22 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
         restarts = tuple(
             (sha, age) for _id, _project, sha, age
             in store.unreturned_loop_restarts(conn, knobs.restart_grace_ms, now))
-        swept = conn.execute(
-            "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
-            " r.startedAt, r.timeBoxMs, r.host"
-            " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-            " WHERE r.endedAt IS NULL"
-            f"   AND r.phase IN ({', '.join('?' * len(SWEEPABLE_PHASES))})"
-            " ORDER BY r.id", SWEEPABLE_PHASES).fetchall()
-        for run_id, ticket, phase, heartbeat, started, time_box, host in swept:
+        swept = store.read.live_runs(conn, SWEEPABLE_PHASES)
+        for run in swept:
+            run_id, ticket, phase, host = (run.id, run.linearIdentifier,
+                                           run.phase, run.host)
+            heartbeat, started, time_box = (run.lastHeartbeat, run.startedAt,
+                                            run.timeBoxMs)
             silent = now - heartbeat
             stale = silent > stale_ms
-            on_file = conn.execute(
-                "SELECT strikes, lastSeen FROM sweepStrikes WHERE runId = ?",
-                (run_id,)).fetchone()
-            if (stale and on_file is not None and heartbeat <= on_file[1]
-                    and now - on_file[1] < stale_ms):
+            on_file = store.read.strike(conn, run_id)
+            if (stale and on_file is not None and heartbeat <= on_file.lastSeen
+                    and now - on_file.lastSeen < stale_ms):
                 # A sighting within one stale-threshold of the last is the
                 # same sample: two launches seconds apart must not
                 # manufacture the second strike the two-strike rule exists
                 # to require of two separate silences. The tally stands.
-                strikes = on_file[0]
+                strikes = on_file.strikes
             else:
                 strikes = store.record_strike(
                     conn, run_id, stale, heartbeat, now)
