@@ -506,5 +506,88 @@ class WiringClaimTests(unittest.TestCase):
                          [("failed", "failed")])
 
 
+
+class ReadyIssuesPaginationTests(unittest.TestCase):
+    """`list_ready_issues()` walks every page and honours blockers in any state.
+
+    A fake Linear serves the project's issues fifty at a time behind cursor
+    pagination, the way the real API does past fifty issues, so a ready ticket
+    on page two and a blocks relation whose source sits there are only seen
+    by a provider that keeps asking for the next page.
+    """
+
+    PAGE = 50
+
+    @classmethod
+    def setUpClass(cls):
+        # linear_provider refuses to import without a configured project.
+        os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
+        import linear_provider
+        cls.provider = linear_provider
+
+    @staticmethod
+    def issue(n, state_type="unstarted", blocks=()):
+        return {"identifier": f"KO-{n}", "id": f"uuid-{n}", "title": f"t{n}",
+                "description": "", "estimate": None,
+                "state": {"type": state_type, "name": state_type},
+                "relations": {"nodes": [
+                    {"type": "blocks",
+                     "relatedIssue": {"identifier": f"KO-{b}",
+                                      "state": {"type": "unstarted"}}}
+                    for b in blocks]}}
+
+    def linear(self, issues):
+        """A fake `_gql` serving `issues` in cursor pages of PAGE."""
+        self.calls = []
+
+        def fake(query, variables=None):
+            self.calls.append(variables)
+            filtered = "nin:" in query
+            rows = [i for i in issues
+                    if not (filtered and i["state"]["type"]
+                            in ("completed", "canceled", "backlog"))]
+            start = int(variables.get("after") or 0)
+            page = rows[start:start + self.PAGE]
+            end = start + len(page)
+            return {"project": {"issues": {
+                "nodes": page,
+                "pageInfo": {"hasNextPage": end < len(rows),
+                             "endCursor": str(end)}}}}
+        return patch.object(self.provider, "_gql", fake)
+
+    def ready_ids(self):
+        return sorted(i["identifier"] for i in
+                      self.provider.list_ready_issues("test-project"))
+
+    def test_a_ready_issue_on_the_second_page_is_returned(self):
+        issues = [self.issue(n) for n in range(1, 61)]
+        with self.linear(issues):
+            ready = self.ready_ids()
+
+        self.assertEqual(len(ready), 60)
+        self.assertIn("KO-60", ready)
+        # Both queries walked past their first page with the returned cursor.
+        self.assertIn(str(self.PAGE), [c.get("after") for c in self.calls])
+
+    def test_a_blocker_on_the_second_page_still_blocks(self):
+        issues = [self.issue(n) for n in range(1, 60)]
+        issues.append(self.issue(60, blocks=(1,)))
+        with self.linear(issues):
+            ready = self.ready_ids()
+
+        self.assertNotIn("KO-1", ready)
+        self.assertIn("KO-60", ready)
+
+    def test_a_backlog_blocker_blocks(self):
+        issues = [self.issue(1), self.issue(2, "backlog", blocks=(1,))]
+        with self.linear(issues):
+            self.assertEqual(self.ready_ids(), [])
+
+    def test_a_done_blocker_does_not_block(self):
+        issues = [self.issue(1), self.issue(2, "completed", blocks=(1,))]
+        with self.linear(issues):
+            self.assertEqual(self.ready_ids(), ["KO-1"])
+
+
 if __name__ == "__main__":
     unittest.main()
