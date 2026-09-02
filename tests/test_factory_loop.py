@@ -1131,5 +1131,56 @@ class CrashContainmentTests(LoopFixture):
         self.assertEqual(self.leases(), [(None, None)])
 
 
+class SelfHostingTests(LoopFixture):
+    """A loop working on the factory's own repository re-executes itself
+    after a merge, so the merged code is what runs the next pass. Through
+    the `EXEC` seam: the test runner is never exec-ed."""
+
+    def setUp(self):
+        super().setUp()
+        self.execs = []
+        patcher = patch.object(factory, "EXEC",
+                               lambda *args: self.execs.append(args))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def host_the_factory_in(self, repo):
+        """Make the module look imported from `repo`, the way it is when the
+        target is the factory's own checkout."""
+        patcher = patch.object(factory, "__file__", str(repo / "factory.py"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_merge_into_the_factory_itself_re_executes_the_loop(self):
+        self.host_the_factory_in(self.target)
+        out = self.main_output(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.execs,
+                         [(sys.executable, [sys.executable, *sys.argv])])
+        head = self.git("rev-parse", "--short", "HEAD").strip()
+        self.assertIn("merged a change to the factory itself;"
+                      f" re-executing from {head}", out)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_merge_into_another_repository_does_not_re_execute(self):
+        self.host_the_factory_in(self.target.parent / "elsewhere")
+        self.loop(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.execs, [])
+
+    def test_a_failed_self_hosted_run_stops_without_re_executing(self):
+        self.host_the_factory_in(self.target)
+        provider = StubProvider(a_task(1), a_task(2))
+        self.loop(Commit("first cut"), REQUEST_CHANGES,
+                  Commit("fix round 1"), REQUEST_CHANGES,
+                  Commit("fix round 2"), FAIL, provider=provider)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.rc, 1)
+        self.assertEqual(len(provider.queue), 1)  # the loop stopped
+        self.assertEqual(self.execs, [])
+
+
 if __name__ == "__main__":
     unittest.main()

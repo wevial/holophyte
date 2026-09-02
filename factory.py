@@ -66,6 +66,10 @@ TARGET = HOLO_DIR = STORE_PATH = WORKTREES = CONFIG_PATH = None
 # file can set has a hardcoded default, so an absent file is exactly today's
 # behavior.
 CONFIG = None
+# How the loop restarts itself after merging a change to its own code: the
+# process image is replaced, never a module reloaded. A seam so tests can
+# see the decision without exec-ing the test runner.
+EXEC = os.execv
 
 
 def load_config(path):
@@ -2800,9 +2804,22 @@ def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None,
     return True
 
 
+def self_hosted():
+    """Whether TARGET is the repository this very module was imported from.
+
+    Decided once at startup by `main()`: a loop working on the factory's own
+    checkout keeps running the pre-merge code after every merge, so each
+    dogfooded fix is invisible to the loop that merged it until someone
+    restarts it (gembox 2026-09-02, run 17 cut a worktree without the
+    ticket id run 16 had just merged support for).
+    """
+    return Path(__file__).resolve().parent == Path(TARGET).resolve()
+
+
 def main(provider=None):
     if provider is None:
         import linear_provider as provider
+    restart_after_merge = self_hosted()
     conn = open_store()
     try:
         # The provider knows its team by name rather than by id; the column's
@@ -2989,6 +3006,18 @@ def main(provider=None):
                 # shell — and anything supervising it — sees the failure.
                 return 1  # stop on first failure; ticket stays In Progress
             commit_findings(f"Complete task {task['id']}: {task['title']}")
+            if restart_after_merge:
+                # Store and Linear are terminal for this run, the lease is
+                # released and no worktree is open: the re-exec starts
+                # exactly where the next pass would, from the merged code.
+                # Only after a merge -- a failure returned above, which is
+                # the intended stop.
+                sha = sh(["git", "rev-parse", "--short", "HEAD"], TARGET)
+                print("[holo2] merged a change to the factory itself;"
+                      f" re-executing from {sha}")
+                conn.close()
+                EXEC(sys.executable, [sys.executable, *sys.argv])
+                return  # only a test's EXEC returns
     finally:
         conn.close()
 
