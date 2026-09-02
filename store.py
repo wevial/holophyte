@@ -1117,6 +1117,44 @@ TICKET_TRANSITIONS = {
 TICKET_STATUSES = tuple(TICKET_TRANSITIONS)
 
 
+def render_state_graph(transitions):
+    """Render a `{state: {next, ...}}` table as Mermaid `stateDiagram-v2` text.
+
+    Pure and deterministic: nodes are the table's keys in sorted order, edges
+    are every `(from, to)` pair in sorted order, one per line, and nothing
+    else is drawn. README embeds the output for `TICKET_TRANSITIONS` and
+    `RUN_PHASE_TRANSITIONS` between marker comments, and a test re-renders
+    both from the live tables and asserts byte equality, so the drawing
+    cannot drift from the code the way the prose diagram did. A state that
+    appears only as a target is still declared as a node by its own key, so
+    a table missing a key renders that state as an edge end only.
+
+    `python3 store.py --state-graph` prints both blocks with their markers,
+    ready to paste over README's sections.
+    """
+    lines = ["stateDiagram-v2"]
+    lines.extend(f"    {state}" for state in sorted(transitions))
+    lines.extend(f"    {src} --> {dst}"
+                 for src in sorted(transitions)
+                 for dst in sorted(transitions[src]))
+    return "\n".join(lines) + "\n"
+
+
+# The README sections `--state-graph` prints, in README order: marker name to
+# the table it draws. The markers are HTML comments so GitHub renders only the
+# fenced Mermaid between them.
+STATE_GRAPHS = (
+    ("state-graph: tickets", "TICKET_TRANSITIONS"),
+    ("state-graph: runs", "RUN_PHASE_TRANSITIONS"),
+)
+
+
+def render_state_graph_section(name, transitions):
+    """The exact README text for one marked section, markers included."""
+    return (f"<!-- {name} -->\n```mermaid\n{render_state_graph(transitions)}"
+            f"```\n<!-- end {name} -->\n")
+
+
 class IllegalTransition(Exception):
     """A status change the §3 diagram does not draw; nothing was written.
 
@@ -1472,6 +1510,35 @@ RESUMABLE_WORK_PHASES = frozenset(
     {"working", "verifying", "reviewing", "addressing"}
 )
 RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {"failed", "blocked_on_operator"}
+
+# §4's run graph as an edge table, keyed like `TICKET_TRANSITIONS` so both
+# state machines render through `render_state_graph()` the same way. The
+# edges are the ones the loop writes — `factory.py`'s `set_phase()` calls,
+# `release()`'s move into the terminal phase for each outcome, and `resume()`'s
+# way back out of a parked run — not a `set_phase()` gate: that function moves
+# a run between any two phases on purpose, so the table is the loop's map and
+# the wiring tests hold the walked streams against it. Every phase in `PHASES`
+# is a key so a declared phase always renders as a node; `awaiting_merge_approval`
+# and `squashing` are declared but have no edge because this loop never enters
+# them (the merge is --no-ff, and the autonomy gate refuses rather than parks).
+RUN_PHASE_TRANSITIONS = {
+    "claimed": frozenset({"working", "failed", "killed"}),
+    "working": frozenset({"verifying", "failed", "killed"}),
+    "verifying": frozenset({"reviewing", "failed", "killed"}),
+    "reviewing": frozenset({"addressing", "merge_gate", "failed", "killed"}),
+    "addressing": frozenset({"verifying", "failed", "killed"}),
+    "merge_gate": frozenset({"merging", "failed", "killed"}),
+    "awaiting_merge_approval": frozenset(),
+    "merging": frozenset({"done", "failed", "killed"}),
+    "squashing": frozenset(),
+    "done": frozenset(),
+    # `resume()`: a failed run re-enters its `resumePhase`, or `working` when
+    # none was recorded; a parked run always re-enters `working`.
+    "failed": RESUMABLE_WORK_PHASES,
+    "blocked_on_operator": frozenset({"working"}),
+    "killed": frozenset(),
+}
+assert set(RUN_PHASE_TRANSITIONS) == set(PHASES)
 
 
 class ResumeRefused(Exception):
@@ -2007,3 +2074,12 @@ def latest_supervisor_heartbeat(conn):
         " FROM supervisorHeartbeats"
         " ORDER BY lastBeat DESC, startedAt DESC LIMIT 1").fetchone()
     return tuple(row) if row is not None else None
+
+
+if __name__ == "__main__":
+    import sys
+
+    if sys.argv[1:] != ["--state-graph"]:
+        sys.exit("usage: python3 store.py --state-graph")
+    print("\n".join(render_state_graph_section(name, globals()[table])
+                    for name, table in STATE_GRAPHS), end="")

@@ -127,9 +127,16 @@ class RunPhaseTests(unittest.TestCase):
 
         Each `phase_change` summary opens with `"<from> -> <to>"` and may
         carry a note after a colon; the edge is what §4 draws, so the note is
-        dropped here.
+        dropped here. Every walked edge must be one `RUN_PHASE_TRANSITIONS`
+        draws: that table is README's run diagram, and this is where the
+        loop's real stream is held against it.
         """
-        return [summary.split(":")[0] for _, _, _, summary, _ in self.events()]
+        edges = [summary.split(":")[0] for _, _, _, summary, _ in self.events()]
+        for edge in edges:
+            src, dst = edge.split(" -> ")
+            self.assertIn(dst, store.RUN_PHASE_TRANSITIONS[src],
+                          f"walked edge {edge!r} is not in RUN_PHASE_TRANSITIONS")
+        return edges
 
     def notes(self):
         return [summary.split(": ", 1)[1] for _, _, _, summary, _ in self.events()

@@ -58,6 +58,88 @@ Usage: `python3 factory.py /srv/dev/holo2test`, or
    one is claimed: a blocked ticket still projects to Todo and still sorts
    where it sorts, so stopping on it would starve every ticket behind it.
 
+## State machines
+
+Both diagrams below are generated from the code, not drawn: `store.py`'s
+`TICKET_TRANSITIONS` and `RUN_PHASE_TRANSITIONS` are the only authority for
+which moves are legal, `store.render_state_graph()` renders them, and
+`tests/test_store_status_graph.py` fails whenever the text between the
+markers differs from what the tables render to. Regenerate with
+`python3 store.py --state-graph` and paste the output over the marked
+sections.
+
+Ticket status (`store.transition()` refuses every edge not drawn here):
+
+<!-- state-graph: tickets -->
+```mermaid
+stateDiagram-v2
+    abandoned
+    blocked_on_deps
+    blocked_on_operator
+    in_flight
+    merged
+    needs_spec
+    ready
+    blocked_on_deps --> blocked_on_operator
+    blocked_on_deps --> ready
+    blocked_on_operator --> blocked_on_deps
+    in_flight --> abandoned
+    in_flight --> blocked_on_operator
+    in_flight --> merged
+    needs_spec --> ready
+    ready --> blocked_on_deps
+    ready --> in_flight
+```
+<!-- end state-graph: tickets -->
+Run phase (the edges the loop writes; `awaiting_merge_approval` and
+`squashing` are declared but never entered by this loop):
+
+<!-- state-graph: runs -->
+```mermaid
+stateDiagram-v2
+    addressing
+    awaiting_merge_approval
+    blocked_on_operator
+    claimed
+    done
+    failed
+    killed
+    merge_gate
+    merging
+    reviewing
+    squashing
+    verifying
+    working
+    addressing --> failed
+    addressing --> killed
+    addressing --> verifying
+    blocked_on_operator --> working
+    claimed --> failed
+    claimed --> killed
+    claimed --> working
+    failed --> addressing
+    failed --> reviewing
+    failed --> verifying
+    failed --> working
+    merge_gate --> failed
+    merge_gate --> killed
+    merge_gate --> merging
+    merging --> done
+    merging --> failed
+    merging --> killed
+    reviewing --> addressing
+    reviewing --> failed
+    reviewing --> killed
+    reviewing --> merge_gate
+    verifying --> failed
+    verifying --> killed
+    verifying --> reviewing
+    working --> failed
+    working --> killed
+    working --> verifying
+```
+<!-- end state-graph: runs -->
+
 ## Files
 
 - `factory.py` — the loop, and `--report`: a read-only query over the store
