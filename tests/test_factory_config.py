@@ -33,7 +33,9 @@ class ConfigTestCase(unittest.TestCase):
     def retarget(self, config=None):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET)
+        # Paths only (adopt=False): restoring the default target at
+        # teardown must not move a real host's state around.
+        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
         self.root = Path(tmp.name)
         self.home = self.root / "home"
         self.set_home(self.home)
@@ -197,7 +199,9 @@ class LegacyAdoptionTests(ConfigTestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET)
+        # Paths only (adopt=False): restoring the default target at
+        # teardown must not move a real host's state around.
+        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
         self.root = Path(tmp.name)
         self.home = self.root / "home"
         self.set_home(self.home)
@@ -272,6 +276,63 @@ class LegacyAdoptionTests(ConfigTestCase):
         # Neither store is touched: an operator decides which history wins.
         self.assertEqual((holo / "store.db").read_bytes(), b"legacy store\n")
         self.assertEqual((new / "store.db").read_bytes(), b"new store\n")
+
+    def test_a_state_directory_without_a_store_still_adopts_the_legacy_one(self):
+        """An empty-ish state directory is not proof the move already ran.
+
+        The README tells an operator to write `config.toml` at the new
+        address, and anything else that creates the directory first would do
+        the same: gating on the directory rather than on the store is how a
+        legacy history gets silently shadowed by the store `open_store()`
+        creates a moment later -- exactly the KO-165 failure.
+        """
+        holo = self.legacy_directory()
+        (holo / "config.toml").unlink()
+        new = factory.state_dir(self.target)
+        new.mkdir(parents=True)
+        (new / "config.toml").write_text("[agents]\n")
+
+        self.retarget()
+
+        self.assertEqual(factory.STORE_PATH.read_bytes(), b"legacy store\n")
+        self.assertFalse(holo.exists())
+        self.assertIn(str(factory.STORE_PATH), self.printed)
+
+    def test_a_file_already_at_the_new_address_is_refused_not_overwritten(self):
+        holo = self.legacy_directory()
+        new = factory.state_dir(self.target)
+        new.mkdir(parents=True)
+        (new / "config.toml").write_text("[agents]\nimplementer = \"new\"\n")
+
+        with self.assertRaises(SystemExit) as raised:
+            self.retarget()
+
+        message = str(raised.exception)
+        self.assertIn(str(holo / "config.toml"), message)
+        self.assertIn(str(new / "config.toml"), message)
+        # Nothing moved: the operator's file and the legacy one both stand.
+        self.assertEqual((new / "config.toml").read_text(),
+                         '[agents]\nimplementer = "new"\n')
+        self.assertTrue((holo / "store.db").exists())
+        self.assertTrue((holo / "config.toml").exists())
+
+    def test_deriving_paths_without_adopting_leaves_the_target_alone(self):
+        """`retarget(..., adopt=False)` is the import-time call.
+
+        The module retargets at the default target when it is imported, so
+        adoption there would move some unrelated target's state -- and, where
+        that target has two stores, would make `import factory` and
+        `factory.py --help` exit. Both are what `adopt=False` prevents.
+        """
+        holo = self.legacy_directory()
+        new = factory.state_dir(self.target)
+        new.mkdir(parents=True)
+        (new / "store.db").write_bytes(b"new store\n")
+
+        factory.retarget(self.target, adopt=False)
+
+        self.assertEqual((holo / "store.db").read_bytes(), b"legacy store\n")
+        self.assertEqual(factory.STORE_PATH.read_bytes(), b"new store\n")
 
     def test_adoption_happens_once_and_a_later_run_leaves_the_target_alone(self):
         self.legacy_directory()

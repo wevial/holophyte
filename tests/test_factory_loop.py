@@ -494,7 +494,9 @@ class WorktreeSetupLoopTests(LoopFixture):
         that set the config by hand could pass with the file unwired.
         """
         (self.db.parent / "config.toml").write_text(toml)
-        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET)
+        # Paths only (adopt=False): restoring the default target at
+        # teardown must not move a real host's state around.
+        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
         factory.retarget(self.target)
 
     def test_setup_runs_in_the_fresh_worktree_before_the_implementer(self):

@@ -153,9 +153,16 @@ def adopt_legacy_state(target, destination, out=None):
     impossible -- either the history moves with the address, or the factory
     refuses to start against half of it.
 
-    Adoption happens only into a destination that does not exist yet, so it
-    is a one-time event: once a target has a state directory, whatever else
-    is lying beside the checkout is somebody's backup, not this run's state.
+    What makes it a one-time event is the store at the new address, not the
+    directory holding it: an operator who writes `config.toml` at the new
+    address first -- which the README tells them to do -- creates that
+    directory without adopting anything, and gating on the directory would
+    leave the legacy history for the empty store `open_store()` writes a
+    moment later to shadow. So adoption runs whenever `destination` has no
+    store, merging into the directory if it is already there, and a file
+    already sitting at a landing address stops the whole move rather than
+    being overwritten. Once the store has moved, whatever else is lying
+    beside the checkout is somebody's backup, not this run's state.
     """
     out = sys.stdout if out is None else out
     destination = Path(destination)
@@ -170,10 +177,18 @@ def adopt_legacy_state(target, destination, out=None):
             + ", ".join(standing + [str(path) for path in stores])
             + "; refusing to start against one and shadow the rest -- move"
             " or remove all but the history you want to keep")
-    if destination.exists() or len(layouts) != 1:
+    if new_store.exists() or len(layouts) != 1:
         return []
     stem, moves = layouts[0]
-    destination.mkdir(parents=True)
+    # Every landing address is checked before the first move, so a refusal
+    # leaves both layouts whole rather than half of one in each place.
+    for source, name in moves:
+        landing = destination / name
+        if landing.exists():
+            raise SystemExit(
+                f"[holo2] cannot adopt {source}: {landing} is already there;"
+                " refusing to overwrite it -- move or remove one of the two")
+    destination.mkdir(parents=True, exist_ok=True)
     adopted = []
     for source, name in moves:
         landing = destination / name
@@ -192,7 +207,7 @@ def adopt_legacy_state(target, destination, out=None):
     return adopted
 
 
-def retarget(target):
+def retarget(target, adopt=True):
     """Point TARGET, the paths derived from it and CONFIG at `target`.
 
     Called once at import for the default and again by `cli()` for whatever
@@ -200,6 +215,13 @@ def retarget(target):
     different target says so here instead of patching one path and leaving the
     other two pointing at the last one. The config is loaded here for the same
     reason: it is derived from the target, so it moves when the target does.
+
+    `adopt=False` derives the paths and nothing else, which is what the
+    import-time call for `DEFAULT_TARGET` uses. Adopting there would move
+    some unrelated target's state as a side effect of importing this module,
+    and -- where that target has two stores -- would make `import factory`
+    and `factory.py --help` exit, the same rule `config()` follows: nothing
+    target-specific happens before `cli()` has picked a target.
     """
     global TARGET, HOLO_DIR, STORE_PATH, WORKTREES, CONFIG_PATH, CONFIG
     TARGET = Path(target)
@@ -213,7 +235,8 @@ def retarget(target):
     HOLO_DIR = state_dir(TARGET)
     # Whatever a previous layout left beside the checkout moves in here now,
     # before anything opens a store at the new address and finds it empty.
-    adopt_legacy_state(TARGET, HOLO_DIR)
+    if adopt:
+        adopt_legacy_state(TARGET, HOLO_DIR)
     # The loop's durable state: one WAL-mode SQLite file per target repo.
     STORE_PATH = HOLO_DIR / "store.db"
     # Config for a target is not a file the target has to carry either.
@@ -244,7 +267,9 @@ def config():
     return CONFIG
 
 
-retarget(DEFAULT_TARGET)
+# Paths only: see `retarget()`. The default target's state is adopted when
+# `cli()` names it, not because somebody imported this module.
+retarget(DEFAULT_TARGET, adopt=False)
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
 BUDGET_RE = re.compile(r"\((\d+)\s*min\)\s*$")

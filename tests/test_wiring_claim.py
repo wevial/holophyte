@@ -148,7 +148,7 @@ class WiringClaimTests(unittest.TestCase):
             mod = importlib.util.module_from_spec(SPEC)
             SPEC.loader.exec_module(mod)
 
-            mod.retarget("/srv/dev/holo2test")
+            mod.retarget("/srv/dev/holo2test", adopt=False)
 
         self.assertEqual(mod.STORE_PATH.parent.parent, home)
         self.assertEqual(mod.STORE_PATH.name, "store.db")

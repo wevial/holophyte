@@ -168,11 +168,20 @@ Older layouts are adopted once, on the first retarget that finds them: a
 `<repo>.holophyte/` directory beside the checkout, or the dotted siblings
 that preceded it (`<repo>.holophyte.db` with its `-wal`/`-shm` sidecars and
 `<repo>.holophyte.toml`), are moved into the state directory with one
-`[holo2] adopted <from> -> <to>` line per file. Adoption happens only into a
-state directory that does not exist yet, so it never runs twice. If a store
-is already at the new address and another is still at an old one, the factory
-exits non-zero naming both and moves nothing: which history is the real one
-is an operator's decision, not a guess.
+`[holo2] adopted <from> -> <to>` line per file. What ends adoption is the
+store at the new address, not the directory holding it, so writing
+`config.toml` there by hand first does not strand a legacy history — the move
+merges into the directory that is already there. If a store is already at the
+new address and another is still at an old one, the factory exits non-zero
+naming both and moves nothing: which history is the real one is an operator's
+decision, not a guess. A single file already sitting at a landing address —
+that hand-written `config.toml`, say, with a legacy `<repo>.holophyte.toml`
+still beside the checkout — stops the move the same way rather than being
+overwritten.
+
+Adoption runs for the target the command line names, once `cli()` has named
+it. Importing the module or asking for `--help` derives paths and moves
+nothing.
 
 The file is optional:
 absent means every default below stays in place, which is how the factory runs
