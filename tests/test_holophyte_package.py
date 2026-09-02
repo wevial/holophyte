@@ -19,7 +19,9 @@ sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 
@@ -69,6 +71,30 @@ DEFINED = {
         "agent",
         "agent_route",
         "publish_review_refs",
+    ],
+    holophyte.findings: [
+        "_document",
+        "_entry",
+        "_gist",
+        "_ms",
+        "_stamp",
+        "commit_findings",
+        "finding_line",
+        "findings_entries",
+        "frozen_preamble",
+        "refresh_findings",
+        "render_findings",
+        "round_at",
+        "round_entry",
+        "run_entry",
+        "write_findings",
+    ],
+    holophyte.report: [
+        "format_age",
+        "host_name",
+        "report_lines",
+        "report_rows",
+        "report_summary",
     ],
     holophyte.review: [
         "_trailing_verdict",
