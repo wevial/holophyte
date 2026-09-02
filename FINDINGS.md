@@ -653,32 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[12 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-08-30T17:36:37Z — KO-143
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py:350 [p2] `factory.py:350`: Setup timeouts kill only the `shell=True` wrapper, not its process group. Child commands can continue after the reported timeout and after wor…
-
-## 2026-08-30T17:40:53Z — KO-143
-Round 3: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-08-30T17:40:56Z — KO-143
-MERGED to main.
-actual: 14.2 min · estimate: 25 min · rounds: 3
-
-## 2026-08-30T18:15:37Z — KO-145
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py:2263 [p2] `factory.py:2263-2276`: staleness is computed from a snapshot before `record_strike()` opens its transaction. A concurrent heartbeat or run completion can occur…
-
-## 2026-08-30T18:20:59Z — KO-145
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- store.py [p2] [store.py](/workspace/store.py:1641): A heartbeat does not reset an existing strike unless a sweep observes it while still fresh. Repro: stale sweep at T+6 reco…
-
-## 2026-08-30T18:24:16Z — KO-145
-Round 3: pass · reviewer codex-sol-medium · verify passed
+[18 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-08-30T18:24:17Z — KO-145
 MERGED to main.
@@ -687,7 +662,7 @@ actual: 17.5 min · estimate: 25 min · rounds: 3
 ## 2026-08-30T18:35:11Z — KO-146
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
 Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:2386): Acting occurs after the classification transaction without revalidating the heartbeat, phase, or `endedAt`. A worker c…
+- factory.py [p2] [factory.py](/workspace/factory.py:2386): Acting occurs after the classification transaction without revalidating the heartbeat, phase, or `endedAt`. A worker…
 
 ## 2026-08-30T22:03:05Z — KO-146
 FAILED: ticket was not ready when the run was claimed; no work started
@@ -708,12 +683,12 @@ actual: 1339.2 min · estimate: 25 min · rounds: 1
 ## 2026-09-01T20:46:47Z — KO-147
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
 Findings (1):
-- factory.py:2632 [p2] [factory.py:2632](/workspace/factory.py:2632): `still_tripped()` does not re-evaluate `review_stuck`. If a new completed round clears the overlap while the run…
+- factory.py:2632 [p2] [factory.py:2632](/workspace/factory.py:2632): `still_tripped()` does not re-evaluate `review_stuck`. If a new completed round clears the overlap while the ru…
 
 ## 2026-09-01T20:49:33Z — KO-147
 Round 2: changes_requested · reviewer codex-sol-medium · verify passed
 Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:2648): `still_tripped()` can fail a progressing run that returns to the same `reviewing` phase. After classification on round…
+- factory.py [p2] [factory.py](/workspace/factory.py:2648): `still_tripped()` can fail a progressing run that returns to the same `reviewing` phase. After classification on rou…
 
 ## 2026-09-01T20:52:50Z — KO-147
 Round 3: pass · reviewer codex-sol-medium · verify passed
@@ -725,7 +700,7 @@ actual: 10.7 min · estimate: 25 min · rounds: 3
 ## 2026-09-01T21:02:37Z — KO-148
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
 Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:3042): Stale-lock reclamation has a TOCTOU race. Two starters can both validate the stale inode; one can unlink it and acquir…
+- factory.py [p2] [factory.py](/workspace/factory.py:3042): Stale-lock reclamation has a TOCTOU race. Two starters can both validate the stale inode; one can unlink it and acqu…
 
 ## 2026-09-01T21:07:59Z — KO-148
 Round 2: pass · reviewer codex-sol-medium · verify passed
@@ -737,12 +712,12 @@ actual: 15.1 min · estimate: 30 min · rounds: 2
 ## 2026-09-01T21:12:27Z — KO-149
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
 Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:2582): Falsy non-table values (`false`, `0`, `""`, `[]`) are converted to `{}` and silently use defaults instead of producing…
+- factory.py [p2] [factory.py](/workspace/factory.py:2582): Falsy non-table values (`false`, `0`, `""`, `[]`) are converted to `{}` and silently use defaults instead of produci…
 
 ## 2026-09-01T21:14:36Z — KO-149
 Round 2: changes_requested · reviewer codex-sol-medium · verify passed
 Findings (1):
-- factory.py:2590 [p2] [factory.py:2590](/workspace/factory.py:2590): TOML `inf` passes the “positive number” validation. `sweep_interval_sec = inf` then crashes `--supervise` with `O…
+- factory.py:2590 [p2] [factory.py:2590](/workspace/factory.py:2590): TOML `inf` passes the “positive number” validation. `sweep_interval_sec = inf` then crashes `--supervise` with…
 
 ## 2026-09-01T21:16:44Z — KO-149
 Round 3: pass · reviewer codex-sol-medium · verify passed
@@ -757,3 +732,27 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T01:29:17Z — KO-165
 MERGED to main.
 actual: 5.5 min · estimate: 30 min · rounds: 1
+
+## 2026-09-02T01:33:46Z — KO-169
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:1613): A malformed timestamp still raises `TypeError` in `_stamp()` (for example, `startedAt = 'not-a-timestamp'`). Thus a…
+
+## 2026-09-02T01:37:31Z — KO-169
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- tests/test_wiring_findings.py:297 [p2] [tests/test_wiring_findings.py:297](/workspace/tests/test_wiring_findings.py:297): The new test embeds `1_700_000_500_000` directly in SQL. SQLite rejects the…
+
+## 2026-09-02T01:39:21Z — KO-169
+Round 3: changes_requested · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T01:39:21Z — KO-169
+FAILED: terminal adjudication: FAIL; branch task/findings-renderer-never-raises preserved at 63b11458343d
+actual: 10.0 min · estimate: 25 min · rounds: 3
+
+## 2026-09-02T05:12:22Z — KO-170
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T05:12:26Z — KO-170
+MERGED to main.
+actual: 4.0 min · estimate: 20 min · rounds: 1
