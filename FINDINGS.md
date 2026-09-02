@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[30 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-01T21:08:00Z — KO-148
-MERGED to main.
-actual: 15.1 min · estimate: 30 min · rounds: 2
-
-## 2026-09-01T21:12:27Z — KO-149
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:2582): Falsy non-table values (`false`, `0`, `""`, `[]`) are converted to `{}` and silently use defaults instead of produci…
+[32 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-01T21:14:36Z — KO-149
 Round 2: changes_requested · reviewer codex-sol-medium · verify passed
@@ -755,3 +746,10 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T14:35:16Z — KO-176
 MERGED to main.
 actual: 5.4 min · estimate: 30 min · rounds: 1
+
+## 2026-09-02T14:41:35Z — KO-177
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T14:41:38Z — KO-177
+MERGED to main.
+actual: 6.4 min · estimate: 30 min · rounds: 1
