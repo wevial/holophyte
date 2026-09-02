@@ -3076,7 +3076,7 @@ def report_lines(conn):
     return lines + [report_summary(rows)]
 
 
-def report(conn=None, out=None):
+def report(conn=None, out=None, now=None):
     """Print the target store's estimate-vs-actual table. Returns nothing.
 
     `--report`'s whole body: it reads rows and prints them, so no ticket is
@@ -3089,6 +3089,10 @@ def report(conn=None, out=None):
     older module never stamped are recomputed from the rounds themselves
     rather than reported as zero. A target with no store at all is not created
     for the sake of an empty table; it is reported.
+
+    Below the table, one line on the target's supervisor -- see
+    `supervisor_liveness_line()`. `now` is the clock the heartbeat's age is
+    taken against, injectable so a test can place a beat in time.
     """
     out = out or sys.stdout
     if conn is None and not STORE_PATH.exists():
@@ -3098,9 +3102,57 @@ def report(conn=None, out=None):
     conn = conn if conn is not None else open_store()
     try:
         print("\n".join(report_lines(conn)), file=out)
+        print(supervisor_liveness_line(conn, now), file=out)
     finally:
         if owned:
             conn.close()
+
+
+def format_age(ms):
+    """An age in milliseconds as an operator reads one: `12s`, `9m`, `3h`.
+
+    Whole units, largest that fits, because the question the age answers --
+    is the watcher a minute quiet or an evening quiet -- is not one that
+    turns on the seconds past the hour.
+    """
+    seconds = max(0, int(ms // 1000))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    return f"{seconds // 3600}h"
+
+
+def supervisor_liveness_line(conn=None, now=None):
+    """One line saying whether a supervisor is live for the target.
+
+    `supervisor: live, last heartbeat 12s ago (pid N)` when the newest beat
+    in `supervisorHeartbeats` is younger than the target's
+    `[supervisor] heartbeat_stale_min`, the same boundary the sweep judges
+    a run's heartbeat by; `stale` past it; `none recorded` when no
+    supervisor has ever beaten -- or, with no `conn` given, when there is
+    no store to ask. Read-only: it exists so an operator can tell from
+    `--report`, or from a refused `--supervise`, whether the watcher they
+    are about to launch is already running.
+    """
+    now = int(time() * 1000) if now is None else now
+    owned = conn is None
+    if owned:
+        if not STORE_PATH.exists():
+            return "supervisor: none recorded"
+        conn = open_store()
+    try:
+        beat = store.latest_supervisor_heartbeat(conn)
+    finally:
+        if owned:
+            conn.close()
+    if beat is None:
+        return "supervisor: none recorded"
+    pid, _started_at, last_beat, _passes = beat
+    age = now - last_beat
+    state = "live" if age < sweep_config().heartbeat_stale_ms else "stale"
+    return (f"supervisor: {state}, last heartbeat {format_age(age)} ago"
+            f" (pid {pid})")
 
 
 # --- the supervisor's stale-run sweep -----------------------------------------
@@ -4003,7 +4055,11 @@ def cli(argv=None):
         try:
             return supervise()
         except SupervisorHeld as held:
-            raise SystemExit(str(held)) from None
+            # With the liveness line, so the refusal is actionable: a held
+            # lock and a fresh heartbeat is a watcher doing its job; a held
+            # lock and a stale one is a watcher to go and look at.
+            raise SystemExit(
+                f"{held}\n{supervisor_liveness_line()}") from None
     # And, on the path that actually dispatches agents, every route the config
     # names resolves before the loop claims a ticket. `--report` skips this: it
     # calls nobody, so a reviewer that is not installed on the machine reading

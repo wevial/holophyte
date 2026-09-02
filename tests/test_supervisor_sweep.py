@@ -1062,6 +1062,30 @@ class SuperviseTests(SweepTestCase):
         self.assertEqual(factory.read_supervisor_lock(self.lock),
                          (holder.pid, T0))
 
+    def test_a_refused_start_says_whether_the_holder_is_still_beating(self):
+        """The refusal is actionable only with the liveness beside it: the
+        holder's lock plus a fresh heartbeat is a watcher at work, which is
+        the answer to "do I relaunch?" that the lock alone never gave."""
+        holder = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        factory.acquire_supervisor_lock(self.lock, pid=holder.pid, now=T0)
+        now = int(factory.time() * 1000)
+        store.record_supervisor_heartbeat(self.conn, holder.pid, T0,
+                                          now=now - 12_000)
+        self.conn.commit()
+
+        with patch.object(sys, "stderr", io.StringIO()), \
+                self.assertRaises(SystemExit) as exited:
+            factory.cli(["--supervise", str(self.target)])
+
+        message = str(exited.exception)
+        self.assertIn(f"pid {holder.pid}", message.splitlines()[0])
+        self.assertRegex(
+            message.splitlines()[-1],
+            rf"^supervisor: live, last heartbeat 1[2-9]s ago"
+            rf" \(pid {holder.pid}\)$")
+
     def test_a_lock_naming_no_pid_is_refused_rather_than_guessed_about(self):
         """Never spawn a rival on one ambiguous probe: an empty lock is a
         starter that crashed between its create and its write, or something

@@ -19,6 +19,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -298,7 +299,11 @@ class ReportTests(unittest.TestCase):
 
         printed = out.getvalue().splitlines()
         self.assertEqual(printed[0].split()[0], "ticket")
-        self.assertEqual(len(printed), 5)
+        # The table is the five lines it always was, and below it the one
+        # line on the supervisor: none has ever beaten in this store.
+        self.assertEqual(printed[:5], factory.report_lines(self.conn))
+        self.assertEqual(printed[5], "supervisor: none recorded")
+        self.assertEqual(len(printed), 6)
         self.assertEqual(factory.STORE_PATH, self.db)
         # Nothing was claimed: three runs went in, three are there, all ended,
         # and the lease the loop would have taken is free.
@@ -311,6 +316,33 @@ class ReportTests(unittest.TestCase):
         # And no branch was cut for one: the worktrees directory is the first
         # thing a started run creates.
         self.assertFalse(self.worktrees.exists())
+
+    def report_with_a_heartbeat(self, age_ms):
+        """`--report` as the operator runs it, over a store whose one
+        supervisor last beat `age_ms` before now."""
+        now = int(time.time() * 1000)
+        store.record_supervisor_heartbeat(self.conn, pid=4242, started_at=now,
+                                          now=now - age_ms)
+        self.conn.commit()
+        out = io.StringIO()
+        with no_network(), patch.object(sys, "stdout", out):
+            factory.cli(["--report", str(self.target)])
+        return out.getvalue().splitlines()
+
+    def test_a_fresh_heartbeat_reports_a_live_supervisor_with_its_age(self):
+        printed = self.report_with_a_heartbeat(age_ms=12_000)
+
+        self.assertRegex(printed[-1],
+                         r"^supervisor: live, last heartbeat 1[2-9]s ago"
+                         r" \(pid 4242\)$")
+
+    def test_a_heartbeat_past_the_stale_threshold_reports_stale(self):
+        """Nine minutes against the default five: the watcher stopped."""
+        printed = self.report_with_a_heartbeat(age_ms=9 * 60_000)
+
+        self.assertRegex(printed[-1],
+                         r"^supervisor: stale, last heartbeat 9m ago"
+                         r" \(pid 4242\)$")
 
     def test_a_target_with_no_store_is_reported_not_created(self):
         out = io.StringIO()
