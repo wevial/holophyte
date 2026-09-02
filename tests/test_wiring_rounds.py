@@ -87,7 +87,8 @@ class ReviewRoundRowTests(unittest.TestCase):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
                               check=True, capture_output=True, text=True).stdout
 
-    def loop(self, *replies):
+    def loop(self, *replies, criteria=("Given the thing, when it runs, "
+                                       "then it works",)):
         """Run the loop over one task, answering each review turn in order."""
         turns = []
         replies = list(replies)
@@ -106,7 +107,7 @@ class ReviewRoundRowTests(unittest.TestCase):
         provider = StubProvider(
             {"id": "KO-130", "issue_id": "iss-130", "title": "add a thing",
              "verify": "echo ok", "budget_min": 5, "contracts": [],
-             "criteria": ["Given the thing, when it runs, then it works"]})
+             "criteria": list(criteria)})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", fake_agent):
                 factory.main(provider)
@@ -135,7 +136,9 @@ class ReviewRoundRowTests(unittest.TestCase):
             "- [BLOCKER] factory.py:512 the round is recorded after the break,\n"
             "  so an approving round is never stored.\n"
             "- store.py:1180 the docstring names three columns and lists four.\n"
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "\nVERDICT: REQUEST_CHANGES",
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "VERDICT: APPROVE")
 
         first = self.rounds()[0]
@@ -161,7 +164,9 @@ class ReviewRoundRowTests(unittest.TestCase):
         self.loop(
             "- factory.py:512 the approving round is never stored.\n"
             "- [BLOCKER] Dockerfile installs build deps into the runtime image.\n"
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "\nVERDICT: REQUEST_CHANGES",
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "VERDICT: APPROVE")
 
         findings = json.loads(self.rounds()[0]["findings"])
@@ -181,7 +186,9 @@ class ReviewRoundRowTests(unittest.TestCase):
         self.loop(
             "- [BLOCKER] Dockerfile installs build deps into the runtime image.\n"
             "- [BLOCKER] Makefile has no target for the new stage.\n"
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "\nVERDICT: REQUEST_CHANGES",
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "VERDICT: APPROVE")
 
         findings = json.loads(self.rounds()[0]["findings"])
@@ -200,8 +207,10 @@ class ReviewRoundRowTests(unittest.TestCase):
         inverted, on the comparison this task exists to enable."""
         self.loop(
             "- [BLOCKER] Dockerfile installs build deps into the runtime image.\n"
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "\nVERDICT: REQUEST_CHANGES",
             "- [BLOCKER] Makefile has no target for the new stage.\n"
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "\nVERDICT: REQUEST_CHANGES",
             "VERDICT: PASS")
 
@@ -231,8 +240,10 @@ class ReviewRoundRowTests(unittest.TestCase):
         recorded whole under a placeholder path — the alternative is a row
         claiming the reviewer found nothing."""
         self.loop("This is sloppy and I do not like it.\n"
+                  "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
                   "VERDICT: REQUEST_CHANGES",
-                  "VERDICT: APPROVE")
+                  "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+            "VERDICT: APPROVE")
 
         findings = json.loads(self.rounds()[0]["findings"])
         self.assertEqual(len(findings), 1)
@@ -260,13 +271,72 @@ class ReviewRoundRowTests(unittest.TestCase):
         self.assertGreater(store.findings_overlap(first, second), 0)
         self.assertLess(store.findings_overlap(first, second), 1)
 
+    # --- the per-criterion checklist ---------------------------------------
+
+    TWO = ("Given a row, when it is written, then it is fingerprinted",
+           "Given existing rows, when the store migrates, then they carry over")
+
+    def test_an_approval_leaving_a_criterion_unwitnessed_is_changes_requested(self):
+        """KO-165 was approved with its second criterion unmet. The verdict
+        line no longer decides alone: a criterion the reviewer could not
+        witness is a finding, and the round is recorded as a request for
+        changes naming it."""
+        self.loop(
+            "Looks fine.\n"
+            "CRITERION 1: met \u2014 tests/test_store.py::test_fingerprint\n"
+            "CRITERION 2: unwitnessed \u2014 no test covers the carry-over\n"
+            "VERDICT: APPROVE",
+            "CRITERION 1: met \u2014 tests/test_store.py::test_fingerprint\n"
+            "CRITERION 2: met \u2014 tests/test_store.py::test_carry_over\n"
+            "VERDICT: APPROVE",
+            criteria=self.TWO)
+
+        first, second = self.rounds()
+        self.assertEqual(first["verdict"], "changes_requested")
+        (finding,) = json.loads(first["findings"])
+        self.assertIn("CRITERION 2", finding["message"])
+        self.assertIn("no test covers the carry-over", finding["message"])
+        self.assertIn("carry over", finding["message"])
+        self.assertEqual((finding["path"], finding["line"]), ("criteria", 2))
+        self.assertEqual(second["verdict"], "pass")
+
+    def test_an_approval_witnessing_every_criterion_passes_and_merges(self):
+        self.loop(
+            "CRITERION 1: met \u2014 tests/test_store.py::test_fingerprint\n"
+            "CRITERION 2: met \u2014 tests/test_store.py::test_carry_over\n"
+            "VERDICT: APPROVE",
+            criteria=self.TWO)
+
+        (only,) = self.rounds()
+        self.assertEqual(only["verdict"], "pass")
+        self.assertEqual(json.loads(only["findings"]), [])
+        self.assertIn("change1.txt", self.git("ls-tree", "--name-only", "main"))
+
+    def test_an_approval_with_no_checklist_is_unwitnessed_on_every_criterion(self):
+        """A reply that never answered for the criteria has witnessed none of
+        them: one finding per criterion, whatever the verdict line says."""
+        self.loop("Looks good.\nVERDICT: APPROVE",
+                  "CRITERION 1: met \u2014 a\nCRITERION 2: met \u2014 b\n"
+                  "VERDICT: APPROVE",
+                  criteria=self.TWO)
+
+        first = self.rounds()[0]
+        self.assertEqual(first["verdict"], "changes_requested")
+        findings = json.loads(first["findings"])
+        self.assertEqual([(f["path"], f["line"]) for f in findings],
+                         [("criteria", 1), ("criteria", 2)])
+        for finding in findings:
+            self.assertIn("unwitnessed", finding["message"])
+
     # --- the round's own record ------------------------------------------
 
     def test_an_approving_round_records_the_verify_result_it_was_given(self):
         """An approval carries no findings — approving prose is not a findings
         list — and the round keeps the verify result the reviewer was briefed
         with and the reviewer route that issued the verdict."""
-        self.loop("Looks good.\nVERDICT: APPROVE")
+        self.loop("Looks good.\n"
+                  "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+                  "VERDICT: APPROVE")
 
         (only,) = self.rounds()
         self.assertEqual((only["round"], only["verdict"], only["model"]),

@@ -147,7 +147,9 @@ class RunPhaseTests(unittest.TestCase):
         reviewing → merge_gate → merging, ending `done` with outcome merged.
         `squashing` is absent because this loop merges --no-ff and rewrites no
         history, so it never does the thing that phase names."""
-        provider = self.loop("VERDICT: APPROVE")
+        provider = self.loop(
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+            "VERDICT: APPROVE")
 
         # The merge's Linear side is the projection and nothing else: the
         # claim posted In Progress, the merge posted Done.
@@ -169,7 +171,8 @@ class RunPhaseTests(unittest.TestCase):
         """§2's dual-level log: transitions are `narrative`/`phase_change`
         rows, so the dashboard's default view is the run's story, and `seq` is
         monotonic from 1 without a caller counting."""
-        self.loop("VERDICT: APPROVE")
+        self.loop("CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+            "VERDICT: APPROVE")
 
         events = self.events()
         self.assertEqual([seq for seq, *_ in events],
@@ -243,7 +246,8 @@ class RunPhaseTests(unittest.TestCase):
         """A phase and a heartbeat from different moments would show the
         supervisor a run that has been stale for a whole stage, so the run's
         heartbeat is the timestamp of its most recent transition."""
-        self.loop("VERDICT: APPROVE")
+        self.loop("CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+            "VERDICT: APPROVE")
 
         _, _, _, _, started, heartbeat, _ = self.run_row()
         self.assertEqual(heartbeat, max(at for *_, at in self.events()))

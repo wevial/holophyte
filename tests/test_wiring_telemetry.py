@@ -146,7 +146,8 @@ class CloseOutTelemetryTests(unittest.TestCase):
         drift this ticket exists to remove.
         """
         self.loop("- factory.py:1: name the estimate\nVERDICT: REQUEST_CHANGES",
-                  "VERDICT: APPROVE")
+                  "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+            "VERDICT: APPROVE")
 
         (started, ended, estimate, rounds, outcome), = self.read(
             "SELECT startedAt, endedAt, timeBoxMs, reviewRoundCount, outcome"

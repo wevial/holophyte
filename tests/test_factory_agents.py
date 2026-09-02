@@ -285,6 +285,24 @@ class ReviewLoopTests(unittest.TestCase):
         self.assertIn("add a thing", goal)
         self.assertIn("echo ok", goal)
 
+    def test_review_goal_numbers_the_criteria_and_asks_for_a_checklist(self):
+        """The reviewer is asked to account for each criterion by number; a
+        task with none gets no such block, so the prompt never asks for a
+        checklist the loop would not read."""
+        self.run_task("CRITERION 1: met \u2014 t\nCRITERION 2: met \u2014 u\n"
+                      "VERDICT: APPROVE",
+                      criteria=["Given a, then b", "Given c, then d"])
+        with_criteria = next(g for role, g in self.goals if role == "review")
+        self.assertIn("1. Given a, then b", with_criteria)
+        self.assertIn("2. Given c, then d", with_criteria)
+        self.assertIn("CRITERION n: met", with_criteria)
+
+        self.goals.clear()
+        merged = self.run_task("VERDICT: APPROVE")
+        self.assertTrue(merged)
+        without = next(g for role, g in self.goals if role == "review")
+        self.assertNotIn("CRITERION", without)
+
     def test_review_and_adjudication_goals_carry_the_ticket_body(self):
         """The reviewer and the adjudicator judge against the approved body.
 
