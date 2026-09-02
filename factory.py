@@ -3013,8 +3013,11 @@ def main(provider=None):
                 # Only after a merge -- a failure returned above, which is
                 # the intended stop.
                 sha = sh(["git", "rev-parse", "--short", "HEAD"], TARGET)
+                # flush=True: execv replaces the process image without
+                # running Python's buffered-stdout flush, so under a
+                # redirected (block-buffered) stdout the line would be lost.
                 print("[holo2] merged a change to the factory itself;"
-                      f" re-executing from {sha}")
+                      f" re-executing from {sha}", flush=True)
                 conn.close()
                 EXEC(sys.executable, [sys.executable, *sys.argv])
                 return  # only a test's EXEC returns
