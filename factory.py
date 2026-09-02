@@ -2170,6 +2170,12 @@ def mirrored_ticket(conn, project, task):
     return row[0] if row else None
 
 
+def store_status(conn, ticket_id):
+    """The store's status column for `ticket_id`, for a printed decision."""
+    return conn.execute("SELECT status FROM tickets WHERE id = ?",
+                        (ticket_id,)).fetchone()[0]
+
+
 def task_contract(task):
     """A provider task's contract as `(title, criteria, commands)`.
 
@@ -2663,6 +2669,30 @@ def main(provider=None):
                       " skipping it. a human owns it now")
                 skip.add(task["id"])
                 continue
+            # Same place, the store's own question: §2's `pickable()`. The
+            # board and the store can disagree about whether a ticket is
+            # workable — a failed run leaves its mirror `in_flight` on
+            # purpose, and a body edit or a hand-dragged column offers the
+            # ticket again as ready — and claiming on the board's word alone
+            # produced a run row that existed only to be refused by the
+            # `in_flight` transition below (holophyte-bugs.md #4). Asked
+            # before the claim so the refusal costs no run row and no
+            # failure. A ticket the store has never seen is pickable by
+            # definition: its first claim is what mirrors it.
+            #
+            # One store status is left to the claim: a `needs_spec` mirror
+            # is unpickable *as stored*, but the claim re-mirrors the live
+            # body and promotes it if the lists are there now, and the
+            # `in_flight` transition below still refuses it if they are not.
+            # Refusing it here on the stale row would park a fixed ticket.
+            if known is not None:
+                verdict = store.pickable(conn, known)
+                status = store_status(conn, known)
+                if not verdict and status != "needs_spec":
+                    print(f"[holo2] {task['id']} is {status} in the store,"
+                          f" not claimable ({verdict.reason}); skipping it")
+                    skip.add(task["id"])
+                    continue
             try:
                 ticket_id, run_id = claim_run(conn, project, task)
             except store.ClaimConflict as e:
