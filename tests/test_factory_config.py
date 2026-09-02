@@ -13,7 +13,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -836,7 +836,11 @@ class StartupCheckTests(ConfigTestCase):
             factory.cli([str(target), "--sweep"])
 
         report.assert_called_once_with(self.tgt)
-        sweep_report.assert_called_once_with(self.tgt, act=False)
+        # The board is handed down from `cli()`, never reached for by name;
+        # building it reads no config and opens no connection.
+        sweep_report.assert_called_once_with(self.tgt, act=False, provider=ANY)
+        self.assertIsInstance(sweep_report.call_args.kwargs["provider"],
+                              factory.LinearProvider)
 
 
 class WorktreeSetupTests(ConfigTestCase):

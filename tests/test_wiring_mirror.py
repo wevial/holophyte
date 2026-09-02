@@ -40,6 +40,7 @@ class StubProvider:
     """
 
     TEAM = "team-under-test"
+    team = TEAM  # the `Provider` protocol's spelling
 
     def __init__(self, *tasks, fail=False):
         self.queue = list(tasks)

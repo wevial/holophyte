@@ -38,6 +38,7 @@ class StubProvider:
     """The provider seam `main()` drives, recording what it was asked for."""
 
     TEAM = "team-under-test"
+    team = TEAM  # the `Provider` protocol's spelling
 
     def __init__(self, *tasks):
         self.queue = list(tasks)

@@ -37,6 +37,7 @@ class StubProvider:
     """The provider seam `main()` drives, plus the module `run_task` imports."""
 
     TEAM = "team-under-test"
+    team = TEAM  # the `Provider` protocol's spelling
 
     def __init__(self, *tasks):
         self.queue = list(tasks)
