@@ -6,17 +6,22 @@ import importlib.util
 import os
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports ticket_template by name
+# `waiting` is a helper, not a test module: discovery never imports it, and
+# how this file is imported decides whether `tests/` is on the path at all.
+sys.path.insert(0, str(HERE))
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
 factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
+
+from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
 class VerifyClauseDiagnosticsTests(unittest.TestCase):
@@ -113,6 +118,17 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
 
 
 class VerifyTimeoutTests(unittest.TestCase):
+    """Real caps against real process trees; nothing here is mocked.
+
+    Margins: a 0.3 s or 0.5 s cap lost to the shell's own startup whenever
+    another suite or a review ran alongside, so the pre-cap output the tests
+    look for was never printed and green code went red. Caps are 1 s; a child
+    that must outlive the cap sleeps 3 s; a wait that proves a child is gone
+    runs past that delay; where a test reads pre-cap output out of the report,
+    the shell also touches a `started` marker, so a machine too loaded to get
+    the shell to its first line is named as such rather than as lost output.
+    """
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -121,27 +137,34 @@ class VerifyTimeoutTests(unittest.TestCase):
     def test_a_chain_that_hits_the_cap_is_red_and_names_the_running_clause(self):
         # KO acceptance criterion, verbatim command: the cap is a failed
         # verify, not a `TimeoutExpired` escaping into the loop.
-        with patch.object(factory, "VERIFY_TIMEOUT", 0.5):
+        # The command is kept verbatim (a `touch` clause would change the
+        # clause count the assertions name), so the 1 s cap is the margin.
+        with patch.object(factory, "VERIFY_TIMEOUT", 1.0):
             ok, out = factory.run_verify("echo a && sleep 5", self.cwd)
 
         self.assertFalse(ok)
-        self.assertIn("timed out after 0.5s", out)
+        self.assertIn("timed out after 1s", out)
         self.assertIn("clause 2 of 2", out)
         self.assertIn("running clause: sleep 5", out)
         self.assertIn("--- clause 1 (ok): echo a", out)  # what got that far
 
     def test_the_cap_still_reaps_the_command_s_process_group(self):
-        marker = self.cwd / "escaped.txt"
-        cmd = "echo resolving; (sleep 1; touch %s) & sleep 5" % marker
+        started = self.cwd / "started.txt"
+        escaped = self.cwd / "escaped.txt"
+        cmd = ("echo resolving; touch %s; (sleep 3; touch %s) & sleep 5"
+               % (started, escaped))
 
-        with patch.object(factory, "VERIFY_TIMEOUT", 0.3):
+        with patch.object(factory, "VERIFY_TIMEOUT", 1.0):
             ok, out = factory.run_verify(cmd, self.cwd)
 
         self.assertFalse(ok)
-        self.assertIn("timed out after 0.3s", out)
-        self.assertIn("resolving", out)
-        time.sleep(1.5)  # past when the child would have touched the marker
-        self.assertFalse(marker.exists())
+        self.assertIn("timed out after 1s", out)
+        self.assertTrue(wait_for(started.exists, 5.0),
+                        "the shell did not reach its first line inside the 1s "
+                        "cap: this machine is too loaded to time this run")
+        self.assertIn("resolving", out)  # what it said before the cap
+        self.assertFalse(wait_for(escaped.exists, 3.5),
+                         "a child of the timed-out command outlived the cap")
 
     def test_a_detached_descendant_holding_the_pipe_still_yields_a_report(self):
         # Review finding on the cap: a grandchild in its own session survives
@@ -149,14 +172,23 @@ class VerifyTimeoutTests(unittest.TestCase):
         # to the partial output CPython attached to `TimeoutExpired` -- which
         # is `bytes` even under `text=True`. That must not turn the timeout
         # report into a `TypeError`.
-        cmd = "echo before; setsid sh -c 'sleep 1' & sleep 5"
+        # The grandchild sleeps 3 s so that it is still holding the pipe when
+        # the cap (1 s) plus the grace (0.1 s) runs out: a `sleep 1` could
+        # exit first and let `communicate` return normally, and the fallback
+        # this test exists for would never run.
+        started = self.cwd / "started.txt"
+        cmd = ("echo before; touch %s; setsid sh -c 'sleep 3' & sleep 5"
+               % started)
 
-        with patch.object(factory, "VERIFY_TIMEOUT", 0.3), \
+        with patch.object(factory, "VERIFY_TIMEOUT", 1.0), \
                 patch.object(factory, "REAP_GRACE", 0.1):
             ok, out = factory.run_verify(cmd, self.cwd)
 
         self.assertFalse(ok)
-        self.assertIn("timed out after 0.3s", out)
+        self.assertIn("timed out after 1s", out)
+        self.assertTrue(wait_for(started.exists, 5.0),
+                        "the shell did not reach its first line inside the 1s "
+                        "cap: this machine is too loaded to time this run")
         self.assertIn("before", out)
 
 

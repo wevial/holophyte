@@ -15,11 +15,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+# `waiting` is a helper, not a test module: discovery never imports it, and
+# how this file is imported decides whether `tests/` is on the path at all.
+sys.path.insert(0, str(HERE))
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
 factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
+
+from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
 class ConfigTestCase(unittest.TestCase):
@@ -934,24 +940,42 @@ class WorktreeSetupTests(ConfigTestCase):
         # tree and not just the shell at the top of it. A background child
         # that outlives the reported timeout goes on writing into a worktree
         # the caller is about to delete, on a branch nobody keeps.
+        #
+        # Margins: a 0.3 s cap lost to the shell's own startup whenever
+        # another suite or a review ran alongside -- the cap fired before
+        # `echo` had run, and the "what it said before the cap" check failed
+        # on green code. The cap is 1 s; the escaping child sleeps 3 s, well
+        # past the cap, so only the kill can stop it; the wait for its marker
+        # runs past that delay. `started` is the shell's own word that it
+        # reached its first line before the kill -- the only case in which
+        # the report can be expected to hold that line -- so a machine too
+        # loaded to get there is named as such instead of as lost output.
+        # Polled rather than looked at once: the writer is a process the test
+        # never joined.
         wt = self.worktree()
-        marker = wt / "escaped.txt"
-        self.locate('[worktree]\nsetup = ["echo resolving; '
-                      '(sleep 1; touch %s) & sleep 30"]\n' % marker)
+        started = wt / "started.txt"
+        escaped = wt / "escaped.txt"
+        self.locate('[worktree]\nsetup = ["echo resolving; touch %s; '
+                      '(sleep 3; touch %s) & sleep 30"]\n' % (started, escaped))
 
-        with patch.object(factory, "VERIFY_TIMEOUT", 0.3):
+        with patch.object(factory, "VERIFY_TIMEOUT", 1.0):
             ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("timed out", report)
+        self.assertTrue(wait_for(started.exists, 5.0),
+                        "the shell did not reach its first line inside the 1s "
+                        "cap: this machine is too loaded to time this run")
         self.assertIn("resolving", report)  # what it said before the cap
-        time.sleep(1.5)  # past when the child would have touched the marker
-        self.assertFalse(marker.exists())
+        self.assertFalse(wait_for(escaped.exists, 3.5),
+                         "a child of the timed-out command outlived the cap")
 
     def test_setup_timeout_sec_bounds_the_setup_commands(self):
         # A real timeout again, against the configured cap rather than the
         # module constant: a one-second cap and a command that sleeps longer
-        # fails the run naming the timeout.
+        # fails the run naming the timeout. The cap stays at 1 s because the
+        # message assertion pins it, and nothing here depends on what the
+        # shell printed before the cap, so there is no race to widen.
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["echo installing; sleep 30"]\n'
                       'setup_timeout_sec = 1\n')
