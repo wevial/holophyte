@@ -38,6 +38,7 @@ factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
+import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
 MINUTE = 60 * 1000
@@ -77,7 +78,7 @@ class SweepTestCase(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = factory.state_dir(self.target) / "store.db"
+        self.db = holophyte.target.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
         # The `Target` every sweep here is handed. The acting sweep writes
         # FINDINGS.md into whichever target it names, so it is this test's
@@ -980,7 +981,7 @@ class SweepModeTests(SweepTestCase):
             factory.cli(["--sweep", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse(factory.state_dir(self.root / "elsewhere").exists())
+        self.assertFalse(holophyte.target.state_dir(self.root / "elsewhere").exists())
 
 
 def a_dead_pid():
