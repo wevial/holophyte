@@ -312,7 +312,7 @@ def contract_path_problem(path):
     return None
 
 
-def validate(t):
+def validate(t):  # noqa: C901 -- one pass over every rule; split at a rule registry
     """All template violations as human-readable strings.
 
     An entry starting with ADVISORY_PREFIX is scope guidance, not a
