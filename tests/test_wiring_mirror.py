@@ -185,7 +185,9 @@ class MirrorPushTests(unittest.TestCase):
         board that is behind it cannot re-open finished work. A merged ticket
         whose Done push never landed is still non-terminal in Linear and gets
         offered again — `store.pickable()` refuses it before the claim, so no
-        run is opened for it and the loop says why it moved on."""
+        run is opened for it, the loop says why it moved on, and Done is
+        pushed once more at the board that missed it: a skip that left the
+        board alone would leave the ticket offered forever."""
         self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
         self.assertEqual(self.status(), "merged")  # and the board never heard
         runs = self.read("SELECT id FROM runs")
@@ -198,6 +200,7 @@ class MirrorPushTests(unittest.TestCase):
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), runs)
         self.assertEqual(self.status(), "merged")
+        self.assertEqual(provider.states, [(ISSUE_UUID, "Done")])
         notes = [c.args[0] for c in printed.call_args_list
                  if c.args and "skipping" in str(c.args[0])]
         self.assertEqual(len(notes), 1)

@@ -2150,24 +2150,10 @@ def mirror_key(task):
 
     The canonical issue UUID when the provider has one, and the human label
     otherwise. Written once here because two callers now have to agree on it:
-    `claim_run()` mirrors under this id, and the failure-pattern check below
+    `mirror_task()` mirrors under this id, and the failure-pattern check below
     has to find that same row *before* anything is claimed.
     """
     return task.get("issue_id") or task["id"]
-
-
-def mirrored_ticket(conn, project, task):
-    """The id of `task`'s existing mirror row, or None if it has never run.
-
-    Deliberately a read and not a mirror: this is asked before the claim, and
-    a ticket the store has never seen has no failure history to have an
-    opinion about. Creating the row here would only move `claim_run()`'s write
-    earlier for no gain.
-    """
-    row = conn.execute(
-        "SELECT id FROM tickets WHERE projectId = ? AND linearIssueId = ?",
-        (project, mirror_key(task))).fetchone()
-    return row[0] if row else None
 
 
 def store_status(conn, ticket_id):
@@ -2180,7 +2166,7 @@ def task_contract(task):
     """A provider task's contract as `(title, criteria, commands)`.
 
     The one mapping from the provider's shape to the store's, used by both
-    sides of the drift check: `claim_run()` mirrors the ticket through it, so
+    sides of the drift check: `mirror_task()` mirrors the ticket through it, so
     the snapshot `store.claim()` freezes off that row is this contract, and
     `merge_drift()` snapshots the live ticket the same way. Two hand-rolled
     mappings would eventually disagree about, say, a ticket carrying no verify
@@ -2234,16 +2220,16 @@ def merge_drift(conn, run_id, provider, issue_id):
         claimed, store.contract_snapshot(*task_contract(live)))
 
 
-def claim_run(conn, project, task):
-    """Mirror the claimed ticket and take the project's lease; return both ids.
+def mirror_task(conn, project, task):
+    """Mirror the offered ticket's live body into the store; return its id.
 
-    Raises `store.ClaimConflict` when the project already has an active run —
-    the point of routing the claim through the store, since that is what stops
-    two loops from working one project at once.
-
-    The ticket id comes back beside the run id because the two are separate
-    subjects: the run is what phases and rounds are recorded against, and the
-    ticket is what status is projected onto Linear from.
+    The first half of a claim, split from the lease so the loop can ask the
+    store about the ticket *as it is now* before it opens a run. The mirror is
+    an upsert with no lease of its own, so a ticket that turns out to be
+    unpickable has cost nothing but a refreshed row — which is the row the
+    next offer is judged on. The lease itself is `store.claim()`, taken by
+    `main()` once the fresh row has said yes; that is what stops two loops
+    from working one project at once.
 
     Where the mirror lands is the store's routing rule (§2) applied to what
     the provider parsed: a ticket carrying both acceptance criteria and a
@@ -2261,7 +2247,7 @@ def claim_run(conn, project, task):
     UUID to give still gets a mirror, keyed on the identifier it does have.
     """
     title, criteria, commands = task_contract(task)
-    ticket_id = store.mirror_ticket(
+    return store.mirror_ticket(
         conn,
         project,
         linear_issue_id=mirror_key(task),
@@ -2271,7 +2257,6 @@ def claim_run(conn, project, task):
         verification_commands=commands,
         time_box_ms=task["budget_min"] * 60 * 1000,
     )
-    return ticket_id, store.claim(conn, project, ticket_id)
 
 
 def release_run(conn, run_id, merged, reason=None, outcome_class="work"):
@@ -2663,8 +2648,14 @@ def main(provider=None):
             # so stopping on it would starve every ticket behind it until a
             # human noticed — and a ticket parked *for* a human is the one
             # case where there is nothing for this loop to wait on.
-            known = mirrored_ticket(conn, project, task)
-            if known is not None and escalate(conn, known, provider):
+            # The mirror comes first, and the questions are asked of the row
+            # it leaves: the live body is what the run would work from, and
+            # the row a previous pass left behind can say `ready` about a
+            # ticket whose criteria or verify command have since been edited
+            # out. `mirror_ticket()` is an upsert with no lease, so a ticket
+            # refused below has cost nothing but a refreshed row.
+            ticket_id = mirror_task(conn, project, task)
+            if escalate(conn, ticket_id, provider):
                 print(f"[holo2] {task['id']} is blocked by repeated failures;"
                       " skipping it. a human owns it now")
                 skip.add(task["id"])
@@ -2677,24 +2668,28 @@ def main(provider=None):
             # produced a run row that existed only to be refused by the
             # `in_flight` transition below (holophyte-bugs.md #4). Asked
             # before the claim so the refusal costs no run row and no
-            # failure. A ticket the store has never seen is pickable by
-            # definition: its first claim is what mirrors it.
+            # failure, and asked of the row just mirrored so an under-specced
+            # body is refused whether the ticket is new or was `ready` last
+            # time the store saw it: the `ready -> in_flight` move below does
+            # not re-read the lists, and this is the only gate that does.
             #
-            # One store status is left to the claim: a `needs_spec` mirror
-            # is unpickable *as stored*, but the claim re-mirrors the live
-            # body and promotes it if the lists are there now, and the
-            # `in_flight` transition below still refuses it if they are not.
-            # Refusing it here on the stale row would park a fixed ticket.
-            if known is not None:
-                verdict = store.pickable(conn, known)
-                status = store_status(conn, known)
-                if not verdict and status != "needs_spec":
-                    print(f"[holo2] {task['id']} is {status} in the store,"
-                          f" not claimable ({verdict.reason}); skipping it")
-                    skip.add(task["id"])
-                    continue
+            # A skipped ticket is still re-projected. The refusal used to fall
+            # out of the claim, and the claim's refusal path pushed the store's
+            # status back at the board as one more attempt at unsticking it —
+            # a `merged` ticket whose Done push never landed is offered again
+            # *because* the board is behind, and skipping it silently would
+            # leave it Ready on the board for good. Best-effort, like every
+            # push: a status with no board state (`needs_spec`) pushes nothing.
+            verdict = store.pickable(conn, ticket_id)
+            if not verdict:
+                status = store_status(conn, ticket_id)
+                print(f"[holo2] {task['id']} is {status} in the store,"
+                      f" not claimable ({verdict.reason}); skipping it")
+                mirror_push(conn, ticket_id, provider)
+                skip.add(task["id"])
+                continue
             try:
-                ticket_id, run_id = claim_run(conn, project, task)
+                run_id = store.claim(conn, project, ticket_id)
             except store.ClaimConflict as e:
                 # Before any branch or worktree exists: another loop holds the
                 # project, so this one stops rather than working beside it.

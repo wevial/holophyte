@@ -262,6 +262,58 @@ class WiringClaimTests(unittest.TestCase):
         self.assertIn("HOL-1", lines[0])
         self.assertIn("in_flight", lines[0])
 
+    def test_a_ready_mirror_whose_live_body_lost_its_contract_is_not_run(self):
+        """The gate reads the body the run would work from, not the row a
+        previous pass left. The store already says `ready` with both lists;
+        the offer arrives with the verify command edited out. Claiming on the
+        stale row would open a run and hand `run_task()` an empty contract."""
+        stale = a_task()
+        conn = factory.open_store(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+                            linear_identifier=stale["id"], title=stale["title"],
+                            acceptance_criteria=stale["criteria"],
+                            verification_commands=[stale["verify"]])
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
+        live = dict(stale, verify="")
+
+        with patch.object(factory, "run_task", return_value=True) as run_task, \
+                patch("builtins.print") as printed:
+            factory.main(StubProvider(live))
+
+        run_task.assert_not_called()
+        self.assertEqual(self.read("SELECT id FROM runs"), [])
+        self.assertEqual(
+            self.read("SELECT verificationCommands FROM tickets"), [("[]",)])
+        lines = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipping" in str(c.args[0])]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("HOL-1", lines[0])
+
+    def test_an_under_specced_ticket_the_store_has_never_seen_is_skipped(self):
+        """A new ticket is judged on the same gate as a known one: it is
+        mirrored, found `needs_spec`, and passed over for the next ready
+        ticket without a run row of its own."""
+        unspecced = a_task(identifier="HOL-1", issue_id=ISSUE_UUID)
+        unspecced["criteria"] = []
+        second = a_task(identifier="HOL-2", title="the other thing",
+                        issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
+
+        with patch.object(factory, "run_task", return_value=True) as run_task:
+            factory.main(StubProvider(unspecced, second))
+
+        run_task.assert_called_once()
+        self.assertEqual(run_task.call_args.args[0]["id"], "HOL-2")
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, status FROM tickets"
+                      " ORDER BY linearIdentifier"),
+            [("HOL-1", "needs_spec"), ("HOL-2", "merged")])
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier FROM runs r"
+                      " JOIN tickets t ON t.id = r.ticketId"),
+            [("HOL-2",)])
+
     def test_a_merged_run_gives_the_lease_back(self):
         with patch.object(factory, "run_task", return_value=True):
             factory.main(StubProvider(a_task()))
