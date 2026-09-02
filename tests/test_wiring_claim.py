@@ -73,6 +73,59 @@ def a_task(identifier="HOL-1", title="do the thing", issue_id=ISSUE_UUID):
             "contracts": [], "budget_min": 25}
 
 
+# A body `ticket_template.validate()` passes with an advisory and nothing
+# else: the bare `python3` in the verify command is scope guidance, not a
+# violation, which is exactly the case a claim must not be refused over.
+VALID_BODY = """# do the thing
+
+## Summary
+
+The thing gets done.
+
+## What / Why / How
+
+**What:** The thing is done by the loop.
+
+**How:** Do it in the obvious place.
+
+## In scope
+
+- Doing the thing.
+
+## Out of scope
+
+- Doing the other thing.
+
+## Acceptance criteria
+
+- [ ] Given a claim, when it lands, then the mirror exists.
+
+## Verify command(s)
+
+```
+python3 -m unittest discover -s tests
+```
+
+## Implementation notes
+
+- None worth noting.
+
+## Estimate & dependencies
+
+Estimate: 25 min · Depends on: none
+
+## Open questions
+
+- None
+"""
+
+# The same ticket with the template's own Summary placeholder left in, as
+# KO-165 was claimed: criteria and a verify command present, so every
+# store-side gate says `ready`, and only the validator objects.
+PLACEHOLDER = "<Describe the outcome in one or two sentences.>"
+INVALID_BODY = VALID_BODY.replace("The thing gets done.", PLACEHOLDER)
+
+
 class WiringClaimTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -352,6 +405,73 @@ class WiringClaimTests(unittest.TestCase):
             self.read("SELECT t.linearIdentifier FROM runs r"
                       " JOIN tickets t ON t.id = r.ticketId"),
             [("HOL-2",)])
+
+    def test_a_ticket_mirrored_ready_last_pass_is_parked_when_its_body_goes_bad(self):
+        """The gate judges the live body, not the row a previous pass left:
+        a ticket the store already holds as `ready` whose description has
+        since been edited into an unfilled template is refused and its
+        mirror follows the body to `needs_spec`, with no run row."""
+        conn = factory.open_store(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        was_valid = a_task(identifier="HOL-1", issue_id=ISSUE_UUID)
+        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+                            linear_identifier=was_valid["id"],
+                            title=was_valid["title"],
+                            acceptance_criteria=was_valid["criteria"],
+                            verification_commands=[was_valid["verify"]])
+        conn.commit()
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"), [("ready",)])
+        now_invalid = dict(was_valid, body=INVALID_BODY)
+
+        with patch.object(factory, "run_task", return_value=True) as run_task, \
+                patch("builtins.print") as printed:
+            factory.main(StubProvider(now_invalid))
+
+        run_task.assert_not_called()
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, status FROM tickets"),
+            [("HOL-1", "needs_spec")])
+        self.assertEqual(self.read("SELECT id FROM runs"), [])
+        lines = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipped" in str(c.args[0])]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("HOL-1", lines[0])
+        self.assertIn("placeholder", lines[0])
+
+    def test_a_body_the_template_validator_refuses_is_skipped_for_the_next(self):
+        """The contract itself is gated, not just the row: a body carrying
+        criteria and a verify command but an unfilled template placeholder
+        is refused at claim with the problem named, parked `needs_spec`, and
+        opens no run; the valid ticket behind it is claimed in the same
+        pass, its advisory-only validator output notwithstanding."""
+        invalid = dict(a_task(identifier="HOL-1", issue_id=ISSUE_UUID),
+                       body=INVALID_BODY)
+        valid = dict(a_task(identifier="HOL-2", title="the other thing",
+                            issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc"),
+                     body=VALID_BODY)
+
+        with patch.object(factory, "run_task", return_value=True) as run_task, \
+                patch("builtins.print") as printed:
+            factory.main(StubProvider(invalid, valid))
+
+        run_task.assert_called_once()
+        self.assertEqual(run_task.call_args.args[0]["id"], "HOL-2")
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, status FROM tickets"
+                      " ORDER BY linearIdentifier"),
+            [("HOL-1", "needs_spec"), ("HOL-2", "merged")])
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier FROM runs r"
+                      " JOIN tickets t ON t.id = r.ticketId"),
+            [("HOL-2",)])
+        lines = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipped" in str(c.args[0])]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("HOL-1", lines[0])
+        self.assertIn("placeholder", lines[0])
+        self.assertIn(PLACEHOLDER, lines[0])
 
     def test_a_merged_run_gives_the_lease_back(self):
         with patch.object(factory, "run_task", return_value=True):
