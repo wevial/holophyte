@@ -20,7 +20,9 @@ factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
+import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.review  # noqa: E402 - after the sys.path insert above
 
 
 def bare_target(case, path):
@@ -44,7 +46,7 @@ class AgentRouteTests(unittest.TestCase):
         self.worktree = Path("/tmp/holophyte-agent-contract")
         self.tgt = bare_target(self, self.worktree)
 
-    @patch.object(factory, "run_capped")
+    @patch.object(holophyte.agents, "run_capped")
     def test_implementer_uses_claude_opus_at_high_effort(self, run_capped):
         run_capped.return_value = (0, "implemented\n")
 
@@ -60,7 +62,7 @@ class AgentRouteTests(unittest.TestCase):
             self.worktree, 1800,
         )
 
-    @patch.object(factory, "run_capped")
+    @patch.object(holophyte.agents, "run_capped")
     def test_implementer_budget_is_the_dispatch_timeout_under_the_hard_cap(
         self, run_capped
     ):
@@ -178,8 +180,8 @@ class ImplementerProcessGroupTests(unittest.TestCase):
             target.config_path.write_text(
                 "[agents]\nimplementer = %s\n" % json.dumps(shlex.join(argv)))
             with self.assertRaises(subprocess.TimeoutExpired) as raised:
-                factory.agent(target, "implement", "spawn and stall",
-                              Path(cwd), timeout=1)
+                holophyte.agents.agent(target, "implement", "spawn and stall",
+                                       Path(cwd), timeout=1)
 
         # Partial output survives the kill and names the two processes.
         output = raised.exception.output
@@ -440,7 +442,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
     `parse_findings()` builds its messages through the same one."""
 
     def stored(self, entry):
-        return factory.raw_finding(entry)["message"]
+        return holophyte.review.raw_finding(entry)["message"]
 
     def test_ansi_escapes_and_control_bytes_are_stripped(self):
         # A coloured tool trace of the shape that reached the KO-107 entry.
@@ -474,7 +476,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
         self.assertIn("[… truncated]", written)
         self.assertIn("line 0 ", written)
         self.assertNotIn("line 199 ", written)
-        self.assertLessEqual(len(written), factory.MAX_FINDING_CHARS)
+        self.assertLessEqual(len(written), holophyte.review.MAX_FINDING_CHARS)
 
     def test_c1_escape_sequences_are_stripped_with_their_payload(self):
         # A CSI introduced by the single C1 byte, not by ESC-[: dropping only
@@ -515,7 +517,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
 
         body = self.stored(entry)
 
-        self.assertLessEqual(len(body), factory.MAX_FINDING_CHARS)
+        self.assertLessEqual(len(body), holophyte.review.MAX_FINDING_CHARS)
 
     def test_an_oversize_verdict_line_cannot_escape_the_budget(self):
         # A malformed adjudicator reply is persisted verbatim, so the trailing
@@ -525,7 +527,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
 
         body = self.stored(entry)
 
-        self.assertLessEqual(len(body), factory.MAX_FINDING_CHARS)
+        self.assertLessEqual(len(body), holophyte.review.MAX_FINDING_CHARS)
         self.assertIn("[… truncated]", body)
         self.assertNotIn("line 199 ", body)
         # The verdict is still recorded, cut rather than dropped.

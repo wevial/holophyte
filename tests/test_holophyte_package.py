@@ -17,8 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
 
+import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 
 # The functions and classes each module owns after the slices so far; constants
@@ -62,6 +64,25 @@ DEFINED = {
         "split_and_clauses",
         "timeout_failure_report",
         "vacuous_green_report",
+    ],
+    holophyte.agents: [
+        "agent",
+        "agent_route",
+        "publish_review_refs",
+    ],
+    holophyte.review: [
+        "_trailing_verdict",
+        "criteria_block",
+        "criteria_brief",
+        "criteria_findings",
+        "finding_blocks",
+        "finding_message",
+        "finding_severity",
+        "parse_findings",
+        "raw_finding",
+        "round_verdict",
+        "sanitize_findings",
+        "unparsed_path",
     ],
 }
 

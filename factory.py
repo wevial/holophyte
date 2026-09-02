@@ -32,7 +32,6 @@ import collections
 import contextlib
 import fcntl
 import functools
-import hashlib
 import json
 import os
 import re
@@ -54,15 +53,9 @@ import ticket_template
 # These names live in the `holophyte` package now (phase-2 split, one
 # section per slice): imported back for the call sites still in this file, and
 # dropped when `factory.py` becomes the thin entry point in the last slice.
+from holophyte.agents import agent, agent_route
 from holophyte.config import (
-    AGENT_CONFIG_KEYS,
-    DEFAULT_IMPLEMENTER,
-    IMPL_EFFORT,
-    IMPL_MODEL,
-    IMPL_TIMEOUT,
-    REVIEW_PROFILE,
     SUPERVISE_INTERVAL_SEC,
-    agent_command,
     check_agent_commands,
     check_config_keys,
     loop_config,
@@ -74,9 +67,16 @@ from holophyte.gates import (
     InfraFailure,
     RunFailure,
     outcome_class_of,
-    run_capped,
     run_verify,
     sh,
+)
+from holophyte.review import (
+    BLOCK_BREAK_RE,
+    criteria_brief,
+    criteria_findings,
+    parse_findings,
+    raw_finding,
+    round_verdict,
 )
 from holophyte.target import Target
 from provider import LinearProvider
@@ -94,148 +94,6 @@ DEFAULT_TARGET = Path("/srv/dev/holo2test")
 # process image is replaced, never a module reloaded. A seam so tests can
 # see the decision without exec-ing the test runner.
 EXEC = os.execv
-
-
-
-
-def agent_route(target, role):
-    """What ran `role`'s turn, named for the record the round leaves.
-
-    The default reviewer profile, or the configured command when the target
-    named one. A `reviewRounds` row reading `codex-sol-medium` about a round
-    some other harness ran would be evidence of something that did not happen,
-    and the rows are what FINDINGS.md and the fingerprint are built from.
-    """
-    return ((target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
-            or REVIEW_PROFILE)
-
-
-def publish_review_refs(repo, base_sha, candidate_sha):
-    """Name this round's two commits `refs/review/base` and
-    `refs/review/candidate` inside `repo`.
-
-    The default reviewer route gets those two refs from
-    `review_runner.stage_candidate()`, which creates them in the checkout it
-    builds. A configured reviewer or adjudicator runs in the task worktree
-    instead, where nothing had ever created them — and the prompt it is handed
-    tells it to review the base and the candidate by exactly those names. So
-    the worktree gets the same two names for the same two commits, and the
-    override is asked about the frozen pair rather than about whatever HEAD
-    happens to be.
-
-    The exact-SHA requirement holds on this route too, the same way the staged
-    one enforces it: each side must be a full commit SHA that resolves here to
-    itself, and the base must be an ancestor of the candidate. A round argues
-    about one named candidate against one named base, whoever runs it.
-
-    The refs live in the target repository's ref store, shared by its
-    worktrees; that is safe because the project's run lease single-threads
-    runs, and each round overwrites both refs with its own pair before
-    dispatching. They are left behind afterwards, like the branch a finished
-    run leaves for a human to look at.
-    """
-    for sha in (base_sha, candidate_sha):
-        resolved = subprocess.run(
-            ["git", "rev-parse", "--verify", f"{sha}^{{commit}}"],
-            cwd=repo, capture_output=True, text=True)
-        if resolved.returncode or resolved.stdout.strip() != sha:
-            raise review_runner.ReviewBoundaryError(
-                f"not a full commit SHA in {repo}: {sha}")
-    if subprocess.run(["git", "merge-base", "--is-ancestor", base_sha,
-                       candidate_sha], cwd=repo).returncode:
-        raise review_runner.ReviewBoundaryError(
-            f"base {base_sha} is not an ancestor of {candidate_sha}")
-    for name, sha in (("base", base_sha), ("candidate", candidate_sha)):
-        sh(["git", "update-ref", f"refs/review/{name}", sha], cwd=repo)
-
-
-def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
-          timeout=None):
-    """Run one agent turn for a role. Returns combined output text.
-
-    An `implement` turn runs in a process group of its own under `timeout`
-    seconds (`IMPL_TIMEOUT` when the caller names none, and never more): a
-    `claude -p` that reaches the cap is killed with every subagent and Bash
-    child it started, and the turn raises `subprocess.TimeoutExpired` carrying
-    what it printed first. Signalling only the CLI left its children
-    committing into a worktree the loop had already given up on.
-
-    `adjudicate` is the terminal pass/fail round. It takes the same
-    independent reviewer route as `review` — a fresh dispatch that knows only
-    the diff and the ticket — but its verdict is not enforced at the boundary:
-    a reply that names no clean verdict has to reach the loop as text so it
-    can be recorded and read as FAIL.
-
-    A configured command replaces the role's route, so an `[agents] reviewer`
-    override is also an opt-out of the hardened container the default reviewer
-    runs behind. What it does not opt out of is the pair the round is about:
-    the exact-SHA requirement is enforced either way, and either way the two
-    commits reach the reviewer as `refs/review/base` and
-    `refs/review/candidate` — the names its prompt uses — the staged checkout
-    on the default route, the task worktree on the configured one.
-    """
-    if role not in AGENT_CONFIG_KEYS:
-        raise ValueError(role)
-    if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
-        raise ValueError(f"{role} requires exact base_sha and candidate_sha")
-    cmd = agent_command(target, role, goal)
-    if cmd is None:
-        if role != "implement":
-            try:
-                return review_runner.run_review(
-                    repo=Path(cwd),
-                    base_sha=base_sha,
-                    candidate_sha=candidate_sha,
-                    prompt=goal,
-                    profile=REVIEW_PROFILE,
-                    timeout=1800,
-                    verdicts=(review_runner.REVIEW_VERDICTS
-                              if role == "review" else None),
-                )
-            except review_runner.ReviewBoundaryError as e:
-                # The runner could not stage, start or read the reviewer —
-                # a missing CLI, an image that will not build, a container
-                # that produced no events. The candidate was never judged,
-                # so the failure is the factory's, not the ticket's.
-                raise InfraFailure(f"reviewer route failed for {role}:"
-                                   f" {e}") from e
-        cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
-               "--effort", IMPL_EFFORT]
-    elif role != "implement":
-        publish_review_refs(Path(cwd), base_sha, candidate_sha)
-    if role != "implement":
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                           timeout=1800)
-        return (r.stdout + "\n" + r.stderr).strip()
-    cap = IMPL_TIMEOUT if timeout is None else min(timeout, IMPL_TIMEOUT)
-    _, out = run_capped(cmd, cwd, cap)
-    return out.strip()
-
-
-# Agent replies reach the ledger as raw terminal output — ANSI-coloured tool
-# traces — and as reviewer prose that heads its own sections. FINDINGS.md is
-# append-only evidence, so whatever lands there is permanent: sanitize at the
-# append boundary rather than cleaning the file up afterwards.
-# A CSI sequence is introduced either by ESC-[ or by the single C1 byte \x9b;
-# matching only the first left `\x9b31m` to lose its introducer and print as
-# literal `31m`.
-ANSI_CSI_RE = re.compile(r"(?:\x1b\[|\x9b)[0-9;?]*[ -/]*[@-~]")
-# C0 and C1 controls, minus \t and \n.
-CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
-# Both Markdown heading forms, which the outline treats identically: ATX
-# (`## Blockers`, indentable by up to three spaces) and Setext (a paragraph
-# line underlined by `===` or `---`). The Setext lookahead skips a line that
-# is itself an ATX heading or a list/quote marker, leaving those to ATX_RE
-# and to the thematic break they actually are.
-SETEXT_RE = re.compile(r"^ {0,3}(?![-*+>#\s])(.+?)[ \t]*\n {0,3}(?:=+|-+)[ \t]*$", re.M)
-ATX_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t#]*$", re.M)
-# A real verdict is one short line — `VERDICT: REQUEST_CHANGES` is 24 chars.
-# The line truncation is obliged to keep is agent-written, though, and a
-# malformed reply is persisted verbatim, so cap it: otherwise `VERDICT: ` plus
-# 10k characters is one trailing "verdict" line that carries the whole record
-# past its budget.
-MAX_VERDICT_CHARS = 200
-TRUNCATION_MARKER = "[… truncated]"
 
 
 def check_worktree_setup(target):
@@ -316,58 +174,6 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
     return True, ""
 
 
-def _trailing_verdict(text):
-    """The `VERDICT:` line `text` ends on, which the record must keep.
-
-    `review_runner.terminal_verdict` reads a verdict only in final position,
-    so that is the one line truncation may never drop: it is the outcome the
-    whole entry is evidence for. Any line opening `VERDICT:` counts, malformed
-    ones included — those are exactly what a FAIL gets recorded from — and the
-    line is cut to `MAX_VERDICT_CHARS` so that keeping it stays an exemption
-    for one short line rather than a way around the entry budget.
-    """
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines or not lines[-1].startswith("VERDICT:"):
-        return None
-    verdict = lines[-1]
-    if len(verdict) > MAX_VERDICT_CHARS:
-        verdict = (verdict[:MAX_VERDICT_CHARS - len(TRUNCATION_MARKER)]
-                   + TRUNCATION_MARKER)
-    return verdict
-
-
-def sanitize_findings(text, limit):
-    """Make one agent-authored block safe to keep as a findings record.
-
-    Strips ANSI escape sequences and other control bytes, demotes embedded
-    Markdown headings to bold lines so the file's outline stays the factory's
-    own `## <timestamp> — <ticket>` entries, and cuts an oversize block down
-    with a visible marker. A trailing `VERDICT:` line survives all three: the
-    escape and heading rules never match it, and truncation re-attaches it
-    below the marker so an oversize entry still records its outcome.
-
-    Applied at the row write (`finding_message`) rather than at a file
-    append: FINDINGS.md is rendered from the rows now, so text a row carries
-    dirty is text every later render carries dirty. `limit` is the calling
-    boundary's own budget, and has no default — there is one boundary, and a
-    sanitizer that guesses a bound is one that silently keeps the wrong one.
-    """
-    text = ANSI_CSI_RE.sub("", text)
-    text = CONTROL_RE.sub("", text)
-    text = SETEXT_RE.sub(r"**\1**", text)
-    text = ATX_RE.sub(r"**\2**", text)
-    if len(text) > limit:
-        verdict = _trailing_verdict(text)
-        tail = f"\n\n{TRUNCATION_MARKER}" + (f"\n\n{verdict}" if verdict else "")
-        # max(): a negative bound would slice from the *end* and keep
-        # nearly all of an oversize entry.
-        head = text[:max(0, limit - len(tail))]
-        if text[len(head)] != "\n" and "\n" in head:
-            head = head[:head.rindex("\n")]  # never cut a line in half
-        text = head.rstrip() + tail
-    return text
-
-
 def ledger(provider, task_id, entry):
     """Archive one record as a comment on the ticket, on `provider`'s board.
 
@@ -390,253 +196,6 @@ def ledger(provider, task_id, entry):
         provider.comment(task_id, f"**{ts}**\n\n{entry}")
     except Exception as e:
         print(f"[holo2] board comment failed ({e}); record kept in the store")
-
-
-# --- review rounds as structured findings ------------------------------------
-# The reviewer writes prose; `reviewRounds.findings` wants
-# `{path, line?, severity, message}` objects, because a round the store holds
-# as a paragraph cannot be compared with the next one. Extraction is therefore
-# best-effort over the output format that exists today: what carries a file
-# reference becomes a structured finding, an item the reviewer listed without
-# one is kept under a placeholder path, and a reply that filed nothing at all
-# is still recorded verbatim as a single finding. No complaint the reviewer
-# filed is dropped — a round is evidence, and a lossy record of it would make
-# the fingerprint agree about rounds that never matched.
-
-# A path as a reviewer cites one: a token carrying a directory separator, or
-# one whose extension is at least two characters, optionally followed by
-# `:line`. Deliberately narrow — a bare word is prose, and a wrong path is
-# worse than none, since the fingerprint keys on it. The two-character
-# extension is what keeps `e.g.` and `i.e.` out of the findings; a one-letter
-# extension still parses when the citation carries a directory (`src/a.c`).
-# The lookbehind makes the match start at a token boundary, so a URL in the
-# reviewer's prose is not read as the path `//linear.app`.
-FINDING_PATH_RE = re.compile(
-    r"(?<![\w:/.\-])"
-    r"([\w.\-]*/[\w.\-/]*\.\w+|[\w.\-/]*[\w\-]\.[A-Za-z]\w+)(?::(\d+))?")
-# An *explicit* severity marker, bracketed (`[P0]`, `(blocker)`) or opening the
-# line (`- BLOCKER: ...`). Only a marker moves a finding off the default: tone
-# is not severity, and a reviewer that sounds alarmed has not filed a p0.
-SEVERITY_RE = re.compile(
-    r"[\[(]\s*(p0|p1|p2|nit|blocker)\s*[\])]"
-    r"|^[\s\-*\d.)]*(p0|p1|p2|nit|blocker)\b\s*[:\-]", re.I | re.M)
-DEFAULT_SEVERITY = "p2"
-# The path prefix a finding gets when the reviewer named none. Not a path any
-# repository holds, so it cannot collide with a real file's findings, and
-# readable in a `path:line:severity` key. A prefix rather than the whole path
-# because that key is all §6 compares rounds by: findings sharing one
-# placeholder would collapse into a single key, so a round complaining about
-# `Dockerfile` and about `Makefile` would fingerprint as one complaint, and an
-# unrelated round that filed one pathless p2 would fingerprint identically to
-# it -- the false "same round twice" this task exists to make detectable.
-# `unparsed_path()` appends a digest of the finding's own text to keep them
-# apart.
-UNPARSED_PATH = "(unparsed)"
-# One finding is a complaint, not a transcript. Long enough for a blocker with
-# its reasoning; short enough that a runaway reply cannot make one row the
-# size of the review.
-MAX_FINDING_CHARS = 2000
-# A blank line, or the bullet/number that opens the next item: the boundaries
-# a reviewer's findings list actually uses, so a finding keeps the lines that
-# explain it instead of being cut to the one that names the file.
-BLOCK_BREAK_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
-
-
-def unparsed_path(message):
-    """`UNPARSED_PATH` made distinct per complaint, by digesting its message.
-
-    A finding with no path has only its text to say which complaint it is, so
-    that is what the placeholder carries. This is not message prose leaking
-    into the fingerprint generally -- a finding that cites a file still keys on
-    the file -- it is the pathless case having nothing else to key on.
-
-    Whitespace-normalized and lowercased before hashing, so a reviewer that
-    rewraps or recapitalizes an unchanged complaint still keys to the same
-    place. Prose it genuinely rewrote keys somewhere new, which is the
-    direction to fail in: §6 reads a fingerprint match as a stuck review, so
-    two distinct complaints reading as one is a false stop, while one complaint
-    reworded reading as two only costs the softer overlap signal.
-    """
-    normalized = " ".join(message.split()).lower()
-    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
-    return f"{UNPARSED_PATH}:{digest}"
-
-
-def finding_message(text):
-    """One finding's message, safe to store: sanitized and bounded.
-
-    The row write is where `sanitize_findings()` now applies, so a message
-    carrying a terminal escape or a Markdown heading is cleaned once, here,
-    rather than on every render of the window it will appear in.
-    """
-    return sanitize_findings(text, MAX_FINDING_CHARS).strip()
-
-
-def raw_finding(reply):
-    """The whole reply as one finding, for a round nothing parsed out of.
-
-    The fallback the extraction is allowed to have: an unparseable reviewer
-    reply is still a round that said something, and the alternative to keeping
-    it under a placeholder path is a stored round that claims the reviewer
-    found nothing.
-    """
-    message = finding_message(reply)
-    return {"path": unparsed_path(message), "severity": DEFAULT_SEVERITY,
-            "message": message}
-
-
-def finding_blocks(text):
-    """The reply split into candidate findings: bullet items and paragraphs."""
-    blocks, current = [], []
-    for line in text.splitlines():
-        if not line.strip() or BLOCK_BREAK_RE.match(line):
-            if current:
-                blocks.append("\n".join(current))
-            current = [line] if line.strip() else []
-            continue
-        current.append(line)
-    if current:
-        blocks.append("\n".join(current))
-    return blocks
-
-
-def parse_findings(reply):
-    """Structured findings from one reviewer reply, best effort.
-
-    Each block that cites a file becomes one finding: the cited path and line,
-    an explicit severity marker if the block carries one, and the block itself
-    as the message, so the reasoning stays with the complaint it belongs to.
-
-    A block the path pattern found nothing in is still a finding when the
-    reviewer wrote it as a list item, filed under an `unparsed_path()`
-    placeholder with whatever severity it marked. The reviewer's own bullet is
-    what says it filed a complaint, and this parser recognizing no path in it
-    is a fact about the parser: `Dockerfile`, `Makefile` and a bare directory
-    carry nothing to match on. Keeping only the items whose paths happen to
-    parse would leave the round fingerprinted as a shorter complaint than the
-    one that was made, and §6 compares those fingerprints. Prose around the
-    list -- an opening sentence, the closing `VERDICT:` line -- is narration
-    rather than a filed item and is not stored as one; a reply that filed no
-    item at all still returns `raw_finding()` over the whole text, so a round
-    is never recorded as having said nothing.
-    """
-    findings = []
-    # The per-criterion checklist is the reviewer's account of the contract,
-    # not a complaint: a `met` line naming its witnessing test cites a path,
-    # and read as a finding it would file the test as a blocker. Its lines
-    # are dropped before the split; `criteria_findings()` reads them.
-    for block in finding_blocks(CRITERION_LINE_RE.sub("", reply)):
-        match = FINDING_PATH_RE.search(block)
-        listed = BLOCK_BREAK_RE.match(block) is not None
-        if match is None and not listed:
-            continue
-        message = finding_message(block)
-        if not message:
-            continue  # a bullet with nothing after it is not a complaint
-        path, line = ((match.group(1), match.group(2)) if match
-                      else (unparsed_path(message), None))
-        finding = {"path": path, "severity": finding_severity(block),
-                   "message": message}
-        if line and int(line) > 0:
-            finding["line"] = int(line)
-        findings.append(finding)
-    return findings or [raw_finding(reply)]
-
-
-def finding_severity(block):
-    """`p2` unless the block carries an explicit severity marker."""
-    match = SEVERITY_RE.search(block)
-    if match is None:
-        return DEFAULT_SEVERITY
-    marker = (match.group(1) or match.group(2)).lower()
-    return "p0" if marker == "blocker" else marker
-
-
-# One line of the reviewer's per-criterion checklist: `CRITERION n: met —
-# TEST_OR_CHECK`, `not met — WHY` or `unwitnessed — WHAT_IS_MISSING`. The
-# separator is loose (dash, em dash or colon) because a reviewer paraphrasing
-# the prompt's punctuation has still answered the question; the status word is
-# not, because `met` is the only answer that clears the gate.
-CRITERION_LINE_RE = re.compile(
-    r"^\s*CRITERION\s+(\d+)\s*:\s*(met|not met|unwitnessed)\b"
-    r"\s*(?:[-\u2013\u2014:]+\s*)?(.*?)\s*$", re.I | re.M)
-# The `path` a per-criterion finding is keyed under, with the criterion's
-# number as its `line`: not a file any repository holds, and distinct per
-# criterion so two unwitnessed criteria fingerprint as two complaints.
-CRITERIA_PATH = "criteria"
-UNWITNESSED_NOTE = "no CRITERION line in the reply"
-
-
-def criteria_block(reply):
-    """`{n: (status, note)}` for every CRITERION line in `reply`.
-
-    A number the reviewer wrote twice keeps its last line, which is the one
-    a reviewer correcting itself meant.
-    """
-    block = {}
-    for match in CRITERION_LINE_RE.finditer(reply):
-        block[int(match.group(1))] = (match.group(2).lower(), match.group(3))
-    return block
-
-
-def criteria_findings(reply, criteria):
-    """One finding per criterion `reply` did not witness; `[]` when all met.
-
-    The gate KO-165 lacked: a reviewer that approves while a criterion is
-    `not met` or `unwitnessed` — or that never answered for it at all — has
-    filed a complaint against the candidate whatever its verdict line says,
-    and this is that complaint in the findings shape the round stores. A
-    task with no criteria has nothing to witness and always answers `[]`.
-    """
-    block = criteria_block(reply)
-    findings = []
-    for n, criterion in enumerate(criteria or (), 1):
-        status, note = block.get(n, ("unwitnessed", UNWITNESSED_NOTE))
-        if status == "met" and note:
-            continue
-        if status == "met":  # claimed, with nothing named to witness it
-            status, note = "unwitnessed", "met claimed but no test or check named"
-        message = (f"CRITERION {n}: {status} \u2014 {note or '(no reason given)'}"
-                   f"\n{criterion}")
-        findings.append({"path": CRITERIA_PATH, "line": n,
-                         "severity": DEFAULT_SEVERITY,
-                         "message": finding_message(message)})
-    return findings
-
-
-def criteria_brief(criteria):
-    """The numbered criteria and the reply contract the reviewer is held to;
-    empty for a task with none, so the prompt never asks for a block the
-    loop would not read."""
-    if not criteria:
-        return ""
-    numbered = "\n".join(f"{n}. {c}" for n, c in enumerate(criteria, 1))
-    return (f"Acceptance criteria, numbered:\n{numbered}\n\n"
-            "Before the VERDICT line, account for every criterion with "
-            "exactly one line each, in this form:\n"
-            "CRITERION n: met \u2014 TEST_OR_CHECK  (name the test or check "
-            "that witnesses it)\n"
-            "CRITERION n: not met \u2014 WHY\n"
-            "CRITERION n: unwitnessed \u2014 WHAT_IS_MISSING\n"
-            "A criterion marked not met or unwitnessed, or left out of this "
-            "list, is a blocker: the round is REQUEST_CHANGES regardless of "
-            "the verdict line.\n\n")
-
-
-def round_verdict(reply, verdicts):
-    """The reply's verdict as `reviewRounds.verdict` spells it.
-
-    Both reviewer vocabularies collapse onto §2's three: an approval or a
-    terminal PASS is `pass`, findings or a terminal FAIL is
-    `changes_requested`, and a reply with no clean verdict line is `error` —
-    which is what the loop already reads a malformed adjudication as.
-    """
-    try:
-        return {"APPROVE": "pass", "REQUEST_CHANGES": "changes_requested",
-                "PASS": "pass", "FAIL": "changes_requested"}[
-                    review_runner.terminal_verdict(reply, verdicts)]
-    except review_runner.ReviewBoundaryError:
-        return "error"
 
 
 def reuse_leftover(target, wt, branch):

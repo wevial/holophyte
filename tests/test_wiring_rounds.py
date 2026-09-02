@@ -30,6 +30,8 @@ factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
+import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.review  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
 
@@ -174,8 +176,10 @@ class ReviewRoundRowTests(unittest.TestCase):
         findings = json.loads(self.rounds()[0]["findings"])
         self.assertEqual([(f["path"], f["severity"]) for f in findings],
                          [("factory.py", "p2"),
-                          (factory.unparsed_path(findings[1]["message"]), "p0")])
-        self.assertTrue(findings[1]["path"].startswith(factory.UNPARSED_PATH))
+                          (holophyte.review.unparsed_path(findings[1]["message"]),
+                           "p0")])
+        self.assertTrue(
+            findings[1]["path"].startswith(holophyte.review.UNPARSED_PATH))
         self.assertIn("build deps into the runtime image",
                       findings[1]["message"])
 
@@ -342,7 +346,7 @@ class ReviewRoundRowTests(unittest.TestCase):
 
         (only,) = self.rounds()
         self.assertEqual((only["round"], only["verdict"], only["model"]),
-                         (1, "pass", factory.REVIEW_PROFILE))
+                         (1, "pass", holophyte.config.REVIEW_PROFILE))
         self.assertEqual(json.loads(only["findings"]), [])
         self.assertEqual(only["fingerprint"], store.EMPTY_FINGERPRINT)
         (result,) = json.loads(only["verification"])

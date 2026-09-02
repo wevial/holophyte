@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
+import holophyte.agents
 import holophyte.config
 import holophyte.gates
 import holophyte.target
@@ -133,9 +134,9 @@ class ConfigLoadingTests(ConfigTestCase):
         # routes to is what its own file says.
         self.assertEqual(first.config()["agents"]["implementer"],
                          "harness-one run")
-        self.assertEqual(factory.agent_command(first, "implement", "go"),
+        self.assertEqual(holophyte.config.agent_command(first, "implement", "go"),
                          ["harness-one", "run", "go"])
-        self.assertEqual(factory.agent_command(second, "implement", "go"),
+        self.assertEqual(holophyte.config.agent_command(second, "implement", "go"),
                          ["harness-two", "run", "go"])
 
     def test_importing_the_module_names_no_target(self):
@@ -184,7 +185,7 @@ class ConfigLoadingTests(ConfigTestCase):
                                '[agents]\nimplementer = "harness run"\n').path
 
         self.assertEqual(self.tgt.config()["notifier"], {"channel": "#factory"})
-        self.assertEqual(factory.agent_command(self.tgt, "implement", "do it"),
+        self.assertEqual(holophyte.config.agent_command(self.tgt, "implement", "do it"),
                          ["harness", "run", "do it"])
         # And startup tolerates the table: a report against this config runs.
         with patch.object(factory, "report") as report:
@@ -506,7 +507,7 @@ class AgentCommandTests(ConfigTestCase):
     def test_an_absent_config_leaves_todays_routes_byte_identical(self):
         self.locate()
 
-        with patch.object(factory, "run_capped") as run:
+        with patch.object(holophyte.agents, "run_capped") as run:
             run.return_value = (0, "implemented")
             factory.agent(self.tgt, "implement", "make the change", self.WORKTREE)
         with patch.object(factory.review_runner, "run_review") as run_review:
@@ -515,7 +516,7 @@ class AgentCommandTests(ConfigTestCase):
                           base_sha="1" * 40, candidate_sha="2" * 40)
 
         self.assertIsNone(
-            factory.agent_command(self.tgt, "implement", "make the change"))
+            holophyte.config.agent_command(self.tgt, "implement", "make the change"))
         run.assert_called_once_with(
             ["claude", "-p", "make the change",
              "--model", "opus", "--effort", "high"],
@@ -529,7 +530,7 @@ class AgentCommandTests(ConfigTestCase):
         self.locate('[agents]\n'
                       'implementer = "claude --model sonnet --effort medium -p"\n')
 
-        with patch.object(factory, "run_capped") as run:
+        with patch.object(holophyte.agents, "run_capped") as run:
             run.return_value = (0, "implemented")
             result = factory.agent(self.tgt, "implement", "make the change",
                                    self.WORKTREE)
@@ -547,7 +548,7 @@ class AgentCommandTests(ConfigTestCase):
         self.locate('[agents]\nreviewer = "my-reviewer --diff"\n')
 
         with patch.object(factory.review_runner, "run_review") as run_review, \
-                patch.object(factory, "publish_review_refs") as publish, \
+                patch.object(holophyte.agents, "publish_review_refs") as publish, \
                 patch.object(factory.subprocess, "run") as run:
             run.return_value.stdout = "VERDICT: APPROVE"
             run.return_value.stderr = ""
@@ -566,7 +567,7 @@ class AgentCommandTests(ConfigTestCase):
         # The adjudicator is a separate key: overriding one role leaves the
         # other on its default route.
         self.assertIsNone(
-            factory.agent_command(self.tgt, "adjudicate", "adjudicate it"))
+            holophyte.config.agent_command(self.tgt, "adjudicate", "adjudicate it"))
 
     def test_the_round_records_the_route_that_actually_ran_it(self):
         self.locate('[agents]\nreviewer = "my-reviewer --diff"\n')
@@ -592,7 +593,8 @@ class AgentCommandTests(ConfigTestCase):
                 self.locate(config)
 
                 with self.assertRaises(SystemExit) as raised:
-                    factory.agent_command(self.tgt, "implement", "make the change")
+                    holophyte.config.agent_command(self.tgt, "implement",
+                                                   "make the change")
 
                 self.assertIn(str(self.tgt.config_path), str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
@@ -1186,7 +1188,7 @@ class ReviewRefTests(ConfigTestCase):
         self.locate()
         root = self.repo()
 
-        with patch.object(factory, "publish_review_refs") as publish, \
+        with patch.object(holophyte.agents, "publish_review_refs") as publish, \
                 patch.object(factory.review_runner, "run_review") as run_review:
             run_review.return_value = "VERDICT: APPROVE"
             factory.agent(self.tgt, "review", "review it", root,
