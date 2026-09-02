@@ -450,15 +450,20 @@ class ReviewStuckTests(SweepTestCase):
         # The loop's own process, in the gap after the verdict committed.
         self.round(run_id, 3, [finding("c.py")], at=T0 + 11 * MINUTE)
 
-        acted = factory.act_on_trip(self.conn, trip)
+        outcome = factory.act_on_trip(self.conn, trip)
 
-        self.assertFalse(acted)
+        self.assertFalse(outcome.acted)
+        self.assertEqual(outcome.phase, "reviewing")
         self.assertEqual(self.conn.execute(
             "SELECT phase, endedAt FROM runs WHERE id = ?",
             (run_id,)).fetchone(), ("reviewing", None))
-        self.assertEqual(self.conn.execute(
-            "SELECT COUNT(*) FROM runEvents WHERE runId = ? AND kind = ?",
-            (run_id, factory.SWEEP_EVENT)).fetchone(), (0,))
+        # The supervisor's visit is on the record as a decline, not a
+        # failure: the stream says it looked and stood down.
+        (event,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
+            (run_id, factory.SWEEP_EVENT)).fetchall()
+        self.assertIn("no action", event[0])
+        self.assertNotIn("failing", event[0])
 
     def test_a_round_that_still_overlaps_since_the_verdict_does_not_acquit(self):
         """The converse: a round 3 that repeats round 2 is the same stuck
@@ -473,7 +478,7 @@ class ReviewStuckTests(SweepTestCase):
         self.round(run_id, 3, [finding("a.py"), finding("b.py")],
                    at=T0 + 11 * MINUTE)
 
-        self.assertTrue(factory.act_on_trip(self.conn, trip))
+        self.assertTrue(factory.act_on_trip(self.conn, trip).acted)
         self.assertEqual(self.conn.execute(
             "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
             ("failed",))
@@ -496,7 +501,7 @@ class ReviewStuckTests(SweepTestCase):
         for phase in ("addressing", "verifying", "reviewing"):
             store.set_phase(self.conn, run_id, phase, now=T0 + 11 * MINUTE)
 
-        self.assertTrue(factory.act_on_trip(self.conn, trip))
+        self.assertTrue(factory.act_on_trip(self.conn, trip).acted)
         self.assertEqual(self.conn.execute(
             "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
             ("failed",))
@@ -755,6 +760,66 @@ class ActingSweepTests(SweepTestCase):
             events)
         self.assertFalse((self.target / "FINDINGS.md").exists())
 
+    def test_a_run_that_ended_before_the_act_is_declined_and_reported_so(self):
+        """holophyte-bugs.md #1: the loop's own process finished the run in
+        the gap between the classification committing and the act. The
+        re-check stands down, and the summary must say so -- naming the
+        status it saw -- rather than claim a failure that was never written.
+        The store shows the supervisor looked, so a reader of the run's
+        stream sees the visit and the decision, not a silent no-op."""
+        run_id = self.a_run()
+        at = self.trip()
+        original_act = factory.act_on_trip
+
+        def finish_then_act(conn, trip, provider=None, knobs=None):
+            # The run's own process, landing after the verdict committed.
+            store.release(conn, trip.run_id, "merged", now=at)
+            return original_act(conn, trip, provider, knobs)
+
+        with patch.object(factory, "act_on_trip", finish_then_act):
+            result = self.act(at)
+        lines = factory.sweep_lines(result)
+
+        self.assertEqual(len(result.trips), 1)
+        self.assertEqual(self.run_row(run_id)[:3], ("done", "merged", at))
+        self.assertIn(f"declined: run {run_id} is now done; no action", lines)
+        self.assertNotIn(f"acted: failed run {run_id}, leases released",
+                         lines)
+        self.assertEqual(lines[-1],
+                         "1 tripped of 1 run swept, 1 declined, no action")
+        (event,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
+            (run_id, factory.SWEEP_EVENT)).fetchall()
+        self.assertIn("no action", event[0])
+        self.assertNotIn("failing", event[0])
+
+    def test_one_acted_and_one_declined_trip_are_counted_apart(self):
+        """Two trips in one sweep, one of which the re-check stands down on:
+        each gets its own outcome line and the summary counts them apart."""
+        other = self.another_project()
+        failed = self.a_run()
+        finished = self.a_run(project=other)
+        at = self.trip()
+        original_act = factory.act_on_trip
+
+        def finish_one_then_act(conn, trip, provider=None, knobs=None):
+            if trip.run_id == finished:
+                store.release(conn, trip.run_id, "merged", now=at)
+            return original_act(conn, trip, provider, knobs)
+
+        with patch.object(factory, "act_on_trip", finish_one_then_act):
+            lines = factory.sweep_lines(self.act(at))
+
+        self.assertIn(f"acted: failed run {failed}, leases released", lines)
+        self.assertIn(f"declined: run {finished} is now done; no action",
+                      lines)
+        self.assertEqual(
+            lines[-1],
+            "2 tripped of 2 runs swept, 1 failed and leases released,"
+            " 1 declined, no action")
+        self.assertEqual(self.run_row(failed)[:2], ("failed", "failed"))
+        self.assertEqual(self.run_row(finished)[:2], ("done", "merged"))
+
     def test_a_swept_failure_counts_towards_the_escalation_threshold(self):
         """A run the supervisor failed is a failed run like any other, so the
         ticket the loop kept failing on is parked after the second one rather
@@ -900,8 +965,10 @@ class SweepModeTests(SweepTestCase):
         self.run_sweep(T0 + 6 * MINUTE, "--act")
         printed = self.run_sweep(T0 + 12 * MINUTE, "--act")
 
-        self.assertEqual(printed[-1],
-                         "1 tripped of 1 run swept, failed and leases released")
+        self.assertIn(f"acted: failed run {run_id}, leases released", printed)
+        self.assertEqual(
+            printed[-1],
+            "1 tripped of 1 run swept, 1 failed and leases released")
         self.assertEqual(
             self.conn.execute(
                 "SELECT phase, outcome FROM runs WHERE id = ?",

@@ -2590,11 +2590,13 @@ def close_out_failure(conn, run_id, ticket_id, reason=None, provider=None,
     own process may have heartbeated, changed phase or finished — so the
     decision is re-reached here instead, inside the transaction that writes
     the failure and under the write lock that keeps the run's process out of
-    it. Returning false abandons the close-out having written nothing, and
+    it. Returning false abandons the close-out with none of it written, and
     this answers false in turn; the callback may also record what it is about
-    to do, because a note of a failure that then did not happen is worse than
-    no note. The loop's own `finally` passes nothing: a process failing itself
-    cannot race itself, and there is no verdict of its own to re-reach.
+    to do -- or that it declined to -- because a note of a failure that then
+    did not happen is worse than no note, and a decline nobody wrote down is
+    indistinguishable from a sweep that never came. The loop's own `finally`
+    passes nothing: a process failing itself cannot race itself, and there is
+    no verdict of its own to re-reach.
 
     Only the release is under that lock. The escalation may call Linear, and
     a supervisor holding the store's write lock across a network call would
@@ -3088,7 +3090,16 @@ Trip = collections.namedtuple(
 # or failed. `watched` is carried because a first strike printed as "all
 # healthy" hides exactly the evidence the next invocation acts on.
 Sweep = collections.namedtuple("Sweep",
-                               ("swept", "trips", "acted", "watched"))
+                               ("swept", "trips", "acted", "watched",
+                                "outcomes"))
+# What acting on one trip came to. `acted` is whether the run was failed;
+# `phase` is the run's phase as the re-check found it, which for a decline is
+# the status the summary names -- the run finished, moved on or answered --
+# and for an act is the phase it was failed in. `acted` is the outcome, not
+# the flag `sweep()` was called with: the two parted in holophyte-bugs.md #1,
+# where a summary read the flag and reported a failure the re-check had
+# refused to write.
+Outcome = collections.namedtuple("Outcome", ("trip", "acted", "phase"))
 
 
 def review_overlap(conn, run_id):
@@ -3177,7 +3188,7 @@ def still_tripped(conn, trip, knobs=None):
 
 
 def act_on_trip(conn, trip, provider=None, knobs=None):
-    """Fail one tripped run, if it is still tripped; say whether it was.
+    """Fail one tripped run, if it is still tripped; return an `Outcome`.
 
     The whole of what acting means. `close_out_failure()` is the loop's own,
     unchanged and not re-implemented here, so a swept failure is the same kind
@@ -3199,6 +3210,13 @@ def act_on_trip(conn, trip, provider=None, knobs=None):
     handed to the next worker, because under one `BEGIN IMMEDIATE` there is no
     gap for it to do so in.
 
+    A decline is recorded too, under the same event kind: the supervisor
+    looked, found the run finished or moved on, and stood down. Without the
+    row a reader of the run's stream cannot tell a sweep that declined from
+    one that never arrived, and the summary line the operator reads is
+    derived from this same answer -- `acted` here is what happened, never
+    the flag the sweep was called with.
+
     Nothing is signalled, killed or deleted. Freeing the lease and recording
     the failure is enough to unblock the queue, and a supervisor that also
     tried to kill things would need to be right about which process it was
@@ -3209,9 +3227,21 @@ def act_on_trip(conn, trip, provider=None, knobs=None):
     knobs = sweep_config() if knobs is None else knobs
     (ticket_id,) = conn.execute(
         "SELECT ticketId FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
+    seen = {"phase": None}
 
     def confirm():
+        # Read under the same lock the verdict is re-reached under, so the
+        # phase the outcome names is the one the decision was made on.
+        row = conn.execute(
+            "SELECT phase FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
+        seen["phase"] = row[0] if row is not None else None
         if not still_tripped(conn, trip, knobs):
+            if row is not None:
+                store.record_event(
+                    conn, trip.run_id, SWEEP_EVENT,
+                    f"supervisor sweep: {trip.condition} ({trip.evidence})"
+                    f" no longer held at re-check; run is now {row[0]};"
+                    " no action")
             return False
         store.record_event(
             conn, trip.run_id, SWEEP_EVENT,
@@ -3219,11 +3249,12 @@ def act_on_trip(conn, trip, provider=None, knobs=None):
             " failing the run and releasing its leases")
         return True
 
-    return close_out_failure(
+    acted = close_out_failure(
         conn, trip.run_id, ticket_id,
         f"swept by the supervisor in phase {trip.phase}: {trip.condition}"
         f" ({trip.evidence}); branch and worktree preserved for a human",
         provider, confirm)
+    return Outcome(trip, acted, seen["phase"])
 
 
 def sweep(conn, now, act=False, provider=None, knobs=None):
@@ -3241,7 +3272,9 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
     no sweep caught it awake. Without `act`, that bookkeeping is the only
     write this makes -- no phase moves, no lease is freed, no ticket is
     touched -- which is what makes a bare `--sweep` safe against a working
-    loop. With `act`, every trip is then failed by `act_on_trip()`.
+    loop. With `act`, every trip is then put to `act_on_trip()`, and what
+    each came to -- failed, or declined because the run had moved -- is
+    carried as the sweep's `outcomes`, one per trip in the same order.
 
     A run reports at most one trip, and the conditions are asked in the order
     of what they explain. A stale heartbeat comes first: a dead worker
@@ -3336,10 +3369,10 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
                     f"run {run_id} ({ticket}, {phase}): silent"
                     f" {silent / 60000:.1f} min, strike {strikes} of"
                     f" {strikes_needed}")
+    outcomes = []
     if act:
-        for trip in trips:
-            act_on_trip(conn, trip, provider, knobs)
-    return Sweep(len(swept), trips, act, tuple(watched))
+        outcomes = [act_on_trip(conn, trip, provider, knobs) for trip in trips]
+    return Sweep(len(swept), trips, act, tuple(watched), tuple(outcomes))
 
 
 SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence")
@@ -3365,6 +3398,15 @@ def sweep_lines(result):
     ambiguous -- it reads the same as a crashed supervisor, a mistyped target
     or a store with no runs in it -- so the quiet case is an assertion an
     operator can act on, and the three quiet cases say which one they are.
+
+    An acting sweep adds one outcome line per trip and a summary that counts
+    the failed apart from the declined. Both come from `Outcome`, which is
+    what `act_on_trip()` actually did, and never from the `acted` flag the
+    sweep was called with: a re-check that stood down because the run had
+    finished is reported as exactly that, naming the status it found, and
+    the words "failed and leases released" are printed only for a run whose
+    failure was written. A read-only sweep has no outcomes and prints as it
+    always has.
     """
     if not result.swept:
         return ["no runs in flight, nothing to sweep"]
@@ -3384,10 +3426,23 @@ def sweep_lines(result):
                         for cell, width in zip(row, widths)).rstrip()
         for row in table
     ]
+    for outcome in result.outcomes:
+        run_id = outcome.trip.run_id
+        if outcome.acted:
+            lines.append(f"acted: failed run {run_id}, leases released")
+        else:
+            status = ("gone" if outcome.phase is None
+                      else f"now {outcome.phase}")
+            lines.append(f"declined: run {run_id} is {status}; no action")
     lines += list(result.watched)
-    return lines + [
-        f"{len(result.trips)} tripped of {_runs(result.swept)} swept"
-        + (", failed and leases released" if result.acted else "")]
+    failed = sum(1 for outcome in result.outcomes if outcome.acted)
+    declined = len(result.outcomes) - failed
+    summary = f"{len(result.trips)} tripped of {_runs(result.swept)} swept"
+    if failed:
+        summary += f", {failed} failed and leases released"
+    if declined:
+        summary += f", {declined} declined, no action"
+    return lines + [summary]
 
 
 def sweep_report(conn=None, now=None, out=None, act=False, provider=None):
