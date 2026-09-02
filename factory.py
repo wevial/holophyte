@@ -1668,16 +1668,76 @@ FINDINGS_ARCHIVE = "[{n} earlier entries in holophyte.db — query runs/reviewRo
 FINDING_LINE_CHARS = 160
 
 
+STAMP_UNREADABLE = "(unreadable timestamp)"
+
+
+def _ms(value):
+    """`value` as epoch milliseconds, or None when the column does not hold one.
+
+    The timestamp columns are declared INTEGER but SQLite affinity does not
+    enforce it, so a row can carry text, NULL, or a float no calendar reaches.
+    Anything that is not a finite number the renderer treats as unreadable.
+    """
+    import math
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
+
+
 def _stamp(ms):
-    """Epoch milliseconds as the ledger's UTC timestamp."""
+    """Epoch milliseconds as the ledger's UTC timestamp.
+
+    A stamp the row cannot supply renders as a visible placeholder rather than
+    raising: one bad row must not take the whole window with it.
+    """
     from datetime import datetime, timezone
-    return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ")
+    ms = _ms(ms)
+    if ms is None:
+        return STAMP_UNREADABLE
+    try:
+        return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+    except (OverflowError, OSError, ValueError):
+        return STAMP_UNREADABLE
 
 
 def _entry(at, ticket, lines):
     """One entry: the heading the file has always used, then its body."""
     return "\n".join([f"## {_stamp(at)} — {ticket}", *lines])
+
+
+def _gist(text):
+    """`text` collapsed to one line and cut to the window's width."""
+    gist = " ".join(str(text).split())
+    if len(gist) > FINDING_LINE_CHARS:
+        gist = gist[:FINDING_LINE_CHARS].rstrip() + "…"
+    return gist
+
+
+def _document(text):
+    """A stored JSON document column decoded to its list, or None.
+
+    None for anything the schema's `[]` comment does not describe: text that
+    is not JSON, JSON nested past what the decoder's stack can walk, or JSON
+    that is not an array. The writer refuses all three, so a row like this was
+    written past it -- by hand, by an earlier release, or by corruption -- and
+    the renderer's job is to show that, not to crash the close-out that
+    regenerates every other entry in the window.
+
+    The caught set is wider than `json.JSONDecodeError` on purpose. A column
+    SQLite hands back as a BLOB decodes through `UnicodeDecodeError`, which is
+    a `ValueError` but not a `JSONDecodeError`, so catching the base class is
+    what makes "never raises" hold for a bytes column rather than only for bad
+    syntax; `TypeError` covers a column that is not text at all, and
+    `RecursionError` — not a `ValueError` — the pathologically nested document.
+    """
+    try:
+        decoded = json.loads(text)
+    except (TypeError, ValueError, RecursionError):
+        return None
+    return decoded if isinstance(decoded, list) else None
 
 
 def finding_line(finding):
@@ -1687,31 +1747,48 @@ def finding_line(finding):
     place to notice a complaint rather than to read it: the whole message is in
     `reviewRounds.findings`, and the alternative -- full prose per finding --
     is the unbounded file this rendering replaces.
+
+    Never raises. A finding that is not a mapping with a `path` and a
+    `severity` is rendered as a marked line carrying its compact repr, so the
+    row's shape is visible in the window rather than fatal to it.
     """
-    where = finding["path"]
+    if (not isinstance(finding, dict) or "path" not in finding
+            or "severity" not in finding):
+        return f"- (malformed finding) {_gist(repr(finding))}"
+    where = str(finding["path"])
     if finding.get("line"):
         where = f"{where}:{finding['line']}"
     # The reviewer's own bullet marker opens most stored messages; the line
     # this renders already is a bullet, so it is dropped rather than nested.
-    gist = BLOCK_BREAK_RE.sub("", " ".join(str(finding.get("message", "")).split()),
-                              count=1)
-    if len(gist) > FINDING_LINE_CHARS:
-        gist = gist[:FINDING_LINE_CHARS].rstrip() + "…"
+    gist = BLOCK_BREAK_RE.sub("", _gist(finding.get("message", "")), count=1)
     return f"- {where} [{finding['severity']}] {gist}".rstrip()
 
 
 def round_entry(row):
-    """One `reviewRounds` row as an entry: the verdict and what it filed."""
+    """One `reviewRounds` row as an entry: the verdict and what it filed.
+
+    Never raises on the row's two JSON columns. A `verificationResults` or
+    `findings` document that does not decode to the schema's array, or an
+    array holding a result that is not a mapping, renders as an `unreadable`
+    verify note or an `unparseable` findings line quoting the raw column,
+    rather than as a verdict the row does not actually carry: the writer
+    refuses such rows, so one that exists is evidence to show, and a render
+    that died on it would leave the file stale for every good row after it.
+    """
     at, ticket, number, verdict, model, results, findings = row
-    results = json.loads(results)
+    results = _document(results)
     verify = ""
-    if results:
+    if results is None or not all(isinstance(r, dict) for r in results):
+        verify = " · verify unreadable"
+    elif results:
         verify = (" · verify "
                   + ("passed" if all(r.get("exitCode") == 0 for r in results)
                      else "failed"))
-    findings = json.loads(findings)
+    raw_findings, findings = findings, _document(findings)
     lines = [f"Round {number}: {verdict} · reviewer {model}{verify}"]
-    if findings:
+    if findings is None:
+        lines.append(f"Findings: unparseable — {_gist(raw_findings)}")
+    elif findings:
         lines.append(f"Findings ({len(findings)}):")
         lines.extend(finding_line(finding) for finding in findings)
     return _entry(at, ticket, lines)
@@ -1736,11 +1813,13 @@ def run_entry(row):
         head = (outcome or "ended").upper()
         head += f": {' '.join(reason.split())}" if reason else "."
     # Byte-stable: a burndown script greps this line.
-    estimate = f"{time_box // 60000} min" if time_box else "n/a"
+    estimate = f"{time_box // 60000} min" if _ms(time_box) else "n/a"
+    ended, started = _ms(at), _ms(started)
+    actual = ("n/a" if ended is None or started is None
+              else f"{(ended - started) / 60000:.1f} min")
     return _entry(at, ticket, [
         head,
-        f"actual: {(at - started) / 60000:.1f} min · "
-        f"estimate: {estimate} · rounds: {rounds}",
+        f"actual: {actual} · estimate: {estimate} · rounds: {rounds}",
     ])
 
 
@@ -1765,8 +1844,13 @@ def findings_entries(conn):
     entries = [(row[0], "round", row[-1], round_entry(row[:-1])) for row in rounds]
     entries += [(row[0], "run", row[-1], run_entry(row[:-1])) for row in runs]
     # Two rows stamped the same millisecond still have one order: kind, then
-    # the id the database gave them.
-    entries.sort(key=lambda entry: entry[:3])
+    # the id the database gave them. A row with no readable stamp cannot be
+    # placed in time, so it sorts ahead of every dated one -- deterministic,
+    # and never a comparison between a number and whatever the column held.
+    def _order(entry):
+        at = _ms(entry[0])
+        return (at is not None, at or 0, entry[1], entry[2])
+    entries.sort(key=_order)
     return [entry[3] for entry in entries]
 
 

@@ -1734,6 +1734,39 @@ def findings_overlap(earlier, later):
 ROUND_VERDICTS = ("pass", "changes_requested", "error")
 
 
+def _document_argument(label, value):
+    """`value` as the list a `reviewRounds` document column is written from.
+
+    The contract's arguments are object *arrays*, and `list()` alone does not
+    say so: it accepts any iterable, so `findings="prose"` becomes a document
+    of five one-character findings and a mapping becomes a document of its
+    keys. Both were written past the refusal they were supposed to hit, and
+    the renderer can only show them as a row nothing should have stored. So
+    the shape is checked before the coercion, and a string, a mapping, or
+    anything that is not a sequence is a `ValueError` named for `label`.
+    """
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    raise ValueError(
+        f"{label} must be a list of objects, got {type(value).__name__}")
+
+
+def _json_document(label, value):
+    """`value` as the JSON text a `reviewRounds` document column stores.
+
+    Strict on both sides of the encoder: a Python value it cannot serialize
+    raises `TypeError`, and `allow_nan=False` turns the non-JSON floats it
+    would otherwise emit into a `ValueError`. Both become the `ValueError`
+    the caller's other refusals are, named for `label`, so a round that
+    cannot be written as valid JSON is refused whole rather than stored as
+    text the renderer cannot read back.
+    """
+    try:
+        return json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a JSON document: {exc}") from exc
+
+
 def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
                         findings=(), verification_results=(),
                         started_at=None, ended_at=None):
@@ -1748,8 +1781,16 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
     before this opens a transaction, so a round is stored whole or not at all.
 
     `findings` and `verification_results` are the contract's object arrays,
-    stored as the JSON documents the schema declares. A round that found
-    nothing is an ordinary `pass` and stores `[]` against
+    stored as the JSON documents the schema declares. Both are encoded here,
+    before the transaction, for the same reason the fingerprint is: a value
+    `json` cannot write (bytes, a set) or writes as something no reader can
+    decode back (`NaN`, `Infinity` — legal to the encoder, not to JSON) is a
+    `ValueError`, and nothing is stored. So is a value that is not a list at
+    all: `"prose"` and `{...}` are iterable, and coercing them would store a
+    document of characters or of keys instead of refusing the caller's
+    mistake. The renderer reads these columns
+    back with `json.loads()`; refusing here is what lets it trust them. A
+    round that found nothing is an ordinary `pass` and stores `[]` against
     `EMPTY_FINGERPRINT`.
 
     `ended_at` defaults to NULL, which is the column's "still running"; a
@@ -1772,8 +1813,12 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
         raise ValueError(
             f"round must be a positive integer, got {round_number!r}"
         )
-    findings = list(findings)
+    findings = _document_argument("findings", findings)
     fingerprint = findings_fingerprint(findings)
+    findings_json = _json_document("findings", findings)
+    results_json = _json_document(
+        "verification results",
+        _document_argument("verification results", verification_results))
     if started_at is None:
         started_at = int(time.time() * 1000)
     with _transaction(conn):
@@ -1785,9 +1830,8 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
             "INSERT INTO reviewRounds (runId, round, verificationResults,"
             " verdict, findings, findingsFingerprint, reviewerModel,"
             " startedAt, endedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (run_id, round_number, json.dumps(list(verification_results)),
-             verdict, json.dumps(findings), fingerprint, reviewer_model,
-             started_at, ended_at),
+            (run_id, round_number, results_json, verdict, findings_json,
+             fingerprint, reviewer_model, started_at, ended_at),
         )
     return cursor.lastrowid
 
