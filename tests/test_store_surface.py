@@ -33,6 +33,8 @@ EXPECTED = [
     "pickable",
     "record_event",
     "record_intervention",
+    "record_loop_restart",
+    "record_loop_return",
     "record_review_round",
     "record_strike",
     "record_supervisor_heartbeat",
@@ -45,6 +47,7 @@ EXPECTED = [
     "set_phase",
     "transaction",
     "transition",
+    "unreturned_loop_restarts",
     "walk_ticket",
 ]
 

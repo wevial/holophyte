@@ -1225,6 +1225,20 @@ class SelfHostingTests(LoopFixture):
                       f" re-executing from {head}: {orig}", out)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
+    def test_the_re_exec_leaves_a_restart_note_the_sweep_can_watch(self):
+        """Before the exec, not after: a re-exec that dies prints nothing,
+        so the note is the only witness. It names the merged sha and stands
+        unreturned until a loop claims or exits clean."""
+        orig = ["/usr/bin/python3", "factory.py", "/srv/dev/holophyte"]
+        with patch.object(sys, "orig_argv", orig):
+            self.host_the_factory_in(self.target)
+            self.loop(Commit("the scripted work"), APPROVE)
+
+        head = self.git("rev-parse", "--short", "HEAD").strip()
+        self.assertEqual(
+            self.read("SELECT sha, returnedAt, reportedAt FROM loopRestarts"),
+            [(head, None, None)])
+
     def test_re_exec_resolves_a_bare_interpreter_name_on_path(self):
         """`sys.orig_argv[0]` is whatever the operator typed -- usually the
         bare `python3` -- and `os.execv` does not search PATH: the first live

@@ -234,6 +234,24 @@ CREATE TABLE IF NOT EXISTS supervisorHeartbeats (
     PRIMARY KEY (pid, startedAt)
 );
 
+-- loopRestarts: one row per self-merge re-exec of the loop, written just
+-- before the exec replaces the process. The shape of `supervisorHeartbeats`
+-- turned around: the heartbeat says "the watcher is still here", this says
+-- "the loop is about to leave and means to come back" -- and the sweep is the
+-- witness for whether it did. A loop that came back claims (a `runs` row with
+-- a heartbeat newer than `at`) or writes its exit note (`returnedAt`); one
+-- that died in the exec does neither, and past the grace window the sweep
+-- prints and stamps `reportedAt`, once, so the same silence is not reported
+-- on every pass.
+CREATE TABLE IF NOT EXISTS loopRestarts (
+    id         INTEGER PRIMARY KEY,
+    projectId  INTEGER NOT NULL REFERENCES projects (id),
+    sha        TEXT    NOT NULL,  -- the merged commit the loop re-executed from
+    at         INTEGER NOT NULL,  -- when the exec was about to happen
+    returnedAt INTEGER,           -- when a loop next wrote its exit note
+    reportedAt INTEGER            -- when the sweep reported it unreturned
+);
+
 -- linearDeliveries: webhook idempotency (state-model §1). The delivery id is
 -- the primary key, so a replayed delivery collides instead of re-running its
 -- effect.
@@ -273,7 +291,7 @@ CREATE TABLE IF NOT EXISTS interventions (
 # changes shape, so an older build refuses a store it would otherwise read
 # one column short. The ladder itself stays ADDED_COLUMNS; the number is
 # bookkeeping around it, not a replacement for it.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Every join the loop, the sweep and the FINDINGS renderer perform goes
 # through one of these three foreign keys; without an index each is a full
@@ -2015,6 +2033,76 @@ def latest_supervisor_heartbeat(conn):
         " FROM supervisorHeartbeats"
         " ORDER BY lastBeat DESC, startedAt DESC LIMIT 1").fetchone()
     return tuple(row) if row is not None else None
+
+
+def record_loop_restart(conn, project_id, sha, now=None):
+    """Note that the loop is about to re-exec itself from `sha`; return the id.
+
+    Written by the loop just before `os.execv()` replaces it, so a restart that
+    never comes back has left something a reader can see: the exec itself
+    prints nothing once it has failed, and every gate before it had passed.
+    `now` is epoch milliseconds for `at`, defaulting to the clock. The row is
+    the question "did the loop return?"; `record_loop_return()` and a claim
+    are the two ways of answering yes, `unreturned_loop_restarts()` is how the
+    sweep asks.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        cursor = conn.execute(
+            "INSERT INTO loopRestarts (projectId, sha, at) VALUES (?, ?, ?)",
+            (project_id, sha, now))
+        return cursor.lastrowid
+
+
+def record_loop_return(conn, project_id, now=None):
+    """The loop's exit note: every open restart of `project_id` came back.
+
+    Called where the loop prints "no ready tickets" and exits clean -- the one
+    way a loop that restarted successfully can end without ever claiming, and
+    so without a heartbeat to vouch for it. Stamps `returnedAt` on every
+    restart row of the project not already returned, and returns how many it
+    stamped: zero for a loop that was not restarted, which is the common case
+    and not an error. `now` is epoch milliseconds, defaulting to the clock.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        return conn.execute(
+            "UPDATE loopRestarts SET returnedAt = ?"
+            " WHERE projectId = ? AND returnedAt IS NULL",
+            (now, project_id)).rowcount
+
+
+def unreturned_loop_restarts(conn, grace_ms, now=None):
+    """Restarts older than `grace_ms` no loop activity has followed, once each.
+
+    A restart row counts as unreturned when it has no `returnedAt`, no run of
+    its project has a heartbeat newer than it -- `claim()` stamps a fresh
+    run's heartbeat at its claim time, so a claim is a heartbeat here -- and
+    it is at least `grace_ms` old at `now`, the time the exec is allowed to
+    take before its silence means something. Each row is returned as
+    `(id, project_id, sha, age_ms)` exactly once: this stamps `reportedAt` on
+    what it returns, in the caller's transaction when there is one, so the
+    sweep that prints the line is the sweep that records it and the next pass
+    is quiet about the same restart. A restart younger than the grace is not
+    returned and not stamped; it is asked about again on the next pass.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        rows = conn.execute(
+            "SELECT id, projectId, sha, at FROM loopRestarts"
+            " WHERE returnedAt IS NULL AND reportedAt IS NULL"
+            "   AND at <= ?"
+            "   AND NOT EXISTS (SELECT 1 FROM runs"
+            "                   WHERE runs.projectId = loopRestarts.projectId"
+            "                     AND runs.lastHeartbeat > loopRestarts.at)"
+            " ORDER BY at, id", (now - grace_ms,)).fetchall()
+        conn.executemany(
+            "UPDATE loopRestarts SET reportedAt = ? WHERE id = ?",
+            [(now, row[0]) for row in rows])
+        return [(row[0], row[1], row[2], now - row[3]) for row in rows]
 
 
 if __name__ == "__main__":
