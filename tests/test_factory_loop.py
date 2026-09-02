@@ -1211,15 +1211,26 @@ class SelfHostingTests(LoopFixture):
         self.addCleanup(patcher.stop)
 
     def test_a_merge_into_the_factory_itself_re_executes_the_loop(self):
+        # The original command line, interpreter flags included: a loop
+        # launched with -u must keep streaming its log after the restart.
+        orig = ["/usr/bin/python3", "-u", "factory.py", "/srv/dev/holophyte"]
+        with patch.object(sys, "orig_argv", orig):
+            self.host_the_factory_in(self.target)
+            out = self.main_output(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.execs, [("/usr/bin/python3", orig)])
+        head = self.git("rev-parse", "--short", "HEAD").strip()
+        self.assertIn("merged a change to the factory itself;"
+                      f" re-executing from {head}: {orig}", out)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_re_exec_falls_back_to_executable_and_argv_without_orig_argv(self):
         self.host_the_factory_in(self.target)
-        out = self.main_output(Commit("the scripted work"), APPROVE)
+        with patch.object(sys, "orig_argv", []):
+            self.loop(Commit("the scripted work"), APPROVE)
 
         self.assertEqual(self.execs,
                          [(sys.executable, [sys.executable, *sys.argv])])
-        head = self.git("rev-parse", "--short", "HEAD").strip()
-        self.assertIn("merged a change to the factory itself;"
-                      f" re-executing from {head}", out)
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_merge_into_another_repository_does_not_re_execute(self):
         self.host_the_factory_in(self.target.parent / "elsewhere")
