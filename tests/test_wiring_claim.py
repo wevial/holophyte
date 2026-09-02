@@ -291,6 +291,45 @@ class WiringClaimTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("HOL-1", lines[0])
 
+    def test_a_ready_mirror_with_an_unmerged_dependency_is_not_run(self):
+        """The claim-time re-mirror carries the live body, not the dependency
+        list: the provider does not parse one, so the store's is the only
+        copy. A re-mirror that reset it to `[]` would make a blocked ticket
+        pickable in the very row the gate reads next."""
+        conn = factory.open_store(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        dep = a_task(identifier="HOL-0", title="the prerequisite",
+                     issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
+        store.mirror_ticket(conn, project, linear_issue_id=dep["issue_id"],
+                            linear_identifier=dep["id"], title=dep["title"],
+                            acceptance_criteria=dep["criteria"],
+                            verification_commands=[dep["verify"]])
+        offered = a_task()
+        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+                            linear_identifier=offered["id"],
+                            title=offered["title"],
+                            acceptance_criteria=offered["criteria"],
+                            verification_commands=[offered["verify"]],
+                            depends_on=[dep["issue_id"]])
+        conn.commit()
+
+        with patch.object(factory, "run_task", return_value=True) as run_task, \
+                patch("builtins.print") as printed:
+            factory.main(StubProvider(offered))
+
+        run_task.assert_not_called()
+        self.assertEqual(self.read("SELECT id FROM runs"), [])
+        self.assertEqual(
+            self.read("SELECT dependsOn FROM tickets"
+                      f" WHERE linearIssueId = '{ISSUE_UUID}'"),
+            [(json.dumps([dep["issue_id"]]),)])
+        lines = [c.args[0] for c in printed.call_args_list
+                 if c.args and "skipping" in str(c.args[0])]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("HOL-1", lines[0])
+        self.assertIn(dep["issue_id"], lines[0])
+
     def test_an_under_specced_ticket_the_store_has_never_seen_is_skipped(self):
         """A new ticket is judged on the same gate as a known one: it is
         mirrored, found `needs_spec`, and passed over for the next ready

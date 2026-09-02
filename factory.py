@@ -2245,6 +2245,12 @@ def mirror_task(conn, project, task):
     mutable one, so a later UUID-carrying writer — webhook wiring, say — would
     mirror the same issue a second time under its real id. A provider with no
     UUID to give still gets a mirror, keyed on the identifier it does have.
+
+    No `depends_on`, on purpose: the provider does not parse a dependency
+    list, so the store's copy is the only one, and `store.mirror_ticket()`
+    keeps it when the caller says nothing. Passing `[]` here instead would
+    clear a blocked ticket's dependencies in the very row the pickability
+    gate reads next.
     """
     title, criteria, commands = task_contract(task)
     return store.mirror_ticket(
