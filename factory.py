@@ -2374,6 +2374,36 @@ def task_contract(task):
             [task["verify"]] if task.get("verify") else [])
 
 
+def body_problem(task):
+    """The first template violation in the offered ticket's body, or None.
+
+    The claim-time contract gate. `ticket_template.validate()` is what a
+    ticket is held to before it enters the queue, and until now nothing on
+    the claim path asked it: KO-165 was claimed with literal angle-bracket
+    placeholders in its title, summary and first criterion and no What line,
+    the title-only implementer skipped the in-scope work, review passed it,
+    and the merge shadowed fifteen runs of history. The validator refuses
+    that body; this is the call that puts it in the way.
+
+    Advisories are scope guidance, not violations, so `blocking()` filters
+    them out and an advisory-only body is claimed as before. The first
+    blocker is returned rather than the list because the loop prints one
+    line per refusal — the ticket's owner gets the full list from
+    `ticket_template.py` — and the first is what the validator names first.
+
+    A task with no body at all (`None`, not `""`) is not judged: a provider
+    that hands no body has nothing to validate, whereas the Linear provider
+    always hands a string, and an empty description is the emptiest invalid
+    body there is.
+    """
+    body = task.get("body")
+    if body is None:
+        return None
+    problems = ticket_template.blocking(
+        ticket_template.validate(ticket_template.parse(body)))
+    return problems[0] if problems else None
+
+
 def merge_drift(conn, run_id, provider, issue_id):
     """The contract fields that moved between the claim and now; () if none.
 
@@ -2416,7 +2446,7 @@ def merge_drift(conn, run_id, provider, issue_id):
         claimed, store.contract_snapshot(*task_contract(live)))
 
 
-def mirror_task(conn, project, task):
+def mirror_task(conn, project, task, specced=True):
     """Mirror the offered ticket's live body into the store; return its id.
 
     The first half of a claim, split from the lease so the loop can ask the
@@ -2447,8 +2477,19 @@ def mirror_task(conn, project, task):
     keeps it when the caller says nothing. Passing `[]` here instead would
     clear a blocked ticket's dependencies in the very row the pickability
     gate reads next.
+
+    `specced=False` mirrors the ticket with its criteria and verify command
+    withheld, which is the same row a criteria-less body produces: the store
+    routes it to `needs_spec`, and `pickable()` refuses it. That is how a body
+    the template validator rejects is parked — the lists it carries are not a
+    contract the loop may work from, whatever they say, and `needs_spec` is
+    the status the state model already reserves for a ticket a human has to
+    finish specifying. The rows keep no separate word for "malformed"; the
+    printed refusal names the problem.
     """
     title, criteria, commands = task_contract(task)
+    if not specced:
+        criteria, commands = [], []
     return store.mirror_ticket(
         conn,
         project,
@@ -2871,6 +2912,21 @@ def main(provider=None):
             # ticket whose criteria or verify command have since been edited
             # out. `mirror_ticket()` is an upsert with no lease, so a ticket
             # refused below has cost nothing but a refreshed row.
+            #
+            # First question, asked of the body itself: does it pass the
+            # template validator? The store's gates below judge the row —
+            # criteria present, a verify command present — and a body with
+            # both can still be unfilled template (KO-165: placeholders in
+            # the title, the summary and the first criterion, no What
+            # line). One printed line names the first problem, the mirror
+            # lands in `needs_spec` as an under-specced body would, and the
+            # next candidate is tried; no run row is opened for it.
+            problem = body_problem(task)
+            if problem:
+                mirror_task(conn, project, task, specced=False)
+                print(f"[holo2] {task['id']} skipped: {problem}")
+                skip.add(task["id"])
+                continue
             ticket_id = mirror_task(conn, project, task)
             if escalate(conn, ticket_id, provider):
                 print(f"[holo2] {task['id']} is blocked by repeated failures;"
