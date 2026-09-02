@@ -1222,6 +1222,107 @@ class SuperviseTests(SweepTestCase):
         self.assertEqual(self.heartbeats(), [(pid, T0 + 12 * MINUTE, 2)])
 
 
+class LoopRestartTests(SweepTestCase):
+    """A self-merge re-exec the loop did not come back from.
+
+    The loop leaves a `loopRestarts` note before `os.execv()` replaces it; a
+    loop that returned claims (a heartbeat) or writes its exit note. Past the
+    grace window with neither, the sweep says so -- once -- and is otherwise
+    exactly as quiet as it was.
+    """
+
+    SHA = "abc1234"
+    SECOND = 1000
+
+    def lines(self, now):
+        return factory.sweep_lines(factory.sweep(self.conn, now))
+
+    def restart_lines(self, now):
+        return [line for line in self.lines(now) if "re-exec" in line]
+
+    def reported(self):
+        return self.conn.execute(
+            "SELECT reportedAt FROM loopRestarts ORDER BY id").fetchall()
+
+    def test_a_restart_followed_by_a_heartbeat_is_quiet(self):
+        """Restart at T, a claim (which stamps the run's heartbeat) at T+30s,
+        sweep at T+200s: nothing about restarts, and the run report reads
+        exactly as it did before restarts existed."""
+        store.record_loop_restart(self.conn, self.project, self.SHA, now=T0)
+        self.a_run(claimed_at=T0 + 30 * self.SECOND)
+
+        lines = self.lines(T0 + 200 * self.SECOND)
+
+        self.assertEqual(lines, ["1 run swept, all healthy"])
+        self.assertEqual(self.reported(), [(None,)])
+
+    def test_a_restart_followed_by_the_exit_note_is_quiet(self):
+        """A loop that came back to no ready tickets never heartbeats; its
+        exit note is what says it returned."""
+        store.record_loop_restart(self.conn, self.project, self.SHA, now=T0)
+        store.record_loop_return(self.conn, self.project,
+                                 now=T0 + 30 * self.SECOND)
+
+        lines = self.lines(T0 + 200 * self.SECOND)
+
+        self.assertEqual(lines, ["no runs in flight, nothing to sweep"])
+        self.assertEqual(self.reported(), [(None,)])
+
+    def test_a_restart_nothing_followed_is_reported_once_past_the_grace(self):
+        """Restart at T and silence: inside the default two minutes nothing
+        is said; at T+200s the line names the sha and the store records the
+        condition; a second sweep neither prints nor records it again."""
+        store.record_loop_restart(self.conn, self.project, self.SHA, now=T0)
+
+        self.assertEqual(self.restart_lines(T0 + 60 * self.SECOND), [])
+        self.assertEqual(self.reported(), [(None,)])
+
+        first = self.lines(T0 + 200 * self.SECOND)
+
+        line, = [line for line in first if "re-exec" in line]
+        self.assertIn(f"loop did not return after re-exec from {self.SHA}",
+                      line)
+        self.assertIn("3.3 min", line)
+        # Above the run report, which is the quiet case: a dead loop leaves
+        # nothing in flight, and that must not hide the line.
+        self.assertEqual(first, [line, "no runs in flight, nothing to sweep"])
+        self.assertEqual(self.reported(), [(T0 + 200 * self.SECOND,)])
+
+        second = self.lines(T0 + 260 * self.SECOND)
+
+        self.assertEqual(second, ["no runs in flight, nothing to sweep"])
+        self.assertEqual(self.reported(), [(T0 + 200 * self.SECOND,)])
+
+    def test_a_claim_from_before_the_restart_does_not_vouch_for_it(self):
+        """The heartbeat that clears a restart has to be newer than it: the
+        run the old loop merged just before re-executing is history."""
+        run_id = self.a_run(claimed_at=T0 - 10 * MINUTE)
+        self.heartbeat_at(run_id, T0 - self.SECOND)
+        store.record_loop_restart(self.conn, self.project, self.SHA, now=T0)
+
+        self.assertEqual(len(self.restart_lines(T0 + 200 * self.SECOND)), 1)
+
+    def test_the_supervisor_pass_prints_the_line_on_an_otherwise_quiet_pass(self):
+        """`--supervise` prints nothing on a healthy pass; an unreturned
+        restart is not a healthy pass."""
+        self.retarget_factory()
+        store.record_loop_restart(self.conn, self.project, self.SHA, now=T0)
+        self.conn.commit()
+        out = io.StringIO()
+
+        with patch.dict(sys.modules,
+                        {"linear_provider": Tripwire("linear_provider")}):
+            with no_network():
+                factory.supervise_pass(os.getpid(), T0,
+                                       now=T0 + 200 * self.SECOND, out=out)
+                factory.supervise_pass(os.getpid(), T0,
+                                       now=T0 + 260 * self.SECOND, out=out)
+
+        self.assertEqual(
+            out.getvalue().count("loop did not return after re-exec from"
+                                 f" {self.SHA}"), 1)
+
+
 class SupervisorConfigTests(SweepTestCase):
     """`[supervisor]` in the target's `config.toml`: the thresholds have an address.
 
@@ -1239,7 +1340,7 @@ class SupervisorConfigTests(SweepTestCase):
         self.retarget_factory()
 
         self.assertEqual(factory.sweep_config(),
-                         (5 * MINUTE, 2, 1.5, 0.5, 60))
+                         (5 * MINUTE, 2, 1.5, 0.5, 60, 2 * MINUTE))
 
     def test_heartbeat_stale_min_moves_the_silence_a_trip_needs(self):
         """A heartbeat two and three minutes old on two consecutive sweeps:
@@ -1305,6 +1406,8 @@ class SupervisorConfigTests(SweepTestCase):
                 ("budget_grace = true", "budget_grace",
                  "a finite positive number"),
                 ('sweep_interval_sec = "60"', "sweep_interval_sec",
+                 "a finite positive number"),
+                ("restart_grace_sec = 0", "restart_grace_sec",
                  "a finite positive number")):
             with self.subTest(line=line):
                 self.configure(f"[supervisor]\n{line}\n")
@@ -1335,6 +1438,19 @@ class SupervisorConfigTests(SweepTestCase):
                 message = str(raised.exception)
                 self.assertIn("[supervisor] must be a table", message)
                 self.assertIn(f"got {kind}", message)
+
+    def test_restart_grace_sec_moves_how_long_a_re_exec_may_take(self):
+        """A restart 200s old: reported under the default two minutes, not
+        under a five-minute grace."""
+        store.record_loop_restart(self.conn, self.project, "abc1234", now=T0)
+        self.configure("[supervisor]\nrestart_grace_sec = 300\n")
+
+        patient = factory.sweep(self.conn, T0 + 200_000)
+        self.assertEqual(patient.restarts, ())
+
+        self.configure("[supervisor]\nrestart_grace_sec = 120\n")
+        default = factory.sweep(self.conn, T0 + 200_000)
+        self.assertEqual(default.restarts, (("abc1234", 200_000),))
 
     def test_sweep_interval_sec_is_the_supervisor_s_sleep(self):
         self.configure("[supervisor]\nsweep_interval_sec = 7\n")

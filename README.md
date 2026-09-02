@@ -205,7 +205,11 @@ which file to look at.
 
 Each pass bumps the process's row in the store's `supervisorHeartbeats`
 table, so whether the watcher is still watching is a query rather than a
-`ps`. Process management (systemd, a tmux pane, `nohup`) is the operator's;
+`ps`. The sweep also watches the loop's own restarts: a loop that merges a
+change to the factory itself writes a `loopRestarts` row and re-executes,
+and if no claim, heartbeat or "no ready tickets" exit follows within
+`restart_grace_sec` the next sweep prints `loop did not return after re-exec
+from <sha>` and records it, once per restart. Nothing is relaunched. Process management (systemd, a tmux pane, `nohup`) is the operator's;
 the factory ships the invocation and nothing around it.
 
 ## Linting
@@ -358,9 +362,10 @@ stale_strikes            = 2    # consecutive silent sightings that trip a run
 budget_grace             = 1.5  # multiple of the ticket's estimate that blows the box
 review_overlap_threshold = 0.5  # findings shared by two rounds that reads as stuck
 sweep_interval_sec       = 60   # sleep between two --supervise passes
+restart_grace_sec        = 120  # how long a self-merge re-exec may take to come back
 ```
 
-Accepted keys: the five above.
+Accepted keys: the six above.
 
 Different targets want different patience — a Go build's worktree setup is
 slower than stdlib Python's — and these are the knobs `--sweep` and

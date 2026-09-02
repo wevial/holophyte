@@ -2982,7 +2982,7 @@ def main(provider=None):
         # count one silence twice) or reprinting (which would look like it
         # had).
         seen = sweep(conn, int(time() * 1000))
-        if seen.trips or seen.watched:
+        if seen.trips or seen.watched or seen.restarts:
             print("\n".join(sweep_lines(seen)))
             if seen.trips:
                 print(SWEEP_HINT.format(target=TARGET))
@@ -2996,6 +2996,11 @@ def main(provider=None):
         while True:
             task = provider.claim_next(skip=skip)
             if not task:
+                # The exit note, in the store before it is on the terminal:
+                # a loop that was re-exec'd and found nothing to claim ends
+                # here without ever heartbeating, and this is what tells the
+                # sweep the restart came back.
+                store.record_loop_return(conn, project)
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if failed else None
             # Before the lease, before the mirror: a ticket that has already
@@ -3204,6 +3209,11 @@ def main(provider=None):
                 # redirected (block-buffered) stdout the line would be lost.
                 print("[holo2] merged a change to the factory itself;"
                       f" re-executing from {sha}: {argv}", flush=True)
+                # The note the supervisor watches for, written before the
+                # exec because nothing can be written after a failed one:
+                # the sweep reports this restart if no claim, heartbeat or
+                # exit note follows it within the grace window.
+                store.record_loop_restart(conn, project, sha)
                 conn.close()
                 EXEC(program, argv)
                 return  # only a test's EXEC returns
@@ -3422,12 +3432,22 @@ REVIEW_OVERLAP_THRESHOLD = 0.5
 # interval of dying, coarse enough that the store's write lock is taken for
 # the sweep's arithmetic sixty times an hour and not six hundred.
 SUPERVISE_INTERVAL_SEC = 60
+# How long a self-merge re-exec may take to come back before its silence is
+# reported. The loop writes a `loopRestarts` row just before `os.execv()`
+# replaces it, and a loop that came back claims a ticket (a heartbeat) or
+# writes its exit note; a restart older than this that neither has followed
+# is a loop that died in the exec -- the one gap every earlier gate had
+# passed through when the first live re-exec after KO-191 died with
+# `FileNotFoundError` before printing anything. Two minutes: an exec is
+# instant and a startup probe is seconds, so a loop that has not claimed or
+# exited in two minutes is not merely slow.
+RESTART_GRACE_SEC = 120
 # The phases the review-stuck check applies in: the ones a run is in between
 # a review round ending and the next one starting. Anywhere else the rounds on
 # file are history the run has moved past, not a review it is still inside.
 REVIEW_PHASES = ("reviewing", "addressing")
 
-# The five knobs above have an address: the optional `[supervisor]` table of
+# The six knobs above have an address: the optional `[supervisor]` table of
 # `<repo>.holophyte.toml`. Different targets legitimately want different
 # patience -- a Go build's setup is slower than stdlib Python's -- and the
 # constants are the defaults, not the lookup sites: an absent table is
@@ -3440,15 +3460,16 @@ SUPERVISOR_KEYS = {
     "budget_grace": BUDGET_GRACE,
     "review_overlap_threshold": REVIEW_OVERLAP_THRESHOLD,
     "sweep_interval_sec": SUPERVISE_INTERVAL_SEC,
+    "restart_grace_sec": RESTART_GRACE_SEC,
 }
-# The knobs as the sweep reads them: the same five, with the heartbeat
-# threshold already in milliseconds, so the arithmetic in `sweep()` is the
-# arithmetic it always was.
+# The knobs as the sweep reads them: the same six, with the heartbeat
+# threshold and the restart grace already in milliseconds, so the arithmetic
+# in `sweep()` is the arithmetic it always was.
 KNOWN_KEYS["supervisor"] = frozenset(SUPERVISOR_KEYS)
 SweepConfig = collections.namedtuple(
     "SweepConfig",
     ("heartbeat_stale_ms", "stale_strikes", "budget_grace",
-     "review_overlap_threshold", "sweep_interval_sec"))
+     "review_overlap_threshold", "sweep_interval_sec", "restart_grace_ms"))
 
 
 def sweep_config():
@@ -3498,7 +3519,8 @@ def sweep_config():
         stale_strikes=values["stale_strikes"],
         budget_grace=values["budget_grace"],
         review_overlap_threshold=values["review_overlap_threshold"],
-        sweep_interval_sec=values["sweep_interval_sec"])
+        sweep_interval_sec=values["sweep_interval_sec"],
+        restart_grace_ms=values["restart_grace_sec"] * 1000)
 
 # What the claim loop does after a run it closed out as failed. The default
 # is the loop as it has always been: one failure ends the process, and an
@@ -3595,9 +3617,14 @@ Trip = collections.namedtuple(
 # runs reads completely differently depending on whether they were left alone
 # or failed. `watched` is carried because a first strike printed as "all
 # healthy" hides exactly the evidence the next invocation acts on.
+# `restarts` is the loop-level condition, apart from the per-run ones: each is
+# a `(sha, age_ms)` for a self-merge re-exec no loop activity has followed
+# past the grace window, carried once -- the sweep that found it stamped it
+# reported -- so the line is printed by the pass that recorded it and no
+# other.
 Sweep = collections.namedtuple("Sweep",
                                ("swept", "trips", "acted", "watched",
-                                "outcomes"))
+                                "outcomes", "restarts"), defaults=((),))
 # What acting on one trip came to. `acted` is whether the run was failed;
 # `phase` is the run's phase as the re-check found it, which for a decline is
 # the status the summary names -- the run finished, moved on or answered --
@@ -3815,6 +3842,14 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
     Linear, and holding the store's write lock across a network call would
     stall every live loop for as long as the provider takes to answer.
 
+    One condition is the loop's rather than a run's: a self-merge re-exec
+    (`loopRestarts`) that no claim, heartbeat or exit note has followed
+    within `restart_grace_ms` is a loop that did not come back. It is asked
+    in the same transaction, and the store hands each such restart over once
+    -- stamping it reported as it does -- so the pass that prints the line is
+    the pass that recorded the condition, and the next pass is quiet about it.
+    Nothing is relaunched.
+
     `knobs` is the target's `SweepConfig`; the default is `sweep_config()`,
     the `[supervisor]` table over the module constants.
     """
@@ -3823,6 +3858,9 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
     grace, overlap_threshold = knobs.budget_grace, knobs.review_overlap_threshold
     trips, watched = [], []
     with store.transaction(conn):
+        restarts = tuple(
+            (sha, age) for _id, _project, sha, age
+            in store.unreturned_loop_restarts(conn, knobs.restart_grace_ms, now))
         swept = conn.execute(
             "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
             " r.startedAt, r.timeBoxMs, r.host"
@@ -3878,7 +3916,8 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
     outcomes = []
     if act:
         outcomes = [act_on_trip(conn, trip, provider, knobs) for trip in trips]
-    return Sweep(len(swept), trips, act, tuple(watched), tuple(outcomes))
+    return Sweep(len(swept), trips, act, tuple(watched), tuple(outcomes),
+                 restarts)
 
 
 SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence", "host")
@@ -3923,7 +3962,26 @@ def sweep_lines(result):
     the words "failed and leases released" are printed only for a run whose
     failure was written. A read-only sweep has no outcomes and prints as it
     always has.
+
+    A restart the loop did not come back from is printed first, one line per
+    restart naming the sha and how long ago the exec was: it is not about a
+    run, so it sits above the run table, and it is printed above the quiet
+    lines too, because "no runs in flight" is exactly what a loop that died
+    in its exec leaves behind.
     """
+    return restart_lines(result) + run_lines(result)
+
+
+def restart_lines(result):
+    """One line per self-merge re-exec the loop did not come back from."""
+    return [f"loop did not return after re-exec from {sha}:"
+            f" no claim, heartbeat or exit note in the {age / 60000:.1f} min"
+            " since the exec"
+            for sha, age in result.restarts]
+
+
+def run_lines(result):
+    """`sweep_lines()` less the restart lines: the per-run report."""
     if not result.swept:
         return ["no runs in flight, nothing to sweep"]
     if not result.trips:
@@ -4219,7 +4277,7 @@ def supervise_pass(pid, started_at, now=None, provider=None, out=None):
     conn = open_store()
     try:
         seen = sweep(conn, now, act=True, provider=provider)
-        if seen.trips or seen.watched:
+        if seen.trips or seen.watched or seen.restarts:
             print("\n".join(sweep_lines(seen)), file=out)
         store.record_supervisor_heartbeat(conn, pid, started_at, now)
     finally:

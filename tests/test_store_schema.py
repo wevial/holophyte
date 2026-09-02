@@ -72,6 +72,10 @@ DOCUMENTED_COLUMNS = {
     # Store-owned as well: one row per `--supervise` process, bumped on every
     # pass, so a reader can tell a live watcher from a dead one.
     "supervisorHeartbeats": {"pid", "startedAt", "lastBeat", "passes", "host"},
+    # And one row per self-merge re-exec of the loop, so the sweep can tell a
+    # restart that came back from one that died in the exec.
+    "loopRestarts": {"id", "projectId", "sha", "at", "returnedAt",
+                     "reportedAt"},
 }
 
 A_PROJECT = (
