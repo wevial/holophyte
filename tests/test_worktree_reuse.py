@@ -17,7 +17,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -29,7 +28,7 @@ SPEC.loader.exec_module(factory)
 
 
 class ReuseFixture(unittest.TestCase):
-    """A real target repo and worktree directory, patched into the factory."""
+    """A real target repo and worktree directory, as a `Target`."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -45,11 +44,9 @@ class ReuseFixture(unittest.TestCase):
         self.git("add", "README.md")
         self.git("commit", "-q", "-m", "base")
         self.base = self.git("rev-parse", "main").strip()
-        for name, value in (("TARGET", self.target),
-                            ("WORKTREES", self.worktrees)):
-            patcher = patch.object(factory, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        self.tgt = factory.Target(
+            path=self.target, holo_dir=root, store_path=root / "store.db",
+            config_path=root / "config.toml", worktrees=self.worktrees)
         self.wt = self.worktrees / "add-a-thing"
         self.branch = "task/add-a-thing"
 
@@ -72,7 +69,7 @@ class UnregisteredLeftoverTests(ReuseFixture):
         self.wt.mkdir(parents=True)
         (self.wt / "precious.txt").write_text("rescued work\n")
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn(str(self.wt), why)
@@ -90,7 +87,7 @@ class UnregisteredLeftoverTests(ReuseFixture):
         self.wt.mkdir(parents=True)
         (self.wt / "precious.txt").write_text("rescued work\n")
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn("not a registered worktree", why)
@@ -104,7 +101,7 @@ class UnregisteredLeftoverTests(ReuseFixture):
         alias = self.worktrees.parent / "alias"
         alias.symlink_to(self.worktrees)
 
-        ok, why = factory.reuse_leftover(alias / "add-a-thing", self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, alias / "add-a-thing", self.branch)
 
         self.assertTrue(ok, why)
 
@@ -117,7 +114,7 @@ class DirtyLeftoverTests(ReuseFixture):
         self.leftover_worktree()
         (self.wt / "notes.txt").write_text("uncommitted rescue\n")
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("status", "--porcelain", cwd=self.wt), "")
@@ -129,7 +126,7 @@ class DirtyLeftoverTests(ReuseFixture):
     def test_a_clean_registered_leftover_is_reused_on_its_branch(self):
         self.leftover_worktree()
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(
@@ -149,7 +146,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("commit", "-q", "-m", "rescued: preserved work", cwd=self.wt)
         tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
@@ -164,7 +161,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "new.txt")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
@@ -183,7 +180,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "new.txt")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         # The ancestor invariant both review routes enforce, asked of git
@@ -202,7 +199,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "README.md")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn("conflict", why)
@@ -222,7 +219,7 @@ class CarriedCommitsTests(ReuseFixture):
         tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
         self.git("checkout", "-q", "--detach", "main", cwd=self.wt)
 
-        ok, why = factory.reuse_leftover(self.wt, self.branch)
+        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn(self.branch, why)

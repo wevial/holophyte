@@ -140,14 +140,14 @@ class WiringClaimTests(unittest.TestCase):
                            ("user.name", "Factory Test")):
             subprocess.run(["git", "config", key, value],
                            cwd=self.target, check=True)
-        # Stands in for factory.STORE_PATH: outside the target, never a file in it.
+        # The `Target` the loop is handed, with the store and the worktrees
+        # placed by hand: outside the target, never a file in it.
         self.db = Path(tmp.name) / "store.db"
         self.worktrees = Path(tmp.name) / "repo.worktrees"
-        for attr, value in (("TARGET", self.target), ("STORE_PATH", self.db),
-                            ("WORKTREES", self.worktrees)):
-            p = patch.object(factory, attr, value)
-            p.start()
-            self.addCleanup(p.stop)
+        self.tgt = factory.Target(
+            path=self.target, holo_dir=Path(tmp.name), store_path=self.db,
+            config_path=Path(tmp.name) / "config.toml",
+            worktrees=self.worktrees)
 
     def read(self, sql):
         """Query the store over a connection the factory never touched."""
@@ -157,14 +157,14 @@ class WiringClaimTests(unittest.TestCase):
 
     def hold_the_lease(self):
         """Leave the project with an active run, as a second loop would find it."""
-        conn = factory.open_store(self.db)
+        conn = factory.open_store(self.tgt)
         self.addCleanup(conn.close)
         project = store.ensure_project(conn, StubProvider.TEAM, self.target)
         ticket = store.mirror_ticket(conn, project, "HOL-0", "HOL-0", "in flight")
         return store.claim(conn, project, ticket)
 
     def test_loop_start_creates_a_wal_store_with_the_schema(self):
-        factory.main(StubProvider())  # no ready tickets: bootstrap and stop
+        factory.main(self.tgt, StubProvider())  # no ready tickets: bootstrap and stop
 
         self.assertTrue(self.db.exists())
         self.assertEqual(self.read("PRAGMA journal_mode")[0][0].lower(), "wal")
@@ -180,7 +180,7 @@ class WiringClaimTests(unittest.TestCase):
         checkout, so the only thing that keeps the database and its two WAL
         sidecars out of a task's `git add -A` is living outside the repo.
         """
-        factory.main(StubProvider())  # bootstrap the store, no ready tickets
+        factory.main(self.tgt, StubProvider())  # bootstrap the store, no ready tickets
 
         self.assertTrue(self.db.exists())
         self.assertFalse(self.db.is_relative_to(self.target))
@@ -192,27 +192,25 @@ class WiringClaimTests(unittest.TestCase):
     def test_the_store_path_is_in_the_targets_state_directory(self):
         """One store per target, in its directory under `HOLOPHYTE_HOME`.
 
-        Retargets a module of its own, because the paths are derived from the
-        target together: patching STORE_PATH afterwards, as the other tests
-        do, would test the patch rather than the rule.
+        Through `Target.locate()`, because the paths are derived from the
+        target together: a `Target` assembled by hand, as the other tests
+        do, would test the assembly rather than the rule.
         """
         home = Path(tempfile.mkdtemp()) / "home"
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}):
-            mod = importlib.util.module_from_spec(SPEC)
-            SPEC.loader.exec_module(mod)
+            target = factory.Target.locate("/srv/dev/holo2test", adopt=False)
 
-            mod.retarget("/srv/dev/holo2test", adopt=False)
-
-        self.assertEqual(mod.STORE_PATH.parent.parent, home)
-        self.assertEqual(mod.STORE_PATH.name, "store.db")
-        self.assertEqual(mod.CONFIG_PATH.parent, mod.STORE_PATH.parent)
+        self.assertEqual(target.store_path.parent.parent, home)
+        self.assertEqual(target.store_path.name, "store.db")
+        self.assertEqual(target.config_path.parent, target.store_path.parent)
+        self.assertEqual(target.holo_dir, target.store_path.parent)
         # The worktrees keep their sibling address beside the checkout.
-        self.assertEqual(mod.WORKTREES, Path("/srv/dev/holo2test.worktrees"))
+        self.assertEqual(target.worktrees, Path("/srv/dev/holo2test.worktrees"))
 
     def test_claim_mirrors_the_ticket_and_holds_the_lease_during_the_run(self):
         seen = {}
 
-        def spy(task, conn=None, run_id=None, provider=None):
+        def spy(target, task, conn=None, run_id=None, provider=None):
             # Runs while the lease is held, and before run_task's first git
             # command — so this is the state the branch would be cut under.
             seen["projects"] = self.read("SELECT id, activeRunId FROM projects")
@@ -224,7 +222,7 @@ class WiringClaimTests(unittest.TestCase):
             return True
 
         with patch.object(factory, "run_task", spy):
-            factory.main(StubProvider(a_task()))
+            factory.main(self.tgt, StubProvider(a_task()))
 
         (project_id, project_lease), = seen["projects"]
         (ticket_id, ticket_project, issue_id, identifier, title,
@@ -250,8 +248,8 @@ class WiringClaimTests(unittest.TestCase):
         row count is the assertion, not a refreshed label.
         """
         with patch.object(factory, "run_task", return_value=True):
-            factory.main(StubProvider(a_task()))
-            factory.main(StubProvider(a_task(identifier="HOL-1-renamed")))
+            factory.main(self.tgt, StubProvider(a_task()))
+            factory.main(self.tgt, StubProvider(a_task(identifier="HOL-1-renamed")))
 
         self.assertEqual(self.read("SELECT linearIssueId, status FROM tickets"),
                          [(ISSUE_UUID, "merged")])
@@ -259,7 +257,7 @@ class WiringClaimTests(unittest.TestCase):
     def test_a_provider_without_a_uuid_still_mirrors_under_its_identifier(self):
         """A UUID-less provider keeps working, keyed on the id it does have."""
         with patch.object(factory, "run_task", return_value=True):
-            factory.main(StubProvider(a_task(issue_id=None)))
+            factory.main(self.tgt, StubProvider(a_task(issue_id=None)))
 
         self.assertEqual(
             self.read("SELECT linearIssueId, linearIdentifier FROM tickets"),
@@ -269,7 +267,7 @@ class WiringClaimTests(unittest.TestCase):
         held = self.hold_the_lease()
 
         with patch.object(factory, "run_task") as run_task:
-            factory.main(StubProvider(a_task()))
+            factory.main(self.tgt, StubProvider(a_task()))
 
         run_task.assert_not_called()
         self.assertFalse(self.worktrees.exists())
@@ -288,17 +286,17 @@ class WiringClaimTests(unittest.TestCase):
         second = a_task(identifier="HOL-2", title="the other thing",
                         issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
         with patch.object(factory, "run_task", return_value=False):
-            factory.main(StubProvider(first))  # fails: mirror stays in_flight
+            factory.main(self.tgt, StubProvider(first))  # fails: mirror stays in_flight
         self.assertEqual(self.read("SELECT linearIdentifier, status FROM tickets"),
                          [("HOL-1", "in_flight")])
         before = self.read("SELECT id, ticketId FROM runs")
 
         with patch.object(factory, "run_task", return_value=True) as run_task, \
                 patch("builtins.print") as printed:
-            factory.main(StubProvider(first, second))
+            factory.main(self.tgt, StubProvider(first, second))
 
         run_task.assert_called_once()
-        self.assertEqual(run_task.call_args.args[0]["id"], "HOL-2")
+        self.assertEqual(run_task.call_args.args[1]["id"], "HOL-2")
         (skipped_id,), = self.read(
             "SELECT id FROM tickets WHERE linearIdentifier = 'HOL-1'")
         self.assertEqual(
@@ -321,7 +319,7 @@ class WiringClaimTests(unittest.TestCase):
         the offer arrives with the verify command edited out. Claiming on the
         stale row would open a run and hand `run_task()` an empty contract."""
         stale = a_task()
-        conn = factory.open_store(self.db)
+        conn = factory.open_store(self.tgt)
         self.addCleanup(conn.close)
         project = store.ensure_project(conn, StubProvider.TEAM, self.target)
         store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
@@ -333,7 +331,7 @@ class WiringClaimTests(unittest.TestCase):
 
         with patch.object(factory, "run_task", return_value=True) as run_task, \
                 patch("builtins.print") as printed:
-            factory.main(StubProvider(live))
+            factory.main(self.tgt, StubProvider(live))
 
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), [])
@@ -349,7 +347,7 @@ class WiringClaimTests(unittest.TestCase):
         list: the provider does not parse one, so the store's is the only
         copy. A re-mirror that reset it to `[]` would make a blocked ticket
         pickable in the very row the gate reads next."""
-        conn = factory.open_store(self.db)
+        conn = factory.open_store(self.tgt)
         self.addCleanup(conn.close)
         project = store.ensure_project(conn, StubProvider.TEAM, self.target)
         dep = a_task(identifier="HOL-0", title="the prerequisite",
@@ -369,7 +367,7 @@ class WiringClaimTests(unittest.TestCase):
 
         with patch.object(factory, "run_task", return_value=True) as run_task, \
                 patch("builtins.print") as printed:
-            factory.main(StubProvider(offered))
+            factory.main(self.tgt, StubProvider(offered))
 
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), [])
@@ -393,10 +391,10 @@ class WiringClaimTests(unittest.TestCase):
                         issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
 
         with patch.object(factory, "run_task", return_value=True) as run_task:
-            factory.main(StubProvider(unspecced, second))
+            factory.main(self.tgt, StubProvider(unspecced, second))
 
         run_task.assert_called_once()
-        self.assertEqual(run_task.call_args.args[0]["id"], "HOL-2")
+        self.assertEqual(run_task.call_args.args[1]["id"], "HOL-2")
         self.assertEqual(
             self.read("SELECT linearIdentifier, status FROM tickets"
                       " ORDER BY linearIdentifier"),
@@ -411,7 +409,7 @@ class WiringClaimTests(unittest.TestCase):
         a ticket the store already holds as `ready` whose description has
         since been edited into an unfilled template is refused and its
         mirror follows the body to `needs_spec`, with no run row."""
-        conn = factory.open_store(self.db)
+        conn = factory.open_store(self.tgt)
         self.addCleanup(conn.close)
         project = store.ensure_project(conn, StubProvider.TEAM, self.target)
         was_valid = a_task(identifier="HOL-1", issue_id=ISSUE_UUID)
@@ -427,7 +425,7 @@ class WiringClaimTests(unittest.TestCase):
 
         with patch.object(factory, "run_task", return_value=True) as run_task, \
                 patch("builtins.print") as printed:
-            factory.main(StubProvider(now_invalid))
+            factory.main(self.tgt, StubProvider(now_invalid))
 
         run_task.assert_not_called()
         self.assertEqual(
@@ -454,10 +452,10 @@ class WiringClaimTests(unittest.TestCase):
 
         with patch.object(factory, "run_task", return_value=True) as run_task, \
                 patch("builtins.print") as printed:
-            factory.main(StubProvider(invalid, valid))
+            factory.main(self.tgt, StubProvider(invalid, valid))
 
         run_task.assert_called_once()
-        self.assertEqual(run_task.call_args.args[0]["id"], "HOL-2")
+        self.assertEqual(run_task.call_args.args[1]["id"], "HOL-2")
         self.assertEqual(
             self.read("SELECT linearIdentifier, status FROM tickets"
                       " ORDER BY linearIdentifier"),
@@ -475,7 +473,7 @@ class WiringClaimTests(unittest.TestCase):
 
     def test_a_merged_run_gives_the_lease_back(self):
         with patch.object(factory, "run_task", return_value=True):
-            factory.main(StubProvider(a_task()))
+            factory.main(self.tgt, StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
         (run_id, phase, outcome, ended), = self.read(
@@ -487,7 +485,7 @@ class WiringClaimTests(unittest.TestCase):
 
     def test_a_failed_run_gives_the_lease_back(self):
         with patch.object(factory, "run_task", return_value=False):
-            factory.main(StubProvider(a_task()))
+            factory.main(self.tgt, StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
@@ -497,7 +495,7 @@ class WiringClaimTests(unittest.TestCase):
         boom = RuntimeError("merge blew up")
 
         with patch.object(factory, "run_task", side_effect=boom):
-            rc = factory.main(StubProvider(a_task()))
+            rc = factory.main(self.tgt, StubProvider(a_task()))
 
         # Contained, not propagated: the crash is this run's failure, exit 1.
         self.assertEqual(rc, 1)

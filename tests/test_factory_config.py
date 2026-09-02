@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,29 +23,27 @@ SPEC.loader.exec_module(factory)
 
 
 class ConfigTestCase(unittest.TestCase):
-    """Retarget the module at a throwaway target, optionally with a config.
+    """Build a `Target` at a throwaway repository, optionally with a config.
 
-    `retarget()` is the only thing that moves TARGET/CONFIG_PATH, so the tests
-    use it rather than patching the globals: a test that set the config by
-    hand would pass even if the file were never wired into the retarget path
-    at all.
+    `Target.locate()` is the only thing that derives a target's paths, so the
+    tests go through it rather than assembling a `Target` by hand: a test
+    that set the config path itself would pass even if the file were never
+    wired into the path `cli()` derives at all.
     """
 
-    def retarget(self, config=None):
+    def locate(self, config=None):
+        """The `Target` for a fresh repository under a fresh home, as `self.tgt`."""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        # Paths only (adopt=False): restoring the default target at
-        # teardown must not move a real host's state around.
-        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
         self.root = Path(tmp.name)
         self.home = self.root / "home"
         self.set_home(self.home)
-        target = self.root / "repo"
-        target.mkdir()
-        factory.retarget(target)
+        self.target = self.root / "repo"
+        self.target.mkdir()
+        self.tgt = factory.Target.locate(self.target)
         if config is not None:
             self.write_config(config)
-        return target
+        return self.tgt
 
     def set_home(self, home):
         """Point HOLOPHYTE_HOME at a throwaway directory for this test.
@@ -57,31 +56,33 @@ class ConfigTestCase(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    @staticmethod
-    def write_config(config):
-        """Put `config` where the retargeted module will look for it."""
-        factory.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        factory.CONFIG_PATH.write_text(config)
-        factory.CONFIG = None
+    def write_config(self, config):
+        """Put `config` where `self.tgt` will look for it.
+
+        Before anything has read it: a `Target` parses its config once, so a
+        file written after the first read would be a file nobody reads.
+        """
+        self.tgt.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.tgt.config_path.write_text(config)
 
 
 class ConfigLoadingTests(ConfigTestCase):
     def test_an_absent_config_file_loads_as_empty(self):
-        target = self.retarget()
+        target = self.locate().path
 
-        self.assertEqual(factory.CONFIG_PATH,
+        self.assertEqual(self.tgt.config_path,
                          factory.state_dir(target) / "config.toml")
-        self.assertFalse(factory.CONFIG_PATH.exists())
-        self.assertEqual(factory.config(), {})
+        self.assertFalse(self.tgt.config_path.exists())
+        self.assertEqual(self.tgt.config(), {})
 
     def test_malformed_toml_aborts_naming_the_file_and_the_problem(self):
-        self.retarget('[agents]\nimplementer = "unterminated\n')
+        self.locate('[agents]\nimplementer = "unterminated\n')
 
         with self.assertRaises(SystemExit) as raised:
-            factory.config()
+            self.tgt.config()
 
         message = str(raised.exception)
-        self.assertIn(str(factory.CONFIG_PATH), message)
+        self.assertIn(str(self.tgt.config_path), message)
         # The parser's own complaint, not just "could not read config": the
         # operator has to be told which line to go fix.
         self.assertIn("line 2", message)
@@ -90,13 +91,57 @@ class ConfigLoadingTests(ConfigTestCase):
         # Not at import, and not for the default target: a broken config file
         # sitting next to some other repository is that repository's problem.
         # `cli()` reads the one the run named, before it claims anything.
-        target = self.retarget()
+        target = self.locate().path
         self.write_config("[agents\n")
 
         with self.assertRaises(SystemExit) as raised:
             factory.cli([str(target), "--report"])
 
-        self.assertIn(str(factory.CONFIG_PATH), str(raised.exception))
+        self.assertIn(str(self.tgt.config_path), str(raised.exception))
+
+    def test_two_targets_in_one_process_each_read_their_own_config(self):
+        # The point of a value over module state: the `serve` daemon and the
+        # supervisor both want two targets live at once, and the config one
+        # of them reads must not become the other's.
+        self.locate()
+        targets = []
+        for name in ("one", "two"):
+            path = self.root / name / "repo"
+            path.mkdir(parents=True)
+            target = factory.Target.locate(path)
+            target.config_path.parent.mkdir(parents=True)
+            target.config_path.write_text(
+                f'[agents]\nimplementer = "harness-{name} run"\n')
+            targets.append(target)
+        first, second = targets
+
+        self.assertEqual(first.config()["agents"]["implementer"],
+                         "harness-one run")
+        self.assertEqual(second.config()["agents"]["implementer"],
+                         "harness-two run")
+        # Reading the second changed nothing about the first, and what each
+        # routes to is what its own file says.
+        self.assertEqual(first.config()["agents"]["implementer"],
+                         "harness-one run")
+        self.assertEqual(factory.agent_command(first, "implement", "go"),
+                         ["harness-one", "run", "go"])
+        self.assertEqual(factory.agent_command(second, "implement", "go"),
+                         ["harness-two", "run", "go"])
+
+    def test_importing_the_module_names_no_target(self):
+        # No module-level target, no module-level config, and nothing under
+        # the home: a target is something `cli()` builds from the command
+        # line, and importing this module is not a command line.
+        home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, home)
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}):
+            mod = importlib.util.module_from_spec(SPEC)
+            SPEC.loader.exec_module(mod)
+
+        for name in ("TARGET", "HOLO_DIR", "STORE_PATH", "WORKTREES",
+                     "CONFIG_PATH", "CONFIG", "retarget", "config"):
+            self.assertFalse(hasattr(mod, name), name)
+        self.assertEqual(sorted(home.iterdir()), [])
 
     def test_help_does_not_read_any_config(self):
         # `--help` exits before a target is worked with at all, so a malformed
@@ -114,16 +159,16 @@ class ConfigLoadingTests(ConfigTestCase):
     def test_unknown_tables_are_left_alone(self):
         # A config written against a later version still loads, and the table
         # this version does read keeps working beside the ones it does not.
-        target = self.retarget('[notifier]\nchannel = "#factory"\n\n'
-                               '[agents]\nimplementer = "harness run"\n')
+        target = self.locate('[notifier]\nchannel = "#factory"\n\n'
+                               '[agents]\nimplementer = "harness run"\n').path
 
-        self.assertEqual(factory.config()["notifier"], {"channel": "#factory"})
-        self.assertEqual(factory.agent_command("implement", "do it"),
+        self.assertEqual(self.tgt.config()["notifier"], {"channel": "#factory"})
+        self.assertEqual(factory.agent_command(self.tgt, "implement", "do it"),
                          ["harness", "run", "do it"])
         # And startup tolerates the table: a report against this config runs.
         with patch.object(factory, "report") as report:
             factory.cli([str(target), "--report"])
-        report.assert_called_once_with()
+        report.assert_called_once_with(self.tgt)
 
 
 class KnownKeyTests(ConfigTestCase):
@@ -137,14 +182,14 @@ class KnownKeyTests(ConfigTestCase):
     """
 
     def test_an_unknown_key_in_a_known_table_is_a_startup_error(self):
-        target = self.retarget('[worktree]\nsetup_timeout_min = 10\n')
+        target = self.locate('[worktree]\nsetup_timeout_min = 10\n').path
 
         with patch.object(factory, "report") as report:
             with self.assertRaises(SystemExit) as raised:
                 factory.cli([str(target), "--report"])
 
         message = str(raised.exception)
-        self.assertIn(str(factory.CONFIG_PATH), message)
+        self.assertIn(str(self.tgt.config_path), message)
         self.assertIn("[worktree]", message)
         self.assertIn("setup_timeout_min", message)
         # The accepted keys, so the operator can see the one they meant.
@@ -157,38 +202,38 @@ class KnownKeyTests(ConfigTestCase):
                        '[supervisor]\nstale_heartbeat_min = 7\n',
                        '[loop]\nstop_on_failures = false\n'):
             with self.subTest(config=config):
-                self.retarget(config)
+                self.locate(config)
 
                 with self.assertRaises(SystemExit) as raised:
-                    factory.check_config_keys()
+                    factory.check_config_keys(self.tgt)
 
-                self.assertIn(str(factory.CONFIG_PATH), str(raised.exception))
+                self.assertIn(str(self.tgt.config_path), str(raised.exception))
 
     def test_a_config_of_only_known_keys_passes(self):
-        target = self.retarget(
+        target = self.locate(
             '[agents]\nimplementer = "harness run"\n'
             '[worktree]\nsetup = ["true"]\nsetup_timeout_sec = 30\n'
             '[supervisor]\nheartbeat_stale_min = 7\n'
-            '[loop]\nstop_on_failure = false\n')
+            '[loop]\nstop_on_failure = false\n').path
 
         with patch.object(factory, "report") as report:
             factory.cli([str(target), "--report"])
 
-        report.assert_called_once_with()
+        report.assert_called_once_with(self.tgt)
 
 
 class LoopConfigTests(ConfigTestCase):
     """`[loop] stop_on_failure`: a boolean, defaulting to today's stop."""
 
     def test_an_absent_table_stops_on_failure(self):
-        self.retarget()
+        self.locate()
 
-        self.assertIs(factory.loop_config().stop_on_failure, True)
+        self.assertIs(factory.loop_config(self.tgt).stop_on_failure, True)
 
     def test_false_is_read_as_go_on(self):
-        self.retarget('[loop]\nstop_on_failure = false\n')
+        self.locate('[loop]\nstop_on_failure = false\n')
 
-        self.assertIs(factory.loop_config().stop_on_failure, False)
+        self.assertIs(factory.loop_config(self.tgt).stop_on_failure, False)
 
     def test_a_non_boolean_is_a_startup_error_naming_the_key(self):
         """`"yes"` is a string, `1` an int: neither is the answer TOML's
@@ -197,14 +242,14 @@ class LoopConfigTests(ConfigTestCase):
         for line in ('stop_on_failure = "yes"', "stop_on_failure = 1",
                      'stop_on_failure = "false"'):
             with self.subTest(line=line):
-                target = self.retarget(f"[loop]\n{line}\n")
+                target = self.locate(f"[loop]\n{line}\n").path
 
                 with patch.object(factory, "report") as report:
                     with self.assertRaises(SystemExit) as raised:
                         factory.cli([str(target), "--report"])
 
                 message = str(raised.exception)
-                self.assertIn(str(factory.CONFIG_PATH), message)
+                self.assertIn(str(self.tgt.config_path), message)
                 self.assertIn("[loop]", message)
                 self.assertIn("stop_on_failure", message)
                 self.assertIn("boolean", message)
@@ -214,49 +259,47 @@ class LoopConfigTests(ConfigTestCase):
 class StateDirectoryTests(ConfigTestCase):
     """Every per-target artifact lives under one `HOLOPHYTE_HOME/SLUG/`.
 
-    Retargeting derives the directory and the three paths in it together, so
-    the tests go through `retarget()` and look at what the module derived.
+    `Target.locate()` derives the directory and the three paths in it
+    together, so the tests go through it and look at what it derived.
     """
 
     def test_config_store_and_lock_share_the_target_directory(self):
-        target = self.retarget()
-        holo = factory.HOLO_DIR
+        target = self.locate().path
+        holo = self.tgt.holo_dir
 
         self.assertEqual(holo.parent, self.home)
         self.assertTrue(holo.name.startswith("repo-"), holo)
-        self.assertEqual(factory.CONFIG_PATH, holo / "config.toml")
-        self.assertEqual(factory.STORE_PATH, holo / "store.db")
-        self.assertEqual(factory.supervisor_lock_path(), holo / "supervisor.lock")
-        self.assertEqual(factory.supervisor_lock_path(target),
+        self.assertEqual(self.tgt.config_path, holo / "config.toml")
+        self.assertEqual(self.tgt.store_path, holo / "store.db")
+        self.assertEqual(factory.supervisor_lock_path(self.tgt),
                          holo / "supervisor.lock")
         # The worktree directory is heavy git state, not factory state, and
         # keeps its own sibling address.
-        self.assertEqual(factory.WORKTREES, target.parent / "repo.worktrees")
+        self.assertEqual(self.tgt.worktrees, target.parent / "repo.worktrees")
 
     def test_two_targets_with_one_basename_get_two_state_directories(self):
         # The whole reason the directory carries a hash: `/a/repo` and
         # `/b/repo` are different repositories with different histories.
-        self.retarget()
+        self.locate()
         one = (self.root / "one" / "repo")
         two = (self.root / "two" / "repo")
         one.parent.mkdir()
         two.parent.mkdir()
 
-        factory.retarget(one)
-        first = factory.HOLO_DIR
-        factory.retarget(two)
+        first = factory.Target.locate(one).holo_dir
+        second = factory.Target.locate(two).holo_dir
 
-        self.assertNotEqual(first, factory.HOLO_DIR)
-        self.assertEqual(first.parent, factory.HOLO_DIR.parent)
+        self.assertNotEqual(first, second)
+        self.assertEqual(first.parent, second.parent)
 
     def test_the_directory_is_created_on_first_need_and_nothing_else_is(self):
-        target = self.retarget()
-        holo = factory.HOLO_DIR
+        target = self.locate().path
+        holo = self.tgt.holo_dir
         self.assertFalse(holo.exists())
 
-        conn = factory.open_store()
+        conn = factory.open_store(self.tgt)
         self.addCleanup(conn.close)
-        lock = factory.acquire_supervisor_lock(factory.supervisor_lock_path())
+        lock = factory.acquire_supervisor_lock(factory.supervisor_lock_path(self.tgt))
         self.addCleanup(factory.release_supervisor_lock, lock)
 
         self.assertTrue((holo / "store.db").exists())
@@ -266,13 +309,13 @@ class StateDirectoryTests(ConfigTestCase):
         self.assertEqual(beside, ["home", "repo"])
 
     def test_a_target_with_no_store_gets_no_directory_either(self):
-        self.retarget()
+        self.locate()
         out = io.StringIO()
 
-        factory.report(out=out)
+        factory.report(self.tgt, out=out)
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse(factory.HOLO_DIR.exists())
+        self.assertFalse(self.tgt.holo_dir.exists())
 
 
 class LegacyAdoptionTests(ConfigTestCase):
@@ -280,28 +323,26 @@ class LegacyAdoptionTests(ConfigTestCase):
 
     KO-165 changed the address without moving what was at the old one, and a
     run against the new empty store shadowed fifteen runs and the target's
-    agent routes. These go through `retarget()` for that reason: adoption
-    that is not wired into the path a run takes is adoption that never runs.
+    agent routes. These go through `Target.locate()` for that reason:
+    adoption that is not wired into the path a run takes is adoption that
+    never runs.
     """
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        # Paths only (adopt=False): restoring the default target at
-        # teardown must not move a real host's state around.
-        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
         self.root = Path(tmp.name)
         self.home = self.root / "home"
         self.set_home(self.home)
         self.target = self.root / "repo"
         self.target.mkdir()
 
-    def retarget(self, config=None):
+    def locate(self, config=None):
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            factory.retarget(self.target)
+            self.tgt = factory.Target.locate(self.target)
         self.printed = printed.getvalue()
-        return self.target
+        return self.tgt
 
     def legacy_directory(self):
         """KO-165's layout: `<target>.holophyte/` holding the state files."""
@@ -324,26 +365,26 @@ class LegacyAdoptionTests(ConfigTestCase):
     def test_the_ko165_directory_is_adopted_whole(self):
         holo = self.legacy_directory()
 
-        self.retarget()
+        self.locate()
 
-        self.assertEqual(factory.STORE_PATH.read_bytes(), b"legacy store\n")
-        self.assertEqual(factory.config()["agents"]["implementer"],
+        self.assertEqual(self.tgt.store_path.read_bytes(), b"legacy store\n")
+        self.assertEqual(self.tgt.config()["agents"]["implementer"],
                          "harness run")
         self.assertFalse(holo.exists())
         self.assertIn(str(holo / "store.db"), self.printed)
-        self.assertIn(str(factory.STORE_PATH), self.printed)
+        self.assertIn(str(self.tgt.store_path), self.printed)
 
     def test_the_dotted_siblings_are_adopted_with_their_sidecars(self):
         db = self.legacy_siblings()
 
-        self.retarget()
+        self.locate()
 
-        self.assertEqual(factory.STORE_PATH.read_bytes(), b"legacy store\n")
+        self.assertEqual(self.tgt.store_path.read_bytes(), b"legacy store\n")
         self.assertEqual(
-            factory.HOLO_DIR.joinpath("store.db-wal").read_bytes(), b"wal\n")
+            self.tgt.holo_dir.joinpath("store.db-wal").read_bytes(), b"wal\n")
         self.assertEqual(
-            factory.HOLO_DIR.joinpath("store.db-shm").read_bytes(), b"shm\n")
-        self.assertEqual(factory.config()["agents"]["implementer"],
+            self.tgt.holo_dir.joinpath("store.db-shm").read_bytes(), b"shm\n")
+        self.assertEqual(self.tgt.config()["agents"]["implementer"],
                          "harness run")
         self.assertEqual(sorted(p.name for p in self.root.iterdir()),
                          ["home", "repo"])
@@ -356,7 +397,7 @@ class LegacyAdoptionTests(ConfigTestCase):
         (new / "store.db").write_bytes(b"new store\n")
 
         with self.assertRaises(SystemExit) as raised:
-            self.retarget()
+            self.locate()
 
         message = str(raised.exception)
         self.assertIn(str(holo / "store.db"), message)
@@ -380,11 +421,11 @@ class LegacyAdoptionTests(ConfigTestCase):
         new.mkdir(parents=True)
         (new / "config.toml").write_text("[agents]\n")
 
-        self.retarget()
+        self.locate()
 
-        self.assertEqual(factory.STORE_PATH.read_bytes(), b"legacy store\n")
+        self.assertEqual(self.tgt.store_path.read_bytes(), b"legacy store\n")
         self.assertFalse(holo.exists())
-        self.assertIn(str(factory.STORE_PATH), self.printed)
+        self.assertIn(str(self.tgt.store_path), self.printed)
 
     def test_a_file_already_at_the_new_address_is_refused_not_overwritten(self):
         holo = self.legacy_directory()
@@ -393,7 +434,7 @@ class LegacyAdoptionTests(ConfigTestCase):
         (new / "config.toml").write_text("[agents]\nimplementer = \"new\"\n")
 
         with self.assertRaises(SystemExit) as raised:
-            self.retarget()
+            self.locate()
 
         message = str(raised.exception)
         self.assertIn(str(holo / "config.toml"), message)
@@ -405,33 +446,34 @@ class LegacyAdoptionTests(ConfigTestCase):
         self.assertTrue((holo / "config.toml").exists())
 
     def test_deriving_paths_without_adopting_leaves_the_target_alone(self):
-        """`retarget(..., adopt=False)` is the import-time call.
+        """`Target.locate(..., adopt=False)` derives the paths and nothing else.
 
-        The module retargets at the default target when it is imported, so
-        adoption there would move some unrelated target's state -- and, where
-        that target has two stores, would make `import factory` and
-        `factory.py --help` exit. Both are what `adopt=False` prevents.
+        Adoption is a side effect the caller asks for: a value built for a
+        target nobody is about to run against -- a daemon enumerating a
+        host's targets, a test naming a directory -- must not move that
+        target's state, and where the target has two stores must not exit.
+        `cli()` asks; nothing else does.
         """
         holo = self.legacy_directory()
         new = factory.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "store.db").write_bytes(b"new store\n")
 
-        factory.retarget(self.target, adopt=False)
+        target = factory.Target.locate(self.target, adopt=False)
 
         self.assertEqual((holo / "store.db").read_bytes(), b"legacy store\n")
-        self.assertEqual(factory.STORE_PATH.read_bytes(), b"new store\n")
+        self.assertEqual(target.store_path.read_bytes(), b"new store\n")
 
     def test_adoption_happens_once_and_a_later_run_leaves_the_target_alone(self):
         self.legacy_directory()
-        self.retarget()
+        self.locate()
 
         # A second target's worth of legacy state appearing later must not be
         # swept in on top of a state directory that is already the real one.
         (self.root / "repo.holophyte.toml").write_text("[agents]\n")
-        self.retarget()
+        self.locate()
 
-        self.assertEqual(factory.STORE_PATH.read_bytes(), b"legacy store\n")
+        self.assertEqual(self.tgt.store_path.read_bytes(), b"legacy store\n")
         self.assertTrue((self.root / "repo.holophyte.toml").exists())
         self.assertEqual(self.printed, "")
 
@@ -440,17 +482,18 @@ class AgentCommandTests(ConfigTestCase):
     WORKTREE = Path("/tmp/holophyte-config-contract")
 
     def test_an_absent_config_leaves_todays_routes_byte_identical(self):
-        self.retarget()
+        self.locate()
 
         with patch.object(factory, "run_capped") as run:
             run.return_value = (0, "implemented")
-            factory.agent("implement", "make the change", self.WORKTREE)
+            factory.agent(self.tgt, "implement", "make the change", self.WORKTREE)
         with patch.object(factory.review_runner, "run_review") as run_review:
             run_review.return_value = "VERDICT: APPROVE"
-            factory.agent("review", "review it", self.WORKTREE,
+            factory.agent(self.tgt, "review", "review it", self.WORKTREE,
                           base_sha="1" * 40, candidate_sha="2" * 40)
 
-        self.assertIsNone(factory.agent_command("implement", "make the change"))
+        self.assertIsNone(
+            factory.agent_command(self.tgt, "implement", "make the change"))
         run.assert_called_once_with(
             ["claude", "-p", "make the change",
              "--model", "opus", "--effort", "high"],
@@ -461,12 +504,13 @@ class AgentCommandTests(ConfigTestCase):
                          "codex-sol-medium")
 
     def test_an_implementer_override_replaces_the_argv(self):
-        self.retarget('[agents]\n'
+        self.locate('[agents]\n'
                       'implementer = "claude --model sonnet --effort medium -p"\n')
 
         with patch.object(factory, "run_capped") as run:
             run.return_value = (0, "implemented")
-            result = factory.agent("implement", "make the change", self.WORKTREE)
+            result = factory.agent(self.tgt, "implement", "make the change",
+                                   self.WORKTREE)
 
         self.assertEqual(result, "implemented")
         # The goal lands as the command's last argument — one argv element, so
@@ -478,14 +522,14 @@ class AgentCommandTests(ConfigTestCase):
         )
 
     def test_a_reviewer_override_replaces_the_container_route(self):
-        self.retarget('[agents]\nreviewer = "my-reviewer --diff"\n')
+        self.locate('[agents]\nreviewer = "my-reviewer --diff"\n')
 
         with patch.object(factory.review_runner, "run_review") as run_review, \
                 patch.object(factory, "publish_review_refs") as publish, \
                 patch.object(factory.subprocess, "run") as run:
             run.return_value.stdout = "VERDICT: APPROVE"
             run.return_value.stderr = ""
-            result = factory.agent("review", "review it", self.WORKTREE,
+            result = factory.agent(self.tgt, "review", "review it", self.WORKTREE,
                                    base_sha="1" * 40, candidate_sha="2" * 40)
 
         self.assertEqual(result, "VERDICT: APPROVE")
@@ -499,15 +543,16 @@ class AgentCommandTests(ConfigTestCase):
         )
         # The adjudicator is a separate key: overriding one role leaves the
         # other on its default route.
-        self.assertIsNone(factory.agent_command("adjudicate", "adjudicate it"))
+        self.assertIsNone(
+            factory.agent_command(self.tgt, "adjudicate", "adjudicate it"))
 
     def test_the_round_records_the_route_that_actually_ran_it(self):
-        self.retarget('[agents]\nreviewer = "my-reviewer --diff"\n')
+        self.locate('[agents]\nreviewer = "my-reviewer --diff"\n')
 
         with patch.object(factory.store, "record_review_round") as record:
-            factory.record_round(object(), "run-1", 1, "review",
+            factory.record_round(self.tgt, object(), "run-1", 1, "review",
                                  "VERDICT: APPROVE", "echo ok", True, "")
-            factory.record_round(object(), "run-1", 2, "adjudicate",
+            factory.record_round(self.tgt, object(), "run-1", 2, "adjudicate",
                                  "VERDICT: PASS", "echo ok", True, "")
 
         # The override ran the review round, so the row names it; the
@@ -522,12 +567,12 @@ class AgentCommandTests(ConfigTestCase):
             ('[agents]\nimplementer = ["claude", "-p"]\n', "command string"),
         ):
             with self.subTest(config=config):
-                self.retarget(config)
+                self.locate(config)
 
                 with self.assertRaises(SystemExit) as raised:
-                    factory.agent_command("implement", "make the change")
+                    factory.agent_command(self.tgt, "implement", "make the change")
 
-                self.assertIn(str(factory.CONFIG_PATH), str(raised.exception))
+                self.assertIn(str(self.tgt.config_path), str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
 
 
@@ -590,17 +635,17 @@ class StartupCheckTests(ConfigTestCase):
     def test_a_startup_check_of_a_resolvable_command_passes(self):
         # `sh` is on PATH everywhere the factory runs; a bare name is the
         # documented normal way to write one of these.
-        self.retarget('[agents]\nimplementer = "sh -c"\n'
+        self.locate('[agents]\nimplementer = "sh -c"\n'
                       f'reviewer = "{Path(sys.executable)} -c"\n')
 
-        self.assertIsNone(factory.check_agent_commands())
+        self.assertIsNone(factory.check_agent_commands(self.tgt))
 
     def test_an_absent_agents_table_passes_when_the_default_routes_answer(self):
-        self.retarget()
+        self.locate()
 
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            self.assertIsNone(factory.check_agent_commands())
+            self.assertIsNone(factory.check_agent_commands(self.tgt))
 
         # A built image is nothing to remark on.
         self.assertEqual(printed.getvalue(), "")
@@ -609,18 +654,18 @@ class StartupCheckTests(ConfigTestCase):
         # The runner builds the image on the first review that finds it
         # missing, so a fresh host is told what to expect and proceeds.
         self.stub_path(image=False)
-        self.retarget()
+        self.locate()
 
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            self.assertIsNone(factory.check_agent_commands())
+            self.assertIsNone(factory.check_agent_commands(self.tgt))
 
         self.assertIn(factory.review_runner.IMAGE, printed.getvalue())
         self.assertIn(str(factory.review_runner.DOCKERFILE), printed.getvalue())
 
     def test_a_missing_claude_is_a_startup_error_naming_the_override_key(self):
         self.stub_path(claude=False, system=False)
-        target = self.retarget()
+        target = self.locate().path
 
         with patch.object(factory, "main",
                           side_effect=AssertionError("claimed work")) as main:
@@ -634,10 +679,10 @@ class StartupCheckTests(ConfigTestCase):
 
     def test_a_missing_docker_is_a_startup_error_naming_the_override_key(self):
         self.stub_path(docker=None, system=False)
-        self.retarget()
+        self.locate()
 
         with self.assertRaises(SystemExit) as raised:
-            factory.check_agent_commands()
+            factory.check_agent_commands(self.tgt)
 
         message = str(raised.exception)
         self.assertIn("docker", message)
@@ -645,7 +690,7 @@ class StartupCheckTests(ConfigTestCase):
 
     def test_a_stopped_docker_daemon_is_a_startup_error_before_any_claim(self):
         self.stub_path(docker="down")
-        target = self.retarget()
+        target = self.locate().path
 
         with patch.object(factory, "main",
                           side_effect=AssertionError("claimed work")) as main:
@@ -660,12 +705,12 @@ class StartupCheckTests(ConfigTestCase):
 
     def test_a_docker_daemon_that_never_answers_is_capped(self):
         self.stub_path(docker="hang")
-        self.retarget()
+        self.locate()
 
         with patch.object(factory, "DOCKER_PROBE_TIMEOUT", 1):
             start = time.monotonic()
             with self.assertRaises(SystemExit) as raised:
-                factory.check_agent_commands()
+                factory.check_agent_commands(self.tgt)
 
         self.assertLess(time.monotonic() - start, 10)
         self.assertIn("did not answer `docker info` within 1s",
@@ -675,10 +720,10 @@ class StartupCheckTests(ConfigTestCase):
         # The adjudicator is its own key and falls to the container route
         # when only the reviewer is overridden.
         self.stub_path(docker="down")
-        self.retarget('[agents]\nreviewer = "sh -c"\n')
+        self.locate('[agents]\nreviewer = "sh -c"\n')
 
         with self.assertRaises(SystemExit) as raised:
-            factory.check_agent_commands()
+            factory.check_agent_commands(self.tgt)
 
         message = str(raised.exception)
         self.assertIn("[agents] adjudicator not set", message)
@@ -688,19 +733,19 @@ class StartupCheckTests(ConfigTestCase):
         # A docker that is down is not the problem of a target that routes
         # every role somewhere else.
         self.stub_path(claude=False, docker="down")
-        self.retarget('[agents]\nimplementer = "sh -c"\n'
+        self.locate('[agents]\nimplementer = "sh -c"\n'
                       'reviewer = "sh -c"\nadjudicator = "sh -c"\n')
 
-        self.assertIsNone(factory.check_agent_commands())
+        self.assertIsNone(factory.check_agent_commands(self.tgt))
 
     def test_a_program_that_is_not_on_path_is_a_startup_error(self):
-        self.retarget('[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n')
+        self.locate('[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n')
 
         with self.assertRaises(SystemExit) as raised:
-            factory.check_agent_commands()
+            factory.check_agent_commands(self.tgt)
 
         message = str(raised.exception)
-        self.assertIn(str(factory.CONFIG_PATH), message)
+        self.assertIn(str(self.tgt.config_path), message)
         # The key the operator wrote, and the word that did not resolve.
         self.assertIn("reviewer", message)
         self.assertIn("holophyte-no-such-reviewer", message)
@@ -711,36 +756,36 @@ class StartupCheckTests(ConfigTestCase):
         tool = Path(tmp.name) / "tool.sh"
         tool.write_text("#!/bin/sh\nexit 0\n")
         tool.chmod(0o644)
-        self.retarget(f'[agents]\nadjudicator = "{tool} --final"\n')
+        self.locate(f'[agents]\nadjudicator = "{tool} --final"\n')
 
         with self.assertRaises(SystemExit) as raised:
-            factory.check_agent_commands()
+            factory.check_agent_commands(self.tgt)
 
         self.assertIn("adjudicator", str(raised.exception))
 
     def test_a_relative_program_path_is_refused_rather_than_guessed_at(self):
         # It would resolve inside a task worktree that does not exist yet, so
         # startup cannot check the file the round would actually run.
-        self.retarget('[agents]\nreviewer = "./review.sh --diff"\n')
+        self.locate('[agents]\nreviewer = "./review.sh --diff"\n')
 
         with self.assertRaises(SystemExit) as raised:
-            factory.check_agent_commands()
+            factory.check_agent_commands(self.tgt)
 
         self.assertIn("relative", str(raised.exception))
 
     def test_the_check_reuses_the_parse_a_round_would_use(self):
         # An unquotable or wrongly-typed command is caught here too, with the
         # same message a round would have raised -- one parser, not two.
-        self.retarget('[agents]\nimplementer = ["claude", "-p"]\n')
+        self.locate('[agents]\nimplementer = ["claude", "-p"]\n')
 
         with self.assertRaises(SystemExit) as raised:
-            factory.check_agent_commands()
+            factory.check_agent_commands(self.tgt)
 
         self.assertIn("command string", str(raised.exception))
 
     def test_a_run_checks_its_commands_before_claiming_anything(self):
-        target = self.retarget(
-            '[agents]\nimplementer = "holophyte-no-such-harness -p"\n')
+        target = self.locate(
+            '[agents]\nimplementer = "holophyte-no-such-harness -p"\n').path
 
         with patch.object(factory, "main",
                           side_effect=AssertionError("claimed work")) as main:
@@ -753,27 +798,27 @@ class StartupCheckTests(ConfigTestCase):
     def test_report_does_not_require_the_configured_commands(self):
         # `--report` reads the store and calls nobody, so a reviewer that is
         # not installed on the machine reading the table is not its problem.
-        target = self.retarget(
-            '[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n')
+        target = self.locate(
+            '[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n').path
 
         with patch.object(factory, "report") as report:
             factory.cli([str(target), "--report"])
 
-        report.assert_called_once_with()
+        report.assert_called_once_with(self.tgt)
 
     def test_read_only_modes_do_not_probe_the_default_routes(self):
         # `--report` and `--sweep` dispatch nobody, so a host with no `claude`
         # and Docker stopped can still read the store.
         self.stub_path(claude=False, docker="down", system=False)
-        target = self.retarget()
+        target = self.locate().path
 
         with patch.object(factory, "report") as report:
             factory.cli([str(target), "--report"])
         with patch.object(factory, "sweep_report") as sweep_report:
             factory.cli([str(target), "--sweep"])
 
-        report.assert_called_once_with()
-        sweep_report.assert_called_once_with(act=False)
+        report.assert_called_once_with(self.tgt)
+        sweep_report.assert_called_once_with(self.tgt, act=False)
 
 
 class WorktreeSetupTests(ConfigTestCase):
@@ -793,20 +838,20 @@ class WorktreeSetupTests(ConfigTestCase):
         return Path(tmp.name)
 
     def test_an_absent_worktree_table_runs_nothing(self):
-        self.retarget()
+        self.locate()
 
         with patch.object(factory, "run_verify",
                           side_effect=AssertionError("ran a setup command")):
-            self.assertEqual(factory.run_worktree_setup(self.worktree()),
+            self.assertEqual(factory.run_worktree_setup(self.tgt, self.worktree()),
                              (True, ""))
-        self.assertEqual(factory.setup_commands(), [])
+        self.assertEqual(factory.setup_commands(self.tgt), [])
 
     def test_the_commands_run_in_the_worktree_in_the_order_written(self):
         wt = self.worktree()
-        self.retarget('[worktree]\nsetup = ["pwd > where.txt", '
+        self.locate('[worktree]\nsetup = ["pwd > where.txt", '
                       '"cp where.txt copied.txt"]\n')
 
-        ok, report = factory.run_worktree_setup(wt)
+        ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertTrue(ok)
         self.assertEqual(report, "")
@@ -819,10 +864,10 @@ class WorktreeSetupTests(ConfigTestCase):
 
     def test_a_failing_command_stops_the_setup_and_names_itself(self):
         wt = self.worktree()
-        self.retarget('[worktree]\nsetup = ["echo building; exit 3", '
+        self.locate('[worktree]\nsetup = ["echo building; exit 3", '
                       '"touch never.txt"]\n')
 
-        ok, report = factory.run_worktree_setup(wt)
+        ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("command 1 of 2", report)
@@ -835,9 +880,9 @@ class WorktreeSetupTests(ConfigTestCase):
         # The verify gate's fail-loud machinery, reused verbatim: a chain is
         # attributed clause by clause rather than as a bare non-zero exit.
         wt = self.worktree()
-        self.retarget('[worktree]\nsetup = ["echo first && false && echo third"]\n')
+        self.locate('[worktree]\nsetup = ["echo first && false && echo third"]\n')
 
-        ok, report = factory.run_worktree_setup(wt)
+        ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("clause 2 of 3", report)
@@ -846,9 +891,9 @@ class WorktreeSetupTests(ConfigTestCase):
 
     def test_a_silent_failure_is_reported_as_silence(self):
         wt = self.worktree()
-        self.retarget('[worktree]\nsetup = ["exit 1"]\n')
+        self.locate('[worktree]\nsetup = ["exit 1"]\n')
 
-        ok, report = factory.run_worktree_setup(wt)
+        ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("failed silently", report)
@@ -858,12 +903,12 @@ class WorktreeSetupTests(ConfigTestCase):
         # must arrive as a `(False, report)` like any other failure, not as a
         # `TimeoutExpired` past the branch-and-worktree teardown.
         wt = self.worktree()
-        self.retarget('[worktree]\nsetup = ["make deps", "touch never.txt"]\n')
+        self.locate('[worktree]\nsetup = ["make deps", "touch never.txt"]\n')
         expired = subprocess.TimeoutExpired("make deps", 300,
                                             output="resolving packages\n")
 
         with patch.object(factory, "run_verify", side_effect=expired):
-            ok, report = factory.run_worktree_setup(wt)
+            ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("command 1 of 2", report)
@@ -879,11 +924,11 @@ class WorktreeSetupTests(ConfigTestCase):
         # the caller is about to delete, on a branch nobody keeps.
         wt = self.worktree()
         marker = wt / "escaped.txt"
-        self.retarget('[worktree]\nsetup = ["echo resolving; '
+        self.locate('[worktree]\nsetup = ["echo resolving; '
                       '(sleep 1; touch %s) & sleep 30"]\n' % marker)
 
         with patch.object(factory, "VERIFY_TIMEOUT", 0.3):
-            ok, report = factory.run_worktree_setup(wt)
+            ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("timed out", report)
@@ -896,11 +941,11 @@ class WorktreeSetupTests(ConfigTestCase):
         # module constant: a one-second cap and a command that sleeps longer
         # fails the run naming the timeout.
         wt = self.worktree()
-        self.retarget('[worktree]\nsetup = ["echo installing; sleep 30"]\n'
+        self.locate('[worktree]\nsetup = ["echo installing; sleep 30"]\n'
                       'setup_timeout_sec = 1\n')
 
         start = time.monotonic()
-        ok, report = factory.run_worktree_setup(wt)
+        ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertLess(time.monotonic() - start, 10)
@@ -908,14 +953,14 @@ class WorktreeSetupTests(ConfigTestCase):
         self.assertIn("sleep 30", report)
 
     def test_the_default_setup_cap_is_the_verify_cap(self):
-        self.retarget('[worktree]\nsetup = ["make deps"]\n')
+        self.locate('[worktree]\nsetup = ["make deps"]\n')
 
-        self.assertEqual(factory.setup_timeout(), factory.VERIFY_TIMEOUT)
+        self.assertEqual(factory.setup_timeout(self.tgt), factory.VERIFY_TIMEOUT)
 
     def test_an_unusable_setup_timeout_is_a_startup_error(self):
         for value in ("0", "-5", "true", '"10"', "inf"):
             with self.subTest(value=value):
-                target = self.retarget(f'[worktree]\nsetup_timeout_sec = {value}\n')
+                target = self.locate(f'[worktree]\nsetup_timeout_sec = {value}\n').path
 
                 # The default routes are this host's business, not the table's.
                 with patch.object(factory, "check_agent_commands"), \
@@ -925,28 +970,28 @@ class WorktreeSetupTests(ConfigTestCase):
                         factory.cli([str(target)])
 
                 message = str(raised.exception)
-                self.assertIn(str(factory.CONFIG_PATH), message)
+                self.assertIn(str(self.tgt.config_path), message)
                 self.assertIn("setup_timeout_sec", message)
                 self.assertIn("positive number", message)
 
     def test_a_silent_timeout_is_reported_as_silence(self):
         wt = self.worktree()
-        self.retarget('[worktree]\nsetup = ["make deps"]\n')
+        self.locate('[worktree]\nsetup = ["make deps"]\n')
 
         with patch.object(factory, "run_verify", side_effect=
                           subprocess.TimeoutExpired("make deps", 300)):
-            ok, report = factory.run_worktree_setup(wt)
+            ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("no output before the timeout", report)
 
     def test_the_setup_records_a_phase_before_it_runs_anything(self):
         wt = self.worktree()
-        self.retarget('[worktree]\nsetup = ["true"]\n')
+        self.locate('[worktree]\nsetup = ["true"]\n')
         conn = object()
 
         with patch.object(factory.store, "set_phase") as set_phase:
-            factory.run_worktree_setup(wt, conn, "run-1")
+            factory.run_worktree_setup(self.tgt, wt, conn, "run-1")
 
         set_phase.assert_called_once()
         self.assertEqual(set_phase.call_args.args[2], "working")
@@ -960,19 +1005,19 @@ class WorktreeSetupTests(ConfigTestCase):
             ('[worktree]\nsetup = ["   "]\n', "is empty"),
         ):
             with self.subTest(config=config):
-                self.retarget(config)
+                self.locate(config)
 
                 with self.assertRaises(SystemExit) as raised:
-                    factory.setup_commands()
+                    factory.setup_commands(self.tgt)
 
-                self.assertIn(str(factory.CONFIG_PATH), str(raised.exception))
+                self.assertIn(str(self.tgt.config_path), str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
 
     def test_the_startup_check_reuses_the_parse_a_run_would_use(self):
-        self.retarget('[worktree]\nsetup = [7]\n')
+        self.locate('[worktree]\nsetup = [7]\n')
 
         with self.assertRaises(SystemExit) as raised:
-            factory.check_worktree_setup()
+            factory.check_worktree_setup(self.tgt)
 
         self.assertIn("command string", str(raised.exception))
 
@@ -980,17 +1025,17 @@ class WorktreeSetupTests(ConfigTestCase):
         # Startup settles the shape of the table and deliberately not the
         # commands: they are shell, written against a worktree that does not
         # exist yet.
-        self.retarget('[worktree]\nsetup = ["holophyte-no-such-tool --install"]\n')
+        self.locate('[worktree]\nsetup = ["holophyte-no-such-tool --install"]\n')
 
-        self.assertIsNone(factory.check_worktree_setup())
+        self.assertIsNone(factory.check_worktree_setup(self.tgt))
 
     def test_an_absent_table_checks_nothing(self):
-        self.retarget()
+        self.locate()
 
-        self.assertIsNone(factory.check_worktree_setup())
+        self.assertIsNone(factory.check_worktree_setup(self.tgt))
 
     def test_a_run_checks_the_table_before_claiming_anything(self):
-        target = self.retarget('[worktree]\nsetup = "make deps"\n')
+        target = self.locate('[worktree]\nsetup = "make deps"\n').path
 
         with patch.object(factory, "check_agent_commands"), \
                 patch.object(factory, "main",
@@ -1004,12 +1049,12 @@ class WorktreeSetupTests(ConfigTestCase):
     def test_report_does_not_read_the_setup_table(self):
         # `--report` cuts no worktree, so a table it would never run is not
         # that reading's problem.
-        target = self.retarget('[worktree]\nsetup = [7]\n')
+        target = self.locate('[worktree]\nsetup = [7]\n').path
 
         with patch.object(factory, "report") as report:
             factory.cli([str(target), "--report"])
 
-        report.assert_called_once_with()
+        report.assert_called_once_with(self.tgt)
 
 
 class ReviewRefTests(ConfigTestCase):
@@ -1049,9 +1094,9 @@ class ReviewRefTests(ConfigTestCase):
         reviewer.write_text("#!/bin/sh\n"
                             "git rev-parse refs/review/base refs/review/candidate\n")
         reviewer.chmod(0o755)
-        self.retarget(f'[agents]\nreviewer = "{reviewer}"\n')
+        self.locate(f'[agents]\nreviewer = "{reviewer}"\n')
 
-        reply = factory.agent("review", "review it", root,
+        reply = factory.agent(self.tgt, "review", "review it", root,
                               base_sha=self.base, candidate_sha=self.head)
 
         # What the command printed is the pair the round is about, read out of
@@ -1060,10 +1105,10 @@ class ReviewRefTests(ConfigTestCase):
 
     def test_a_sha_the_repo_does_not_have_is_refused(self):
         root = self.repo()
-        self.retarget('[agents]\nreviewer = "true"\n')
+        self.locate('[agents]\nreviewer = "true"\n')
 
         with self.assertRaises(factory.review_runner.ReviewBoundaryError):
-            factory.agent("review", "review it", root,
+            factory.agent(self.tgt, "review", "review it", root,
                           base_sha=self.base, candidate_sha="0" * 40)
 
         # Nothing was published: a refused round leaves no ref claiming a
@@ -1074,25 +1119,25 @@ class ReviewRefTests(ConfigTestCase):
 
     def test_a_base_that_is_not_an_ancestor_is_refused(self):
         root = self.repo()
-        self.retarget('[agents]\nadjudicator = "true"\n')
+        self.locate('[agents]\nadjudicator = "true"\n')
         self.git(root, "checkout", "-q", "--orphan", "sideways")
         self.git(root, "rm", "-rqf", ".")
         unrelated = self.commit(root, "unrelated.txt")
 
         with self.assertRaises(factory.review_runner.ReviewBoundaryError):
-            factory.agent("adjudicate", "judge it", root,
+            factory.agent(self.tgt, "adjudicate", "judge it", root,
                           base_sha=unrelated, candidate_sha=self.head)
 
     def test_the_default_route_is_left_to_stage_its_own_refs(self):
         # The container route builds its own checkout and names the refs
         # there; the task worktree is not where its reviewer looks.
-        self.retarget()
+        self.locate()
         root = self.repo()
 
         with patch.object(factory, "publish_review_refs") as publish, \
                 patch.object(factory.review_runner, "run_review") as run_review:
             run_review.return_value = "VERDICT: APPROVE"
-            factory.agent("review", "review it", root,
+            factory.agent(self.tgt, "review", "review it", root,
                           base_sha=self.base, candidate_sha=self.head)
 
         publish.assert_not_called()

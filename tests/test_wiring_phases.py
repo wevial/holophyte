@@ -77,11 +77,12 @@ class RunPhaseTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
-        for name, value in (("TARGET", self.target), ("STORE_PATH", self.db),
-                            ("WORKTREES", root / "repo.worktrees")):
-            patcher = patch.object(factory, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        # The `Target` the loop is handed, with the store and the worktrees
+        # placed by hand: outside the target, never a file in it.
+        self.tgt = factory.Target(
+            path=self.target, holo_dir=root, store_path=self.db,
+            config_path=root / "config.toml",
+            worktrees=root / "repo.worktrees")
 
     def git(self, *args, cwd=None):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
@@ -92,8 +93,8 @@ class RunPhaseTests(unittest.TestCase):
         replies = list(replies)
         turns = []
 
-        def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
-                       timeout=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None,
+                       candidate_sha=None, timeout=None):
             turns.append(role)
             if role != "implement":
                 return replies.pop(0)
@@ -109,7 +110,7 @@ class RunPhaseTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", fake_agent):
-                factory.main(provider)
+                factory.main(self.tgt, provider)
         return provider
 
     def read(self, sql):
@@ -220,8 +221,8 @@ class RunPhaseTests(unittest.TestCase):
         """The point of durable phases: state that outlives the process. The
         loop dies mid-review with no chance to record anything, and the run
         still says the work stopped under review."""
-        def boom(role, goal, cwd, *, base_sha=None, candidate_sha=None,
-                 timeout=None):
+        def boom(target, role, goal, cwd, *, base_sha=None,
+                 candidate_sha=None, timeout=None):
             if role == "review":
                 raise RuntimeError("reviewer host went away")
             (Path(cwd) / "change.txt").write_text("work\n")
@@ -235,7 +236,7 @@ class RunPhaseTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", boom):
-                rc = factory.main(provider)
+                rc = factory.main(self.tgt, provider)
 
         # Contained, not propagated — and the run row still says the work
         # stopped under review, with the error text as the reason.

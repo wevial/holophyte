@@ -70,6 +70,7 @@ class RenderedWindowTests(unittest.TestCase):
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = store.ensure_project(self.conn, "team-1", self.root / "repo")
+        self.tgt = factory.Target.locate(self.root / "repo", adopt=False)
 
     def complete_run(self, n):
         """One merged run of its own ticket, stamped a minute apart per `n`."""
@@ -130,10 +131,10 @@ class RenderedWindowTests(unittest.TestCase):
         path.write_text(preamble)
         self.complete_run(1)
 
-        factory.write_findings(self.conn, path)
+        factory.write_findings(self.tgt, self.conn, path)
         first = path.read_text()
         self.complete_run(2)
-        factory.write_findings(self.conn, path)
+        factory.write_findings(self.tgt, self.conn, path)
         second = path.read_text()
 
         # Untouched, and still the top of the file after a second pass that
@@ -159,8 +160,8 @@ class RenderedWindowTests(unittest.TestCase):
         path.write_text(preamble)
         self.complete_run(1)
 
-        factory.write_findings(self.conn, path)
-        factory.write_findings(self.conn, path)
+        factory.write_findings(self.tgt, self.conn, path)
+        factory.write_findings(self.tgt, self.conn, path)
 
         rendered = path.read_text()
         self.assertTrue(rendered.startswith(preamble), rendered[:300])
@@ -186,11 +187,12 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
-        for name, value in (("TARGET", self.target), ("STORE_PATH", self.db),
-                            ("WORKTREES", root / "repo.worktrees")):
-            patcher = patch.object(factory, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        # The `Target` the loop is handed, with the store and the worktrees
+        # placed by hand: outside the target, never a file in it.
+        self.tgt = factory.Target(
+            path=self.target, holo_dir=root, store_path=self.db,
+            config_path=root / "config.toml",
+            worktrees=root / "repo.worktrees")
 
     def git(self, *args, cwd=None):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
@@ -200,8 +202,8 @@ class CloseOutRegenerationTests(unittest.TestCase):
         replies = list(replies)
         turns = []
 
-        def fake_agent(role, goal, cwd, *, base_sha=None, candidate_sha=None,
-                       timeout=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None,
+                       candidate_sha=None, timeout=None):
             turns.append(role)
             if role != "implement":
                 return replies.pop(0)
@@ -217,7 +219,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(factory, "agent", fake_agent):
-                factory.main(provider)
+                factory.main(self.tgt, provider)
 
     def test_a_close_out_renders_and_commits_the_runs_entries(self):
         self.loop("- store.py:7: the migration is missing\n"
