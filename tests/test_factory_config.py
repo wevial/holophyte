@@ -143,18 +143,29 @@ class ConfigLoadingTests(ConfigTestCase):
             self.assertFalse(hasattr(mod, name), name)
         self.assertEqual(sorted(home.iterdir()), [])
 
-    def test_help_does_not_read_any_config(self):
+    def test_help_does_not_read_any_config_or_touch_the_home(self):
         # `--help` exits before a target is worked with at all, so a malformed
         # config for the default target cannot break it -- nor can it break
         # importing this module, which every test here already relies on.
-        with patch.object(factory, "load_config",
-                          side_effect=AssertionError("config read")) as load:
+        # Nor is a target located or its legacy state adopted: the home it
+        # ran under is as empty afterwards as before.
+        home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, home)
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}), \
+                patch.object(factory, "load_config",
+                             side_effect=AssertionError("config read")) as load, \
+                patch.object(factory.Target, "locate", autospec=True) as locate, \
+                patch.object(factory, "adopt_legacy_state",
+                             autospec=True) as adopt:
             with contextlib.redirect_stdout(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:
                 factory.cli(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
         load.assert_not_called()
+        locate.assert_not_called()
+        adopt.assert_not_called()
+        self.assertEqual(sorted(home.iterdir()), [])
 
     def test_unknown_tables_are_left_alone(self):
         # A config written against a later version still loads, and the table
@@ -299,7 +310,8 @@ class StateDirectoryTests(ConfigTestCase):
 
         conn = factory.open_store(self.tgt)
         self.addCleanup(conn.close)
-        lock = factory.acquire_supervisor_lock(factory.supervisor_lock_path(self.tgt))
+        lock = factory.acquire_supervisor_lock(
+            factory.supervisor_lock_path(self.tgt), self.tgt.path)
         self.addCleanup(factory.release_supervisor_lock, lock)
 
         self.assertTrue((holo / "store.db").exists())

@@ -4,6 +4,7 @@ loop's control flow.
 Run: python3 -m unittest discover -s tests -p 'test_factory_agents*' -v
 """
 import importlib.util
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -18,15 +19,17 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
 
-def bare_target(path):
+def bare_target(case, path):
     """A `Target` at `path` whose state directory holds no config.
 
     The routes these tests pin are the defaults, so the config the value
     would read has to be absent -- in a directory of the test's own, not
-    wherever `HOLOPHYTE_HOME` happens to point on this host.
+    wherever `HOLOPHYTE_HOME` happens to point on this host. The directory
+    is removed when `case` finishes.
     """
     path = Path(path)
     holo = Path(tempfile.mkdtemp())
+    case.addCleanup(shutil.rmtree, holo, ignore_errors=True)
     return factory.Target(path=path, holo_dir=holo, store_path=holo / "store.db",
                           config_path=holo / "config.toml",
                           worktrees=path.parent / f"{path.name}.worktrees")
@@ -35,7 +38,7 @@ def bare_target(path):
 class AgentRouteTests(unittest.TestCase):
     def setUp(self):
         self.worktree = Path("/tmp/holophyte-agent-contract")
-        self.tgt = bare_target(self.worktree)
+        self.tgt = bare_target(self, self.worktree)
 
     @patch.object(factory, "run_capped")
     def test_implementer_uses_claude_opus_at_high_effort(self, run_capped):
@@ -167,7 +170,8 @@ class ImplementerProcessGroupTests(unittest.TestCase):
                 patch.object(factory, "agent_command",
                              lambda target, role, goal: argv):
             with self.assertRaises(subprocess.TimeoutExpired) as raised:
-                factory.agent(bare_target(cwd), "implement", "spawn and stall",
+                factory.agent(bare_target(self, cwd), "implement",
+                              "spawn and stall",
                               Path(cwd),
                               timeout=1)
 

@@ -1029,7 +1029,8 @@ class SuperviseTests(SweepTestCase):
         holder = subprocess.Popen(["sleep", "60"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
-        factory.acquire_supervisor_lock(self.lock, pid=holder.pid, now=T0)
+        factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                        pid=holder.pid, now=T0)
         complaint = io.StringIO()
 
         with patch.object(sys, "stderr", complaint), \
@@ -1039,6 +1040,9 @@ class SuperviseTests(SweepTestCase):
         self.assertNotEqual(exited.exception.code, 0)
         self.assertIn(f"pid {holder.pid} on {socket.gethostname()}",
                       str(exited.exception))
+        # The refusal names the repository as well as the lock: an operator
+        # supervising several targets has to know which one is already taken.
+        self.assertIn(f"for {self.tgt.path}:", str(exited.exception))
         # And the holder's lock is untouched: a refused starter must not
         # take the file out from under the supervisor it deferred to.
         self.assertEqual(factory.read_supervisor_lock(self.lock),
@@ -1053,7 +1057,8 @@ class SuperviseTests(SweepTestCase):
         holder = subprocess.Popen(["sleep", "60"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
-        factory.acquire_supervisor_lock(self.lock, pid=holder.pid, now=T0)
+        factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                        pid=holder.pid, now=T0)
         now = int(factory.time() * 1000)
         store.record_supervisor_heartbeat(self.conn, holder.pid, T0,
                                           now=now - 12_000)
@@ -1077,7 +1082,8 @@ class SuperviseTests(SweepTestCase):
         self.lock.write_text("")
 
         with self.assertRaises(factory.SupervisorHeld) as refused:
-            factory.acquire_supervisor_lock(self.lock, pid=os.getpid(), now=T0)
+            factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                            pid=os.getpid(), now=T0)
 
         self.assertIsNone(refused.exception.pid)
         self.assertIn(str(self.lock), str(refused.exception))
@@ -1116,8 +1122,8 @@ class SuperviseTests(SweepTestCase):
         def rival_starts():
             try:
                 rival_outcome.append(
-                    factory.acquire_supervisor_lock(self.lock, pid=rival,
-                                                    now=T0 + 1))
+                    factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                                    pid=rival, now=T0 + 1))
             except factory.SupervisorHeld as held:
                 rival_outcome.append(held)
 
@@ -1132,8 +1138,8 @@ class SuperviseTests(SweepTestCase):
                           lambda pid: pid in (us, rival) or real_alive(pid)), \
                 patch.object(os, "unlink", unlink_with_a_rival_in_the_gap):
             try:
-                ours = factory.acquire_supervisor_lock(self.lock, pid=us,
-                                                       now=T0)
+                ours = factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+                                                       pid=us, now=T0)
             except factory.SupervisorHeld as held:
                 ours = held
             fired[0].join(5)

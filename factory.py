@@ -31,6 +31,7 @@ import collections
 import contextlib
 import dataclasses
 import fcntl
+import functools
 import hashlib
 import json
 import math
@@ -1742,7 +1743,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     # leftovers cannot stand in for the implementer's own progress.
     start_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
-    def timed(goal):
+    def timed(target, goal):
         """Run one agent turn with the budget as its wall-clock cap; None on
         timeout.
 
@@ -1773,7 +1774,8 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     ticket = f"{task}\n\n{body}" if body else task
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
-    out = timed(f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+    out = timed(target,
+                f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
                 "The ticket above is the contract, acceptance criteria "
                 "included; the task is done only when they hold. Commit your "
                 "work with a clear message. Stay strictly on-scope; do not "
@@ -1869,7 +1871,8 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
 
         # 3. implementer addresses findings (same branch, new commit)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        fixes = timed("A reviewer left findings on your work. The ticket you "
+        fixes = timed(target,
+                      "A reviewer left findings on your work. The ticket you "
                       "are held to, acceptance criteria included:\n\n"
                       f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
                       "For EACH finding, adjudicate it first: ADDRESS (concrete "
@@ -3787,7 +3790,7 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
         "SELECT ticketId FROM runs WHERE id = ?", (trip.run_id,)).fetchone()
     seen = {"phase": None}
 
-    def confirm():
+    def confirm(target):
         # Read under the same lock the verdict is re-reached under, so the
         # phase the outcome names is the one the decision was made on.
         row = conn.execute(
@@ -3811,7 +3814,10 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
         target, conn, trip.run_id, ticket_id,
         f"swept by the supervisor in phase {trip.phase}: {trip.condition}"
         f" ({trip.evidence}); branch and worktree preserved for a human",
-        provider, confirm)
+        # `close_out_failure()` calls its `confirm` with no arguments, so
+        # the target is bound here, where the dependency is visible,
+        # rather than captured from this scope.
+        provider, functools.partial(confirm, target))
     return Outcome(trip, acted, seen["phase"])
 
 
@@ -4133,16 +4139,16 @@ class SupervisorHeld(Exception):
     file.
     """
 
-    def __init__(self, path, pid=None, started_at=None, host=None):
-        self.path, self.pid, self.started_at = path, pid, started_at
-        self.host = host
+    def __init__(self, path, repo, pid=None, started_at=None, host=None):
+        self.path, self.repo, self.pid = path, repo, pid
+        self.started_at, self.host = started_at, host
         if pid is None:
             what = (f"[holo2] supervisor lock {path} exists but names no"
                     " process; refusing to guess. remove it if no supervisor"
                     " is running")
         else:
             since = (f" since {started_at}" if started_at is not None else "")
-            what = (f"[holo2] a supervisor is already running:"
+            what = (f"[holo2] a supervisor is already running for {repo}:"
                     f" pid {pid} on {host_name(host)}{since} holds {path};"
                     " not starting another")
         super().__init__(what)
@@ -4203,8 +4209,11 @@ def reclaim_turn(path):
         os.close(fd)
 
 
-def acquire_supervisor_lock(path, pid=None, now=None, host=None):
+def acquire_supervisor_lock(path, repo, pid=None, now=None, host=None):
     """Take the supervisor lock at `path` for `pid`; raise `SupervisorHeld`.
+
+    `repo` is the repository the lock guards, named in the refusal so the
+    operator reading it knows which target already has its supervisor.
 
     The lock's content is `host pid started_at`, `host` defaulting to this
     machine's hostname: a target's state directory can be read from another
@@ -4250,10 +4259,10 @@ def acquire_supervisor_lock(path, pid=None, now=None, host=None):
     with reclaim_turn(path):
         holder = read_supervisor_lock(path)
         if holder is None and path.exists():
-            raise SupervisorHeld(path)
+            raise SupervisorHeld(path, repo)
         if holder is not None:
             if holder[0] != pid and pid_alive(holder[0]):
-                raise SupervisorHeld(path, *holder)
+                raise SupervisorHeld(path, repo, *holder)
             try:
                 os.unlink(path)
             except FileNotFoundError:
@@ -4264,7 +4273,7 @@ def acquire_supervisor_lock(path, pid=None, now=None, host=None):
         if created():
             return path
     holder = read_supervisor_lock(path)
-    raise SupervisorHeld(path, *(holder or ()))
+    raise SupervisorHeld(path, repo, *(holder or ()))
 
 
 def release_supervisor_lock(path, pid=None):
@@ -4337,8 +4346,8 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
                 else interval)
     pid = os.getpid()
     started_at = int(time() * 1000)
-    path = acquire_supervisor_lock(supervisor_lock_path(target), pid,
-                                   started_at)
+    path = acquire_supervisor_lock(supervisor_lock_path(target), target.path,
+                                   pid, started_at)
     stop = threading.Event()
     wait = stop.wait if wait is None else wait
 
