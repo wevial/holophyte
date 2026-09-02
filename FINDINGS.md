@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[34 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-01T21:16:46Z — KO-149
-MERGED to main.
-actual: 8.7 min · estimate: 20 min · rounds: 3
-
-## 2026-09-02T01:29:15Z — KO-165
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T01:29:17Z — KO-165
-MERGED to main.
-actual: 5.5 min · estimate: 30 min · rounds: 1
+[37 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T01:33:46Z — KO-169
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -752,3 +741,16 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T14:49:31Z — KO-178
 MERGED to main.
 actual: 7.9 min · estimate: 30 min · rounds: 1
+
+## 2026-09-02T14:55:50Z — KO-179
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- review_runner.IMAGE [p2] `check_default_reviewer()` never verifies that `review_runner.IMAGE` exists; it only runs `docker info`. The ticket explicitly requires checking the exposed r…
+- (unparsed):888e5d5974df [p2] The config tests are not isolated from host routes. Several existing `check_agent_commands()` tests omit default-route stubs, causing the prescribed suite to…
+
+## 2026-09-02T15:02:27Z — KO-179
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T15:02:33Z — KO-179
+MERGED to main.
+actual: 13.0 min · estimate: 25 min · rounds: 2
