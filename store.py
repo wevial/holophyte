@@ -267,8 +267,33 @@ CREATE TABLE IF NOT EXISTS interventions (
 )"""
 
 
+# The schema version this module ships, stamped into `PRAGMA user_version`
+# by init() once the migration ladder has run. Version 0 is what SQLite
+# reports for any file this module never stamped: an empty one, or a store
+# made before the stamp existed. Bump this when SCHEMA or ADDED_COLUMNS
+# changes shape, so an older build refuses a store it would otherwise read
+# one column short. The ladder itself stays ADDED_COLUMNS; the number is
+# bookkeeping around it, not a replacement for it.
+SCHEMA_VERSION = 1
+
+# Every join the loop, the sweep and the FINDINGS renderer perform goes
+# through one of these three foreign keys; without an index each is a full
+# scan of the child table. Idempotent DDL, run on every open() after the
+# tables exist.
+INDEXES = """
+CREATE INDEX IF NOT EXISTS runs_ticketId ON runs (ticketId);
+CREATE INDEX IF NOT EXISTS reviewRounds_runId ON reviewRounds (runId);
+CREATE INDEX IF NOT EXISTS runEvents_runId ON runEvents (runId);
+"""
+
+
 def open(path):  # noqa: A001 - the ticket names this entry point open()
     """Open the store at `path` in WAL mode and return the connection.
+
+    Reads `PRAGMA user_version` first: a store stamped newer than
+    `SCHEMA_VERSION` is refused with `SystemExit` before anything is written,
+    and one stamped older (or never stamped) is carried forward by `init()`
+    and stamped current. The three foreign-key indexes are created if absent.
 
     WAL is not advisory here: the supervisor reads a run's state while the
     loop is writing it, and rollback-journal mode would block one on the
@@ -280,6 +305,16 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
     `store.open(...)`.
     """
     conn = sqlite3.connect(path)
+    # Before anything that writes, including the WAL switch below: a store a
+    # newer module stamped is refused without touching it, so the file is
+    # still exactly what that newer build left for it to reopen.
+    (version,) = conn.execute("PRAGMA user_version").fetchone()
+    if version > SCHEMA_VERSION:
+        conn.close()
+        raise SystemExit(
+            f"{path}: store schema version {version} is newer than the"
+            f" version {SCHEMA_VERSION} this build understands; refusing"
+            " to open it with an older factory")
     # Referential integrity is off by default in SQLite and is per-connection,
     # so it has to be asserted on every open, not once at init().
     conn.execute("PRAGMA foreign_keys = ON")
@@ -289,6 +324,16 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
         raise sqlite3.DatabaseError(
             f"{path}: could not enable WAL mode (journal_mode is {mode!r})"
         )
+    try:
+        if version < SCHEMA_VERSION:
+            # 0 is every store made before the stamp existed, and a fresh
+            # file; either way the ladder in init() carries it to the
+            # current version and stamps it there, in one transaction.
+            init(conn)
+        conn.executescript(INDEXES)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 
@@ -413,6 +458,10 @@ def init(conn):
         for _repairs, sql in BACKFILLS:
             conn.execute(sql)
         _widen_interventions_action(conn)
+        # Stamped last and inside the same transaction as the ladder, so a
+        # store carries the version only once it holds everything the
+        # version means.
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
         conn.commit()
     except BaseException:
         conn.rollback()

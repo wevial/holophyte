@@ -136,6 +136,12 @@ class StoreSchemaTests(unittest.TestCase):
         self.addCleanup(conn.close)
         return conn
 
+    def raw(self):
+        """A plain sqlite3 connection to the file, bypassing store.open()."""
+        conn = sqlite3.connect(self.path)
+        self.addCleanup(conn.close)
+        return conn
+
     def test_init_creates_the_documented_tables_and_columns(self):
         conn = self.open()
 
@@ -197,8 +203,10 @@ class StoreSchemaTests(unittest.TestCase):
 
     def legacy_store(self):
         """A store whose `runs` predates `resumePhase`, then brought up to date."""
+        # Built on a raw connection before store.open() sees the file: an
+        # older store exists before the module that carries it forward does.
+        self.raw().executescript(LEGACY_RUNS_TABLE)
         conn = self.open()
-        conn.executescript(LEGACY_RUNS_TABLE)
         store.init(conn)
         return conn
 
@@ -285,13 +293,15 @@ class StoreSchemaTests(unittest.TestCase):
     def test_init_adds_host_to_an_older_heartbeats_table_as_nullable(self):
         # A beat an older supervisor wrote has no host and keeps none; the
         # next beat lands with one. Nothing here is backfilled.
-        conn = self.open()
-        conn.executescript(LEGACY_HEARTBEATS_TABLE)
-        conn.execute(
+        raw = self.raw()
+        raw.executescript(LEGACY_HEARTBEATS_TABLE)
+        raw.execute(
             "INSERT INTO supervisorHeartbeats (pid, startedAt, lastBeat, passes)"
             " VALUES (1, 1, 1, 1)")
-        conn.commit()
+        raw.commit()
+        raw.close()
 
+        conn = self.open()
         store.init(conn)
         store.record_supervisor_heartbeat(conn, pid=2, started_at=2, now=3)
 
@@ -411,3 +421,97 @@ class StoreSchemaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# The three indexes the ticket names, by the column each one covers. Named
+# here by hand rather than read from store.INDEXES: the point is that these
+# foreign keys are indexed, whatever the module chooses to call the indexes.
+HOT_FOREIGN_KEYS = {
+    ("runs", "ticketId"),
+    ("reviewRounds", "runId"),
+    ("runEvents", "runId"),
+}
+
+
+class StoreSchemaVersionTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+
+    def raw(self):
+        conn = sqlite3.connect(self.path)
+        self.addCleanup(conn.close)
+        return conn
+
+    def current_unstamped_store(self):
+        """A store with every current column and `user_version` still 0.
+
+        Exactly what any file made before the stamp existed looks like:
+        store.SCHEMA ran, ADDED_COLUMNS ran, nothing recorded which.
+        """
+        conn = store.open(self.path)
+        store.init(conn)
+        conn.execute(f"INSERT INTO projects ({A_PROJECT[0]}) VALUES (?, ?, ?, ?)",
+                     A_PROJECT[1])
+        conn.commit()
+        conn.close()
+        raw = self.raw()
+        raw.execute("PRAGMA user_version = 0")
+        raw.commit()
+        rows = raw.execute("SELECT * FROM projects").fetchall()
+        raw.close()
+        self.assertEqual(self.user_version(), 0)
+        return rows
+
+    def user_version(self):
+        return self.raw().execute("PRAGMA user_version").fetchone()[0]
+
+    def test_a_version_zero_store_is_stamped_on_open_without_data_changes(self):
+        before = self.current_unstamped_store()
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertEqual(conn.execute("SELECT * FROM projects").fetchall(),
+                         before)
+
+    def test_a_store_stamped_newer_is_refused_and_untouched(self):
+        self.current_unstamped_store()
+        newer = store.SCHEMA_VERSION + 1
+        raw = self.raw()
+        raw.execute(f"PRAGMA user_version = {newer}")
+        raw.commit()
+        raw.close()
+        before = self.path.read_bytes()
+
+        with self.assertRaises(SystemExit) as caught:
+            store.open(self.path)
+
+        message = str(caught.exception)
+        self.assertIn(str(newer), message)
+        self.assertIn(str(store.SCHEMA_VERSION), message)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.user_version(), newer)
+
+    def test_the_hot_foreign_keys_are_indexed_after_open(self):
+        # The UNIQUE constraints already give every hot column an automatic
+        # index, so asserting "some index covers the column" would pass
+        # without the ticket's DDL. Assert the three named indexes exist and
+        # each leads on its foreign key.
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        named = {}
+        for (name, table) in conn.execute(
+                "SELECT name, tbl_name FROM sqlite_master"
+                " WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex%'"
+                ).fetchall():
+            columns = [row[2] for row in
+                       conn.execute(f"PRAGMA index_info({name})")]
+            named[name] = (table, columns[0])
+
+        expected = {f"{table}_{column}": (table, column)
+                    for (table, column) in HOT_FOREIGN_KEYS}
+        self.assertEqual({k: named.get(k) for k in expected}, expected)
