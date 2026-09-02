@@ -187,7 +187,7 @@ class ImplementerProcessGroupTests(unittest.TestCase):
 
 
 class FakeLinear:
-    """Stand-in for the provider module `run_task` imports at call time."""
+    """Stand-in for the board `run_task` is handed and archives its records on."""
 
     def __init__(self):
         self.states = []
@@ -271,7 +271,7 @@ class ReviewLoopTests(unittest.TestCase):
                     "id": "KO-116", "title": "add a thing",
                     "verify": "echo ok", "budget_min": budget_min,
                     "contracts": [], **task,
-                })
+                }, provider=self.linear)
             except factory.RunFailure:
                 # run_task's failure exits raise so their reasons reach the
                 # close-out; a direct call answers False the way main() does.

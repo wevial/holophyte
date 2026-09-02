@@ -64,6 +64,7 @@ class StubProvider:
     """The provider seam `main()` drives, queueing tasks it hands out in order."""
 
     TEAM = "team-under-test"
+    team = TEAM  # the `Provider` protocol's spelling
 
     def __init__(self, *tasks):
         self.queue = list(tasks)

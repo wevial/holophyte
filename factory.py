@@ -3,9 +3,10 @@
 
 Loop:
   0. Open the v2 store (WAL-mode SQLite, a sibling file of the target repo).
-  1. Claim the first ready ticket from Linear (project in linear_provider),
-     mirror it into the store and take the project's run lease before any
-     branch exists; the lease goes back when the run ends, merged or not.
+  1. Claim the first ready ticket from the board (a `provider.Provider`,
+     Linear by default), mirror it into the store and take the project's
+     run lease before any branch exists; the lease goes back when the run
+     ends, merged or not.
   2. Spawn an implementer agent (goal-based) on a branch.
   3. Spawn a read-only reviewer agent on the committed result.
   4. If findings: implementer fixes, one narrow re-review, and a fix round for
@@ -53,6 +54,7 @@ import review_runner
 import store
 import store.read
 import ticket_template
+from provider import LinearProvider
 
 MAX_ROUNDS = 2
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
@@ -1258,22 +1260,28 @@ def sanitize_findings(text, limit):
     return text
 
 
-def ledger(task_id, entry):
-    """Archive one record as a Linear comment on the ticket.
+def ledger(provider, task_id, entry):
+    """Archive one record as a comment on the ticket, on `provider`'s board.
 
     Nothing is appended to FINDINGS.md here any more: that file is rendered
     from the store's rows at close-out (`write_findings`), so it stays a
-    bounded window instead of growing by one full transcript per turn. Linear
+    bounded window instead of growing by one full transcript per turn. Board
     comments are unchanged and stay the per-ticket archive of the whole prose
-    — the store keeps the structure, Linear keeps the words.
+    — the store keeps the structure, the board keeps the words.
+
+    The board is the one the run was handed, never a module reached for
+    here: a `run_task()` called directly with no provider has no board to
+    archive to, and says so once per record instead of failing.
     """
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if provider is None:
+        print("[holo2] no board to archive to; record kept in the store")
+        return
     try:
-        import linear_provider
-        linear_provider.comment(task_id, f"**{ts}**\n\n{entry}")
+        provider.comment(task_id, f"**{ts}**\n\n{entry}")
     except Exception as e:
-        print(f"[holo2] Linear comment failed ({e}); record kept in the store")
+        print(f"[holo2] board comment failed ({e}); record kept in the store")
 
 
 # --- review rounds as structured findings ------------------------------------
@@ -1676,8 +1684,8 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         # survives; the branch check below still gates on commits.
         ok, why = reuse_leftover(target, wt, branch)
         if not ok:
-            ledger(task_id, f"FAILED to reuse leftover worktree for: {task}\n"
-                            f"{why}\nNothing was deleted.")
+            ledger(provider, task_id, f"FAILED to reuse leftover worktree for: {task}\n"
+                                      f"{why}\nNothing was deleted.")
             raise RunFailure(f"cannot reuse leftover worktree: {why}")
         # Whether the leftover actually holds anything, decided from content
         # rather than from which arm ran: an empty reuse was reset to main by
@@ -1697,8 +1705,8 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
             why = (f"branch {branch} already exists with no worktree; a"
                    " human moves it aside or deletes it before this ticket"
                    " is run again")
-            ledger(task_id, f"FAILED to cut a fresh worktree for: {task}\n"
-                            f"{why}\nNothing was deleted.")
+            ledger(provider, task_id, f"FAILED to cut a fresh worktree for: {task}\n"
+                                      f"{why}\nNothing was deleted.")
             raise RunFailure(f"cannot cut a fresh worktree: {why}")
         sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
         sh(["git", "checkout", "-b", branch], cwd=wt)
@@ -1721,16 +1729,17 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         # Ledger first: a deletion that itself fails must not also cost the
         # durable record of why the run stopped.
         if fresh:
-            ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran;"
-                            f" branch {branch} holds nothing and is"
-                            f" discarded.\n\n{out}")
+            ledger(provider, task_id,
+                   f"FAILED worktree setup for: {task}\nNo agent ran;"
+                   f" branch {branch} holds nothing and is"
+                   f" discarded.\n\n{out}")
             sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
             sh(["git", "branch", "-D", branch], target.path)
             raise InfraFailure("worktree setup failed; no agent ran and the"
                                " empty branch was discarded")
-        ledger(task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
-                        f"reused worktree {wt} left in place with its "
-                        f"work.\n\n{out}")
+        ledger(provider, task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
+                                  f"reused worktree {wt} left in place with its "
+                                  f"work.\n\n{out}")
         raise InfraFailure(f"worktree setup failed; no agent ran; reused"
                            f" worktree and branch {branch} left in place with"
                            " their work")
@@ -1881,7 +1890,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
                       "it in the commit message), or DECLINE (invalid/out-of-scope — "
                       "state the rationale in the commit message). Then fix only the "
                       "ADDRESS items and commit.")
-        ledger(task_id, f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
+        ledger(provider, task_id, f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                      f"Reviewer findings:\n{verdict}\n\n"
                      f"Implementer response:\n{fixes}")
         if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
@@ -1900,9 +1909,10 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         if not ok:
             print(f"[holo2] verify FAILED before adjudication; leaving branch "
                   f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
-            ledger(task_id, f"FAILED verify before terminal adjudication after "
-                         f"{MAX_ROUNDS} review rounds; branch {branch} preserved "
-                         f"at {sha}\n\n{out}")
+            ledger(provider, task_id,
+                   f"FAILED verify before terminal adjudication after "
+                   f"{MAX_ROUNDS} review rounds; branch {branch} preserved "
+                   f"at {sha}\n\n{out}")
             raise RunFailure(f"verify failed before terminal adjudication;"
                              f" branch {branch} preserved at {sha[:12]}")
         print("[holo2] verify ok before adjudication")
@@ -1941,13 +1951,14 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         if decision != "PASS":
             print(f"[holo2] terminal adjudication: {decision}; leaving branch "
                   f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
-            ledger(task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
-                         f"rounds: {decision}; branch {branch} preserved at "
-                         f"{sha}\n\nAdjudicator reply:\n{reply}")
+            ledger(provider, task_id,
+                   f"Terminal adjudication after {MAX_ROUNDS} review "
+                   f"rounds: {decision}; branch {branch} preserved at "
+                   f"{sha}\n\nAdjudicator reply:\n{reply}")
             raise RunFailure(f"terminal adjudication: {decision};"
                              f" branch {branch} preserved at {sha[:12]}")
         print("[holo2] terminal adjudication: PASS")
-        ledger(task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
+        ledger(provider, task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
                      f"rounds: PASS\n\nAdjudicator reply:\n{reply}")
 
     # 4. pre-merge verify (catches fix-round regressions), then merge. Both
@@ -1961,8 +1972,8 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
-        ledger(task_id, f"FAILED verify before merge; branch {branch} "
-                        f"preserved at {sha}\n\n{out}")
+        ledger(provider, task_id, f"FAILED verify before merge; branch {branch} "
+                                  f"preserved at {sha}\n\n{out}")
         raise RunFailure(f"verify failed before merge; branch {branch}"
                          f" preserved at {sha[:12]}")
     print("[holo2] verify ok before merge")
@@ -1981,11 +1992,11 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
                     f"({', '.join(drift)}); not merging {branch} at {sha} — "
                     "the candidate answers the ticket as it was claimed, not "
                     "as it now reads")
-        ledger(task_id, "MERGE REFUSED: the ticket drifted from the contract "
-                        f"this run was claimed under ({', '.join(drift)}). "
-                        f"Branch {branch} preserved at {sha}. Work it again "
-                        "against the body as it now reads, or restore the "
-                        "body the run was claimed under.")
+        ledger(provider, task_id, "MERGE REFUSED: the ticket drifted from the contract "
+                                  f"this run was claimed under ({', '.join(drift)}). "
+                                  f"Branch {branch} preserved at {sha}. Work it again "
+                                  "against the body as it now reads, or restore the "
+                                  "body the run was claimed under.")
         raise RunFailure(f"ticket drifted from the claimed contract"
                          f" ({', '.join(drift)}); branch {branch} preserved"
                          f" at {sha[:12]}")
@@ -2039,9 +2050,9 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
                 why += (" — main is NOT clean after the abort: "
                         + " ".join(dirty.split()))
             print(f"[holo2] {why}")
-            ledger(task_id, f"MERGE ABORTED: conflict on {paths}. Branch "
-                            f"{branch} preserved at {sha}. Rebase it on main "
-                            "and re-run, or merge it by hand.")
+            ledger(provider, task_id, f"MERGE ABORTED: conflict on {paths}. Branch "
+                                      f"{branch} preserved at {sha}. Rebase it on main "
+                                      "and re-run, or merge it by hand.")
             raise RunFailure(why)
     # The merge has landed: the branch holds nothing main does not, so the
     # worktree's stray untracked files are not preserved work — and a cleanup
@@ -2059,7 +2070,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     # One greppable line of timing data per merged ticket: the estimate stays
     # write-only otherwise, and a future burndown script reads this format.
     actual_min = (monotonic() - started) / 60
-    ledger(task_id, f"MERGED to main (branch {branch} deleted). "
+    ledger(provider, task_id, f"MERGED to main (branch {branch} deleted). "
                  f"Verify: {'passed' if ok else 'n/a'}.\n"
                  f"actual: {actual_min:.1f} min · estimate: {budget_min} min · "
                  f"rounds: {rnd}")
@@ -2711,7 +2722,7 @@ def warn(conn, ticket_id, summary):
     warn_on_run(conn, run_id, summary)
 
 
-def mirror_push(conn, ticket_id, provider=None):
+def mirror_push(conn, ticket_id, provider):
     """Project the ticket's stored status onto its Linear state; return it.
 
     Last-write-wins and one-way: the store's `tickets.status` is the truth,
@@ -2738,8 +2749,6 @@ def mirror_push(conn, ticket_id, provider=None):
     state = MIRROR_STATES.get(status)
     if state is None:
         return None
-    if provider is None:
-        import linear_provider as provider
     try:
         provider.set_state(issue_id, state)
     except Exception as e:
@@ -2750,7 +2759,7 @@ def mirror_push(conn, ticket_id, provider=None):
     return state
 
 
-def mirror_status(conn, ticket_id, status, provider=None):
+def mirror_status(conn, ticket_id, status, provider):
     """Move the ticket to `status` in the store, then push the move to Linear.
 
     The pair the loop calls at a boundary that changes ticket status, in that
@@ -2853,7 +2862,7 @@ def escalation_comment(history):
     return "\n".join(lines)
 
 
-def escalate(conn, ticket_id, provider=None):
+def escalate(conn, ticket_id, provider):
     """Park a ticket whose failed runs have reached `MAX_FAILED_RUNS`.
 
     Returns whether the ticket *is* blocked when this call returns, not
@@ -2899,8 +2908,6 @@ def escalate(conn, ticket_id, provider=None):
                   " claiming it; a human decides what happens next.",
                   ticket_id))
     conn.commit()
-    if provider is None:
-        import linear_provider as provider
     try:
         provider.comment(issue_id, escalation_comment(history))
     except Exception as e:
@@ -2976,9 +2983,7 @@ def self_hosted(target):
     return Path(__file__).resolve().parent == target.path.resolve()
 
 
-def main(target, provider=None):
-    if provider is None:
-        import linear_provider as provider
+def main(target, provider):
     restart_after_merge = self_hosted(target)
     stop_on_failure = loop_config(target).stop_on_failure
     # Whether any run this pass failed, for the exit code when the loop was
@@ -2990,7 +2995,7 @@ def main(target, provider=None):
         # The provider knows its team by name rather than by id; the column's
         # contract is one row per Linear team, which the name keys just as
         # well until the provider resolves the id.
-        project = store.ensure_project(conn, provider.TEAM, target.path)
+        project = store.ensure_project(conn, provider.team, target.path)
         # Startup self-sweep, read-only: it records what it saw — a first
         # strike on anything silent — so the *next* invocation or a
         # `--sweep --act` can act on the second sighting. Nothing is failed
@@ -4412,17 +4417,22 @@ def cli(argv=None):
     loop_config(target)
     if args.report:
         return report(target)
+    # The board, built once here and handed down: nothing below reaches for
+    # Linear by name. Construction touches neither the network nor the
+    # module's configuration, so a read-only sweep still calls nobody; the
+    # first call that posts to the board is what reads it.
+    board = LinearProvider()
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails
     # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
-        return sweep_report(target, act=args.act)
+        return sweep_report(target, act=args.act, provider=board)
     # The acting sweep on a timer. Like `--sweep --act` it dispatches nothing
     # and so resolves no route; unlike it, it takes the target's supervisor
     # lock first, and a target that already has one is an exit, not a loop.
     if args.supervise:
         try:
-            return supervise(target)
+            return supervise(target, board)
         except SupervisorHeld as held:
             # With the liveness line, so the refusal is actionable: a held
             # lock and a fresh heartbeat is a watcher doing its job; a held
@@ -4437,7 +4447,7 @@ def cli(argv=None):
     # Same window, same reason: the `[worktree]` table is read here rather
     # than by the first run that cuts a worktree with it.
     check_worktree_setup(target)
-    return main(target)
+    return main(target, board)
 
 
 if __name__ == "__main__":
