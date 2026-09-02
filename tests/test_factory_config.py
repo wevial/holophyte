@@ -503,12 +503,21 @@ class StartupCheckTests(ConfigTestCase):
     in flight. `check_agent_commands()` moves that failure to startup.
     """
 
-    def stub_path(self, *, claude=True, docker="ok", system=True):
+    def setUp(self):
+        # Every test starts on a PATH where both default routes answer and
+        # the host's own `claude` and `docker` are shadowed: what these tests
+        # say about a configured route must not depend on what the machine
+        # running them happens to have installed. A test about a default
+        # route that is missing or down calls `stub_path()` again.
+        self.stub_path()
+
+    def stub_path(self, *, claude=True, docker="ok", image=True, system=True):
         """Put a PATH in place holding stubs for the default routes.
 
         `claude` is a no-op script or absent; `docker` is a script whose
         `info` answers as a live daemon ("ok"), as a stopped one ("down"),
-        as one that never answers ("hang"), or is absent (None). `system`
+        as one that never answers ("hang"), or is absent (None). A live
+        daemon reports the review image as built (`image`) or not. `system`
         keeps /usr/bin and /bin behind the stubs for the tests that also name
         a real program; the stubs shadow any real `docker` there.
         """
@@ -520,7 +529,10 @@ class StartupCheckTests(ConfigTestCase):
         if docker == "ok":
             self.stub(bindir / "docker",
                       'if [ "$1" = info ]; then echo "Server Version: 27"; '
-                      'exit 0; fi\nexit 1\n')
+                      'exit 0; fi\n'
+                      'if [ "$1" = image ] && [ "$2" = inspect ]; then '
+                      f'exit {0 if image else 1}; fi\n'
+                      'exit 1\n')
         elif docker == "down":
             self.stub(bindir / "docker",
                       'echo "Cannot connect to the Docker daemon at '
@@ -542,17 +554,33 @@ class StartupCheckTests(ConfigTestCase):
     def test_a_startup_check_of_a_resolvable_command_passes(self):
         # `sh` is on PATH everywhere the factory runs; a bare name is the
         # documented normal way to write one of these.
-        self.stub_path()
         self.retarget('[agents]\nimplementer = "sh -c"\n'
                       f'reviewer = "{Path(sys.executable)} -c"\n')
 
         self.assertIsNone(factory.check_agent_commands())
 
     def test_an_absent_agents_table_passes_when_the_default_routes_answer(self):
-        self.stub_path()
         self.retarget()
 
-        self.assertIsNone(factory.check_agent_commands())
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            self.assertIsNone(factory.check_agent_commands())
+
+        # A built image is nothing to remark on.
+        self.assertEqual(printed.getvalue(), "")
+
+    def test_an_unbuilt_review_image_is_reported_not_refused(self):
+        # The runner builds the image on the first review that finds it
+        # missing, so a fresh host is told what to expect and proceeds.
+        self.stub_path(image=False)
+        self.retarget()
+
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            self.assertIsNone(factory.check_agent_commands())
+
+        self.assertIn(factory.review_runner.IMAGE, printed.getvalue())
+        self.assertIn(str(factory.review_runner.DOCKERFILE), printed.getvalue())
 
     def test_a_missing_claude_is_a_startup_error_naming_the_override_key(self):
         self.stub_path(claude=False, system=False)

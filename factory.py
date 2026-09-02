@@ -802,7 +802,8 @@ def check_agent_commands():
     host with Docker stopped used to claim a ticket, cut a branch and fail at
     the first review with the lease held. `docker info` is a liveness probe of
     the daemon, not an agent turn -- no review is staged and the image is
-    neither pulled nor built, since the runner builds it on first use.
+    neither pulled nor built, since the runner builds it on first use; the
+    image is only looked up, so a host that has yet to build it hears so.
     """
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
@@ -845,6 +846,13 @@ def check_default_reviewer(keys):
     The daemon is asked `docker info` under `DOCKER_PROBE_TIMEOUT`: a daemon
     that is stopped answers at once with a connection error, and one that is
     wedged does not answer at all, and both are the same startup error.
+
+    With the daemon up, the review image is looked up too, and its state is
+    reported rather than enforced: `review_runner` builds the image on the
+    first review that finds it missing, so an unbuilt image is what a fresh
+    host looks like, not a route that is broken. What the operator learns is
+    that the first review round will spend its time on a build, and where the
+    Dockerfile it builds from lives.
     """
     unset = " and ".join(keys)
     remedy = (f"start the Docker daemon or set [agents] {unset} to the "
@@ -856,15 +864,7 @@ def check_default_reviewer(keys):
             f"and there is no executable {DEFAULT_REVIEWER!r} on PATH -- "
             f"install Docker or set [agents] {unset} to the command to run "
             f"instead")
-    try:
-        probe = subprocess.run([DEFAULT_REVIEWER, "info"], capture_output=True,
-                               text=True, timeout=DOCKER_PROBE_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        raise SystemExit(
-            f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
-            f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
-            f"did not answer `{DEFAULT_REVIEWER} info` within "
-            f"{DOCKER_PROBE_TIMEOUT}s -- {remedy}") from None
+    probe = docker_probe(["info"], unset, remedy)
     if probe.returncode:
         detail = (probe.stderr or probe.stdout).strip().splitlines()
         reason = detail[-1] if detail else f"exit {probe.returncode}"
@@ -872,6 +872,30 @@ def check_default_reviewer(keys):
             f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
             f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
             f"did not answer `{DEFAULT_REVIEWER} info`: {reason} -- {remedy}")
+    image = docker_probe(["image", "inspect", review_runner.IMAGE], unset, remedy)
+    if image.returncode:
+        print(f"[holo2] review image {review_runner.IMAGE} is not built on this "
+              f"host; the first review round builds it from "
+              f"{review_runner.DOCKERFILE}")
+
+
+def docker_probe(args, unset, remedy):
+    """Ask the daemon `docker <args>` under `DOCKER_PROBE_TIMEOUT`.
+
+    A daemon that does not answer in time is a startup error naming the
+    probe, whatever it was asking; a daemon that answers, with any exit
+    status, hands its result back for the caller to read.
+    """
+    argv = [DEFAULT_REVIEWER, *args]
+    try:
+        return subprocess.run(argv, capture_output=True, text=True,
+                              timeout=DOCKER_PROBE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [agents] {unset} not set, so the review "
+            f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
+            f"did not answer `{' '.join(argv)}` within "
+            f"{DOCKER_PROBE_TIMEOUT}s -- {remedy}") from None
 
 
 def agent_route(role):
