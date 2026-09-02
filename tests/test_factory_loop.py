@@ -52,6 +52,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     no_agent_processes,
 )
 
+import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -531,7 +532,7 @@ class LoopTests(LoopFixture):
                      (t1 + 1, last_run))
         conn.commit()
 
-        self.assertEqual(factory.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.failure_history(conn, 1), [])
 
     def test_a_supervisor_intervention_grants_no_amnesty(self):
         """Only a human's recorded touch resets the count: a supervisor
