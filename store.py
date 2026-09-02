@@ -6,9 +6,8 @@ rewrite. Stdlib ``sqlite3`` only.
 
 The API so far is ``open()`` and ``init()`` for the schema,
 ``ensure_project()`` for the repo's projects row, ``claim()``/``release()``
-for the per-project lease, ``with_delivery()`` for webhook idempotency,
-``mirror_ticket()``/``transition()`` for ticket status,
-``pickable()``/``next_pickable()`` for the pickability predicate,
+for the per-project lease, ``mirror_ticket()``/``transition()`` for ticket
+status, ``pickable()`` for the pickability predicate,
 ``resume()`` for the resume guidance invariant,
 ``findings_fingerprint()``/``findings_overlap()`` for stuck-review
 detection, ``record_review_round()`` for the rows they read, and
@@ -525,15 +524,14 @@ def _transaction(conn):
 
     When a transaction is *already* open the block joins it and this commits
     and rolls back nothing: the owner does both, at its own boundary. That is
-    what lets these writers run as the effect of `with_delivery()`, which owns
-    a transaction precisely so the delivery id and the effect's writes commit
-    or roll back as one. Without it, a nested `BEGIN` would raise
-    `OperationalError: cannot start a transaction within a transaction` and no
-    Linear delivery could atomically record the ticket write it caused.
+    what lets these writers run inside a caller's `transaction()` block, which
+    owns a transaction precisely so several writes commit or roll back as one.
+    Without it, a nested `BEGIN` would raise `OperationalError: cannot start a
+    transaction within a transaction` and no caller could group them.
 
     A joined block inherits the owner's locking, so an owner that wants the
     serialization above must have opened its transaction IMMEDIATE too;
-    `with_delivery()` and `claim()` do.
+    `transaction()` and `claim()` do.
     """
     if conn.in_transaction:
         yield
@@ -541,8 +539,8 @@ def _transaction(conn):
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield
-        # Inside the guard, like `with_delivery()`: a deferred constraint the
-        # block violated is only checked at COMMIT, and SQLite leaves the
+        # Inside the guard: a deferred constraint the block violated is only
+        # checked at COMMIT, and SQLite leaves the
         # transaction *open* when it fails that way. Unrolled back, the block's
         # writes stay pending on the connection, and the next `_transaction()`
         # would see `in_transaction` and silently join that contaminated state
@@ -1046,79 +1044,6 @@ def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
         ).lastrowid
 
 
-# What `with_delivery()` hands back. A namedtuple rather than a bare value
-# because "the effect returned None" and "the effect never ran" are different
-# answers a webhook handler acts on differently, and no sentinel return value
-# can tell them apart when the effect is free to return anything.
-Delivery = collections.namedtuple("Delivery", ("replayed", "result"))
-
-
-def with_delivery(conn, delivery_id, effect, now=None):
-    """Run `effect(conn)` exactly once per `delivery_id`; return a `Delivery`.
-
-    State-model §1: every inbound Linear delivery id is recorded in
-    `linearDeliveries` *in the same transaction as its effect*. That sharing is
-    the whole primitive. A check-then-act split across two transactions still
-    races two concurrent copies of the same redelivery, and recording the id in
-    its own transaction would burn it even when the effect went on to fail.
-
-    So: one `BEGIN IMMEDIATE`, insert the id, run the effect, commit. The three
-    outcomes are
-
-    * fresh id — `Delivery(replayed=False, result=<what the effect returned>)`,
-      the effect's writes and the delivery row committed together;
-    * duplicate id — the insert raises `IntegrityError`, the effect never runs,
-      the transaction rolls back, and the result is `Delivery(True, None)`.
-      Nothing is written, so the original `processedAt` is not restamped;
-    * the effect raises, or the commit does — everything rolls back,
-      *including the delivery id*, and the exception propagates. Linear's next
-      redelivery is processed rather than swallowed, which is the point of the
-      shared transaction, and the connection is left usable for that retry.
-
-    Only the insert is guarded, never the effect: an `IntegrityError` from the
-    effect's own writes is a real failure, and reporting it as a replay would
-    silently drop a delivery that was never processed.
-
-    `effect` must confine itself to `conn` and must not commit, roll back or
-    open its own transaction; doing so breaks the atomicity this exists for.
-    The store's own writers satisfy that by construction — `mirror_ticket()`
-    and `transition()` go through `_transaction()`, which joins an open
-    transaction instead of starting one — so `lambda c: mirror_ticket(c, ...)`
-    is the intended shape of an effect, not a special case.
-    `now` is epoch milliseconds for `processedAt`, defaulting to the clock.
-    """
-    # SQLite allows NULL in a TEXT PRIMARY KEY, and allows it repeatedly, so an
-    # absent id would silently process every replay instead of colliding on the
-    # second one. Refuse it here rather than let the dedup quietly not happen.
-    if not isinstance(delivery_id, str) or not delivery_id:
-        raise ValueError(f"delivery id must be a non-empty string, got {delivery_id!r}")
-    if now is None:
-        now = int(time.time() * 1000)
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        try:
-            conn.execute(
-                "INSERT INTO linearDeliveries (deliveryId, processedAt)"
-                " VALUES (?, ?)",
-                (delivery_id, now),
-            )
-        except sqlite3.IntegrityError:
-            conn.rollback()
-            return Delivery(replayed=True, result=None)
-        result = effect(conn)
-        # Inside the guard: a deferred constraint the effect violated is only
-        # checked here, and SQLite leaves the transaction *open* when COMMIT
-        # fails that way. Without the rollback the id would be reserved but
-        # uncommitted, and the connection's next BEGIN IMMEDIATE would raise
-        # "cannot start a transaction within a transaction" — so the retry that
-        # should process the delivery could not even start.
-        conn.commit()
-    except BaseException:
-        conn.rollback()
-        raise
-    return Delivery(replayed=False, result=result)
-
-
 # The §3 status diagram, transcribed edge for edge, plus the one edge below
 # that the diagram does not draw:
 #
@@ -1241,9 +1166,8 @@ def transition(conn, ticket_id, to_status):
     on it. `BEGIN IMMEDIATE` takes the write lock up front, so they serialize
     and the second one validates against the status the first one wrote. When
     the caller already owns a transaction the move joins it and commits with
-    it, which is what makes this usable as a `with_delivery()` effect: a
-    Linear status webhook records its delivery id and the status change
-    together or not at all.
+    it, so a `transaction()` block can record a status change together with
+    its other writes or not at all.
 
     The previous status is returned because the caller usually has to log or
     mirror the change, and re-reading it afterwards cannot recover it.
@@ -1367,11 +1291,8 @@ def mirror_ticket(
     defaulting to the clock.
 
     The upsert runs in one `_transaction()`, so it joins a transaction the
-    caller already owns rather than opening its own. Mirroring is the effect
-    of an inbound Linear issue webhook, and §1 wants that effect and its
-    delivery id committed together, so `with_delivery(conn, id, lambda c:
-    mirror_ticket(c, ...))` has to work — the argument validation above still
-    raises before any transaction is touched.
+    caller already owns rather than opening its own and commits with it — the
+    argument validation above still raises before any transaction is touched.
     """
     criteria = _json_list("acceptance_criteria", acceptance_criteria)
     commands = _json_list("verification_commands", verification_commands)
@@ -1483,8 +1404,8 @@ def pickable(conn, ticket_id):
 def _pickability(conn, row):
     """Evaluate §2's clauses over one already-fetched `tickets` row.
 
-    Split out only so `next_pickable()` can walk candidate rows through the
-    exact same predicate instead of re-deriving any part of it in SQL.
+    Split out from `pickable()` so the row fetch and the predicate stay
+    separate; a candidate walk can reuse it instead of re-deriving §2 in SQL.
     """
     project_id, status, active_run_id, criteria, commands, depends_on = row
     if status != "ready":
@@ -1508,35 +1429,6 @@ def _pickability(conn, row):
                 False, f"it depends on {dep}, which is {dep_row[0]}, not merged"
             )
     return Pickability(True, None)
-
-
-def next_pickable(conn, project_id):
-    """Return the id of the project's next pickable ticket, or None.
-
-    The v0 flat queue: every ticket of the project in ascending `id` order —
-    mirror order, so the ticket seen first is offered first — and the first
-    one `pickable()` accepts wins. Ascending `id` rather than `mirroredAt`
-    because a re-mirror restamps `mirroredAt`, and editing a ticket's body
-    should not move it in the queue.
-
-    Deliberately no SQL prefilter on the cheap clauses: every candidate goes
-    through the same `pickable()` predicate, so there is one implementation of
-    §2 to keep correct rather than two that can drift apart.
-
-    Says nothing about whether the project may start a run at all — the §7
-    single-threading lease is `claim()`'s assertion, and re-checking it here
-    would only make it look like this answer could be trusted without it.
-    """
-    rows = conn.execute(
-        "SELECT id, projectId, status, activeRunId, acceptanceCriteria,"
-        " verificationCommands, dependsOn FROM tickets"
-        " WHERE projectId = ? ORDER BY id",
-        (project_id,),
-    ).fetchall()
-    for row in rows:
-        if _pickability(conn, row[1:]):
-            return row[0]
-    return None
 
 
 # §5's resumable set, transcribed: "mechanically resumable — `failed`, or any

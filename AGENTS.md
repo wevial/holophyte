@@ -65,6 +65,11 @@ worktree and merged only after mechanical verification and independent review.
   `transition`, `record_intervention`, `walk_ticket`); (4) raw SQL only
   where no API exists — and then only paired with a ticket for the
   missing API, filed the same day. Never skip a rung downward.
+- **Operator store API, by name.** `release`, `resume`, `transition`,
+  `record_intervention` and `walk_ticket` are kept for the REPL rung above
+  even when the loop itself does not call them; `tests/test_store_surface.py`
+  holds the module's public surface to an explicit allow-list and checks
+  these five against this list, so a removal or addition is deliberate.
 - **A stuck or refused lease is a `--sweep` question, not a SQL
   question.** The first response to "lease already held by run N" is a
   read-only `--sweep` (the loop now runs one at startup and prints it);
