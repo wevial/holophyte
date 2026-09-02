@@ -653,24 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[24 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-01T20:46:47Z — KO-147
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py:2632 [p2] [factory.py:2632](/workspace/factory.py:2632): `still_tripped()` does not re-evaluate `review_stuck`. If a new completed round clears the overlap while the ru…
-
-## 2026-09-01T20:49:33Z — KO-147
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:2648): `still_tripped()` can fail a progressing run that returns to the same `reviewing` phase. After classification on rou…
-
-## 2026-09-01T20:52:50Z — KO-147
-Round 3: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-01T20:52:51Z — KO-147
-MERGED to main.
-actual: 10.7 min · estimate: 25 min · rounds: 3
+[28 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-01T21:02:37Z — KO-148
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -755,3 +738,21 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T05:27:56Z — KO-174
 MERGED to main.
 actual: 9.7 min · estimate: 30 min · rounds: 2
+
+## 2026-09-02T05:35:20Z — KO-175
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- factory.py:2688 [p2] [factory.py:2688](/workspace/factory.py:2688): Pickability is checked against the stale mirror before `claim_run()` refreshes it. A previously `ready` ticket…
+- factory.py:2691 [p2] [factory.py:2691](/workspace/factory.py:2691): Early-skipping a merged ticket removes the existing retry that projected its store status back to Linear. After…
+
+## 2026-09-02T05:40:16Z — KO-175
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- factory.py [p2] [factory.py](/workspace/factory.py:2250) re-mirrors the ticket without `depends_on`, so `store.mirror_ticket()` overwrites existing dependencies with `[]` imm…
+
+## 2026-09-02T05:44:11Z — KO-175
+Round 3: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T05:44:12Z — KO-175
+MERGED to main.
+actual: 16.3 min · estimate: 25 min · rounds: 3
