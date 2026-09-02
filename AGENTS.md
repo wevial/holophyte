@@ -55,6 +55,9 @@ worktree and merged only after mechanical verification and independent review.
 - Model/harness routing is an explicit factory policy: live-probe the exact
   configured CLI/provider/model path before dispatching a task, and do not
   silently substitute a model or harness when a route fails.
+- Cyclomatic complexity above 12 is a lint failure (ruff `C901`); an exemption
+  is a per-function `noqa: C901` that names its reason and the ticket that
+  retires it.
 
 ## Operator protocol
 

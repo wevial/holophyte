@@ -330,7 +330,7 @@ FAIL_MARK = "__holo2_verify_failed__"
 VACUOUS_RE = re.compile(r"^\s*(?:Ran 0 tests\b|collected 0 items\b)", re.M)
 
 
-def split_and_clauses(cmd):
+def split_and_clauses(cmd):  # noqa: C901 -- hand-written tokenizer; slice 4b owns it
     """Split a verify command on its top-level `&&` operators.
 
     Returns the clause list, or None when the command uses shell constructs
@@ -1626,7 +1626,9 @@ def reuse_leftover(target, wt, branch):
     return True, ""
 
 
-def run_task(target, task, conn=None, run_id=None, provider=None):
+def run_task(  # noqa: C901 -- the loop body; slice 4f of the module split breaks it up
+    target, task, conn=None, run_id=None, provider=None
+):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
     Each task works in its own git worktree (the target stays on main, untouched),
@@ -2983,7 +2985,7 @@ def self_hosted(target):
     return Path(__file__).resolve().parent == target.path.resolve()
 
 
-def main(target, provider):
+def main(target, provider):  # noqa: C901 -- same, slice 4f
     restart_after_merge = self_hosted(target)
     stop_on_failure = loop_config(target).stop_on_failure
     # Whether any run this pass failed, for the exit code when the loop was
