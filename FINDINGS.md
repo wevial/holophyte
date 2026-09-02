@@ -653,22 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[64 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T15:12:14Z — KO-181
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T15:12:15Z — KO-181
-MERGED to main.
-actual: 5.6 min · estimate: 20 min · rounds: 1
-
-## 2026-09-02T15:19:19Z — KO-182
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:3003): `--report` still renders completed runs without their `host`, leaving the ticket’s required report output unmet and…
-
-## 2026-09-02T15:22:44Z — KO-182
-Round 2: pass · reviewer codex-sol-medium · verify passed
+[68 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T15:22:45Z — KO-182
 MERGED to main.
@@ -751,3 +736,21 @@ Round 3: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T17:13:36Z — KO-193
 MERGED to main.
 actual: 17.5 min · estimate: 30 min · rounds: 3
+
+## 2026-09-02T17:20:10Z — KO-194
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):9a0275adc957 [p2] CRITERION 1: met — `test_a_version_zero_store_is_stamped_on_open_without_data_changes` CRITERION 2: met — `test_a_store_stamped_newer_is_refused_and_untouched`…
+- criteria:4 [p2] CRITERION 4: unwitnessed — The supplied run covers only 17 schema tests; local full discovery ran 470 tests but had 7 failures and 4 errors because `/tmp` is mo…
+
+## 2026-09-02T17:25:59Z — KO-194
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- tests/test_store_schema.py:498 [p0] Blocker: [tests/test_store_schema.py:498](/workspace/tests/test_store_schema.py:498) is tautological: it passes against the frozen base because existing `UNIQUE…
+
+## 2026-09-02T17:28:27Z — KO-194
+Round 3: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T17:28:28Z — KO-194
+MERGED to main.
+actual: 14.8 min · estimate: 30 min · rounds: 3
