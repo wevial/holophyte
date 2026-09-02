@@ -23,6 +23,8 @@ SPEC.loader.exec_module(factory)
 
 from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
+
 
 class VerifyClauseDiagnosticsTests(unittest.TestCase):
     def setUp(self):
@@ -139,7 +141,7 @@ class VerifyTimeoutTests(unittest.TestCase):
         # verify, not a `TimeoutExpired` escaping into the loop.
         # The command is kept verbatim (a `touch` clause would change the
         # clause count the assertions name), so the 1 s cap is the margin.
-        with patch.object(factory, "VERIFY_TIMEOUT", 1.0):
+        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0):
             ok, out = factory.run_verify("echo a && sleep 5", self.cwd)
 
         self.assertFalse(ok)
@@ -154,7 +156,7 @@ class VerifyTimeoutTests(unittest.TestCase):
         cmd = ("echo resolving; touch %s; (sleep 3; touch %s) & sleep 5"
                % (started, escaped))
 
-        with patch.object(factory, "VERIFY_TIMEOUT", 1.0):
+        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0):
             ok, out = factory.run_verify(cmd, self.cwd)
 
         self.assertFalse(ok)
@@ -180,8 +182,8 @@ class VerifyTimeoutTests(unittest.TestCase):
         cmd = ("echo before; touch %s; setsid sh -c 'sleep 3' & sleep 5"
                % started)
 
-        with patch.object(factory, "VERIFY_TIMEOUT", 1.0), \
-                patch.object(factory, "REAP_GRACE", 0.1):
+        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0), \
+                patch.object(holophyte.gates, "REAP_GRACE", 0.1):
             ok, out = factory.run_verify(cmd, self.cwd)
 
         self.assertFalse(ok)

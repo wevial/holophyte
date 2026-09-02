@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest.mock import ANY, patch
 
 import holophyte.config
+import holophyte.gates
 import holophyte.target
 
 HERE = Path(__file__).resolve().parent
@@ -865,7 +866,10 @@ class WorktreeSetupTests(ConfigTestCase):
     def test_an_absent_worktree_table_runs_nothing(self):
         self.locate()
 
-        with patch.object(factory, "run_verify",
+        # The gate's one subprocess call, resolved where `run_verify` lives:
+        # `run_worktree_setup` reaches it through `run_verify`, so a
+        # command that ran would trip this sentinel.
+        with patch.object(holophyte.gates, "run_capped",
                           side_effect=AssertionError("ran a setup command")):
             self.assertEqual(factory.run_worktree_setup(self.tgt, self.worktree()),
                              (True, ""))
@@ -932,7 +936,9 @@ class WorktreeSetupTests(ConfigTestCase):
         expired = subprocess.TimeoutExpired("make deps", 300,
                                             output="resolving packages\n")
 
-        with patch.object(factory, "run_verify", side_effect=expired):
+        # The cap fires inside `run_capped`, the gate's one subprocess call,
+        # resolved in `holophyte.gates` where `run_verify` reads it.
+        with patch.object(holophyte.gates, "run_capped", side_effect=expired):
             ok, report = factory.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
@@ -998,7 +1004,8 @@ class WorktreeSetupTests(ConfigTestCase):
     def test_the_default_setup_cap_is_the_verify_cap(self):
         self.locate('[worktree]\nsetup = ["make deps"]\n')
 
-        self.assertEqual(factory.setup_timeout(self.tgt), factory.VERIFY_TIMEOUT)
+        self.assertEqual(factory.setup_timeout(self.tgt),
+                         holophyte.config.VERIFY_TIMEOUT)
 
     def test_an_unusable_setup_timeout_is_a_startup_error(self):
         for value in ("0", "-5", "true", '"10"', "inf"):
@@ -1022,7 +1029,7 @@ class WorktreeSetupTests(ConfigTestCase):
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["make deps"]\n')
 
-        with patch.object(factory, "run_verify", side_effect=
+        with patch.object(holophyte.gates, "run_capped", side_effect=
                           subprocess.TimeoutExpired("make deps", 300)):
             ok, report = factory.run_worktree_setup(self.tgt, wt)
 
