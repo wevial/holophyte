@@ -75,8 +75,9 @@ def load_config(path):
     startup error naming the file and what `tomllib` objected to: a config the
     operator wrote and the factory silently ignored would route a run to a
     harness nobody chose, which is the one outcome the file exists to prevent.
-    Unknown tables and keys are left alone, so a config written for a later
-    version still loads here.
+    Unknown tables are left alone, so a config written for a later version
+    still loads here; a key this version does not read inside a table it does
+    is refused by `check_config_keys()` at startup.
     """
     path = Path(path)
     try:
@@ -586,7 +587,7 @@ def run_capped(cmd, cwd, timeout):
         return proc.returncode, out
 
 
-def run_verify(cmd, cwd=None, contracts=None):
+def run_verify(cmd, cwd=None, contracts=None, timeout=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
 
@@ -595,8 +596,9 @@ def run_verify(cmd, cwd=None, contracts=None):
     exited non-zero, including when that clause failed without printing
     anything. An exit-0 run that reports zero collected tests is failed as
     `vacuous-green` rather than passed. A command that runs past
-    `VERIFY_TIMEOUT` is RED too, naming the cap and the clause that was
-    running; it never raises `TimeoutExpired` at the caller.
+    the cap -- `timeout`, or `VERIFY_TIMEOUT` when the caller names none --
+    is RED too, naming the cap and the clause that was running; it never
+    raises `TimeoutExpired` at the caller.
 
     Literal contract checks declared on the ticket run first: they are
     deterministic, need no subprocess, and a drifted literal is a RED result
@@ -614,7 +616,7 @@ def run_verify(cmd, cwd=None, contracts=None):
     try:
         returncode, out = run_capped(
             instrumented_script(clauses) if marked else cmd,
-            cwd or TARGET, VERIFY_TIMEOUT)
+            cwd or TARGET, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
         # The cap is a failed verify, not a crash: `run_capped` has already
         # reaped the process group, and what the command printed before the
@@ -688,6 +690,42 @@ AGENT_CONFIG_KEYS = {
     "review": "reviewer",
     "adjudicate": "adjudicator",
 }
+
+# Every key the factory reads, per table it reads. `check_config_keys()` holds
+# a config to this at startup: a key inside one of these tables that is not
+# listed here is a typo (`setup_timeout_min` for `setup_timeout_sec`), and a
+# typo the factory ignored would leave the operator believing a knob is set
+# that is not. Tables not named here are left alone -- a config written for a
+# later version, or for another tool reading the same file, still loads.
+# `[supervisor]`'s entry is filled in beside `SUPERVISOR_KEYS`, where those
+# knobs and their defaults are defined.
+KNOWN_KEYS = {
+    "agents": frozenset(AGENT_CONFIG_KEYS.values()),
+    "worktree": frozenset({"setup", "setup_timeout_sec"}),
+}
+
+
+def check_config_keys():
+    """Refuse a key the factory does not read inside a table it does.
+
+    Runs at startup for every mode, in the same breath as `sweep_config()`
+    checks the `[supervisor]` values: an unknown key is the same kind of
+    mistake as a value outside its constraint, and deserves the same loud
+    answer while nothing is claimed. The message names the file, the table,
+    the key and the keys the table does accept, so the operator can see the
+    one they meant. A table that is not a table is left to the reader that
+    owns it (`agent_command()`, `setup_commands()`, `sweep_config()`), which
+    already says so in its own words.
+    """
+    for table, known in KNOWN_KEYS.items():
+        section = config().get(table)
+        if not isinstance(section, dict):
+            continue
+        for key in section:
+            if key not in known:
+                raise SystemExit(
+                    f"[holo2] {CONFIG_PATH}: [{table}] {key}: unknown key; "
+                    f"[{table}] accepts: {', '.join(sorted(known))}")
 
 
 def agent_command(role, goal):
@@ -927,6 +965,30 @@ def setup_commands():
     return commands
 
 
+def setup_timeout():
+    """The per-command cap on `[worktree] setup`, in seconds.
+
+    `[worktree] setup_timeout_sec` when the target names one, else the same
+    `VERIFY_TIMEOUT` a verify command gets: setup is a build step, and a Go
+    module download or a fat pip install legitimately needs more patience
+    than stdlib Python's nothing. The value is held to the constraint
+    `sweep_config()` holds an interval to -- a finite positive number, with
+    booleans refused as numbers -- and a value outside it is a startup error
+    naming the key, for the reason a bad `[supervisor]` value is: a cap the
+    factory quietly replaced with its default would bound the setup with a
+    number nobody chose.
+    """
+    value = (config().get("worktree") or {}).get("setup_timeout_sec")
+    if value is None:
+        return VERIFY_TIMEOUT
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or value <= 0):
+        raise SystemExit(
+            f"[holo2] {CONFIG_PATH}: [worktree] setup_timeout_sec must be a "
+            f"finite positive number of seconds, got {value!r}")
+    return value
+
+
 def check_worktree_setup():
     """Parse the `[worktree] setup` table before the loop claims work.
 
@@ -940,9 +1002,11 @@ def check_worktree_setup():
     shell, not argv -- `run_verify()` runs them the way it runs a ticket's
     verify command -- and they are written against a worktree that does not
     exist yet, so there is nothing here to resolve them against. Startup
-    settles the shape of the table; the worktree settles the rest.
+    settles the shape of the table; the worktree settles the rest. The cap
+    the commands run under is checked here too, for the same reason.
     """
     setup_commands()
+    setup_timeout()
 
 
 def timeout_report(cmd, expired):
@@ -970,7 +1034,8 @@ def run_worktree_setup(wt, conn=None, run_id=None):
     failure reads like a failed verify and not like a bare non-zero exit: the
     command is named, its output is shown, a top-level `&&` chain is
     attributed clause by clause, and silence is reported as silence. The same
-    machinery also means the same `VERIFY_TIMEOUT` cap per command -- setup
+    machinery also means a wall-clock cap per command -- `setup_timeout()`,
+    the target's `[worktree] setup_timeout_sec` over the verify cap; setup
     is a build step, not a round -- and the cap takes the command's whole
     process tree with it, so a build that hangs is not still writing into the
     worktree while the caller deletes it. A command that reaches the cap is
@@ -987,11 +1052,12 @@ def run_worktree_setup(wt, conn=None, run_id=None):
     commands = setup_commands()
     if not commands:
         return True, ""
+    timeout = setup_timeout()
     set_phase(conn, run_id, "working",
               f"worktree setup: {len(commands)} command(s) in {wt}")
     for n, command in enumerate(commands, 1):
         try:
-            ok, out = run_verify(command, wt)
+            ok, out = run_verify(command, wt, timeout=timeout)
         except subprocess.TimeoutExpired as e:
             ok, out = False, timeout_report(command, e)
         if not ok:
@@ -2987,6 +3053,7 @@ SUPERVISOR_KEYS = {
 # The knobs as the sweep reads them: the same five, with the heartbeat
 # threshold already in milliseconds, so the arithmetic in `sweep()` is the
 # arithmetic it always was.
+KNOWN_KEYS["supervisor"] = frozenset(SUPERVISOR_KEYS)
 SweepConfig = collections.namedtuple(
     "SweepConfig",
     ("heartbeat_stale_ms", "stale_strikes", "budget_grace",
@@ -3010,8 +3077,8 @@ def sweep_config():
     trip that silently never fires, and an infinite interval is a `sleep()`
     that raises OverflowError instead of sleeping.
 
-    Keys the table names that this version does not know are left alone,
-    the way `load_config()` leaves unknown tables alone.
+    Keys the table names that this version does not know are refused by
+    `check_config_keys()`, which startup runs beside this.
     """
     table = config().get("supervisor", {})
     if not isinstance(table, dict):
@@ -3801,7 +3868,10 @@ def cli(argv=None):
     # read it, and a threshold outside its constraint is the same kind of
     # mistake as a file that does not parse -- an error about the config,
     # before anything is claimed, rather than a sweep with numbers nobody
-    # chose.
+    # chose. Unknown keys in any table the factory reads are refused in the
+    # same window: a typo the factory ignored would leave the operator
+    # believing a knob is set that is not.
+    check_config_keys()
     sweep_config()
     if args.report:
         return report()

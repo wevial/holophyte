@@ -187,7 +187,12 @@ The file is optional:
 absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
-Tables this version does not know are left alone.
+Tables this version does not know are left alone. Inside a table it does read
+(`[agents]`, `[worktree]`, `[supervisor]`), a key it does not read is a startup
+error naming the file, the table, the key and the keys the table accepts:
+`setup_timeout_min` is a typo, not a timeout, and a typo the factory ignored
+would leave a knob believed set that is not. The accepted keys are listed with
+each table below.
 
 ```toml
 [agents]
@@ -198,6 +203,8 @@ implementer = "claude --model opus --effort high -p"   # default route
 reviewer    = "my-reviewer --diff"                     # see the caveat below
 adjudicator = "my-reviewer --final"
 ```
+
+Accepted keys: `implementer`, `reviewer`, `adjudicator`.
 
 Defaults, in place whenever the key is absent: `claude -p <goal> --model opus
 --effort high` implements; `review` and `adjudicate` go through the hardened
@@ -229,16 +236,23 @@ setup = [
   "python3 -m venv .venv",
   ".venv/bin/pip install -q -e '.[dev]'",
 ]
+# Wall-clock cap per setup command, in seconds. Optional; the default is the
+# verify gate's 300-second cap.
+setup_timeout_sec = 300
 ```
+
+Accepted keys: `setup`, `setup_timeout_sec`.
 
 They run in the worktree, right after its branch is cut and before the first
 agent turn — the moment that decides what the implementer and the verify gate
 have to work with. Without them a worktree silently borrows the main checkout's
 environment (its `.venv`, its module cache), so a task that changes a dependency
 is tested against the old one. Each command goes through the same machinery as a
-ticket's verify command: shell, one command per entry, a 300-second cap, and a
-fail-loud report that names the failing command and its output, attributing a
-top-level `&&` chain clause by clause.
+ticket's verify command: shell, one command per entry, a per-command cap
+(`setup_timeout_sec`, a positive number of seconds; 300 when absent), and a
+fail-loud report that names the failing command, the cap when it is the cap
+that fired, and its output, attributing a top-level `&&` chain clause by
+clause.
 
 A failing command stops the setup — step two of a setup assumes step one worked
 — and fails the run before an agent turn is dispatched, so a target whose
@@ -263,15 +277,17 @@ review_overlap_threshold = 0.5  # findings shared by two rounds that reads as st
 sweep_interval_sec       = 60   # sleep between two --supervise passes
 ```
 
+Accepted keys: the five above.
+
 Different targets want different patience — a Go build's worktree setup is
 slower than stdlib Python's — and these are the knobs `--sweep` and
 `--supervise` read. Each value is checked at startup, for every mode: the
 thresholds and the interval must be positive numbers, `stale_strikes` a
 positive integer, and the overlap a fraction in (0, 1]. A value outside its
 constraint is an error naming the key and the constraint, like malformed TOML,
-rather than a default quietly used in its place. Keys this version does not
-know are left alone. The config is read once at startup; a running supervisor
-does not pick up an edit.
+rather than a default quietly used in its place. A key this version does not
+know is refused the same way. The config is read once at startup; a running
+supervisor does not pick up an edit.
 
 ## Local reviewer boundary
 
