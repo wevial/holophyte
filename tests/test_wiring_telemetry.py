@@ -334,7 +334,7 @@ class ReportTests(unittest.TestCase):
 
         self.assertRegex(printed[-1],
                          r"^supervisor: live, last heartbeat 1[2-9]s ago"
-                         r" \(pid 4242\)$")
+                         rf" \(pid 4242 on {socket.gethostname()}\)$")
 
     def test_a_heartbeat_past_the_stale_threshold_reports_stale(self):
         """Nine minutes against the default five: the watcher stopped."""
@@ -342,7 +342,7 @@ class ReportTests(unittest.TestCase):
 
         self.assertRegex(printed[-1],
                          r"^supervisor: stale, last heartbeat 9m ago"
-                         r" \(pid 4242\)$")
+                         rf" \(pid 4242 on {socket.gethostname()}\)$")
 
     def test_a_target_with_no_store_is_reported_not_created(self):
         out = io.StringIO()

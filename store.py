@@ -43,6 +43,7 @@ import collections
 import contextlib
 import hashlib
 import json
+import socket
 import sqlite3
 import time
 
@@ -151,6 +152,11 @@ CREATE TABLE IF NOT EXISTS runs (
     -- parks a ticket for a human. The report still shows both.
     outcomeClass      TEXT    NOT NULL DEFAULT 'work'
         CHECK (outcomeClass IN ('work', 'infra')),
+    -- The hostname that claimed the run. A target is pinned to one host
+    -- and its store may be read from another, so the row is the only
+    -- place "where is this run executing" can be answered from. Nullable:
+    -- rows older than the column are not backfilled.
+    host              TEXT,
     -- §5's "re-enters the phase it left": the phase a parked run goes back
     -- to, written by whoever parks it and consumed by `resume()`. Not a
     -- state-model field — the doc states the rule and leaves the mechanism
@@ -225,6 +231,7 @@ CREATE TABLE IF NOT EXISTS supervisorHeartbeats (
     startedAt INTEGER NOT NULL,  -- when this supervisor process took the lock
     lastBeat  INTEGER NOT NULL,  -- when it last completed a pass
     passes    INTEGER NOT NULL,  -- how many passes it has completed
+    host      TEXT,              -- the machine the supervisor runs on
     PRIMARY KEY (pid, startedAt)
 );
 
@@ -326,6 +333,16 @@ ADDED_COLUMNS = (
         "outcomeClass",
         "outcomeClass TEXT NOT NULL DEFAULT 'work'"
         " CHECK (outcomeClass IN ('work', 'infra'))",
+    ),
+    (
+        "runs",
+        "host",
+        "host TEXT",
+    ),
+    (
+        "supervisorHeartbeats",
+        "host",
+        "host TEXT",
     ),
 )
 
@@ -650,9 +667,10 @@ def claim(conn, project_id, ticket_id, now=None):
         run_id = conn.execute(
             "INSERT INTO runs"
             " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
-            "  timeBoxMs, ticketSnapshot)"
-            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?)",
-            (ticket_id, project_id, prior + 1, now, now, estimate, snapshot),
+            "  timeBoxMs, ticketSnapshot, host)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?)",
+            (ticket_id, project_id, prior + 1, now, now, estimate, snapshot,
+             socket.gethostname()),
         ).lastrowid
         conn.execute(
             "UPDATE projects SET activeRunId = ? WHERE id = ?",
@@ -1949,17 +1967,21 @@ def record_supervisor_heartbeat(conn, pid, started_at, now=None):
     make the old one look like it never died. The first call inserts the row
     with one pass; every later call bumps `lastBeat` and the count. `now` is
     epoch milliseconds, defaulting to the clock; the loop passes the instant
-    its sweep ran so the beat and the sweep it vouches for agree.
+    its sweep ran so the beat and the sweep it vouches for agree. Every beat
+    stamps `host` with this machine's hostname, so a store read elsewhere can
+    say which machine the watcher is on.
     """
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
         conn.execute(
-            "INSERT INTO supervisorHeartbeats (pid, startedAt, lastBeat, passes)"
-            " VALUES (?, ?, ?, 1)"
+            "INSERT INTO supervisorHeartbeats"
+            " (pid, startedAt, lastBeat, passes, host)"
+            " VALUES (?, ?, ?, 1, ?)"
             " ON CONFLICT (pid, startedAt) DO UPDATE SET"
-            "   lastBeat = excluded.lastBeat, passes = passes + 1",
-            (pid, started_at, now),
+            "   lastBeat = excluded.lastBeat, passes = passes + 1,"
+            "   host = excluded.host",
+            (pid, started_at, now, socket.gethostname()),
         )
         return conn.execute(
             "SELECT passes FROM supervisorHeartbeats"
@@ -1969,12 +1991,14 @@ def record_supervisor_heartbeat(conn, pid, started_at, now=None):
 def latest_supervisor_heartbeat(conn):
     """The newest supervisor heartbeat, or None when no supervisor has beaten.
 
-    `(pid, started_at, last_beat, passes)` for the row whose `lastBeat` is
-    most recent: the one supervisor that could still be alive, since any
-    other process's row stopped moving before it. Read-only, so `--report`
-    can ask it of a store a live supervisor is writing to.
+    `(pid, started_at, last_beat, passes, host)` for the row whose `lastBeat`
+    is most recent: the one supervisor that could still be alive, since any
+    other process's row stopped moving before it. `host` is None for a beat
+    written before the column existed. Read-only, so `--report` can ask it
+    of a store a live supervisor is writing to.
     """
     row = conn.execute(
-        "SELECT pid, startedAt, lastBeat, passes FROM supervisorHeartbeats"
+        "SELECT pid, startedAt, lastBeat, passes, host"
+        " FROM supervisorHeartbeats"
         " ORDER BY lastBeat DESC, startedAt DESC LIMIT 1").fetchone()
     return tuple(row) if row is not None else None

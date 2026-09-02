@@ -38,6 +38,7 @@ import re
 import shlex
 import shutil
 import signal
+import socket
 import statistics
 import subprocess
 import sys
@@ -3126,8 +3127,8 @@ def format_age(ms):
 def supervisor_liveness_line(conn=None, now=None):
     """One line saying whether a supervisor is live for the target.
 
-    `supervisor: live, last heartbeat 12s ago (pid N)` when the newest beat
-    in `supervisorHeartbeats` is younger than the target's
+    `supervisor: live, last heartbeat 12s ago (pid N on HOST)` when the
+    newest beat in `supervisorHeartbeats` is younger than the target's
     `[supervisor] heartbeat_stale_min`, the same boundary the sweep judges
     a run's heartbeat by; `stale` past it; `none recorded` when no
     supervisor has ever beaten -- or, with no `conn` given, when there is
@@ -3148,11 +3149,11 @@ def supervisor_liveness_line(conn=None, now=None):
             conn.close()
     if beat is None:
         return "supervisor: none recorded"
-    pid, _started_at, last_beat, _passes = beat
+    pid, _started_at, last_beat, _passes, host = beat
     age = now - last_beat
     state = "live" if age < sweep_config().heartbeat_stale_ms else "stale"
     return (f"supervisor: {state}, last heartbeat {format_age(age)} ago"
-            f" (pid {pid})")
+            f" (pid {pid} on {host_name(host)})")
 
 
 # --- the supervisor's stale-run sweep -----------------------------------------
@@ -3313,9 +3314,14 @@ SWEEP_EVENT = "supervisor_sweep"
 # reached on, carried so `still_tripped()` can ask whether the run has shown
 # any sign of life since -- a verdict is only actionable against the state it
 # was made from.
+#
+# `host` is the machine the run was claimed on, from `runs.host`, and None
+# for a row older than that column. It is carried for the report only: the
+# sweep does not branch on it.
 Trip = collections.namedtuple(
     "Trip",
-    ("run_id", "ticket", "phase", "condition", "evidence", "heartbeat"))
+    ("run_id", "ticket", "phase", "condition", "evidence", "heartbeat",
+     "host"), defaults=(None,))
 # What one pass found: how many live runs it looked at, the trips among them,
 # whether it acted on them, and the runs it is watching -- silent, at a strike
 # below the trip threshold. The count is carried because "nothing tripped" is
@@ -3554,12 +3560,12 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
     with store.transaction(conn):
         swept = conn.execute(
             "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
-            " r.startedAt, r.timeBoxMs"
+            " r.startedAt, r.timeBoxMs, r.host"
             " FROM runs r JOIN tickets t ON t.id = r.ticketId"
             " WHERE r.endedAt IS NULL"
             f"   AND r.phase IN ({', '.join('?' * len(SWEEPABLE_PHASES))})"
             " ORDER BY r.id", SWEEPABLE_PHASES).fetchall()
-        for run_id, ticket, phase, heartbeat, started, time_box in swept:
+        for run_id, ticket, phase, heartbeat, started, time_box, host in swept:
             silent = now - heartbeat
             stale = silent > stale_ms
             on_file = conn.execute(
@@ -3580,13 +3586,13 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
                 trips.append(Trip(
                     run_id, ticket, phase, STALE_HEARTBEAT,
                     f"silent for {silent / 60000:.1f} min"
-                    f" over {strikes} consecutive sweeps", heartbeat))
+                    f" over {strikes} consecutive sweeps", heartbeat, host))
             elif time_box and elapsed > time_box * grace:
                 trips.append(Trip(
                     run_id, ticket, phase, TIME_BOX,
                     f"{elapsed / 60000:.1f} min against a"
                     f" {time_box / 60000:.0f} min box ({grace}x grace)",
-                    heartbeat))
+                    heartbeat, host))
             elif (phase in REVIEW_PHASES
                     and (overlap := review_overlap(conn, run_id)) is not None
                     and overlap[2] >= overlap_threshold):
@@ -3595,7 +3601,7 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
                     run_id, ticket, phase, REVIEW_STUCK,
                     f"rounds {earlier} and {later} share {shared:.2f} of"
                     f" their findings ({overlap_threshold} threshold)",
-                    heartbeat))
+                    heartbeat, host))
             elif strikes:
                 # Silent, but one sighting short of a trip: not evidence yet,
                 # and not "all healthy" either. Carried for rendering so the
@@ -3603,14 +3609,24 @@ def sweep(conn, now, act=False, provider=None, knobs=None):
                 watched.append(
                     f"run {run_id} ({ticket}, {phase}): silent"
                     f" {silent / 60000:.1f} min, strike {strikes} of"
-                    f" {strikes_needed}")
+                    f" {strikes_needed} on {host_name(host)}")
     outcomes = []
     if act:
         outcomes = [act_on_trip(conn, trip, provider, knobs) for trip in trips]
     return Sweep(len(swept), trips, act, tuple(watched), tuple(outcomes))
 
 
-SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence")
+SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence", "host")
+
+
+def host_name(host):
+    """A `host` column as printed: the hostname, or `?` for a row without one.
+
+    Rows older than the column are not backfilled, and a blank cell at the
+    end of a line is invisible; `?` says "unknown" where unknown is the truth.
+    """
+    return "?" if host is None else host
+
 
 # Printed under a table with trips in it wherever the reader is an operator
 # who did not ask for a sweep (startup, a refused claim): the table says what
@@ -3654,7 +3670,7 @@ def sweep_lines(result):
         return [f"{_runs(result.swept)} swept, all healthy"]
     table = [SWEEP_HEADERS]
     table += [(trip.ticket, f"run {trip.run_id}", trip.phase, trip.condition,
-               trip.evidence) for trip in result.trips]
+               trip.evidence, host_name(trip.host)) for trip in result.trips]
     widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
         REPORT_GAP.join(cell.ljust(width)
@@ -3767,8 +3783,9 @@ class SupervisorHeld(Exception):
     file.
     """
 
-    def __init__(self, path, pid=None, started_at=None):
+    def __init__(self, path, pid=None, started_at=None, host=None):
         self.path, self.pid, self.started_at = path, pid, started_at
+        self.host = host
         if pid is None:
             what = (f"[holo2] supervisor lock {path} exists but names no"
                     " process; refusing to guess. remove it if no supervisor"
@@ -3776,7 +3793,8 @@ class SupervisorHeld(Exception):
         else:
             since = (f" since {started_at}" if started_at is not None else "")
             what = (f"[holo2] a supervisor is already running for {TARGET}:"
-                    f" pid {pid}{since} holds {path}; not starting another")
+                    f" pid {pid} on {host_name(host)}{since} holds {path};"
+                    " not starting another")
         super().__init__(what)
 
 
@@ -3797,19 +3815,25 @@ def pid_alive(pid):
 
 
 def read_supervisor_lock(path):
-    """The `(pid, started_at)` a lockfile names, or None if it names none.
+    """The `(pid, started_at, host)` a lockfile names, or None if none.
 
-    Written as two integers on one line by `acquire_supervisor_lock()`;
-    anything else -- an empty file a crashed starter left between its create
-    and its write, a file somebody else wrote -- is None, and the caller
-    treats None as a lock it must not remove.
+    Written as `host pid started_at` on one line by
+    `acquire_supervisor_lock()`. A lock an older supervisor wrote as the two
+    integers alone still reads, with `host` None: it is a lock whose dead
+    pid can be reclaimed, not a file somebody else wrote. Anything else --
+    an empty file a crashed starter left between its create and its write,
+    a file somebody else wrote -- is None, and the caller treats None as a
+    lock it must not remove.
     """
     try:
         fields = Path(path).read_text().split()
-        pid, started_at = int(fields[0]), int(fields[1])
+        if len(fields) == 2:
+            host, pid, started_at = None, int(fields[0]), int(fields[1])
+        else:
+            host, pid, started_at = fields[0], int(fields[1]), int(fields[2])
     except (OSError, ValueError, IndexError):
         return None
-    return pid, started_at
+    return pid, started_at, host
 
 
 @contextlib.contextmanager
@@ -3829,8 +3853,13 @@ def reclaim_turn(path):
         os.close(fd)
 
 
-def acquire_supervisor_lock(path, pid=None, now=None):
+def acquire_supervisor_lock(path, pid=None, now=None, host=None):
     """Take the supervisor lock at `path` for `pid`; raise `SupervisorHeld`.
+
+    The lock's content is `host pid started_at`, `host` defaulting to this
+    machine's hostname: a target's state directory can be read from another
+    machine, and a lock naming only a pid then names a process nobody there
+    can find.
 
     The exclusive create is the arbitration: two starters racing here both
     reach the kernel, and the kernel lets one of them through. The loser
@@ -3852,6 +3881,7 @@ def acquire_supervisor_lock(path, pid=None, now=None):
     path = Path(path)
     pid = os.getpid() if pid is None else pid
     now = int(time() * 1000) if now is None else now
+    host = socket.gethostname() if host is None else host
     # The target's state directory, on first need: a supervisor can be the
     # first thing to run against a target.
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -3862,7 +3892,7 @@ def acquire_supervisor_lock(path, pid=None, now=None):
         except FileExistsError:
             return False
         with os.fdopen(fd, "w") as fh:
-            fh.write(f"{pid} {now}\n")
+            fh.write(f"{host} {pid} {now}\n")
         return True
 
     if created():
@@ -3966,8 +3996,9 @@ def supervise(provider=None, interval=None, wait=None, out=None):
     previous = {signum: signal.signal(signum, on_signal)
                 for signum in STOP_SIGNALS}
     try:
-        print(f"[holo2] supervising {TARGET} as pid {pid}: acting sweep"
-              f" every {interval}s, lock at {path}", file=out)
+        print(f"[holo2] supervising {TARGET} as pid {pid} on"
+              f" {socket.gethostname()}: acting sweep every {interval}s,"
+              f" lock at {path}", file=out)
         while not stop.is_set():
             supervise_pass(pid, started_at, provider=provider, out=out)
             wait(interval)

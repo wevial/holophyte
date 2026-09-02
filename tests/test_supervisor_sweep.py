@@ -917,6 +917,11 @@ class SweepModeTests(SweepTestCase):
         self.assertEqual(printed[1].split()[:5],
                          ["KO-1", "run", str(run_id), "working",
                           "stale_heartbeat"])
+        # A store read from another machine has to say where the run is:
+        # the trip line and the watched line both end in the host.
+        self.assertEqual(printed[1].split()[-1], socket.gethostname())
+        self.assertTrue(first[1].endswith(f" on {socket.gethostname()}"),
+                        first[1])
         self.assertEqual(printed[-1], "1 tripped of 1 run swept")
         # Read-only apart from the strikes: the run is still in flight, in the
         # phase it stopped in, and the lease it holds was not given back.
@@ -1056,11 +1061,14 @@ class SuperviseTests(SweepTestCase):
             factory.cli(["--supervise", str(self.target)])
 
         self.assertNotEqual(exited.exception.code, 0)
-        self.assertIn(str(holder.pid), str(exited.exception))
+        self.assertIn(f"pid {holder.pid} on {socket.gethostname()}",
+                      str(exited.exception))
         # And the holder's lock is untouched: a refused starter must not
         # take the file out from under the supervisor it deferred to.
         self.assertEqual(factory.read_supervisor_lock(self.lock),
-                         (holder.pid, T0))
+                         (holder.pid, T0, socket.gethostname()))
+        self.assertEqual(self.lock.read_text().split(),
+                         [socket.gethostname(), str(holder.pid), str(T0)])
 
     def test_a_refused_start_says_whether_the_holder_is_still_beating(self):
         """The refusal is actionable only with the liveness beside it: the
@@ -1084,7 +1092,7 @@ class SuperviseTests(SweepTestCase):
         self.assertRegex(
             message.splitlines()[-1],
             rf"^supervisor: live, last heartbeat 1[2-9]s ago"
-            rf" \(pid {holder.pid}\)$")
+            rf" \(pid {holder.pid} on {socket.gethostname()}\)$")
 
     def test_a_lock_naming_no_pid_is_refused_rather_than_guessed_about(self):
         """Never spawn a rival on one ambiguous probe: an empty lock is a
@@ -1103,7 +1111,7 @@ class SuperviseTests(SweepTestCase):
         """A dead pid in the lock is a supervisor killed without the chance
         to clean up. The proof of "runs" is a pass on file under this
         process's pid, made while the lock named this process."""
-        self.lock.write_text(f"{a_dead_pid()} {T0}\n")
+        self.lock.write_text(f"{socket.gethostname()} {a_dead_pid()} {T0}\n")
         held_during_pass = []
 
         def stop_after_one_pass(_interval):

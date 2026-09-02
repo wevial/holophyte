@@ -9,6 +9,7 @@ Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
 from __future__ import annotations
 
+import socket
 import sqlite3
 import tempfile
 import unittest
@@ -48,6 +49,9 @@ DOCUMENTED_COLUMNS = {
         # (`work`) or about the factory's own plumbing (`infra`), so the
         # escalation count can leave the second kind out.
         "outcomeClass",
+        # Store-owned: the hostname that claimed the run, so a store read on
+        # another machine can say where each live run is executing.
+        "host",
     },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",
@@ -67,13 +71,25 @@ DOCUMENTED_COLUMNS = {
     "sweepStrikes": {"runId", "strikes", "lastSeen"},
     # Store-owned as well: one row per `--supervise` process, bumped on every
     # pass, so a reader can tell a live watcher from a dead one.
-    "supervisorHeartbeats": {"pid", "startedAt", "lastBeat", "passes"},
+    "supervisorHeartbeats": {"pid", "startedAt", "lastBeat", "passes", "host"},
 }
 
 A_PROJECT = (
     "linearTeamId, repoPath, defaultBranch, autonomyProfile",
     ("team_abc", "/srv/dev/holophyte", "main", "personal"),
 )
+
+# `supervisorHeartbeats` as it shipped before `host` was added, for the same
+# reason as `LEGACY_RUNS_TABLE` below: init() must carry it forward.
+LEGACY_HEARTBEATS_TABLE = """
+CREATE TABLE IF NOT EXISTS supervisorHeartbeats (
+    pid       INTEGER NOT NULL,
+    startedAt INTEGER NOT NULL,
+    lastBeat  INTEGER NOT NULL,
+    passes    INTEGER NOT NULL,
+    PRIMARY KEY (pid, startedAt)
+);
+"""
 
 # `runs` exactly as it shipped before `resumePhase` was added, kept verbatim
 # rather than derived from store.SCHEMA: this is a real older store, and the
@@ -231,6 +247,62 @@ class StoreSchemaTests(unittest.TestCase):
             [("work",)])
         with self.assertRaises(sqlite3.IntegrityError):
             conn.execute("UPDATE runs SET outcomeClass = 'nonsense'")
+
+    def test_a_claim_records_the_hostname_that_made_it(self):
+        # The federation model pins a target to one host and lets a store be
+        # read elsewhere; the row itself is the only place "where is this run
+        # executing" can be answered from.
+        conn = self.open()
+        store.init(conn)
+        project = store.ensure_project(conn, "team-h", "/srv/dev/x")
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="iss-h", linear_identifier="KO-9",
+            title="a ticket", acceptance_criteria=["Given, then"],
+            verification_commands=["echo ok"], time_box_ms=None)
+        store.transition(conn, ticket, "in_flight")
+
+        run_id = store.claim(conn, project, ticket, now=1_000)
+
+        self.assertEqual(
+            conn.execute("SELECT host FROM runs WHERE id = ?",
+                         (run_id,)).fetchone(),
+            (socket.gethostname(),))
+
+    def test_a_supervisor_heartbeat_records_its_host(self):
+        conn = self.open()
+        store.init(conn)
+
+        store.record_supervisor_heartbeat(conn, pid=4242, started_at=1, now=2)
+        store.record_supervisor_heartbeat(conn, pid=4242, started_at=1, now=3)
+
+        self.assertEqual(
+            conn.execute(
+                "SELECT host, passes FROM supervisorHeartbeats").fetchall(),
+            [(socket.gethostname(), 2)])
+        self.assertEqual(store.latest_supervisor_heartbeat(conn)[-1],
+                         socket.gethostname())
+
+    def test_init_adds_host_to_an_older_heartbeats_table_as_nullable(self):
+        # A beat an older supervisor wrote has no host and keeps none; the
+        # next beat lands with one. Nothing here is backfilled.
+        conn = self.open()
+        conn.executescript(LEGACY_HEARTBEATS_TABLE)
+        conn.execute(
+            "INSERT INTO supervisorHeartbeats (pid, startedAt, lastBeat, passes)"
+            " VALUES (1, 1, 1, 1)")
+        conn.commit()
+
+        store.init(conn)
+        store.record_supervisor_heartbeat(conn, pid=2, started_at=2, now=3)
+
+        self.assertEqual(
+            {row[1] for row in conn.execute(
+                "PRAGMA table_info(supervisorHeartbeats)")},
+            DOCUMENTED_COLUMNS["supervisorHeartbeats"])
+        self.assertEqual(
+            conn.execute("SELECT pid, host FROM supervisorHeartbeats"
+                         " ORDER BY pid").fetchall(),
+            [(1, None), (2, socket.gethostname())])
 
     def test_resume_works_on_a_migrated_store(self):
         # The end-to-end version: before the migration this raised
