@@ -653,15 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[50 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T05:40:16Z — KO-175
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- factory.py [p2] [factory.py](/workspace/factory.py:2250) re-mirrors the ticket without `depends_on`, so `store.mirror_ticket()` overwrites existing dependencies with `[]` imm…
-
-## 2026-09-02T05:44:11Z — KO-175
-Round 3: pass · reviewer codex-sol-medium · verify passed
+[52 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T05:44:12Z — KO-175
 MERGED to main.
@@ -750,3 +742,10 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T15:38:27Z — KO-188
 MERGED to main.
 actual: 8.1 min · estimate: 25 min · rounds: 2
+
+## 2026-09-02T15:46:49Z — KO-189
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T15:46:52Z — KO-189
+MERGED to main.
+actual: 8.4 min · estimate: 30 min · rounds: 1
