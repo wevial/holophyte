@@ -285,6 +285,33 @@ class MalformedRoundRowTests(unittest.TestCase):
                  store.EMPTY_FINGERPRINT, 1_700_000_000_000 + number * 60_000,
                  1_700_000_030_000 + number * 60_000))
 
+    def test_malformed_timestamps_render_as_placeholders(self):
+        self.raw_round(1, "[]")
+        self.conn.execute(
+            "UPDATE reviewRounds SET startedAt = 'not-a-timestamp',"
+            " endedAt = NULL WHERE round = 1")
+        self.raw_round(2, "[]")
+        self.conn.execute(
+            "UPDATE reviewRounds SET endedAt = 1e300 WHERE round = 2")
+        self.raw_round(3, "[]")
+        self.conn.execute(
+            "UPDATE runs SET startedAt = 'later', endedAt = 1_700_000_500_000,"
+            " outcome = 'merged', phase = 'done' WHERE id = ?",
+            (self.run_id,))
+        self.conn.commit()
+
+        rendered = factory.render_findings(self.conn)
+
+        for number in range(1, 4):
+            self.assertIn(f"Round {number}:", rendered)
+        self.assertIn("## (unreadable timestamp) — ", rendered)
+        self.assertIn("## 2023-11-14T22:16:50Z — KO-1\nRound 3:", rendered)
+        # Unplaceable in time, so unreadable rows sort ahead of dated ones.
+        self.assertLess(rendered.index("Round 1:"), rendered.index("Round 3:"))
+        self.assertIn("MERGED to main", rendered)
+        self.assertIn("actual: n/a", rendered)
+        self.assertEqual(rendered, factory.render_findings(self.conn))
+
     def test_malformed_round_rows_render_as_placeholders(self):
         self.raw_round(1, "not json at all")
         self.raw_round(2, '{"path": "store.py"}')  # JSON, but not a list

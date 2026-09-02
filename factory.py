@@ -1610,11 +1610,39 @@ FINDINGS_ARCHIVE = "[{n} earlier entries in holophyte.db — query runs/reviewRo
 FINDING_LINE_CHARS = 160
 
 
+STAMP_UNREADABLE = "(unreadable timestamp)"
+
+
+def _ms(value):
+    """`value` as epoch milliseconds, or None when the column does not hold one.
+
+    The timestamp columns are declared INTEGER but SQLite affinity does not
+    enforce it, so a row can carry text, NULL, or a float no calendar reaches.
+    Anything that is not a finite number the renderer treats as unreadable.
+    """
+    import math
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
+
+
 def _stamp(ms):
-    """Epoch milliseconds as the ledger's UTC timestamp."""
+    """Epoch milliseconds as the ledger's UTC timestamp.
+
+    A stamp the row cannot supply renders as a visible placeholder rather than
+    raising: one bad row must not take the whole window with it.
+    """
     from datetime import datetime, timezone
-    return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ")
+    ms = _ms(ms)
+    if ms is None:
+        return STAMP_UNREADABLE
+    try:
+        return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+    except (OverflowError, OSError, ValueError):
+        return STAMP_UNREADABLE
 
 
 def _entry(at, ticket, lines):
@@ -1718,11 +1746,13 @@ def run_entry(row):
         head = (outcome or "ended").upper()
         head += f": {' '.join(reason.split())}" if reason else "."
     # Byte-stable: a burndown script greps this line.
-    estimate = f"{time_box // 60000} min" if time_box else "n/a"
+    estimate = f"{time_box // 60000} min" if _ms(time_box) else "n/a"
+    ended, started = _ms(at), _ms(started)
+    actual = ("n/a" if ended is None or started is None
+              else f"{(ended - started) / 60000:.1f} min")
     return _entry(at, ticket, [
         head,
-        f"actual: {(at - started) / 60000:.1f} min · "
-        f"estimate: {estimate} · rounds: {rounds}",
+        f"actual: {actual} · estimate: {estimate} · rounds: {rounds}",
     ])
 
 
@@ -1747,8 +1777,13 @@ def findings_entries(conn):
     entries = [(row[0], "round", row[-1], round_entry(row[:-1])) for row in rounds]
     entries += [(row[0], "run", row[-1], run_entry(row[:-1])) for row in runs]
     # Two rows stamped the same millisecond still have one order: kind, then
-    # the id the database gave them.
-    entries.sort(key=lambda entry: entry[:3])
+    # the id the database gave them. A row with no readable stamp cannot be
+    # placed in time, so it sorts ahead of every dated one -- deterministic,
+    # and never a comparison between a number and whatever the column held.
+    def _order(entry):
+        at = _ms(entry[0])
+        return (at is not None, at or 0, entry[1], entry[2])
+    entries.sort(key=_order)
     return [entry[3] for entry in entries]
 
 
