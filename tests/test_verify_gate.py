@@ -6,8 +6,10 @@ import importlib.util
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports ticket_template by name
@@ -108,6 +110,38 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("clause 2 of 2 exited 1", out)
         self.assertIn("failing clause: grep -q absent sub/value.txt # why", out)
+
+
+class VerifyTimeoutTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cwd = Path(tmp.name)
+
+    def test_a_chain_that_hits_the_cap_is_red_and_names_the_running_clause(self):
+        # KO acceptance criterion, verbatim command: the cap is a failed
+        # verify, not a `TimeoutExpired` escaping into the loop.
+        with patch.object(factory, "VERIFY_TIMEOUT", 0.5):
+            ok, out = factory.run_verify("echo a && sleep 5", self.cwd)
+
+        self.assertFalse(ok)
+        self.assertIn("timed out after 0.5s", out)
+        self.assertIn("clause 2 of 2", out)
+        self.assertIn("running clause: sleep 5", out)
+        self.assertIn("--- clause 1 (ok): echo a", out)  # what got that far
+
+    def test_the_cap_still_reaps_the_command_s_process_group(self):
+        marker = self.cwd / "escaped.txt"
+        cmd = "echo resolving; (sleep 1; touch %s) & sleep 5" % marker
+
+        with patch.object(factory, "VERIFY_TIMEOUT", 0.3):
+            ok, out = factory.run_verify(cmd, self.cwd)
+
+        self.assertFalse(ok)
+        self.assertIn("timed out after 0.3s", out)
+        self.assertIn("resolving", out)
+        time.sleep(1.5)  # past when the child would have touched the marker
+        self.assertFalse(marker.exists())
 
 
 class VacuousGreenTests(unittest.TestCase):
