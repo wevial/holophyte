@@ -20,6 +20,8 @@ factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
+
 
 def bare_target(case, path):
     """A `Target` at `path` whose state directory holds no config.
@@ -235,13 +237,16 @@ class ReviewLoopTests(unittest.TestCase):
 
         self.events = []
         self.goals = []
-        real_verify = factory.run_verify
+        # One "verify" per gate run: `run_verify` resolves `run_capped`, its
+        # one subprocess call, in `holophyte.gates`, and `agent()` is faked
+        # below, so nothing else in a run reaches it.
+        real_capped = holophyte.gates.run_capped
 
         def spy(*args, **kwargs):
             self.events.append("verify")
-            return real_verify(*args, **kwargs)
+            return real_capped(*args, **kwargs)
 
-        patcher = patch.object(factory, "run_verify", spy)
+        patcher = patch.object(holophyte.gates, "run_capped", spy)
         patcher.start()
         self.addCleanup(patcher.stop)
 

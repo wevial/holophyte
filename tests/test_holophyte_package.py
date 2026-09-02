@@ -18,9 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
 
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 
-# The functions and classes each module owns after the first slice; constants
+# The functions and classes each module owns after the slices so far; constants
 # carry no `__module__`, so they are not listed. Edit these lists in the same
 # change that moves a name, and say why in the commit.
 DEFINED = {
@@ -44,6 +45,23 @@ DEFINED = {
         "setup_commands",
         "setup_timeout",
         "sweep_config",
+    ],
+    holophyte.gates: [
+        "InfraFailure",
+        "RunFailure",
+        "contract_report",
+        "failure_report",
+        "instrumented_script",
+        "outcome_class_of",
+        "parse_clause_output",
+        "parse_task",
+        "reap_group",
+        "run_capped",
+        "run_verify",
+        "sh",
+        "split_and_clauses",
+        "timeout_failure_report",
+        "vacuous_green_report",
     ],
 }
 
