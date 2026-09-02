@@ -1478,14 +1478,46 @@ def run_task(task, conn=None, run_id=None, provider=None):
     mr = subprocess.run(["git", "merge", "--no-ff", branch, "-m",
                          f"Merge {branch}: {task}"], cwd=TARGET,
                         capture_output=True, text=True)
-    if mr.returncode != 0 and "FINDINGS.md" in (mr.stdout + mr.stderr):
-        # conflict limited to FINDINGS.md — prefer the branch side (fuller log)
-        subprocess.run(["git", "checkout", "--theirs", "FINDINGS.md"],
-                       cwd=TARGET, capture_output=True, text=True)
-        sh(["git", "add", "FINDINGS.md"], TARGET)
-        sh(["git", "commit", "--no-edit"], TARGET)
-    else:
-        assert mr.returncode == 0, (mr.stdout, mr.stderr)
+    if mr.returncode != 0:
+        # What conflicted is the index's answer, not the merge output's: a
+        # substring search over stdout+stderr also matches a conflict in
+        # `docs/FINDINGS.md-notes.md`, or one whose message merely mentions
+        # the file, and would then "resolve" a conflict nobody looked at.
+        conflicted = sorted(
+            p for p in subprocess.run(
+                ["git", "diff", "--name-only", "--diff-filter=U"], cwd=TARGET,
+                capture_output=True, text=True).stdout.splitlines() if p.strip())
+        if conflicted == ["FINDINGS.md"]:
+            # conflict limited to FINDINGS.md — prefer the branch side (fuller log)
+            subprocess.run(["git", "checkout", "--theirs", "FINDINGS.md"],
+                           cwd=TARGET, capture_output=True, text=True)
+            sh(["git", "add", "FINDINGS.md"], TARGET)
+            sh(["git", "commit", "--no-edit"], TARGET)
+        else:
+            # Anything else is a human's merge to make. An `assert` here was
+            # both stripped under `python -O` and, when it did fire, left main
+            # sitting on a half-applied merge with an unresolved index while
+            # the run died mid-frame. Abort first, so main is the integration
+            # point it was before the attempt, and fail the run through the
+            # same close-out every other refusal at this gate uses — branch
+            # and worktree preserved.
+            subprocess.run(["git", "merge", "--abort"], cwd=TARGET,
+                           capture_output=True, text=True)
+            dirty = subprocess.run(["git", "status", "--porcelain"], cwd=TARGET,
+                                   capture_output=True, text=True).stdout.strip()
+            paths = ", ".join(conflicted) or "(no unmerged paths reported)"
+            why = (f"merge of {branch} into main conflicted on: {paths};"
+                   f" branch and worktree preserved")
+            if dirty:
+                # The abort did not restore main: say so in the reason rather
+                # than let the next run discover it.
+                why += (" — main is NOT clean after the abort: "
+                        + " ".join(dirty.split()))
+            print(f"[holo2] {why}")
+            ledger(task_id, f"MERGE ABORTED: conflict on {paths}. Branch "
+                            f"{branch} preserved at {sha}. Rebase it on main "
+                            "and re-run, or merge it by hand.")
+            raise RunFailure(why)
     # The merge has landed: the branch holds nothing main does not, so the
     # worktree's stray untracked files are not preserved work — and a cleanup
     # refusal must not re-classify merged work as a failed run.

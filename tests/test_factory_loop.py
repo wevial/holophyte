@@ -43,6 +43,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     MALFORMED,
     PASS,
     REQUEST_CHANGES,
+    REVIEW_ROLES,
     Commit,
     FakeAgent,
     Idle,
@@ -846,6 +847,99 @@ class Interrupt:
 
     def play(self, cwd, turn):
         raise KeyboardInterrupt
+
+
+class MainDiverges:
+    """A review turn that also lands a commit on main behind the branch.
+
+    The one way a merge conflict happens for real: main moves while the run
+    is under review, so the `--no-ff` merge at the end of the run meets a
+    changed file. The step answers the review turn as usual after committing.
+    """
+
+    role = REVIEW_ROLES
+
+    def __init__(self, commit, text=APPROVE.text):
+        self.commit = commit
+        self.text = text
+
+    def play(self, cwd, turn):
+        self.commit()
+        return self.text
+
+
+class MergeConflictTests(LoopFixture):
+    """The merge gate meeting a conflict: only a conflict whose unmerged set
+    is exactly FINDINGS.md is resolved, and anything else aborts the merge,
+    leaves main clean and fails the run with the paths named."""
+
+    def commit_on_main(self, path, body):
+        """Land `body` at `path` on main — the divergence the merge meets."""
+        file = self.target / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(body)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", f"main moves {path}")
+
+    def main_status(self):
+        """Main's tracked state: empty means no half-applied merge left.
+
+        Untracked files are excluded because a failed run deliberately leaves
+        its regenerated FINDINGS.md window uncommitted for a human, which is
+        not merge residue.
+        """
+        return self.git("status", "--porcelain", "-uno").strip()
+
+    def mid_merge(self):
+        """Whether main is still sitting in a merge git never finished."""
+        return (self.target / ".git" / "MERGE_HEAD").exists()
+
+    def test_a_conflict_outside_findings_aborts_and_leaves_main_clean(self):
+        self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
+                  MainDiverges(lambda: self.commit_on_main("README.md",
+                                                           "main side\n")))
+
+        self.assertEqual(self.main_status(), "")
+        self.assertFalse(self.mid_merge())
+        self.assertEqual((self.target / "README.md").read_text(), "main side\n")
+        ((outcome, reason),) = self.read(
+            "SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("README.md", reason)
+        self.assertIn(BRANCH, self.branches())  # preserved for a human
+
+    def test_a_conflicting_path_that_merely_contains_findings_md_is_not_resolved(self):
+        """The unmerged set decides, not a substring of the merge's output: a
+        conflict in `docs/FINDINGS.md-notes.md` names FINDINGS.md in every
+        line git prints about it, and is still a non-FINDINGS conflict."""
+        path = "docs/FINDINGS.md-notes.md"
+        self.commit_on_main(path, "base\n")
+        self.loop(Commit("branch edit", path=path, body="branch side\n"),
+                  MainDiverges(lambda: self.commit_on_main(path, "main side\n")))
+
+        self.assertEqual(self.main_status(), "")
+        self.assertFalse(self.mid_merge())
+        self.assertEqual((self.target / path).read_text(), "main side\n")
+        ((outcome, reason),) = self.read(
+            "SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn(path, reason)
+
+    def test_a_conflict_only_in_findings_md_still_takes_the_branch_side(self):
+        """The kept resolution: main's FINDINGS.md window moves while the run
+        is under review and the branch wrote its own, so the merge really
+        conflicts there — and the branch's fuller window wins, merge lands."""
+        self.loop(Commit("branch window", path="FINDINGS.md",
+                         body="branch window\n"),
+                  MainDiverges(lambda: self.commit_on_main("FINDINGS.md",
+                                                           "main window\n")))
+
+        self.assertEqual(self.main_status(), "")
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertIn("branch window", (self.target / "FINDINGS.md").read_text())
+        self.assertNotIn("main window", (self.target / "FINDINGS.md").read_text())
+        self.assertNotIn(BRANCH, self.branches())  # merged, so cleaned up
 
 
 class CrashContainmentTests(LoopFixture):
