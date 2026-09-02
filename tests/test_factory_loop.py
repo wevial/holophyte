@@ -146,6 +146,19 @@ class LoopFixture(unittest.TestCase):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
                               check=True, capture_output=True, text=True).stdout
 
+    def configure(self, toml):
+        """Give the fixture target a config file and point the module at it.
+
+        Through `retarget()` rather than by patching CONFIG_PATH: it derives
+        every path from the target the same way the fixture does, so a test
+        that set the config by hand could pass with the file unwired.
+        """
+        (self.db.parent / "config.toml").write_text(toml)
+        # Paths only (adopt=False): restoring the default target at
+        # teardown must not move a real host's state around.
+        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
+        factory.retarget(self.target)
+
     def loop(self, *script, provider=None):
         """Run `main()` over the queued tasks with the script answering agents.
 
@@ -568,19 +581,6 @@ class WorktreeSetupLoopTests(LoopFixture):
     where the commands land in the loop — after the branch is cut, before the
     first agent turn — and what a failing setup does to the run around it.
     """
-
-    def configure(self, toml):
-        """Give the fixture target a config file and point the module at it.
-
-        Through `retarget()` rather than by patching CONFIG_PATH: it derives
-        every path from the target the same way the fixture does, so a test
-        that set the config by hand could pass with the file unwired.
-        """
-        (self.db.parent / "config.toml").write_text(toml)
-        # Paths only (adopt=False): restoring the default target at
-        # teardown must not move a real host's state around.
-        self.addCleanup(factory.retarget, factory.DEFAULT_TARGET, False)
-        factory.retarget(self.target)
 
     def test_setup_runs_in_the_fresh_worktree_before_the_implementer(self):
         """The commands run in the task worktree — not the main checkout —
@@ -1129,6 +1129,65 @@ class CrashContainmentTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.leases(), [(None, None)])
+
+
+class StopOnFailureTests(LoopFixture):
+    """`[loop] stop_on_failure`: whether one failed run ends the whole pass.
+
+    The default is the loop as it always was — a failure is closed out and
+    the process exits nonzero with the next ticket unclaimed. `false` is the
+    unattended night: the same close-out, then the next ready ticket in the
+    same process. Escalation is not this knob's business, and the tests keep
+    to one failure per ticket so it never enters.
+    """
+
+    def outcomes(self):
+        return self.read(
+            "SELECT t.linearIdentifier, r.outcome FROM runs r"
+            " JOIN tickets t ON t.id = r.ticketId ORDER BY r.id")
+
+    def test_by_default_one_failure_stops_the_pass_with_the_next_unclaimed(self):
+        provider = StubProvider(a_task(1), a_task(2))
+
+        self.loop(Refuse(), provider=provider)
+
+        self.assertEqual(self.rc, 1)
+        self.assertEqual(self.outcomes(), [("KO-131", "failed")])
+        self.assertEqual([t["id"] for t in provider.queue], ["KO-132"])
+
+    def goes_on_past(self, failure):
+        """`stop_on_failure = false`, two tickets, the first run lost to
+        `failure`: the run is closed out as today — lease back, ticket left
+        in flight for a human — and then the second ticket is claimed,
+        worked and merged in the same process. The pass still exits nonzero
+        so a shell sees the night was not clean."""
+        self.configure("[loop]\nstop_on_failure = false\n")
+        provider = StubProvider(a_task(1), a_task(2))
+
+        out = self.main_output(failure, Commit("the other work"), APPROVE,
+                               provider=provider)
+
+        self.assertEqual(self.outcomes(),
+                         [("KO-131", "failed"), ("KO-132", "merged")])
+        self.assertIn("the other work", self.subjects())
+        self.assertEqual(provider.queue, [])
+        self.assertIn("continuing to the next ready ticket", out)
+        self.assertEqual(self.read("SELECT status FROM tickets ORDER BY id"),
+                         [("in_flight",), ("merged",)])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+        self.assertEqual(self.rc, 1)
+
+    # One test per failure exit `main()` has: a `RunFailure`, an
+    # `InfraFailure`, and a contained crash.
+    def test_false_claims_the_next_ticket_after_a_run_failure(self):
+        self.goes_on_past(Refuse())
+
+    def test_false_claims_the_next_ticket_after_an_infra_failure(self):
+        self.goes_on_past(InfraRefuse())
+
+    def test_false_claims_the_next_ticket_after_a_crash(self):
+        self.goes_on_past(Boom())
 
 
 class SelfHostingTests(LoopFixture):

@@ -154,7 +154,8 @@ class KnownKeyTests(ConfigTestCase):
 
     def test_every_known_table_is_checked(self):
         for config in ('[agents]\nimplementor = "harness run"\n',
-                       '[supervisor]\nstale_heartbeat_min = 7\n'):
+                       '[supervisor]\nstale_heartbeat_min = 7\n',
+                       '[loop]\nstop_on_failures = false\n'):
             with self.subTest(config=config):
                 self.retarget(config)
 
@@ -167,12 +168,47 @@ class KnownKeyTests(ConfigTestCase):
         target = self.retarget(
             '[agents]\nimplementer = "harness run"\n'
             '[worktree]\nsetup = ["true"]\nsetup_timeout_sec = 30\n'
-            '[supervisor]\nheartbeat_stale_min = 7\n')
+            '[supervisor]\nheartbeat_stale_min = 7\n'
+            '[loop]\nstop_on_failure = false\n')
 
         with patch.object(factory, "report") as report:
             factory.cli([str(target), "--report"])
 
         report.assert_called_once_with()
+
+
+class LoopConfigTests(ConfigTestCase):
+    """`[loop] stop_on_failure`: a boolean, defaulting to today's stop."""
+
+    def test_an_absent_table_stops_on_failure(self):
+        self.retarget()
+
+        self.assertIs(factory.loop_config().stop_on_failure, True)
+
+    def test_false_is_read_as_go_on(self):
+        self.retarget('[loop]\nstop_on_failure = false\n')
+
+        self.assertIs(factory.loop_config().stop_on_failure, False)
+
+    def test_a_non_boolean_is_a_startup_error_naming_the_key(self):
+        """`"yes"` is a string, `1` an int: neither is the answer TOML's
+        `true` is, and neither is quietly read as one. Startup refuses it
+        for every mode, before anything is claimed."""
+        for line in ('stop_on_failure = "yes"', "stop_on_failure = 1",
+                     'stop_on_failure = "false"'):
+            with self.subTest(line=line):
+                target = self.retarget(f"[loop]\n{line}\n")
+
+                with patch.object(factory, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        factory.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(factory.CONFIG_PATH), message)
+                self.assertIn("[loop]", message)
+                self.assertIn("stop_on_failure", message)
+                self.assertIn("boolean", message)
+                report.assert_not_called()
 
 
 class StateDirectoryTests(ConfigTestCase):

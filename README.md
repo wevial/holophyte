@@ -188,7 +188,8 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[worktree]`, `[supervisor]`), a key it does not read is a startup
+(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`), a key it does not read is
+a startup
 error naming the file, the table, the key and the keys the table accepts:
 `setup_timeout_min` is a typo, not a timeout, and a typo the factory ignored
 would leave a knob believed set that is not. The accepted keys are listed with
@@ -288,6 +289,27 @@ constraint is an error naming the key and the constraint, like malformed TOML,
 rather than a default quietly used in its place. A key this version does not
 know is refused the same way. The config is read once at startup; a running
 supervisor does not pick up an edit.
+
+```toml
+[loop]
+# What the claim loop does after a run it closed out as failed. Optional; the
+# value shown is the default.
+stop_on_failure = true   # false: record the failure and claim the next ticket
+```
+
+Accepted keys: `stop_on_failure`.
+
+By default one failed run ends the process after its close-out, with a nonzero
+exit, and an operator relaunches the loop — the right call while the loop is
+still being watched. With `stop_on_failure = false` the run is closed out
+exactly as before (released, escalated if it was one failure too many, the
+`FINDINGS.md` window regenerated) and the loop goes on to the next ready ticket
+in the same process, for an unattended night. Escalation is untouched: a ticket
+that fails twice still parks itself for a human; the knob only decides whether
+one failure stops the whole queue. The exit status is still nonzero once the
+queue is empty if any run failed. The value must be a boolean, `true` or
+`false`; a string such as `"yes"` is a startup error naming the key, like a
+`[supervisor]` threshold outside its constraint.
 
 ## Local reviewer boundary
 
