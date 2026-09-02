@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[39 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T01:39:21Z — KO-169
-Round 3: changes_requested · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T01:39:21Z — KO-169
-FAILED: terminal adjudication: FAIL; branch task/findings-renderer-never-raises preserved at 63b11458343d
-actual: 10.0 min · estimate: 25 min · rounds: 3
+[41 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T05:12:22Z — KO-170
 Round 1: pass · reviewer codex-sol-medium · verify passed
@@ -751,3 +744,10 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T15:06:41Z — KO-180
 MERGED to main.
 actual: 4.1 min · estimate: 20 min · rounds: 1
+
+## 2026-09-02T15:12:14Z — KO-181
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-02T15:12:15Z — KO-181
+MERGED to main.
+actual: 5.6 min · estimate: 20 min · rounds: 1
