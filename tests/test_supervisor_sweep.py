@@ -38,6 +38,7 @@ factory = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(factory)
 
+import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -419,7 +420,7 @@ class ReviewStuckTests(SweepTestCase):
             (self.ticket_of[run_id],)).fetchone(), (None, run_id))
         (event,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
-            (run_id, factory.SWEEP_EVENT)).fetchall()
+            (run_id, holophyte.supervisor.SWEEP_EVENT)).fetchall()
         self.assertIn("rounds 1 and 2", event[0])
 
     def test_a_round_that_converged_since_the_verdict_acquits_the_run(self):
@@ -437,7 +438,7 @@ class ReviewStuckTests(SweepTestCase):
         # The loop's own process, in the gap after the verdict committed.
         self.round(run_id, 3, [finding("c.py")], at=T0 + 11 * MINUTE)
 
-        outcome = factory.act_on_trip(self.tgt, self.conn, trip)
+        outcome = holophyte.supervisor.act_on_trip(self.tgt, self.conn, trip)
 
         self.assertFalse(outcome.acted)
         self.assertEqual(outcome.phase, "reviewing")
@@ -448,7 +449,7 @@ class ReviewStuckTests(SweepTestCase):
         # failure: the stream says it looked and stood down.
         (event,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
-            (run_id, factory.SWEEP_EVENT)).fetchall()
+            (run_id, holophyte.supervisor.SWEEP_EVENT)).fetchall()
         self.assertIn("no action", event[0])
         self.assertNotIn("failing", event[0])
 
@@ -464,7 +465,8 @@ class ReviewStuckTests(SweepTestCase):
         self.round(run_id, 3, [finding("a.py"), finding("b.py")],
                    at=T0 + 11 * MINUTE)
 
-        self.assertTrue(factory.act_on_trip(self.tgt, self.conn, trip).acted)
+        self.assertTrue(
+            holophyte.supervisor.act_on_trip(self.tgt, self.conn, trip).acted)
         self.assertEqual(self.conn.execute(
             "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
             ("failed",))
@@ -486,7 +488,8 @@ class ReviewStuckTests(SweepTestCase):
         for phase in ("addressing", "verifying", "reviewing"):
             store.set_phase(self.conn, run_id, phase, now=T0 + 11 * MINUTE)
 
-        self.assertTrue(factory.act_on_trip(self.tgt, self.conn, trip).acted)
+        self.assertTrue(
+            holophyte.supervisor.act_on_trip(self.tgt, self.conn, trip).acted)
         self.assertEqual(self.conn.execute(
             "SELECT phase FROM runs WHERE id = ?", (run_id,)).fetchone(),
             ("failed",))
@@ -716,7 +719,7 @@ class ActingSweepTests(SweepTestCase):
 
         (event,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
-            (run_id, factory.SWEEP_EVENT)).fetchall()
+            (run_id, holophyte.supervisor.SWEEP_EVENT)).fetchall()
         self.assertIn("stale_heartbeat", event[0])
         self.assertIn("2 consecutive sweeps", event[0])
         rendered = (self.target / "FINDINGS.md").read_text()
@@ -753,14 +756,14 @@ class ActingSweepTests(SweepTestCase):
         stream sees the visit and the decision, not a silent no-op."""
         run_id = self.a_run()
         at = self.trip()
-        original_act = factory.act_on_trip
+        original_act = holophyte.supervisor.act_on_trip
 
         def finish_then_act(target, conn, trip, provider=None, knobs=None):
             # The run's own process, landing after the verdict committed.
             store.release(conn, trip.run_id, "merged", now=at)
             return original_act(target, conn, trip, provider, knobs)
 
-        with patch.object(factory, "act_on_trip", finish_then_act):
+        with patch.object(holophyte.supervisor, "act_on_trip", finish_then_act):
             result = self.act(at)
         lines = factory.sweep_lines(result)
 
@@ -773,7 +776,7 @@ class ActingSweepTests(SweepTestCase):
                          "1 tripped of 1 run swept, 1 declined, no action")
         (event,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
-            (run_id, factory.SWEEP_EVENT)).fetchall()
+            (run_id, holophyte.supervisor.SWEEP_EVENT)).fetchall()
         self.assertIn("no action", event[0])
         self.assertNotIn("failing", event[0])
 
@@ -784,14 +787,14 @@ class ActingSweepTests(SweepTestCase):
         failed = self.a_run()
         finished = self.a_run(project=other)
         at = self.trip()
-        original_act = factory.act_on_trip
+        original_act = holophyte.supervisor.act_on_trip
 
         def finish_one_then_act(target, conn, trip, provider=None, knobs=None):
             if trip.run_id == finished:
                 store.release(conn, trip.run_id, "merged", now=at)
             return original_act(target, conn, trip, provider, knobs)
 
-        with patch.object(factory, "act_on_trip", finish_one_then_act):
+        with patch.object(holophyte.supervisor, "act_on_trip", finish_one_then_act):
             lines = factory.sweep_lines(self.act(at))
 
         self.assertIn(f"acted: failed run {failed}, leases released", lines)
@@ -869,7 +872,7 @@ class SweepModeTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", out), \
-                    patch.object(factory, "time", lambda: at / 1000):
+                    patch.object(holophyte.supervisor, "time", lambda: at / 1000):
                 factory.cli(["--sweep", *flags, str(self.target)])
         return out.getvalue().splitlines()
 
@@ -891,7 +894,7 @@ class SweepModeTests(SweepTestCase):
 
         self.assertEqual(first[0], "1 run swept, none tripped")
         self.assertIn("strike 1 of 2", first[1])
-        self.assertEqual(printed[0].split(), list(factory.SWEEP_HEADERS))
+        self.assertEqual(printed[0].split(), list(holophyte.supervisor.SWEEP_HEADERS))
         self.assertEqual(printed[1].split()[:5],
                          ["KO-1", "run", str(run_id), "working",
                           "stale_heartbeat"])
@@ -1006,7 +1009,7 @@ class SuperviseTests(SweepTestCase):
 
     def setUp(self):
         super().setUp()
-        self.lock = factory.supervisor_lock_path(self.tgt)
+        self.lock = holophyte.supervisor.supervisor_lock_path(self.tgt)
 
     def supervise(self, wait):
         """The mode with an injected sleep, and the provider as a tripwire."""
@@ -1030,7 +1033,7 @@ class SuperviseTests(SweepTestCase):
         holder = subprocess.Popen(["sleep", "60"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
-        factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+        holophyte.supervisor.acquire_supervisor_lock(self.lock, self.tgt.path,
                                         pid=holder.pid, now=T0)
         complaint = io.StringIO()
 
@@ -1046,7 +1049,7 @@ class SuperviseTests(SweepTestCase):
         self.assertIn(f"for {self.tgt.path}:", str(exited.exception))
         # And the holder's lock is untouched: a refused starter must not
         # take the file out from under the supervisor it deferred to.
-        self.assertEqual(factory.read_supervisor_lock(self.lock),
+        self.assertEqual(holophyte.supervisor.read_supervisor_lock(self.lock),
                          (holder.pid, T0, socket.gethostname()))
         self.assertEqual(self.lock.read_text().split(),
                          [socket.gethostname(), str(holder.pid), str(T0)])
@@ -1058,7 +1061,7 @@ class SuperviseTests(SweepTestCase):
         holder = subprocess.Popen(["sleep", "60"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
-        factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+        holophyte.supervisor.acquire_supervisor_lock(self.lock, self.tgt.path,
                                         pid=holder.pid, now=T0)
         now = int(factory.time() * 1000)
         store.record_supervisor_heartbeat(self.conn, holder.pid, T0,
@@ -1083,7 +1086,7 @@ class SuperviseTests(SweepTestCase):
         self.lock.write_text("")
 
         with self.assertRaises(factory.SupervisorHeld) as refused:
-            factory.acquire_supervisor_lock(self.lock, self.tgt.path,
+            holophyte.supervisor.acquire_supervisor_lock(self.lock, self.tgt.path,
                                             pid=os.getpid(), now=T0)
 
         self.assertIsNone(refused.exception.pid)
@@ -1098,7 +1101,8 @@ class SuperviseTests(SweepTestCase):
         held_during_pass = []
 
         def stop_after_one_pass(_interval):
-            held_during_pass.append(factory.read_supervisor_lock(self.lock))
+            held_during_pass.append(
+                holophyte.supervisor.read_supervisor_lock(self.lock))
             os.kill(os.getpid(), signal.SIGTERM)
 
         code, printed = self.supervise(stop_after_one_pass)
@@ -1117,14 +1121,14 @@ class SuperviseTests(SweepTestCase):
         lose to it, or two supervisors run side by side."""
         self.lock.write_text(f"{a_dead_pid()} {T0}\n")
         us, rival = os.getpid(), os.getpid() + 1
-        real_unlink, real_alive = os.unlink, factory.pid_alive
+        real_unlink, real_alive = os.unlink, holophyte.supervisor.pid_alive
         rival_outcome, fired = [], []
 
         def rival_starts():
             try:
                 rival_outcome.append(
-                    factory.acquire_supervisor_lock(self.lock, self.tgt.path,
-                                                    pid=rival, now=T0 + 1))
+                    holophyte.supervisor.acquire_supervisor_lock(
+                        self.lock, self.tgt.path, pid=rival, now=T0 + 1))
             except factory.SupervisorHeld as held:
                 rival_outcome.append(held)
 
@@ -1135,12 +1139,12 @@ class SuperviseTests(SweepTestCase):
                 fired[0].join(0.5)
             return real_unlink(path, *args, **kwargs)
 
-        with patch.object(factory, "pid_alive",
+        with patch.object(holophyte.supervisor, "pid_alive",
                           lambda pid: pid in (us, rival) or real_alive(pid)), \
                 patch.object(os, "unlink", unlink_with_a_rival_in_the_gap):
             try:
-                ours = factory.acquire_supervisor_lock(self.lock, self.tgt.path,
-                                                       pid=us, now=T0)
+                ours = holophyte.supervisor.acquire_supervisor_lock(
+                    self.lock, self.tgt.path, pid=us, now=T0)
             except factory.SupervisorHeld as held:
                 ours = held
             fired[0].join(5)
@@ -1152,7 +1156,7 @@ class SuperviseTests(SweepTestCase):
         self.assertEqual(len(admitted), 1, outcomes)
         # The lock on disk names the one starter that was admitted, and the
         # other was refused naming exactly that pid.
-        self.assertEqual(factory.read_supervisor_lock(self.lock)[0],
+        self.assertEqual(holophyte.supervisor.read_supervisor_lock(self.lock)[0],
                          admitted[0])
         refused = outcomes[rival if admitted == [us] else us]
         self.assertEqual(refused.pid, admitted[0])
@@ -1192,8 +1196,10 @@ class SuperviseTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", io.StringIO()):
-                factory.supervise_pass(self.tgt, pid, T0, now=T0 + 6 * MINUTE)
-                factory.supervise_pass(self.tgt, pid, T0, now=T0 + 12 * MINUTE)
+                holophyte.supervisor.supervise_pass(self.tgt, pid, T0,
+                                                    now=T0 + 6 * MINUTE)
+                holophyte.supervisor.supervise_pass(self.tgt, pid, T0,
+                                                    now=T0 + 12 * MINUTE)
 
         self.assertEqual(
             self.conn.execute(
@@ -1295,9 +1301,9 @@ class LoopRestartTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                factory.supervise_pass(self.tgt, os.getpid(), T0,
+                holophyte.supervisor.supervise_pass(self.tgt, os.getpid(), T0,
                                        now=T0 + 200 * self.SECOND, out=out)
-                factory.supervise_pass(self.tgt, os.getpid(), T0,
+                holophyte.supervisor.supervise_pass(self.tgt, os.getpid(), T0,
                                        now=T0 + 260 * self.SECOND, out=out)
 
         self.assertEqual(
@@ -1342,7 +1348,7 @@ class SupervisorConfigTests(SweepTestCase):
 
         trip, = result.trips
         self.assertEqual((trip.run_id, trip.condition),
-                         (run_id, factory.STALE_HEARTBEAT))
+                         (run_id, holophyte.supervisor.STALE_HEARTBEAT))
         self.assertIn("over 2 consecutive sweeps", trip.evidence)
 
     def test_stale_strikes_moves_how_many_sightings_a_trip_needs(self):
@@ -1396,7 +1402,7 @@ class SupervisorConfigTests(SweepTestCase):
             with self.subTest(line=line):
                 self.configure(f"[supervisor]\n{line}\n")
                 with self.assertRaises(SystemExit) as raised, \
-                        patch.object(factory, "time",
+                        patch.object(holophyte.supervisor, "time",
                                      lambda: (T0 + 6 * MINUTE) / 1000):
                     factory.cli(["--sweep", str(self.target)])
                 message = str(raised.exception)
