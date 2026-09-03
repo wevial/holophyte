@@ -11,7 +11,6 @@ Run: python3 -m unittest discover -s tests -p 'test_wiring*' -v
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
@@ -22,12 +21,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
-factory = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(factory)
-
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
 
@@ -72,7 +68,7 @@ class RenderedWindowTests(unittest.TestCase):
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = store.ensure_project(self.conn, "team-1", self.root / "repo")
-        self.tgt = factory.Target.locate(self.root / "repo", adopt=False)
+        self.tgt = holophyte.target.Target.locate(self.root / "repo", adopt=False)
 
     def complete_run(self, n):
         """One merged run of its own ticket, stamped a minute apart per `n`."""
@@ -192,7 +188,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.db = root / "repo.holophyte.db"
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = factory.Target(
+        self.tgt = holophyte.target.Target(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -221,8 +217,8 @@ class CloseOutRegenerationTests(unittest.TestCase):
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(factory, "agent", fake_agent):
-                factory.main(self.tgt, provider)
+            with patch.object(holophyte.loop, "agent", fake_agent):
+                holophyte.loop.main(self.tgt, provider)
 
     def test_a_close_out_renders_and_commits_the_runs_entries(self):
         self.loop("- store.py:7: the migration is missing\n"

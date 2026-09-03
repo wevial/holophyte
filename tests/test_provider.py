@@ -1,6 +1,6 @@
 """Conformance suite for the board seam: one set of assertions, two boards.
 
-`provider.Provider` is what `factory.main()` drives, and the loop observes a
+`provider.Provider` is what `holophyte.loop.main()` drives, and the loop observes a
 board through five things only -- what `claim_next()` hands out and in what
 order, whether `skip` is honored, whether `fetch_task()` sees an edit made
 after the claim, whether `set_state()` is reflected by `fetch_task()` and

@@ -11,7 +11,6 @@ Run: python3 -m unittest discover -s tests -p 'test_wiring*' -v
 """
 from __future__ import annotations
 
-import importlib.util
 import os
 import sqlite3
 import subprocess
@@ -23,10 +22,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
-factory = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(factory)
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.target  # noqa: E402 - after the sys.path insert above
+import store  # noqa: E402 - after the sys.path insert above
 
 ISSUE_UUID = "b0c1d2e3-4567-4890-abcd-ef0123456789"  # Linear's canonical id
 
@@ -97,7 +95,7 @@ class MirrorPushTests(unittest.TestCase):
         self.db = root / "repo.holophyte.db"
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = factory.Target(
+        self.tgt = holophyte.target.Target(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -119,8 +117,8 @@ class MirrorPushTests(unittest.TestCase):
     def loop(self, merged=True, provider=None):
         """Run the loop over one task, with the run itself stubbed out."""
         provider = provider or StubProvider(a_task())
-        with patch.object(factory, "run_task", return_value=merged):
-            factory.main(self.tgt, provider)
+        with patch.object(holophyte.loop, "run_task", return_value=merged):
+            holophyte.loop.main(self.tgt, provider)
         return provider
 
     def test_the_claim_pushes_in_progress_exactly_once(self):
@@ -136,8 +134,8 @@ class MirrorPushTests(unittest.TestCase):
             return True
 
         provider = StubProvider(a_task())
-        with patch.object(factory, "run_task", spy):
-            factory.main(self.tgt, provider)
+        with patch.object(holophyte.loop, "run_task", spy):
+            holophyte.loop.main(self.tgt, provider)
 
         self.assertEqual(seen["states"], [(ISSUE_UUID, "In Progress")])
         self.assertEqual(seen["status"], "in_flight")
@@ -195,9 +193,9 @@ class MirrorPushTests(unittest.TestCase):
         runs = self.read("SELECT id FROM runs")
 
         provider = StubProvider(a_task())
-        with patch.object(factory, "run_task") as run_task, \
+        with patch.object(holophyte.loop, "run_task") as run_task, \
                 patch("builtins.print") as printed:
-            factory.main(self.tgt, provider)
+            holophyte.loop.main(self.tgt, provider)
 
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), runs)
@@ -217,10 +215,10 @@ class MirrorPushTests(unittest.TestCase):
         question with a yes the store would not give."""
         self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
 
-        with patch.object(factory, "run_task"), \
-                patch.object(factory.store, "pickable",
-                             return_value=factory.store.Pickability(True, None)):
-            factory.main(self.tgt, StubProvider(a_task()))
+        with patch.object(holophyte.loop, "run_task"), \
+                patch.object(store, "pickable",
+                             return_value=store.Pickability(True, None)):
+            holophyte.loop.main(self.tgt, StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),
                          [(None,)])

@@ -11,7 +11,6 @@ Run: python3 -m unittest discover -s tests -p 'test_wiring*' -v
 """
 from __future__ import annotations
 
-import importlib.util
 import io
 import os
 import socket
@@ -26,11 +25,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
-factory = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(factory)
-
+import holophyte.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -100,7 +96,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         self.db = root / "repo.holophyte.db"
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = factory.Target(
+        self.tgt = holophyte.target.Target(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -137,8 +133,8 @@ class CloseOutTelemetryTests(unittest.TestCase):
              "criteria": ["Given a merged ticket, when close-out completes, "
                           "then the run row carries its timing"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(factory, "agent", fake_agent):
-                factory.main(self.tgt, provider)
+            with patch.object(holophyte.loop, "agent", fake_agent):
+                holophyte.loop.main(self.tgt, provider)
         return provider
 
     def test_close_out_stamps_the_run_row_and_the_window_reads_it_back(self):
@@ -303,7 +299,7 @@ class ReportTests(unittest.TestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", out):
-                factory.cli(["--report", str(self.target)])
+                holophyte.cli.cli(["--report", str(self.target)])
 
         printed = out.getvalue().splitlines()
         self.assertEqual(printed[0].split()[0], "ticket")
@@ -333,7 +329,7 @@ class ReportTests(unittest.TestCase):
         self.conn.commit()
         out = io.StringIO()
         with no_network(), patch.object(sys, "stdout", out):
-            factory.cli(["--report", str(self.target)])
+            holophyte.cli.cli(["--report", str(self.target)])
         return out.getvalue().splitlines()
 
     def test_a_fresh_heartbeat_reports_a_live_supervisor_with_its_age(self):
@@ -355,7 +351,7 @@ class ReportTests(unittest.TestCase):
         out = io.StringIO()
 
         with no_network(), patch.object(sys, "stdout", out):
-            factory.cli(["--report", str(self.root / "elsewhere")])
+            holophyte.cli.cli(["--report", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
         self.assertFalse(holophyte.target.state_dir(self.root / "elsewhere").exists())

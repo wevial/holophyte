@@ -5,8 +5,8 @@ the padded lines an operator reads, and the two formatting helpers the
 report shares with the supervisor's liveness line and the sweep table --
 `format_age` for a heartbeat's age and `host_name` for a `host` column.
 Read-only: `store.read` and the standard library, and nothing that writes,
-claims or calls Linear. Opening the store stays with `report()` and
-`supervisor_liveness_line()` in `factory.py` until the store seam moves.
+claims or calls Linear. Opening the store is `report()`'s job in
+`holophyte.loop` and `supervisor_liveness_line()`'s in `holophyte.supervisor`.
 
 Fourth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.

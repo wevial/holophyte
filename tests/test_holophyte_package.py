@@ -1,15 +1,16 @@
 """The `holophyte` package: each moved name is defined where the split says.
 
-Phase 2 moves `factory.py` into the package one section at a time, and
-`factory.py` imports the moved names back for the call sites still in it. The
-re-export is what keeps the tests and the loop running between slices; this
-test is what keeps it a re-export: a name listed here that is defined in
-`factory.py` again, or in the wrong module, fails naming the name. The
-companion check -- that `factory.py` no longer holds the `def`/`class` lines
--- is the slice's verify grep.
+Phase 2 moved `factory.py` into the package one section at a time; with the
+last slice `factory.py` is the entry point and nothing else. A name listed
+here that is defined in the wrong module fails naming the name, and a
+function or class defined in `factory.py` again fails naming it too. The
+companion check -- that `factory.py` holds no `def`/`class` lines -- is the
+verify grep.
 
 Run: python3 -m unittest discover -s tests -p 'test_holophyte_package*' -v
 """
+import importlib.util
+import inspect
 import sys
 import unittest
 from pathlib import Path
@@ -19,14 +20,18 @@ sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
+
+FACTORY = ROOT / "factory.py"
 
 # The functions and classes each module owns after the slices so far; constants
 # carry no `__module__`, so they are not listed. Edit these lists in the same
@@ -162,6 +167,19 @@ DEFINED = {
         "sweep_lines",
         "sweep_report",
     ],
+    holophyte.loop: [
+        "check_worktree_setup",
+        "main",
+        "report",
+        "reuse_leftover",
+        "run_task",
+        "run_worktree_setup",
+        "self_hosted",
+        "timeout_report",
+    ],
+    holophyte.cli: [
+        "cli",
+    ],
 }
 
 
@@ -173,6 +191,22 @@ class MovedNamesTests(unittest.TestCase):
                 with self.subTest(module=module.__name__, name=name):
                     self.assertEqual(getattr(module, name).__module__,
                                      module.__name__)
+
+    def test_factory_defines_no_function_or_class_of_its_own(self):
+        # The entry point, loaded by path the way `python3 factory.py` runs
+        # it: every function and class reachable from it was defined
+        # somewhere in the package. `cli` itself is the one imported name.
+        spec = importlib.util.spec_from_file_location("holophyte_factory",
+                                                      FACTORY)
+        entry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(entry)
+        own = sorted(
+            name for name, value in vars(entry).items()
+            if not name.startswith("_")
+            and (inspect.isfunction(value) or inspect.isclass(value))
+            and value.__module__ == entry.__name__)
+        self.assertEqual(own, [])
+        self.assertIs(entry.cli, holophyte.cli.cli)
 
 
 if __name__ == "__main__":
