@@ -3,7 +3,6 @@ loop's control flow.
 
 Run: python3 -m unittest discover -s tests -p 'test_factory_agents*' -v
 """
-import importlib.util
 import json
 import shlex
 import shutil
@@ -15,14 +14,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
-factory = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(factory)
-
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
+import holophyte.target  # noqa: E402 - after the sys.path insert above
+import review_runner  # noqa: E402 - after the sys.path insert above
 
 
 def bare_target(case, path):
@@ -36,9 +33,10 @@ def bare_target(case, path):
     path = Path(path)
     holo = Path(tempfile.mkdtemp())
     case.addCleanup(shutil.rmtree, holo, ignore_errors=True)
-    return factory.Target(path=path, holo_dir=holo, store_path=holo / "store.db",
-                          config_path=holo / "config.toml",
-                          worktrees=path.parent / f"{path.name}.worktrees")
+    return holophyte.target.Target(
+        path=path, holo_dir=holo, store_path=holo / "store.db",
+        config_path=holo / "config.toml",
+        worktrees=path.parent / f"{path.name}.worktrees")
 
 
 class AgentRouteTests(unittest.TestCase):
@@ -50,8 +48,8 @@ class AgentRouteTests(unittest.TestCase):
     def test_implementer_uses_claude_opus_at_high_effort(self, run_capped):
         run_capped.return_value = (0, "implemented\n")
 
-        result = factory.agent(self.tgt, "implement", "make the focused change",
-                               self.worktree)
+        result = holophyte.agents.agent(self.tgt, "implement",
+                                        "make the focused change", self.worktree)
 
         self.assertEqual(result, "implemented")
         run_capped.assert_called_once_with(
@@ -68,20 +66,22 @@ class AgentRouteTests(unittest.TestCase):
     ):
         run_capped.return_value = (0, "")
 
-        factory.agent(self.tgt, "implement", "goal", self.worktree, timeout=300)
-        factory.agent(self.tgt, "implement", "goal", self.worktree, timeout=7200)
+        holophyte.agents.agent(self.tgt, "implement", "goal", self.worktree,
+                               timeout=300)
+        holophyte.agents.agent(self.tgt, "implement", "goal", self.worktree,
+                               timeout=7200)
 
         self.assertEqual([c.args[2] for c in run_capped.call_args_list],
                          [300, 1800])
 
 
-    @patch.object(factory.review_runner, "run_review")
+    @patch.object(review_runner, "run_review")
     def test_reviewer_uses_containerized_codex_sol(self, run_review):
         run_review.return_value = "VERDICT: APPROVE"
         base = "1" * 40
         candidate = "2" * 40
 
-        result = factory.agent(
+        result = holophyte.agents.agent(
             self.tgt, "review",
             "review the candidate",
             self.worktree,
@@ -97,24 +97,25 @@ class AgentRouteTests(unittest.TestCase):
             prompt="review the candidate",
             profile="codex-sol-medium",
             timeout=1800,
-            verdicts=factory.review_runner.REVIEW_VERDICTS,
+            verdicts=review_runner.REVIEW_VERDICTS,
         )
 
-    @patch.object(factory.review_runner, "run_review")
+    @patch.object(review_runner, "run_review")
     def test_a_reviewer_runner_failure_is_an_infra_failure(self, run_review):
         # The container did not start, so no candidate was judged: the run
         # fails, and fails as the factory's own failure rather than one the
         # ticket is charged for.
-        run_review.side_effect = factory.review_runner.ReviewBoundaryError(
+        run_review.side_effect = review_runner.ReviewBoundaryError(
             "Codex CLI is not installed")
 
-        with self.assertRaises(factory.InfraFailure) as raised:
-            factory.agent(self.tgt, "review", "review the candidate", self.worktree,
-                          base_sha="1" * 40, candidate_sha="2" * 40)
+        with self.assertRaises(holophyte.gates.InfraFailure) as raised:
+            holophyte.agents.agent(self.tgt, "review", "review the candidate",
+                                   self.worktree, base_sha="1" * 40,
+                                   candidate_sha="2" * 40)
 
         self.assertIn("Codex CLI is not installed", str(raised.exception))
 
-    @patch.object(factory.review_runner, "run_review")
+    @patch.object(review_runner, "run_review")
     def test_adjudicator_shares_the_reviewer_route_without_verdict_enforcement(
         self, run_review
     ):
@@ -122,7 +123,7 @@ class AgentRouteTests(unittest.TestCase):
         # record it and read it as FAIL, not raise at the review boundary.
         run_review.return_value = "no verdict here"
 
-        result = factory.agent(
+        result = holophyte.agents.agent(
             self.tgt, "adjudicate",
             "adjudicate the candidate",
             self.worktree,
@@ -229,7 +230,7 @@ class ReviewLoopTests(unittest.TestCase):
         self.worktrees = root / "repo.worktrees"
         self.branch = "task/ko-116-add-a-thing"
         self.wt = self.worktrees / "ko-116-add-a-thing"
-        self.tgt = factory.Target(
+        self.tgt = holophyte.target.Target(
             path=self.target, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=self.worktrees)
         self.linear = FakeLinear()
@@ -276,14 +277,14 @@ class ReviewLoopTests(unittest.TestCase):
             self.git("commit", "-q", "-m", f"work {n}", cwd=cwd)
             return f"committed work {n}"
 
-        with patch.object(factory, "agent", fake_agent):
+        with patch.object(holophyte.loop, "agent", fake_agent):
             try:
-                return factory.run_task(self.tgt, {
+                return holophyte.loop.run_task(self.tgt, {
                     "id": "KO-116", "title": "add a thing",
                     "verify": "echo ok", "budget_min": budget_min,
                     "contracts": [], **task,
                 }, provider=self.linear)
-            except factory.RunFailure:
+            except holophyte.gates.RunFailure:
                 # run_task's failure exits raise so their reasons reach the
                 # close-out; a direct call answers False the way main() does.
                 return False
@@ -398,7 +399,7 @@ class ReviewLoopTests(unittest.TestCase):
     def test_close_out_records_actual_duration_estimate_and_rounds(self):
         # Claim at t=100 s, close-out 42.7 s later: 0.711 min, reported to one
         # decimal, against a 20 min estimate and a single review round.
-        with patch.object(factory, "monotonic", side_effect=[100.0, 142.7]):
+        with patch.object(holophyte.loop, "monotonic", side_effect=[100.0, 142.7]):
             merged = self.run_task("VERDICT: APPROVE", budget_min=20)
 
         self.assertTrue(merged)

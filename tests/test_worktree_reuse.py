@@ -11,7 +11,6 @@ Run: python3 -m unittest discover -s tests -p 'test_worktree_reuse*' -v
 """
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -21,10 +20,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
-factory = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(factory)
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.target  # noqa: E402 - after the sys.path insert above
 
 
 class ReuseFixture(unittest.TestCase):
@@ -44,7 +41,7 @@ class ReuseFixture(unittest.TestCase):
         self.git("add", "README.md")
         self.git("commit", "-q", "-m", "base")
         self.base = self.git("rev-parse", "main").strip()
-        self.tgt = factory.Target(
+        self.tgt = holophyte.target.Target(
             path=self.target, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=self.worktrees)
         self.wt = self.worktrees / "add-a-thing"
@@ -69,7 +66,7 @@ class UnregisteredLeftoverTests(ReuseFixture):
         self.wt.mkdir(parents=True)
         (self.wt / "precious.txt").write_text("rescued work\n")
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn(str(self.wt), why)
@@ -87,7 +84,7 @@ class UnregisteredLeftoverTests(ReuseFixture):
         self.wt.mkdir(parents=True)
         (self.wt / "precious.txt").write_text("rescued work\n")
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn("not a registered worktree", why)
@@ -101,7 +98,8 @@ class UnregisteredLeftoverTests(ReuseFixture):
         alias = self.worktrees.parent / "alias"
         alias.symlink_to(self.worktrees)
 
-        ok, why = factory.reuse_leftover(self.tgt, alias / "add-a-thing", self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, alias / "add-a-thing",
+                                                self.branch)
 
         self.assertTrue(ok, why)
 
@@ -114,7 +112,7 @@ class DirtyLeftoverTests(ReuseFixture):
         self.leftover_worktree()
         (self.wt / "notes.txt").write_text("uncommitted rescue\n")
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("status", "--porcelain", cwd=self.wt), "")
@@ -126,7 +124,7 @@ class DirtyLeftoverTests(ReuseFixture):
     def test_a_clean_registered_leftover_is_reused_on_its_branch(self):
         self.leftover_worktree()
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(
@@ -146,7 +144,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("commit", "-q", "-m", "rescued: preserved work", cwd=self.wt)
         tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
@@ -161,7 +159,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "new.txt")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
@@ -180,7 +178,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "new.txt")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         # The ancestor invariant both review routes enforce, asked of git
@@ -199,7 +197,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "README.md")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn("conflict", why)
@@ -219,7 +217,7 @@ class CarriedCommitsTests(ReuseFixture):
         tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
         self.git("checkout", "-q", "--detach", "main", cwd=self.wt)
 
-        ok, why = factory.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn(self.branch, why)

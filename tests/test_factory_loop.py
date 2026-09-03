@@ -13,7 +13,6 @@ Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 """
 from __future__ import annotations
 
-import importlib.util
 import io
 import os
 import shutil
@@ -34,11 +33,6 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.test_factory_loop` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
-SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
-factory = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(factory)
-
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     FAIL,
@@ -52,7 +46,10 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     no_agent_processes,
 )
 
+import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -141,7 +138,7 @@ class LoopFixture(unittest.TestCase):
         self.addCleanup(home.stop)
         self.db = holophyte.target.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
-        self.tgt = factory.Target.locate(self.target)
+        self.tgt = holophyte.target.Target.locate(self.target)
         assert self.tgt.store_path == self.db
         assert self.tgt.worktrees == self.worktrees
 
@@ -158,7 +155,7 @@ class LoopFixture(unittest.TestCase):
         unwired. A fresh value, too: a `Target` parses its config once.
         """
         (self.db.parent / "config.toml").write_text(toml)
-        self.tgt = factory.Target.locate(self.target)
+        self.tgt = holophyte.target.Target.locate(self.target)
 
     def loop(self, *script, provider=None):
         """Run `main()` over the queued tasks with the script answering agents.
@@ -174,8 +171,8 @@ class LoopFixture(unittest.TestCase):
         self.last_fake = fake
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
-                with patch.object(factory, "agent", fake):
-                    self.rc = factory.main(self.tgt, provider)
+                with patch.object(holophyte.loop, "agent", fake):
+                    self.rc = holophyte.loop.main(self.tgt, provider)
         return fake, guard
 
     def main_output(self, *script, provider=None):
@@ -955,7 +952,7 @@ class SweepDiagnosticsTests(LoopFixture):
 class CommitThenTimeout(Commit):
     """An implementer turn that commits real work, then hits the budget.
 
-    Raises what `factory.agent()` raises once the cap has reaped the turn:
+    Raises what `holophyte.agents.agent()` raises once the cap has reaped the turn:
     `TimeoutExpired` carrying the output captured before the kill.
     """
 
@@ -980,7 +977,7 @@ class Refuse:
     role = "implement"
 
     def play(self, cwd, turn):
-        raise factory.RunFailure("some reason")
+        raise holophyte.gates.RunFailure("some reason")
 
 
 class InfraRefuse:
@@ -990,7 +987,7 @@ class InfraRefuse:
     role = "implement"
 
     def play(self, cwd, turn):
-        raise factory.InfraFailure("the reviewer container did not start")
+        raise holophyte.gates.InfraFailure("the reviewer container did not start")
 
 
 class Interrupt:
@@ -1199,7 +1196,7 @@ class SelfHostingTests(LoopFixture):
     def setUp(self):
         super().setUp()
         self.execs = []
-        patcher = patch.object(factory, "EXEC",
+        patcher = patch.object(holophyte.loop, "EXEC",
                                lambda *args: self.execs.append(args))
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -1207,7 +1204,8 @@ class SelfHostingTests(LoopFixture):
     def host_the_factory_in(self, repo):
         """Make the module look imported from `repo`, the way it is when the
         target is the factory's own checkout."""
-        patcher = patch.object(factory, "__file__", str(repo / "factory.py"))
+        patcher = patch.object(holophyte.loop, "__file__",
+                               str(repo / "holophyte" / "loop.py"))
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -1261,6 +1259,22 @@ class SelfHostingTests(LoopFixture):
 
         self.assertEqual(self.execs,
                          [(sys.executable, [sys.executable, *sys.argv])])
+
+    def test_self_hosted_is_the_repository_that_holds_the_package(self):
+        """Unpatched: the module lives in `holophyte/`, one level below the
+        repository it is compared against, so the answer must be about the
+        repository -- a loop on the factory's own checkout re-execs -- and
+        not about the package directory, which is never a target."""
+        holo = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, holo, ignore_errors=True)
+
+        def target(path):
+            return holophyte.target.Target(
+                path=path, holo_dir=holo, store_path=holo / "store.db",
+                config_path=holo / "config.toml", worktrees=holo / "wt")
+
+        self.assertTrue(holophyte.loop.self_hosted(target(ROOT)))
+        self.assertFalse(holophyte.loop.self_hosted(target(ROOT / "holophyte")))
 
     def test_a_merge_into_another_repository_does_not_re_execute(self):
         self.host_the_factory_in(self.target.parent / "elsewhere")

@@ -17,7 +17,6 @@ Run: python3 -m unittest discover -s tests -p 'test_supervisor*' -v
 """
 from __future__ import annotations
 
-import importlib.util
 import io
 import os
 import signal
@@ -33,11 +32,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
-factory = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(factory)
-
+import holophyte.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -84,7 +80,7 @@ class SweepTestCase(unittest.TestCase):
         # The `Target` every sweep here is handed. The acting sweep writes
         # FINDINGS.md into whichever target it names, so it is this test's
         # repository and never the one this suite is running in.
-        self.tgt = factory.Target.locate(self.target)
+        self.tgt = holophyte.target.Target.locate(self.target)
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
@@ -155,7 +151,7 @@ class StaleHeartbeatTests(SweepTestCase):
     def test_a_fresh_heartbeat_inside_its_budget_does_not_trip(self):
         run_id = self.a_run(budget_min=25)
 
-        result = factory.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
+        result = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
 
         self.assertEqual(result.trips, [])
         self.assertEqual(result.swept, 1)
@@ -165,7 +161,7 @@ class StaleHeartbeatTests(SweepTestCase):
         """The two-strike rule's whole point: a load spike is not a death."""
         run_id = self.a_run()
 
-        result = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        result = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
 
         self.assertEqual(result.trips, [])
         self.assertEqual(self.strikes(run_id), (1, T0 + 6 * MINUTE))
@@ -177,13 +173,13 @@ class StaleHeartbeatTests(SweepTestCase):
         rendered, with the strike count naming what happens next."""
         run_id = self.a_run()
 
-        result = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        result = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
 
         self.assertEqual(result.trips, [])
         (line,) = result.watched
         self.assertIn(f"run {run_id}", line)
         self.assertIn("strike 1 of 2", line)
-        printed = factory.sweep_lines(result)
+        printed = holophyte.supervisor.sweep_lines(result)
         self.assertEqual(printed[0], "1 run swept, none tripped")
         self.assertIn(line, printed)
 
@@ -194,8 +190,9 @@ class StaleHeartbeatTests(SweepTestCase):
         strike that lets --sweep --act fail a live run."""
         run_id = self.a_run()
 
-        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
-        result = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE + 20_000)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        result = holophyte.supervisor.sweep(self.tgt, self.conn,
+                                            T0 + 6 * MINUTE + 20_000)
 
         self.assertEqual(result.trips, [])
         (line,) = result.watched
@@ -205,8 +202,8 @@ class StaleHeartbeatTests(SweepTestCase):
     def test_two_consecutive_stale_sightings_trip_the_run(self):
         run_id = self.a_run(phase="reviewing")
 
-        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
-        result = factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        result = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
 
         trip, = result.trips
         self.assertEqual(
@@ -221,10 +218,10 @@ class StaleHeartbeatTests(SweepTestCase):
         """Consecutive, not cumulative: a run that answers starts over."""
         run_id = self.a_run()
 
-        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
         self.heartbeat_at(run_id, T0 + 7 * MINUTE)
-        alive = factory.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
-        stale_again = factory.sweep(self.tgt, self.conn, T0 + 14 * MINUTE)
+        alive = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
+        stale_again = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 14 * MINUTE)
 
         self.assertEqual(alive.trips, [])
         # Silent again six minutes later, and back to a first strike rather
@@ -241,9 +238,9 @@ class StaleHeartbeatTests(SweepTestCase):
         """
         run_id = self.a_run()
 
-        first = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        first = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
         self.heartbeat_at(run_id, T0 + 7 * MINUTE)  # alive, between sweeps
-        second = factory.sweep(self.tgt, self.conn, T0 + 13 * MINUTE)
+        second = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 13 * MINUTE)
 
         # Six minutes silent again, so a strike again -- but the first one,
         # because the run answered after it was recorded.
@@ -255,9 +252,9 @@ class StaleHeartbeatTests(SweepTestCase):
         not a rule that every second sighting is forgiven."""
         run_id = self.a_run()
 
-        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
-        factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
-        trip, = factory.sweep(self.tgt, self.conn, T0 + 18 * MINUTE).trips
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
+        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 18 * MINUTE).trips
 
         self.assertEqual((trip.run_id, trip.condition),
                          (run_id, "stale_heartbeat"))
@@ -272,7 +269,7 @@ class TimeBoxTests(SweepTestCase):
         at = T0 + 31 * MINUTE  # 1.55x of 20 min
         self.heartbeat_at(run_id, at)  # alive, and still overdue
 
-        trip, = factory.sweep(self.tgt, self.conn, at).trips
+        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, at).trips
 
         self.assertEqual((trip.run_id, trip.condition), (run_id, "time_box"))
         self.assertIn("31.0 min", trip.evidence)
@@ -284,14 +281,14 @@ class TimeBoxTests(SweepTestCase):
         at = T0 + 29 * MINUTE  # 1.45x of 20 min
         self.heartbeat_at(run_id, at)
 
-        self.assertEqual(factory.sweep(self.tgt, self.conn, at).trips, [])
+        self.assertEqual(holophyte.supervisor.sweep(self.tgt, self.conn, at).trips, [])
 
     def test_a_run_claimed_against_no_estimate_has_no_box_to_blow(self):
         run_id = self.a_run(budget_min=None)
         at = T0 + 600 * MINUTE
         self.heartbeat_at(run_id, at)
 
-        self.assertEqual(factory.sweep(self.tgt, self.conn, at).trips, [])
+        self.assertEqual(holophyte.supervisor.sweep(self.tgt, self.conn, at).trips, [])
 
 
 def finding(path, severity="p1", line=1):
@@ -318,7 +315,7 @@ class ReviewStuckTests(SweepTestCase):
     def sweep(self, run_id, at=T0 + 10 * MINUTE):
         """A sweep at `at` of a run alive at `at`."""
         self.heartbeat_at(run_id, at)
-        return factory.sweep(self.tgt, self.conn, at)
+        return holophyte.supervisor.sweep(self.tgt, self.conn, at)
 
     def test_two_rounds_sharing_no_findings_do_not_trip(self):
         """A fix round that cleared every complaint and drew new ones is a
@@ -401,7 +398,8 @@ class ReviewStuckTests(SweepTestCase):
         self.round(run_id, 2, [finding("a.py")], at=T0 + 3 * MINUTE)
         self.heartbeat_at(run_id, T0 + 10 * MINUTE)
 
-        result = factory.sweep(self.tgt, self.conn, T0 + 10 * MINUTE, act=True)
+        result = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 10 * MINUTE,
+                                            act=True)
 
         self.assertEqual(len(result.trips), 1)
         phase, outcome, ended, reason = self.conn.execute(
@@ -433,7 +431,7 @@ class ReviewStuckTests(SweepTestCase):
         self.round(run_id, 2, [finding("a.py"), finding("b.py")],
                    at=T0 + 3 * MINUTE)
         self.heartbeat_at(run_id, T0 + 10 * MINUTE)
-        trip, = factory.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
+        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
         self.assertEqual(trip.condition, "review_stuck")
         # The loop's own process, in the gap after the verdict committed.
         self.round(run_id, 3, [finding("c.py")], at=T0 + 11 * MINUTE)
@@ -461,7 +459,7 @@ class ReviewStuckTests(SweepTestCase):
         self.round(run_id, 2, [finding("a.py"), finding("b.py")],
                    at=T0 + 3 * MINUTE)
         self.heartbeat_at(run_id, T0 + 10 * MINUTE)
-        trip, = factory.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
+        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
         self.round(run_id, 3, [finding("a.py"), finding("b.py")],
                    at=T0 + 11 * MINUTE)
 
@@ -483,7 +481,7 @@ class ReviewStuckTests(SweepTestCase):
         self.round(run_id, 2, [finding("a.py"), finding("b.py")],
                    at=T0 + 3 * MINUTE)
         self.heartbeat_at(run_id, T0 + 10 * MINUTE)
-        trip, = factory.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
+        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 10 * MINUTE).trips
         self.assertEqual(trip.condition, "review_stuck")
         for phase in ("addressing", "verifying", "reviewing"):
             store.set_phase(self.conn, run_id, phase, now=T0 + 11 * MINUTE)
@@ -500,7 +498,7 @@ class ReviewStuckTests(SweepTestCase):
         self.round(fresh, 2, [finding("a.py"), finding("b.py")],
                    at=T0 + 3 * MINUTE)
         self.heartbeat_at(fresh, T0 + 12 * MINUTE)
-        trip, = factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE).trips
+        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 12 * MINUTE).trips
         self.assertEqual((trip.run_id, trip.condition), (fresh, "review_stuck"))
 
 
@@ -513,7 +511,7 @@ class NotSweptTests(SweepTestCase):
         store.release(self.conn, done, "merged", now=T0 + MINUTE)
         live = self.a_run(claimed_at=T0 + 2 * MINUTE)
 
-        result = factory.sweep(self.tgt, self.conn, T0 + 20 * MINUTE)
+        result = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 20 * MINUTE)
 
         self.assertEqual(result.swept, 1)
         self.assertEqual([trip.run_id for trip in result.trips], [])
@@ -524,8 +522,8 @@ class NotSweptTests(SweepTestCase):
         """It has no heartbeat by design: it is waiting for a human answer."""
         parked = self.a_run(phase="blocked_on_operator")
 
-        first = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
-        second = factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
+        first = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        second = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
 
         self.assertEqual((first.swept, second.swept), (0, 0))
         self.assertEqual(second.trips, [])
@@ -568,7 +566,7 @@ class AtomicityTests(SweepTestCase):
             return real(conn, rid, stale, heartbeat, now)
 
         with patch.object(store, "record_strike", strike_and_race):
-            result = factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+            result = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
 
         # Refused, not interleaved: the sweep holds the write lock across both
         # halves, so the loop's heartbeat waits for a sweep that is over.
@@ -583,7 +581,7 @@ class AtomicityTests(SweepTestCase):
         run_id = self.a_run()
         loop = self.rival()
 
-        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
         loop.execute("BEGIN IMMEDIATE")
         loop.execute("UPDATE runs SET lastHeartbeat = ? WHERE id = ?",
                      (T0 + 6 * MINUTE, run_id))
@@ -591,7 +589,8 @@ class AtomicityTests(SweepTestCase):
 
         # And the next sweep sees it and clears the strike, which is the
         # behaviour the shut-out heartbeat was queued for.
-        self.assertEqual(factory.sweep(self.tgt, self.conn, T0 + 7 * MINUTE).trips, [])
+        self.assertEqual(
+            holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 7 * MINUTE).trips, [])
         self.assertIsNone(self.strikes(run_id))
 
     def test_a_failed_sweep_writes_no_strikes_at_all(self):
@@ -612,7 +611,7 @@ class AtomicityTests(SweepTestCase):
 
         with patch.object(store, "record_strike", strike_then_die):
             with self.assertRaises(RuntimeError):
-                factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+                holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
 
         self.assertIsNone(self.strikes(first))
         self.assertIsNone(self.strikes(second))
@@ -652,7 +651,8 @@ class ActingSweepTests(SweepTestCase):
 
     def act(self, at, provider=None):
         """One acting sweep at `at`, as `--sweep --act` runs it."""
-        return factory.sweep(self.tgt, self.conn, at, act=True, provider=provider)
+        return holophyte.supervisor.sweep(self.tgt, self.conn, at, act=True,
+                                          provider=provider)
 
     def trip(self):
         """Take the first strike, and return the time the second one trips.
@@ -662,7 +662,7 @@ class ActingSweepTests(SweepTestCase):
         before the acting one, and the second sighting sits beyond the
         minimum spacing.
         """
-        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
         return T0 + 12 * MINUTE
 
     def run_row(self, run_id):
@@ -765,7 +765,7 @@ class ActingSweepTests(SweepTestCase):
 
         with patch.object(holophyte.supervisor, "act_on_trip", finish_then_act):
             result = self.act(at)
-        lines = factory.sweep_lines(result)
+        lines = holophyte.supervisor.sweep_lines(result)
 
         self.assertEqual(len(result.trips), 1)
         self.assertEqual(self.run_row(run_id)[:3], ("done", "merged", at))
@@ -795,7 +795,7 @@ class ActingSweepTests(SweepTestCase):
             return original_act(target, conn, trip, provider, knobs)
 
         with patch.object(holophyte.supervisor, "act_on_trip", finish_one_then_act):
-            lines = factory.sweep_lines(self.act(at))
+            lines = holophyte.supervisor.sweep_lines(self.act(at))
 
         self.assertIn(f"acted: failed run {failed}, leases released", lines)
         self.assertIn(f"declined: run {finished} is now done; no action",
@@ -816,7 +816,7 @@ class ActingSweepTests(SweepTestCase):
                       now=T0 + MINUTE)
         second = self.a_run(claimed_at=T0 + 2 * MINUTE,
                             ticket=self.ticket_of[first])
-        factory.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
         provider = StubProvider()
 
         self.act(T0 + 14 * MINUTE, provider)
@@ -841,7 +841,7 @@ class ActingSweepTests(SweepTestCase):
                       now=T0 + MINUTE)
         second = self.a_run(claimed_at=T0 + 2 * MINUTE,
                             ticket=self.ticket_of[first])
-        factory.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 8 * MINUTE)
         provider = StubProvider()
 
         def refuse(issue_id, state):
@@ -873,7 +873,7 @@ class SweepModeTests(SweepTestCase):
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", out), \
                     patch.object(holophyte.supervisor, "time", lambda: at / 1000):
-                factory.cli(["--sweep", *flags, str(self.target)])
+                holophyte.cli.cli(["--sweep", *flags, str(self.target)])
         return out.getvalue().splitlines()
 
     def test_a_clean_sweep_says_so_rather_than_printing_nothing(self):
@@ -973,7 +973,7 @@ class SweepModeTests(SweepTestCase):
         silent no-op, or a loop that claims a ticket."""
         with patch.object(sys, "stderr", io.StringIO()) as complaint:
             with self.assertRaises(SystemExit):
-                factory.cli(["--act", str(self.target)])
+                holophyte.cli.cli(["--act", str(self.target)])
 
         self.assertIn("--act", complaint.getvalue())
 
@@ -981,7 +981,7 @@ class SweepModeTests(SweepTestCase):
         out = io.StringIO()
 
         with no_network(), patch.object(sys, "stdout", out):
-            factory.cli(["--sweep", str(self.root / "elsewhere")])
+            holophyte.cli.cli(["--sweep", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
         self.assertFalse(holophyte.target.state_dir(self.root / "elsewhere").exists())
@@ -1017,7 +1017,7 @@ class SuperviseTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                code = factory.supervise(self.tgt, wait=wait, out=out)
+                code = holophyte.supervisor.supervise(self.tgt, wait=wait, out=out)
         return code, out.getvalue()
 
     def heartbeats(self):
@@ -1039,7 +1039,7 @@ class SuperviseTests(SweepTestCase):
 
         with patch.object(sys, "stderr", complaint), \
                 self.assertRaises(SystemExit) as exited:
-            factory.cli(["--supervise", str(self.target)])
+            holophyte.cli.cli(["--supervise", str(self.target)])
 
         self.assertNotEqual(exited.exception.code, 0)
         self.assertIn(f"pid {holder.pid} on {socket.gethostname()}",
@@ -1063,14 +1063,14 @@ class SuperviseTests(SweepTestCase):
         self.addCleanup(holder.kill)
         holophyte.supervisor.acquire_supervisor_lock(self.lock, self.tgt.path,
                                         pid=holder.pid, now=T0)
-        now = int(factory.time() * 1000)
+        now = int(holophyte.supervisor.time() * 1000)
         store.record_supervisor_heartbeat(self.conn, holder.pid, T0,
                                           now=now - 12_000)
         self.conn.commit()
 
         with patch.object(sys, "stderr", io.StringIO()), \
                 self.assertRaises(SystemExit) as exited:
-            factory.cli(["--supervise", str(self.target)])
+            holophyte.cli.cli(["--supervise", str(self.target)])
 
         message = str(exited.exception)
         self.assertIn(f"pid {holder.pid}", message.splitlines()[0])
@@ -1085,7 +1085,7 @@ class SuperviseTests(SweepTestCase):
         else entirely -- either way not this starter's to remove."""
         self.lock.write_text("")
 
-        with self.assertRaises(factory.SupervisorHeld) as refused:
+        with self.assertRaises(holophyte.supervisor.SupervisorHeld) as refused:
             holophyte.supervisor.acquire_supervisor_lock(self.lock, self.tgt.path,
                                             pid=os.getpid(), now=T0)
 
@@ -1129,7 +1129,7 @@ class SuperviseTests(SweepTestCase):
                 rival_outcome.append(
                     holophyte.supervisor.acquire_supervisor_lock(
                         self.lock, self.tgt.path, pid=rival, now=T0 + 1))
-            except factory.SupervisorHeld as held:
+            except holophyte.supervisor.SupervisorHeld as held:
                 rival_outcome.append(held)
 
         def unlink_with_a_rival_in_the_gap(path, *args, **kwargs):
@@ -1145,7 +1145,7 @@ class SuperviseTests(SweepTestCase):
             try:
                 ours = holophyte.supervisor.acquire_supervisor_lock(
                     self.lock, self.tgt.path, pid=us, now=T0)
-            except factory.SupervisorHeld as held:
+            except holophyte.supervisor.SupervisorHeld as held:
                 ours = held
             fired[0].join(5)
 
@@ -1224,7 +1224,8 @@ class LoopRestartTests(SweepTestCase):
     SECOND = 1000
 
     def lines(self, now):
-        return factory.sweep_lines(factory.sweep(self.tgt, self.conn, now))
+        return holophyte.supervisor.sweep_lines(
+            holophyte.supervisor.sweep(self.tgt, self.conn, now))
 
     def restart_lines(self, now):
         return [line for line in self.lines(now) if "re-exec" in line]
@@ -1326,25 +1327,25 @@ class SupervisorConfigTests(SweepTestCase):
         once, and this test wants the file it just wrote.
         """
         (self.db.parent / "config.toml").write_text(text)
-        self.tgt = factory.Target.locate(self.target)
+        self.tgt = holophyte.target.Target.locate(self.target)
 
     def test_an_absent_table_is_the_documented_defaults(self):
 
-        self.assertEqual(factory.sweep_config(self.tgt),
+        self.assertEqual(holophyte.config.sweep_config(self.tgt),
                          (5 * MINUTE, 2, 1.5, 0.5, 60, 2 * MINUTE))
 
     def test_heartbeat_stale_min_moves_the_silence_a_trip_needs(self):
         """A heartbeat two and three minutes old on two consecutive sweeps:
         not even a strike under the default five, a trip under one."""
         run_id = self.a_run()
-        factory.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
-        default = factory.sweep(self.tgt, self.conn, T0 + 3 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
+        default = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 3 * MINUTE)
         self.assertEqual(default.trips, [])
         self.assertIsNone(self.strikes(run_id))
 
         self.configure("[supervisor]\nheartbeat_stale_min = 1\n")
-        factory.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
-        result = factory.sweep(self.tgt, self.conn, T0 + 3 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 2 * MINUTE)
+        result = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 3 * MINUTE)
 
         trip, = result.trips
         self.assertEqual((trip.run_id, trip.condition),
@@ -1355,9 +1356,9 @@ class SupervisorConfigTests(SweepTestCase):
         run_id = self.a_run()
         self.configure("[supervisor]\nstale_strikes = 3\n")
 
-        factory.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
-        second = factory.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
-        third = factory.sweep(self.tgt, self.conn, T0 + 18 * MINUTE)
+        holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
+        second = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
+        third = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 18 * MINUTE)
 
         self.assertEqual(second.trips, [])
         (line,) = second.watched
@@ -1367,7 +1368,7 @@ class SupervisorConfigTests(SweepTestCase):
     def test_unknown_keys_in_the_table_are_left_alone(self):
         self.configure("[supervisor]\nstale_heartbeat_min = 7\n")
 
-        self.assertEqual(factory.sweep_config(self.tgt).heartbeat_stale_ms,
+        self.assertEqual(holophyte.config.sweep_config(self.tgt).heartbeat_stale_ms,
                          5 * MINUTE)
 
     def test_a_value_outside_its_constraint_is_refused_at_startup(self):
@@ -1404,7 +1405,7 @@ class SupervisorConfigTests(SweepTestCase):
                 with self.assertRaises(SystemExit) as raised, \
                         patch.object(holophyte.supervisor, "time",
                                      lambda: (T0 + 6 * MINUTE) / 1000):
-                    factory.cli(["--sweep", str(self.target)])
+                    holophyte.cli.cli(["--sweep", str(self.target)])
                 message = str(raised.exception)
                 self.assertIn(f"[supervisor] {key}", message)
                 self.assertIn(constraint, message)
@@ -1424,7 +1425,7 @@ class SupervisorConfigTests(SweepTestCase):
             with self.subTest(line=line):
                 self.configure(line + "\n")
                 with self.assertRaises(SystemExit) as raised:
-                    factory.sweep_config(self.tgt)
+                    holophyte.config.sweep_config(self.tgt)
                 message = str(raised.exception)
                 self.assertIn("[supervisor] must be a table", message)
                 self.assertIn(f"got {kind}", message)
@@ -1435,11 +1436,11 @@ class SupervisorConfigTests(SweepTestCase):
         store.record_loop_restart(self.conn, self.project, "abc1234", now=T0)
         self.configure("[supervisor]\nrestart_grace_sec = 300\n")
 
-        patient = factory.sweep(self.tgt, self.conn, T0 + 200_000)
+        patient = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 200_000)
         self.assertEqual(patient.restarts, ())
 
         self.configure("[supervisor]\nrestart_grace_sec = 120\n")
-        default = factory.sweep(self.tgt, self.conn, T0 + 200_000)
+        default = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 200_000)
         self.assertEqual(default.restarts, (("abc1234", 200_000),))
 
     def test_sweep_interval_sec_is_the_supervisor_s_sleep(self):
@@ -1454,7 +1455,8 @@ class SupervisorConfigTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                code = factory.supervise(self.tgt, wait=stop_after_one, out=out)
+                code = holophyte.supervisor.supervise(self.tgt, wait=stop_after_one,
+                                                      out=out)
 
         self.assertEqual(code, 0)
         self.assertEqual(slept, [7])
