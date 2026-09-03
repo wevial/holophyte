@@ -26,6 +26,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
@@ -203,8 +204,8 @@ class CloseOutTelemetryTests(unittest.TestCase):
             25 * 60 * 1000)
 
 
-class ReportTests(unittest.TestCase):
-    """`--report` over a seeded store: what it prints, and what it never does."""
+class ReportStoreCase(unittest.TestCase):
+    """A seeded store under a home of the test's own, and `--report` over it."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -246,6 +247,22 @@ class ReportTests(unittest.TestCase):
                            outcome="failed")
         self.completed_run(3, actual_min=3, estimate_min=25, rounds=0,
                            outcome="merged")
+
+    def report_with_a_heartbeat(self, age_ms):
+        """`--report` as the operator runs it, over a store whose one
+        supervisor last beat `age_ms` before now."""
+        now = int(time.time() * 1000)
+        store.record_supervisor_heartbeat(self.conn, pid=4242, started_at=now,
+                                          now=now - age_ms)
+        self.conn.commit()
+        out = io.StringIO()
+        with no_network(), patch.object(sys, "stdout", out):
+            holophyte.cli.cli(["--report", str(self.target)])
+        return out.getvalue().splitlines()
+
+
+class ReportTests(ReportStoreCase):
+    """`--report` over a seeded store: what it prints, and what it never does."""
 
     def test_a_line_per_run_with_its_ratio_and_a_summary(self):
         self.three_runs()
@@ -325,17 +342,6 @@ class ReportTests(unittest.TestCase):
         # thing a started run creates.
         self.assertFalse(self.worktrees.exists())
 
-    def report_with_a_heartbeat(self, age_ms):
-        """`--report` as the operator runs it, over a store whose one
-        supervisor last beat `age_ms` before now."""
-        now = int(time.time() * 1000)
-        store.record_supervisor_heartbeat(self.conn, pid=4242, started_at=now,
-                                          now=now - age_ms)
-        self.conn.commit()
-        out = io.StringIO()
-        with no_network(), patch.object(sys, "stdout", out):
-            holophyte.cli.cli(["--report", str(self.target)])
-        return out.getvalue().splitlines()
 
     def test_a_fresh_heartbeat_reports_a_live_supervisor_with_its_age(self):
         printed = self.report_with_a_heartbeat(age_ms=12_000)
@@ -364,3 +370,52 @@ class ReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostLabelTests(ReportStoreCase):
+    """`[report] host_label`: the rendering names the writer, not the machine.
+
+    The repository is public and the loop commits `FINDINGS.md` after every
+    merge, so the hostname the store records must not be what the factory
+    prints. With the label set, every rendered host is the label; the store
+    goes on holding the real hostname, which is what the supervisor's
+    own-host checks compare against.
+    """
+
+    LABEL = "writer-1"
+
+    def setUp(self):
+        super().setUp()
+        (self.db.parent / "config.toml").write_text(
+            f'[report]\nhost_label = "{self.LABEL}"\n')
+        self.tgt = holophyte.target.Target.locate(self.target)
+
+    def test_the_report_and_findings_show_the_label_and_never_the_hostname(self):
+        self.three_runs()
+        self.conn.execute("UPDATE runs SET host = NULL WHERE id = 2")
+        printed = self.report_with_a_heartbeat(age_ms=12_000)
+        rendered = holophyte.findings.render_findings(self.conn)
+
+        hostname = socket.gethostname()
+        self.assertNotIn(hostname, "\n".join(printed))
+        self.assertNotIn(hostname, rendered)
+        # Every host column, the NULL row included: one label for the writer.
+        self.assertEqual([line.split()[-1] for line in printed[1:4]],
+                         [self.LABEL] * 3)
+        self.assertRegex(printed[-1],
+                         rf"^supervisor: live, .* \(pid 4242 on {self.LABEL}\)$")
+
+    def test_the_store_still_records_the_real_hostname(self):
+        self.three_runs()
+        store.record_supervisor_heartbeat(self.conn, pid=4242, started_at=1,
+                                          now=2)
+
+        hostname = socket.gethostname()
+        self.assertEqual(
+            self.conn.execute("SELECT DISTINCT host FROM runs").fetchall(),
+            [(hostname,)])
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT host FROM supervisorHeartbeats").fetchall(),
+            [(hostname,)])
+        self.assertNotEqual(hostname, self.LABEL)

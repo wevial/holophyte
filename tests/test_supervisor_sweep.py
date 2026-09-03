@@ -139,6 +139,21 @@ class SweepTestCase(unittest.TestCase):
         store.set_phase(self.conn, run_id, store.run_phase(self.conn, run_id),
                         now=at)
 
+    def run_sweep(self, at, *flags):
+        """The mode end to end, with the provider and the network as tripwires.
+
+        The mode reads the wall clock, which is the one thing about it a test
+        cannot arrange, so `time` is what `at` replaces -- the seam the sweep
+        itself takes as a parameter.
+        """
+        out = io.StringIO()
+        with patch.dict(sys.modules,
+                        {"linear_provider": Tripwire("linear_provider")}):
+            with no_network(), patch.object(sys, "stdout", out), \
+                    patch.object(holophyte.supervisor, "time", lambda: at / 1000):
+                holophyte.cli.cli(["--sweep", *flags, str(self.target)])
+        return out.getvalue().splitlines()
+
     def strikes(self, run_id):
         """The strike row the sweep keeps, read straight out of the table."""
         row = self.conn.execute(
@@ -863,21 +878,6 @@ class ActingSweepTests(SweepTestCase):
 class SweepModeTests(SweepTestCase):
     """`factory.py --sweep <target>` as an operator runs it."""
 
-    def run_sweep(self, at, *flags):
-        """The mode end to end, with the provider and the network as tripwires.
-
-        The mode reads the wall clock, which is the one thing about it a test
-        cannot arrange, so `time` is what `at` replaces -- the seam the sweep
-        itself takes as a parameter.
-        """
-        out = io.StringIO()
-        with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}):
-            with no_network(), patch.object(sys, "stdout", out), \
-                    patch.object(holophyte.supervisor, "time", lambda: at / 1000):
-                holophyte.cli.cli(["--sweep", *flags, str(self.target)])
-        return out.getvalue().splitlines()
-
     def test_a_clean_sweep_says_so_rather_than_printing_nothing(self):
         """Silence is ambiguous: an operator cannot tell it from a crash."""
         self.a_run()
@@ -1532,3 +1532,60 @@ class HeartbeatWhileTests(SweepTestCase):
         after = self.conn.execute(
             "SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         self.assertEqual(after, before)
+
+
+class HostLabelTests(SweepTestCase):
+    """`[report] host_label` on the sweep table and the supervisor's lines.
+
+    The lock file and the store keep the real hostname -- `reclaim_turn` and
+    `still_tripped` compare against it -- and only the printed lines change.
+    """
+
+    LABEL = "writer-1"
+
+    def setUp(self):
+        super().setUp()
+        (self.db.parent / "config.toml").write_text(
+            f'[report]\nhost_label = "{self.LABEL}"\n')
+        self.tgt = holophyte.target.Target.locate(self.target)
+        self.lock = holophyte.supervisor.supervisor_lock_path(self.tgt)
+
+    def test_the_sweep_table_and_watched_line_show_the_label(self):
+        self.a_run()
+        self.conn.commit()
+
+        first = self.run_sweep(T0 + 6 * MINUTE)
+        printed = self.run_sweep(T0 + 12 * MINUTE)
+
+        hostname = socket.gethostname()
+        self.assertNotIn(hostname, "\n".join(first + printed))
+        self.assertTrue(first[1].endswith(f" on {self.LABEL}"), first[1])
+        self.assertEqual(printed[1].split()[-1], self.LABEL)
+
+    def test_the_startup_and_refusal_lines_show_the_label_over_a_real_lock(self):
+        out = io.StringIO()
+        with patch.dict(sys.modules,
+                        {"linear_provider": Tripwire("linear_provider")}):
+            with no_network(), \
+                    patch.object(holophyte.supervisor, "supervise_pass"):
+                holophyte.supervisor.supervise(
+                    self.tgt, wait=lambda _i: os.kill(os.getpid(), signal.SIGTERM),
+                    out=out)
+        holder = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        holophyte.supervisor.acquire_supervisor_lock(
+            self.lock, self.tgt.path, pid=holder.pid, now=T0)
+
+        with patch.object(sys, "stderr", io.StringIO()), \
+                self.assertRaises(SystemExit) as exited:
+            holophyte.cli.cli(["--supervise", str(self.target)])
+
+        hostname = socket.gethostname()
+        self.assertIn(f"as pid {os.getpid()} on {self.LABEL}", out.getvalue())
+        self.assertNotIn(hostname, out.getvalue())
+        self.assertIn(f"pid {holder.pid} on {self.LABEL}", str(exited.exception))
+        self.assertNotIn(hostname, str(exited.exception))
+        # The lock itself still names the machine: another host reading the
+        # state directory has to know whose pid that is.
+        self.assertEqual(self.lock.read_text().split()[0], hostname)

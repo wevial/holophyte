@@ -85,7 +85,8 @@ KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()),
     "worktree": frozenset({"setup", "setup_timeout_sec"}),
 }
-# `[loop]`'s entry is filled in beside `LOOP_KEYS`, with `[supervisor]`'s.
+# `[loop]`'s and `[report]`'s entries are filled in beside `LOOP_KEYS` and
+# `REPORT_KEYS`, with `[supervisor]`'s.
 
 
 def check_config_keys(target):
@@ -504,3 +505,47 @@ def loop_config(target):
                 f"{allowed}, got {value!r}")
         values[key] = value
     return LoopConfig(**values)
+
+
+# What the factory prints where it would print the writer host's hostname:
+# the `host` column of `--report` and `--sweep`, the supervisor's startup
+# and refusal lines, and the FINDINGS window the loop commits to a public
+# repository. The column exists so a reader can tell which writer produced
+# a run when there is more than one; a stable label does that job without
+# naming a personal machine. The store keeps recording the real hostname
+# (`runs.host`, `supervisorHeartbeats.host`, the lock file), which the
+# supervisor compares against its own -- and the label stays out of the
+# store on purpose, so it can be renamed later without a migration.
+REPORT_KEYS = {
+    "host_label": None,
+}
+KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
+ReportConfig = collections.namedtuple("ReportConfig", ("host_label",))
+
+
+def report_config(target):
+    """The target's `[report]` knobs over the defaults.
+
+    Checked at startup beside `loop_config()`, the same way: an absent table
+    (or key) is the defaults exactly -- no label, the hostname rendered as
+    it always was -- and a present `host_label` has to be a string, and a
+    non-empty one: `3` names no writer, and `""` would render every host as
+    nothing, which is the invisible blank `host_name()`'s `?` exists to
+    avoid. The refusal names the table, the key and the constraint, like a
+    bad `[loop]` value. Keys this version does not know are refused by
+    `check_config_keys()`.
+    """
+    table = target.config().get("report", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [report] must be a table, got "
+            f"{type(table).__name__}")
+    values = {}
+    for key, default in REPORT_KEYS.items():
+        value = table.get(key, default)
+        if value is not None and not (isinstance(value, str) and value.strip()):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [report] {key} must be a "
+                f"non-empty string, got {value!r}")
+        values[key] = value
+    return ReportConfig(**values)
