@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[76 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T15:46:52Z — KO-189
-MERGED to main.
-actual: 8.4 min · estimate: 30 min · rounds: 1
-
-## 2026-09-02T15:51:35Z — KO-190
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[78 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T15:51:43Z — KO-190
 MERGED to main.
@@ -754,3 +747,10 @@ actual: 6.8 min · estimate: 20 min · rounds: 1
 ## 2026-09-03T00:41:41Z — KO-210
 FAILED: swept by the supervisor in phase working: stale_heartbeat (silent for 10.5 min over 2 consecutive sweeps); branch and worktree preserved for a human
 actual: 10.5 min · estimate: 25 min · rounds: 0
+
+## 2026-09-03T00:55:56Z — KO-212
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T00:56:23Z — KO-212
+MERGED to main.
+actual: 9.0 min · estimate: 30 min · rounds: 1
