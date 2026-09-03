@@ -72,8 +72,10 @@ cannot be reached (you know nothing about that target until it is).
 
 An idle target's row names what it last shipped: `idle · last merge KO-n ·
 12m ago`, read from a second request, `GET /runs`, that the plugin makes only
-for an idle daemon (the newest `merged` row of the whole table, since `/runs`
-lists oldest first). The daemon's rows do not carry an end time today, so a
+for an idle daemon. It reads the whole table and takes its newest `merged`
+row, deliberately not `?limit=1`: `/runs` lists oldest first and `?limit=N`
+keeps the first N, so `?limit=1` would name the first run ever, not the last
+merge. The daemon's rows do not carry an end time today, so a
 live row reads `idle · last merge KO-n` without the age until they do; when
 `/runs` does not answer, the row falls back to `idle · queue empty`. The
 supervisor row is the state word alone when it is `live`; `stale · 7m` and
