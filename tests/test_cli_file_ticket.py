@@ -1,4 +1,5 @@
-"""`factory.py TARGET --file-ticket TICKET.md [--state]`: a validated markdown
+"""`factory.py TARGET --file-ticket TICKET.md [--state] [--priority]`: a
+validated markdown
 file becomes a Linear issue, and the body Linear stored is validated again.
 
 The transport (`linear_provider._gql`) is patched to capture every mutation
@@ -233,6 +234,33 @@ class FileTicketCliTests(unittest.TestCase):
             self.cli("--state", "Done", linear=refused)
         self.assertEqual(raised.exception.code, 2)
         self.assertEqual(refused.calls, [])
+
+    def test_priority_high_is_sent_as_2_and_printed_by_its_word(self):
+        self.with_board()
+        linear = FakeLinear()
+
+        status, printed = self.cli("--priority", "high", linear=linear)
+
+        self.assertEqual(status, 0)
+        self.assertEqual(linear.created()["priority"], 2)
+        self.assertTrue(printed.strip().endswith("high)"), printed)
+
+    def test_no_priority_flag_sends_no_priority_field(self):
+        self.with_board()
+        linear = FakeLinear()
+
+        status, _ = self.cli(linear=linear)
+
+        self.assertEqual(status, 0)
+        self.assertNotIn("priority", linear.created())
+
+    def test_priority_without_file_ticket_is_refused_naming_file_ticket(self):
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, \
+                contextlib.redirect_stderr(err):
+            holophyte.cli.cli([str(self.repo), "--priority", "high"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--file-ticket", err.getvalue())
 
     def test_a_target_with_no_board_exits_naming_the_key_before_reading_the_file(self):
         self.ticket.unlink()
