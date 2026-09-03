@@ -6,12 +6,12 @@ in `test_verify_gate.py`, `test_the_cap_takes_the_command_s_children_down_with_i
 in `test_factory_config.py`) have each failed once under heavy concurrent load
 and passed on every rerun, and a bare "a child outlived the cap" cannot say
 why. When the escaped marker appears these helpers describe the moment: how
-late the kill ran, which branch `reap_group` took, what the surviving process
-tree looked like, and which shell `/bin/sh` is on this host. The one cost on
-a passing run is a single `ps` inside the watched `killpg` call, taken then
-because that is the only moment the tree is certain to be alive: once the
-capped call returns, the shell's pipe-holding `sleep` has been reaped and the
-child that wrote the marker has usually exited with it.
+late the kill ran, which branch `reap_group` took, what survived it, and
+which shell `/bin/sh` is on this host. The one cost on a passing run is a
+single `ps` taken just after the watched `killpg` call returns, never before
+it: whatever still mentions the marker then is exactly what the group kill
+missed, and once the capped call itself returns the shell's pipe-holding
+`sleep` has been reaped and the escaped child has usually exited too.
 """
 import errno
 import os
@@ -29,10 +29,12 @@ class KillWatch:
 
     Use as a context manager around the capped run. Each call is recorded
     with the monotonic time since the watch began (the launch, near enough),
-    whether `marker` already existed when the kill ran, the `ps` lines that
-    mention `marker` at that instant (pid, pgid, session, state, command),
-    and whether the real call returned or raised (and with which errno). The
-    real call always runs; a raise is re-raised so `reap_group` takes its
+    whether `marker` already existed when the kill ran, whether the real
+    call returned or raised (and with which errno) and how long it took,
+    and the `ps` lines that mention `marker` (pid, pgid, session, state,
+    command) taken right after it returned. The real call runs at once,
+    with only a clock read and a `stat` ahead of it, so the watch cannot
+    delay the kill; a raise is re-raised so `reap_group` takes its
     `proc.kill()` fallback exactly as it would unwatched.
 
     Read the record against the two hypotheses for an escaped child: a late
@@ -58,18 +60,26 @@ class KillWatch:
         return False
 
     def _record(self, pgid, sig):
+        # Only a clock read and one `stat` stand between `reap_group`
+        # deciding to kill and the real call: anything slower here (a `ps`
+        # takes tens of milliseconds unloaded, seconds under load) would
+        # itself hold the kill past the child's escape and manufacture the
+        # failure being diagnosed. The tree is inspected after the call.
         call = {"at": time.monotonic() - self.started,
                 "pgid": pgid, "sig": sig,
                 "marker_present": self.marker.exists(),
-                "snapshot": process_snapshot(self.marker)}
+                "error": None, "took": None, "snapshot": None}
         self.calls.append(call)
+        began = time.monotonic()
         try:
             self._real(pgid, sig)
         except OSError as exc:
             call["error"] = "%s (errno %s)" % (
                 errno.errorcode.get(exc.errno, "?"), exc.errno)
             raise
-        call["error"] = None
+        finally:
+            call["took"] = time.monotonic() - began
+            call["snapshot"] = process_snapshot(self.marker)
 
     def describe(self):
         if not self.calls:
@@ -77,13 +87,15 @@ class KillWatch:
         lines = []
         for call in self.calls:
             lines.append(
-                "killpg(%s, %s) at +%.3fs: %s; escaped marker %s at the call"
+                "killpg(%s, %s) at +%.3fs: %s in %.3fs; escaped marker %s at "
+                "the call"
                 % (call["pgid"], call["sig"], call["at"],
                    "returned" if call["error"] is None else
                    "raised " + call["error"],
+                   call["took"],
                    "already present" if call["marker_present"] else "absent"))
-            lines.append("processes mentioning the marker at that call (ps -o %s):"
-                         "\n%s" % (PS_COLUMNS, call["snapshot"]))
+            lines.append("processes mentioning the marker just after that call "
+                         "(ps -o %s):\n%s" % (PS_COLUMNS, call["snapshot"]))
         return "\n".join(lines)
 
 
