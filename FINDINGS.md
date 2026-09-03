@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[144 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T18:47:29Z — KO-222
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T18:48:15Z — KO-222
-MERGED to main.
-actual: 7.6 min · estimate: 30 min · rounds: 1
+[146 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T18:57:49Z — KO-223
 Round 1: pass · reviewer codex-sol-medium · verify passed
@@ -750,3 +743,10 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T21:39:03Z — KO-231
 MERGED to main.
 actual: 11.7 min · estimate: 20 min · rounds: 2
+
+## 2026-09-03T21:46:40Z — KO-232
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T21:47:27Z — KO-232
+MERGED to main.
+actual: 8.3 min · estimate: 30 min · rounds: 1
