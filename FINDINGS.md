@@ -653,28 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[75 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T15:46:49Z — KO-189
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T15:46:52Z — KO-189
-MERGED to main.
-actual: 8.4 min · estimate: 30 min · rounds: 1
-
-## 2026-09-02T15:51:35Z — KO-190
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T15:51:43Z — KO-190
-MERGED to main.
-actual: 4.8 min · estimate: 25 min · rounds: 1
-
-## 2026-09-02T15:55:10Z — KO-191
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T15:55:14Z — KO-191
-MERGED to main.
-actual: 3.5 min · estimate: 15 min · rounds: 1
+[81 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T16:46:23Z — KO-192
 Round 1: pass · reviewer codex-sol-medium · verify passed
@@ -753,3 +732,27 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-02T21:37:07Z — KO-204
 MERGED to main.
 actual: 6.8 min · estimate: 20 min · rounds: 1
+
+## 2026-09-03T00:41:41Z — KO-210
+FAILED: swept by the supervisor in phase working: stale_heartbeat (silent for 10.5 min over 2 consecutive sweeps); branch and worktree preserved for a human
+actual: 10.5 min · estimate: 25 min · rounds: 0
+
+## 2026-09-03T00:55:56Z — KO-212
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T00:56:23Z — KO-212
+MERGED to main.
+actual: 9.0 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T01:05:04Z — KO-213
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):a75e893bbb06 [p2] CRITERION 1: not met — `set_phase` checks `endedAt` only when the current phase is terminal; after `resume`, an unchanged non-null `endedAt` run advances and wr…
+- criteria:1 [p2] CRITERION 1: not met — `set_phase` checks `endedAt` only when the current phase is terminal; after `resume`, an unchanged non-null `endedAt` run advances and wr…
+
+## 2026-09-03T01:11:29Z — KO-213
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T01:11:56Z — KO-213
+MERGED to main.
+actual: 15.5 min · estimate: 30 min · rounds: 2

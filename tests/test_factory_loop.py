@@ -48,8 +48,10 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -1298,3 +1300,107 @@ class SelfHostingTests(LoopFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeartbeatTests(LoopFixture):
+    """The loop beats while an agent runs, so a slow agent is not a dead loop.
+
+    Run 39 (KO-212) was failed by the supervisor's stale-heartbeat sweep while
+    its implementer was still working: the heartbeat moved only at phase
+    boundaries. Here the implementer turn blocks for longer than the whole
+    stale budget, `heartbeat_stale_min * stale_strikes`, and sweeps the store
+    from inside its wait the way the supervisor would.
+    """
+
+    def test_an_implementer_slower_than_the_stale_budget_is_not_tripped(self):
+        # 0.01 min is 600 ms; two strikes make a 1.2 s budget. The turn
+        # below sweeps every 400 ms for 2 s.
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
+        knobs = holophyte.config.sweep_config(self.tgt)
+        budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
+        db, tgt = self.db, self.tgt
+        sightings = []
+
+        class SlowCommit(Commit):
+            """An implementer that works past the stale budget, sweeping the
+            store as it goes, then commits like `Commit`."""
+
+            def play(self, cwd, turn):
+                conn = store.open(str(db))
+                try:
+                    deadline = time.monotonic() + budget_s * 5 / 3
+                    while time.monotonic() < deadline:
+                        time.sleep(0.4)
+                        result = holophyte.supervisor.sweep(
+                            tgt, conn, int(time.time() * 1000), knobs=knobs)
+                        sightings.append((
+                            result.trips,
+                            conn.execute("SELECT phase, lastHeartbeat FROM"
+                                         " runs").fetchone()))
+                finally:
+                    conn.close()
+                return super().play(cwd, turn)
+
+        fake, guard = self.loop(SlowCommit("the slow work"), APPROVE)
+
+        self.assertEqual(guard.spawned, [])
+        self.assertGreaterEqual(len(sightings), 4, sightings)
+        self.assertEqual([trips for trips, _ in sightings if trips], [])
+        # The heartbeat moved during the turn while the phase did not: the
+        # beat, not a stage boundary, kept the run alive.
+        phases = {phase for _, (phase, _) in sightings}
+        beats = [beat for _, (_, beat) in sightings]
+        self.assertEqual(phases, {"working"})
+        self.assertGreater(beats[-1], beats[0])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertIn("the slow work", self.subjects())
+
+
+class EndedRunTests(LoopFixture):
+    """A run the store has ended cannot advance (KO-213).
+
+    Run 39 was failed by the supervisor sweep while its implementer ran; when
+    the implementer returned, the loop walked the ended run `failed ->
+    verifying -> reviewing` and was heading for a merge under a row that said
+    the work had failed. Here the implementer turn ends its own run through
+    `store.release()` -- the sweep's write, from another connection, the
+    way `act_on_trip()` makes it -- and commits as usual.
+    """
+
+    def test_a_run_failed_mid_agent_stops_with_the_sweeps_verdict(self):
+        db = self.db
+        sweep_reason = "supervisor sweep: stale_heartbeat (2 strikes); failing"
+
+        class SweptCommit(Commit):
+            def play(self, cwd, turn):
+                conn = store.open(str(db))
+                try:
+                    (run_id,) = conn.execute("SELECT id FROM runs").fetchone()
+                    store.release(conn, run_id, "failed", sweep_reason)
+                finally:
+                    conn.close()
+                return super().play(cwd, turn)
+
+        out = self.main_output(SweptCommit("swept work"), APPROVE)
+        provider = self.last_provider
+
+        self.assertIn("[holo2] run 1 was ended by the supervisor"
+                      f" (failed: {sweep_reason}); stopping", out)
+        # The stream ends where the sweep ended it: no phase event after the
+        # release, so nothing reanimated the run.
+        self.assertEqual(self.transitions(),
+                         ["claimed -> working", "working -> failed"])
+        self.assertEqual(
+            self.read("SELECT outcome, outcomeReason, phase FROM runs"),
+            [("failed", sweep_reason, "failed")])
+        # Nothing pushed to the board past the claim, nothing merged, and
+        # the loop stopped on the failure.
+        self.assertEqual(provider.states, [("iss-131", "In Progress")])
+        self.assertEqual(self.subjects(), ["base"])
+        self.assertEqual(self.rc, 1)
+        # The worktree and its branch are as the implementer left them.
+        self.assertIn("swept work", self.subjects("task/ko-131-add-a-thing"))
+        self.assertTrue(any(p.is_dir() for p in self.worktrees.iterdir()))
+        # The reviewer never ran: the script's APPROVE is still unconsumed.
+        self.assertEqual([turn.role for turn in self.last_fake.turns],
+                         ["implement"])

@@ -119,6 +119,7 @@ DEFINED = {
         "unparsed_path",
     ],
     holophyte.runs: [
+        "heartbeat_while",
         "open_store",
         "record_round",
         "set_phase",
