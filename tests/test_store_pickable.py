@@ -40,7 +40,7 @@ class PickabilityTests(unittest.TestCase):
         return self.conn.execute(
             "INSERT INTO projects"
             " (linearTeamId, repoPath, defaultBranch, autonomyProfile)"
-            " VALUES (?, '/srv/dev/holophyte', 'main', 'personal')",
+            " VALUES (?, '/repos/holophyte', 'main', 'personal')",
             (linear_team_id,),
         ).lastrowid
 

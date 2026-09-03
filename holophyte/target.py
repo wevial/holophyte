@@ -32,7 +32,7 @@ def state_dir(target):
     leases and heartbeats, so it belongs to the host rather than to a
     checkout that gets cloned, moved and deleted. One home also gives
     `--serve` and the drawer a single place to enumerate a host's targets,
-    leaves project parents such as `/srv/dev` free of dotted artifacts, and
+    leaves project parents such as `/path/to` free of dotted artifacts, and
     works when that parent is not writable. The hash of the absolute path is
     what keeps `/a/repo` and `/b/repo` -- two repositories, two histories --
     out of each other's store.
@@ -76,7 +76,7 @@ def adopt_legacy_state(target, destination, out=None):
     """Move `target`'s legacy state into `destination`, once, loudly.
 
     KO-165 moved the store's address and shipped no migration with it: the
-    next run on gembox opened an empty database at the new path and shadowed
+    next run on the writer host opened an empty database at the new path and shadowed
     fifteen runs, the ticket's failure count, every intervention row and the
     `[agents] implementer` route the old config carried. Nothing was lost and
     nothing said so, which is the failure this function exists to make

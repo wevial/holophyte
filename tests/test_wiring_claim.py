@@ -198,14 +198,14 @@ class WiringClaimTests(unittest.TestCase):
         """
         home = Path(tempfile.mkdtemp()) / "home"
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}):
-            target = holophyte.target.Target.locate("/srv/dev/holo2test", adopt=False)
+            target = holophyte.target.Target.locate("/repos/example", adopt=False)
 
         self.assertEqual(target.store_path.parent.parent, home)
         self.assertEqual(target.store_path.name, "store.db")
         self.assertEqual(target.config_path.parent, target.store_path.parent)
         self.assertEqual(target.holo_dir, target.store_path.parent)
         # The worktrees keep their sibling address beside the checkout.
-        self.assertEqual(target.worktrees, Path("/srv/dev/holo2test.worktrees"))
+        self.assertEqual(target.worktrees, Path("/repos/example.worktrees"))
 
     def test_claim_mirrors_the_ticket_and_holds_the_lease_during_the_run(self):
         seen = {}
@@ -522,6 +522,7 @@ class ReadyIssuesPaginationTests(unittest.TestCase):
     def setUpClass(cls):
         # linear_provider refuses to import without a configured project.
         os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
+        os.environ.setdefault("HOLO2_TEAM", "test-team")
         import linear_provider
         cls.provider = linear_provider
 

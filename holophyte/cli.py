@@ -19,7 +19,7 @@ from holophyte.config import (
     loop_config,
     sweep_config,
 )
-from holophyte.loop import DEFAULT_TARGET, check_worktree_setup, main, report
+from holophyte.loop import check_worktree_setup, main, report
 from holophyte.supervisor import (
     SupervisorHeld,
     supervise,
@@ -42,9 +42,12 @@ def cli(argv=None):
     parser = argparse.ArgumentParser(
         prog="factory.py",
         description="Holophyte: a minimal Linear-driven software factory.")
+    # Required, with no default: a default would name one operator's checkout,
+    # and a bare `factory.py` would then run against a path that exists on
+    # one machine. A missing target is an argparse error, the same way a
+    # mistyped flag is.
     parser.add_argument(
-        "target", nargs="?", default=str(DEFAULT_TARGET),
-        help="repository the loop works in (default: %(default)s)")
+        "target", help="repository the loop works in")
     # The read-only modes, exclusive of each other: each one prints its table
     # and exits, so a command line naming both is a mistake argparse should
     # answer rather than a silent choice between them.

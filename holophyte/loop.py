@@ -6,8 +6,7 @@ after merging a change to the factory itself (`self_hosted()`). `run_task()`
 is the loop body: the worktree (`reuse_leftover()` for a leftover,
 `run_worktree_setup()` for the `[worktree] setup` table, checked at startup by
 `check_worktree_setup()`), the implement/review/adjudicate turns, the verify
-gate, the `--no-ff` merge. `report()` is `--report`'s whole body and
-`DEFAULT_TARGET` the repository the command line defaults to. Imports the
+gate, the `--no-ff` merge. `report()` is `--report`'s whole body. Imports the
 package modules, `store`, `store.read`, `review_runner`, `provider` and the
 standard library; nothing from `factory`.
 
@@ -70,7 +69,6 @@ from holophyte.supervisor import (
     sweep_lines,
 )
 
-DEFAULT_TARGET = Path("/srv/dev/holo2test")
 # The paths a run works against, plus the config they carry, are a `Target`
 # (below): built once by `cli()` from the command line and passed to every
 # function that needs one, so the derivation lives in one place and the
@@ -839,7 +837,7 @@ def self_hosted(target):
     Decided once at startup by `main()`: a loop working on the factory's own
     checkout keeps running the pre-merge code after every merge, so each
     dogfooded fix is invisible to the loop that merged it until someone
-    restarts it (gembox 2026-09-02, run 17 cut a worktree without the
+    restarts it (the writer host, 2026-09-02: run 17 cut a worktree without the
     ticket id run 16 had just merged support for).
     """
     # This module lives in `holophyte/`, one level below the repository; the

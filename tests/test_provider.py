@@ -21,6 +21,7 @@ import contextlib
 import io
 import os
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -310,6 +311,7 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         # linear_provider refuses to import without a configured project; the
         # fake serves every project alike, so the value is a placeholder.
         os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
+        os.environ.setdefault("HOLO2_TEAM", "test-team")
         import linear_provider
         cls.linear = linear_provider
 
@@ -390,6 +392,44 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         with patch.object(self.linear, "_gql", tripwire):
             fresh = board_seam.LinearProvider()
             self.assertEqual(fresh.team, self.provider.team)
+
+
+class LinearTeamConfigTests(unittest.TestCase):
+    """`team` comes from `HOLO2_TEAM`, the way the project id comes from
+    `HOLO2_PROJECT_ID`: from the environment or a `.env` beside the module,
+    never from a name written into the code.
+
+    Each test imports a fresh copy of `linear_provider.py` from a directory
+    with no `.env` in it, so the operator's own file cannot stand in for the
+    variable, and pops it again afterwards so the copy never serves anyone
+    else.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        shutil.copy(ROOT / "linear_provider.py", tmp.name)
+        self.saved = sys.modules.pop("linear_provider", None)
+        self.addCleanup(self.restore)
+        sys.path.insert(0, tmp.name)
+        self.addCleanup(sys.path.remove, tmp.name)
+
+    def restore(self):
+        sys.modules.pop("linear_provider", None)
+        if self.saved is not None:
+            sys.modules["linear_provider"] = self.saved
+
+    def test_an_unset_team_is_a_startup_error_naming_the_variable(self):
+        env = {"HOLO2_PROJECT_ID": "test-project"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaises(RuntimeError) as raised:
+                board_seam.LinearProvider().team
+        self.assertIn("HOLO2_TEAM", str(raised.exception))
+
+    def test_the_team_is_the_one_the_environment_names(self):
+        env = {"HOLO2_PROJECT_ID": "test-project", "HOLO2_TEAM": "Example Team"}
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(board_seam.LinearProvider().team, "Example Team")
 
 
 if __name__ == "__main__":
