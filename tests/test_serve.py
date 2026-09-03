@@ -281,8 +281,20 @@ class RunsTests(ServeTestCase):
         finally:
             conn.close()
         keys = ("ticket", "actual_min", "estimate_min", "ratio", "rounds",
-                "outcome", "host")
-        return [dict(zip(keys, row)) for row in rows]
+                "outcome", "host", "ended_ms")
+        return [dict(zip(keys, row + (ended,)))
+                for row, ended in zip(rows, self.ended_at())]
+
+    def ended_at(self):
+        """The oracle for `ended_ms`: `runs.endedAt` itself, in the report's
+        order, read straight from the table rather than through the report."""
+        conn = store.open(str(self.db))
+        try:
+            return [ended for (ended,) in conn.execute(
+                "SELECT endedAt FROM runs WHERE endedAt IS NOT NULL"
+                " ORDER BY endedAt, id")]
+        finally:
+            conn.close()
 
     def test_runs_is_the_report_table_as_json(self):
         self.seed_ended()
@@ -307,6 +319,23 @@ class RunsTests(ServeTestCase):
         self.assertIsNone(body["rows"][2]["estimate_min"])
         self.assertIsNone(body["rows"][2]["ratio"])
         self.assertAlmostEqual(body["rows"][0]["ratio"], 0.5)
+
+    def test_each_run_carries_its_end_as_ended_ms(self):
+        self.seed_ended()
+        self.start()
+
+        code, _headers, body = self.request("GET", "/runs")
+
+        self.assertEqual(code, 200)
+        # The seed released each run `took` after its start: KO-1 ten
+        # minutes after starting ten hours ago, and so on -- integers, in
+        # epoch milliseconds, equal to the table's own `endedAt`.
+        ended = [r["ended_ms"] for r in body["rows"]]
+        self.assertEqual(ended, self.ended_at())
+        self.assertTrue(all(isinstance(ms, int) for ms in ended), ended)
+        expected = [self.now - (10 - n) * 60 * MIN + took
+                    for n, took in enumerate((10 * MIN, 45 * MIN, 15 * MIN))]
+        self.assertEqual(ended, expected)
 
     def test_limit_keeps_the_first_rows_and_a_bad_limit_is_400(self):
         self.seed_ended()

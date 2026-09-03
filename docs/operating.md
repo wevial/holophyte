@@ -63,7 +63,7 @@ any method but GET is 405, both as JSON.
 | Path | Body |
 | --- | --- |
 | `GET /status` | `target`, `host`, `now`, `supervisor` (`state` live/stale/none, `pid`, `heartbeat_age_ms`, `host`), `thresholds` (`heartbeat_stale_ms`, `strikes`), and `runs`: one `{id, ticket, phase, heartbeat_age_ms, elapsed_ms, time_box_ms, host}` per live run. 503 when the target has no store yet. |
-| `GET /runs?limit=N` | The `--report` table: `rows` of `{ticket, actual_min, estimate_min, ratio, rounds, outcome, host}`, the same rows in the same order as `--report` prints, oldest first; `?limit=N` keeps the first N and echoes `limit` (null when absent). A `limit` that is not a positive integer is 400 with an `error`. |
+| `GET /runs?limit=N` | The `--report` table: `rows` of `{ticket, actual_min, estimate_min, ratio, rounds, outcome, host, ended_ms}`, the same rows in the same order as `--report` prints, oldest first, each with `ended_ms` (the run's end as epoch milliseconds, which the table does not print; a drawer ages the last merge from it against `/status`'s `now`); `?limit=N` keeps the first N and echoes `limit` (null when absent). A `limit` that is not a positive integer is 400 with an `error`. |
 
 Every `host` passes through `[report] host_label`, so a configured label is
 what the network sees rather than the machine name.

@@ -172,7 +172,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("idle · last merge KO-237 · 12m ago", merged)
         self.assertNotIn("KO-239", "\n".join(merged))  # newer, but failed
         self.assertIn("idle · nothing merged yet", nothing)
-        # Rows the daemon sends today carry no `ended_ms`: the ticket alone.
+        # Rows from a daemon older than `ended_ms`: the ticket alone.
         e = drawer.fixture_entry(FIXTURES / "idle_last_merge.json")
         for r in e["runs"]["rows"]:
             del r["ended_ms"]

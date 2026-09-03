@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import store.read
 from holophyte.config import sweep_config
-from holophyte.report import host_label, report_rows
+from holophyte.report import ended_rows, host_label
 from holophyte.supervisor import SWEEPABLE_PHASES
 
 ADDRESS_SHAPE = "HOST:PORT"
@@ -131,8 +131,10 @@ def runs(target, query=""):
     """The `/runs` answer: `--report`'s rows as JSON, first `limit` of them.
 
     Same rows, same order as `report_rows()` -- oldest first -- with the
-    tuple's positions named. `host` is None for a row older than the column,
-    label or not, as on `/status`.
+    tuple's positions named, plus `ended_ms`: the run's `endedAt` in epoch
+    milliseconds, which the table never prints and a drawer's "last merge
+    KO-n · 2h ago" is read from against `/status`'s `now`. `host` is None
+    for a row older than the column, label or not, as on `/status`.
     """
     try:
         limit = parse_limit(query)
@@ -142,7 +144,7 @@ def runs(target, query=""):
         return 503, no_store(target)
     conn = store.read.open_readonly(target.store_path)
     try:
-        rows = report_rows(conn)
+        rows = ended_rows(conn)
     finally:
         conn.close()
     if limit is not None:
@@ -151,9 +153,9 @@ def runs(target, query=""):
         "rows": [{"ticket": ticket, "actual_min": actual,
                   "estimate_min": estimate, "ratio": ratio,
                   "rounds": rounds, "outcome": outcome,
-                  "host": json_host(target, host)}
-                 for ticket, actual, estimate, ratio, rounds, outcome, host
-                 in rows],
+                  "host": json_host(target, host), "ended_ms": ended_at}
+                 for ticket, actual, estimate, ratio, rounds, outcome, host,
+                 ended_at in rows],
         "limit": limit,
     }
 
