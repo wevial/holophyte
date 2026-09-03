@@ -3,11 +3,11 @@
 
 Reads `drawer.toml` from `$HOLOPHYTE_HOME` (default `~/.holophyte`), polls
 `GET /status` on every `[[daemon]]` with a two-second timeout and prints
-SwiftBar's line format: the two-leaf template icon with a coloured dot beside
-it, a "needs you" section when anything needs the operator, then one block
-per target. Every age is rendered from the daemon's own `now` and its `_ms`
-fields, never from this machine's clock, so two renders of the same answer
-are byte-identical. Standard library only.
+SwiftBar's line format: the two-leaf icon with the state dot drawn inside
+it (a template glyph when idle), a "needs you" section when anything needs
+the operator, then one block per target. Every age is rendered from the
+daemon's own `now` and its `_ms` fields, never from this machine's clock, so
+two renders of the same answer are byte-identical. Standard library only.
 
 `--render FIXTURE.json [...]` prints the menu from files instead of the
 network, so a test and an operator see the exact output. A fixture is a
@@ -29,6 +29,7 @@ from pathlib import Path
 GREEN, AMBER, RED = "#4EA876", "#F0B13A", "#FF5F57"
 IDLE, WORKING, ATTENTION, CRITICAL = 0, 1, 2, 3
 DOT = {WORKING: GREEN, ATTENTION: AMBER, CRITICAL: RED}
+VARIANT = {WORKING: "ok", ATTENTION: "warn", CRITICAL: "bad"}
 TIMEOUT_SEC = 2
 ASSETS = Path(__file__).resolve().parents[2] / "assets"
 HEADER = "size=11"
@@ -134,7 +135,7 @@ def attention(statuses):
 
 
 def icon_bytes(assets=None):
-    """The menu-bar glyph: the 18 pt PDF template, else the 18 px 1x PNG,
+    """The idle menu-bar glyph: the 20 pt PDF template, else the 1x PNG,
     else None. Never the 2x PNG: SwiftBar sizes a base64 raster by its
     pixels, so 36 px draws at twice menu-bar height.
     """
@@ -146,7 +147,34 @@ def icon_bytes(assets=None):
     return None
 
 
-def title(level, assets=None):
+def glyph(level, appearance, assets=None):
+    """`(parameter, path)` for the title-line image, or `(None, None)`.
+
+    Idle is the template glyph. Any other level is the pre-rendered variant
+    with the dot drawn at the glyph's top-right: white leaves for the dark
+    bar, black for the light one. SwiftBar sets `OS_APPEARANCE` to `Dark`
+    or `Light`; anything but `Dark` is treated as light. A missing variant
+    yields `(None, None)` so the caller can fall back to the template.
+    """
+    assets = ASSETS if assets is None else Path(assets)
+    if level == IDLE:
+        path = assets / "menubar-template.pdf"
+        return ("templateImage", path) if path.is_file() else (None, None)
+    bar = "dark" if appearance == "Dark" else "light"
+    path = assets / f"menubar-{bar}-{VARIANT[level]}.pdf"
+    return ("image", path) if path.is_file() else (None, None)
+
+
+def title(level, assets=None, appearance=None):
+    """The title line. A variant image carries the dot itself; the coloured
+    `●` text appears only in the fallback when the variant file is missing.
+    """
+    if appearance is None:
+        appearance = os.environ.get("OS_APPEARANCE", "")
+    parameter, path = glyph(level, appearance, assets)
+    if parameter == "image":
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        return f" | image={encoded}"
     raw = icon_bytes(assets)
     icon = f" templateImage={base64.b64encode(raw).decode('ascii')}" if raw else ""
     if level == IDLE:

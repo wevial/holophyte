@@ -49,6 +49,10 @@ def render_cli(*names):
     return out.stdout
 
 
+def embedded(line, parameter="templateImage="):
+    return base64.b64decode(line.split(parameter)[1].split()[0])
+
+
 def closed_loopback_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -58,9 +62,10 @@ def closed_loopback_port():
 class RenderTests(unittest.TestCase):
     def test_working_and_idle_targets_render_green_with_no_needs_you(self):
         lines = render_cli("working", "idle").splitlines()
-        self.assertIn("templateImage=", lines[0])
-        self.assertTrue(lines[0].startswith("●"))
-        self.assertIn(f"color={drawer.GREEN}", lines[0])
+        self.assertNotIn("●", lines[0])
+        self.assertNotIn("templateImage=", lines[0])
+        self.assertEqual(embedded(lines[0], "image="),
+                         (ROOT / "assets" / "menubar-light-ok.pdf").read_bytes())
         self.assertNotIn("NEEDS YOU", "\n".join(lines))
         text = "\n".join(lines)
         self.assertIn("working · writer", text)
@@ -78,7 +83,8 @@ class RenderTests(unittest.TestCase):
 
     def test_stale_heartbeat_is_amber_and_named_in_needs_you(self):
         lines = render_cli("stale_heartbeat", "idle").splitlines()
-        self.assertIn(f"color={drawer.AMBER}", lines[0])
+        self.assertEqual(embedded(lines[0], "image="),
+                         (ROOT / "assets" / "menubar-light-warn.pdf").read_bytes())
         needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
         block = lines.index(next(x for x in lines if "stale_heartbeat · writer" in x))
         self.assertLess(needs, block)
@@ -187,9 +193,42 @@ class RenderTests(unittest.TestCase):
         self.assertIn("2 targets · 2 hosts ·",
                       render_cli("idle", "idle_second_host"))
 
+    def test_title_picks_the_variant_by_level_and_bar_appearance(self):
+        assets = ROOT / "assets"
+        for level, name in ((drawer.WORKING, "ok"), (drawer.ATTENTION, "warn"),
+                            (drawer.CRITICAL, "bad")):
+            for appearance, bar in (("Dark", "dark"), ("Light", "light"),
+                                    ("", "light")):
+                line = drawer.title(level, appearance=appearance)
+                self.assertNotIn("●", line)
+                self.assertNotIn("templateImage=", line)
+                self.assertNotIn("color=", line)
+                self.assertEqual(
+                    embedded(line, "image="),
+                    (assets / f"menubar-{bar}-{name}.pdf").read_bytes(),
+                    (level, appearance))
+        for appearance in ("Dark", "Light", ""):
+            line = drawer.title(drawer.IDLE, appearance=appearance)
+            self.assertNotIn("●", line)
+            self.assertNotIn(" image=", line)
+            self.assertTrue(embedded(line).startswith(b"%PDF"))
+        # The unset variable is light, read from the environment at render.
+        self.assertEqual(render_cli("working").splitlines()[0],
+                         drawer.title(drawer.WORKING, appearance=""))
+
+    def test_missing_variant_falls_back_to_template_and_dot_text(self):
+        pdf = (ROOT / "assets" / "menubar-template.pdf").read_bytes()
+        with tempfile.TemporaryDirectory() as assets:
+            (Path(assets) / "menubar-template.pdf").write_bytes(pdf)
+            line = drawer.title(drawer.CRITICAL, assets, appearance="Dark")
+            self.assertTrue(line.startswith("●"))
+            self.assertIn(f"color={drawer.RED}", line)
+            self.assertNotIn(" image=", line)
+            self.assertEqual(embedded(line), pdf)
+            self.assertEqual(drawer.glyph(drawer.CRITICAL, "Dark", assets),
+                             (None, None))
+
     def test_title_embeds_pdf_then_1x_png_then_nothing(self):
-        def embedded(line):
-            return base64.b64decode(line.split("templateImage=")[1].split()[0])
         pdf = (ROOT / "assets" / "menubar-template.pdf").read_bytes()
         png = (ROOT / "assets" / "menubar-template@1x.png").read_bytes()
         self.assertTrue(pdf.startswith(b"%PDF"))
@@ -249,7 +288,8 @@ class LiveTests(unittest.TestCase):
             with redirect_stdout(out):
                 drawer.main(["--config", str(cfg)])
         lines = out.getvalue().splitlines()
-        self.assertIn(f"color={drawer.RED}", lines[0])
+        self.assertEqual(embedded(lines[0], "image="),
+                         (ROOT / "assets" / "menubar-light-bad.pdf").read_bytes())
         needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
         self.assertEqual(lines[needs + 1], f"gone · unreachable | color={drawer.RED}")
         text = "\n".join(lines)
