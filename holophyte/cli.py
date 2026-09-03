@@ -1,11 +1,12 @@
 """The command line: `cli()` parses the arguments and runs the mode they name.
 
-`--report`, `--sweep [--act]`, `--supervise`, `--serve HOST:PORT` and the loop
-itself dispatch from here to `holophyte.loop`, `holophyte.supervisor` and
-`holophyte.serve`; the `Target` is built once from the command line and handed
-down, and the board (`LinearProvider`) is built here and never reached for by
-name below. Importing this module
-locates no target, reads no config and touches no `HOLOPHYTE_HOME`.
+`--report`, `--requeue KO-n --note TEXT`, `--sweep [--act]`, `--supervise`,
+`--serve HOST:PORT` and the loop itself dispatch from here to
+`holophyte.loop`, `holophyte.supervisor` and `holophyte.serve`; the `Target`
+is built once from the command line and handed down, and the board
+(`LinearProvider`) is built here and never reached for by name below.
+Importing this module locates no target, reads no config and touches no
+`HOLOPHYTE_HOME`.
 
 Seventh and last slice of the phase-2 module split; moved verbatim from
 `factory.py`, which keeps only `from holophyte.cli import cli` and the
@@ -22,7 +23,7 @@ from holophyte.config import (
     report_config,
     sweep_config,
 )
-from holophyte.loop import check_worktree_setup, main, report
+from holophyte.loop import check_worktree_setup, main, report, requeue
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.supervisor import (
     SupervisorHeld,
@@ -69,6 +70,17 @@ def cli(argv=None):
         "--report", action="store_true",
         help="print the target store's estimate-vs-actual table and exit; "
              "reads only -- claims no ticket, cuts no worktree, calls nobody")
+    # The one writing mode among them, and the only write it makes: the
+    # ladder's rung-3 pair (`record_intervention` then `walk_ticket`) as a
+    # command line, so a ticket whose run failed goes back in the queue with
+    # its intervention row instead of through a REPL.
+    modes.add_argument(
+        "--requeue", metavar="KO-n",
+        help="put the ticket back in the queue after its run failed: records "
+             "a 'requeue' intervention on that run carrying --note and walks "
+             "the ticket to ready, in one transaction; refuses a ticket with "
+             "a live run, one not in_flight, or one whose last run did not "
+             "fail, and writes nothing then")
     modes.add_argument(
         "--sweep", action="store_true",
         help="print the live runs that have tripped a mechanical condition "
@@ -98,10 +110,23 @@ def cli(argv=None):
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "
              "leaving its branch and worktree for a human")
+    # Required with `--requeue` and meaningless without it: the intervention
+    # row is the point of the mode, and a row with no reason is the
+    # unrecorded action the row exists to replace.
+    parser.add_argument(
+        "--note", metavar="TEXT",
+        help="with --requeue: why the ticket goes back in the queue, "
+             "recorded on the intervention row's event")
     args = parser.parse_args(argv)
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
+    if args.requeue is not None and not (args.note or "").strip():
+        parser.error("--requeue records why the ticket goes back in the "
+                     "queue; say so with --note TEXT")
+    if args.note is not None and args.requeue is None:
+        parser.error("--note is what --requeue records; it has nothing to "
+                     "annotate by itself")
     target = Target.locate(args.target)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
@@ -121,6 +146,11 @@ def cli(argv=None):
     report_config(target)
     if args.report:
         return report(target)
+    # The one mode that writes, and only to the store: no board is built and
+    # no route resolves, the same as `--report`; Linear is mirrored by the
+    # loop when it claims the ticket again.
+    if args.requeue is not None:
+        return requeue(target, args.requeue, args.note)
     # Same window as `--report`: a read-only daemon calls nobody, so no board
     # is built and no route has to resolve.
     if args.serve is not None:

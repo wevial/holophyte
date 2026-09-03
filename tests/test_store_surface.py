@@ -44,6 +44,9 @@ EXPECTED = [
     "record_strike",
     "record_supervisor_heartbeat",
     "release",
+    # KO-223: the operator's requeue-after-failure, one transaction behind
+    # `--requeue`, so the ladder's rung-3 pair is a rung-1 command.
+    "requeue",
     "render_state_graph",
     "render_state_graph_section",
     "resume",
@@ -64,6 +67,7 @@ EXPECTED_CLASSES = [
     "GuidanceNotAccepted",
     "IllegalTransition",
     "Pickability",
+    "RequeueRefused",
     "ResumeRefused",
     "RunEnded",
 ]
@@ -172,7 +176,7 @@ class StoreSurfaceTests(unittest.TestCase):
 
     def test_operator_api_named_in_agents_md_is_present(self):
         names = operator_api_names()
-        self.assertEqual(len(names), 5, names)
+        self.assertEqual(len(names), 6, names)
         for name in names:
             with self.subTest(name=name):
                 self.assertIn(name, public_functions())

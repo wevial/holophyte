@@ -17,7 +17,9 @@ Loop:
 
 `--report` runs none of the above: it prints the store's estimate-vs-actual
 table for the target and exits, so the timing the runs recorded is a query
-rather than a grep over FINDINGS.md. `--sweep` runs none of it either: it
+rather than a grep over FINDINGS.md. `--requeue KO-n --note TEXT` puts a
+ticket whose run failed back in the queue, recording the intervention that
+says why, and exits. `--sweep` runs none of it either: it
 reads the live runs and says which have tripped a mechanical condition -- a
 dead heartbeat or a blown time box -- without touching one. `--sweep --act`
 adds the acting: each tripped run is failed and its leases released through

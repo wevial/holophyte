@@ -1183,3 +1183,38 @@ def report(target, conn=None, out=None, now=None):
     finally:
         if owned:
             conn.close()
+
+
+def requeue(target, identifier, note, out=None):
+    """Put the failed ticket `identifier` back in the queue. Returns nothing.
+
+    `--requeue`'s whole body, and off every other mode's write path: it opens
+    the store, does `store.requeue()`'s one transaction, prints the requeued
+    line and exits. The identifier is the Linear one (`KO-n`), resolved in
+    this target's store; an identifier the store has not mirrored, or one it
+    holds more than once, is a `SystemExit` naming it, as is every refusal
+    `store.requeue()` makes -- and in all of those nothing is written. A
+    target with no store has nothing to requeue and says so the same way.
+    """
+    out = out or sys.stdout
+    if not target.store_path.exists():
+        raise SystemExit(f"[holo2] no store at {target.store_path}")
+    conn = open_store(target)
+    try:
+        rows = conn.execute(
+            "SELECT id FROM tickets WHERE linearIdentifier = ?",
+            (identifier,)).fetchall()
+        if not rows:
+            raise SystemExit(
+                f"[holo2] {identifier}: no such ticket in {target.store_path}")
+        if len(rows) > 1:
+            raise SystemExit(
+                f"[holo2] {identifier} names {len(rows)} tickets in"
+                f" {target.store_path}; refusing to pick one")
+        try:
+            run_id = store.requeue(conn, rows[0][0], note)
+        except (store.RequeueRefused, ValueError) as refused:
+            raise SystemExit(f"[holo2] {refused}") from None
+        print(f"[holo2] {identifier} requeued after run {run_id}", file=out)
+    finally:
+        conn.close()
