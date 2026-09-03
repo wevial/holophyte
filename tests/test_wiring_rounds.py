@@ -72,7 +72,15 @@ class ReviewRoundRowTests(unittest.TestCase):
         self.git("config", "user.email", "factory@example.invalid")
         self.git("config", "user.name", "Factory Test")
         (self.target / "README.md").write_text("base\n")
-        self.git("add", "README.md")
+        # The test the scripted approvals name as their witness: since KO-215
+        # the loop checks a named test exists in the worktree.
+        (self.target / "tests").mkdir()
+        (self.target / "tests" / "test_thing.py").write_text(
+            "def test_it_works():\n    pass\n")
+        (self.target / "tests" / "test_store.py").write_text(
+            "def test_fingerprint():\n    pass\n\n\n"
+            "def test_carry_over():\n    pass\n")
+        self.git("add", "-A")
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
@@ -329,6 +337,93 @@ class ReviewRoundRowTests(unittest.TestCase):
                          [("criteria", 1), ("criteria", 2)])
         for finding in findings:
             self.assertIn("unwitnessed", finding["message"])
+
+    def test_a_witness_naming_an_existing_class_and_method_stays_met(self):
+        """The reviewer named a test precisely and it is there: the check
+        changes nothing about the round."""
+        self.write_gates_test()
+        self.loop(
+            "CRITERION 1: met \u2014 tests/test_gates.py::VerifyGateTests::"
+            "test_cap_reaps\n"
+            "VERDICT: APPROVE")
+
+        (only,) = self.rounds()
+        self.assertEqual(only["verdict"], "pass")
+        self.assertEqual(json.loads(only["findings"]), [])
+
+    def test_a_witness_naming_a_missing_test_is_unwitnessed(self):
+        """A confidently named test that is fiction — the method, the class
+        or the whole file absent — does not witness anything: the criterion
+        is downgraded and the round asks for changes."""
+        cases = {
+            "method": ("class VerifyGateTests:\n    def test_other(self):\n"
+                       "        pass\n"),
+            "class": ("class OtherTests:\n    def test_cap_reaps(self):\n"
+                      "        pass\n"),
+            "file": None,
+        }
+        for label, body in cases.items():
+            with self.subTest(missing=label):
+                self.setUp()
+                self.write_gates_test(body)
+                self.loop(
+                    "CRITERION 1: met \u2014 tests/test_gates.py::"
+                    "VerifyGateTests::test_cap_reaps\n"
+                    "VERDICT: APPROVE",
+                    "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+                    "VERDICT: APPROVE")
+
+                first = self.rounds()[0]
+                self.assertEqual(first["verdict"], "changes_requested")
+                (finding,) = json.loads(first["findings"])
+                self.assertEqual((finding["path"], finding["line"]),
+                                 ("criteria", 1))
+                self.assertIn("CRITERION 1: unwitnessed \u2014 named test not "
+                              "found: tests/test_gates.py::VerifyGateTests::"
+                              "test_cap_reaps", finding["message"])
+
+    def test_a_witness_reaching_outside_the_worktree_is_missing(self):
+        """A real test that lives outside the candidate worktree — named by
+        an absolute path or through `..` — witnesses nothing: only the
+        branch under review counts."""
+        outside = Path(tempfile.mkdtemp(prefix="outside-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside))
+        (outside / "named_witness.py").write_text(
+            "def test_fiction():\n    pass\n")
+        worktree = Path(tempfile.mkdtemp(prefix="worktree-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(worktree))
+        escape = Path("..") / outside.name / "named_witness.py"
+
+        for path in (str(outside / "named_witness.py"), str(escape)):
+            with self.subTest(path=path):
+                references = holophyte.review.test_references(
+                    f"{path}::test_fiction")
+                self.assertEqual(references, [(path, None, "test_fiction")])
+                missing = holophyte.review.missing_witnesses(
+                    references, worktree)
+                self.assertEqual(len(missing), 1)
+                self.assertIn("outside the worktree", missing[0])
+
+    def test_a_witness_naming_a_check_rather_than_a_test_is_left_alone(self):
+        self.loop(
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+            "CRITERION 2: met \u2014 ruff check . passes\n"
+            "VERDICT: APPROVE",
+            criteria=self.TWO)
+
+        (only,) = self.rounds()
+        self.assertEqual(only["verdict"], "pass")
+        self.assertEqual(json.loads(only["findings"]), [])
+
+    def write_gates_test(self, body="class VerifyGateTests:\n"
+                         "    def test_cap_reaps(self):\n        pass\n"):
+        """Commit `tests/test_gates.py` to main with `body`; None leaves the
+        file absent."""
+        if body is None:
+            return
+        (self.target / "tests" / "test_gates.py").write_text(body)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "gates test")
 
     # --- the round's own record ------------------------------------------
 

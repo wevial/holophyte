@@ -613,11 +613,14 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
         # §6 cannot compare the next one against.
         record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                      ok, out,
-                     started_at=round_started, criteria=criteria)
+                     started_at=round_started, criteria=criteria, root=wt)
 
         # A criterion the reviewer left not met or unwitnessed is a blocker
-        # whatever the verdict line says (KO-165 was approved with one unmet).
-        unwitnessed = criteria_findings(verdict, criteria)
+        # whatever the verdict line says (KO-165 was approved with one unmet),
+        # and so is one whose witness names a test the worktree does not hold:
+        # `criteria_findings()` reads that as `unwitnessed — named test not
+        # found: ...`.
+        unwitnessed = criteria_findings(verdict, criteria, wt)
         if unwitnessed:
             print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
                   "witnessed; treating as REQUEST_CHANGES")
