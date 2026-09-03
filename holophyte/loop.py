@@ -882,7 +882,7 @@ def main(target, provider):
                 store.record_loop_return(conn, project)
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if failed else None
-            ticket_id = _admit_ticket(conn, project, provider, task)
+            ticket_id = _admit_ticket(target, conn, project, provider, task)
             if ticket_id is None:
                 skip.add(task["id"])
                 continue
@@ -940,7 +940,7 @@ def _startup_sweep(target, conn):
     return seen
 
 
-def _admit_ticket(conn, project, provider, task):
+def _admit_ticket(target, conn, project, provider, task):
     """The questions asked of a ticket before the lease and before any run
     row exists. Returns the mirrored ticket id, or None for a ticket this
     pass refuses -- `main()` skips it and takes the next one.
@@ -973,8 +973,10 @@ def _admit_ticket(conn, project, provider, task):
     # the title, the summary and the first criterion, no What
     # line). One printed line names the first problem, the mirror
     # lands in `needs_spec` as an under-specced body would, and the
-    # next candidate is tried; no run row is opened for it.
-    problem = body_problem(task)
+    # next candidate is tried; no run row is opened for it. The
+    # target's path goes along so a body naming a path this
+    # repository gitignores is refused here too (KO-222).
+    problem = body_problem(task, target.path)
     if problem:
         mirror_task(conn, project, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")

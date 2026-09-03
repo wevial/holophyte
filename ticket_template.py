@@ -27,9 +27,20 @@ file names to "[factory.py:1](<http://factory.py:1>)" and ticket ids to
 "[KO-1](https://linear.app/...)" -- reads as its text, so those variants are
 accepted. Loose formatting beyond those equivalences still fails.
 
-CLI: python3 ticket_template.py TICKET.md [...]  ->  exit 0 iff all valid.
+Two checks look past the body at what a reviewer could witness. A relative
+path a criterion, verify command or contract check names is asked of the
+target repository with "git check-ignore": an ignored path can never appear
+in the candidate export the reviewer sees, so it is a violation — but only
+when the caller names the repository (validate(t, repo=...), CLI --repo);
+without one the check is skipped. A criterion phrased as something only an
+operator or a merged main could witness (OPERATOR_WITNESS_PHRASES) gets an
+advisory, since a sentence can mention an operator legitimately.
+
+CLI: python3 ticket_template.py [--repo PATH] TICKET.md [...]
+     ->  exit 0 iff all valid.
 """
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -58,6 +69,21 @@ SCOPE_CHAINING = (" and ", ";", ", then ")
 # Advisory only: stdlib-only targets legitimately run bare "python3", while
 # a project with a venv wants it activated or addressed by path first.
 BARE_INTERPRETER_RE = re.compile(r"(?<![\w./-])(python3?|pip)(?![\w.-])")
+# Phrases that make an acceptance criterion read as a witness the reviewer
+# cannot be: the reviewer sees a clean export of the candidate commit, not
+# main after the merge, not the writer host, not a screen. Advisory only.
+OPERATOR_WITNESS_PHRASES = (
+    "after the merge", "once merged", "on the writer host", "operator",
+    "visual pass", "when viewed", "by hand",
+)
+# A token that looks like a relative repository path: path characters only,
+# and either a slash or a short lowercase file extension. Absolute paths,
+# flags, URLs and shell globs are someone else's rule or nothing at all.
+PATH_TOKEN_RE = re.compile(r"^(?:\./)?[\w][\w.\-]*(?:/[\w.\-]+)*/?$")
+FILE_EXT_RE = re.compile(r"\.[a-z][a-z0-9]{0,9}$")
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+# "e.g." / "i.e." read as a stem plus a one-letter extension; they are prose.
+ABBREVIATION_RE = re.compile(r"^(?:\w\.)+\w$")
 VENV_ACTIVATE_RE = re.compile(r"(?:^|[\s;&|])(?:\.|source)\s+\.venv/bin/activate\b")
 H1_RE = re.compile(r"^#\s+(.*?)\s*$")
 H2_RE = re.compile(r"^##\s+(.*?)\s*$")
@@ -312,11 +338,92 @@ def contract_path_problem(path):
     return None
 
 
-def validate(t):  # noqa: C901 -- one pass over every rule; split at a rule registry
+def path_candidates(text):
+    """The tokens of `text` that look like relative repository paths, in
+    order, deduplicated: a slash or a file extension, path characters only.
+    Backticks and quotes are stripped first (a path in a criterion is usually
+    a code span), markdown links read as their text, and anything absolute,
+    flag-shaped, URL-shaped or glob-shaped is left alone."""
+    text = MARKDOWN_LINK_RE.sub(r"\1", text)
+    seen = []
+    for raw in re.split(r"[\s=]+", text):
+        token = raw.strip("`'\"(),;:!?<>[]{}")
+        token = token.rstrip(".")
+        if not token or "://" in token:
+            continue
+        if not PATH_TOKEN_RE.match(token) or ABBREVIATION_RE.match(token):
+            continue
+        if "/" not in token and not FILE_EXT_RE.search(token):
+            continue
+        if token not in seen:
+            seen.append(token)
+    return seen
+
+
+def _witnessable_texts(t):
+    """The (label, text) fields whose paths the reviewer must be able to
+    reach on the candidate branch."""
+    for i, ac in enumerate(t.acceptance, 1):
+        yield f"Acceptance criteria #{i}", ac
+    for cmd in t.verify_commands:
+        yield "verify command", cmd
+    for path, _literal in t.contract_checks:
+        yield "contract check", path
+
+
+def _gitignored(repo, token):
+    """Whether `repo` ignores `token`: True/False, or None when git could not
+    answer (exit 128: not a repository, or a path it cannot resolve)."""
+    r = subprocess.run(["git", "-C", str(repo), "check-ignore", "-q", "--",
+                        token], capture_output=True, text=True)
+    if r.returncode == 0:
+        return True
+    if r.returncode == 1:
+        return False
+    return None
+
+
+def _gitignored_path_problems(t, repo):
+    """One problem per named relative path that `repo` gitignores. A
+    repository git cannot read yields a single advisory instead: the ticket
+    is not at fault for where the validator was run."""
+    problems = []
+    unchecked = False
+    for label, text in _witnessable_texts(t):
+        for token in path_candidates(text):
+            ignored = _gitignored(repo, token)
+            if ignored:
+                problems.append(f"gitignored path in {label}: {token}")
+            elif ignored is None:
+                unchecked = True
+    if unchecked:
+        problems.append(f"{ADVISORY_PREFIX}could not check paths against "
+                        f"{repo}: git check-ignore failed there (not a "
+                        f"repository?)")
+    return problems
+
+
+def _operator_witness_advisories(t):
+    """An advisory per acceptance criterion phrased as something only an
+    operator, a screen, or main-after-the-merge could witness."""
+    out = []
+    for i, ac in enumerate(t.acceptance, 1):
+        low = ac.lower()
+        if any(phrase in low for phrase in OPERATOR_WITNESS_PHRASES):
+            out.append(f"{ADVISORY_PREFIX}criterion {i} reads as an operator "
+                       f"or post-merge witness; the reviewer can only witness "
+                       f"the candidate branch")
+    return out
+
+
+def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at a rule registry
     """All template violations as human-readable strings.
 
     An entry starting with ADVISORY_PREFIX is scope guidance, not a
-    violation: the ticket is valid iff blocking(validate(t)) is empty."""
+    violation: the ticket is valid iff blocking(validate(t)) is empty.
+
+    `repo`, when given, is the target repository the named paths are checked
+    against with `git check-ignore`; without it the path check is skipped."""
     p = []
     if not t.title:
         p.append("missing H1 title ('# ...' on the first heading line)")
@@ -421,6 +528,9 @@ def validate(t):  # noqa: C901 -- one pass over every rule; split at a rule regi
             p.append(f"{ADVISORY_PREFIX}verify command uses bare {token!r} "
                      f"(template rule: activate the venv or use "
                      f".venv/bin/{token} if the project has one): {cmd}")
+    p.extend(_operator_witness_advisories(t))
+    if repo is not None:
+        p.extend(_gitignored_path_problems(t, repo))
     return p
 
 
@@ -432,13 +542,37 @@ def blocking(problems):
     return [pr for pr in problems if not pr.startswith(ADVISORY_PREFIX)]
 
 
+USAGE = "usage: python3 ticket_template.py [--repo PATH] TICKET.md [...]"
+
+
+def _parse_args(argv):
+    """`(repo, paths)` from the command line, or None for a usage error."""
+    repo, paths = None, []
+    args = list(argv)
+    while args:
+        arg = args.pop(0)
+        if arg == "--repo":
+            if not args:
+                return None
+            repo = args.pop(0)
+        elif arg.startswith("--repo="):
+            repo = arg[len("--repo="):]
+        else:
+            paths.append(arg)
+    if not paths or repo == "":
+        return None
+    return repo, paths
+
+
 def main(argv):
-    if not argv:
-        print("usage: python3 ticket_template.py TICKET.md [...]", file=sys.stderr)
+    parsed = _parse_args(argv)
+    if parsed is None:
+        print(USAGE, file=sys.stderr)
         return 2
+    repo, paths = parsed
     invalid = 0
-    for path in argv:
-        problems = validate(parse(Path(path).read_text()))
+    for path in paths:
+        problems = validate(parse(Path(path).read_text()), repo=repo)
         blockers = blocking(problems)
         if blockers:
             invalid += 1
@@ -446,6 +580,10 @@ def main(argv):
         else:
             print(f"{path}: OK")
         advisories = [a for a in problems if a.startswith(ADVISORY_PREFIX)]
+        if repo is None:
+            advisories.append(f"{ADVISORY_PREFIX}gitignored-path check "
+                              f"skipped: pass --repo PATH to check named "
+                              f"paths against the target repository")
         for pr in blockers + advisories:
             print(f"  - {pr}")
     return 1 if invalid else 0

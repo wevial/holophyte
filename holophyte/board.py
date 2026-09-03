@@ -56,7 +56,7 @@ def task_contract(task):
             [task["verify"]] if task.get("verify") else [])
 
 
-def body_problem(task):
+def body_problem(task, repo=None):
     """The first template violation in the offered ticket's body, or None.
 
     The claim-time contract gate. `ticket_template.validate()` is what a
@@ -77,12 +77,16 @@ def body_problem(task):
     that hands no body has nothing to validate, whereas the Linear provider
     always hands a string, and an empty description is the emptiest invalid
     body there is.
+
+    `repo` is the target repository's path; with it the validator also
+    refuses a body naming a path that repository gitignores, which the
+    reviewer's export of the candidate can never contain.
     """
     body = task.get("body")
     if body is None:
         return None
     problems = ticket_template.blocking(
-        ticket_template.validate(ticket_template.parse(body)))
+        ticket_template.validate(ticket_template.parse(body), repo=repo))
     return problems[0] if problems else None
 
 
