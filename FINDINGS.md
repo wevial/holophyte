@@ -653,26 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[84 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T16:56:06Z — KO-184
-MERGED to main.
-actual: 3.1 min · estimate: 20 min · rounds: 1
-
-## 2026-09-02T17:03:41Z — KO-193
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):ee7516e65828 [p2] CRITERION 1: met — `RendererTests.test_ticket_graph_draws_each_legal_edge_once_and_nothing_else` CRITERION 2: met — `ReadmeTests.test_a_hand_added_edge_fails_na…
-- criteria:4 [p2] CRITERION 4: not met — repository-wide discovery failed with 7 failures and 4 errors; additionally, `ruff check .` could not run because `ruff` is unavailable G…
-
-## 2026-09-02T17:09:10Z — KO-193
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):b4942266c2f2 [p2] CRITERION 1: met — `RendererTests.test_ticket_graph_draws_each_legal_edge_once_and_nothing_else` CRITERION 2: met — `ReadmeTests.test_a_hand_added_edge_fails_na…
-- criteria:4 [p2] CRITERION 4: not met — full discovery ran 467 tests with 7 failures and 4 errors Given the full test suite, when run, then all tests pass.
-
-## 2026-09-02T17:13:34Z — KO-193
-Round 3: pass · reviewer codex-sol-medium · verify passed
+[88 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T17:13:36Z — KO-193
 MERGED to main.
@@ -759,3 +740,22 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T01:28:38Z — KO-210
 MERGED to main.
 actual: 15.3 min · estimate: 25 min · rounds: 2
+
+## 2026-09-03T01:42:00Z — KO-211
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):b68b63432a05 [p2] CRITERION 1: met — supplied `ruff check .` and C901 grep checks CRITERION 2: met — supplied 513-test `unittest discover` verification CRITERION 3: met — commit…
+- criteria:4 [p2] CRITERION 4: unwitnessed — no post-merge gembox run and operator witness is recorded in the ticket ledger Given gembox, when the loop runs one ticket end to end…
+
+## 2026-09-03T01:47:36Z — KO-211
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):bd4064f0d9ea [p2] CRITERION 1: met — supplied `ruff check .`, C901-only check, and exemption-count checks CRITERION 2: met — supplied 513-test verification run; focused loop suit…
+- criteria:4 [p2] CRITERION 4: unwitnessed — missing post-merge gembox end-to-end operator witness in the ticket ledger Given gembox, when the loop runs one ticket end to end aft…
+
+## 2026-09-03T01:51:11Z — KO-211
+Round 3: changes_requested · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T01:51:11Z — KO-211
+FAILED: terminal adjudication: FAIL; branch task/ko-211-retire-the-c901-exemptions-on preserved at ce43a8b3316b
+actual: 20.0 min · estimate: 30 min · rounds: 3
