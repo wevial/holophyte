@@ -277,7 +277,7 @@ CREATE TABLE IF NOT EXISTS interventions (
                              'review_stuck', 'linear_cancelled', 'manual')),
     "action"  TEXT    NOT NULL
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
-                            'close_out')),
+                            'close_out', 'requeue')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL
@@ -290,8 +290,9 @@ CREATE TABLE IF NOT EXISTS interventions (
 # made before the stamp existed. Bump this when SCHEMA or ADDED_COLUMNS
 # changes shape, so an older build refuses a store it would otherwise read
 # one column short. The ladder itself stays ADDED_COLUMNS; the number is
-# bookkeeping around it, not a replacement for it.
-SCHEMA_VERSION = 2
+# bookkeeping around it, not a replacement for it. Version 3 is the
+# `interventions` action CHECK admitting 'requeue' (KO-223).
+SCHEMA_VERSION = 3
 
 # Every join the loop, the sweep and the FINDINGS renderer perform goes
 # through one of these three foreign keys; without an index each is a full
@@ -486,15 +487,18 @@ def init(conn):
 
 
 def _widen_interventions_action(conn):
-    """Rebuild `interventions` when its action CHECK predates 'close_out'.
+    """Rebuild `interventions` when its action CHECK predates 'requeue'.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
-    cannot ALTER a CHECK, so a store initialized before the value shipped
+    cannot ALTER a CHECK, so a store initialized before a value shipped
     would refuse the row forever — which is how the KO-146 incident ended in
-    raw SQL and four falsely-labeled 'resume' rows. The stored DDL says which
-    world this store is from; the rebuild is the standard rename-copy-drop
-    from `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store
-    and a second call both skip it. The column list is unchanged, so existing
+    raw SQL and four falsely-labeled 'resume' rows, the precedent that added
+    'close_out' here. 'requeue' (schema version 3) rides the same rebuild:
+    the newest value is the one tested for, so a store from before either
+    shipped is carried forward in one pass. The stored DDL says which world
+    this store is from; the rebuild is the standard rename-copy-drop from
+    `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store and
+    a second call both skip it. The column list is unchanged, so existing
     rows are carried verbatim; `runId`'s foreign key stays enforced through
     the copy, which only re-checks rows against `runs` — rows that were valid
     stay valid.
@@ -508,7 +512,7 @@ def _widen_interventions_action(conn):
     # literal appearing anywhere else (a future comment, a default) must not
     # skip a rebuild that is still needed.
     (ddl,) = row
-    if "'close_out'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
+    if "'requeue'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -1315,6 +1319,64 @@ def walk_ticket(conn, ticket_id, to_status):
     return path
 
 
+class RequeueRefused(Exception):
+    """A requeue `requeue()` will not do; nothing was written.
+
+    The ticket does not exist, still has a live run, is not `in_flight`, or
+    its last run did not end `failed` -- each is the same answer to the
+    operator: this is not a failed ticket waiting to go back in the queue,
+    so the message names which and the command line exits on it.
+    """
+
+
+def requeue(conn, ticket_id, note, now=None):
+    """Put a failed ticket back in the queue; return the run it failed in.
+
+    The escalation ladder's rung-3 pair (`record_intervention()` then
+    `walk_ticket()`) as one rung-1 call: a run that fails leaves its ticket
+    `in_flight` with no active run, which `pickable()` refuses until an
+    operator moves it, and on 2026-09-03 that was five REPL sessions. Both
+    writes land in one `_transaction()`, so the ticket is never `ready`
+    without the `requeue` row that says why -- and the row carries `note`,
+    the operator's reason, rather than the mislabeled `close_out` those
+    sessions wrote.
+
+    Refuses, with `RequeueRefused` and no write, anything that is not a
+    failed ticket with no live run: an unknown ticket, one with an active
+    run, one not `in_flight` (already `ready`, say), or one whose last run
+    ended some other way (merged) or never ended. Touches no board state:
+    the loop mirrors the Linear status when it claims.
+    """
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT linearIdentifier, status, activeRunId, lastRunId"
+            " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        if row is None:
+            raise RequeueRefused(f"ticket {ticket_id} does not exist")
+        identifier, status, active_run_id, last_run_id = row
+        if active_run_id is not None:
+            raise RequeueRefused(
+                f"{identifier}: run {active_run_id} is still live;"
+                " a requeue is for a ticket whose run has ended")
+        if status != "in_flight":
+            raise RequeueRefused(
+                f"{identifier} is {status}, not in_flight; nothing to requeue")
+        run = (conn.execute("SELECT outcome FROM runs WHERE id = ?",
+                            (last_run_id,)).fetchone()
+               if last_run_id is not None else None)
+        if run is None:
+            raise RequeueRefused(
+                f"{identifier} has no ended run to requeue after")
+        (outcome,) = run
+        if outcome != "failed":
+            raise RequeueRefused(
+                f"{identifier}: run {last_run_id} ended {outcome},"
+                " not failed; nothing to requeue")
+        record_intervention(conn, last_run_id, "requeue", note, now=now)
+        walk_ticket(conn, ticket_id, "ready")
+    return last_run_id
+
+
 def mirror_ticket(
     conn,
     project_id,
@@ -1683,7 +1745,7 @@ INTERVENTION_SOURCES = ("supervisor", "human")
 INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
                          "review_stuck", "linear_cancelled", "manual")
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
-                        "close_out")
+                        "close_out", "requeue")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

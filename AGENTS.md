@@ -64,17 +64,20 @@ worktree and merged only after mechanical verification and independent review.
 ## Operator protocol
 
 - **Escalation ladder, in order.** When the factory is stuck: (1)
-  relaunch/unblock through the factory's legal paths; (2) `factory.py
-  <repo> --sweep`, then `--sweep --act` once a trip is confirmed; (3)
-  store *API* calls from a Python REPL (`release`, `resume`,
-  `transition`, `record_intervention`, `walk_ticket`); (4) raw SQL only
+  relaunch/unblock through the factory's legal paths, including
+  `factory.py <repo> --requeue KO-n --note TEXT` for a ticket whose run
+  failed; (2) `factory.py <repo> --sweep`, then `--sweep --act` once a
+  trip is confirmed; (3) store *API* calls from a Python REPL (`release`,
+  `resume`, `transition`, `record_intervention`, `walk_ticket`,
+  `requeue`); (4) raw SQL only
   where no API exists — and then only paired with a ticket for the
   missing API, filed the same day. Never skip a rung downward.
 - **Operator store API, by name.** `release`, `resume`, `transition`,
-  `record_intervention` and `walk_ticket` are kept for the REPL rung above
-  even when the loop itself does not call them; `tests/test_store_surface.py`
-  holds the module's public surface to an explicit allow-list and checks
-  these five against this list, so a removal or addition is deliberate.
+  `record_intervention`, `walk_ticket` and `requeue` are kept for the REPL
+  rung above even when the loop itself does not call them (`--requeue` is
+  `requeue`); `tests/test_store_surface.py` holds the module's public
+  surface to an explicit allow-list and checks these six against this
+  list, so a removal or addition is deliberate.
 - **A stuck or refused lease is a `--sweep` question, not a SQL
   question.** The first response to "lease already held by run N" is a
   read-only `--sweep` (the loop now runs one at startup and prints it);
