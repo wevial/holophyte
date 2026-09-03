@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[149 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T19:08:13Z — KO-225
-MERGED to main.
-actual: 9.6 min · estimate: 30 min · rounds: 1
-
-## 2026-09-03T19:15:39Z — KO-224
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[151 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T19:16:25Z — KO-224
 MERGED to main.
@@ -758,3 +751,10 @@ Findings (3):
 ## 2026-09-03T22:32:30Z — KO-237
 FAILED: swept by the supervisor in phase addressing: review_stuck (rounds 1 and 2 share 0.50 of their findings (0.5 threshold)); branch and worktree preserved for a human
 actual: 17.6 min · estimate: 20 min · rounds: 2
+
+## 2026-09-03T22:47:51Z — KO-237
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T22:48:38Z — KO-237
+MERGED to main.
+actual: 5.5 min · estimate: 20 min · rounds: 1
