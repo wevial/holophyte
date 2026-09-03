@@ -93,6 +93,28 @@ LINEAR_NORMALIZED = (FILLED.replace("**What:**", "**What: **")
                            .replace("- None", "* None"))
 
 
+# The same body with the What/Why/How keys authored without bold.
+PLAIN_KEYS = (FILLED.replace("**What:**", "What:")
+                    .replace("**Why:**", "Why:")
+                    .replace("**How:**", "How:"))
+
+
+class BoldOptionalKeyTests(unittest.TestCase):
+    """`What:`, `**What:**` and `**What: **` are one key: the bold run is
+    how Linear serialises the line, not part of the contract."""
+
+    def test_three_key_forms_parse_and_validate_the_same(self):
+        expected = tt.parse(FILLED)
+        self.assertEqual(tt.validate(expected), [])
+        for name, body in (("plain", PLAIN_KEYS),
+                           ("linear", LINEAR_NORMALIZED)):
+            with self.subTest(form=name):
+                t = tt.parse(body)
+                self.assertEqual((t.what, t.why, t.how),
+                                 (expected.what, expected.why, expected.how))
+                self.assertEqual(tt.validate(t), tt.validate(expected))
+
+
 class ParseTests(unittest.TestCase):
     def setUp(self):
         self.t = tt.parse(FILLED)
@@ -199,9 +221,9 @@ class ValidateTests(unittest.TestCase):
             LINEAR_NORMALIZED.replace("* None", "* Which CSV dialect?"),
             "'- None'")
 
-    def test_loose_what_line_is_still_rejected(self):
+    def test_a_what_line_without_its_colon_is_still_rejected(self):
         self.assert_problems_contain(
-            FILLED.replace("**What:** GET", "What: GET"),
+            FILLED.replace("**What:** GET", "What GET"),
             "'**What:**' line missing")
 
     def test_missing_section(self):

@@ -133,7 +133,10 @@ def host_label(target, host):
     supervisor's lines; the FINDINGS window a public repository commits has
     no host column to replace -- while the store goes on holding the real
     hostname for the supervisor's own-host checks.
-    With no label (or no `target`), this is `host_name(host)` exactly.
+    With no label (or no `target`), this is `host_name(host)` exactly; so
+    is a `host` of None, label or not: a row older than the column has no
+    recorded host, and calling it the writer would state something the
+    store does not know.
     """
     label = report_config(target).host_label if target is not None else None
-    return host_name(host) if label is None else label
+    return host_name(host) if host is None or label is None else label

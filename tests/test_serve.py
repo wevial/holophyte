@@ -129,7 +129,17 @@ class ServeTestCase(unittest.TestCase):
             raw = response.read()
         finally:
             conn.close()
+        self.raw_body = raw.decode()
         return response.status, dict(response.getheaders()), json.loads(raw)
+
+    def null_host(self, run_id):
+        """Age run `run_id` past the host column: a row with no recorded host."""
+        conn = sqlite3.connect(str(self.db))
+        try:
+            conn.execute("UPDATE runs SET host = NULL WHERE id = ?", (run_id,))
+            conn.commit()
+        finally:
+            conn.close()
 
 
 class StatusTests(ServeTestCase):
@@ -165,6 +175,17 @@ class StatusTests(ServeTestCase):
                          {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                           "strikes": knobs.stale_strikes})
 
+    def test_the_stale_threshold_is_a_json_integer(self):
+        self.seed()
+        self.start()
+
+        _code, _headers, body = self.request("GET", "/status")
+
+        stale = body["thresholds"]["heartbeat_stale_ms"]
+        self.assertIs(type(stale), int)
+        self.assertEqual(stale, 300000)
+        self.assertIn('"heartbeat_stale_ms": 300000,', self.raw_body)
+
     def test_a_configured_host_label_is_every_host_the_network_sees(self):
         self.seed()
         self.start('[report]\nhost_label = "writer-1"\n')
@@ -177,6 +198,19 @@ class StatusTests(ServeTestCase):
         self.assertEqual(len(hosts), 3)
         self.assertEqual(set(hosts), {"writer-1"})
         self.assertNotIn(socket.gethostname(), json.dumps(body))
+
+    def test_a_run_without_a_recorded_host_is_null_under_a_label(self):
+        self.seed()
+        self.null_host(self.run)
+        self.start('[report]\nhost_label = "writer-1"\n')
+
+        code, _headers, body = self.request("GET", "/status")
+
+        self.assertEqual(code, 200)
+        (run,) = body["runs"]
+        self.assertIsNone(run["host"])
+        self.assertEqual(body["host"], "writer-1")
+        self.assertNotIn("?", json.dumps(body))
 
     def test_the_daemon_holds_no_write_lock_after_answering(self):
         self.seed()
@@ -302,6 +336,18 @@ class RunsTests(ServeTestCase):
         self.assertEqual(len(body["rows"]), 3)
         self.assertEqual({r["host"] for r in body["rows"]}, {"writer-1"})
         self.assertNotIn(socket.gethostname(), json.dumps(body))
+
+    def test_a_row_without_a_recorded_host_is_null_under_a_label(self):
+        self.seed_ended()
+        self.null_host(2)
+        self.start('[report]\nhost_label = "writer-1"\n')
+
+        code, _headers, body = self.request("GET", "/runs")
+
+        self.assertEqual(code, 200)
+        self.assertEqual([r["host"] for r in body["rows"]],
+                         ["writer-1", None, "writer-1"])
+        self.assertNotIn("?", json.dumps(body))
 
     def test_runs_without_a_store_is_503_and_creates_none(self):
         self.start()
