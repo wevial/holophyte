@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[121 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T05:03:11Z — KO-216
-MERGED to main.
-actual: 7.6 min · estimate: 30 min · rounds: 1
-
-## 2026-09-03T05:13:32Z — KO-217
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):ac47191b1880 [p2] CRITERION 1: not met — `holophyte/findings.py` never receives the target or renders `host_label`; the added test only checks hostname absence and never verifies…
-- criteria:1 [p2] CRITERION 1: not met — `holophyte/findings.py` never receives the target or renders `host_label`; the added test only checks hostname absence and never verifies…
+[123 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T05:19:52Z — KO-217
 Round 2: changes_requested · reviewer codex-sol-medium · verify passed
@@ -754,3 +744,10 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T18:48:15Z — KO-222
 MERGED to main.
 actual: 7.6 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T18:57:49Z — KO-223
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T18:58:35Z — KO-223
+MERGED to main.
+actual: 10.3 min · estimate: 30 min · rounds: 1
