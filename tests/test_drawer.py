@@ -10,6 +10,7 @@ Run: python3 -m unittest discover -s tests -p 'test_drawer*' -v
 """
 from __future__ import annotations
 
+import base64
 import http.server
 import importlib.util
 import io
@@ -66,11 +67,12 @@ class RenderTests(unittest.TestCase):
         self.assertIn("idle · writer", text)
         self.assertIn("KO-232 · reviewing", text)
         self.assertIn("idle · queue empty", text)
-        detail = next(x for x in lines if x.startswith("--round"))
+        detail = next(x for x in lines if x.lstrip().startswith("round"))
         self.assertIn("12m of 30m", detail)
         self.assertIn("heartbeat 4s", detail)
-        self.assertEqual(
-            len([x for x in lines if x.startswith("--supervisor live · 12s")]), 2)
+        supervisors = [x for x in lines
+                       if x.lstrip().startswith("supervisor live · 12s")]
+        self.assertEqual(len(supervisors), 2)
         header_index = lines.index(next(x for x in lines if "working · writer" in x))
         self.assertLess(header_index, lines.index("KO-232 · reviewing"))
 
@@ -98,6 +100,48 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("●", first)
         self.assertNotIn("color=", first)
         self.assertIn("templateImage=", first)
+
+    def test_detail_rows_are_inline_under_their_target_not_submenus(self):
+        lines = render_cli("idle").splitlines()
+        submenu = [x for x in lines if x.startswith("--") and x != "---"]
+        self.assertEqual(submenu, [])
+        main_row = lines.index(next(x for x in lines if x.startswith("idle · writer")))
+        supervisor = lines[main_row + 2]
+        self.assertEqual(lines[main_row + 1], "idle · queue empty")
+        self.assertTrue(supervisor.startswith(" "), supervisor)
+        self.assertIn("supervisor live · 12s", supervisor)
+        self.assertIn("trim=false", supervisor)
+
+    def test_footer_counts_targets_and_distinct_hosts(self):
+        def status(host):
+            return {"name": host, "url": host,
+                    "status": {**fixture("idle"), "host": host}}
+        one = drawer.render([status("writer-1"), status("writer-1")], 1756900000000)
+        self.assertIn("2 targets · 1 host ·", one[-1])
+        two = drawer.render([status("writer-1"), status("writer-2")], 1756900000000)
+        self.assertIn("2 targets · 2 hosts ·", two[-1])
+        self.assertIn("2 targets · 1 host ·", render_cli("idle", "idle"))
+        self.assertIn("2 targets · 2 hosts ·",
+                      render_cli("idle", "idle_second_host"))
+
+    def test_title_embeds_pdf_then_1x_png_then_nothing(self):
+        def embedded(line):
+            return base64.b64decode(line.split("templateImage=")[1].split()[0])
+        pdf = (ROOT / "assets" / "menubar-template.pdf").read_bytes()
+        png = (ROOT / "assets" / "menubar-template@1x.png").read_bytes()
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertTrue(embedded(drawer.title(drawer.IDLE)).startswith(b"%PDF"))
+        with tempfile.TemporaryDirectory() as assets:
+            (Path(assets) / "menubar-template.pdf").write_bytes(pdf)
+            (Path(assets) / "menubar-template@1x.png").write_bytes(png)
+            (Path(assets) / "menubar-template@2x.png").write_bytes(b"\x89PNG2x")
+            self.assertEqual(embedded(drawer.title(drawer.WORKING, assets)), pdf)
+            (Path(assets) / "menubar-template.pdf").unlink()
+            self.assertEqual(embedded(drawer.title(drawer.WORKING, assets)), png)
+            (Path(assets) / "menubar-template@1x.png").unlink()
+            bare = drawer.title(drawer.WORKING, assets)
+            self.assertNotIn("templateImage=", bare)
+            self.assertEqual(bare, f"● | color={drawer.GREEN}")
 
     def test_same_fixture_renders_byte_identical(self):
         once = render_cli("working", "stale_heartbeat")
@@ -145,7 +189,7 @@ class LiveTests(unittest.TestCase):
         self.assertIn("KO-232 · reviewing", text)
         self.assertIn("gone · ?", text)
         self.assertIn("href=https://linear.app/example", text)
-        self.assertIn("2 hosts", text)
+        self.assertIn("2 targets · 1 host", text)
 
     def test_fetch_marks_a_closed_port_unreachable(self):
         got = drawer.fetch(f"http://127.0.0.1:{closed_loopback_port()}")
