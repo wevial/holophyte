@@ -48,11 +48,25 @@ idle target's "last merge" row reads.
 
 ## The dot
 
-The menu-bar glyph is the two-leaf template icon, embedded as the 18 pt PDF
-in `assets/` (the 1x PNG if the PDF is missing): SwiftBar sizes a base64
-raster by its pixels, so the 36 px Retina PNG would draw at twice menu-bar
-height, while a PDF is 18 points and crisp at any scale. A dot beside it
-mirrors the worst row of the menu:
+The menu-bar glyph is the two-leaf icon from `assets/`, 24 × 20 points as a
+vector PDF so it is crisp at any scale (SwiftBar sizes a base64 raster by
+its pixels, which is why the 36 px Retina PNG is never embedded). When every
+target is idle the title carries `menubar-template.pdf` as `templateImage=`,
+which macOS tints for the bar. Otherwise the state dot is drawn inside the
+image, at the glyph's top-right, so the title carries one of the six
+pre-rendered variants as a plain `image=`:
+
+| file | when |
+|---|---|
+| `menubar-template.pdf` | idle (`templateImage=`) |
+| `menubar-dark-{ok,warn,bad}.pdf` | white leaves for the dark bar |
+| `menubar-light-{ok,warn,bad}.pdf` | black leaves for the light bar |
+
+`dark`/`light` follows the `OS_APPEARANCE` variable SwiftBar sets for a
+plugin: `Dark` picks the dark set, any other value (or none) the light set.
+If a variant file is missing (a partial checkout), the script falls back to
+the template glyph with a coloured `●` printed beside it, so state still
+shows. `ok`/`warn`/`bad` is the worst row of the menu:
 
 | dot | meaning |
 |---|---|
