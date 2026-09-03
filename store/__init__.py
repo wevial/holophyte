@@ -822,18 +822,16 @@ def set_phase(conn, run_id, phase, note=None, now=None):
     other phase writer and deliberately does not come through here — it moves
     a parked run without stamping a heartbeat it has no evidence for.
 
-    An ended run is refused with `RunEnded`, and nothing is written: run 39
-    (KO-213) was failed by the supervisor sweep while its loop waited on an
-    implementer, and the loop's next phase change walked the ended run
-    `failed -> verifying -> reviewing` towards a merge under a row that said
-    the work had failed. The ending is the last word on a run; the check sits
-    inside the transaction so a release landing between the read and the
-    UPDATE cannot slip through. "Ended" is what `release()` means by it --
-    `endedAt` stamped *and* the phase in `ENDED_PHASES` -- because
-    `resume()` moves a released run back into a work phase without clearing
-    `endedAt`, and that second stretch of work has to be able to move and to
-    be released. `release()` itself moves the terminal phase through here
-    *before* it stamps `endedAt`, which is why it is not refused either.
+    A run with `endedAt` stamped is refused with `RunEnded`, and nothing is
+    written: run 39 (KO-213) was failed by the supervisor sweep while its
+    loop waited on an implementer, and the loop's next phase change walked
+    the ended run `failed -> verifying -> reviewing` towards a merge under a
+    row that said the work had failed. The ending is the last word on a run;
+    the check sits inside the transaction so a release landing between the
+    read and the UPDATE cannot slip through. `endedAt` alone is the test,
+    whatever the phase says: `resume()` clears the stamp when it puts a run
+    back to work, so a resumed run moves, and `release()` moves the terminal
+    phase through here *before* it stamps `endedAt`, so an ending lands.
     """
     if phase not in PHASES:
         raise ValueError(f"unknown phase {phase!r}")
@@ -847,7 +845,7 @@ def set_phase(conn, run_id, phase, note=None, now=None):
         if row is None:
             raise ValueError(f"no run {run_id}")
         previous, ended_at, outcome, reason = row
-        if ended_at is not None and previous in ENDED_PHASES:
+        if ended_at is not None:
             raise RunEnded(run_id, outcome, reason)
         conn.execute(
             "UPDATE runs SET phase = ?, lastHeartbeat = ? WHERE id = ?",
@@ -969,7 +967,8 @@ TERMINAL_PHASES = {
 # The phases those outcomes leave behind. A run with `endedAt` stamped and
 # sitting in one of them is over, and that pair is what `release()` refuses to
 # end a second time. A resumed run is not in the set: `resume()` moves a failed
-# run back to a work phase, so the run it hands back is releasable again.
+# run back to a work phase and clears its ending, so the run it hands back
+# moves and is releasable again.
 ENDED_PHASES = frozenset(TERMINAL_PHASES.values())
 
 # `runs.outcomeClass`: what a failure is evidence about. Mirrors the CHECK.
@@ -1609,11 +1608,18 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
     resumed (`human` or `supervisor`); the trigger is `manual` because §6's
     triggers name why a run was *stopped* and none of them names a resume.
 
-    Phase is the only field this moves. A resumed run's `lastHeartbeat` stays
-    where the worker left it: heartbeats are written by whoever is doing the
-    work, and stamping one here would claim liveness this call has no evidence
-    for. `now` is epoch milliseconds for the intervention's `at`, defaulting
-    to the clock.
+    Resuming a `failed` run clears the ending `release()` stamped --
+    `endedAt`, `outcome`, `outcomeReason`, `outcomeClass` back to its default
+    -- because the run is live again and everything that reads `endedAt`
+    reads it as "over": `set_phase()` refuses a stamped run (KO-213),
+    `heartbeat()` leaves one alone, the sweep skips it and the FINDINGS
+    window lists it. A resumed run that kept its stamp could not move, and
+    the stretch of work it does is closed out by the release that ends it,
+    which writes a fresh ending over nothing. A resumed run's
+    `lastHeartbeat` stays where the worker left it: heartbeats are written
+    by whoever is doing the work, and stamping one here would claim liveness
+    this call has no evidence for. `now` is epoch milliseconds for the
+    intervention's `at`, defaulting to the clock.
 
     Runs in one `_transaction()`, like the other writers, so a resume arriving
     as the effect of a Linear webhook commits with its delivery id.
@@ -1655,6 +1661,12 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
             "UPDATE runs SET phase = ?, resumePhase = NULL WHERE id = ?",
             (target, run_id),
         )
+        if phase in ENDED_PHASES:
+            conn.execute(
+                "UPDATE runs SET endedAt = NULL, outcome = NULL,"
+                " outcomeReason = NULL, outcomeClass = 'work' WHERE id = ?",
+                (run_id,),
+            )
         conn.execute(
             'INSERT INTO interventions'
             ' (runId, source, "trigger", "action", guidance, at)'

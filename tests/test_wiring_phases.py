@@ -390,6 +390,26 @@ class ReleaseTests(unittest.TestCase):
 
         self.assertEqual(self.run_row(), ("done", "merged", None, None, 4000))
 
+    def test_a_resumed_run_is_live_again_and_moves(self):
+        """`set_phase()` refuses any run with `endedAt` stamped (KO-213), so
+        a resume has to take the stamp back with the phase: a resumed run
+        that still read as ended could never reach its next stage, and the
+        sweep and the FINDINGS window would go on treating it as over."""
+        store.set_phase(self.conn, self.run_id, "working", now=2000)
+        store.release(self.conn, self.run_id, "failed", "flaky verify",
+                      now=3000, outcome_class="infra")
+        store.resume(self.conn, self.run_id, now=3500)
+
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT endedAt, outcome, outcomeReason, outcomeClass"
+                " FROM runs WHERE id = ?", (self.run_id,)).fetchone(),
+            (None, None, None, "work"))
+        self.assertEqual(
+            store.set_phase(self.conn, self.run_id, "verifying", now=4000),
+            "working")
+        self.assertTrue(store.heartbeat(self.conn, self.run_id, now=4500))
+
 
 if __name__ == "__main__":
     unittest.main()
