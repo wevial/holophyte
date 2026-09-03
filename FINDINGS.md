@@ -653,22 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[109 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T01:42:00Z — KO-211
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):b68b63432a05 [p2] CRITERION 1: met — supplied `ruff check .` and C901 grep checks CRITERION 2: met — supplied 513-test `unittest discover` verification CRITERION 3: met — commit…
-- criteria:4 [p2] CRITERION 4: unwitnessed — no post-merge gembox run and operator witness is recorded in the ticket ledger Given gembox, when the loop runs one ticket end to end…
-
-## 2026-09-03T01:47:36Z — KO-211
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):bd4064f0d9ea [p2] CRITERION 1: met — supplied `ruff check .`, C901-only check, and exemption-count checks CRITERION 2: met — supplied 513-test verification run; focused loop suit…
-- criteria:4 [p2] CRITERION 4: unwitnessed — missing post-merge gembox end-to-end operator witness in the ticket ledger Given gembox, when the loop runs one ticket end to end aft…
-
-## 2026-09-03T01:51:11Z — KO-211
-Round 3: changes_requested · reviewer codex-sol-medium · verify passed
+[112 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T01:51:11Z — KO-211
 FAILED: terminal adjudication: FAIL; branch task/ko-211-retire-the-c901-exemptions-on preserved at ce43a8b3316b
@@ -755,3 +740,15 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T15:55:24Z — KO-219
 MERGED to main.
 actual: 7.7 min · estimate: 25 min · rounds: 1
+
+## 2026-09-03T16:09:51Z — KO-220
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- linear_provider.py [p2] [linear_provider.py](/workspace/linear_provider.py:309): The retained script entry point calls the newly parameterized `claim_next()` without `project_id` or `t…
+
+## 2026-09-03T16:17:20Z — KO-220
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T16:18:06Z — KO-220
+MERGED to main.
+actual: 22.7 min · estimate: 30 min · rounds: 2
