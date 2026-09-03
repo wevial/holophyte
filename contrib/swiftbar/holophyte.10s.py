@@ -10,7 +10,9 @@ fields, never from this machine's clock, so two renders of the same answer
 are byte-identical. Standard library only.
 
 `--render FIXTURE.json [...]` prints the menu from files instead of the
-network, so a test and an operator see the exact output.
+network, so a test and an operator see the exact output. A fixture is a
+`/status` answer, or `{"status": ..., "runs": ...}` carrying the `/runs`
+answer an idle target's "last merge" row reads.
 """
 from __future__ import annotations
 
@@ -50,14 +52,14 @@ def load_config(path):
     return {"daemons": daemons, "linear": raw.get("linear", "https://linear.app")}
 
 
-def fetch(url):
-    """The parsed `/status` JSON, or `{"unreachable": True, "error": TEXT}`.
+def fetch(url, path="/status"):
+    """The parsed JSON of `url + path`, or `{"unreachable": True, "error": TEXT}`.
 
     A 503 (no store yet) is an answer, not an outage: its body comes back as
     is, and `render()` shows the daemon's own `error` text in the block.
     """
     try:
-        with urllib.request.urlopen(url + "/status", timeout=TIMEOUT_SEC) as r:
+        with urllib.request.urlopen(url + path, timeout=TIMEOUT_SEC) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         try:
@@ -78,6 +80,23 @@ def age(ms):
     if s < 3600:
         return f"{s // 60}m"
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def coarse_age(ms):
+    """An age as the daemon's own tables print one: `12s`, `7m`, `2h`, `3d`,
+    the largest whole unit that fits. For the supervisor and idle rows, where
+    the question is "how long has this been so", not "how many minutes".
+    """
+    if ms is None:
+        return "?"
+    s = max(0, int(ms) // 1000)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h"
+    return f"{s // 86400}d"
 
 
 def attention(statuses):
@@ -108,7 +127,7 @@ def attention(statuses):
         if sup.get("state") in ("stale", "none"):
             text = f"{name} · supervisor {sup['state']}"
             if sup.get("heartbeat_age_ms") is not None:
-                text += f" · {age(sup['heartbeat_age_ms'])}"
+                text += f" · {coarse_age(sup['heartbeat_age_ms'])}"
             rows.append((text, AMBER))
             level = max(level, ATTENTION)
     return rows, level
@@ -135,6 +154,52 @@ def title(level, assets=None):
     return f"● |{icon} color={DOT[level]}"
 
 
+def last_merge(runs):
+    """The newest `/runs` row whose `outcome` is `merged`, or None.
+
+    `/runs` lists the report table oldest first (and `?limit=N` keeps the
+    first N), so the last merge is the last merged row of the whole answer.
+    None for no such row, an error body, or no answer at all.
+    """
+    rows = (runs or {}).get("rows") or []
+    for row in reversed(rows):
+        if row.get("outcome") == "merged":
+            return row
+    return None
+
+
+def idle_row(status, runs):
+    """`idle · last merge KO-n · 12m ago` from the `/runs` answer, the age
+    against the daemon's `now` when the row carries `ended_ms` and dropped
+    when it does not; `idle · nothing merged yet` for an answer without a
+    merged row; `idle · queue empty` when `/runs` gave no answer.
+    """
+    if runs is None or runs.get("unreachable") or "rows" not in runs:
+        return "idle · queue empty"
+    row = last_merge(runs)
+    if row is None:
+        return "idle · nothing merged yet"
+    text = f"idle · last merge {row['ticket']}"
+    if row.get("ended_ms") is not None and status.get("now") is not None:
+        text += f" · {coarse_age(status['now'] - row['ended_ms'])} ago"
+    return text
+
+
+def supervisor_row(sup):
+    """`supervisor live` in the detail grey; `supervisor stale · 7m` and
+    `supervisor none` in amber. The age is shown only when the state is
+    the problem: against a live supervisor it is a number the reader would
+    have to judge against a threshold they do not know.
+    """
+    state = sup.get("state", "none")
+    if state == "live":
+        return f"{INDENT}supervisor live | {DETAIL}"
+    text = f"supervisor {state}"
+    if sup.get("heartbeat_age_ms") is not None:
+        text += f" · {coarse_age(sup['heartbeat_age_ms'])}"
+    return f"{INDENT}{text} | trim=false {HEADER} color={AMBER}"
+
+
 def target_block(entry):
     name, status = entry["name"], entry["status"]
     host = status.get("host") or "?"
@@ -147,16 +212,13 @@ def target_block(entry):
         return lines
     runs = status["runs"]
     if not runs:
-        lines.append("idle · queue empty")
+        lines.append(idle_row(status, entry.get("runs")))
     for run in runs:
         lines.append(f"{run['ticket']} · {run['phase']}")
         lines.append(f"{INDENT}round {run.get('round', '—')} · "
                      f"{age(run['elapsed_ms'])} of {age(run['time_box_ms'])} · "
                      f"heartbeat {age(run['heartbeat_age_ms'])} | {DETAIL}")
-    sup = status.get("supervisor") or {}
-    beat = sup.get("heartbeat_age_ms")
-    tail = f" · {age(beat)}" if beat is not None else ""
-    lines.append(f"{INDENT}supervisor {sup.get('state', 'none')}{tail} | {DETAIL}")
+    lines.append(supervisor_row(status.get("supervisor") or {}))
     return lines
 
 
@@ -195,6 +257,27 @@ def footer_counts(statuses):
     return f"{len(statuses)} targets · {len(hosts)} {host}"
 
 
+def fixture_entry(path):
+    """A `--render` entry from a file: a bare `/status` answer, or an object
+    with `status` and `runs` keys carrying both answers."""
+    raw = json.loads(Path(path).read_text())
+    if "status" in raw and "runs" in raw and "now" not in raw:
+        status, runs = raw["status"], raw["runs"]
+    else:
+        status, runs = raw, None
+    return {"name": Path(path).stem, "url": str(path), "status": status,
+            "runs": runs}
+
+
+def poll(daemon):
+    """One daemon's entry: `/status`, then `/runs` only for an idle target,
+    so a working daemon still costs one request."""
+    status = fetch(daemon["url"])
+    runs = fetch(daemon["url"], "/runs") if status.get("runs") == [] else None
+    return {"name": daemon["name"], "url": daemon["url"], "status": status,
+            "runs": runs}
+
+
 def reference_now(statuses):
     """The latest `now` any daemon answered with, None when none did."""
     nows = [e["status"]["now"] for e in statuses if "now" in e["status"]]
@@ -210,14 +293,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     linear = "https://linear.app"
     if args.render:
-        statuses = [{"name": Path(p).stem, "url": p,
-                     "status": json.loads(Path(p).read_text())}
-                    for p in args.render]
+        statuses = [fixture_entry(p) for p in args.render]
     else:
         config = load_config(args.config or config_path())
         linear = config["linear"]
-        statuses = [{"name": d["name"], "url": d["url"],
-                     "status": fetch(d["url"])} for d in config["daemons"]]
+        statuses = [poll(d) for d in config["daemons"]]
     for line in render(statuses, reference_now(statuses), linear):
         print(line)
     return 0
