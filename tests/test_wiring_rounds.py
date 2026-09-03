@@ -471,6 +471,37 @@ class ReviewRoundRowTests(unittest.TestCase):
         self.assertIn("rather talk about the architecture", finding["message"])
 
 
+class CitationParsingTests(unittest.TestCase):
+    """A reviewer that cites a file as a markdown link puts the line in the
+    link's target; read it there rather than from the link text."""
+
+    def test_a_markdown_link_citation_keeps_its_line(self):
+        (finding,) = holophyte.review.parse_findings(
+            "Blocker: [ticket_template.py](/workspace/ticket_template.py:363)"
+            " scans only unchecked criteria")
+        self.assertEqual((finding["path"], finding["line"], finding["severity"]),
+                         ("ticket_template.py", 363, "p0"))
+
+    def test_two_links_into_one_file_are_two_keys(self):
+        """Run 55's failure: both rounds' findings collapsed to
+        `(ticket_template.py, None, p2)` because the link text won."""
+        findings = holophyte.review.parse_findings(
+            "- [ticket_template.py](/workspace/ticket_template.py:363) one\n"
+            "- [ticket_template.py](/workspace/ticket_template.py:401) two\n")
+        self.assertEqual(
+            {(f["path"], f["line"]) for f in findings},
+            {("ticket_template.py", 363), ("ticket_template.py", 401)})
+        self.assertEqual(len(store.findings_fingerprint(findings)), 64)
+        self.assertNotEqual(store.findings_fingerprint(findings[:1]),
+                            store.findings_fingerprint(findings[1:]))
+
+    def test_a_plain_citation_parses_as_before(self):
+        (finding,) = holophyte.review.parse_findings(
+            "- holophyte/serve.py:122 answers before the store is open")
+        self.assertEqual((finding["path"], finding["line"]),
+                         ("holophyte/serve.py", 122))
+
+
 class RoundWriteTests(unittest.TestCase):
     """The store primitive the wiring above stands on."""
 
