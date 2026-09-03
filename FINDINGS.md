@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[146 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T18:57:49Z — KO-223
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T18:58:35Z — KO-223
-MERGED to main.
-actual: 10.3 min · estimate: 30 min · rounds: 1
-
-## 2026-09-03T19:07:27Z — KO-225
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[149 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T19:08:13Z — KO-225
 MERGED to main.
@@ -750,3 +740,21 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T21:47:27Z — KO-232
 MERGED to main.
 actual: 8.3 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T22:25:23Z — KO-237
+Round 1: changes_requested · reviewer codex-sol-medium · verify failed
+Findings (3):
+- (unparsed):647bea4daa21 [p2] CRITERION 1: met — tests/test_drawer.py::RenderTests::test_title_embeds_pdf_then_1x_png_then_nothing CRITERION 2: not met — rendered `---` separator lines begin…
+- criteria:2 [p2] CRITERION 2: not met — rendered `---` separator lines begin with `--`; the test explicitly excludes them, and the required negated grep fails Given the idle fix…
+- criteria:4 [p2] CRITERION 4: not met — the required mechanical verification exits 1; the idle footer renders `1 target ·`, so the required `grep -q 'targets ·'` check also fail…
+
+## 2026-09-03T22:32:10Z — KO-237
+Round 2: changes_requested · reviewer codex-sol-medium · verify failed
+Findings (3):
+- (unparsed):54036ae77ff0 [p2] CRITERION 1: met — tests/test_drawer.py::RenderTests::test_title_embeds_pdf_then_1x_png_then_nothing CRITERION 2: not met — rendered separators are `---`, which…
+- criteria:2 [p2] CRITERION 2: not met — rendered separators are `---`, which begin with `--`; the test explicitly excludes them, and the required negated grep fails Given the id…
+- criteria:4 [p2] CRITERION 4: not met — the required full-suite verification exits 1, so the test-and-ruff gate is not satisfied Given the full test suite and `ruff`, when run,…
+
+## 2026-09-03T22:32:30Z — KO-237
+FAILED: swept by the supervisor in phase addressing: review_stuck (rounds 1 and 2 share 0.50 of their findings (0.5 threshold)); branch and worktree preserved for a human
+actual: 17.6 min · estimate: 20 min · rounds: 2
