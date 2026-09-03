@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[136 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T16:18:06Z — KO-220
-MERGED to main.
-actual: 22.7 min · estimate: 30 min · rounds: 2
-
-## 2026-09-03T18:08:28Z — KO-221
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T18:09:15Z — KO-221
-MERGED to main.
-actual: 12.9 min · estimate: 30 min · rounds: 1
+[139 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T18:17:33Z — KO-222
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -751,3 +740,15 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T19:49:05Z — KO-227
 MERGED to main.
 actual: 6.6 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T20:13:37Z — KO-230
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- holophyte/supervisor.py:915 [p2] [holophyte/supervisor.py:915](/workspace/holophyte/supervisor.py:915): If SIGTERM arrives during `factory_revision()`, `stop` becomes set but the revision-cha…
+
+## 2026-09-03T20:20:03Z — KO-230
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T20:20:49Z — KO-230
+MERGED to main.
+actual: 17.0 min · estimate: 30 min · rounds: 2
