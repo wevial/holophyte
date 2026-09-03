@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[81 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T16:46:23Z — KO-192
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-02T16:46:26Z — KO-192
-MERGED to main.
-actual: 3.5 min · estimate: 25 min · rounds: 1
-
-## 2026-09-02T16:56:05Z — KO-184
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[84 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T16:56:06Z — KO-184
 MERGED to main.
@@ -756,3 +746,16 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T01:11:56Z — KO-213
 MERGED to main.
 actual: 15.5 min · estimate: 30 min · rounds: 2
+
+## 2026-09-03T01:19:53Z — KO-210
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- tests/procs.py:60 [p2] [tests/procs.py:60](/workspace/tests/procs.py:60): `process_snapshot()` runs before the real `killpg`, potentially delaying it for five seconds—longer than th…
+- criteria:2 [p2] CRITERION 2: not met — `KillWatch._record` changes kill timing by synchronously running `ps` before `os.killpg` Given both tests unmodified in behavior, when th…
+
+## 2026-09-03T01:27:53Z — KO-210
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T01:28:38Z — KO-210
+MERGED to main.
+actual: 15.3 min · estimate: 25 min · rounds: 2
