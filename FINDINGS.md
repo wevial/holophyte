@@ -653,11 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[133 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T15:55:24Z — KO-219
-MERGED to main.
-actual: 7.7 min · estimate: 25 min · rounds: 1
+[134 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T16:09:51Z — KO-220
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -752,3 +748,7 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T19:40:47Z — KO-228
 MERGED to main.
 actual: 5.1 min · estimate: 10 min · rounds: 1
+
+## 2026-09-03T19:40:49Z — KO-227
+FAILED: cannot reuse leftover worktree: preserved commits on task/ko-227-readme-is-the-front-door-the-m conflict with a main that moved on; a human resolves the merge before this ticket is run again
+actual: 0.0 min · estimate: 30 min · rounds: 0
