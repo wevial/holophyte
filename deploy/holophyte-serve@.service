@@ -1,0 +1,27 @@
+[Unit]
+Description=Holophyte read daemon (--serve) for target %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# One instance per target: `holophyte-serve@SLUG` reads ~/.holophyte/SLUG/serve.env,
+# which MUST define HOLOPHYTE_TARGET, HOLOPHYTE_SERVE_ADDRESS and
+# HOLOPHYTE_SERVE_PORT (see docs/operating.md, "Serving standing").
+# WorkingDirectory is the factory checkout and ExecStart names factory.py from
+# it, so a self-merge is picked up on the next restart. Adjust it to your layout.
+EnvironmentFile=%h/.holophyte/%i/serve.env
+WorkingDirectory=%h/srv/dev/holophyte
+ExecStart=/usr/bin/python3 factory.py ${HOLOPHYTE_TARGET} --serve ${HOLOPHYTE_SERVE_ADDRESS}:${HOLOPHYTE_SERVE_PORT}
+Restart=on-failure
+RestartSec=5
+
+# Hardening: the listener has no authentication; the tailnet bind address is
+# its whole boundary. No new privileges, private tmp.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%h
+
+[Install]
+WantedBy=default.target
