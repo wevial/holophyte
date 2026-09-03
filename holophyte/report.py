@@ -40,13 +40,28 @@ def report_rows(conn):
     `host` is the machine the run was claimed on, None for a row older than
     the column: a store read from another machine says where each run ran.
     """
+    return [row[:-1] for row in ended_rows(conn)]
+
+
+def ended_rows(conn):
+    """`report_rows()`'s tuple with the run's `endedAt` appended: every
+    ended run, oldest first, as `(ticket, actual_min, estimate_min, ratio,
+    rounds, outcome, host, ended_at)`.
+
+    The daemon's `/runs` reads this one -- a drawer saying "last merge KO-n
+    · 2h ago" needs to know *when*, which the terminal table never prints
+    -- and `report_rows()` drops the last position, so `--report`'s shape
+    stays what it was. `ended_at` is epoch milliseconds, never None here:
+    `ended_runs()` lists only runs with an end.
+    """
     rows = []
     for run in store.read.ended_runs(conn):
         actual = (run.endedAt - run.startedAt) / 60000
         estimate = run.timeBoxMs / 60000 if run.timeBoxMs else None
         rows.append((run.linearIdentifier, actual, estimate,
                      actual / estimate if estimate else None,
-                     run.reviewRoundCount, run.outcome or "ended", run.host))
+                     run.reviewRoundCount, run.outcome or "ended", run.host,
+                     run.endedAt))
     return rows
 
 
