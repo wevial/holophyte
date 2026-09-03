@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[104 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T01:11:29Z — KO-213
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T01:11:56Z — KO-213
-MERGED to main.
-actual: 15.5 min · estimate: 30 min · rounds: 2
-
-## 2026-09-03T01:19:53Z — KO-210
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- tests/procs.py:60 [p2] [tests/procs.py:60](/workspace/tests/procs.py:60): `process_snapshot()` runs before the real `killpg`, potentially delaying it for five seconds—longer than th…
-- criteria:2 [p2] CRITERION 2: not met — `KillWatch._record` changes kill timing by synchronously running `ps` before `os.killpg` Given both tests unmodified in behavior, when th…
+[107 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T01:27:53Z — KO-210
 Round 2: pass · reviewer codex-sol-medium · verify passed
@@ -756,3 +743,15 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T15:29:25Z — KO-217
 MERGED to main.
 actual: 7.0 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T15:40:52Z — KO-218
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- holophyte/serve.py:122 [p0] BLOCKER: [holophyte/serve.py:122](/workspace/holophyte/serve.py:122) handles only POST/PUT/DELETE/PATCH; HEAD, OPTIONS, TRACE, and CONNECT return 501 HTML inste…
+
+## 2026-09-03T15:46:52Z — KO-218
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T15:47:38Z — KO-218
+MERGED to main.
+actual: 18.2 min · estimate: 30 min · rounds: 2
