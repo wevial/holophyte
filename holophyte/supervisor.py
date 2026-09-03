@@ -10,11 +10,16 @@ supervisor loop -- `supervise()`, one `supervise_pass()` per interval, held
 to one process per target by `acquire_supervisor_lock()` and its helpers,
 refused with `SupervisorHeld` -- is `--supervise`'s. `supervisor_liveness_line()`
 is `--report`'s line about that process, read from the heartbeat rows
-`supervise_pass()` writes. Beyond the standard library it imports `store` and
-`store.read` for the rows, `open_store` from `holophyte.runs`,
-`close_out_failure` from `holophyte.board`, `sweep_config` from
-`holophyte.config`, and `host_label`, `format_age`, `REPORT_GAP` from
-`holophyte.report`; nothing from `factory`.
+`supervise_pass()` writes. `supervise()` also watches the factory's own
+code: `factory_revision()` is the checkout's `HEAD`, read once at startup and
+again before each pass, and a supervisor whose code has moved -- or whose
+store a newer build has stamped -- releases its lock and re-executes itself
+through the `EXEC` seam rather than exiting. Beyond the standard library it
+imports `store` and `store.read` for the rows, `open_store` from
+`holophyte.runs`, `reexec_self` from `holophyte.reexec`, `close_out_failure`
+from `holophyte.board`, `sweep_config` from `holophyte.config`, and
+`host_label`, `format_age`, `REPORT_GAP` from `holophyte.report`; nothing
+from `factory`.
 
 Sixth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
@@ -27,18 +32,26 @@ import json
 import os
 import signal
 import socket
+import subprocess
 import sys
 import threading
 from pathlib import Path
 from time import time
 
+import holophyte
 import review_runner
 import store
 import store.read
 from holophyte.board import close_out_failure
 from holophyte.config import sweep_config
+from holophyte.reexec import reexec_self
 from holophyte.report import REPORT_GAP, format_age, host_label
 from holophyte.runs import open_store
+
+# How the supervisor restarts itself when the factory's code moves under it:
+# the process image is replaced, never a module reloaded. A seam so tests can
+# see the decision without exec-ing the test runner.
+EXEC = os.execv
 
 # --- the supervisor's stale-run sweep -----------------------------------------
 # The loop watches itself only while it is alive. A run whose process crashed,
@@ -816,6 +829,30 @@ def supervise_pass(target, pid, started_at, now=None, provider=None, out=None):
     return seen
 
 
+def factory_revision():
+    """The `HEAD` of the checkout the `holophyte` package is imported from,
+    or None where that directory is not a git checkout.
+
+    The factory checkout, not the target: for a self-hosted target they are
+    the same directory, but for any other target the supervisor's code lives
+    somewhere the target's `HEAD` says nothing about -- which is exactly the
+    supervisor that went unnoticed for an hour after a self-merge bumped the
+    store schema out from under it.
+    """
+    checkout = Path(holophyte.__file__).resolve().parent.parent
+    try:
+        done = subprocess.run(["git", "rev-parse", "HEAD"], cwd=checkout,
+                              capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+# The refusal `store.open()` raises for a store a newer build has stamped:
+# a `SystemExit` whose message says the schema is newer than this build's.
+NEWER_SCHEMA = "newer than the version"
+
+
 def supervise(target, provider=None, interval=None, wait=None, out=None):
     """`--supervise`'s whole body: lock, sweep, sleep, repeat until a signal.
 
@@ -830,6 +867,17 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
     afterwards because this is a mode of a module other code imports, not
     the process's only occupant.
 
+    The factory's own code is watched too. `factory_revision()` is read once
+    here and again before every pass; when it has moved -- a self-merge on
+    this host -- the supervisor prints the two revisions, releases its lock
+    and replaces itself with the same command line through `EXEC`, so the
+    fresh process takes the lock and carries on from the new code. A pass
+    whose store open refuses a newer schema (`store.open()`'s `SystemExit`)
+    does the same instead of exiting: the net that guards every other
+    target on the host must not end without a sound over the one event the
+    loop already restarts itself for. A stop request wins over a pending
+    re-exec, and the exec never happens from inside a signal handler.
+
     `wait` is the sleep, injectable so a test can drive the loop without
     one; it is called with the interval and its result is ignored. The
     default waits on the stop flag itself, so a signal ends the sleep at
@@ -843,11 +891,18 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
     started_at = int(time() * 1000)
     path = acquire_supervisor_lock(supervisor_lock_path(target), target.path,
                                    pid, started_at, target=target)
+    started_from = factory_revision()
     stop = threading.Event()
     wait = stop.wait if wait is None else wait
 
     def on_signal(signum, _frame):
         stop.set()
+
+    def reexec(reason):
+        # The lock first: the fresh process must find it free, and nothing
+        # can be released after the exec has replaced this process.
+        release_supervisor_lock(path, pid)
+        reexec_self(reason, EXEC, out)
 
     previous = {signum: signal.signal(signum, on_signal)
                 for signum in STOP_SIGNALS}
@@ -857,7 +912,19 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
               f" every {interval}s,"
               f" lock at {path}", file=out)
         while not stop.is_set():
-            supervise_pass(target, pid, started_at, provider=provider, out=out)
+            current = factory_revision()
+            if current != started_from:
+                reexec(f"factory code moved from {started_from} to {current};"
+                       " supervisor re-executing")
+                return 0  # only a test's EXEC returns
+            try:
+                supervise_pass(target, pid, started_at, provider=provider,
+                               out=out)
+            except SystemExit as refused:
+                if NEWER_SCHEMA not in str(refused) or stop.is_set():
+                    raise
+                reexec(f"{refused}; supervisor re-executing")
+                return 0  # only a test's EXEC returns
             wait(interval)
         print("[holo2] supervisor stopping on signal; lock released",
               file=out)

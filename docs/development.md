@@ -40,6 +40,8 @@ Each module, one line:
 - `holophyte/serve.py` — `--serve HOST:PORT`, the read-only HTTP daemon.
 - `holophyte/loop.py` — the loop: worktree setup and reuse, `run_task`,
   `main`, `report`, `requeue` and the self-merge re-exec.
+- `holophyte/reexec.py` — `reexec_self`, the shared self re-exec the loop
+  and the supervisor both restart themselves through.
 
 The store is its own package:
 
