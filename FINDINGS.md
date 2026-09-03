@@ -653,15 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[117 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T02:28:14Z — KO-215
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- holophyte/review.py:329 [p2] `holophyte/review.py:329`: `Path(root) / path` permits absolute paths and `..` traversal. A test outside the candidate worktree can therefore satisfy a witnes…
-
-## 2026-09-03T02:34:17Z — KO-215
-Round 2: pass · reviewer codex-sol-medium · verify passed
+[119 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T02:35:02Z — KO-215
 MERGED to main.
@@ -755,3 +747,10 @@ Findings (1):
 ## 2026-09-03T18:25:20Z — KO-222
 FAILED: swept by the supervisor in phase addressing: review_stuck (rounds 1 and 2 share 1.00 of their findings (0.5 threshold)); branch and worktree preserved for a human
 actual: 16.1 min · estimate: 30 min · rounds: 2
+
+## 2026-09-03T18:39:50Z — KO-226
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T18:40:35Z — KO-226
+MERGED to main.
+actual: 8.5 min · estimate: 25 min · rounds: 1
