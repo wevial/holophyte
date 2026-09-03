@@ -1280,10 +1280,6 @@ class ReviewRefTests(ConfigTestCase):
         publish.assert_not_called()
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ReportConfigTests(ConfigTestCase):
     """`[report] host_label`: a string shown wherever a host is rendered,
     absent by default."""
@@ -1317,3 +1313,7 @@ class ReportConfigTests(ConfigTestCase):
                 self.assertIn("[report]", message)
                 self.assertIn(key, message)
                 report.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

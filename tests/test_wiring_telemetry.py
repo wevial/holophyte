@@ -368,10 +368,6 @@ class ReportTests(ReportStoreCase):
         self.assertFalse(holophyte.target.state_dir(self.root / "elsewhere").exists())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class HostLabelTests(ReportStoreCase):
     """`[report] host_label`: the rendering names the writer, not the machine.
 
@@ -423,3 +419,7 @@ class HostLabelTests(ReportStoreCase):
                 "SELECT host FROM supervisorHeartbeats").fetchall(),
             [(hostname,)])
         self.assertNotEqual(hostname, self.LABEL)
+
+
+if __name__ == "__main__":
+    unittest.main()
