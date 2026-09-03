@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[139 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T18:17:33Z — KO-222
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- ticket_template.py [p0] Blocker: [ticket_template.py](/workspace/ticket_template.py:363) scans only unchecked criteria (`t.acceptance`). In a valid mixed checked/unchecked ticket, igno…
-
-## 2026-09-03T18:24:57Z — KO-222
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- ticket_template.py [p0] Blocker: [ticket_template.py](/workspace/ticket_template.py:82) rejects dot-prefixed path tokens. For `.cache/report.html` ignored by `.cache/*`, Git reports…
+[141 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T18:25:20Z — KO-222
 FAILED: swept by the supervisor in phase addressing: review_stuck (rounds 1 and 2 share 1.00 of their findings (0.5 threshold)); branch and worktree preserved for a human
@@ -752,3 +742,10 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T20:20:49Z — KO-230
 MERGED to main.
 actual: 17.0 min · estimate: 30 min · rounds: 2
+
+## 2026-09-03T20:26:37Z — KO-229
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T20:27:23Z — KO-229
+MERGED to main.
+actual: 6.5 min · estimate: 15 min · rounds: 1
