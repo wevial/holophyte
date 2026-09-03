@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[123 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T05:19:52Z — KO-217
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- holophyte/findings.py [p0] Blocker: FINDINGS run and review-round entries never render `writer-1`; they have no target/config seam or host output. The purported test only checks that the…
-- criteria:1 [p2] CRITERION 1: not met — FINDINGS renders neither the configured host label nor any host, contrary to the required labeled run and round lines. Given `[report] ho…
-
-## 2026-09-03T05:25:04Z — KO-217
-Round 3: changes_requested · reviewer codex-sol-medium · verify passed
+[125 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T05:25:04Z — KO-217
 FAILED: terminal adjudication: FAIL; branch task/ko-217-rendered-output-shows-a-host-l preserved at 339e6bb3fef2
@@ -751,3 +742,10 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T18:58:35Z — KO-223
 MERGED to main.
 actual: 10.3 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T19:07:27Z — KO-225
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T19:08:13Z — KO-225
+MERGED to main.
+actual: 9.6 min · estimate: 30 min · rounds: 1
