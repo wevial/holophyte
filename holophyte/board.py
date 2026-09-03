@@ -8,8 +8,10 @@ the loop's only writers of a Linear workflow state (`MIRROR_STATES` says which),
 `warn()` records a best-effort failure against the ticket's run,
 `failure_history()`, `escalation_comment()` and `escalate()` park a ticket whose
 failed runs reached `MAX_FAILED_RUNS`, `close_out_failure()` ends a failed run
-the one way the factory ends them, and `ledger()` archives one record as a
-comment on the ticket. Beyond the standard library it imports `store` and
+the one way the factory ends them, `ledger()` archives one record as a
+comment on the ticket, and `file_ticket()` is `--file-ticket`'s body: a
+validated markdown file becomes a Linear issue and is validated again as
+stored. Beyond the standard library it imports `store` and
 `store.read` for the rows, `ticket_template` for the claim-time body gate,
 `warn_on_run` from `holophyte.runs` and `refresh_findings` from
 `holophyte.findings`.
@@ -17,6 +19,9 @@ comment on the ticket. Beyond the standard library it imports `store` and
 Fifth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import sys
+from pathlib import Path
+
 import store
 import store.read
 import ticket_template
@@ -537,3 +542,61 @@ def ledger(provider, task_id, entry):
         provider.comment(task_id, f"**{ts}**\n\n{entry}")
     except Exception as e:
         print(f"[holo2] board comment failed ({e}); record kept in the store")
+
+
+# --- Operator command: filing a ticket from a file --------------------------
+
+def _ticket_problems(text, repo):
+    """The blocking template violations of `text`, checked against `repo`."""
+    return ticket_template.blocking(
+        ticket_template.validate(ticket_template.parse(text), repo=repo))
+
+
+def file_ticket(target, path, state, board, out=None):
+    """`--file-ticket`'s whole body: validate `path`, create the issue in the
+    target's `board`, relate it, read it back and validate that.
+
+    Returns 0 with the filed line printed, 1 with the first problem printed
+    and nothing created when the file fails validation, and 2 with the
+    identifier *and* the first problem printed when the body Linear stored
+    fails it: the ticket exists then, and the operator has to fix it there,
+    so its identifier is printed before the problem and is never lost.
+
+    The re-read is the point of the command. Every ticket the loop refused
+    as `needs_spec` this week was valid on disk and broken in transfer -- a
+    client rewriting bold and autolinks -- so the file is validated twice,
+    once as written and once as Linear gives it back, and only the second
+    pass says the transfer was clean.
+
+    `board` is the target's `[board]` pair (`project_id`, `team`), resolved
+    by `cli()` before the file is read: a target with no board exits there,
+    naming the key. The module is imported here rather than at the top, the
+    way `provider.LinearProvider` does it: the loop's other paths through
+    this module never file a ticket.
+    """
+    import linear_provider
+
+    out = out or sys.stdout
+    text = Path(path).read_text()
+    ticket = ticket_template.parse(text)
+    problems = _ticket_problems(text, target.path)
+    if problems:
+        print(f"[holo2] {path}: {problems[0]}", file=out)
+        return 1
+    issue = linear_provider.create_issue(
+        board.project_id, board.team, ticket.title, text,
+        ticket.estimate_min, state)
+    for blocker in ticket.depends_on or []:
+        linear_provider.add_blocker(issue["id"], blocker)
+    identifier = issue["identifier"]
+    detail = f"{state}, {ticket.estimate_min} min"
+    if ticket.depends_on:
+        detail += f", blocked by {', '.join(ticket.depends_on)}"
+    print(f"[holo2] filed {identifier}: {ticket.title} ({detail})", file=out)
+    stored = _ticket_problems(
+        linear_provider.fetch_description(identifier), target.path)
+    if stored:
+        print(f"[holo2] {identifier}: as stored by Linear, {stored[0]}",
+              file=out)
+        return 2
+    return 0

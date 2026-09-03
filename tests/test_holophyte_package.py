@@ -136,6 +136,7 @@ DEFINED = {
         "escalate",
         "escalation_comment",
         "failure_history",
+        "file_ticket",
         "ledger",
         "merge_drift",
         "mirror_key",
