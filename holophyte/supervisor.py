@@ -32,6 +32,7 @@ import threading
 from pathlib import Path
 from time import time
 
+import review_runner
 import store
 import store.read
 from holophyte.board import close_out_failure
@@ -528,11 +529,16 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
 
     A target with no store has no runs to sweep and is reported rather than
     created, the way `--report` answers the same mistake.
+
+    The `review containers` section comes first, so the run summary stays
+    the last line: it asks Docker rather than the store, and a reviewer
+    leaked by a loop that died is the one thing here the store cannot see.
     """
     out = out or sys.stdout
     if conn is None and not target.store_path.exists():
         print(f"[holo2] no store at {target.store_path}", file=out)
         return
+    print("\n".join(review_container_lines(act)), file=out)
     owned = conn is None
     conn = conn if conn is not None else open_store(target)
     try:
@@ -544,6 +550,37 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
     finally:
         if owned:
             conn.close()
+
+
+def review_container_lines(act=False):
+    """The `review containers` section: strays listed, and removed when `act`.
+
+    A review container is removed by the loop that started it, on exit or on
+    a stop signal; one still running after its scratch directory is gone
+    belongs to a loop that died some other way (SIGKILL, a host reset) and
+    holds two CPUs, 2 GB and a Codex session until something removes it. A
+    container whose scratch directory still exists is a live review and is
+    never touched. Without a `docker` to ask, the section says the check was
+    skipped rather than claiming a clean host.
+    """
+    try:
+        strays = review_runner.stray_containers()
+    except review_runner.ReviewBoundaryError as e:
+        return [f"review containers: skipped ({e})"]
+    if not strays:
+        return ["review containers: none stray"]
+    lines = ["review containers:"]
+    for name in strays:
+        if not act:
+            lines.append(f"  stray {name}")
+            continue
+        try:
+            review_runner._remove_container(name)
+        except review_runner.ReviewBoundaryError as e:
+            lines.append(f"  stray {name}: {e}")
+        else:
+            lines.append(f"  removed stray {name}")
+    return lines
 
 
 # --- the supervisor loop --------------------------------------------------------

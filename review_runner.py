@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -17,6 +20,12 @@ ROOT = Path(__file__).resolve().parent
 IMAGE = "holophyte-reviewer:ubuntu24.04-v1"
 PROFILE = "codex-sol-medium"
 SCRATCH_ROOT = Path.home() / ".cache" / "holophyte" / "reviews"
+SCRATCH_PREFIX = "review."
+CONTAINER_PREFIX = "holophyte-review-"
+# The signals a loop stops on that still let a handler run. A container the
+# `finally` below would have removed must not outlive a process that never
+# reached it; SIGKILL cannot be caught, and the sweep answers that case.
+REMOVAL_SIGNALS = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
 CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 CODEX_FILES = ("codex", "codex-code-mode-host")
@@ -270,6 +279,68 @@ def _remove_container(name: str) -> None:
         )
 
 
+@contextlib.contextmanager
+def _removing_on_signal(name: str):
+    """Remove container `name` if a stop signal arrives inside the block.
+
+    Each handler removes the container, then restores the default disposition
+    and re-sends the signal to this process, so the loop still ends by the
+    signal it was sent. The handlers it displaced come back on exit, so
+    nothing changes outside the review window. Signals can only be installed
+    from the main thread; a review run anywhere else keeps the `finally` path
+    alone.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def handler(signum, frame):
+        _remove_container(name)
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    previous = {sig: signal.signal(sig, handler) for sig in REMOVAL_SIGNALS}
+    try:
+        yield
+    finally:
+        for sig, old in previous.items():
+            signal.signal(sig, old)
+
+
+def _docker() -> str:
+    docker = shutil.which("docker")
+    if not docker:
+        raise ReviewBoundaryError("no docker on PATH")
+    return docker
+
+
+def stray_containers() -> list[str]:
+    """Running review containers whose scratch directory no longer exists.
+
+    A review's container is named after its scratch directory, which the
+    process removes on its way out; a running container without one belongs
+    to a loop that is gone. Raises when there is no `docker` to ask or it
+    does not answer, so a caller can say the check was skipped rather than
+    report a clean host it never looked at.
+    """
+    result = subprocess.run(
+        [_docker(), "ps", "--filter", f"name={CONTAINER_PREFIX}",
+         "--format", "{{.Names}}"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode:
+        raise ReviewBoundaryError(
+            f"docker ps failed ({result.returncode}): "
+            f"{(result.stderr or result.stdout).strip()}")
+    names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return [
+        name for name in names
+        if name.startswith(CONTAINER_PREFIX)
+        and not (SCRATCH_ROOT / (SCRATCH_PREFIX + name[len(CONTAINER_PREFIX):])
+                 ).is_dir()
+    ]
+
+
 def run_review(
     *,
     repo: Path,
@@ -288,7 +359,8 @@ def run_review(
         raise ReviewBoundaryError("Codex CLI is not installed")
 
     SCRATCH_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with tempfile.TemporaryDirectory(prefix="review.", dir=SCRATCH_ROOT) as temporary:
+    scratch = tempfile.TemporaryDirectory(prefix=SCRATCH_PREFIX, dir=SCRATCH_ROOT)
+    with scratch as temporary:
         root = Path(temporary)
         staged = stage_candidate(repo, root / "candidate", base_sha, candidate_sha)
         home, toolchain = _prepare_runtime(root, CODEX_AUTH, Path(codex))
@@ -304,7 +376,8 @@ def run_review(
             gid=os.getgid(),
         )
         try:
-            result = _run(command, timeout=timeout)
+            with _removing_on_signal(name):
+                result = _run(command, timeout=timeout)
         finally:
             _remove_container(name)
             if _fingerprint(staged.path) != staged.fingerprint:
