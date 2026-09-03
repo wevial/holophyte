@@ -257,7 +257,32 @@ def reuse_leftover(target, wt, branch):
     return True, ""
 
 
-def run_task(  # noqa: C901 -- the loop body; follow-up: break up after the split (ticket TBD)
+def run_task(target, task, conn=None, run_id=None, provider=None):
+    """Run `task` through `_run_stages()`, and stop if the store ended the run.
+
+    The one catch for `store.RunEnded`. The supervisor's `act_on_trip()` --
+    or an operator's `--sweep --act` -- fails a run, releases its leases and
+    records the outcome while this loop is blocked in an agent call and
+    cannot know. When the agent returns, the loop's next `set_phase()` is
+    refused, and the refusal is the signal: run 39 (KO-213) went
+    `failed -> verifying -> reviewing` after its sweep and would have merged
+    under a row that said the work had failed. So the run stops here with
+    the sweep's verdict and nothing else: no further phase event, no board
+    push, no merge, and the worktree and branch are left exactly as they
+    are for the sweep's close-out to describe. `main()` counts the failure
+    off the row the sweep wrote, so no `RunFailure` is raised for it; the
+    result is whatever outcome the row records, which is `merged` only if
+    the ender said so.
+    """
+    try:
+        return _run_stages(target, task, conn, run_id, provider)
+    except store.RunEnded as ended:
+        print(f"[holo2] run {ended.run_id} was ended by the supervisor"
+              f" ({ended.outcome}: {ended.reason}); stopping")
+        return ended.outcome == "merged"
+
+
+def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the split (ticket TBD)
     target, task, conn=None, run_id=None, provider=None
 ):
     """task: dict from a provider — {id, title, verify, budget_min}.
