@@ -1832,6 +1832,13 @@ def _finding_keys(findings):
     return keys
 
 
+def _message_digest(finding):
+    """A finding's message normalised for comparison: lower-cased, whitespace
+    collapsed, digits kept -- the form `unparsed_path()` already digests, so
+    a reworded complaint reads as new and a rewrapped one does not."""
+    return " ".join(str(finding.get("message", "")).split()).lower()
+
+
 def findings_fingerprint(findings):
     """Hash a review round's `findings` into its stable fingerprint.
 
@@ -1875,12 +1882,25 @@ def findings_overlap(earlier, later):
     nothing: the sets are equal, and a `pass` after a `pass` is not the caller's
     stuck-review question. Argument order does not matter — the measure is
     symmetric; the names only say how it is usually read.
+
+    One exception to the key-only reading: when the two rounds together raise
+    a *single* key, they overlap only if their messages agree once normalised
+    (`_message_digest()`), else 0.0. A one-finding round is the common case
+    for a small ticket, and one coarse key -- a file cited without a line --
+    is all it takes for two different complaints to score 1.00 and end a
+    converging run. With two or more keys the reworded-complaint reasoning
+    above still holds and the plain Jaccard measure is kept; the fingerprint
+    is untouched either way.
     """
     earlier_keys = _finding_keys(earlier)
     later_keys = _finding_keys(later)
     union = earlier_keys | later_keys
     if not union:
         return 1.0
+    if len(union) == 1 and earlier and later:
+        earlier_messages = {_message_digest(f) for f in earlier}
+        later_messages = {_message_digest(f) for f in later}
+        return 1.0 if earlier_messages == later_messages else 0.0
     return len(earlier_keys & later_keys) / len(union)
 
 

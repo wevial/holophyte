@@ -117,6 +117,15 @@ def sanitize_findings(text, limit):
 FINDING_PATH_RE = re.compile(
     r"(?<![\w:/.\-])"
     r"([\w.\-]*/[\w.\-/]*\.\w+|[\w.\-/]*[\w\-]\.[A-Za-z]\w+)(?::(\d+))?")
+# A markdown link `[text](target)` as some reviewers cite a file: the target
+# is the citation, `path` or `path:line`, and the text is whatever the
+# reviewer chose to show. Read the target, not the text: matched against the
+# whole block, `FINDING_PATH_RE` takes the text first and never reaches the
+# `:line` in the target, so every finding in one file keyed alike. The target
+# may carry the reviewer's mount as a prefix; `WORKSPACE_PREFIX` is stripped
+# so the path is the repository's own.
+MD_LINK_TARGET_RE = re.compile(r"\[[^\]\n]*\]\(([^)\s]+)\)")
+WORKSPACE_PREFIX = "/workspace/"
 # An *explicit* severity marker, bracketed (`[P0]`, `(blocker)`) or opening the
 # line (`- BLOCKER: ...`). Only a marker moves a finding off the default: tone
 # is not severity, and a reviewer that sounds alarmed has not filed a p0.
@@ -229,7 +238,7 @@ def parse_findings(reply):
     # and read as a finding it would file the test as a blocker. Its lines
     # are dropped before the split; `criteria_findings()` reads them.
     for block in finding_blocks(CRITERION_LINE_RE.sub("", reply)):
-        match = FINDING_PATH_RE.search(block)
+        match = FINDING_PATH_RE.search(citation(block))
         listed = BLOCK_BREAK_RE.match(block) is not None
         if match is None and not listed:
             continue
@@ -244,6 +253,21 @@ def parse_findings(reply):
             finding["line"] = int(line)
         findings.append(finding)
     return findings or [raw_finding(reply)]
+
+
+def citation(block):
+    """The text `FINDING_PATH_RE` reads a block's path from.
+
+    The target of the block's first markdown link when it has one, with the
+    reviewer's mount prefix removed; otherwise the whole block.
+    """
+    link = MD_LINK_TARGET_RE.search(block)
+    if link is None:
+        return block
+    target = link.group(1)
+    if target.startswith(WORKSPACE_PREFIX):
+        target = target[len(WORKSPACE_PREFIX):]
+    return target
 
 
 def finding_severity(block):

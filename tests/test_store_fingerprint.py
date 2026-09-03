@@ -159,6 +159,28 @@ class OverlapTests(unittest.TestCase):
         ]
         self.assertEqual(store.findings_overlap(ROUND, later), 0.5)
 
+    def test_one_key_rounds_overlap_only_when_the_complaint_agrees(self):
+        """Run 55: two one-finding rounds on the same file with no line
+        keyed alike and scored 1.00 although they complained about different
+        things. A single key is too coarse to read as 'the same round twice'
+        on its own; the message has to agree as well."""
+        first = finding("ticket_template.py", "p2", message=(
+            "scans only unchecked criteria (`t.acceptance`). In a valid mixed"
+            " checked/unchecked ticket, ignored paths and operator phrases in"
+            " `t.acceptance_done` are missed"))
+        second = finding("ticket_template.py", "p2", message=(
+            "rejects dot-prefixed path tokens. For `.cache/report.html`"
+            " ignored by `.cache/*`, Git reports it ignored, but"
+            " `path_candidates()` returns nothing and validation passes"))
+        self.assertEqual(store.findings_overlap([first], [second]), 0.0)
+
+        rewrapped = dict(first, message="  " + first["message"].upper()
+                         .replace(" ", "\n  "))
+        self.assertEqual(store.findings_overlap([first], [rewrapped]), 1.0)
+        self.assertEqual(
+            store.findings_fingerprint([first]),
+            store.findings_fingerprint([second]))
+
     def test_repeated_round_overlaps_completely(self):
         """The same findings twice is total overlap — §6's stuck review."""
         self.assertEqual(store.findings_overlap(ROUND, list(reversed(ROUND))), 1.0)
