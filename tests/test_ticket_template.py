@@ -371,6 +371,16 @@ GITIGNORED_CRITERION = FILLED.replace(
     "- [ ] Given 3 orders, when GET /orders.csv, then 4 lines including header.",
     "- [ ] Given 3 orders, when exported, then `artifacts/report.html` lists "
     "them.")
+# Criterion 1 is already checked off and names the ignored path; criterion 2
+# is still open and reads as a post-merge witness. Both keep their document
+# numbers.
+MIXED_CHECKED_CRITERIA = FILLED.replace(
+    "- [ ] Given 3 orders, when GET /orders.csv, then 4 lines including header.",
+    "- [x] Given 3 orders, when exported, then `artifacts/report.html` lists "
+    "them.").replace(
+    "- [ ] Given no orders, when GET /orders.csv, then only the header row.",
+    "- [ ] Given no orders, when checked after the merge, then only the "
+    "header row.")
 TRACKED_CRITERION = FILLED.replace(
     "- [ ] Given 3 orders, when GET /orders.csv, then 4 lines including header.",
     "- [ ] Given 3 orders, when `src/lotuspod/cli.py` runs, then 4 lines.")
@@ -405,6 +415,15 @@ class GitignoredPathTests(unittest.TestCase):
         self.assertIn("INVALID", r.stdout)
         self.assertIn("gitignored path in Acceptance criteria #1: "
                       "artifacts/report.html", r.stdout)
+
+    def test_checked_off_criteria_are_scanned_under_their_document_number(self):
+        problems = tt.validate(tt.parse(MIXED_CHECKED_CRITERIA), repo=self.repo)
+        self.assertIn("gitignored path in Acceptance criteria #1: "
+                      "artifacts/report.html", problems)
+        self.assertIn(
+            f"{tt.ADVISORY_PREFIX}criterion 2 reads as an operator or "
+            "post-merge witness; the reviewer can only witness the "
+            "candidate branch", problems)
 
     def test_unignored_path_reports_no_path_problem(self):
         r = self.run_cli(TRACKED_CRITERION, "--repo", str(self.repo))

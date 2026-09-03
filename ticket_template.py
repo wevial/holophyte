@@ -131,7 +131,9 @@ def _list_items(body):
 
 
 def _criteria(body):
-    """Acceptance-criteria list entries as (unchecked, checked, other).
+    """Acceptance-criteria list entries as (unchecked, checked, other,
+    checkboxes) -- the last being every "- [ ]"/"- [x]" entry in document
+    order, so a rule can name a criterion by the number the author sees.
 
     "other" is every list entry that is not a "- [ ]"/"- [x]" checkbox — a
     plain bullet, a numbered item. The author wrote those as criteria, so
@@ -139,7 +141,7 @@ def _criteria(body):
     validate clean; validate() counts them toward the cap and rejects their
     form instead.
     """
-    unchecked, checked, other = [], [], []
+    unchecked, checked, other, boxes = [], [], [], []
     for line in body.splitlines():
         s = line.strip()
         item = LIST_ITEM_RE.match(s)
@@ -148,11 +150,13 @@ def _criteria(body):
         done, todo = CHECKED_RE.match(s), UNCHECKED_RE.match(s)
         if todo:
             unchecked.append(_clean(todo.group(1)))
+            boxes.append(unchecked[-1])
         elif done:
             checked.append(_clean(done.group(1)))
+            boxes.append(checked[-1])
         else:
             other.append(_clean(item.group(1)))
-    return unchecked, checked, other
+    return unchecked, checked, other, boxes
 
 
 def _fenced_lines(body):
@@ -220,6 +224,7 @@ class Ticket:
         self.acceptance = []
         self.acceptance_done = []
         self.acceptance_other = []
+        self.acceptance_boxes = []  # checked and unchecked, document order
         self.verify_commands = []
         self.contract_checks = []
         self.notes = []
@@ -263,8 +268,8 @@ def parse(text):
     t.what, t.why, t.how = kv.get("What", ""), kv.get("Why", ""), kv.get("How", "")
     t.in_scope = _list_items(t.sections.get("In scope", ""))
     t.out_of_scope = _list_items(t.sections.get("Out of scope", ""))
-    t.acceptance, t.acceptance_done, t.acceptance_other = _criteria(
-        t.sections.get("Acceptance criteria", ""))
+    (t.acceptance, t.acceptance_done, t.acceptance_other,
+     t.acceptance_boxes) = _criteria(t.sections.get("Acceptance criteria", ""))
     t.verify_commands = _verify_commands(t.sections.get("Verify command(s)", ""))
     t.contract_checks = _contract_checks(t.sections.get("Contract checks", ""))
     t.notes = _list_items(t.sections.get("Implementation notes", ""))
@@ -362,8 +367,9 @@ def path_candidates(text):
 
 def _witnessable_texts(t):
     """The (label, text) fields whose paths the reviewer must be able to
-    reach on the candidate branch."""
-    for i, ac in enumerate(t.acceptance, 1):
+    reach on the candidate branch. Checked-off criteria count too: they are
+    still part of the contract, and skipping them would shift the numbers."""
+    for i, ac in enumerate(t.acceptance_boxes, 1):
         yield f"Acceptance criteria #{i}", ac
     for cmd in t.verify_commands:
         yield "verify command", cmd
@@ -407,7 +413,7 @@ def _operator_witness_advisories(t):
     """An advisory per acceptance criterion phrased as something only an
     operator, a screen, or main-after-the-merge could witness."""
     out = []
-    for i, ac in enumerate(t.acceptance, 1):
+    for i, ac in enumerate(t.acceptance_boxes, 1):
         low = ac.lower()
         if any(phrase in low for phrase in OPERATOR_WITNESS_PHRASES):
             out.append(f"{ADVISORY_PREFIX}criterion {i} reads as an operator "
