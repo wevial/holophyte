@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[131 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T15:47:38Z — KO-218
-MERGED to main.
-actual: 18.2 min · estimate: 30 min · rounds: 2
-
-## 2026-09-03T15:54:39Z — KO-219
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[133 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T15:55:24Z — KO-219
 MERGED to main.
@@ -752,3 +745,10 @@ Round 3: changes_requested · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T19:33:58Z — KO-227
 FAILED: terminal adjudication: FAIL; branch task/ko-227-readme-is-the-front-door-the-m preserved at 22b46360eb22
 actual: 17.4 min · estimate: 30 min · rounds: 3
+
+## 2026-09-03T19:40:01Z — KO-228
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T19:40:47Z — KO-228
+MERGED to main.
+actual: 5.1 min · estimate: 10 min · rounds: 1
