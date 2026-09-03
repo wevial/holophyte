@@ -93,7 +93,7 @@ query($project: String!, $after: String) {
       pageInfo { hasNextPage endCursor }
       nodes {
         identifier id title description
-        estimate
+        estimate priority
         state { type name }
         relations { nodes { type relatedIssue { identifier state { type } } } }
       }
@@ -182,7 +182,8 @@ def parse_task(issue):
                          *parsed.acceptance_other],
             "contracts": parsed.contract_checks,
             "body": desc,
-            "budget_min": int(issue.get("estimate") or 20)}
+            "budget_min": int(issue.get("estimate") or 20),
+            "priority": issue.get("priority")}
 
 
 ISSUE_QUERY = """
@@ -247,8 +248,28 @@ def set_state(issue_id, state_name):
             f"Linear refused to move issue {issue_id} to {state_name!r}")
 
 
-def claim_next(skip=()):
-    """First ready issue (by identifier), parsed. None when there is none.
+# Linear's `priority` is 0 (none), 1 (urgent), 2 (high), 3 (medium), 4 (low).
+# The claim rank is that scale with the one wrinkle fixed: an unprioritised
+# issue is the *least* urgent, not the most, so 0 and an absent field sort
+# after 4 rather than before 1.
+PRIORITY_RANK = {1: 0, 2: 1, 3: 2, 4: 3}
+UNPRIORITISED_RANK = 4
+
+
+def _claim_key(order):
+    """The sort key `claim_next()` orders the ready set by, per `order`."""
+    if order == "priority":
+        return lambda i: (PRIORITY_RANK.get(i.get("priority"), UNPRIORITISED_RANK),
+                          i["identifier"])
+    return lambda i: i["identifier"]
+
+
+def claim_next(skip=(), order="identifier"):
+    """First ready issue, parsed. None when there is none.
+
+    `order` is `[loop] order`: `"identifier"` (the default) offers the lowest
+    identifier; `"priority"` offers the most urgent Linear priority first,
+    identifier ascending within a priority and unprioritised issues last.
 
     Claiming no longer moves the issue to In Progress here. The claim's status
     change belongs to the store — the loop transitions its mirror to
@@ -266,7 +287,7 @@ def claim_next(skip=()):
     ready = [i for i in list_ready_issues() if i["identifier"] not in skip]
     if not ready:
         return None
-    issue = sorted(ready, key=lambda i: i["identifier"])[0]
+    issue = min(ready, key=_claim_key(order))
     task = parse_task(issue)
     print(f"[holo2] claimed {task['id']}: {task['title']} "
           f"(budget {task['budget_min']} min)")

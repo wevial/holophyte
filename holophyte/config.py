@@ -454,11 +454,21 @@ def sweep_config(target):
 # Escalation (`MAX_FAILED_RUNS`) is untouched: a ticket that keeps failing
 # still parks itself; this knob only decides whether one failure stops the
 # whole queue.
+#
+# `order` is which ready ticket the loop claims first. `"identifier"` is the
+# loop as it has always been: lowest identifier first. `"priority"` claims
+# the most urgent Linear priority first (1 before 2 before 3 before 4, then
+# unprioritised), identifier ascending within a priority -- the policy for a
+# queue with more than one author, where a P1 filed after ten P3s should not
+# wait behind all of them. The file board has no priority and orders by
+# identifier under either value.
 LOOP_KEYS = {
     "stop_on_failure": True,
+    "order": "identifier",
 }
+LOOP_ORDERS = ("identifier", "priority")
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
-LoopConfig = collections.namedtuple("LoopConfig", ("stop_on_failure",))
+LoopConfig = collections.namedtuple("LoopConfig", ("stop_on_failure", "order"))
 
 
 def loop_config(target):
@@ -469,9 +479,11 @@ def loop_config(target):
     means. `stop_on_failure` is a boolean, and only a boolean -- `"yes"`,
     `1` and `"false"` are all truthy strings or numbers TOML never meant as
     the answer, and a value the factory quietly read as one would run a
-    night nobody chose. The refusal names the table, the key and the
-    constraint, like a bad `[supervisor]` threshold. Keys this version does
-    not know are refused by `check_config_keys()`.
+    night nobody chose. `order` is one of `LOOP_ORDERS`, and only one of
+    those -- `"urgent"` or `1` names no sort the loop has. The refusal names
+    the table, the key and the constraint, like a bad `[supervisor]`
+    threshold. Keys this version does not know are refused by
+    `check_config_keys()`.
     """
     table = target.config().get("loop", {})
     if not isinstance(table, dict):
@@ -481,9 +493,14 @@ def loop_config(target):
     values = {}
     for key, default in LOOP_KEYS.items():
         value = table.get(key, default)
-        if not isinstance(value, bool):
+        if isinstance(default, bool) and not isinstance(value, bool):
             raise SystemExit(
                 f"[holo2] {target.config_path}: [loop] {key} must be a boolean "
                 f"(true or false), got {value!r}")
+        if key == "order" and value not in LOOP_ORDERS:
+            allowed = " or ".join(f'"{o}"' for o in LOOP_ORDERS)
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [loop] {key} must be one of "
+                f"{allowed}, got {value!r}")
         values[key] = value
     return LoopConfig(**values)

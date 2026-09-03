@@ -850,7 +850,9 @@ def main(target, provider):
     repeat. The phases are the plain functions below, called in the order
     they ran when this was one function (KO-211)."""
     restart_after_merge = self_hosted(target)
-    stop_on_failure = loop_config(target).stop_on_failure
+    knobs = loop_config(target)
+    stop_on_failure = knobs.stop_on_failure
+    order = knobs.order
     # Whether any run this pass failed, for the exit code when the loop was
     # told to go on past failures: the shell still sees a nonzero status for
     # a night that was not clean.
@@ -870,7 +872,7 @@ def main(target, provider):
         # ticket forever.
         skip = set()
         while True:
-            task = provider.claim_next(skip=skip)
+            task = provider.claim_next(skip=skip, order=order)
             if not task:
                 # The exit note, in the store before it is on the terminal:
                 # a loop that was re-exec'd and found nothing to claim ends
