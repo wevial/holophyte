@@ -1,9 +1,10 @@
 """The command line: `cli()` parses the arguments and runs the mode they name.
 
-`--report`, `--sweep [--act]`, `--supervise` and the loop itself dispatch from
-here to `holophyte.loop` and `holophyte.supervisor`; the `Target` is built
-once from the command line and handed down, and the board (`LinearProvider`)
-is built here and never reached for by name below. Importing this module
+`--report`, `--sweep [--act]`, `--supervise`, `--serve HOST:PORT` and the loop
+itself dispatch from here to `holophyte.loop`, `holophyte.supervisor` and
+`holophyte.serve`; the `Target` is built once from the command line and handed
+down, and the board (`LinearProvider`) is built here and never reached for by
+name below. Importing this module
 locates no target, reads no config and touches no `HOLOPHYTE_HOME`.
 
 Seventh and last slice of the phase-2 module split; moved verbatim from
@@ -21,6 +22,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.loop import check_worktree_setup, main, report
+from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.supervisor import (
     SupervisorHeld,
     supervise,
@@ -29,6 +31,15 @@ from holophyte.supervisor import (
 )
 from holophyte.target import Target
 from provider import LinearProvider
+
+
+def serve_address(text):
+    """`--serve`'s argparse type: the address as typed, once it parses."""
+    try:
+        parse_address(text)
+    except ValueError as bad:
+        raise argparse.ArgumentTypeError(str(bad)) from None
+    return text
 
 
 def cli(argv=None):
@@ -68,6 +79,16 @@ def cli(argv=None):
              "sweep_interval_sec, default %ds) until SIGINT/SIGTERM, as the "
              "target's one supervisor: a second one for the same target "
              "exits naming the first" % SUPERVISE_INTERVAL_SEC)
+    # The bind address is required and explicit: a default would pick an
+    # interface nobody named, and a read daemon on the wrong one is either
+    # unreachable or public. The value is checked while parsing, so a port
+    # that is not a number is a usage error naming the shape, not a bind
+    # failure later.
+    modes.add_argument(
+        "--serve", metavar=ADDRESS_SHAPE, type=serve_address,
+        help="answer GET /status as JSON on %s until SIGINT/SIGTERM; reads "
+             "the store through a read-only connection per request and "
+             "writes nothing" % ADDRESS_SHAPE)
     # Not a mode of its own: it says what `--sweep` does with what it finds,
     # so it is refused rather than ignored anywhere else. Silently doing
     # nothing would be the worse answer for the operator who typed
@@ -99,6 +120,10 @@ def cli(argv=None):
     report_config(target)
     if args.report:
         return report(target)
+    # Same window as `--report`: a read-only daemon calls nobody, so no board
+    # is built and no route has to resolve.
+    if args.serve is not None:
+        return serve(target, args.serve)
     # The board, built once here and handed down: nothing below reaches for
     # Linear by name. Construction touches neither the network nor the
     # module's configuration, so a read-only sweep still calls nobody; the

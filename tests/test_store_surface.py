@@ -81,6 +81,9 @@ EXPECTED_READ = [
     "review_rounds",
     "run_snapshot",
     "strike",
+    # KO-218: the `serve` daemon's supervisor read, so it needs nothing from
+    # `store` itself.
+    "supervisor_beat",
     "ticket_by_id",
 ]
 
