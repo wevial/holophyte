@@ -104,6 +104,8 @@ class RenderTests(unittest.TestCase):
 
     def test_detail_rows_are_inline_under_their_target_not_submenus(self):
         lines = render_cli("idle").splitlines()
+        # `---` is SwiftBar's title/body delimiter and separator syntax, not
+        # the `--` submenu prefix; a plugin cannot render without it.
         submenu = [x for x in lines if x.startswith("--") and x != "---"]
         self.assertEqual(submenu, [])
         main_row = lines.index(next(x for x in lines if x.startswith("idle · writer")))
