@@ -827,6 +827,33 @@ def set_phase(conn, run_id, phase, note=None, now=None):
     return previous
 
 
+def heartbeat(conn, run_id, now=None):
+    """Stamp `lastHeartbeat` on the live run `run_id`; return True if it did.
+
+    The one `lastHeartbeat` writer that is not a stage boundary. `set_phase()`
+    moves the heartbeat only when the phase moves, so a loop waiting on a
+    30-minute implementer was silent for the whole wait and the supervisor
+    read that silence as a dead worker (KO-212, run 39). This is the beat the
+    loop sends on a timer while it waits: one UPDATE of one column, no phase
+    change and no `runEvents` row, because a heartbeat is not narrative --
+    a stream with a row every few minutes saying "still here" is a stream
+    nobody can read the run off any more.
+
+    A run with `endedAt` stamped is left exactly as it is, columns and all:
+    the beat thread outlives its stage by a scheduling tick at most, and a
+    beat that landed on a released run would make an ended run look live to
+    a `--report` or a sweep that reads the heartbeat. `now` is epoch
+    milliseconds, defaulting to the clock. Returns whether a row moved.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        cur = conn.execute(
+            "UPDATE runs SET lastHeartbeat = ? WHERE id = ? AND endedAt IS NULL",
+            (now, run_id))
+    return cur.rowcount == 1
+
+
 def run_phase(conn, run_id):
     """Return the phase run `run_id` is in.
 

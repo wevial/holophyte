@@ -48,8 +48,10 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -1298,3 +1300,57 @@ class SelfHostingTests(LoopFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeartbeatTests(LoopFixture):
+    """The loop beats while an agent runs, so a slow agent is not a dead loop.
+
+    Run 39 (KO-212) was failed by the supervisor's stale-heartbeat sweep while
+    its implementer was still working: the heartbeat moved only at phase
+    boundaries. Here the implementer turn blocks for longer than the whole
+    stale budget, `heartbeat_stale_min * stale_strikes`, and sweeps the store
+    from inside its wait the way the supervisor would.
+    """
+
+    def test_an_implementer_slower_than_the_stale_budget_is_not_tripped(self):
+        # 0.01 min is 600 ms; two strikes make a 1.2 s budget. The turn
+        # below sweeps every 400 ms for 2 s.
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
+        knobs = holophyte.config.sweep_config(self.tgt)
+        budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
+        db, tgt = self.db, self.tgt
+        sightings = []
+
+        class SlowCommit(Commit):
+            """An implementer that works past the stale budget, sweeping the
+            store as it goes, then commits like `Commit`."""
+
+            def play(self, cwd, turn):
+                conn = store.open(str(db))
+                try:
+                    deadline = time.monotonic() + budget_s * 5 / 3
+                    while time.monotonic() < deadline:
+                        time.sleep(0.4)
+                        result = holophyte.supervisor.sweep(
+                            tgt, conn, int(time.time() * 1000), knobs=knobs)
+                        sightings.append((
+                            result.trips,
+                            conn.execute("SELECT phase, lastHeartbeat FROM"
+                                         " runs").fetchone()))
+                finally:
+                    conn.close()
+                return super().play(cwd, turn)
+
+        fake, guard = self.loop(SlowCommit("the slow work"), APPROVE)
+
+        self.assertEqual(guard.spawned, [])
+        self.assertGreaterEqual(len(sightings), 4, sightings)
+        self.assertEqual([trips for trips, _ in sightings if trips], [])
+        # The heartbeat moved during the turn while the phase did not: the
+        # beat, not a stage boundary, kept the run alive.
+        phases = {phase for _, (phase, _) in sightings}
+        beats = [beat for _, (_, beat) in sightings]
+        self.assertEqual(phases, {"working"})
+        self.assertGreater(beats[-1], beats[0])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertIn("the slow work", self.subjects())
