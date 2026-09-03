@@ -306,5 +306,12 @@ def comment(task_id, body):
 
 
 if __name__ == "__main__":
-    t = claim_next()
-    print(t)
+    # Run as a script there is no target config to read `[board]` from, so
+    # the board comes from the environment (or the `.env` beside this file),
+    # the same pair `board_config()` falls back to.
+    _project_id = _load_env_var("HOLO2_PROJECT_ID")
+    _team = _load_env_var("HOLO2_TEAM")
+    if not (_project_id and _team):
+        raise SystemExit("[holo2] linear_provider.py needs HOLO2_PROJECT_ID "
+                         "and HOLO2_TEAM in the environment or .env")
+    print(claim_next(_project_id, _team))
