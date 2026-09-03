@@ -382,6 +382,28 @@ class ReviewRoundRowTests(unittest.TestCase):
                               "found: tests/test_gates.py::VerifyGateTests::"
                               "test_cap_reaps", finding["message"])
 
+    def test_a_witness_reaching_outside_the_worktree_is_missing(self):
+        """A real test that lives outside the candidate worktree — named by
+        an absolute path or through `..` — witnesses nothing: only the
+        branch under review counts."""
+        outside = Path(tempfile.mkdtemp(prefix="outside-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside))
+        (outside / "named_witness.py").write_text(
+            "def test_fiction():\n    pass\n")
+        worktree = Path(tempfile.mkdtemp(prefix="worktree-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(worktree))
+        escape = Path("..") / outside.name / "named_witness.py"
+
+        for path in (str(outside / "named_witness.py"), str(escape)):
+            with self.subTest(path=path):
+                references = holophyte.review.test_references(
+                    f"{path}::test_fiction")
+                self.assertEqual(references, [(path, None, "test_fiction")])
+                missing = holophyte.review.missing_witnesses(
+                    references, worktree)
+                self.assertEqual(len(missing), 1)
+                self.assertIn("outside the worktree", missing[0])
+
     def test_a_witness_naming_a_check_rather_than_a_test_is_left_alone(self):
         self.loop(
             "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"

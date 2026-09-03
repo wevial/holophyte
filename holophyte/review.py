@@ -326,7 +326,10 @@ def missing_witnesses(references, root):
     missing = []
     for path, cls, name in references:
         spec = f"{path}::{cls}::{name}" if cls else f"{path}::{name}"
-        file = Path(root) / path
+        file = _inside(root, path)
+        if file is None:
+            missing.append(f"{spec} (outside the worktree: {path})")
+            continue
         if not file.is_file():
             missing.append(f"{spec} (no file {path})")
             continue
@@ -341,6 +344,15 @@ def missing_witnesses(references, root):
         elif not found:
             missing.append(f"{spec} (no def {name} in class {cls})")
     return missing
+
+
+def _inside(root, path):
+    """`root/path` when it resolves within `root`, else None: a witness may
+    only name a test on the candidate branch, never an absolute path or a
+    `..` escape into some other checkout."""
+    base = Path(root).resolve()
+    file = (base / path).resolve()
+    return file if file == base or base in file.parents else None
 
 
 def _defines_in_class(lines, cls, name):
