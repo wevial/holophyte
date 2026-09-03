@@ -147,31 +147,29 @@ def icon_bytes(assets=None):
     return None
 
 
-def glyph(level, appearance, assets=None):
+def glyph(level, assets=None):
     """`(parameter, path)` for the title-line image, or `(None, None)`.
 
     Idle is the template glyph. Any other level is the pre-rendered variant
-    with the dot drawn at the glyph's top-right: white leaves for the dark
-    bar, black for the light one. SwiftBar sets `OS_APPEARANCE` to `Dark`
-    or `Light`; anything but `Dark` is treated as light. A missing variant
+    with the dot drawn at the glyph's top-right. One design per level:
+    macOS tints the menu bar from the wallpaper, not the system appearance,
+    and nothing SwiftBar passes says which, so the variant carries its own
+    contrast (white leaves with a thin dark outline). A missing variant
     yields `(None, None)` so the caller can fall back to the template.
     """
     assets = ASSETS if assets is None else Path(assets)
     if level == IDLE:
         path = assets / "menubar-template.pdf"
         return ("templateImage", path) if path.is_file() else (None, None)
-    bar = "dark" if appearance == "Dark" else "light"
-    path = assets / f"menubar-{bar}-{VARIANT[level]}.pdf"
+    path = assets / f"menubar-{VARIANT[level]}.pdf"
     return ("image", path) if path.is_file() else (None, None)
 
 
-def title(level, assets=None, appearance=None):
+def title(level, assets=None):
     """The title line. A variant image carries the dot itself; the coloured
     `●` text appears only in the fallback when the variant file is missing.
     """
-    if appearance is None:
-        appearance = os.environ.get("OS_APPEARANCE", "")
-    parameter, path = glyph(level, appearance, assets)
+    parameter, path = glyph(level, assets)
     if parameter == "image":
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
         return f" | image={encoded}"

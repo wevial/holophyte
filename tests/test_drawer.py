@@ -15,6 +15,7 @@ import http.server
 import importlib.util
 import io
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -41,11 +42,11 @@ def entry(name):
     return {"name": name, "url": name, "status": fixture(name)}
 
 
-def render_cli(*names):
+def render_cli(*names, env=None):
     out = subprocess.run(
         [sys.executable, str(SCRIPT), "--render",
          *(str(FIXTURES / f"{n}.json") for n in names)],
-        capture_output=True, text=True, check=True, cwd=ROOT)
+        capture_output=True, text=True, check=True, cwd=ROOT, env=env)
     return out.stdout
 
 
@@ -65,7 +66,7 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("●", lines[0])
         self.assertNotIn("templateImage=", lines[0])
         self.assertEqual(embedded(lines[0], "image="),
-                         (ROOT / "assets" / "menubar-light-ok.pdf").read_bytes())
+                         (ROOT / "assets" / "menubar-ok.pdf").read_bytes())
         self.assertNotIn("NEEDS YOU", "\n".join(lines))
         text = "\n".join(lines)
         self.assertIn("working · writer", text)
@@ -84,7 +85,7 @@ class RenderTests(unittest.TestCase):
     def test_stale_heartbeat_is_amber_and_named_in_needs_you(self):
         lines = render_cli("stale_heartbeat", "idle").splitlines()
         self.assertEqual(embedded(lines[0], "image="),
-                         (ROOT / "assets" / "menubar-light-warn.pdf").read_bytes())
+                         (ROOT / "assets" / "menubar-warn.pdf").read_bytes())
         needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
         block = lines.index(next(x for x in lines if "stale_heartbeat · writer" in x))
         self.assertLess(needs, block)
@@ -193,39 +194,41 @@ class RenderTests(unittest.TestCase):
         self.assertIn("2 targets · 2 hosts ·",
                       render_cli("idle", "idle_second_host"))
 
-    def test_title_picks_the_variant_by_level_and_bar_appearance(self):
+    def test_title_picks_the_variant_by_level_whatever_the_appearance(self):
         assets = ROOT / "assets"
         for level, name in ((drawer.WORKING, "ok"), (drawer.ATTENTION, "warn"),
                             (drawer.CRITICAL, "bad")):
-            for appearance, bar in (("Dark", "dark"), ("Light", "light"),
-                                    ("", "light")):
-                line = drawer.title(level, appearance=appearance)
-                self.assertNotIn("●", line)
-                self.assertNotIn("templateImage=", line)
-                self.assertNotIn("color=", line)
-                self.assertEqual(
-                    embedded(line, "image="),
-                    (assets / f"menubar-{bar}-{name}.pdf").read_bytes(),
-                    (level, appearance))
-        for appearance in ("Dark", "Light", ""):
-            line = drawer.title(drawer.IDLE, appearance=appearance)
+            line = drawer.title(level)
             self.assertNotIn("●", line)
-            self.assertNotIn(" image=", line)
-            self.assertTrue(embedded(line).startswith(b"%PDF"))
-        # The unset variable is light, read from the environment at render.
-        self.assertEqual(render_cli("working").splitlines()[0],
-                         drawer.title(drawer.WORKING, appearance=""))
+            self.assertNotIn("templateImage=", line)
+            self.assertNotIn("color=", line)
+            self.assertEqual(embedded(line, "image="),
+                             (assets / f"menubar-{name}.pdf").read_bytes(), level)
+        idle = drawer.title(drawer.IDLE)
+        self.assertNotIn("●", idle)
+        self.assertNotIn(" image=", idle)
+        self.assertTrue(embedded(idle).startswith(b"%PDF"))
+        # The bar's tint is not the system appearance, so the variable
+        # SwiftBar sets must not change the glyph: Dark, Light and unset
+        # all embed the same bytes.
+        warn = (assets / "menubar-warn.pdf").read_bytes()
+        for appearance in ("Dark", "Light", None):
+            env = {k: v for k, v in os.environ.items() if k != "OS_APPEARANCE"}
+            if appearance is not None:
+                env["OS_APPEARANCE"] = appearance
+            first = render_cli("stale_heartbeat", env=env).splitlines()[0]
+            self.assertEqual(embedded(first, "image="), warn, appearance)
 
     def test_missing_variant_falls_back_to_template_and_dot_text(self):
         pdf = (ROOT / "assets" / "menubar-template.pdf").read_bytes()
         with tempfile.TemporaryDirectory() as assets:
             (Path(assets) / "menubar-template.pdf").write_bytes(pdf)
-            line = drawer.title(drawer.CRITICAL, assets, appearance="Dark")
+            line = drawer.title(drawer.CRITICAL, assets)
             self.assertTrue(line.startswith("●"))
             self.assertIn(f"color={drawer.RED}", line)
             self.assertNotIn(" image=", line)
             self.assertEqual(embedded(line), pdf)
-            self.assertEqual(drawer.glyph(drawer.CRITICAL, "Dark", assets),
+            self.assertEqual(drawer.glyph(drawer.CRITICAL, assets),
                              (None, None))
 
     def test_title_embeds_pdf_then_1x_png_then_nothing(self):
@@ -289,7 +292,7 @@ class LiveTests(unittest.TestCase):
                 drawer.main(["--config", str(cfg)])
         lines = out.getvalue().splitlines()
         self.assertEqual(embedded(lines[0], "image="),
-                         (ROOT / "assets" / "menubar-light-bad.pdf").read_bytes())
+                         (ROOT / "assets" / "menubar-bad.pdf").read_bytes())
         needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
         self.assertEqual(lines[needs + 1], f"gone · unreachable | color={drawer.RED}")
         text = "\n".join(lines)

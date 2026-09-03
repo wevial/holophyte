@@ -53,17 +53,19 @@ vector PDF so it is crisp at any scale (SwiftBar sizes a base64 raster by
 its pixels, which is why the 36 px Retina PNG is never embedded). When every
 target is idle the title carries `menubar-template.pdf` as `templateImage=`,
 which macOS tints for the bar. Otherwise the state dot is drawn inside the
-image, at the glyph's top-right, so the title carries one of the six
+image, at the glyph's top-right, so the title carries one of the three
 pre-rendered variants as a plain `image=`:
 
 | file | when |
 |---|---|
 | `menubar-template.pdf` | idle (`templateImage=`) |
-| `menubar-dark-{ok,warn,bad}.pdf` | white leaves for the dark bar |
-| `menubar-light-{ok,warn,bad}.pdf` | black leaves for the light bar |
+| `menubar-{ok,warn,bad}.pdf` | white leaves with a thin dark outline |
 
-`dark`/`light` follows the `OS_APPEARANCE` variable SwiftBar sets for a
-plugin: `Dark` picks the dark set, any other value (or none) the light set.
+There is one design per level, not a dark and a light one: macOS tints the
+menu bar from the wallpaper behind it, not from the system appearance, and
+nothing SwiftBar passes to a plugin says what that tint is (`OS_APPEARANCE`
+reports the system setting, so a light system over a dark wallpaper band
+drew black leaves on a black bar). The outlined white glyph reads on both.
 If a variant file is missing (a partial checkout), the script falls back to
 the template glyph with a coloured `●` printed beside it, so state still
 shows. `ok`/`warn`/`bad` is the worst row of the menu:
