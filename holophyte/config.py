@@ -508,11 +508,12 @@ def loop_config(target):
 
 
 # What the factory prints where it would print the writer host's hostname:
-# the `host` column of `--report` and `--sweep`, the supervisor's startup
-# and refusal lines, and the FINDINGS window the loop commits to a public
-# repository. The column exists so a reader can tell which writer produced
-# a run when there is more than one; a stable label does that job without
-# naming a personal machine. The store keeps recording the real hostname
+# the `host` column of `--report` and `--sweep` and the supervisor's startup
+# and refusal lines. (The FINDINGS window the loop commits to a public
+# repository renders no host at all: its run and round entries never carried
+# one.) The column exists so a reader can tell which writer produced a run
+# when there is more than one; a stable label does that job without naming
+# a personal machine. The store keeps recording the real hostname
 # (`runs.host`, `supervisorHeartbeats.host`, the lock file), which the
 # supervisor compares against its own -- and the label stays out of the
 # store on purpose, so it can be renamed later without a migration.

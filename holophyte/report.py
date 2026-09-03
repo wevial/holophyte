@@ -129,9 +129,10 @@ def host_label(target, host):
     """A `host` column as a rendering shows it: the label, or `host_name()`.
 
     `[report] host_label` in `target`'s config replaces the hostname wherever
-    the factory renders one -- the report and sweep tables, the supervisor's
-    lines, the FINDINGS window a public repository commits -- while the store
-    goes on holding the real hostname for the supervisor's own-host checks.
+    the factory renders one -- the report and sweep tables and the
+    supervisor's lines; the FINDINGS window a public repository commits has
+    no host column to replace -- while the store goes on holding the real
+    hostname for the supervisor's own-host checks.
     With no label (or no `target`), this is `host_name(host)` exactly.
     """
     label = report_config(target).host_label if target is not None else None

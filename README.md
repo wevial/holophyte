@@ -408,9 +408,11 @@ host_label = "writer-1"
 
 Accepted keys: `host_label`.
 
-The `host` column of `--report` and `--sweep`, the supervisor's startup and
-refusal lines, and the `FINDINGS.md` window the loop commits all show the
-label in place of the hostname when it is set. The column exists so a reader
+The `host` column of `--report` and `--sweep` and the supervisor's startup
+and refusal lines show the label in place of the hostname when it is set.
+The `FINDINGS.md` window the loop commits renders no host: its run and round
+entries never carried one, so there is nothing there to relabel. The column
+of the report and sweep exists so a reader
 can tell which writer produced a run when there is more than one; a stable
 label does that job without naming a personal machine in a public repository.
 The store keeps recording the real hostname (`runs.host`,

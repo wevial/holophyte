@@ -379,7 +379,9 @@ class HostLabelTests(ReportStoreCase):
     merge, so the hostname the store records must not be what the factory
     prints. With the label set, every rendered host is the label; the store
     goes on holding the real hostname, which is what the supervisor's
-    own-host checks compare against.
+    own-host checks compare against. The FINDINGS window has no host column
+    (its run and round entries never carried one), so the only thing to
+    hold it to is that it does not start naming the machine.
     """
 
     LABEL = "writer-1"
@@ -398,6 +400,8 @@ class HostLabelTests(ReportStoreCase):
 
         hostname = socket.gethostname()
         self.assertNotIn(hostname, "\n".join(printed))
+        # FINDINGS renders no host column, so this is a guard against one
+        # arriving unlabelled, not a witness of relabelling.
         self.assertNotIn(hostname, rendered)
         # Every host column, the NULL row included: one label for the writer.
         self.assertEqual([line.split()[-1] for line in printed[1:4]],
