@@ -99,11 +99,11 @@ class ConformanceMixin:
     def comments_on(self, identifier):
         raise NotImplementedError
 
-    def claim(self, skip=()):
+    def claim(self, skip=(), **kwargs):
         # `linear_provider.claim_next()` prints the claim line; a passing
         # suite should not narrate it.
         with contextlib.redirect_stdout(io.StringIO()):
-            return self.provider.claim_next(skip=skip)
+            return self.provider.claim_next(skip=skip, **kwargs)
 
     def test_claim_offers_the_lowest_todo_identifier_and_honors_skip(self):
         self.seed("KO-2")
@@ -199,6 +199,16 @@ class FileProviderTests(ConformanceMixin, unittest.TestCase):
             return []
         return re.findall(r"^## \S+\n\n(.*?)\n\n", path.read_text(), re.S | re.M)
 
+    def test_priority_order_is_identifier_order_on_a_board_without_priority(self):
+        """`[loop] order = "priority"` against the file board: a ticket file
+        has no priority, so the keyword is accepted and the lowest identifier
+        is offered, exactly as under `"identifier"`."""
+        self.seed("KO-2")
+        self.seed("KO-1")
+
+        self.assertEqual(self.claim(order="priority")["id"], "KO-1")
+        self.assertEqual(self.claim(skip=("KO-1",), order="priority")["id"], "KO-2")
+
     def test_team_is_the_directory_name(self):
         self.assertEqual(self.provider.team, "board")
 
@@ -244,10 +254,12 @@ class FakeLinear:
         self.comments = []
         self.calls = []
 
-    def add(self, identifier, title, description, estimate=None, state="Todo"):
+    def add(self, identifier, title, description, estimate=None, state="Todo",
+            priority=0):
         self.issues[identifier] = {
             "identifier": identifier, "id": f"uuid-{identifier}",
             "title": title, "description": description, "estimate": estimate,
+            "priority": priority,
             "state": {"name": state, "type": STATE_TYPES[state]},
             "relations": {"nodes": []}}
 
@@ -309,15 +321,57 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         self.provider = board_seam.LinearProvider()
 
     def seed(self, identifier, state="Todo", **fields):
+        # `priority` is an issue field, not part of the body's template.
+        priority = fields.pop("priority", 0)
         title = fields.get("title", TITLE)
         self.board.add(identifier, title, ticket_body(**fields),
-                       estimate=fields.get("estimate", ESTIMATE), state=state)
+                       estimate=fields.get("estimate", ESTIMATE), state=state,
+                       priority=priority)
 
     def edit(self, identifier, body):
         self.board.issues[identifier]["description"] = body
 
     def comments_on(self, identifier):
         return [body for issue, body in self.board.comments if issue == identifier]
+
+    def test_priority_order_claims_the_most_urgent_first_and_unprioritised_last(self):
+        """`order="priority"`: Linear's 1 (urgent) before 3 (medium) before
+        0 (none), whatever the identifiers say -- KO-3 is the urgent one and
+        KO-2 the unprioritised one, and the claim walks 3, 1, 2."""
+        self.seed("KO-3", priority=1)
+        self.seed("KO-1", priority=3)
+        self.seed("KO-2", priority=0)
+
+        self.assertEqual(self.claim(order="priority")["id"], "KO-3")
+        self.assertEqual(self.claim(skip=("KO-3",), order="priority")["id"], "KO-1")
+        self.assertEqual(self.claim(skip=("KO-3", "KO-1"), order="priority")["id"],
+                         "KO-2")
+
+    def test_priority_order_breaks_ties_by_identifier(self):
+        self.seed("KO-2", priority=2)
+        self.seed("KO-1", priority=2)
+        self.seed("KO-3", priority=1)
+
+        self.assertEqual(self.claim(order="priority")["id"], "KO-3")
+        self.assertEqual(self.claim(skip=("KO-3",), order="priority")["id"], "KO-1")
+
+    def test_identifier_order_ignores_priority(self):
+        """The default, spelled out: a P1 filed after a P3 waits behind it."""
+        self.seed("KO-3", priority=1)
+        self.seed("KO-1", priority=3)
+
+        self.assertEqual(self.claim(order="identifier")["id"], "KO-1")
+        self.assertEqual(self.claim()["id"], "KO-1")
+
+    def test_the_ready_query_asks_for_priority(self):
+        """The sort is only as good as the field: the ready query names
+        `priority` so the fake's canned value is what the real board would
+        also return."""
+        self.seed("KO-1")
+        self.claim(order="priority")
+
+        asked = [query for query, _ in self.board.calls if "nin:" in query]
+        self.assertTrue(asked and all("priority" in q for q in asked))
 
     def test_team_is_the_team_the_state_lookup_asks_for(self):
         """`team` names the board the states are resolved in: the workflow

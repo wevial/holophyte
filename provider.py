@@ -28,6 +28,8 @@ boards hand over the same keys:
     criteria    every acceptance-criteria list entry, checked ones included
     contracts   the `## Contract checks` pairs, [] when the section is absent
     budget_min  the time box in minutes
+    priority    Linear's 0-4 priority integer on the Linear board (0/None
+                is unprioritised); the file board has no such field
 
 FileProvider's on-disk format
 -----------------------------
@@ -45,10 +47,11 @@ A ticket file's name has exactly one dot (`KO-12.md`), which is what keeps
 `KO-12.comments.md` from reading as a ticket called `KO-12.comments`. The
 directory's name is the board's `team`. `claim_next()` offers the lowest
 identifier -- plain string order, the order `linear_provider.claim_next()`
-sorts in -- whose state is `Todo` and not in `skip`. The file board has no
-blocking relations: a ticket that must wait is one a human leaves out of
-`Todo`. `budget_min` is the body's `Estimate: N min` line, or 20 without one;
-a file has no other estimate field.
+sorts in by default -- whose state is `Todo` and not in `skip`; a file has
+no priority, so `order="priority"` is accepted and orders the same way. The
+file board has no blocking relations: a ticket that must wait is one a human
+leaves out of `Todo`. `budget_min` is the body's `Estimate: N min` line, or
+20 without one; a file has no other estimate field.
 """
 from __future__ import annotations
 
@@ -74,8 +77,11 @@ class Provider(Protocol):
         """The board's identifier, recorded by `store.ensure_project()`."""
         ...
 
-    def claim_next(self, skip=()) -> dict | None:
-        """The first ready task whose `id` is not in `skip`; None when none."""
+    def claim_next(self, skip=(), order="identifier") -> dict | None:
+        """The first ready task whose `id` is not in `skip`; None when none.
+
+        `order` is `[loop] order`: `"identifier"` or `"priority"`. A board
+        without priorities orders by identifier under either value."""
         ...
 
     def fetch_task(self, issue_id) -> dict | None:
@@ -117,8 +123,8 @@ class LinearProvider:
     def team(self):
         return self._linear().TEAM
 
-    def claim_next(self, skip=()):
-        return self._linear().claim_next(skip=skip)
+    def claim_next(self, skip=(), order="identifier"):
+        return self._linear().claim_next(skip=skip, order=order)
 
     def fetch_task(self, issue_id):
         return self._linear().fetch_task(issue_id)
@@ -152,7 +158,9 @@ class FileProvider:
         if "." in identifier or not self._path(identifier).is_file():
             raise RuntimeError(f"no ticket {identifier!r} in {self.root}")
 
-    def claim_next(self, skip=()):
+    def claim_next(self, skip=(), order="identifier"):
+        # A ticket file has no priority field, so `order = "priority"` is
+        # identifier order here: the keyword is accepted, not acted on.
         for identifier in self._identifiers():
             if identifier in skip or self._state(identifier) != DEFAULT_STATE:
                 continue

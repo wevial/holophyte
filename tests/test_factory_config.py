@@ -255,12 +255,43 @@ class KnownKeyTests(ConfigTestCase):
 
 
 class LoopConfigTests(ConfigTestCase):
-    """`[loop] stop_on_failure`: a boolean, defaulting to today's stop."""
+    """`[loop] stop_on_failure`: a boolean, defaulting to today's stop.
+    `[loop] order`: `"identifier"` (the default) or `"priority"`."""
 
     def test_an_absent_table_stops_on_failure(self):
         self.locate()
 
         self.assertIs(holophyte.config.loop_config(self.tgt).stop_on_failure, True)
+
+    def test_an_absent_order_is_identifier_order(self):
+        self.locate()
+
+        self.assertEqual(holophyte.config.loop_config(self.tgt).order, "identifier")
+
+    def test_priority_is_read_as_priority_order(self):
+        self.locate('[loop]\norder = "priority"\n')
+
+        self.assertEqual(holophyte.config.loop_config(self.tgt).order, "priority")
+
+    def test_an_unknown_order_is_a_startup_error_naming_the_key_and_values(self):
+        """`"urgent"` names no sort the loop has and `1` is not a string:
+        startup refuses both, naming the key and the two values it takes,
+        before anything is claimed."""
+        for line in ('order = "urgent"', "order = 1", 'order = "Identifier"'):
+            with self.subTest(line=line):
+                target = self.locate(f"[loop]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[loop]", message)
+                self.assertIn("order", message)
+                self.assertIn('"identifier"', message)
+                self.assertIn('"priority"', message)
+                report.assert_not_called()
 
     def test_false_is_read_as_go_on(self):
         self.locate('[loop]\nstop_on_failure = false\n')

@@ -44,7 +44,7 @@ class StubProvider:
         self.states = []
         self.comments = []
 
-    def claim_next(self, skip=()):
+    def claim_next(self, skip=(), order="identifier"):
         self.claims += 1
         for i, task in enumerate(self.queue):
             if task["id"] not in skip:

@@ -39,7 +39,7 @@ class StubProvider:
         self.queue = list(tasks)
         self.states = []
 
-    def claim_next(self, skip=()):
+    def claim_next(self, skip=(), order="identifier"):
         """The first queued task the loop has not already refused.
 
         `skip` is honored rather than ignored because the real provider hands
