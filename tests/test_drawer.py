@@ -100,6 +100,7 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("●", first)
         self.assertNotIn("color=", first)
         self.assertIn("templateImage=", first)
+        self.assertIn("1 targets · 1 host ·", render_cli("idle").splitlines()[-1])
 
     def test_detail_rows_are_inline_under_their_target_not_submenus(self):
         lines = render_cli("idle").splitlines()

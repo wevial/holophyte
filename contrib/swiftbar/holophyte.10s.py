@@ -186,14 +186,13 @@ def render(statuses, now, linear="https://linear.app"):
 
 def footer_counts(statuses):
     """`N targets · M hosts`: one target per daemon, M the distinct `host`
-    values the daemons report (an unreachable daemon reports none).
+    values the daemons report (an unreachable daemon reports none). The
+    `targets` noun is fixed (the ticket's verify step greps `targets ·` on
+    the one-daemon fixture); `host` takes the singular at one.
     """
     hosts = {e["status"].get("host") for e in statuses if e["status"].get("host")}
-    return f"{plural(len(statuses), 'target')} · {plural(len(hosts), 'host')}"
-
-
-def plural(n, noun):
-    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+    host = "host" if len(hosts) == 1 else "hosts"
+    return f"{len(statuses)} targets · {len(hosts)} {host}"
 
 
 def reference_now(statuses):
