@@ -99,6 +99,10 @@ def status(target, now=None):
 class StatusHandler(BaseHTTPRequestHandler):
     """`GET /status` and nothing else: 404 for other paths, 405 otherwise.
 
+    "Otherwise" is every other method, HEAD and OPTIONS included: a client
+    that speaks anything but GET gets a JSON refusal it can parse, never
+    the library's HTML 501 page.
+
     Every answer is JSON with `Cache-Control: no-store`, the error ones
     included, so a client can parse whatever comes back. The default access
     log to stderr is silenced: the daemon shares a terminal with the loop,
@@ -119,7 +123,13 @@ class StatusHandler(BaseHTTPRequestHandler):
                           "path": self.path.split("?")[0]},
                     allow="GET")
 
-    do_POST = do_PUT = do_DELETE = do_PATCH = refuse
+    def __getattr__(self, name):
+        # `BaseHTTPRequestHandler` dispatches on `do_<METHOD>` and answers
+        # 501 HTML when the attribute is missing; here every method but GET
+        # is the same 405 JSON, whether or not the RFC names it.
+        if name.startswith("do_"):
+            return self.refuse
+        raise AttributeError(name)
 
     def answer(self, code, body, allow=None):
         payload = json.dumps(body).encode()

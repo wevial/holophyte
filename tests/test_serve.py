@@ -173,7 +173,7 @@ class StatusTests(ServeTestCase):
         self.assertIn(str(self.target), body["detail"])
         self.assertFalse(self.db.exists())
 
-    def test_an_unknown_path_is_404_and_a_write_method_is_405(self):
+    def test_an_unknown_path_is_404_and_any_other_method_is_405(self):
         self.seed()
         self.start()
 
@@ -183,11 +183,28 @@ class StatusTests(ServeTestCase):
         self.assertIn("error", body)
         self.assertEqual(body["path"], "/nope")
 
-        code, headers, body = self.request("POST", "/status")
-        self.assertEqual(code, 405)
-        self.assertEqual(headers["Content-Type"], "application/json")
-        self.assertEqual(headers["Allow"], "GET")
-        self.assertIn("error", body)
+        # Every method but GET, the ones `http.server` would otherwise answer
+        # with its own 501 HTML page included (OPTIONS, TRACE, an unknown one).
+        for method in ("POST", "OPTIONS", "TRACE", "BREW"):
+            with self.subTest(method=method):
+                code, headers, body = self.request(method, "/status")
+                self.assertEqual(code, 405)
+                self.assertEqual(headers["Content-Type"], "application/json")
+                self.assertEqual(headers["Allow"], "GET")
+                self.assertIn("error", body)
+                self.assertEqual(body["method"], method)
+
+        # HEAD too: `http.client` discards a HEAD body, so read the wire.
+        with socket.create_connection((self.host, self.port), timeout=10) as s:
+            s.sendall(b"HEAD /status HTTP/1.1\r\nHost: x\r\n"
+                      b"Connection: close\r\n\r\n")
+            raw = b""
+            while chunk := s.recv(4096):
+                raw += chunk
+        head, _, payload = raw.partition(b"\r\n\r\n")
+        self.assertTrue(head.startswith(b"HTTP/1.0 405 "), head)
+        self.assertIn(b"Content-Type: application/json", head)
+        self.assertIn("error", json.loads(payload))
 
 
 class CliTests(ServeTestCase):
