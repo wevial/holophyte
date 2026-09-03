@@ -245,6 +245,22 @@ class OracleTests(PopulatedStore):
         self.assertEqual(row.runId, self.live)
         self.assertIsNone(read.strike(self.conn, self.live2))
 
+    def test_supervisor_beat_agrees_with_latest_supervisor_heartbeat(self):
+        # Two watchers: the older pid beat last, so it is the row both reads
+        # must pick regardless of insertion order.
+        self.assertIsNone(read.supervisor_beat(self.conn))
+        store.record_supervisor_heartbeat(self.conn, 41, T0, now=T0 + MIN)
+        store.record_supervisor_heartbeat(self.conn, 42, T0 + MIN,
+                                          now=T0 + 2 * MIN)
+        store.record_supervisor_heartbeat(self.conn, 41, T0, now=T0 + 3 * MIN)
+
+        beat = read.supervisor_beat(self.conn)
+
+        self.assertEqual(
+            (beat.pid, beat.startedAt, beat.lastBeat, beat.passes, beat.host),
+            store.latest_supervisor_heartbeat(self.conn))
+        self.assertEqual((beat.pid, beat.passes), (41, 2))
+
 
 class ReadonlyTests(PopulatedStore):
     def test_a_write_through_open_readonly_is_refused_and_changes_nothing(self):

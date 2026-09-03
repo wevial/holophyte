@@ -296,3 +296,35 @@ def strike(conn, run_id):
     if row is None:
         return None
     return Strike(runId=row[0], strikes=row[1], lastSeen=row[2])
+
+
+# --- supervisorHeartbeats ----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SupervisorBeat:
+    """The newest supervisor heartbeat: the one watcher that could be alive."""
+
+    pid: int
+    startedAt: int
+    lastBeat: int
+    passes: int
+    host: str | None
+
+
+def supervisor_beat(conn):
+    """The heartbeat row with the most recent `lastBeat`, or None if none.
+
+    The SELECT `store.latest_supervisor_heartbeat()` makes, as a row type
+    rather than a tuple: the `serve` daemon reads the supervisor's state
+    through here so it imports nothing from `store` itself. `host` is None
+    for a beat written before the column existed.
+    """
+    row = conn.execute(
+        "SELECT pid, startedAt, lastBeat, passes, host"
+        " FROM supervisorHeartbeats"
+        " ORDER BY lastBeat DESC, startedAt DESC LIMIT 1").fetchone()
+    if row is None:
+        return None
+    return SupervisorBeat(pid=row[0], startedAt=row[1], lastBeat=row[2],
+                          passes=row[3], host=row[4])
