@@ -653,26 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[114 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T02:03:32Z — KO-211
-MERGED to main.
-actual: 7.4 min · estimate: 30 min · rounds: 1
-
-## 2026-09-03T02:17:37Z — KO-214
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T02:18:21Z — KO-214
-MERGED to main.
-actual: 8.6 min · estimate: 30 min · rounds: 1
-
-## 2026-09-03T02:28:14Z — KO-215
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- holophyte/review.py:329 [p2] `holophyte/review.py:329`: `Path(root) / path` permits absolute paths and `..` traversal. A test outside the candidate worktree can therefore satisfy a witnes…
-
-## 2026-09-03T02:34:17Z — KO-215
-Round 2: pass · reviewer codex-sol-medium · verify passed
+[119 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T02:35:02Z — KO-215
 MERGED to main.
@@ -752,3 +733,24 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T18:09:15Z — KO-221
 MERGED to main.
 actual: 12.9 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T18:17:33Z — KO-222
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- ticket_template.py [p0] Blocker: [ticket_template.py](/workspace/ticket_template.py:363) scans only unchecked criteria (`t.acceptance`). In a valid mixed checked/unchecked ticket, igno…
+
+## 2026-09-03T18:24:57Z — KO-222
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- ticket_template.py [p0] Blocker: [ticket_template.py](/workspace/ticket_template.py:82) rejects dot-prefixed path tokens. For `.cache/report.html` ignored by `.cache/*`, Git reports…
+
+## 2026-09-03T18:25:20Z — KO-222
+FAILED: swept by the supervisor in phase addressing: review_stuck (rounds 1 and 2 share 1.00 of their findings (0.5 threshold)); branch and worktree preserved for a human
+actual: 16.1 min · estimate: 30 min · rounds: 2
+
+## 2026-09-03T18:39:50Z — KO-226
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T18:40:35Z — KO-226
+MERGED to main.
+actual: 8.5 min · estimate: 25 min · rounds: 1
