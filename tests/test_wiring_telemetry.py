@@ -399,9 +399,10 @@ class HostLabelTests(ReportStoreCase):
         # FINDINGS renders no host column, so this is a guard against one
         # arriving unlabelled, not a witness of relabelling.
         self.assertNotIn(hostname, rendered)
-        # Every host column, the NULL row included: one label for the writer.
+        # Every recorded host is the label; the NULL row stays unknown, as
+        # the store does not know the pre-column run ran on this writer.
         self.assertEqual([line.split()[-1] for line in printed[1:4]],
-                         [self.LABEL] * 3)
+                         [self.LABEL, "?", self.LABEL])
         self.assertRegex(printed[-1],
                          rf"^supervisor: live, .* \(pid 4242 on {self.LABEL}\)$")
 

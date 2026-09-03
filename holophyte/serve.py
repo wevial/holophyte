@@ -29,7 +29,7 @@ from time import time
 from urllib.parse import parse_qs, urlsplit
 
 import store.read
-from holophyte.config import report_config, sweep_config
+from holophyte.config import sweep_config
 from holophyte.report import host_label, report_rows
 from holophyte.supervisor import SWEEPABLE_PHASES
 
@@ -92,7 +92,7 @@ def status(target, now=None):
                   "heartbeat_age_ms": now - run.lastHeartbeat,
                   "elapsed_ms": now - run.startedAt,
                   "time_box_ms": run.timeBoxMs,
-                  "host": host_label(target, run.host)}
+                  "host": json_host(target, run.host)}
                  for run in runs],
     }
 
@@ -123,19 +123,16 @@ def parse_limit(query):
 
 def json_host(target, host):
     """`host_label()` for JSON: null, not the table's `?`, for a row older
-    than the host column when no label is configured."""
-    if host is None and report_config(target).host_label is None:
-        return None
-    return host_label(target, host)
+    than the host column, label or not."""
+    return None if host is None else host_label(target, host)
 
 
 def runs(target, query=""):
     """The `/runs` answer: `--report`'s rows as JSON, first `limit` of them.
 
     Same rows, same order as `report_rows()` -- oldest first -- with the
-    tuple's positions named. `host` is None for a row older than the column
-    unless a `[report] host_label` is configured, in which case it is the
-    label, as on `/status`.
+    tuple's positions named. `host` is None for a row older than the column,
+    label or not, as on `/status`.
     """
     try:
         limit = parse_limit(query)

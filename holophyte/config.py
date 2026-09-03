@@ -440,7 +440,7 @@ def sweep_config(target):
                 f"{constraint}, got {value!r}")
         values[key] = value
     return SweepConfig(
-        heartbeat_stale_ms=values["heartbeat_stale_min"] * 60000,
+        heartbeat_stale_ms=int(values["heartbeat_stale_min"] * 60000),
         stale_strikes=values["stale_strikes"],
         budget_grace=values["budget_grace"],
         review_overlap_threshold=values["review_overlap_threshold"],

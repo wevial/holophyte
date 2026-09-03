@@ -103,9 +103,10 @@ CHECKED_RE = re.compile(rf"^{BULLET}\s+\[[xX]\]\s*(.*)$")
 # everywhere a cap applies -- is what keeps entries from slipping past
 # MAX_CRITERIA or MAX_IN_SCOPE by wearing a marker the parser skipped.
 LIST_ITEM_RE = re.compile(rf"^(?:{BULLET}|\d+[.)])\s+(.*)$")
-# Linear rewrites "**What:**" as "**What: **", so the space is allowed inside
-# the bold run — but the key, the colon, and the bold markers stay required.
-BOLD_KEY_RE = re.compile(r"^\*\*(What|Why|How):[ \t]*\*\*\s*(.*)$")
+# The bold run is a Linear serialisation detail, not a contract: it rewrites
+# "**What:**" as "**What: **" on every body patch, and an authored "What:" is
+# the same key. The key and the colon stay required.
+BOLD_KEY_RE = re.compile(r"^(?:\*\*)?(What|Why|How):(?:[ \t]*\*\*)?\s*(.*)$")
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
 LINEAR_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|<[^<>\n\s][^<>\n]*>")
