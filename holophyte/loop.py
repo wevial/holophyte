@@ -282,9 +282,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         return ended.outcome == "merged"
 
 
-def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the split (ticket TBD)
-    target, task, conn=None, run_id=None, provider=None
-):
+def _run_stages(target, task, conn=None, run_id=None, provider=None):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
     Each task works in its own git worktree (the target stays on main, untouched),
@@ -303,6 +301,11 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
     question only: at the merge gate, has the ticket's contract been edited
     since the claim froze it? A None provider — a direct call, a stub with no
     re-read — simply skips that check, and the gate is what it was.
+
+    The body is the sequence of phase functions below -- worktree, setup,
+    implement, review rounds (or the terminal adjudication after them), the
+    merge gate, the merge -- each a plain function over the same values this
+    frame threads, in the order they ran when this was one function (KO-211).
     """
     task_id = task["id"]
     # The id the ticket is mirrored and re-read under, taken before `task` is
@@ -332,6 +335,82 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
     slug = f"{ident}-{slug}"
     branch = f"task/{slug}"
     wt = target.worktrees / slug
+    fresh = _cut_worktree(target, conn, run_id, provider, task_id, task,
+                          branch, wt)
+
+    # Every wait below -- setup, agent turn, verify -- runs under
+    # `heartbeat_while()`, beating at half the supervisor's stale threshold
+    # so a slow agent is never read as a dead loop (KO-212, run 39). Half,
+    # so one late beat is still inside the threshold.
+    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+    _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
+                    fresh, beat_s)
+
+    # The review base is main, not the HEAD reuse entered on: preserved
+    # commits were never approved, so the reviewer must see them inside the
+    # diff. Identical on a fresh cut, where HEAD is main.
+    base_sha = sh(["git", "rev-parse", "main"], target.path)
+    # Where this run started, WIP commit and preserved commits included. The
+    # no-commit gate below compares against this rather than main, so carried
+    # leftovers cannot stand in for the implementer's own progress.
+    start_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+
+    # 1. implement — the ticket verbatim: title, then the approved body, then
+    # the verify commands the gate will actually run. The same `ticket` text is
+    # what the reviewer and the adjudicator below judge against, so all three
+    # turns are held to one contract. A ticket with no body
+    # (a file-backed task line, a stub provider) degrades to the title alone.
+    ticket = f"{task}\n\n{body}" if body else task
+    sha = _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
+                     start_sha, ticket, verify_cmd, budget_min)
+
+    # 2. review rounds (MAX_ROUNDS). Verify runs before each review and its
+    # result goes into the brief; every round that is not a clean approval —
+    # round 2 included — gets a fix round, because a round-2 blocker is the
+    # cheapest fix in the loop and used to need a human to close it out.
+    sha, rnd, approved = _review_rounds(
+        target, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
+        sha, ticket, verify_cmd, contracts, criteria, budget_min)
+    if not approved:
+        _terminal_adjudication(target, conn, run_id, provider, task_id, task,
+                               branch, wt, beat_s, base_sha, sha, ticket,
+                               verify_cmd, contracts)
+
+    # 4. pre-merge verify (catches fix-round regressions), then merge. Both
+    # happen under `merge_gate`: §4's gate node is the one edge out of a
+    # passing review, and this verify is the mechanical half of what the gate
+    # asks. Under the `personal` autonomy profile the human half is a no-op,
+    # so the run passes through the node rather than around it and a failed
+    # pre-merge verify is a run stopped at the gate.
+    ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
+                     wt, beat_s, sha, verify_cmd, contracts)
+    _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha)
+    # Nothing tells Linear the ticket is done here any more. The merge makes
+    # the ticket `merged` in the store, and `main()` projects that status onto
+    # the board through `mirror_push()` once the run has been released — one
+    # writer of the workflow state instead of a call from the middle of a run
+    # that has not finished ending yet.
+    # One greppable line of timing data per merged ticket: the estimate stays
+    # write-only otherwise, and a future burndown script reads this format.
+    actual_min = (monotonic() - started) / 60
+    ledger(provider, task_id, f"MERGED to main (branch {branch} deleted). "
+                 f"Verify: {'passed' if ok else 'n/a'}.\n"
+                 f"actual: {actual_min:.1f} min · estimate: {budget_min} min · "
+                 f"rounds: {rnd}")
+    # The task's own commit of FINDINGS.md is `main()`'s, not this frame's:
+    # the run's close-out entry exists only once the run has been released,
+    # which happens after this returns.
+    print(f"[holo2] merged: {task}")
+    return True
+
+
+def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
+    """The worktree phase: cut `branch` at `wt`, or reuse the leftover there.
+
+    Returns whether the worktree is fresh -- holds nothing beyond main -- so
+    the close-outs after it neither claim preservation over nothing nor keep
+    an empty leftover alive forever.
+    """
     # §4's one edge out of `claimed`, taken before the first git command:
     # cutting the worktree is already this run doing the ticket's work, so a
     # crash in it belongs to `working` and not to a run that still looks
@@ -350,112 +429,103 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
         # reuse_leftover() and is indistinguishable from a fresh cut, so the
         # close-outs below must neither claim preservation over nothing nor
         # keep an empty leftover alive forever.
-        fresh = (not sh(["git", "status", "--porcelain"], cwd=wt)
-                 and sh(["git", "rev-parse", "HEAD"], cwd=wt)
-                 == sh(["git", "rev-parse", "main"], target.path))
-    else:
-        # The mirror leftover: the branch exists but its directory does not
-        # (a FAIL close-out preserves both; a human may clear only the
-        # directory). `checkout -b` would die on it, and deleting the branch
-        # could destroy preserved commits — so the run fails cleanly, the
-        # same answer as the unregistered directory.
-        if sh(["git", "branch", "--list", branch], target.path):
-            why = (f"branch {branch} already exists with no worktree; a"
-                   " human moves it aside or deletes it before this ticket"
-                   " is run again")
-            ledger(provider, task_id, f"FAILED to cut a fresh worktree for: {task}\n"
-                                      f"{why}\nNothing was deleted.")
-            raise RunFailure(f"cannot cut a fresh worktree: {why}")
-        sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
-        sh(["git", "checkout", "-b", branch], cwd=wt)
-        fresh = True
+        return (not sh(["git", "status", "--porcelain"], cwd=wt)
+                and sh(["git", "rev-parse", "HEAD"], cwd=wt)
+                == sh(["git", "rev-parse", "main"], target.path))
+    # The mirror leftover: the branch exists but its directory does not
+    # (a FAIL close-out preserves both; a human may clear only the
+    # directory). `checkout -b` would die on it, and deleting the branch
+    # could destroy preserved commits — so the run fails cleanly, the
+    # same answer as the unregistered directory.
+    if sh(["git", "branch", "--list", branch], target.path):
+        why = (f"branch {branch} already exists with no worktree; a"
+               " human moves it aside or deletes it before this ticket"
+               " is run again")
+        ledger(provider, task_id, f"FAILED to cut a fresh worktree for: {task}\n"
+                                  f"{why}\nNothing was deleted.")
+        raise RunFailure(f"cannot cut a fresh worktree: {why}")
+    sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
+    sh(["git", "checkout", "-b", branch], cwd=wt)
+    return True
 
-    # The worktree exists and nothing has been dispatched into it yet, which
-    # is the only moment the target's own setup can run: an implementer whose
-    # toolchain is missing burns its whole budget discovering that, and a
-    # worktree that silently borrows the main checkout's environment tests
-    # something other than the branch it is on. A failure here is the run's
-    # failure. A branch this run cut fresh is discarded -- no agent ran, so
-    # there is no work on it to keep -- while a reused worktree may hold
-    # preserved work the setup failure says nothing about, and is left
-    # exactly as found. Either way no agent ran, so the failure is the
-    # factory's plumbing, not evidence about the ticket: it closes out as
-    # `InfraFailure` and does not spend one of the ticket's strikes.
-    #
-    # Every wait below -- setup, agent turn, verify -- runs under
-    # `heartbeat_while()`, beating at half the supervisor's stale threshold
-    # so a slow agent is never read as a dead loop (KO-212, run 39). Half,
-    # so one late beat is still inside the threshold.
-    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+
+def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
+                    fresh, beat_s):
+    """The setup phase: the target's `[worktree] setup` table, run in `wt`.
+
+    The worktree exists and nothing has been dispatched into it yet, which
+    is the only moment the target's own setup can run: an implementer whose
+    toolchain is missing burns its whole budget discovering that, and a
+    worktree that silently borrows the main checkout's environment tests
+    something other than the branch it is on. A failure here is the run's
+    failure. A branch this run cut fresh is discarded -- no agent ran, so
+    there is no work on it to keep -- while a reused worktree may hold
+    preserved work the setup failure says nothing about, and is left
+    exactly as found. Either way no agent ran, so the failure is the
+    factory's plumbing, not evidence about the ticket: it closes out as
+    `InfraFailure` and does not spend one of the ticket's strikes.
+    """
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_worktree_setup(target, wt, conn, run_id)
-    if not ok:
-        print(out)
-        # Ledger first: a deletion that itself fails must not also cost the
-        # durable record of why the run stopped.
-        if fresh:
-            ledger(provider, task_id,
-                   f"FAILED worktree setup for: {task}\nNo agent ran;"
-                   f" branch {branch} holds nothing and is"
-                   f" discarded.\n\n{out}")
-            sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
-            sh(["git", "branch", "-D", branch], target.path)
-            raise InfraFailure("worktree setup failed; no agent ran and the"
-                               " empty branch was discarded")
-        ledger(provider, task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
-                                  f"reused worktree {wt} left in place with its "
-                                  f"work.\n\n{out}")
-        raise InfraFailure(f"worktree setup failed; no agent ran; reused"
-                           f" worktree and branch {branch} left in place with"
-                           " their work")
+    if ok:
+        return
+    print(out)
+    # Ledger first: a deletion that itself fails must not also cost the
+    # durable record of why the run stopped.
+    if fresh:
+        ledger(provider, task_id,
+               f"FAILED worktree setup for: {task}\nNo agent ran;"
+               f" branch {branch} holds nothing and is"
+               f" discarded.\n\n{out}")
+        sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
+        sh(["git", "branch", "-D", branch], target.path)
+        raise InfraFailure("worktree setup failed; no agent ran and the"
+                           " empty branch was discarded")
+    ledger(provider, task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
+                              f"reused worktree {wt} left in place with its "
+                              f"work.\n\n{out}")
+    raise InfraFailure(f"worktree setup failed; no agent ran; reused"
+                       f" worktree and branch {branch} left in place with"
+                       " their work")
 
-    # The review base is main, not the HEAD reuse entered on: preserved
-    # commits were never approved, so the reviewer must see them inside the
-    # diff. Identical on a fresh cut, where HEAD is main.
-    base_sha = sh(["git", "rev-parse", "main"], target.path)
-    # Where this run started, WIP commit and preserved commits included. The
-    # no-commit gate below compares against this rather than main, so carried
-    # leftovers cannot stand in for the implementer's own progress.
-    start_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
-    def timed(target, goal):
-        """Run one agent turn with the budget as its wall-clock cap; None on
-        timeout.
+def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
+    """Run one implementer turn with the budget as its wall-clock cap; None on
+    timeout.
 
-        The budget is the dispatch's own timeout, not an alarm around it: an
-        alarm interrupted the wait but left the implementer and its children
-        running, so a run recorded as over budget kept committing into the
-        worktree. `agent()` kills the whole group before raising, and what
-        the turn printed before the kill is kept in the log.
-        """
-        try:
-            with heartbeat_while(conn, run_id, beat_s):
-                return agent(target, "implement", goal, wt,
-                             timeout=budget_min * 60)
-        except subprocess.TimeoutExpired as expired:
-            print(f"[holo2] task exceeded {budget_min} min budget")
-            partial = expired.output or ""
-            if isinstance(partial, bytes):
-                partial = partial.decode("utf-8", "replace")
-            partial = partial.strip()[-2000:]
-            print("[holo2] implementer output before the budget fired:\n"
-                  + (partial or "(no output before the budget fired)"))
-            return None
+    The budget is the dispatch's own timeout, not an alarm around it: an
+    alarm interrupted the wait but left the implementer and its children
+    running, so a run recorded as over budget kept committing into the
+    worktree. `agent()` kills the whole group before raising, and what
+    the turn printed before the kill is kept in the log.
+    """
+    try:
+        with heartbeat_while(conn, run_id, beat_s):
+            return agent(target, "implement", goal, wt,
+                         timeout=budget_min * 60)
+    except subprocess.TimeoutExpired as expired:
+        print(f"[holo2] task exceeded {budget_min} min budget")
+        partial = expired.output or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode("utf-8", "replace")
+        partial = partial.strip()[-2000:]
+        print("[holo2] implementer output before the budget fired:\n"
+              + (partial or "(no output before the budget fired)"))
+        return None
 
-    # 1. implement — the ticket verbatim: title, then the approved body, then
-    # the verify commands the gate will actually run. The same `ticket` text is
-    # what the reviewer and the adjudicator below judge against, so all three
-    # turns are held to one contract. A ticket with no body
-    # (a file-backed task line, a stub provider) degrades to the title alone.
-    ticket = f"{task}\n\n{body}" if body else task
+
+def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
+               start_sha, ticket, verify_cmd, budget_min):
+    """The implementer phase: one turn against `ticket`, then the no-commit
+    gate. Returns the candidate's sha."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
-    out = timed(target,
-                f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
-                "The ticket above is the contract, acceptance criteria "
-                "included; the task is done only when they hold. Commit your "
-                "work with a clear message. Stay strictly on-scope; do not "
-                "expand the task.")
+    out = _timed(target, conn, run_id, beat_s, wt, budget_min,
+                 f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+                 "The ticket above is the contract, acceptance criteria "
+                 "included; the task is done only when they hold. Commit your "
+                 "work with a clear message. Stay strictly on-scope; do not "
+                 "expand the task.")
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work
@@ -489,21 +559,28 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
         # incident this path exists to prevent.
         raise RunFailure(f"implementer exceeded the {budget_min} min budget;"
                          f" work kept on {branch} at {head[:12]}")
+    return sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
-    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
-    def verify_brief(ok, out):
-        """The verify result as the reviewer sees it — omitted when the ticket
-        declares no command, so the brief never implies a gate that never ran."""
-        if not verify_cmd:
-            return ""
-        return (f"A mechanical verification command was run and "
-                f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n")
+def _verify_brief(verify_cmd, ok, out):
+    """The verify result as the reviewer sees it — omitted when the ticket
+    declares no command, so the brief never implies a gate that never ran."""
+    if not verify_cmd:
+        return ""
+    return (f"A mechanical verification command was run and "
+            f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n")
 
-    # 2. review rounds (MAX_ROUNDS). Verify runs before each review and its
-    # result goes into the brief; every round that is not a clean approval —
-    # round 2 included — gets a fix round, because a round-2 blocker is the
-    # cheapest fix in the loop and used to need a human to close it out.
+
+def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
+                   base_sha, sha, ticket, verify_cmd, contracts, criteria,
+                   budget_min):
+    """The review phase: up to MAX_ROUNDS of verify, review and fix round.
+
+    Returns `(sha, rnd, approved)`: the candidate's sha after the last fix
+    round, the number of the round that ended the phase, and whether that
+    round was a clean approval. `approved` False means both rounds and their
+    fixes are spent and the terminal adjudication is next.
+    """
     for rnd in range(1, MAX_ROUNDS + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
         with heartbeat_while(conn, run_id, beat_s):
@@ -524,7 +601,7 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
                 "contract, acceptance criteria included: a candidate that "
                 "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
                 f"{ticket}\n\n"
-                + verify_brief(ok, out)
+                + _verify_brief(verify_cmd, ok, out)
                 + criteria_brief(criteria)
                 + "Do not modify anything. End your reply with exactly one "
                 "line:\n"
@@ -546,19 +623,19 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
                   "witnessed; treating as REQUEST_CHANGES")
         if (ok and not unwitnessed
                 and review_runner.terminal_verdict(verdict) == "APPROVE"):
-            break
+            return sha, rnd, True
 
         # 3. implementer addresses findings (same branch, new commit)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        fixes = timed(target,
-                      "A reviewer left findings on your work. The ticket you "
-                      "are held to, acceptance criteria included:\n\n"
-                      f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
-                      "For EACH finding, adjudicate it first: ADDRESS (concrete "
-                      "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
-                      "it in the commit message), or DECLINE (invalid/out-of-scope — "
-                      "state the rationale in the commit message). Then fix only the "
-                      "ADDRESS items and commit.")
+        fixes = _timed(target, conn, run_id, beat_s, wt, budget_min,
+                       "A reviewer left findings on your work. The ticket you "
+                       "are held to, acceptance criteria included:\n\n"
+                       f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
+                       "For EACH finding, adjudicate it first: ADDRESS (concrete "
+                       "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
+                       "it in the commit message), or DECLINE (invalid/out-of-scope — "
+                       "state the rationale in the commit message). Then fix only the "
+                       "ADDRESS items and commit.")
         ledger(provider, task_id, f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                      f"Reviewer findings:\n{verdict}\n\n"
                      f"Implementer response:\n{fixes}")
@@ -568,77 +645,82 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
             raise RunFailure(f"fix round {rnd} timed out or made no progress;"
                              f" branch {branch} preserved at {sha[:12]}")
         sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    else:
-        # 3b. Terminal adjudication: both review rounds and their fixes are
-        # spent, so one fresh independent run issues a bare verdict on the
-        # final state. There is no further fix round under any outcome —
-        # anything but PASS preserves the branch and stops the loop.
-        set_phase(conn, run_id, "verifying", "verify before terminal adjudication")
-        with heartbeat_while(conn, run_id, beat_s):
-            ok, out = run_verify(verify_cmd, wt, contracts)
-        if not ok:
-            print(f"[holo2] verify FAILED before adjudication; leaving branch "
-                  f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
-            ledger(provider, task_id,
-                   f"FAILED verify before terminal adjudication after "
-                   f"{MAX_ROUNDS} review rounds; branch {branch} preserved "
-                   f"at {sha}\n\n{out}")
-            raise RunFailure(f"verify failed before terminal adjudication;"
-                             f" branch {branch} preserved at {sha[:12]}")
-        print("[holo2] verify ok before adjudication")
+    return sha, rnd, False
 
-        set_phase(conn, run_id, "reviewing", "terminal adjudication")
-        round_started = int(time() * 1000)
-        with heartbeat_while(conn, run_id, beat_s):
-            reply = agent(target, "adjudicate",
-                f"You are a READ-ONLY final adjudicator. Judge commit {sha} "
-                "using refs/review/base as the frozen base and "
-                "refs/review/candidate as the candidate "
-                "in this repo against the ticket below. The ticket is the "
-                "contract, acceptance criteria included: a candidate that "
-                "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
-                f"{ticket}\n\n"
-                + verify_brief(ok, out)
-                + "This candidate has already had its review rounds and their "
-                "fixes; no further fix round exists. Your job is a verdict on "
-                "the state as it stands, not a review.\n"
-                "Do not modify anything. Do NOT list findings, request "
-                "changes, or propose follow-up work — a reply that reads as a "
-                "findings list is not a verdict and is treated as FAIL. Give "
-                "at most one short paragraph of justification, then exactly "
-                "one final line:\n"
-                "VERDICT: PASS  or  VERDICT: FAIL\n"
-                "PASS means the candidate is mergeable as it stands.", wt,
-                base_sha=base_sha, candidate_sha=sha)
-        # The adjudication is a round of the run like the reviews before it —
-        # numbered after them, so the run's rounds read in the order they
-        # happened.
-        record_round(target, conn, run_id, MAX_ROUNDS + 1, "adjudicate", reply,
-                     verify_cmd, ok, out, started_at=round_started)
-        try:
-            decision = review_runner.terminal_verdict(
-                reply, review_runner.ADJUDICATION_VERDICTS)
-        except review_runner.ReviewBoundaryError:
-            decision = "MALFORMED"  # no clean verdict — read as FAIL
-        if decision != "PASS":
-            print(f"[holo2] terminal adjudication: {decision}; leaving branch "
-                  f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
-            ledger(provider, task_id,
-                   f"Terminal adjudication after {MAX_ROUNDS} review "
-                   f"rounds: {decision}; branch {branch} preserved at "
-                   f"{sha}\n\nAdjudicator reply:\n{reply}")
-            raise RunFailure(f"terminal adjudication: {decision};"
-                             f" branch {branch} preserved at {sha[:12]}")
-        print("[holo2] terminal adjudication: PASS")
-        ledger(provider, task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
-                     f"rounds: PASS\n\nAdjudicator reply:\n{reply}")
 
-    # 4. pre-merge verify (catches fix-round regressions), then merge. Both
-    # happen under `merge_gate`: §4's gate node is the one edge out of a
-    # passing review, and this verify is the mechanical half of what the gate
-    # asks. Under the `personal` autonomy profile the human half is a no-op,
-    # so the run passes through the node rather than around it and a failed
-    # pre-merge verify is a run stopped at the gate.
+def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
+                           branch, wt, beat_s, base_sha, sha, ticket,
+                           verify_cmd, contracts):
+    """3b. Terminal adjudication: both review rounds and their fixes are
+    spent, so one fresh independent run issues a bare verdict on the
+    final state. There is no further fix round under any outcome —
+    anything but PASS preserves the branch and stops the loop.
+    """
+    set_phase(conn, run_id, "verifying", "verify before terminal adjudication")
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, out = run_verify(verify_cmd, wt, contracts)
+    if not ok:
+        print(f"[holo2] verify FAILED before adjudication; leaving branch "
+              f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
+        ledger(provider, task_id,
+               f"FAILED verify before terminal adjudication after "
+               f"{MAX_ROUNDS} review rounds; branch {branch} preserved "
+               f"at {sha}\n\n{out}")
+        raise RunFailure(f"verify failed before terminal adjudication;"
+                         f" branch {branch} preserved at {sha[:12]}")
+    print("[holo2] verify ok before adjudication")
+
+    set_phase(conn, run_id, "reviewing", "terminal adjudication")
+    round_started = int(time() * 1000)
+    with heartbeat_while(conn, run_id, beat_s):
+        reply = agent(target, "adjudicate",
+            f"You are a READ-ONLY final adjudicator. Judge commit {sha} "
+            "using refs/review/base as the frozen base and "
+            "refs/review/candidate as the candidate "
+            "in this repo against the ticket below. The ticket is the "
+            "contract, acceptance criteria included: a candidate that "
+            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
+            f"{ticket}\n\n"
+            + _verify_brief(verify_cmd, ok, out)
+            + "This candidate has already had its review rounds and their "
+            "fixes; no further fix round exists. Your job is a verdict on "
+            "the state as it stands, not a review.\n"
+            "Do not modify anything. Do NOT list findings, request "
+            "changes, or propose follow-up work — a reply that reads as a "
+            "findings list is not a verdict and is treated as FAIL. Give "
+            "at most one short paragraph of justification, then exactly "
+            "one final line:\n"
+            "VERDICT: PASS  or  VERDICT: FAIL\n"
+            "PASS means the candidate is mergeable as it stands.", wt,
+            base_sha=base_sha, candidate_sha=sha)
+    # The adjudication is a round of the run like the reviews before it —
+    # numbered after them, so the run's rounds read in the order they
+    # happened.
+    record_round(target, conn, run_id, MAX_ROUNDS + 1, "adjudicate", reply,
+                 verify_cmd, ok, out, started_at=round_started)
+    try:
+        decision = review_runner.terminal_verdict(
+            reply, review_runner.ADJUDICATION_VERDICTS)
+    except review_runner.ReviewBoundaryError:
+        decision = "MALFORMED"  # no clean verdict — read as FAIL
+    if decision != "PASS":
+        print(f"[holo2] terminal adjudication: {decision}; leaving branch "
+              f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
+        ledger(provider, task_id,
+               f"Terminal adjudication after {MAX_ROUNDS} review "
+               f"rounds: {decision}; branch {branch} preserved at "
+               f"{sha}\n\nAdjudicator reply:\n{reply}")
+        raise RunFailure(f"terminal adjudication: {decision};"
+                         f" branch {branch} preserved at {sha[:12]}")
+    print("[holo2] terminal adjudication: PASS")
+    ledger(provider, task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
+                 f"rounds: PASS\n\nAdjudicator reply:\n{reply}")
+
+
+def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
+                beat_s, sha, verify_cmd, contracts):
+    """The `merge_gate` phase: the pre-merge verify, then the drift check.
+    Returns the verify's `ok`, for the merged ledger line."""
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts)
@@ -673,7 +755,12 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
         raise RunFailure(f"ticket drifted from the claimed contract"
                          f" ({', '.join(drift)}); branch {branch} preserved"
                          f" at {sha[:12]}")
+    return ok
 
+
+def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
+    """The `merging` phase: the `--no-ff` merge of `branch` into main, its
+    one self-resolved conflict, and the post-merge cleanup."""
     # Commit any pending FINDINGS.md changes BEFORE merging so the merge
     # never trips over a dirty index. Nothing is written to the file during a
     # run any more, so this is normally a no-op; what it still catches is a
@@ -688,45 +775,7 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
                          f"Merge {branch}: {task}"], cwd=target.path,
                         capture_output=True, text=True)
     if mr.returncode != 0:
-        # What conflicted is the index's answer, not the merge output's: a
-        # substring search over stdout+stderr also matches a conflict in
-        # `docs/FINDINGS.md-notes.md`, or one whose message merely mentions
-        # the file, and would then "resolve" a conflict nobody looked at.
-        conflicted = sorted(
-            p for p in subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=U"], cwd=target.path,
-                capture_output=True, text=True).stdout.splitlines() if p.strip())
-        if conflicted == ["FINDINGS.md"]:
-            # conflict limited to FINDINGS.md — prefer the branch side (fuller log)
-            subprocess.run(["git", "checkout", "--theirs", "FINDINGS.md"],
-                           cwd=target.path, capture_output=True, text=True)
-            sh(["git", "add", "FINDINGS.md"], target.path)
-            sh(["git", "commit", "--no-edit"], target.path)
-        else:
-            # Anything else is a human's merge to make. An `assert` here was
-            # both stripped under `python -O` and, when it did fire, left main
-            # sitting on a half-applied merge with an unresolved index while
-            # the run died mid-frame. Abort first, so main is the integration
-            # point it was before the attempt, and fail the run through the
-            # same close-out every other refusal at this gate uses — branch
-            # and worktree preserved.
-            subprocess.run(["git", "merge", "--abort"], cwd=target.path,
-                           capture_output=True, text=True)
-            dirty = subprocess.run(["git", "status", "--porcelain"], cwd=target.path,
-                                   capture_output=True, text=True).stdout.strip()
-            paths = ", ".join(conflicted) or "(no unmerged paths reported)"
-            why = (f"merge of {branch} into main conflicted on: {paths};"
-                   f" branch and worktree preserved")
-            if dirty:
-                # The abort did not restore main: say so in the reason rather
-                # than let the next run discover it.
-                why += (" — main is NOT clean after the abort: "
-                        + " ".join(dirty.split()))
-            print(f"[holo2] {why}")
-            ledger(provider, task_id, f"MERGE ABORTED: conflict on {paths}. Branch "
-                                      f"{branch} preserved at {sha}. Rebase it on main "
-                                      "and re-run, or merge it by hand.")
-            raise RunFailure(why)
+        _resolve_merge_conflict(target, provider, task_id, branch, sha)
     # The merge has landed: the branch holds nothing main does not, so the
     # worktree's stray untracked files are not preserved work — and a cleanup
     # refusal must not re-classify merged work as a failed run.
@@ -735,23 +784,50 @@ def _run_stages(  # noqa: C901 -- the loop body; follow-up: break up after the s
         sh(["git", "branch", "-d", branch], target.path)
     except RuntimeError as e:
         print(f"[holo2] post-merge cleanup left debris: {e}")
-    # Nothing tells Linear the ticket is done here any more. The merge makes
-    # the ticket `merged` in the store, and `main()` projects that status onto
-    # the board through `mirror_push()` once the run has been released — one
-    # writer of the workflow state instead of a call from the middle of a run
-    # that has not finished ending yet.
-    # One greppable line of timing data per merged ticket: the estimate stays
-    # write-only otherwise, and a future burndown script reads this format.
-    actual_min = (monotonic() - started) / 60
-    ledger(provider, task_id, f"MERGED to main (branch {branch} deleted). "
-                 f"Verify: {'passed' if ok else 'n/a'}.\n"
-                 f"actual: {actual_min:.1f} min · estimate: {budget_min} min · "
-                 f"rounds: {rnd}")
-    # The task's own commit of FINDINGS.md is `main()`'s, not this frame's:
-    # the run's close-out entry exists only once the run has been released,
-    # which happens after this returns.
-    print(f"[holo2] merged: {task}")
-    return True
+
+
+def _resolve_merge_conflict(target, provider, task_id, branch, sha):
+    """A failed `--no-ff` merge: resolve it if FINDINGS.md alone conflicted,
+    otherwise abort it and fail the run with main restored."""
+    # What conflicted is the index's answer, not the merge output's: a
+    # substring search over stdout+stderr also matches a conflict in
+    # `docs/FINDINGS.md-notes.md`, or one whose message merely mentions
+    # the file, and would then "resolve" a conflict nobody looked at.
+    conflicted = sorted(
+        p for p in subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=target.path,
+            capture_output=True, text=True).stdout.splitlines() if p.strip())
+    if conflicted == ["FINDINGS.md"]:
+        # conflict limited to FINDINGS.md — prefer the branch side (fuller log)
+        subprocess.run(["git", "checkout", "--theirs", "FINDINGS.md"],
+                       cwd=target.path, capture_output=True, text=True)
+        sh(["git", "add", "FINDINGS.md"], target.path)
+        sh(["git", "commit", "--no-edit"], target.path)
+        return
+    # Anything else is a human's merge to make. An `assert` here was
+    # both stripped under `python -O` and, when it did fire, left main
+    # sitting on a half-applied merge with an unresolved index while
+    # the run died mid-frame. Abort first, so main is the integration
+    # point it was before the attempt, and fail the run through the
+    # same close-out every other refusal at this gate uses — branch
+    # and worktree preserved.
+    subprocess.run(["git", "merge", "--abort"], cwd=target.path,
+                   capture_output=True, text=True)
+    dirty = subprocess.run(["git", "status", "--porcelain"], cwd=target.path,
+                           capture_output=True, text=True).stdout.strip()
+    paths = ", ".join(conflicted) or "(no unmerged paths reported)"
+    why = (f"merge of {branch} into main conflicted on: {paths};"
+           f" branch and worktree preserved")
+    if dirty:
+        # The abort did not restore main: say so in the reason rather
+        # than let the next run discover it.
+        why += (" — main is NOT clean after the abort: "
+                + " ".join(dirty.split()))
+    print(f"[holo2] {why}")
+    ledger(provider, task_id, f"MERGE ABORTED: conflict on {paths}. Branch "
+                              f"{branch} preserved at {sha}. Rebase it on main "
+                              "and re-run, or merge it by hand.")
+    raise RunFailure(why)
 
 
 def self_hosted(target):
@@ -769,7 +845,10 @@ def self_hosted(target):
     return Path(__file__).resolve().parent.parent == target.path.resolve()
 
 
-def main(target, provider):  # noqa: C901 -- same; follow-up: break up after the split (ticket TBD)
+def main(target, provider):
+    """One pass of the factory: claim, mirror, lease, `run_task()`, close out,
+    repeat. The phases are the plain functions below, called in the order
+    they ran when this was one function (KO-211)."""
     restart_after_merge = self_hosted(target)
     stop_on_failure = loop_config(target).stop_on_failure
     # Whether any run this pass failed, for the exit code when the loop was
@@ -782,19 +861,7 @@ def main(target, provider):  # noqa: C901 -- same; follow-up: break up after the
         # contract is one row per Linear team, which the name keys just as
         # well until the provider resolves the id.
         project = store.ensure_project(conn, provider.team, target.path)
-        # Startup self-sweep, read-only: it records what it saw — a first
-        # strike on anything silent — so the *next* invocation or a
-        # `--sweep --act` can act on the second sighting. Nothing is failed
-        # from here; one sample is not evidence (STALE_STRIKES). One sweep,
-        # printed once, per invocation: the refused-claim handler below
-        # points back at these lines rather than re-sweeping (which would
-        # count one silence twice) or reprinting (which would look like it
-        # had).
-        seen = sweep(target, conn, int(time() * 1000))
-        if seen.trips or seen.watched or seen.restarts:
-            print("\n".join(sweep_lines(seen)))
-            if seen.trips:
-                print(SWEEP_HINT.format(target=target.path))
+        seen = _startup_sweep(target, conn)
         # The tickets this pass has refused to claim. A blocked ticket keeps
         # its place in the board's ready set — `blocked_on_operator` projects
         # to Todo, the column a human picks work out of — so it is offered
@@ -812,171 +879,14 @@ def main(target, provider):  # noqa: C901 -- same; follow-up: break up after the
                 store.record_loop_return(conn, project)
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if failed else None
-            # Before the lease, before the mirror: a ticket that has already
-            # burned its attempts is refused here rather than claimed and then
-            # discovered to be unworkable, so the escalation costs no run row
-            # of its own. `escalate()` blocks it if this is the pass that
-            # crossed the threshold, and says so again on every later pass —
-            # which is what makes a Linear state a human dragged back to Todo
-            # unable to buy the ticket another run.
-            #
-            # Skipped rather than stopped on, which is not the call the rest
-            # of this loop makes: a stop here would be permanent. The ticket
-            # sorts where it sorts and is offered first on every invocation,
-            # so stopping on it would starve every ticket behind it until a
-            # human noticed — and a ticket parked *for* a human is the one
-            # case where there is nothing for this loop to wait on.
-            # The mirror comes first, and the questions are asked of the row
-            # it leaves: the live body is what the run would work from, and
-            # the row a previous pass left behind can say `ready` about a
-            # ticket whose criteria or verify command have since been edited
-            # out. `mirror_ticket()` is an upsert with no lease, so a ticket
-            # refused below has cost nothing but a refreshed row.
-            #
-            # First question, asked of the body itself: does it pass the
-            # template validator? The store's gates below judge the row —
-            # criteria present, a verify command present — and a body with
-            # both can still be unfilled template (KO-165: placeholders in
-            # the title, the summary and the first criterion, no What
-            # line). One printed line names the first problem, the mirror
-            # lands in `needs_spec` as an under-specced body would, and the
-            # next candidate is tried; no run row is opened for it.
-            problem = body_problem(task)
-            if problem:
-                mirror_task(conn, project, task, specced=False)
-                print(f"[holo2] {task['id']} skipped: {problem}")
+            ticket_id = _admit_ticket(conn, project, provider, task)
+            if ticket_id is None:
                 skip.add(task["id"])
                 continue
-            ticket_id = mirror_task(conn, project, task)
-            if escalate(conn, ticket_id, provider):
-                print(f"[holo2] {task['id']} is blocked by repeated failures;"
-                      " skipping it. a human owns it now")
-                skip.add(task["id"])
-                continue
-            # Same place, the store's own question: §2's `pickable()`. The
-            # board and the store can disagree about whether a ticket is
-            # workable — a failed run leaves its mirror `in_flight` on
-            # purpose, and a body edit or a hand-dragged column offers the
-            # ticket again as ready — and claiming on the board's word alone
-            # produced a run row that existed only to be refused by the
-            # `in_flight` transition below (holophyte-bugs.md #4). Asked
-            # before the claim so the refusal costs no run row and no
-            # failure, and asked of the row just mirrored so an under-specced
-            # body is refused whether the ticket is new or was `ready` last
-            # time the store saw it: the `ready -> in_flight` move below does
-            # not re-read the lists, and this is the only gate that does.
-            #
-            # A skipped ticket is still re-projected. The refusal used to fall
-            # out of the claim, and the claim's refusal path pushed the store's
-            # status back at the board as one more attempt at unsticking it —
-            # a `merged` ticket whose Done push never landed is offered again
-            # *because* the board is behind, and skipping it silently would
-            # leave it Ready on the board for good. Best-effort, like every
-            # push: a status with no board state (`needs_spec`) pushes nothing.
-            verdict = store.pickable(conn, ticket_id)
-            if not verdict:
-                status = store_status(conn, ticket_id)
-                print(f"[holo2] {task['id']} is {status} in the store,"
-                      f" not claimable ({verdict.reason}); skipping it")
-                mirror_push(conn, ticket_id, provider)
-                skip.add(task["id"])
-                continue
-            try:
-                run_id = store.claim(conn, project, ticket_id)
-            except store.ClaimConflict as e:
-                # Before any branch or worktree exists: another loop holds the
-                # project, so this one stops rather than working beside it.
-                # The startup sweep's sighting turns the dead end into an
-                # instruction: is the holder alive, and what to type if not.
-                print(f"[holo2] claim refused, not starting a run: {e}")
-                if seen.trips or seen.watched:
-                    print("[holo2] the sweep above shows the lease holder's"
-                          " last signs of life")
+            run_id = _claim_run(conn, project, provider, ticket_id, seen)
+            if run_id is None:
                 return
-            # §3's `ready -> in_flight`, and the first thing the board is told
-            # about this run: the claim is the moment the ticket starts being
-            # worked, and the projection replaces the state call the provider
-            # used to make on its own.
-            if not mirror_status(conn, ticket_id, "in_flight", provider):
-                # The store refused the move, so this ticket is not `ready`
-                # and no work may start on it. The ordinary cause is a board
-                # that is behind the store — a ticket already `merged` whose
-                # Done push did not land is still non-terminal in Linear and
-                # so is offered again on the next pass — and §1 is exactly
-                # that the store, not the column, decides. Running anyway
-                # would re-implement merged work, once per pass for as long
-                # as the board stays stale.
-                #
-                # So: give the lease straight back, re-project the status the
-                # ticket really has as one more best-effort attempt at
-                # unsticking the board, and stop. Stopping rather than taking
-                # the next ticket is the same call as a refused claim above —
-                # store and board disagree about what is workable, and a
-                # human wants to know — and it is also what keeps a stale
-                # ticket the re-push cannot move (an unmapped status, a Linear
-                # that is down) from being claimed round and round forever.
-                refused = InfraFailure("ticket was not ready when the run"
-                                       " was claimed; no work started")
-                store.release(conn, run_id, "failed", str(refused),
-                              outcome_class=outcome_class_of(refused))
-                # This refusal is a failed run, but an `infra` one: no work
-                # started, so it says nothing about the ticket and does not
-                # count towards parking it. The threshold is still checked
-                # here, for the `work` failures already on the ticket. A
-                # ticket the escalation just parked was pushed to the board
-                # by that move; the re-push is only for one that stayed where
-                # it was.
-                if not escalate(conn, ticket_id, provider):
-                    mirror_push(conn, ticket_id, provider)
-                print("[holo2] claimed ticket is not in a status work starts"
-                      " from; stopping for a human")
-                return
-            merged = False
-            reason = None
-            outcome_class = "work"
-            try:
-                merged = run_task(target, task, conn, run_id, provider)
-            except RunFailure as e:
-                reason = str(e)
-                outcome_class = outcome_class_of(e)
-                print(f"[holo2] run failed: {reason}")
-            except Exception as e:  # noqa: BLE001 - crash containment
-                # Anything that escapes run_task is this run's failure. The
-                # error text becomes the close-out reason — one clean line
-                # instead of a traceback with the reason lost to
-                # release_run()'s generic default (KO-146 incident, run 9).
-                # Collapsed to one line: sh()'s message carries the failed
-                # command's whole output, and the reason lands verbatim in an
-                # escalation comment's markdown bullet.
-                reason = " ".join(f"{type(e).__name__}: {e}".split())
-                print(f"[holo2] run crashed: {reason}")
-            finally:
-                if merged:
-                    release_run(conn, run_id, merged)
-                    # `in_flight -> merged`, projected as Done. A run that did
-                    # not merge leaves the ticket in flight on purpose: the
-                    # branch is preserved for a human and the board should go
-                    # on saying the work is open, so there is nothing to push.
-                    mirror_status(conn, ticket_id, "merged", provider)
-                    # Close-out, and the first moment the run's own outcome is
-                    # a row: the window is regenerated here rather than inside
-                    # `run_task()` so the entry that ends the run is in it.
-                    refresh_findings(target, conn)
-                else:
-                    # The failure close-out: release, escalate if this failure
-                    # was one too many, regenerate the window. Shared with the
-                    # supervisor sweep, which fails runs this loop is no
-                    # longer around to fail itself. Its own failure (a locked
-                    # store, say) must not replace what was in flight — a
-                    # KeyboardInterrupt included — with a traceback of its
-                    # own; the lease stays for release() or the sweep.
-                    try:
-                        close_out_failure(target, conn, run_id, ticket_id,
-                                          reason,
-                                          provider=provider,
-                                          outcome_class=outcome_class)
-                    except Exception as close_err:  # noqa: BLE001
-                        print(f"[holo2] close-out failed: {close_err}")
+            merged = _dispatch(target, conn, run_id, provider, task, ticket_id)
             if not merged:
                 # The regenerated window stays uncommitted, like the preserved
                 # branch it describes: a human closes both out. Nonzero so the
@@ -1003,33 +913,239 @@ def main(target, provider):  # noqa: C901 -- same; follow-up: break up after the
                 # exactly where the next pass would, from the merged code.
                 # Only after a merge -- a failure returned above, which is
                 # the intended stop.
-                sha = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
-                # sys.orig_argv is the exact original command line, so
-                # interpreter flags (-u above all: without it a tee'd log
-                # goes block-buffered and looks hung) survive the restart.
-                argv = list(sys.orig_argv) or [sys.executable, *sys.argv]
-                # `os.execv` does not search PATH, and `orig_argv[0]` is
-                # whatever the operator typed -- usually the bare `python3`.
-                # Resolve it the way the shell did; a name PATH cannot find
-                # falls back to the interpreter actually running this code.
-                program = argv[0]
-                if os.sep not in program:
-                    program = shutil.which(program) or sys.executable
-                # flush=True: execv replaces the process image without
-                # running Python's buffered-stdout flush, so under a
-                # redirected (block-buffered) stdout the line would be lost.
-                print("[holo2] merged a change to the factory itself;"
-                      f" re-executing from {sha}: {argv}", flush=True)
-                # The note the supervisor watches for, written before the
-                # exec because nothing can be written after a failed one:
-                # the sweep reports this restart if no claim, heartbeat or
-                # exit note follows it within the grace window.
-                store.record_loop_restart(conn, project, sha)
-                conn.close()
-                EXEC(program, argv)
+                _reexec(target, conn, project)
                 return  # only a test's EXEC returns
     finally:
         conn.close()
+
+
+def _startup_sweep(target, conn):
+    """Startup self-sweep, read-only: it records what it saw — a first
+    strike on anything silent — so the *next* invocation or a
+    `--sweep --act` can act on the second sighting. Nothing is failed
+    from here; one sample is not evidence (STALE_STRIKES). One sweep,
+    printed once, per invocation: the refused-claim handler below
+    points back at these lines rather than re-sweeping (which would
+    count one silence twice) or reprinting (which would look like it
+    had).
+    """
+    seen = sweep(target, conn, int(time() * 1000))
+    if seen.trips or seen.watched or seen.restarts:
+        print("\n".join(sweep_lines(seen)))
+        if seen.trips:
+            print(SWEEP_HINT.format(target=target.path))
+    return seen
+
+
+def _admit_ticket(conn, project, provider, task):
+    """The questions asked of a ticket before the lease and before any run
+    row exists. Returns the mirrored ticket id, or None for a ticket this
+    pass refuses -- `main()` skips it and takes the next one.
+
+    Before the lease, before the mirror: a ticket that has already
+    burned its attempts is refused here rather than claimed and then
+    discovered to be unworkable, so the escalation costs no run row
+    of its own. `escalate()` blocks it if this is the pass that
+    crossed the threshold, and says so again on every later pass —
+    which is what makes a Linear state a human dragged back to Todo
+    unable to buy the ticket another run.
+
+    Skipped rather than stopped on, which is not the call the rest
+    of this loop makes: a stop here would be permanent. The ticket
+    sorts where it sorts and is offered first on every invocation,
+    so stopping on it would starve every ticket behind it until a
+    human noticed — and a ticket parked *for* a human is the one
+    case where there is nothing for this loop to wait on.
+    The mirror comes first, and the questions are asked of the row
+    it leaves: the live body is what the run would work from, and
+    the row a previous pass left behind can say `ready` about a
+    ticket whose criteria or verify command have since been edited
+    out. `mirror_ticket()` is an upsert with no lease, so a ticket
+    refused below has cost nothing but a refreshed row.
+    """
+    # First question, asked of the body itself: does it pass the
+    # template validator? The store's gates below judge the row —
+    # criteria present, a verify command present — and a body with
+    # both can still be unfilled template (KO-165: placeholders in
+    # the title, the summary and the first criterion, no What
+    # line). One printed line names the first problem, the mirror
+    # lands in `needs_spec` as an under-specced body would, and the
+    # next candidate is tried; no run row is opened for it.
+    problem = body_problem(task)
+    if problem:
+        mirror_task(conn, project, task, specced=False)
+        print(f"[holo2] {task['id']} skipped: {problem}")
+        return None
+    ticket_id = mirror_task(conn, project, task)
+    if escalate(conn, ticket_id, provider):
+        print(f"[holo2] {task['id']} is blocked by repeated failures;"
+              " skipping it. a human owns it now")
+        return None
+    # Same place, the store's own question: §2's `pickable()`. The
+    # board and the store can disagree about whether a ticket is
+    # workable — a failed run leaves its mirror `in_flight` on
+    # purpose, and a body edit or a hand-dragged column offers the
+    # ticket again as ready — and claiming on the board's word alone
+    # produced a run row that existed only to be refused by the
+    # `in_flight` transition below (holophyte-bugs.md #4). Asked
+    # before the claim so the refusal costs no run row and no
+    # failure, and asked of the row just mirrored so an under-specced
+    # body is refused whether the ticket is new or was `ready` last
+    # time the store saw it: the `ready -> in_flight` move below does
+    # not re-read the lists, and this is the only gate that does.
+    #
+    # A skipped ticket is still re-projected. The refusal used to fall
+    # out of the claim, and the claim's refusal path pushed the store's
+    # status back at the board as one more attempt at unsticking it —
+    # a `merged` ticket whose Done push never landed is offered again
+    # *because* the board is behind, and skipping it silently would
+    # leave it Ready on the board for good. Best-effort, like every
+    # push: a status with no board state (`needs_spec`) pushes nothing.
+    verdict = store.pickable(conn, ticket_id)
+    if not verdict:
+        status = store_status(conn, ticket_id)
+        print(f"[holo2] {task['id']} is {status} in the store,"
+              f" not claimable ({verdict.reason}); skipping it")
+        mirror_push(conn, ticket_id, provider)
+        return None
+    return ticket_id
+
+
+def _claim_run(conn, project, provider, ticket_id, seen):
+    """The lease and the `ready -> in_flight` move. Returns the claimed run
+    id, or None when the loop must stop rather than start a run."""
+    try:
+        run_id = store.claim(conn, project, ticket_id)
+    except store.ClaimConflict as e:
+        # Before any branch or worktree exists: another loop holds the
+        # project, so this one stops rather than working beside it.
+        # The startup sweep's sighting turns the dead end into an
+        # instruction: is the holder alive, and what to type if not.
+        print(f"[holo2] claim refused, not starting a run: {e}")
+        if seen.trips or seen.watched:
+            print("[holo2] the sweep above shows the lease holder's"
+                  " last signs of life")
+        return None
+    # §3's `ready -> in_flight`, and the first thing the board is told
+    # about this run: the claim is the moment the ticket starts being
+    # worked, and the projection replaces the state call the provider
+    # used to make on its own.
+    if not mirror_status(conn, ticket_id, "in_flight", provider):
+        # The store refused the move, so this ticket is not `ready`
+        # and no work may start on it. The ordinary cause is a board
+        # that is behind the store — a ticket already `merged` whose
+        # Done push did not land is still non-terminal in Linear and
+        # so is offered again on the next pass — and §1 is exactly
+        # that the store, not the column, decides. Running anyway
+        # would re-implement merged work, once per pass for as long
+        # as the board stays stale.
+        #
+        # So: give the lease straight back, re-project the status the
+        # ticket really has as one more best-effort attempt at
+        # unsticking the board, and stop. Stopping rather than taking
+        # the next ticket is the same call as a refused claim above —
+        # store and board disagree about what is workable, and a
+        # human wants to know — and it is also what keeps a stale
+        # ticket the re-push cannot move (an unmapped status, a Linear
+        # that is down) from being claimed round and round forever.
+        refused = InfraFailure("ticket was not ready when the run"
+                               " was claimed; no work started")
+        store.release(conn, run_id, "failed", str(refused),
+                      outcome_class=outcome_class_of(refused))
+        # This refusal is a failed run, but an `infra` one: no work
+        # started, so it says nothing about the ticket and does not
+        # count towards parking it. The threshold is still checked
+        # here, for the `work` failures already on the ticket. A
+        # ticket the escalation just parked was pushed to the board
+        # by that move; the re-push is only for one that stayed where
+        # it was.
+        if not escalate(conn, ticket_id, provider):
+            mirror_push(conn, ticket_id, provider)
+        print("[holo2] claimed ticket is not in a status work starts"
+              " from; stopping for a human")
+        return None
+    return run_id
+
+
+def _dispatch(target, conn, run_id, provider, task, ticket_id):
+    """One run of `task` under `run_id`, with its failure accounting and
+    close-out. Returns whether the run merged."""
+    merged = False
+    reason = None
+    outcome_class = "work"
+    try:
+        merged = run_task(target, task, conn, run_id, provider)
+    except RunFailure as e:
+        reason = str(e)
+        outcome_class = outcome_class_of(e)
+        print(f"[holo2] run failed: {reason}")
+    except Exception as e:  # noqa: BLE001 - crash containment
+        # Anything that escapes run_task is this run's failure. The
+        # error text becomes the close-out reason — one clean line
+        # instead of a traceback with the reason lost to
+        # release_run()'s generic default (KO-146 incident, run 9).
+        # Collapsed to one line: sh()'s message carries the failed
+        # command's whole output, and the reason lands verbatim in an
+        # escalation comment's markdown bullet.
+        reason = " ".join(f"{type(e).__name__}: {e}".split())
+        print(f"[holo2] run crashed: {reason}")
+    finally:
+        if merged:
+            release_run(conn, run_id, merged)
+            # `in_flight -> merged`, projected as Done. A run that did
+            # not merge leaves the ticket in flight on purpose: the
+            # branch is preserved for a human and the board should go
+            # on saying the work is open, so there is nothing to push.
+            mirror_status(conn, ticket_id, "merged", provider)
+            # Close-out, and the first moment the run's own outcome is
+            # a row: the window is regenerated here rather than inside
+            # `run_task()` so the entry that ends the run is in it.
+            refresh_findings(target, conn)
+        else:
+            # The failure close-out: release, escalate if this failure
+            # was one too many, regenerate the window. Shared with the
+            # supervisor sweep, which fails runs this loop is no
+            # longer around to fail itself. Its own failure (a locked
+            # store, say) must not replace what was in flight — a
+            # KeyboardInterrupt included — with a traceback of its
+            # own; the lease stays for release() or the sweep.
+            try:
+                close_out_failure(target, conn, run_id, ticket_id,
+                                  reason,
+                                  provider=provider,
+                                  outcome_class=outcome_class)
+            except Exception as close_err:  # noqa: BLE001
+                print(f"[holo2] close-out failed: {close_err}")
+    return merged
+
+
+def _reexec(target, conn, project):
+    """Replace the process image with a fresh `factory.py` from the merged
+    code, through the `EXEC` seam. Returns only when a test's EXEC does."""
+    sha = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
+    # sys.orig_argv is the exact original command line, so
+    # interpreter flags (-u above all: without it a tee'd log
+    # goes block-buffered and looks hung) survive the restart.
+    argv = list(sys.orig_argv) or [sys.executable, *sys.argv]
+    # `os.execv` does not search PATH, and `orig_argv[0]` is
+    # whatever the operator typed -- usually the bare `python3`.
+    # Resolve it the way the shell did; a name PATH cannot find
+    # falls back to the interpreter actually running this code.
+    program = argv[0]
+    if os.sep not in program:
+        program = shutil.which(program) or sys.executable
+    # flush=True: execv replaces the process image without
+    # running Python's buffered-stdout flush, so under a
+    # redirected (block-buffered) stdout the line would be lost.
+    print("[holo2] merged a change to the factory itself;"
+          f" re-executing from {sha}: {argv}", flush=True)
+    # The note the supervisor watches for, written before the
+    # exec because nothing can be written after a failed one:
+    # the sweep reports this restart if no claim, heartbeat or
+    # exit note follows it within the grace window.
+    store.record_loop_restart(conn, project, sha)
+    conn.close()
+    EXEC(program, argv)
 
 
 def report(target, conn=None, out=None, now=None):
