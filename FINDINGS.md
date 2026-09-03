@@ -653,26 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[151 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T19:16:25Z — KO-224
-MERGED to main.
-actual: 8.2 min · estimate: 20 min · rounds: 1
-
-## 2026-09-03T19:24:33Z — KO-227
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):b13fb0ffaae3 [p2] CRITERION 1: met — README line-count, heading-count, and doc-link verify checks CRITERION 2: met — tests/test_docs.py::HeadingTests::test_every_moved_heading_li…
-- criteria:3 [p2] CRITERION 3: not met — `strman.py` exists at the repository root but `docs/development.md` omits it; the test explicitly excludes it from its expected file list…
-
-## 2026-09-03T19:29:17Z — KO-227
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):3c8aeaeb2339 [p2] CRITERION 1: met — README `wc -l`, heading-count, and five-doc link checks CRITERION 2: met — tests/test_docs.py::HeadingTests::test_every_moved_heading_lives_i…
-- criteria:3 [p2] CRITERION 3: not met — `strman.py` exists at the repository root but is omitted from `docs/development.md`; the test explicitly excludes it from its expected in…
-
-## 2026-09-03T19:33:58Z — KO-227
-Round 3: changes_requested · reviewer codex-sol-medium · verify passed
+[155 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T19:33:58Z — KO-227
 FAILED: terminal adjudication: FAIL; branch task/ko-227-readme-is-the-front-door-the-m preserved at 22b46360eb22
@@ -758,3 +739,23 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T22:48:38Z — KO-237
 MERGED to main.
 actual: 5.5 min · estimate: 20 min · rounds: 1
+
+## 2026-09-03T23:18:05Z — KO-238
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):5200c45d6bfd [p2] CRITERION 1: met — tests/test_drawer.py::RenderTests::test_supervisor_row_shows_the_age_only_when_stale_or_none CRITERION 2: not met — Production requests `/run…
+- criteria:2 [p2] CRITERION 2: not met — Production requests `/runs`, not the contracted `/runs?limit=1`; tests/test_drawer.py::LiveTests::test_idle_daemon_is_asked_for_runs_and_…
+
+## 2026-09-03T23:24:28Z — KO-238
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (3):
+- contrib/swiftbar/holophyte.10s.py:259 [p2] [holophyte.10s.py](/workspace/contrib/swiftbar/holophyte.10s.py:259) requests `/runs`, while the frozen contract requires `/runs?limit=1`; the live test expli…
+- contrib/swiftbar/holophyte.10s.py:73 [p2] [holophyte.10s.py](/workspace/contrib/swiftbar/holophyte.10s.py:73) does not implement the contracted daemon-table age format: two hours renders `2h00m`, and…
+- criteria:2 [p2] CRITERION 2: not met — production polling does not issue the contracted `GET /runs?limit=1` Given an idle fixture whose runs fixture has a merged row for `KO-23…
+
+## 2026-09-03T23:32:01Z — KO-238
+Round 3: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T23:32:48Z — KO-238
+MERGED to main.
+actual: 21.7 min · estimate: 25 min · rounds: 3
