@@ -1203,6 +1203,110 @@ class SuperviseTests(SweepTestCase):
         self.assertEqual(self.heartbeats()[0][2], 2)
         self.assertIn("stopping on signal", printed)
 
+    def test_a_moved_factory_revision_releases_the_lock_and_re_executes(self):
+        """The revision is read at startup and before each pass; on the
+        first pass that finds it moved, the lock is gone before the exec
+        and the printed line names both revisions. Through the `EXEC` seam:
+        the test runner is never exec-ed, and a real one never returns."""
+        execs = []
+
+        def record_exec(program, argv):
+            execs.append((program, argv, self.lock.exists()))
+
+        orig = ["/usr/bin/python3", "-u", "factory.py", "--supervise", "/r"]
+        revisions = iter(["aaa", "bbb", "bbb"])
+        with patch.object(holophyte.supervisor, "EXEC", record_exec), \
+                patch.object(holophyte.supervisor, "factory_revision",
+                             lambda: next(revisions)), \
+                patch.object(sys, "orig_argv", orig):
+            code, printed = self.supervise(lambda _interval: None)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(execs, [("/usr/bin/python3", orig, False)])
+        self.assertIn("[holo2] factory code moved from aaa to bbb;"
+                      " supervisor re-executing", printed)
+        # `aaa` at startup, `bbb` before the first pass: no pass ran on the
+        # stale code, so no heartbeat was written.
+        self.assertEqual(self.heartbeats(), [])
+
+    def test_a_store_a_newer_build_stamped_re_executes_instead_of_exiting(self):
+        """The 55 unsupervised minutes: a self-merge bumped the schema, the
+        pass's store open refused it with `SystemExit`, and the supervisor
+        exited. Now the refusal is the re-exec's second trigger, with the
+        lock released first."""
+        execs = []
+
+        def record_exec(program, argv):
+            execs.append((program, argv, self.lock.exists()))
+
+        self.conn.execute(
+            f"PRAGMA user_version = {store.SCHEMA_VERSION + 1}")
+        self.conn.commit()
+        with patch.object(holophyte.supervisor, "EXEC", record_exec), \
+                patch.object(holophyte.supervisor, "factory_revision",
+                             lambda: "aaa"), \
+                patch.object(sys, "orig_argv", ["python3", "factory.py"]):
+            code, printed = self.supervise(lambda _interval: None)
+
+        self.assertEqual(code, 0)
+        ((program, argv, held),) = execs
+        self.assertTrue(os.path.isabs(program), program)
+        self.assertEqual(argv, ["python3", "factory.py"])
+        self.assertFalse(held)
+        self.assertIn("newer than the version", printed)
+        self.assertIn("supervisor re-executing", printed)
+
+    def test_a_stop_request_wins_over_a_pending_re_exec(self):
+        """A signal that lands during the refused pass ends the loop; the
+        refusal is re-raised as before rather than exec-ed past."""
+        execs = []
+        self.conn.execute(
+            f"PRAGMA user_version = {store.SCHEMA_VERSION + 1}")
+        self.conn.commit()
+
+        def refuse_then_stop(*args, **kwargs):
+            os.kill(os.getpid(), signal.SIGTERM)
+            raise SystemExit("x: newer than the version this build understands")
+
+        with patch.object(holophyte.supervisor, "EXEC",
+                          lambda *a: execs.append(a)), \
+                patch.object(holophyte.supervisor, "supervise_pass",
+                             refuse_then_stop), \
+                self.assertRaises(SystemExit):
+            self.supervise(lambda _interval: None)
+
+        self.assertEqual(execs, [])
+        self.assertFalse(self.lock.exists())
+
+    def test_a_stop_request_wins_over_a_revision_triggered_re_exec(self):
+        """The other trigger: a signal that lands while the revision is
+        being read -- inside the git call, after the loop's own stop check
+        -- ends the loop with the lock released, even though the revision
+        came back moved."""
+        execs = []
+        reads = []
+
+        def moved_but_stopped():
+            # Startup's read is plain; the one before the first pass is the
+            # one the signal lands in.
+            reads.append(1)
+            if len(reads) == 1:
+                return "aaa"
+            os.kill(os.getpid(), signal.SIGTERM)
+            return "bbb"
+
+        with patch.object(holophyte.supervisor, "EXEC",
+                          lambda *a: execs.append(a)), \
+                patch.object(holophyte.supervisor, "factory_revision",
+                             moved_but_stopped):
+            code, printed = self.supervise(lambda _interval: None)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(execs, [])
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("re-executing", printed)
+        self.assertIn("stopping on signal", printed)
+
     def test_the_loop_body_sweeps_with_action_and_records_a_heartbeat(self):
         """The body is `--sweep --act` plus a beat: a run silent across two
         passes is failed with its lease released, and each pass bumps the

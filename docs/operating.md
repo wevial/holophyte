@@ -36,7 +36,13 @@ table, so whether the watcher is still watching is a query rather than a
 change to the factory itself writes a `loopRestarts` row and re-executes,
 and if no claim, heartbeat or "no ready tickets" exit follows within
 `restart_grace_sec` the next sweep prints `loop did not return after re-exec
-from <sha>` and records it, once per restart. Nothing is relaunched. Process management (systemd, a tmux pane, `nohup`) is the operator's;
+from <sha>` and records it, once per restart. The supervisor also watches
+the factory checkout it runs from: before each pass it compares that
+checkout's `HEAD` with the one it started on, and when they differ -- or
+when a pass finds the store stamped with a newer schema than its build
+understands -- it prints `factory code moved from OLD to NEW; supervisor
+re-executing`, releases its lock and replaces itself with the same command
+line, so a self-merge does not end the watch. Nothing else is relaunched. Process management (systemd, a tmux pane, `nohup`) is the operator's;
 the factory ships the invocation and nothing around it.
 
 ## Serving

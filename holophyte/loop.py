@@ -2,7 +2,8 @@
 
 `main()` drives one pass of the factory -- claim, mirror, lease, `run_task()`,
 close out, repeat -- and re-executes `factory.py` through the `EXEC` seam
-after merging a change to the factory itself (`self_hosted()`). `run_task()`
+(`reexec_self` from `holophyte.reexec`) after merging a change to the factory
+itself (`self_hosted()`). `run_task()`
 is the loop body: the worktree (`reuse_leftover()` for a leftover,
 `run_worktree_setup()` for the `[worktree] setup` table, checked at startup by
 `check_worktree_setup()`), the implement/review/adjudicate turns, the verify
@@ -15,7 +16,6 @@ Seventh and last slice of the phase-2 module split; moved verbatim from
 """
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -52,6 +52,7 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
+from holophyte.reexec import reexec_self
 from holophyte.report import report_lines
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import (
@@ -1128,29 +1129,14 @@ def _reexec(target, conn, project):
     """Replace the process image with a fresh `factory.py` from the merged
     code, through the `EXEC` seam. Returns only when a test's EXEC does."""
     sha = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
-    # sys.orig_argv is the exact original command line, so
-    # interpreter flags (-u above all: without it a tee'd log
-    # goes block-buffered and looks hung) survive the restart.
-    argv = list(sys.orig_argv) or [sys.executable, *sys.argv]
-    # `os.execv` does not search PATH, and `orig_argv[0]` is
-    # whatever the operator typed -- usually the bare `python3`.
-    # Resolve it the way the shell did; a name PATH cannot find
-    # falls back to the interpreter actually running this code.
-    program = argv[0]
-    if os.sep not in program:
-        program = shutil.which(program) or sys.executable
-    # flush=True: execv replaces the process image without
-    # running Python's buffered-stdout flush, so under a
-    # redirected (block-buffered) stdout the line would be lost.
-    print("[holo2] merged a change to the factory itself;"
-          f" re-executing from {sha}: {argv}", flush=True)
-    # The note the supervisor watches for, written before the
-    # exec because nothing can be written after a failed one:
-    # the sweep reports this restart if no claim, heartbeat or
-    # exit note follows it within the grace window.
+    # The note the supervisor watches for, written before the exec because
+    # nothing can be written after a failed one: the sweep reports this
+    # restart if no claim, heartbeat or exit note follows it within the
+    # grace window.
     store.record_loop_restart(conn, project, sha)
     conn.close()
-    EXEC(program, argv)
+    reexec_self("merged a change to the factory itself;"
+                f" re-executing from {sha}", EXEC)
 
 
 def report(target, conn=None, out=None, now=None):
