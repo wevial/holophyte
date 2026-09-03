@@ -35,6 +35,10 @@ sys.path.insert(0, str(HERE))
 # The thin entry point, by path: `test_importing_the_module_names_no_target`
 # executes it fresh to show that importing `factory` chooses no target.
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
+from procs import (  # noqa: E402 - after the sys.path insert above
+    KillWatch,
+    assert_no_escaped_child,
+)
 from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
@@ -960,6 +964,17 @@ class WorktreeSetupTests(ConfigTestCase):
         self.assertFalse((wt / "never.txt").exists())
 
     def test_the_cap_takes_the_command_s_children_down_with_it(self):
+        """The escaped-child check has failed once under load (slice 4b
+        implementer, first full-suite run on `phase2/split-gates`, while a
+        Codex review ran a suite alongside; its twin in `test_verify_gate.py`
+        failed once the same day, 2026-09-02) and passed on every rerun. Two
+        hypotheses: the scheduler held the test between `communicate()`
+        raising and `killpg` running long enough for the child to finish, or
+        `/bin/sh` put the `&` job in a group of its own so the kill missed
+        it. A failure now carries the kill latency, the watched `killpg` call
+        and a `ps` snapshot of what mentions the marker, which tell those
+        apart: read the message before widening anything.
+        """
         # A real timeout, not a mocked one: the cap has to end the process
         # tree and not just the shell at the top of it. A background child
         # that outlives the reported timeout goes on writing into a worktree
@@ -982,8 +997,11 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = ["echo resolving; touch %s; '
                       '(sleep 3; touch %s) & sleep 30"]\n' % (started, escaped))
 
-        with patch.object(holophyte.config, "VERIFY_TIMEOUT", 1.0):
+        with patch.object(holophyte.config, "VERIFY_TIMEOUT", 1.0), \
+                KillWatch(escaped) as watch:
+            began = time.monotonic()
             ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+            elapsed = time.monotonic() - began
 
         self.assertFalse(ok)
         self.assertIn("timed out", report)
@@ -991,8 +1009,8 @@ class WorktreeSetupTests(ConfigTestCase):
                         "the shell did not reach its first line inside the 1s "
                         "cap: this machine is too loaded to time this run")
         self.assertIn("resolving", report)  # what it said before the cap
-        self.assertFalse(wait_for(escaped.exists, 3.5),
-                         "a child of the timed-out command outlived the cap")
+        assert_no_escaped_child(escaped, 3.5, watch=watch, elapsed=elapsed,
+                                cap=1.0)
 
     def test_setup_timeout_sec_bounds_the_setup_commands(self):
         # A real timeout again, against the configured cap rather than the
