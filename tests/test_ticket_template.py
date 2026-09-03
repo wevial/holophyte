@@ -443,6 +443,25 @@ class GitignoredPathTests(unittest.TestCase):
         self.assertIn("gitignored path in verify command: artifacts/check.py",
                       problems)
 
+    def test_dot_prefixed_gitignored_path_is_a_blocker(self):
+        (self.repo / ".gitignore").write_text("artifacts/*\n.cache/*\n")
+        text = FILLED.replace(
+            "- [ ] Given 3 orders, when GET /orders.csv, "
+            "then 4 lines including header.",
+            "- [ ] Given 3 orders, when exported, then `.cache/report.html` "
+            "lists them.")
+        problems = tt.validate(tt.parse(text), repo=self.repo)
+        self.assertIn("gitignored path in Acceptance criteria #1: "
+                      ".cache/report.html", problems)
+
+    def test_the_prescribed_venv_interpreter_is_not_a_path_problem(self):
+        # ticketTemplate.md itself tells verify commands to address the venv
+        # interpreter by path, and every real repository ignores .venv.
+        (self.repo / ".gitignore").write_text(".venv/\n")
+        problems = tt.validate(tt.parse(FILLED), repo=self.repo)
+        self.assertEqual(
+            [p for p in problems if "gitignored path" in p], [])
+
     def test_a_directory_that_is_not_a_repository_yields_one_advisory(self):
         elsewhere = Path(self.tmp.name) / "plain"
         elsewhere.mkdir()

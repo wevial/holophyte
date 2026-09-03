@@ -77,9 +77,16 @@ OPERATOR_WITNESS_PHRASES = (
     "visual pass", "when viewed", "by hand",
 )
 # A token that looks like a relative repository path: path characters only,
-# and either a slash or a short lowercase file extension. Absolute paths,
-# flags, URLs and shell globs are someone else's rule or nothing at all.
-PATH_TOKEN_RE = re.compile(r"^(?:\./)?[\w][\w.\-]*(?:/[\w.\-]+)*/?$")
+# and either a slash or a short lowercase file extension. A leading dot is a
+# path too (".cache/report.html", ".github/workflows/ci.yml"); the ignore
+# check has to see those, since dot-directories are exactly what gets
+# gitignored. Absolute paths, flags, URLs and shell globs are someone else's
+# rule or nothing at all.
+PATH_TOKEN_RE = re.compile(r"^(?:\./)?[\w.][\w.\-]*(?:/[\w.\-]+)*/?$")
+# The venv interpreter path ticketTemplate.md itself prescribes for verify
+# commands. Every real repository ignores .venv, and the harness provisions
+# it, so it is never a "gitignored path" finding.
+VENV_PATH_PREFIX = ".venv/"
 FILE_EXT_RE = re.compile(r"\.[a-z][a-z0-9]{0,9}$")
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 # "e.g." / "i.e." read as a stem plus a one-letter extension; they are prose.
@@ -357,6 +364,8 @@ def path_candidates(text):
         if not token or "://" in token:
             continue
         if not PATH_TOKEN_RE.match(token) or ABBREVIATION_RE.match(token):
+            continue
+        if token.startswith(VENV_PATH_PREFIX):
             continue
         if "/" not in token and not FILE_EXT_RE.search(token):
             continue
