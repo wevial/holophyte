@@ -1278,6 +1278,35 @@ class SuperviseTests(SweepTestCase):
         self.assertEqual(execs, [])
         self.assertFalse(self.lock.exists())
 
+    def test_a_stop_request_wins_over_a_revision_triggered_re_exec(self):
+        """The other trigger: a signal that lands while the revision is
+        being read -- inside the git call, after the loop's own stop check
+        -- ends the loop with the lock released, even though the revision
+        came back moved."""
+        execs = []
+        reads = []
+
+        def moved_but_stopped():
+            # Startup's read is plain; the one before the first pass is the
+            # one the signal lands in.
+            reads.append(1)
+            if len(reads) == 1:
+                return "aaa"
+            os.kill(os.getpid(), signal.SIGTERM)
+            return "bbb"
+
+        with patch.object(holophyte.supervisor, "EXEC",
+                          lambda *a: execs.append(a)), \
+                patch.object(holophyte.supervisor, "factory_revision",
+                             moved_but_stopped):
+            code, printed = self.supervise(lambda _interval: None)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(execs, [])
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("re-executing", printed)
+        self.assertIn("stopping on signal", printed)
+
     def test_the_loop_body_sweeps_with_action_and_records_a_heartbeat(self):
         """The body is `--sweep --act` plus a beat: a run silent across two
         passes is failed with its lease released, and each pass bumps the

@@ -913,6 +913,8 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
               f" lock at {path}", file=out)
         while not stop.is_set():
             current = factory_revision()
+            if stop.is_set():
+                break  # a signal landed in the git call: stop wins
             if current != started_from:
                 reexec(f"factory code moved from {started_from} to {current};"
                        " supervisor re-executing")
