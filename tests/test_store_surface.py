@@ -56,6 +56,18 @@ EXPECTED = [
     "walk_ticket",
 ]
 
+# Alphabetical, same rule, for the classes `store/__init__.py` defines: the
+# exceptions a caller matches on are surface too, and each is an error
+# variant the Rust port has to carry.
+EXPECTED_CLASSES = [
+    "ClaimConflict",
+    "GuidanceNotAccepted",
+    "IllegalTransition",
+    "Pickability",
+    "ResumeRefused",
+    "RunEnded",
+]
+
 # Alphabetical, same rule. One read per SELECT the factory used to embed;
 # a read that fetches the same row with a different column subset is not a
 # new function but a wider row type.
@@ -84,6 +96,15 @@ def public_functions(module=store):
     )
 
 
+def public_classes(module=store):
+    """Names of the classes `module` itself defines without a leading `_`."""
+    return sorted(
+        name
+        for name, obj in inspect.getmembers(module, inspect.isclass)
+        if obj.__module__ == module.__name__ and not name.startswith("_")
+    )
+
+
 def operator_api_names():
     """The backticked names in AGENTS.md's "Operator store API" bullet."""
     text = AGENTS_MD.read_text()
@@ -103,6 +124,17 @@ class StoreSurfaceTests(unittest.TestCase):
             (unexpected, missing), ([], []),
             f"store public surface drifted: not in allow-list {unexpected},"
             f" in allow-list but gone {missing}; update EXPECTED in"
+            f" tests/test_store_surface.py deliberately",
+        )
+
+    def test_public_classes_match_the_allow_list(self):
+        actual = public_classes()
+        unexpected = sorted(set(actual) - set(EXPECTED_CLASSES))
+        missing = sorted(set(EXPECTED_CLASSES) - set(actual))
+        self.assertEqual(
+            (unexpected, missing), ([], []),
+            f"store public classes drifted: not in allow-list {unexpected},"
+            f" in allow-list but gone {missing}; update EXPECTED_CLASSES in"
             f" tests/test_store_surface.py deliberately",
         )
 

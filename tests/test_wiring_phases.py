@@ -299,6 +299,33 @@ class PhaseWriteTests(unittest.TestCase):
         self.assertEqual(self.state(),
                          ("working", 2500, [("claimed -> working", 2500)]))
 
+    def test_an_ended_run_refuses_every_phase_change_and_writes_nothing(self):
+        """The ending is the last word (KO-213, run 39): a run the sweep
+        failed underneath its loop must not be walked on towards a merge by
+        the loop's next phase change. The refusal names the ending, and the
+        row and its stream are exactly as the release left them."""
+        store.set_phase(self.conn, self.run_id, "working", now=2500)
+        store.release(self.conn, self.run_id, "failed",
+                      "supervisor sweep: stale_heartbeat; failing", now=3000)
+        before = self.conn.execute(
+            "SELECT * FROM runs WHERE id = ?", (self.run_id,)).fetchone()
+        before_events = self.state()[2]
+
+        with self.assertRaises(store.RunEnded) as caught:
+            store.set_phase(self.conn, self.run_id, "verifying",
+                            "round 1: verify before review", now=9000)
+
+        self.assertIsInstance(caught.exception, ValueError)
+        self.assertEqual((caught.exception.run_id, caught.exception.outcome),
+                         (self.run_id, "failed"))
+        self.assertIn("stale_heartbeat", caught.exception.reason)
+        after = self.conn.execute(
+            "SELECT * FROM runs WHERE id = ?", (self.run_id,)).fetchone()
+        self.assertEqual(after, before)
+        self.assertEqual(self.state()[2], before_events)
+        self.assertEqual(before_events[-1][0],
+                         "working -> failed: run ended, outcome failed")
+
 
 class ReleaseTests(unittest.TestCase):
     """`release()` writes the run's ending exactly once: it moves phase as

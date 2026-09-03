@@ -771,6 +771,22 @@ PHASES = (
 )
 
 
+class RunEnded(ValueError):
+    """`set_phase()` was asked to move a run whose `endedAt` is stamped.
+
+    A `ValueError` like every other refused write here, and a named one
+    because the loop has to tell it apart from a caller bug: the run was
+    ended underneath a live loop -- by the supervisor sweep, by an operator
+    `--sweep --act` -- while the loop was blocked in an agent call, and the
+    loop's next phase change is the moment it finds out. `run_id`, `outcome`
+    and `reason` are the ended row's, so the catcher can say what ended it.
+    """
+
+    def __init__(self, run_id, outcome, reason):
+        super().__init__(f"run {run_id} has ended ({outcome}: {reason})")
+        self.run_id, self.outcome, self.reason = run_id, outcome, reason
+
+
 def set_phase(conn, run_id, phase, note=None, now=None):
     """Move run `run_id` to `phase`; return the phase it was in.
 
@@ -805,6 +821,19 @@ def set_phase(conn, run_id, phase, note=None, now=None):
     erase the round boundary the log exists to show. `resume()` is the one
     other phase writer and deliberately does not come through here — it moves
     a parked run without stamping a heartbeat it has no evidence for.
+
+    An ended run is refused with `RunEnded`, and nothing is written: run 39
+    (KO-213) was failed by the supervisor sweep while its loop waited on an
+    implementer, and the loop's next phase change walked the ended run
+    `failed -> verifying -> reviewing` towards a merge under a row that said
+    the work had failed. The ending is the last word on a run; the check sits
+    inside the transaction so a release landing between the read and the
+    UPDATE cannot slip through. "Ended" is what `release()` means by it --
+    `endedAt` stamped *and* the phase in `ENDED_PHASES` -- because
+    `resume()` moves a released run back into a work phase without clearing
+    `endedAt`, and that second stretch of work has to be able to move and to
+    be released. `release()` itself moves the terminal phase through here
+    *before* it stamps `endedAt`, which is why it is not refused either.
     """
     if phase not in PHASES:
         raise ValueError(f"unknown phase {phase!r}")
@@ -812,11 +841,14 @@ def set_phase(conn, run_id, phase, note=None, now=None):
         now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
-            "SELECT phase FROM runs WHERE id = ?", (run_id,)
+            "SELECT phase, endedAt, outcome, outcomeReason FROM runs"
+            " WHERE id = ?", (run_id,)
         ).fetchone()
         if row is None:
             raise ValueError(f"no run {run_id}")
-        (previous,) = row
+        previous, ended_at, outcome, reason = row
+        if ended_at is not None and previous in ENDED_PHASES:
+            raise RunEnded(run_id, outcome, reason)
         conn.execute(
             "UPDATE runs SET phase = ?, lastHeartbeat = ? WHERE id = ?",
             (phase, now, run_id),
