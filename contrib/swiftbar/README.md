@@ -42,6 +42,10 @@ To see the exact menu without a network, render fixtures instead:
 python3 contrib/swiftbar/holophyte.10s.py --render tests/fixtures/drawer/idle.json
 ```
 
+A fixture is a `/status` answer, or an object with `status` and `runs` keys
+carrying the `/runs` answer too (`idle_last_merge.json`), which is what an
+idle target's "last merge" row reads.
+
 ## The dot
 
 The menu-bar glyph is the two-leaf template icon, embedded as the 18 pt PDF
@@ -65,6 +69,16 @@ whose heartbeat has gone stale (the supervisor will sweep it after its strike
 count, but a stuck review is worth a look first), a supervisor that is stale
 or absent (nothing will sweep anything until it is back), or a daemon that
 cannot be reached (you know nothing about that target until it is).
+
+An idle target's row names what it last shipped: `idle · last merge KO-n ·
+12m ago`, read from a second request, `GET /runs`, that the plugin makes only
+for an idle daemon (the newest `merged` row of the whole table, since `/runs`
+lists oldest first). The daemon's rows do not carry an end time today, so a
+live row reads `idle · last merge KO-n` without the age until they do; when
+`/runs` does not answer, the row falls back to `idle · queue empty`. The
+supervisor row is the state word alone when it is `live`; `stale · 7m` and
+`none` show the age and turn amber, since the age only says something when
+the state is wrong.
 
 Every age in the menu comes from the daemon's own `now` and `_ms` fields,
 never from the Mac's clock, so a reading is never distorted by clock skew.

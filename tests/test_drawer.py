@@ -71,7 +71,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("12m of 30m", detail)
         self.assertIn("heartbeat 4s", detail)
         supervisors = [x for x in lines
-                       if x.lstrip().startswith("supervisor live · 12s")]
+                       if x.lstrip().startswith("supervisor live |")]
         self.assertEqual(len(supervisors), 2)
         header_index = lines.index(next(x for x in lines if "working · writer" in x))
         self.assertLess(header_index, lines.index("KO-232 · reviewing"))
@@ -112,8 +112,47 @@ class RenderTests(unittest.TestCase):
         supervisor = lines[main_row + 2]
         self.assertEqual(lines[main_row + 1], "idle · queue empty")
         self.assertTrue(supervisor.startswith(" "), supervisor)
-        self.assertIn("supervisor live · 12s", supervisor)
+        self.assertIn("supervisor live", supervisor)
         self.assertIn("trim=false", supervisor)
+
+    def test_supervisor_row_shows_the_age_only_when_stale_or_none(self):
+        def row(name, **sup):
+            e = entry(name)
+            e["status"]["supervisor"] = {**e["status"]["supervisor"], **sup}
+            return drawer.target_block(e)[-1]
+
+        live = row("idle")
+        stale = row("stale_supervisor", heartbeat_age_ms=420000)
+        none = row("supervisor_none")
+        self.assertEqual(live.split(" | ")[0].strip(), "supervisor live")
+        self.assertEqual(stale.split(" | ")[0].strip(), "supervisor stale · 7m")
+        self.assertEqual(none.split(" | ")[0].strip(), "supervisor none")
+        self.assertNotIn(f"color={drawer.AMBER}", live)
+        self.assertIn(f"color={drawer.AMBER}", stale)
+        self.assertIn(f"color={drawer.AMBER}", none)
+        # The CLI path agrees with the pure one, and no live row carries a
+        # number after the state word.
+        text = render_cli("idle", "stale_supervisor", "supervisor_none")
+        self.assertIn("   supervisor live | ", text)
+        amber = f"trim=false size=11 color={drawer.AMBER}"
+        self.assertIn(f"   supervisor stale · 4m | {amber}", text)
+        self.assertIn(f"   supervisor none | {amber}", text)
+        self.assertNotRegex(text, r"supervisor live · [0-9]")
+
+    def test_idle_row_names_the_last_merge_or_says_nothing_merged(self):
+        merged = render_cli("idle_last_merge").splitlines()
+        nothing = render_cli("idle_nothing_merged").splitlines()
+        self.assertIn("idle · last merge KO-237 · 12m ago", merged)
+        self.assertNotIn("KO-239", "\n".join(merged))  # newer, but failed
+        self.assertIn("idle · nothing merged yet", nothing)
+        # Rows the daemon sends today carry no `ended_ms`: the ticket alone.
+        e = drawer.fixture_entry(FIXTURES / "idle_last_merge.json")
+        for r in e["runs"]["rows"]:
+            del r["ended_ms"]
+        self.assertEqual(drawer.target_block(e)[1], "idle · last merge KO-237")
+        # A `/runs` that did not answer falls back to the old row.
+        e["runs"] = {"unreachable": True, "error": "timed out"}
+        self.assertEqual(drawer.target_block(e)[1], "idle · queue empty")
 
     def test_footer_counts_targets_and_distinct_hosts(self):
         def status(host):
@@ -147,20 +186,25 @@ class RenderTests(unittest.TestCase):
             self.assertEqual(bare, f"● | color={drawer.GREEN}")
 
     def test_same_fixture_renders_byte_identical(self):
-        once = render_cli("working", "stale_heartbeat")
-        again = render_cli("working", "stale_heartbeat")
+        once = render_cli("working", "stale_heartbeat", "idle_last_merge")
+        again = render_cli("working", "stale_heartbeat", "idle_last_merge")
         self.assertEqual(once, again)
         self.assertIn("updated 0s ago", once)
+        self.assertIn("idle · last merge KO-237 · 12m ago", once)
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     body = b""
+    runs_body = b'{"rows": [], "limit": null}'
+    paths = []
 
     def do_GET(self):
+        Handler.paths.append(self.path)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(self.body)
+        self.wfile.write(self.runs_body if self.path.startswith("/runs")
+                         else self.body)
 
     def log_message(self, *args):
         pass
@@ -193,6 +237,25 @@ class LiveTests(unittest.TestCase):
         self.assertIn("gone · ?", text)
         self.assertIn("href=https://linear.app/example", text)
         self.assertIn("2 targets · 1 host", text)
+
+    def test_idle_daemon_is_asked_for_runs_and_a_working_one_is_not(self):
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}"
+        Handler.body = json.dumps(fixture("idle")).encode()
+        Handler.runs_body = json.dumps(
+            fixture("idle_last_merge")["runs"]).encode()
+        Handler.paths = []
+        got = drawer.poll({"name": "idle", "url": url})
+        self.assertEqual(Handler.paths, ["/status", "/runs"])
+        self.assertEqual(drawer.target_block(got)[1],
+                         "idle · last merge KO-237 · 12m ago")
+        Handler.body = json.dumps(fixture("working")).encode()
+        Handler.paths = []
+        got = drawer.poll({"name": "working", "url": url})
+        self.assertEqual(Handler.paths, ["/status"])
+        self.assertIsNone(got["runs"])
 
     def test_fetch_marks_a_closed_port_unreachable(self):
         got = drawer.fetch(f"http://127.0.0.1:{closed_loopback_port()}")

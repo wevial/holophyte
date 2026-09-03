@@ -1,0 +1,53 @@
+{
+ "status": {
+  "target": "/srv/dev/writer",
+  "host": "writer",
+  "now": 1756900000000,
+  "supervisor": {
+   "state": "live",
+   "pid": 4242,
+   "heartbeat_age_ms": 12000,
+   "host": "writer"
+  },
+  "thresholds": {
+   "heartbeat_stale_ms": 180000,
+   "strikes": 3
+  },
+  "runs": []
+ },
+ "runs": {
+  "rows": [
+   {
+    "ticket": "KO-236",
+    "actual_min": 22.0,
+    "estimate_min": 25.0,
+    "ratio": 0.88,
+    "rounds": 1,
+    "outcome": "merged",
+    "host": "writer",
+    "ended_ms": 1756890000000
+   },
+   {
+    "ticket": "KO-237",
+    "actual_min": 31.5,
+    "estimate_min": 25.0,
+    "ratio": 1.26,
+    "rounds": 2,
+    "outcome": "merged",
+    "host": "writer",
+    "ended_ms": 1756899280000
+   },
+   {
+    "ticket": "KO-239",
+    "actual_min": 8.0,
+    "estimate_min": 20.0,
+    "ratio": 0.4,
+    "rounds": 0,
+    "outcome": "failed",
+    "host": "writer",
+    "ended_ms": 1756899700000
+   }
+  ],
+  "limit": null
+ }
+}
