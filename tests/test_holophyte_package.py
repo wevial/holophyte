@@ -112,10 +112,12 @@ DEFINED = {
         "finding_blocks",
         "finding_message",
         "finding_severity",
+        "missing_witnesses",
         "parse_findings",
         "raw_finding",
         "round_verdict",
         "sanitize_findings",
+        "test_references",
         "unparsed_path",
     ],
     holophyte.runs: [

@@ -127,7 +127,7 @@ def heartbeat_while(conn, run_id, interval_s):
 
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
-                 started_at=None, criteria=()):
+                 started_at=None, criteria=(), root=None):
     """Record one review or adjudication round as a `reviewRounds` row.
 
     The round the loop just ran, as the store holds it: the verdict, the
@@ -152,7 +152,9 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     criterion, even when its verdict line says APPROVE: the verdict line is
     still read as before, and the override is applied after it. The
     adjudicator keeps its bare PASS/FAIL contract and is not held to the
-    checklist.
+    checklist. `root` is the round's worktree: with it, a `met` witness that
+    names a test must exist there (`criteria_findings()`), so a named test
+    not found is one more such finding.
 
     A `conn` of None makes this a no-op, like `set_phase()`, so a storeless
     `run_task()` runs the same stages and records nothing.
@@ -169,7 +171,7 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     else:
         findings = []
     if role == "review" and verdict != "error":
-        unwitnessed = criteria_findings(reply, criteria)
+        unwitnessed = criteria_findings(reply, criteria, root)
         if unwitnessed:
             verdict = "changes_requested"
             findings = findings + unwitnessed

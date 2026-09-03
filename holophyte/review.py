@@ -13,6 +13,7 @@ which imports back the names its remaining call sites use.
 """
 import hashlib
 import re
+from pathlib import Path
 
 import review_runner
 
@@ -281,7 +282,86 @@ def criteria_block(reply):
     return block
 
 
-def criteria_findings(reply, criteria):
+# A test reference inside a witness: `tests/x.py::Cls::test_y`,
+# `tests/x.py::test_y`, or the dotted `tests.x.Cls.test_y`. Prose witnesses
+# and verify commands match neither and are left alone.
+WITNESS_TEST_RE = re.compile(
+    r"(?P<path>[\w./-]+\.py)::(?:(?P<cls>\w+)::)?(?P<name>test\w*)"
+    r"|(?P<mod>tests(?:\.\w+)+)\.(?P<name2>test\w*)")
+MISSING_WITNESS_NOTE = "named test not found: "
+
+
+def test_references(witness):
+    """`[(path, cls, name)]` for every test `witness` names; `cls` is None
+    for a module-level test.
+
+    The dotted form maps `tests.a.B.test_c` to `tests/a.py`, class `B`: the
+    segment before the test name is a class only when it is capitalised,
+    since a module is never written that way and a test class always is.
+    """
+    references = []
+    for match in WITNESS_TEST_RE.finditer(witness or ""):
+        if match.group("path"):
+            references.append((match.group("path"), match.group("cls"),
+                               match.group("name")))
+            continue
+        segments = match.group("mod").split(".")
+        cls = None
+        if len(segments) > 1 and segments[-1][0].isupper():
+            cls = segments.pop()
+        references.append(("/".join(segments) + ".py", cls,
+                           match.group("name2")))
+    return references
+
+
+def missing_witnesses(references, root):
+    """One message per reference in `references` that `root` does not hold.
+
+    A text scan of the named file, never an import: `def NAME(` at any
+    indentation for a module-level test, or inside the block of `class CLS`
+    — the lines indented deeper than the class line, up to the next line
+    indented at or below it — when a class is named. No test runs here; the
+    verify gate does that.
+    """
+    missing = []
+    for path, cls, name in references:
+        spec = f"{path}::{cls}::{name}" if cls else f"{path}::{name}"
+        file = Path(root) / path
+        if not file.is_file():
+            missing.append(f"{spec} (no file {path})")
+            continue
+        lines = file.read_text(errors="replace").splitlines()
+        if cls is None:
+            if not any(re.match(rf"\s*def {name}\(", line) for line in lines):
+                missing.append(f"{spec} (no def {name})")
+            continue
+        found = _defines_in_class(lines, cls, name)
+        if found is None:
+            missing.append(f"{spec} (no class {cls})")
+        elif not found:
+            missing.append(f"{spec} (no def {name} in class {cls})")
+    return missing
+
+
+def _defines_in_class(lines, cls, name):
+    """True when `class cls` defines `name`, False when it exists without it,
+    None when no such class is in `lines`."""
+    seen = False
+    for i, line in enumerate(lines):
+        match = re.match(rf"(\s*)class {cls}\b", line)
+        if match is None:
+            continue
+        seen = True
+        depth = len(match.group(1))
+        for inner in lines[i + 1:]:
+            if inner.strip() and len(inner) - len(inner.lstrip()) <= depth:
+                break
+            if re.match(rf"\s*def {name}\(", inner):
+                return True
+    return False if seen else None
+
+
+def criteria_findings(reply, criteria, root=None):
     """One finding per criterion `reply` did not witness; `[]` when all met.
 
     The gate KO-165 lacked: a reviewer that approves while a criterion is
@@ -289,11 +369,20 @@ def criteria_findings(reply, criteria):
     filed a complaint against the candidate whatever its verdict line says,
     and this is that complaint in the findings shape the round stores. A
     task with no criteria has nothing to witness and always answers `[]`.
+
+    With `root` — the round's worktree — a `met` witness that names a test
+    (see `test_references()`) is also checked to exist there, and a criterion
+    whose named test is fiction is downgraded to `unwitnessed`. Without it,
+    the witness is taken at its word.
     """
     block = criteria_block(reply)
     findings = []
     for n, criterion in enumerate(criteria or (), 1):
         status, note = block.get(n, ("unwitnessed", UNWITNESSED_NOTE))
+        if status == "met" and note and root is not None:
+            missing = missing_witnesses(test_references(note), root)
+            if missing:
+                status, note = "unwitnessed", MISSING_WITNESS_NOTE + "; ".join(missing)
         if status == "met" and note:
             continue
         if status == "met":  # claimed, with nothing named to witness it
@@ -320,6 +409,8 @@ def criteria_brief(criteria):
             "that witnesses it)\n"
             "CRITERION n: not met \u2014 WHY\n"
             "CRITERION n: unwitnessed \u2014 WHAT_IS_MISSING\n"
+            "Name tests as `tests/file.py::TestClass::test_name`; the loop "
+            "checks the test exists.\n"
             "A criterion marked not met or unwitnessed, or left out of this "
             "list, is a blocker: the round is REQUEST_CHANGES regardless of "
             "the verdict line.\n\n")

@@ -70,7 +70,12 @@ class RunPhaseTests(unittest.TestCase):
         self.git("config", "user.email", "factory@example.invalid")
         self.git("config", "user.name", "Factory Test")
         (self.target / "README.md").write_text("base\n")
-        self.git("add", "README.md")
+        # The test the scripted approvals name as their witness: since KO-215
+        # the loop checks a named test exists in the worktree.
+        (self.target / "tests").mkdir()
+        (self.target / "tests" / "test_thing.py").write_text(
+            "def test_it_works():\n    pass\n")
+        self.git("add", "-A")
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
