@@ -85,7 +85,8 @@ and the drawer then reads the host as "attention needed" on every seat.
 `deploy/holophyte-serve@.service` is a systemd user unit template that keeps
 one daemon per target standing: the instance name is the target slug, the
 unit restarts on failure, and an enabled unit comes back after a reboot or a
-supervisor re-exec. It runs `factory.py` from the factory checkout named in
+supervisor re-exec, provided the operator's user manager itself starts at boot
+(lingering, below). It runs `factory.py` from the factory checkout named in
 its `WorkingDirectory`, so a self-merge is picked up on the next restart; the
 daemon reads the store per request and has no state to lose.
 
@@ -115,11 +116,19 @@ HOLOPHYTE_SERVE_PORT=7710
 Install and enable, one instance per target:
 
 ```
+sudo loginctl enable-linger "$USER"
 mkdir -p ~/.config/systemd/user && cp deploy/holophyte-serve@.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now holophyte-serve@holophyte
 journalctl --user -u holophyte-serve@holophyte -f
 ```
+
+The first line matters for an unattended reboot: a user unit is run by the
+operator's user manager, and without lingering that manager only starts when
+the operator logs in, so an enabled unit would wait for a login that never
+comes on a headless writer host. `loginctl enable-linger` starts the user
+manager at boot; run it once per host, and check with
+`loginctl show-user "$USER" -p Linger` (expect `Linger=yes`).
 
 The unit's `WorkingDirectory` is `%h`-relative and names the checkout
 layout of the writer host; adjust it before enabling if the factory lives
