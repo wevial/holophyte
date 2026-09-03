@@ -1011,6 +1011,11 @@ class SuperviseTests(SweepTestCase):
 
     def setUp(self):
         super().setUp()
+        # `--supervise` posts to the board, so `cli()` needs one named; the
+        # provider is a tripwire below, so the values are never sent.
+        (self.db.parent / "config.toml").write_text(
+            '[board]\nproject_id = "p-1"\nteam = "T"\n')
+        self.tgt = holophyte.target.Target.locate(self.target)
         self.lock = holophyte.supervisor.supervisor_lock_path(self.tgt)
 
     def supervise(self, wait):
@@ -1546,7 +1551,8 @@ class HostLabelTests(SweepTestCase):
     def setUp(self):
         super().setUp()
         (self.db.parent / "config.toml").write_text(
-            f'[report]\nhost_label = "{self.LABEL}"\n')
+            f'[report]\nhost_label = "{self.LABEL}"\n'
+            '[board]\nproject_id = "p-1"\nteam = "T"\n')
         self.tgt = holophyte.target.Target.locate(self.target)
         self.lock = holophyte.supervisor.supervisor_lock_path(self.tgt)
 

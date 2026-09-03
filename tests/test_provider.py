@@ -22,6 +22,7 @@ import io
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -308,10 +309,6 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # linear_provider refuses to import without a configured project; the
-        # fake serves every project alike, so the value is a placeholder.
-        os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
-        os.environ.setdefault("HOLO2_TEAM", "test-team")
         import linear_provider
         cls.linear = linear_provider
 
@@ -320,7 +317,7 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         patcher = patch.object(self.linear, "_gql", self.board.gql)
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.provider = board_seam.LinearProvider()
+        self.provider = board_seam.LinearProvider("test-project", "test-team")
 
     def seed(self, identifier, state="Todo", **fields):
         # `priority` is an issue field, not part of the body's template.
@@ -390,46 +387,48 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
             raise AssertionError(f"_gql was reached: {query[:40]}")
 
         with patch.object(self.linear, "_gql", tripwire):
-            fresh = board_seam.LinearProvider()
-            self.assertEqual(fresh.team, self.provider.team)
+            fresh = board_seam.LinearProvider("test-project", "test-team")
+            self.assertEqual(fresh.team, "test-team")
 
 
-class LinearTeamConfigTests(unittest.TestCase):
-    """`team` comes from `HOLO2_TEAM`, the way the project id comes from
-    `HOLO2_PROJECT_ID`: from the environment or a `.env` beside the module,
-    never from a name written into the code.
+class LinearImportTests(unittest.TestCase):
+    """Importing `linear_provider` reads no configuration.
 
-    Each test imports a fresh copy of `linear_provider.py` from a directory
-    with no `.env` in it, so the operator's own file cannot stand in for the
-    variable, and pops it again afterwards so the copy never serves anyone
-    else.
+    The board is the target's `[board]` table, handed to `LinearProvider`;
+    the module holds no project or team of its own, so importing it with no
+    `HOLO2_*` variables and no `.env` beside it succeeds. The import runs in
+    a subprocess from a copy of the module in a directory with no `.env`, so
+    neither this process's modules nor the operator's own file can stand in
+    for the configuration the import must not need.
     """
 
-    def setUp(self):
+    def test_the_module_imports_with_no_configuration_at_all(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        shutil.copy(ROOT / "linear_provider.py", tmp.name)
-        self.saved = sys.modules.pop("linear_provider", None)
-        self.addCleanup(self.restore)
-        sys.path.insert(0, tmp.name)
-        self.addCleanup(sys.path.remove, tmp.name)
+        for name in ("linear_provider.py", "ticket_template.py"):
+            shutil.copy(ROOT / name, tmp.name)
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("HOLO2_PROJECT_ID", "HOLO2_TEAM")}
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-    def restore(self):
-        sys.modules.pop("linear_provider", None)
-        if self.saved is not None:
-            sys.modules["linear_provider"] = self.saved
+        done = subprocess.run(
+            [sys.executable, "-c",
+             "import linear_provider; "
+             "print(hasattr(linear_provider, 'PROJECT_ID'), "
+             "hasattr(linear_provider, 'TEAM'))"],
+            cwd=tmp.name, env=env, capture_output=True, text=True)
 
-    def test_an_unset_team_is_a_startup_error_naming_the_variable(self):
-        env = {"HOLO2_PROJECT_ID": "test-project"}
-        with patch.dict(os.environ, env, clear=True):
-            with self.assertRaises(RuntimeError) as raised:
-                board_seam.LinearProvider().team
-        self.assertIn("HOLO2_TEAM", str(raised.exception))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), "False False")
 
-    def test_the_team_is_the_one_the_environment_names(self):
-        env = {"HOLO2_PROJECT_ID": "test-project", "HOLO2_TEAM": "Example Team"}
-        with patch.dict(os.environ, env, clear=True):
-            self.assertEqual(board_seam.LinearProvider().team, "Example Team")
+    def test_the_provider_carries_the_pair_it_was_built_with(self):
+        """`team` is the stored value, not a module read: two providers on
+        one host answer with their own boards."""
+        one = board_seam.LinearProvider("p-1", "Team One")
+        two = board_seam.LinearProvider("p-2", "Team Two")
+
+        self.assertEqual((one.project_id, one.team), ("p-1", "Team One"))
+        self.assertEqual((two.project_id, two.team), ("p-2", "Team Two"))
 
 
 if __name__ == "__main__":

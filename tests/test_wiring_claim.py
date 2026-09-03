@@ -520,9 +520,6 @@ class ReadyIssuesPaginationTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # linear_provider refuses to import without a configured project.
-        os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
-        os.environ.setdefault("HOLO2_TEAM", "test-team")
         import linear_provider
         cls.provider = linear_provider
 

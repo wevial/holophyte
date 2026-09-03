@@ -266,8 +266,9 @@ ruff is a developer tool, not a dependency: install it on the host with
 
 ## Config
 
-`LINEAR_API_KEY`, `HOLO2_PROJECT_ID` and `HOLO2_TEAM` (the name of the Linear
-team the project belongs to) — env vars or `.env` next to `linear_provider.py`.
+`LINEAR_API_KEY` — an env var or `.env` next to `linear_provider.py`. Which
+Linear project a target is driven from is the `[board]` table of that
+target's `config.toml`, below.
 
 Per-target behavior lives in `~/.holophyte/<slug>/config.toml`. Everything the
 factory keeps about a target sits in that one directory — the store at
@@ -306,7 +307,7 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`), a key it does
+(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`), a key it does
 not read is
 a startup
 error naming the file, the table, the key and the keys the table accepts:
@@ -430,6 +431,27 @@ one failure stops the whole queue. The exit status is still nonzero once the
 queue is empty if any run failed. The value must be a boolean, `true` or
 `false`; a string such as `"yes"` is a startup error naming the key, like a
 `[supervisor]` threshold outside its constraint.
+
+```toml
+[board]
+# The Linear project this target claims from and the team whose workflow
+# states its tickets move through. Required for the loop and --supervise.
+project_id = "00000000-0000-0000-0000-000000000000"
+team = "Example Team"
+```
+
+Accepted keys: `project_id`, `team`.
+
+The board is a per-target setting: two targets on one host driven from one
+process-wide variable would both claim from the same project, and the second
+would silently work the first's queue. Both values must be non-empty strings.
+`--report`, `--serve` and a read-only `--sweep` need no board and run without
+the table; the loop and `--supervise` exit at startup naming `[board]
+project_id` when it is absent. For one release, `HOLO2_PROJECT_ID` and
+`HOLO2_TEAM` in the environment (or the factory's own `.env`) stand in for an
+absent table, and the factory prints `[board] table absent; using
+HOLO2_PROJECT_ID and HOLO2_TEAM from the environment` once so the setting can
+be moved; a later release removes that fallback.
 
 ```toml
 [report]
