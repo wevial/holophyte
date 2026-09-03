@@ -653,15 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[134 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T16:09:51Z — KO-220
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- linear_provider.py [p2] [linear_provider.py](/workspace/linear_provider.py:309): The retained script entry point calls the newly parameterized `claim_next()` without `project_id` or `t…
-
-## 2026-09-03T16:17:20Z — KO-220
-Round 2: pass · reviewer codex-sol-medium · verify passed
+[136 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T16:18:06Z — KO-220
 MERGED to main.
@@ -752,3 +744,10 @@ actual: 5.1 min · estimate: 10 min · rounds: 1
 ## 2026-09-03T19:40:49Z — KO-227
 FAILED: cannot reuse leftover worktree: preserved commits on task/ko-227-readme-is-the-front-door-the-m conflict with a main that moved on; a human resolves the merge before this ticket is run again
 actual: 0.0 min · estimate: 30 min · rounds: 0
+
+## 2026-09-03T19:48:19Z — KO-227
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T19:49:05Z — KO-227
+MERGED to main.
+actual: 6.6 min · estimate: 30 min · rounds: 1
