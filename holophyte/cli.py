@@ -15,6 +15,7 @@ import argparse
 
 from holophyte.config import (
     SUPERVISE_INTERVAL_SEC,
+    board_config,
     check_agent_commands,
     check_config_keys,
     loop_config,
@@ -124,11 +125,16 @@ def cli(argv=None):
     # is built and no route has to resolve.
     if args.serve is not None:
         return serve(target, args.serve)
-    # The board, built once here and handed down: nothing below reaches for
-    # Linear by name. Construction touches neither the network nor the
-    # module's configuration, so a read-only sweep still calls nobody; the
-    # first call that posts to the board is what reads it.
-    board = LinearProvider()
+    # The board, built once here from the target's `[board]` table and handed
+    # down: nothing below reaches for Linear by name. Construction touches
+    # neither the network nor the module, so a read-only sweep still calls
+    # nobody; the first call that posts to the board is what reads the key.
+    # A target with no table and no `HOLO2_*` fallback has no board, which
+    # a read-only sweep can live with (it calls nobody) and the modes that
+    # post to the board cannot: they exit here, naming the key to set.
+    settings = board_config(target)
+    board = (LinearProvider(settings.project_id, settings.team)
+             if settings is not None else None)
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails
     # runs rather than dispatching them, so it needs no route either.
@@ -139,7 +145,7 @@ def cli(argv=None):
     # lock first, and a target that already has one is an exit, not a loop.
     if args.supervise:
         try:
-            return supervise(target, board)
+            return supervise(target, require_board(target, board))
         except SupervisorHeld as held:
             # With the liveness line, so the refusal is actionable: a held
             # lock and a fresh heartbeat is a watcher doing its job; a held
@@ -154,4 +160,21 @@ def cli(argv=None):
     # Same window, same reason: the `[worktree]` table is read here rather
     # than by the first run that cuts a worktree with it.
     check_worktree_setup(target)
-    return main(target, board)
+    return main(target, require_board(target, board))
+
+
+def require_board(target, board):
+    """`board`, or the startup exit for a target that has none.
+
+    The loop and `--supervise` post to the board, so a target with no
+    `[board]` table and no `HOLO2_*` fallback cannot start them: the exit
+    names the key to set, in the same window as a route that resolves
+    nowhere, before anything is claimed.
+    """
+    if board is None:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [board] project_id is not set -- "
+            "add a [board] table with project_id (the Linear project UUID) "
+            "and team (the Linear team name), or for now set HOLO2_PROJECT_ID "
+            "and HOLO2_TEAM in the environment")
+    return board

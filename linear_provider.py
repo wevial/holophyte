@@ -2,7 +2,8 @@
 """Linear provider for holo2.
 
 Uses a personal API key from LINEAR_API_KEY (env var or .env next to this
-file) against the direct GraphQL API.
+file) against the direct GraphQL API. The project and team are parameters of
+the calls that need them, never module state.
 
 Loop-facing API: claim_next() / fetch_task() / set_state() / comment() /
 list_ready_issues().
@@ -30,22 +31,13 @@ def _load_env_var(name):
     return None
 
 
-# Target Linear project. Configured via HOLO2_PROJECT_ID (env or .env) —
-# never hardcoded here, so public history stays free of internal IDs.
-PROJECT_ID = _load_env_var("HOLO2_PROJECT_ID")
-if not PROJECT_ID:
-    raise RuntimeError(
-        "HOLO2_PROJECT_ID not set — add it to .env next to this file "
-        "(Linear project UUID to drive)")
-
-# The Linear team the project belongs to, by name: the workflow states are
-# looked up per team. Configured via HOLO2_TEAM the same way, and for the
-# same reason -- a team name is one operator's board, not this file's.
-TEAM = _load_env_var("HOLO2_TEAM")
-if not TEAM:
-    raise RuntimeError(
-        "HOLO2_TEAM not set — add it to .env next to this file "
-        "(name of the Linear team the project belongs to)")
+# Which project to drive and which team's workflow states to resolve in are
+# the caller's to say: `list_ready_issues()`, `_state_id()`, `set_state()`
+# and `claim_next()` take them as parameters, and `provider.LinearProvider`
+# carries the pair the target's `[board]` table names. Nothing is read from
+# the environment at import, so importing this module is not a configuration
+# read; the one variable it still reads, `LINEAR_API_KEY`, is read at the
+# first request.
 
 
 def _load_env_key():
@@ -126,7 +118,7 @@ query($project: String!, $after: String) {
 CLOSED_STATE_TYPES = {"completed", "canceled"}
 
 
-def list_ready_issues(project_id=PROJECT_ID):
+def list_ready_issues(project_id):
     """Triaged (Todo/started), non-terminal, unblocked issues in the project.
 
     Note: Linear stores a blocker as an edge with type=blocks whose SOURCE is
@@ -218,21 +210,21 @@ def fetch_task(issue_id):
     return parse_task(issue) if issue else None
 
 
-def _state_id(name):
+def _state_id(name, team):
     data = _gql('query($team: String!) { workflowStates(filter: { team: '
                 '{ name: { eq: $team } } }) { nodes { id name type } } }',
-                {"team": TEAM})
+                {"team": team})
     # A name the team does not have is a mapping the caller got wrong, and it
     # says so: the bare StopIteration `next()` would raise names neither the
     # state nor the team it was looked for in.
     for s in data["workflowStates"]["nodes"]:
         if s["name"] == name:
             return s["id"]
-    raise RuntimeError(f"team {TEAM!r} has no workflow state named {name!r}")
+    raise RuntimeError(f"team {team!r} has no workflow state named {name!r}")
 
 
-def set_state(issue_id, state_name):
-    """Move an issue to the workflow state called `state_name`.
+def set_state(issue_id, state_name, team):
+    """Move an issue to the workflow state called `state_name` of `team`.
 
     The only state-writing entry point, because state-model §1 makes Linear a
     notice board Holophyte posts to: the loop's own status lives in the store
@@ -250,7 +242,7 @@ def set_state(issue_id, state_name):
     """
     data = _gql('mutation($id: String!, $state: String!) { issueUpdate(id: '
                 '$id, input: { stateId: $state }) { success } }',
-                {"id": issue_id, "state": _state_id(state_name)})
+                {"id": issue_id, "state": _state_id(state_name, team)})
     if not data["issueUpdate"]["success"]:
         raise RuntimeError(
             f"Linear refused to move issue {issue_id} to {state_name!r}")
@@ -272,8 +264,12 @@ def _claim_key(order):
     return lambda i: i["identifier"]
 
 
-def claim_next(skip=(), order="identifier"):
-    """First ready issue, parsed. None when there is none.
+def claim_next(project_id, team, skip=(), order="identifier"):
+    """First ready issue of `project_id`, parsed. None when there is none.
+
+    `team` is the board's team, carried alongside the project so the pair
+    that names a board travels together; the claim itself queries only the
+    project.
 
     `order` is `[loop] order`: `"identifier"` (the default) offers the lowest
     identifier; `"priority"` offers the most urgent Linear priority first,
@@ -292,7 +288,8 @@ def claim_next(skip=(), order="identifier"):
     without a way to ask for the next one after it, one unclaimable ticket at
     the head of the queue starves every ticket behind it forever.
     """
-    ready = [i for i in list_ready_issues() if i["identifier"] not in skip]
+    ready = [i for i in list_ready_issues(project_id)
+             if i["identifier"] not in skip]
     if not ready:
         return None
     issue = min(ready, key=_claim_key(order))
@@ -309,5 +306,12 @@ def comment(task_id, body):
 
 
 if __name__ == "__main__":
-    t = claim_next()
-    print(t)
+    # Run as a script there is no target config to read `[board]` from, so
+    # the board comes from the environment (or the `.env` beside this file),
+    # the same pair `board_config()` falls back to.
+    _project_id = _load_env_var("HOLO2_PROJECT_ID")
+    _team = _load_env_var("HOLO2_TEAM")
+    if not (_project_id and _team):
+        raise SystemExit("[holo2] linear_provider.py needs HOLO2_PROJECT_ID "
+                         "and HOLO2_TEAM in the environment or .env")
+    print(claim_next(_project_id, _team))

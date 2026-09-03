@@ -101,16 +101,20 @@ class Provider(Protocol):
 class LinearProvider:
     """Linear, through the functions `linear_provider.py` already has.
 
-    The module is imported at the first call that needs it rather than here.
-    Importing `linear_provider` is itself a configuration read -- it raises
-    without `HOLO2_PROJECT_ID` -- and `--report`, a read-only `--sweep` and an
-    acting sweep that trips nothing all run without a board, as they always
-    have: the loop's own local imports sat exactly where these calls now are.
-    Construction does no I/O of any kind; the API key is read by the module
-    on the first request, as today.
+    `project_id` and `team` are the target's `[board]` table (or, for one
+    release, the `HOLO2_*` fallback `holophyte.config.board_config()`
+    resolves): the pair is stored here and passed to every module call, so
+    the module itself holds no board and two targets on one host drive two
+    projects. The module is imported at the first call that needs it rather
+    than here; importing it reads no configuration any more, but `--report`,
+    a read-only `--sweep` and an acting sweep that trips nothing still run
+    without touching it, as they always have. Construction does no I/O of
+    any kind; the API key is read by the module on the first request.
     """
 
-    def __init__(self):
+    def __init__(self, project_id, team):
+        self.project_id = project_id
+        self._team = team
         self._module = None
 
     def _linear(self):
@@ -121,16 +125,17 @@ class LinearProvider:
 
     @property
     def team(self):
-        return self._linear().TEAM
+        return self._team
 
     def claim_next(self, skip=(), order="identifier"):
-        return self._linear().claim_next(skip=skip, order=order)
+        return self._linear().claim_next(self.project_id, self._team,
+                                         skip=skip, order=order)
 
     def fetch_task(self, issue_id):
         return self._linear().fetch_task(issue_id)
 
     def set_state(self, issue_id, state_name):
-        self._linear().set_state(issue_id, state_name)
+        self._linear().set_state(issue_id, state_name, self._team)
 
     def comment(self, task_id, body):
         self._linear().comment(task_id, body)

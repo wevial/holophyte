@@ -2,7 +2,6 @@
 
 Run: python3 -m unittest discover -s tests -p 'test_verify_gate*' -v
 """
-import os
 import sys
 import tempfile
 import time
@@ -334,9 +333,6 @@ class TaskExtractionTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # linear_provider refuses to import without a configured project.
-        os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
-        os.environ.setdefault("HOLO2_TEAM", "test-team")
         import linear_provider
         cls.provider = linear_provider
 

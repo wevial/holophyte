@@ -11,7 +11,6 @@ Run: python3 -m unittest discover -s tests -p 'test_wiring*' -v
 """
 from __future__ import annotations
 
-import os
 import sqlite3
 import subprocess
 import sys
@@ -237,9 +236,6 @@ class SetStateTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # linear_provider refuses to import without a configured project.
-        os.environ.setdefault("HOLO2_PROJECT_ID", "test-project")
-        os.environ.setdefault("HOLO2_TEAM", "test-team")
         import linear_provider
         cls.provider = linear_provider
 
@@ -255,7 +251,7 @@ class SetStateTests(unittest.TestCase):
 
     def test_a_successful_update_pushes_the_resolved_state_id(self):
         with self.gql(True):
-            self.provider.set_state(ISSUE_UUID, "Done")
+            self.provider.set_state(ISSUE_UUID, "Done", "test-team")
 
         self.assertEqual(self.sent, {"id": ISSUE_UUID, "state": "state-uuid"})
 
@@ -263,7 +259,7 @@ class SetStateTests(unittest.TestCase):
         """`success: false` is a push that did not land, and a push that does
         not raise is one `mirror_push()` records as a projection that did."""
         with self.gql(False), self.assertRaises(RuntimeError) as caught:
-            self.provider.set_state(ISSUE_UUID, "Done")
+            self.provider.set_state(ISSUE_UUID, "Done", "test-team")
 
         self.assertIn(ISSUE_UUID, str(caught.exception))
         self.assertIn("Done", str(caught.exception))
