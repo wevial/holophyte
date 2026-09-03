@@ -331,22 +331,28 @@ def _issue_id(identifier):
     return data["issue"]["id"]
 
 
-def create_issue(project_id, team, title, body, estimate, state_name):
+def create_issue(project_id, team, title, body, estimate, state_name,
+                 priority=None):
     """Create an issue in `project_id` for `team` and return its
     `{"id": UUID, "identifier": "KO-n"}`.
 
     `body` is the description, as markdown; `estimate` is Linear's number;
     `state_name` is resolved in `team`'s workflow the way `set_state()`
-    resolves it. A `success: false` is raised like `set_state()`'s: an issue
-    that was not created must not print as one that was.
+    resolves it; `priority` is Linear's integer (1 urgent .. 4 low) and is
+    put in the input only when given, so None creates the issue with no
+    priority rather than an explicit 0. A `success: false` is raised like
+    `set_state()`'s: an issue that was not created must not print as one
+    that was.
     """
+    fields = {"teamId": _team_id(team), "projectId": project_id,
+              "title": title, "description": body, "estimate": estimate,
+              "stateId": _state_id(state_name, team)}
+    if priority is not None:
+        fields["priority"] = priority
     data = _gql(
         'mutation($input: IssueCreateInput!) { issueCreate(input: $input) '
         '{ success issue { id identifier } } }',
-        {"input": {"teamId": _team_id(team), "projectId": project_id,
-                   "title": title, "description": body,
-                   "estimate": estimate,
-                   "stateId": _state_id(state_name, team)}})
+        {"input": fields})
     created = data["issueCreate"]
     if not created["success"] or not created.get("issue"):
         raise RuntimeError(f"Linear refused to create issue {title!r}")

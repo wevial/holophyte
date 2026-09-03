@@ -1,6 +1,7 @@
 """The command line: `cli()` parses the arguments and runs the mode they name.
 
-`--report`, `--requeue KO-n --note TEXT`, `--file-ticket PATH [--state]`,
+`--report`, `--requeue KO-n --note TEXT`, `--file-ticket PATH [--state]
+[--priority]`,
 `--sweep [--act]`, `--supervise`, `--serve HOST:PORT` and the loop itself
 dispatch from here to `holophyte.loop`, `holophyte.board`,
 `holophyte.supervisor` and `holophyte.serve`; the `Target`
@@ -15,7 +16,7 @@ Seventh and last slice of the phase-2 module split; moved verbatim from
 """
 import argparse
 
-from holophyte.board import file_ticket
+from holophyte.board import FILE_TICKET_PRIORITIES, file_ticket
 from holophyte.config import (
     SUPERVISE_INTERVAL_SEC,
     board_config,
@@ -47,6 +48,18 @@ def serve_address(text):
     except ValueError as bad:
         raise argparse.ArgumentTypeError(str(bad)) from None
     return text
+
+
+def _file_ticket_only(parser, args):
+    """Refuse `--state` and `--priority` given without `--file-ticket`: each
+    is a field of the issue that command creates, and names nothing alone."""
+    if args.file_ticket is not None:
+        return
+    for flag, value in (("--state", args.state),
+                        ("--priority", args.priority)):
+        if value is not None:
+            parser.error(f"{flag} is what --file-ticket creates the issue "
+                         "with; it names nothing by itself")
 
 
 def cli(argv=None):
@@ -141,10 +154,12 @@ def cli(argv=None):
         "--state", choices=FILE_TICKET_STATES,
         help="with --file-ticket: the workflow state the issue is created in "
              "(default %s)" % FILE_TICKET_STATES[0])
+    parser.add_argument(
+        "--priority", choices=tuple(FILE_TICKET_PRIORITIES),
+        help="with --file-ticket: the priority the issue is created with "
+             "(default none)")
     args = parser.parse_args(argv)
-    if args.state is not None and args.file_ticket is None:
-        parser.error("--state is what --file-ticket creates the issue in; "
-                     "it names nothing by itself")
+    _file_ticket_only(parser, args)
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
@@ -205,7 +220,8 @@ def cli(argv=None):
     if args.file_ticket is not None:
         require_board(target, board)
         return file_ticket(target, args.file_ticket,
-                           args.state or FILE_TICKET_STATES[0], settings)
+                           args.state or FILE_TICKET_STATES[0], settings,
+                           priority=args.priority)
     # The acting sweep on a timer. Like `--sweep --act` it dispatches nothing
     # and so resolves no route; unlike it, it takes the target's supervisor
     # lock first, and a target that already has one is an exit, not a loop.

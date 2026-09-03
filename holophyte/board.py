@@ -546,15 +546,24 @@ def ledger(provider, task_id, entry):
 
 # --- Operator command: filing a ticket from a file --------------------------
 
+# The priorities `--file-ticket` may create an issue with, each the word for
+# one of Linear's integers (urgent 1, high 2, medium 3, low 4); absent, the
+# issue is created with none, as before the flag existed.
+FILE_TICKET_PRIORITIES = {"urgent": 1, "high": 2, "medium": 3, "low": 4}
+
 def _ticket_problems(text, repo):
     """The blocking template violations of `text`, checked against `repo`."""
     return ticket_template.blocking(
         ticket_template.validate(ticket_template.parse(text), repo=repo))
 
 
-def file_ticket(target, path, state, board, out=None):
+def file_ticket(target, path, state, board, out=None, priority=None):
     """`--file-ticket`'s whole body: validate `path`, create the issue in the
     target's `board`, relate it, read it back and validate that.
+
+    `priority` is one of `FILE_TICKET_PRIORITIES`' words or None; the word
+    is mapped to Linear's integer for the create call and printed as given
+    at the end of the filed line, and None sends no priority at all.
 
     Returns 0 with the filed line printed, 1 with the first problem printed
     and nothing created when the file fails validation, and 2 with the
@@ -585,13 +594,16 @@ def file_ticket(target, path, state, board, out=None):
         return 1
     issue = linear_provider.create_issue(
         board.project_id, board.team, ticket.title, text,
-        ticket.estimate_min, state)
+        ticket.estimate_min, state,
+        priority=FILE_TICKET_PRIORITIES[priority] if priority else None)
     for blocker in ticket.depends_on or []:
         linear_provider.add_blocker(issue["id"], blocker)
     identifier = issue["identifier"]
     detail = f"{state}, {ticket.estimate_min} min"
     if ticket.depends_on:
         detail += f", blocked by {', '.join(ticket.depends_on)}"
+    if priority:
+        detail += f", {priority}"
     print(f"[holo2] filed {identifier}: {ticket.title} ({detail})", file=out)
     stored = _ticket_problems(
         linear_provider.fetch_description(identifier), target.path)
