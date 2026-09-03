@@ -6,7 +6,8 @@ file) against the direct GraphQL API. The project and team are parameters of
 the calls that need them, never module state.
 
 Loop-facing API: claim_next() / fetch_task() / set_state() / comment() /
-list_ready_issues().
+list_ready_issues(). Operator API, for `--file-ticket`: create_issue() /
+add_blocker() / fetch_description().
 """
 import json
 import os
@@ -303,6 +304,80 @@ def comment(task_id, body):
     _gql('mutation($issue: String!, $body: String!) { commentCreate(input: '
          '{ issueId: $issue, body: $body }) { success } }',
          {"issue": task_id, "body": body})
+
+
+# --- Operator API: filing a ticket from a file ------------------------------
+#
+# Not part of the loop's provider protocol: `--file-ticket` is an operator
+# command on this module directly, the way `--requeue` is on the store. The
+# loop never creates an issue, so `provider.LinearProvider` does not learn to.
+
+def _team_id(team):
+    """The id of the team called `team`, looked up by name."""
+    data = _gql('query($team: String!) { teams(filter: { name: { eq: $team } '
+                '}) { nodes { id } } }', {"team": team})
+    nodes = data["teams"]["nodes"]
+    if not nodes:
+        raise RuntimeError(f"Linear has no team named {team!r}")
+    return nodes[0]["id"]
+
+
+def _issue_id(identifier):
+    """The issue UUID behind the human identifier (`KO-n`)."""
+    data = _gql('query($id: String!) { issue(id: $id) { id } }',
+                {"id": identifier})
+    if not data.get("issue"):
+        raise RuntimeError(f"Linear has no issue {identifier!r}")
+    return data["issue"]["id"]
+
+
+def create_issue(project_id, team, title, body, estimate, state_name):
+    """Create an issue in `project_id` for `team` and return its
+    `{"id": UUID, "identifier": "KO-n"}`.
+
+    `body` is the description, as markdown; `estimate` is Linear's number;
+    `state_name` is resolved in `team`'s workflow the way `set_state()`
+    resolves it. A `success: false` is raised like `set_state()`'s: an issue
+    that was not created must not print as one that was.
+    """
+    data = _gql(
+        'mutation($input: IssueCreateInput!) { issueCreate(input: $input) '
+        '{ success issue { id identifier } } }',
+        {"input": {"teamId": _team_id(team), "projectId": project_id,
+                   "title": title, "description": body,
+                   "estimate": estimate,
+                   "stateId": _state_id(state_name, team)}})
+    created = data["issueCreate"]
+    if not created["success"] or not created.get("issue"):
+        raise RuntimeError(f"Linear refused to create issue {title!r}")
+    return {"id": created["issue"]["id"],
+            "identifier": created["issue"]["identifier"]}
+
+
+def add_blocker(issue_id, blocker_identifier):
+    """Record that the issue `blocker_identifier` blocks the issue `issue_id`.
+
+    The edge is stored the way `list_ready_issues()` reads it: type `blocks`,
+    its source the blocking issue, its related issue the one it blocks.
+    """
+    data = _gql(
+        'mutation($input: IssueRelationCreateInput!) { issueRelationCreate('
+        'input: $input) { success } }',
+        {"input": {"issueId": _issue_id(blocker_identifier),
+                   "relatedIssueId": issue_id, "type": "blocks"}})
+    if not data["issueRelationCreate"]["success"]:
+        raise RuntimeError(
+            f"Linear refused to record {blocker_identifier} as blocking "
+            f"issue {issue_id}")
+
+
+def fetch_description(identifier):
+    """The description Linear stores for `identifier`, as it stores it."""
+    data = _gql('query($id: String!) { issue(id: $id) { description } }',
+                {"id": identifier})
+    if not data.get("issue"):
+        raise RuntimeError(f"Linear has no issue {identifier!r}")
+    return data["issue"]["description"] or ""
 
 
 if __name__ == "__main__":

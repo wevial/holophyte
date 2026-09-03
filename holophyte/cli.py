@@ -1,8 +1,9 @@
 """The command line: `cli()` parses the arguments and runs the mode they name.
 
-`--report`, `--requeue KO-n --note TEXT`, `--sweep [--act]`, `--supervise`,
-`--serve HOST:PORT` and the loop itself dispatch from here to
-`holophyte.loop`, `holophyte.supervisor` and `holophyte.serve`; the `Target`
+`--report`, `--requeue KO-n --note TEXT`, `--file-ticket PATH [--state]`,
+`--sweep [--act]`, `--supervise`, `--serve HOST:PORT` and the loop itself
+dispatch from here to `holophyte.loop`, `holophyte.board`,
+`holophyte.supervisor` and `holophyte.serve`; the `Target`
 is built once from the command line and handed down, and the board
 (`LinearProvider`) is built here and never reached for by name below.
 Importing this module locates no target, reads no config and touches no
@@ -14,6 +15,7 @@ Seventh and last slice of the phase-2 module split; moved verbatim from
 """
 import argparse
 
+from holophyte.board import file_ticket
 from holophyte.config import (
     SUPERVISE_INTERVAL_SEC,
     board_config,
@@ -33,6 +35,9 @@ from holophyte.supervisor import (
 )
 from holophyte.target import Target
 from provider import LinearProvider
+
+# The states `--file-ticket` may create an issue in, the default first.
+FILE_TICKET_STATES = ("Todo", "Backlog")
 
 
 def serve_address(text):
@@ -81,6 +86,18 @@ def cli(argv=None):
              "the ticket to ready, in one transaction; refuses a ticket with "
              "a live run, one not in_flight, or one whose last run did not "
              "fail, and writes nothing then")
+    # The other writing mode, and it writes to the board, not the store:
+    # a ticket file validated against the target becomes a Linear issue,
+    # and the body Linear stored is validated again so the transfer is a
+    # checked step rather than the thing the loop discovers at claim time.
+    modes.add_argument(
+        "--file-ticket", metavar="TICKET.md",
+        help="validate the ticket file against the target, create it as an "
+             "issue in the target's [board] project with its title, body, "
+             "estimate, state and Depends-on relations, read the stored body "
+             "back and validate that; exits 1 with the problem and nothing "
+             "created when the file is invalid, 2 with the identifier and "
+             "the problem when the stored body is")
     modes.add_argument(
         "--sweep", action="store_true",
         help="print the live runs that have tripped a mechanical condition "
@@ -117,7 +134,17 @@ def cli(argv=None):
         "--note", metavar="TEXT",
         help="with --requeue: why the ticket goes back in the queue, "
              "recorded on the intervention row's event")
+    # Only the two states a filed ticket can start in: Todo is ready to
+    # claim, Backlog waits on triage. Anything else is a state the loop
+    # projects, never one a file declares, so argparse refuses it.
+    parser.add_argument(
+        "--state", choices=FILE_TICKET_STATES,
+        help="with --file-ticket: the workflow state the issue is created in "
+             "(default %s)" % FILE_TICKET_STATES[0])
     args = parser.parse_args(argv)
+    if args.state is not None and args.file_ticket is None:
+        parser.error("--state is what --file-ticket creates the issue in; "
+                     "it names nothing by itself")
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
@@ -170,6 +197,15 @@ def cli(argv=None):
     # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
         return sweep_report(target, act=args.act, provider=board)
+    # Posts to the board, so a target without one exits here naming the key
+    # -- before the file is read, so the error is about the target, not the
+    # file. The board is the `[board]` pair itself, not the loop's provider:
+    # this is an operator command on the Linear module, as `--requeue` is on
+    # the store, and the provider protocol does not widen for it.
+    if args.file_ticket is not None:
+        require_board(target, board)
+        return file_ticket(target, args.file_ticket,
+                           args.state or FILE_TICKET_STATES[0], settings)
     # The acting sweep on a timer. Like `--sweep --act` it dispatches nothing
     # and so resolves no route; unlike it, it takes the target's supervisor
     # lock first, and a target that already has one is an exit, not a loop.
