@@ -38,7 +38,11 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
+import review_runner  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # the runner's shim
+from test_review_runner import docker_shim  # noqa: E402 - after the insert
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000  # an epoch-millisecond wall clock the tests do sums on
@@ -147,8 +151,13 @@ class SweepTestCase(unittest.TestCase):
         itself takes as a parameter.
         """
         out = io.StringIO()
+        # No `docker` either: the review-container check asks the host's
+        # daemon, and these tests are about the store.
+        no_docker = self.root / "no-docker-bin"
+        no_docker.mkdir(exist_ok=True)
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}):
+                        {"linear_provider": Tripwire("linear_provider")}), \
+                patch.dict(os.environ, {"PATH": str(no_docker)}):
             with no_network(), patch.object(sys, "stdout", out), \
                     patch.object(holophyte.supervisor, "time", lambda: at / 1000):
                 holophyte.cli.cli(["--sweep", *flags, str(self.target)])
@@ -885,7 +894,8 @@ class SweepModeTests(SweepTestCase):
 
         printed = self.run_sweep(T0 + 2 * MINUTE)
 
-        self.assertEqual(printed, ["1 run swept, all healthy"])
+        self.assertEqual(printed, ["review containers: skipped (no docker on PATH)",
+                                   "1 run swept, all healthy"])
 
     def test_a_tripped_run_is_printed_and_nothing_is_claimed(self):
         run_id = self.a_run()
@@ -894,17 +904,18 @@ class SweepModeTests(SweepTestCase):
         first = self.run_sweep(T0 + 6 * MINUTE)
         printed = self.run_sweep(T0 + 12 * MINUTE)
 
-        self.assertEqual(first[0], "1 run swept, none tripped")
-        self.assertIn("strike 1 of 2", first[1])
-        self.assertEqual(printed[0].split(), list(holophyte.supervisor.SWEEP_HEADERS))
-        self.assertEqual(printed[1].split()[:5],
+        # Each pass opens with the review-container section, one line here.
+        self.assertEqual(first[1], "1 run swept, none tripped")
+        self.assertIn("strike 1 of 2", first[2])
+        self.assertEqual(printed[1].split(), list(holophyte.supervisor.SWEEP_HEADERS))
+        self.assertEqual(printed[2].split()[:5],
                          ["KO-1", "run", str(run_id), "working",
                           "stale_heartbeat"])
         # A store read from another machine has to say where the run is:
         # the trip line and the watched line both end in the host.
-        self.assertEqual(printed[1].split()[-1], socket.gethostname())
-        self.assertTrue(first[1].endswith(f" on {socket.gethostname()}"),
-                        first[1])
+        self.assertEqual(printed[2].split()[-1], socket.gethostname())
+        self.assertTrue(first[2].endswith(f" on {socket.gethostname()}"),
+                        first[2])
         self.assertEqual(printed[-1], "1 tripped of 1 run swept")
         # Read-only apart from the strikes: the run is still in flight, in the
         # phase it stopped in, and the lease it holds was not given back.
@@ -1565,8 +1576,9 @@ class HostLabelTests(SweepTestCase):
 
         hostname = socket.gethostname()
         self.assertNotIn(hostname, "\n".join(first + printed))
-        self.assertTrue(first[1].endswith(f" on {self.LABEL}"), first[1])
-        self.assertEqual(printed[1].split()[-1], self.LABEL)
+        # Line 0 of each pass is the review-container section.
+        self.assertTrue(first[2].endswith(f" on {self.LABEL}"), first[2])
+        self.assertEqual(printed[2].split()[-1], self.LABEL)
 
     def test_the_startup_and_refusal_lines_show_the_label_over_a_real_lock(self):
         out = io.StringIO()
@@ -1595,3 +1607,65 @@ class HostLabelTests(SweepTestCase):
         # The lock itself still names the machine: another host reading the
         # state directory has to know whose pid that is.
         self.assertEqual(self.lock.read_text().split()[0], hostname)
+
+
+class ReviewContainerSweepTests(SweepTestCase):
+    """The `review containers` section of `--sweep`: a leaked reviewer is
+    listed, removed only under `--act`, and a live one is left alone.
+
+    Docker is a shim on PATH that records its argv (`docker_shim()` in the
+    runner's tests), so what is asserted is what the sweep asked of it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.bin_dir, self.env = docker_shim(self.root / "shim")
+        self.scratch = self.root / "reviews"
+        (self.scratch / "review.live1234").mkdir(parents=True)
+        Path(self.env["HOLOPHYTE_DOCKER_PS"]).write_text(
+            "holophyte-review-live1234\nholophyte-review-gone5678\n")
+        self.log = Path(self.env["HOLOPHYTE_DOCKER_LOG"])
+
+    def recorded(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def report(self, act=False, env=None):
+        out = io.StringIO()
+        with patch.dict(os.environ, env if env is not None else self.env), \
+                patch.object(review_runner, "SCRATCH_ROOT", self.scratch):
+            status = holophyte.supervisor.sweep_report(
+                self.tgt, self.conn, T0, out=out, act=act)
+        return status, out.getvalue()
+
+    def test_a_read_only_sweep_names_the_stray_and_removes_nothing(self):
+        status, printed = self.report()
+
+        self.assertIsNone(status)
+        section = printed[printed.index("review containers"):]
+        self.assertIn("stray holophyte-review-gone5678", section)
+        self.assertNotIn("live1234", section)
+        self.assertFalse([line for line in self.recorded()
+                          if line.startswith("rm ")], self.recorded())
+
+    def test_an_acting_sweep_removes_the_stray_and_says_so(self):
+        status, printed = self.report(act=True)
+
+        self.assertIsNone(status)
+        section = printed[printed.index("review containers"):]
+        self.assertIn("removed stray holophyte-review-gone5678", section)
+        self.assertNotIn("live1234", section)
+        self.assertEqual([line for line in self.recorded()
+                          if line.startswith("rm ")],
+                         ["rm --force holophyte-review-gone5678"])
+
+    def test_without_docker_the_section_says_skipped_and_the_status_holds(
+            self):
+        empty = self.root / "empty"
+        empty.mkdir()
+        status, printed = self.report(env={"PATH": str(empty)})
+
+        self.assertIsNone(status)
+        section = printed[printed.index("review containers"):]
+        self.assertIn("skipped", section)
+        self.assertIn("docker", section)
+        self.assertFalse(self.log.exists())
