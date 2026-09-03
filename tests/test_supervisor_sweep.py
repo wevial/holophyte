@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -34,6 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -1465,3 +1467,68 @@ class SupervisorConfigTests(SweepTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeartbeatWhileTests(SweepTestCase):
+    """`heartbeat_while()` keeps a waiting loop off the sweep's stale list.
+
+    Real clock, unlike the rest of this file: the beat is a timer thread, so
+    the sweeps here are given the wall-clock `now` the beats are stamped
+    against, and the thresholds are set in tens of milliseconds to match.
+    """
+
+    def knobs(self, stale_ms):
+        return holophyte.config.sweep_config(self.tgt)._replace(
+            heartbeat_stale_ms=stale_ms)
+
+    def sweep_now(self, knobs):
+        return holophyte.supervisor.sweep(
+            self.tgt, self.conn, int(time.time() * 1000), knobs=knobs)
+
+    def test_a_loop_that_beats_is_alive_and_one_that_stopped_is_dead(self):
+        """Inside the block the run outlives the stale threshold untripped;
+        after it the beats stop and the same threshold trips it on the
+        second sighting, as a dead loop's run has always been."""
+        run_id = self.a_run(claimed_at=int(time.time() * 1000))
+        knobs = self.knobs(stale_ms=300)
+        stale_span = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
+
+        with holophyte.runs.heartbeat_while(self.conn, run_id, 0.05):
+            phase_before = store.run_phase(self.conn, run_id)
+            time.sleep(stale_span)
+            alive = self.sweep_now(knobs)
+            time.sleep(stale_span)
+            still_alive = self.sweep_now(knobs)
+
+        self.assertEqual(alive.trips, [])
+        self.assertEqual(still_alive.trips, [])
+        self.assertIsNone(self.strikes(run_id))
+        # The beat moved the heartbeat without touching the phase or the
+        # narrative: no `phase_change` beyond the one `a_run()` made.
+        self.assertEqual(store.run_phase(self.conn, run_id), phase_before)
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM runEvents WHERE runId = ?",
+            (run_id,)).fetchone()[0], 1)
+
+        time.sleep(stale_span)
+        first = self.sweep_now(knobs)
+        first_strikes = self.strikes(run_id)[0]
+        time.sleep(stale_span)
+        second = self.sweep_now(knobs)
+
+        self.assertEqual((first.trips, first_strikes), ([], 1))
+        self.assertEqual([(t.run_id, t.condition) for t in second.trips],
+                         [(run_id, "stale_heartbeat")])
+
+    def test_a_heartbeat_on_an_ended_run_changes_nothing(self):
+        run_id = self.a_run()
+        store.release(self.conn, run_id, "merged", now=T0 + MINUTE)
+        before = self.conn.execute(
+            "SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+
+        moved = store.heartbeat(self.conn, run_id, now=T0 + 5 * MINUTE)
+
+        self.assertFalse(moved)
+        after = self.conn.execute(
+            "SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        self.assertEqual(after, before)

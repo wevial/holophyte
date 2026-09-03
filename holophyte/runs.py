@@ -1,13 +1,15 @@
 """The store seam: a run's progress as store rows.
 
-Every store call the loop makes goes through one of the four helpers here --
+Every store call the loop makes goes through one of the five helpers here --
 `open_store()` opens and migrates the store, `set_phase()` is the loop's single
-writer of `runs.phase`, `record_round()` turns a review or adjudication reply
-into a `reviewRounds` row, and `warn_on_run()` lands a best-effort failure in
-the run's event stream -- so a later wiring ticket extends this seam instead
-of threading SQL through `run_task()`. `MAX_ROUNDS`, the review-round ceiling
-the loop iterates to and the adjudication round is numbered past, lives beside
-them. Beyond the standard library it imports `store` for the writes,
+writer of `runs.phase`, `heartbeat_while()` keeps the run's heartbeat moving
+while the loop waits on an agent, `record_round()` turns a review or
+adjudication reply into a `reviewRounds` row, and `warn_on_run()` lands a
+best-effort failure in the run's event stream -- so a later wiring ticket
+extends this seam instead of threading SQL through `run_task()`.
+`MAX_ROUNDS`, the review-round ceiling the loop iterates to and the
+adjudication round is numbered past, lives beside them. Beyond the standard
+library it imports `store` for the writes,
 `review_runner` for the verdict vocabularies, `agent_route` from
 `holophyte.agents` for the route a round is stamped with, and the findings
 parsers from `holophyte.review`.
@@ -15,6 +17,8 @@ parsers from `holophyte.review`.
 Fifth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 from time import time
 
@@ -66,6 +70,60 @@ def set_phase(conn, run_id, phase, note=None):
     if conn is None:
         return
     store.set_phase(conn, run_id, phase, note)
+
+
+@contextmanager
+def heartbeat_while(conn, run_id, interval_s):
+    """Beat run `run_id`'s heartbeat every `interval_s` seconds inside the block.
+
+    The loop blocks for as long as an agent or a verify command takes, and
+    `set_phase()` moves `lastHeartbeat` only at stage boundaries, so a stage
+    longer than the supervisor's stale threshold read as a dead loop and was
+    swept while its `claude -p` was still working (KO-212, run 39). This
+    wraps each such wait: a daemon thread calls `store.heartbeat()` on the
+    interval, and the sweep's contract -- a dead heartbeat means a dead
+    worker -- is true again. Same shape in any runtime: a timer thread and
+    one UPDATE.
+
+    The thread opens its own connection to the store `conn` is on, because a
+    SQLite connection belongs to the thread that made it and the loop's
+    `conn` is mid-use for the whole block. A beat that fails is printed as
+    `[holo2] heartbeat failed: ...` and the block goes on: the agent's work
+    is not lost to a locked store. On exit the thread is signalled and joined
+    before the loop's next phase write, so no beat lands after the stage the
+    block was for. A `conn` or `run_id` of None makes this a no-op, like
+    `set_phase()`, for a storeless `run_task()`.
+    """
+    if conn is None or run_id is None:
+        yield
+        return
+    (path,) = [row[2] for row in conn.execute("PRAGMA database_list")
+               if row[1] == "main"]
+    stop = threading.Event()
+
+    def beat():
+        try:
+            own = store.open(path)
+        except Exception as e:  # noqa: BLE001 - best effort; never the run's
+            print(f"[holo2] heartbeat failed: {e}")
+            return
+        try:
+            while not stop.wait(interval_s):
+                try:
+                    store.heartbeat(own, run_id)
+                except Exception as e:  # noqa: BLE001 - same
+                    print(f"[holo2] heartbeat failed: {e}")
+        finally:
+            own.close()
+
+    thread = threading.Thread(target=beat, name=f"heartbeat-run-{run_id}",
+                              daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
 
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,

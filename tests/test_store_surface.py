@@ -30,6 +30,7 @@ EXPECTED = [
     "ensure_project",
     "findings_fingerprint",
     "findings_overlap",
+    "heartbeat",
     "init",
     "latest_supervisor_heartbeat",
     "mirror_ticket",

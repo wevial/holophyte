@@ -43,6 +43,7 @@ from holophyte.config import (
     loop_config,
     setup_commands,
     setup_timeout,
+    sweep_config,
 )
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import (
@@ -56,6 +57,7 @@ from holophyte.report import report_lines
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import (
     MAX_ROUNDS,
+    heartbeat_while,
     open_store,
     record_round,
     set_phase,
@@ -354,7 +356,14 @@ def run_task(  # noqa: C901 -- the loop body; follow-up: break up after the spli
     # exactly as found. Either way no agent ran, so the failure is the
     # factory's plumbing, not evidence about the ticket: it closes out as
     # `InfraFailure` and does not spend one of the ticket's strikes.
-    ok, out = run_worktree_setup(target, wt, conn, run_id)
+    #
+    # Every wait below -- setup, agent turn, verify -- runs under
+    # `heartbeat_while()`, beating at half the supervisor's stale threshold
+    # so a slow agent is never read as a dead loop (KO-212, run 39). Half,
+    # so one late beat is still inside the threshold.
+    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, out = run_worktree_setup(target, wt, conn, run_id)
     if not ok:
         print(out)
         # Ledger first: a deletion that itself fails must not also cost the
@@ -395,8 +404,9 @@ def run_task(  # noqa: C901 -- the loop body; follow-up: break up after the spli
         the turn printed before the kill is kept in the log.
         """
         try:
-            return agent(target, "implement", goal, wt,
-                         timeout=budget_min * 60)
+            with heartbeat_while(conn, run_id, beat_s):
+                return agent(target, "implement", goal, wt,
+                             timeout=budget_min * 60)
         except subprocess.TimeoutExpired as expired:
             print(f"[holo2] task exceeded {budget_min} min budget")
             partial = expired.output or ""
@@ -471,7 +481,8 @@ def run_task(  # noqa: C901 -- the loop body; follow-up: break up after the spli
     # cheapest fix in the loop and used to need a human to close it out.
     for rnd in range(1, MAX_ROUNDS + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
-        ok, out = run_verify(verify_cmd, wt, contracts)
+        with heartbeat_while(conn, run_id, beat_s):
+            ok, out = run_verify(verify_cmd, wt, contracts)
         if ok:
             print(f"[holo2] verify ok before round {rnd}")
         else:
@@ -479,20 +490,22 @@ def run_task(  # noqa: C901 -- the loop body; follow-up: break up after the spli
 
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         round_started = int(time() * 1000)
-        verdict = agent(target, "review",
-            f"You are a READ-ONLY code reviewer. Review commit {sha} using "
-            "refs/review/base as the frozen base and refs/review/candidate as "
-            "the candidate "
-            "in this repo against the ticket below. The ticket is the "
-            "contract, acceptance criteria included: a candidate that "
-            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
-            f"{ticket}\n\n"
-            + verify_brief(ok, out)
-            + criteria_brief(criteria)
-            + "Do not modify anything. End your reply with exactly one line:\n"
-            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-            "If REQUEST_CHANGES, list only concrete blockers.", wt,
-            base_sha=base_sha, candidate_sha=sha)
+        with heartbeat_while(conn, run_id, beat_s):
+            verdict = agent(target, "review",
+                f"You are a READ-ONLY code reviewer. Review commit {sha} using "
+                "refs/review/base as the frozen base and refs/review/candidate "
+                "as the candidate "
+                "in this repo against the ticket below. The ticket is the "
+                "contract, acceptance criteria included: a candidate that "
+                "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
+                f"{ticket}\n\n"
+                + verify_brief(ok, out)
+                + criteria_brief(criteria)
+                + "Do not modify anything. End your reply with exactly one "
+                "line:\n"
+                "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
+                "If REQUEST_CHANGES, list only concrete blockers.", wt,
+                base_sha=base_sha, candidate_sha=sha)
         # Before the approval check, so the round that ends the loop is stored
         # like every other one: a review the store has no row for is a round
         # §6 cannot compare the next one against.
@@ -536,7 +549,8 @@ def run_task(  # noqa: C901 -- the loop body; follow-up: break up after the spli
         # final state. There is no further fix round under any outcome —
         # anything but PASS preserves the branch and stops the loop.
         set_phase(conn, run_id, "verifying", "verify before terminal adjudication")
-        ok, out = run_verify(verify_cmd, wt, contracts)
+        with heartbeat_while(conn, run_id, beat_s):
+            ok, out = run_verify(verify_cmd, wt, contracts)
         if not ok:
             print(f"[holo2] verify FAILED before adjudication; leaving branch "
                   f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
@@ -550,25 +564,27 @@ def run_task(  # noqa: C901 -- the loop body; follow-up: break up after the spli
 
         set_phase(conn, run_id, "reviewing", "terminal adjudication")
         round_started = int(time() * 1000)
-        reply = agent(target, "adjudicate",
-            f"You are a READ-ONLY final adjudicator. Judge commit {sha} using "
-            "refs/review/base as the frozen base and refs/review/candidate as "
-            "the candidate "
-            "in this repo against the ticket below. The ticket is the "
-            "contract, acceptance criteria included: a candidate that "
-            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
-            f"{ticket}\n\n"
-            + verify_brief(ok, out)
-            + "This candidate has already had its review rounds and their "
-            "fixes; no further fix round exists. Your job is a verdict on the "
-            "state as it stands, not a review.\n"
-            "Do not modify anything. Do NOT list findings, request changes, or "
-            "propose follow-up work — a reply that reads as a findings list is "
-            "not a verdict and is treated as FAIL. Give at most one short "
-            "paragraph of justification, then exactly one final line:\n"
-            "VERDICT: PASS  or  VERDICT: FAIL\n"
-            "PASS means the candidate is mergeable as it stands.", wt,
-            base_sha=base_sha, candidate_sha=sha)
+        with heartbeat_while(conn, run_id, beat_s):
+            reply = agent(target, "adjudicate",
+                f"You are a READ-ONLY final adjudicator. Judge commit {sha} "
+                "using refs/review/base as the frozen base and "
+                "refs/review/candidate as the candidate "
+                "in this repo against the ticket below. The ticket is the "
+                "contract, acceptance criteria included: a candidate that "
+                "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
+                f"{ticket}\n\n"
+                + verify_brief(ok, out)
+                + "This candidate has already had its review rounds and their "
+                "fixes; no further fix round exists. Your job is a verdict on "
+                "the state as it stands, not a review.\n"
+                "Do not modify anything. Do NOT list findings, request "
+                "changes, or propose follow-up work — a reply that reads as a "
+                "findings list is not a verdict and is treated as FAIL. Give "
+                "at most one short paragraph of justification, then exactly "
+                "one final line:\n"
+                "VERDICT: PASS  or  VERDICT: FAIL\n"
+                "PASS means the candidate is mergeable as it stands.", wt,
+                base_sha=base_sha, candidate_sha=sha)
         # The adjudication is a round of the run like the reviews before it —
         # numbered after them, so the run's rounds read in the order they
         # happened.
@@ -599,7 +615,8 @@ def run_task(  # noqa: C901 -- the loop body; follow-up: break up after the spli
     # so the run passes through the node rather than around it and a failed
     # pre-merge verify is a run stopped at the gate.
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
-    ok, out = run_verify(verify_cmd, wt, contracts)
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, out = run_verify(verify_cmd, wt, contracts)
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
