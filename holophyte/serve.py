@@ -1,4 +1,5 @@
-"""`--serve HOST:PORT`: a read-only HTTP daemon answering `/status` as JSON.
+"""`--serve HOST:PORT`: a read-only HTTP daemon answering `/status` and
+`/runs` as JSON.
 
 One `ThreadingHTTPServer` per target, bound to the one address the command
 line names, so a drawer or dashboard on another host of the tailnet can poll
@@ -8,7 +9,9 @@ connection between requests and never holds a write connection at all,
 which is why this module imports `store.read` and nothing from `store`
 itself. The handler calls the typed read views and formats JSON; no SQL
 lives here, so a later daemon can replace the module wholesale against the
-same store.
+same store. `/runs` is the `--report` table as JSON: the same rows
+`report_rows()` prints, in the same order, so a dashboard and the terminal
+never disagree about the history.
 
 Every host the body carries passes through `host_label()`, so a configured
 `[report] host_label` is what the network sees rather than the machine name.
@@ -23,10 +26,11 @@ import socket
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import time
+from urllib.parse import parse_qs, urlsplit
 
 import store.read
-from holophyte.config import sweep_config
-from holophyte.report import host_label
+from holophyte.config import report_config, sweep_config
+from holophyte.report import host_label, report_rows
 from holophyte.supervisor import SWEEPABLE_PHASES
 
 ADDRESS_SHAPE = "HOST:PORT"
@@ -59,10 +63,7 @@ def status(target, now=None):
     """
     now = int(time() * 1000) if now is None else now
     if not target.store_path.exists():
-        return 503, {"error": "no store",
-                     "detail": f"{target.path} has no store yet; nothing has"
-                               " run against it on this host",
-                     "target": str(target.path)}
+        return 503, no_store(target)
     conn = store.read.open_readonly(target.store_path)
     try:
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
@@ -96,8 +97,72 @@ def status(target, now=None):
     }
 
 
+def no_store(target):
+    """The 503 body for a target whose store does not exist yet."""
+    return {"error": "no store",
+            "detail": f"{target.path} has no store yet; nothing has run"
+                      " against it on this host",
+            "target": str(target.path)}
+
+
+def parse_limit(query):
+    """`?limit=N` as a positive int, None when absent; ValueError otherwise.
+
+    The shape is the report's: a dashboard asks for the newest few rows,
+    and `limit=0` or `limit=abc` is a client bug to be told about, not a
+    request for nothing.
+    """
+    values = parse_qs(query, keep_blank_values=True).get("limit")
+    if values is None:
+        return None
+    text = values[-1]
+    if not text.isdigit() or int(text) < 1:
+        raise ValueError(f"limit must be a positive integer, got {text!r}")
+    return int(text)
+
+
+def json_host(target, host):
+    """`host_label()` for JSON: null, not the table's `?`, for a row older
+    than the host column when no label is configured."""
+    if host is None and report_config(target).host_label is None:
+        return None
+    return host_label(target, host)
+
+
+def runs(target, query=""):
+    """The `/runs` answer: `--report`'s rows as JSON, first `limit` of them.
+
+    Same rows, same order as `report_rows()` -- oldest first -- with the
+    tuple's positions named. `host` is None for a row older than the column
+    unless a `[report] host_label` is configured, in which case it is the
+    label, as on `/status`.
+    """
+    try:
+        limit = parse_limit(query)
+    except ValueError as bad:
+        return 400, {"error": str(bad)}
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        rows = report_rows(conn)
+    finally:
+        conn.close()
+    if limit is not None:
+        rows = rows[:limit]
+    return 200, {
+        "rows": [{"ticket": ticket, "actual_min": actual,
+                  "estimate_min": estimate, "ratio": ratio,
+                  "rounds": rounds, "outcome": outcome,
+                  "host": json_host(target, host)}
+                 for ticket, actual, estimate, ratio, rounds, outcome, host
+                 in rows],
+        "limit": limit,
+    }
+
+
 class StatusHandler(BaseHTTPRequestHandler):
-    """`GET /status` and nothing else: 404 for other paths, 405 otherwise.
+    """`GET /status` and `GET /runs`: 404 for other paths, 405 otherwise.
 
     "Otherwise" is every other method, HEAD and OPTIONS included: a client
     that speaks anything but GET gets a JSON refusal it can parse, never
@@ -110,9 +175,12 @@ class StatusHandler(BaseHTTPRequestHandler):
     """
 
     def do_GET(self):
-        path = self.path.split("?")[0]
+        parts = urlsplit(self.path)
+        path = parts.path
         if path == "/status":
             code, body = status(self.server.target)
+        elif path == "/runs":
+            code, body = runs(self.server.target, parts.query)
         else:
             code, body = 404, {"error": "not found", "path": path}
         self.answer(code, body)

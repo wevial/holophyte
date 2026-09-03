@@ -1,4 +1,5 @@
-"""`--serve HOST:PORT`: `/status` over a read-only connection per request.
+"""`--serve HOST:PORT`: `/status` and `/runs` over a read-only connection
+per request.
 
 A seeded temporary store under a `HOLOPHYTE_HOME` of the test's own, served
 on a loopback ephemeral port, and read back over `http.client`. The store is
@@ -29,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -74,6 +76,34 @@ class ServeTestCase(unittest.TestCase):
             store.heartbeat(conn, self.run, now=self.now - 30 * SEC)
             store.record_supervisor_heartbeat(
                 conn, 4242, self.now - MIN, now=self.now - 5 * SEC)
+        finally:
+            conn.close()
+
+    def seed_ended(self):
+        """Three ended runs: merged under estimate, failed over it, one with
+        no estimate at all and two review rounds."""
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+            plan = (("KO-1", 20 * MIN, 10 * MIN, "merged", 1),
+                    ("KO-2", 20 * MIN, 45 * MIN, "failed", 0),
+                    ("KO-3", None, 15 * MIN, "merged", 2))
+            for n, (ident, box, took, outcome, rounds) in enumerate(plan):
+                ticket = store.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{ident}",
+                    linear_identifier=ident, title=f"ticket {ident}",
+                    acceptance_criteria=[f"Given {ident}, then it is worked"],
+                    verification_commands=["echo ok"], time_box_ms=box)
+                store.transition(conn, ticket, "in_flight")
+                started = self.now - (10 - n) * 60 * MIN
+                run = store.claim(conn, project, ticket, now=started)
+                for number in range(1, rounds + 1):
+                    store.record_review_round(
+                        conn, run, number, "pass", "reviewer-model",
+                        started_at=started + number * MIN)
+                store.release(conn, run, outcome, now=started + took)
         finally:
             conn.close()
 
@@ -205,6 +235,82 @@ class StatusTests(ServeTestCase):
         self.assertTrue(head.startswith(b"HTTP/1.0 405 "), head)
         self.assertIn(b"Content-Type: application/json", head)
         self.assertIn("error", json.loads(payload))
+
+
+class RunsTests(ServeTestCase):
+
+    def expected_rows(self):
+        """The oracle: `report_rows()` over the same store, named by column."""
+        conn = store.open(str(self.db))
+        try:
+            rows = holophyte.report.report_rows(conn)
+        finally:
+            conn.close()
+        keys = ("ticket", "actual_min", "estimate_min", "ratio", "rounds",
+                "outcome", "host")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def test_runs_is_the_report_table_as_json(self):
+        self.seed_ended()
+        self.start()
+
+        code, headers, body = self.request("GET", "/runs")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertIsNone(body["limit"])
+        expected = self.expected_rows()
+        self.assertEqual(len(expected), 3)
+        self.assertEqual(body["rows"], expected)
+        # The three the seed planned, oldest first, so a wrong order or a
+        # merged/failed mix-up would not pass on equality alone.
+        self.assertEqual([r["ticket"] for r in body["rows"]],
+                         ["KO-1", "KO-2", "KO-3"])
+        self.assertEqual([r["outcome"] for r in body["rows"]],
+                         ["merged", "failed", "merged"])
+        self.assertEqual([r["rounds"] for r in body["rows"]], [1, 0, 2])
+        self.assertIsNone(body["rows"][2]["estimate_min"])
+        self.assertIsNone(body["rows"][2]["ratio"])
+        self.assertAlmostEqual(body["rows"][0]["ratio"], 0.5)
+
+    def test_limit_keeps_the_first_rows_and_a_bad_limit_is_400(self):
+        self.seed_ended()
+        self.start()
+
+        code, _headers, body = self.request("GET", "/runs?limit=2")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["limit"], 2)
+        self.assertEqual(body["rows"], self.expected_rows()[:2])
+
+        for query in ("limit=0", "limit=abc", "limit=-1", "limit="):
+            with self.subTest(query=query):
+                code, headers, body = self.request("GET", f"/runs?{query}")
+                self.assertEqual(code, 400)
+                self.assertEqual(headers["Content-Type"], "application/json")
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                self.assertIn("error", body)
+                self.assertNotIn("rows", body)
+
+    def test_a_configured_host_label_is_every_host_in_the_rows(self):
+        self.seed_ended()
+        self.start('[report]\nhost_label = "writer-1"\n')
+
+        code, _headers, body = self.request("GET", "/runs")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(len(body["rows"]), 3)
+        self.assertEqual({r["host"] for r in body["rows"]}, {"writer-1"})
+        self.assertNotIn(socket.gethostname(), json.dumps(body))
+
+    def test_runs_without_a_store_is_503_and_creates_none(self):
+        self.start()
+
+        code, _headers, body = self.request("GET", "/runs")
+
+        self.assertEqual(code, 503)
+        self.assertIn("no store", body["error"])
+        self.assertFalse(self.db.exists())
 
 
 class CliTests(ServeTestCase):
