@@ -653,15 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[90 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T17:25:59Z — KO-194
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- tests/test_store_schema.py:498 [p0] Blocker: [tests/test_store_schema.py:498](/workspace/tests/test_store_schema.py:498) is tautological: it passes against the frozen base because existing `UNIQUE…
-
-## 2026-09-02T17:28:27Z — KO-194
-Round 3: pass · reviewer codex-sol-medium · verify passed
+[92 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T17:28:28Z — KO-194
 MERGED to main.
@@ -756,3 +748,10 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T02:03:32Z — KO-211
 MERGED to main.
 actual: 7.4 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T02:17:37Z — KO-214
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T02:18:21Z — KO-214
+MERGED to main.
+actual: 8.6 min · estimate: 30 min · rounds: 1
