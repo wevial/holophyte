@@ -28,9 +28,12 @@ GREEN, AMBER, RED = "#4EA876", "#F0B13A", "#FF5F57"
 IDLE, WORKING, ATTENTION, CRITICAL = 0, 1, 2, 3
 DOT = {WORKING: GREEN, ATTENTION: AMBER, CRITICAL: RED}
 TIMEOUT_SEC = 2
-ICON = Path(__file__).resolve().parents[2] / "assets" / "menubar-template@2x.png"
-DETAIL = "size=12 font=Menlo"
+ASSETS = Path(__file__).resolve().parents[2] / "assets"
 HEADER = "size=11"
+# Leading spaces indent a detail row under its target; SwiftBar keeps them
+# only with `trim=false`. The `--` prefix would nest a submenu instead.
+DETAIL = f"trim=false {HEADER} color=#8e8e93"
+INDENT = "   "
 
 
 def config_path():
@@ -111,11 +114,25 @@ def attention(statuses):
     return rows, level
 
 
-def title(level):
-    icon = base64.b64encode(ICON.read_bytes()).decode("ascii")
+def icon_bytes(assets=None):
+    """The menu-bar glyph: the 18 pt PDF template, else the 18 px 1x PNG,
+    else None. Never the 2x PNG: SwiftBar sizes a base64 raster by its
+    pixels, so 36 px draws at twice menu-bar height.
+    """
+    assets = ASSETS if assets is None else Path(assets)
+    for name in ("menubar-template.pdf", "menubar-template@1x.png"):
+        path = assets / name
+        if path.is_file():
+            return path.read_bytes()
+    return None
+
+
+def title(level, assets=None):
+    raw = icon_bytes(assets)
+    icon = f" templateImage={base64.b64encode(raw).decode('ascii')}" if raw else ""
     if level == IDLE:
-        return f" | templateImage={icon}"
-    return f"● | templateImage={icon} color={DOT[level]}"
+        return f" |{icon}"
+    return f"● |{icon} color={DOT[level]}"
 
 
 def target_block(entry):
@@ -133,13 +150,13 @@ def target_block(entry):
         lines.append("idle · queue empty")
     for run in runs:
         lines.append(f"{run['ticket']} · {run['phase']}")
-        lines.append(f"--round {run.get('round', '—')} · "
+        lines.append(f"{INDENT}round {run.get('round', '—')} · "
                      f"{age(run['elapsed_ms'])} of {age(run['time_box_ms'])} · "
                      f"heartbeat {age(run['heartbeat_age_ms'])} | {DETAIL}")
     sup = status.get("supervisor") or {}
     beat = sup.get("heartbeat_age_ms")
     tail = f" · {age(beat)}" if beat is not None else ""
-    lines.append(f"--supervisor {sup.get('state', 'none')}{tail} | {DETAIL}")
+    lines.append(f"{INDENT}supervisor {sup.get('state', 'none')}{tail} | {DETAIL}")
     return lines
 
 
@@ -163,8 +180,19 @@ def render(statuses, now, linear="https://linear.app"):
     answered = [e["status"]["now"] for e in statuses
                 if "now" in e["status"] and now is not None]
     updated = f"updated {age(now - min(answered))} ago" if answered else "no answer"
-    lines.append(f"{len(statuses)} hosts · {updated} | {HEADER}")
+    lines.append(f"{footer_counts(statuses)} · {updated} | {HEADER}")
     return lines
+
+
+def footer_counts(statuses):
+    """`N targets · M hosts`: one target per daemon, M the distinct `host`
+    values the daemons report (an unreachable daemon reports none). The
+    `targets` noun is fixed (the ticket's verify step greps `targets ·` on
+    the one-daemon fixture); `host` takes the singular at one.
+    """
+    hosts = {e["status"].get("host") for e in statuses if e["status"].get("host")}
+    host = "host" if len(hosts) == 1 else "hosts"
+    return f"{len(statuses)} targets · {len(hosts)} {host}"
 
 
 def reference_now(statuses):

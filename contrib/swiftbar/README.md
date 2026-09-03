@@ -44,8 +44,11 @@ python3 contrib/swiftbar/holophyte.10s.py --render tests/fixtures/drawer/idle.js
 
 ## The dot
 
-The menu-bar glyph is the two-leaf template icon. A dot beside it mirrors the
-worst row of the menu:
+The menu-bar glyph is the two-leaf template icon, embedded as the 18 pt PDF
+in `assets/` (the 1x PNG if the PDF is missing): SwiftBar sizes a base64
+raster by its pixels, so the 36 px Retina PNG would draw at twice menu-bar
+height, while a PDF is 18 points and crisp at any scale. A dot beside it
+mirrors the worst row of the menu:
 
 | dot | meaning |
 |---|---|
@@ -66,8 +69,11 @@ cannot be reached (you know nothing about that target until it is).
 Every age in the menu comes from the daemon's own `now` and `_ms` fields,
 never from the Mac's clock, so a reading is never distorted by clock skew.
 The footer's "updated Ns ago" is how far the stalest answer trails the
-freshest one. Detail rows sit under the `--` prefix; SwiftBar shows them as a
-submenu of the run row.
+freshest one. Detail rows are dimmed lines indented under their target
+(leading spaces kept with `trim=false`) rather than a `--` submenu, so the
+detail is in view instead of behind a hover. The footer counts targets (one
+per daemon) and distinct hosts separately, since several daemons can live on
+one host.
 
 Out of scope for v0: any write action, live streaming (SSE), and
 "failed since you last looked" tracking, which needs client state.
