@@ -5,6 +5,7 @@ Run: python3 -m unittest discover -s tests -p 'test_verify_gate*' -v
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -16,6 +17,10 @@ sys.path.insert(0, str(ROOT))  # factory.py imports ticket_template by name
 # how this file is imported decides whether `tests/` is on the path at all.
 sys.path.insert(0, str(HERE))
 
+from procs import (  # noqa: E402 - after the sys.path insert above
+    KillWatch,
+    assert_no_escaped_child,
+)
 from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
@@ -146,13 +151,27 @@ class VerifyTimeoutTests(unittest.TestCase):
         self.assertIn("--- clause 1 (ok): echo a", out)  # what got that far
 
     def test_the_cap_still_reaps_the_command_s_process_group(self):
+        """The escaped-child check has failed once under load (operator,
+        2026-09-02 ~22:30 UTC, on `phase2/split-agents-review`, right after
+        a Codex review finished; its twin in `test_factory_config.py` failed
+        once the same day) and passed on every rerun. Two hypotheses: the
+        scheduler held the test between `communicate()` raising and
+        `killpg` running long enough for the child to finish, or `/bin/sh`
+        put the `&` job in a group of its own so the kill missed it. A
+        failure now carries the kill latency, the watched `killpg` call and
+        a `ps` snapshot of what mentions the marker, which tell those apart:
+        read the message before widening anything.
+        """
         started = self.cwd / "started.txt"
         escaped = self.cwd / "escaped.txt"
         cmd = ("echo resolving; touch %s; (sleep 3; touch %s) & sleep 5"
                % (started, escaped))
 
-        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0):
+        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0), \
+                KillWatch(escaped) as watch:
+            began = time.monotonic()
             ok, out = holophyte.gates.run_verify(cmd, self.cwd)
+            elapsed = time.monotonic() - began
 
         self.assertFalse(ok)
         self.assertIn("timed out after 1s", out)
@@ -160,8 +179,8 @@ class VerifyTimeoutTests(unittest.TestCase):
                         "the shell did not reach its first line inside the 1s "
                         "cap: this machine is too loaded to time this run")
         self.assertIn("resolving", out)  # what it said before the cap
-        self.assertFalse(wait_for(escaped.exists, 3.5),
-                         "a child of the timed-out command outlived the cap")
+        assert_no_escaped_child(escaped, 3.5, watch=watch, elapsed=elapsed,
+                                cap=1.0)
 
     def test_a_detached_descendant_holding_the_pipe_still_yields_a_report(self):
         # Review finding on the cap: a grandchild in its own session survives
