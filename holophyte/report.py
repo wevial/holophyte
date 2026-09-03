@@ -3,7 +3,8 @@
 One tuple per ended run, the summary line with the mean and median ratio,
 the padded lines an operator reads, and the two formatting helpers the
 report shares with the supervisor's liveness line and the sweep table --
-`format_age` for a heartbeat's age and `host_name` for a `host` column.
+`format_age` for a heartbeat's age, `host_name` for a `host` column and
+`host_label` for that column as a public rendering shows it.
 Read-only: `store.read` and the standard library, and nothing that writes,
 claims or calls Linear. Opening the store is `report()`'s job in
 `holophyte.loop` and `supervisor_liveness_line()`'s in `holophyte.supervisor`.
@@ -14,6 +15,7 @@ which imports back the names its remaining call sites use.
 import statistics
 
 import store.read
+from holophyte.config import report_config
 
 # --- estimate vs actual ------------------------------------------------------
 # The rows already carry every number a burndown needs: when a run started and
@@ -66,13 +68,14 @@ def report_summary(rows):
             f" · median ratio {statistics.median(ratios):.2f}")
 
 
-def report_lines(conn):
+def report_lines(conn, target=None):
     """The whole report as lines: a header, one line per ended run, a summary.
 
     Columns are padded to the widest cell in them so the numbers line up in a
     terminal; the ticket, the outcome and the host read left, everything
     numeric reads right. A store with no ended run says so rather than printing a header
-    over nothing.
+    over nothing. `target` is where the `[report] host_label` comes from;
+    without one the host column is the hostname the store holds.
     """
     rows = report_rows(conn)
     if not rows:
@@ -86,7 +89,7 @@ def report_lines(conn):
             f"{ratio:.2f}" if ratio is not None else "n/a",
             str(rounds),
             outcome,
-            host_name(host),
+            host_label(target, host),
         ))
     widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
@@ -120,3 +123,17 @@ def host_name(host):
     end of a line is invisible; `?` says "unknown" where unknown is the truth.
     """
     return "?" if host is None else host
+
+
+def host_label(target, host):
+    """A `host` column as a rendering shows it: the label, or `host_name()`.
+
+    `[report] host_label` in `target`'s config replaces the hostname wherever
+    the factory renders one -- the report and sweep tables and the
+    supervisor's lines; the FINDINGS window a public repository commits has
+    no host column to replace -- while the store goes on holding the real
+    hostname for the supervisor's own-host checks.
+    With no label (or no `target`), this is `host_name(host)` exactly.
+    """
+    label = report_config(target).host_label if target is not None else None
+    return host_name(host) if label is None else label

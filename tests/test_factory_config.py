@@ -256,7 +256,8 @@ class KnownKeyTests(ConfigTestCase):
     def test_every_known_table_is_checked(self):
         for config in ('[agents]\nimplementor = "harness run"\n',
                        '[supervisor]\nstale_heartbeat_min = 7\n',
-                       '[loop]\nstop_on_failures = false\n'):
+                       '[loop]\nstop_on_failures = false\n',
+                       '[report]\nhots_label = "x"\n'):
             with self.subTest(config=config):
                 self.locate(config)
 
@@ -1277,6 +1278,41 @@ class ReviewRefTests(ConfigTestCase):
                           base_sha=self.base, candidate_sha=self.head)
 
         publish.assert_not_called()
+
+
+class ReportConfigTests(ConfigTestCase):
+    """`[report] host_label`: a string shown wherever a host is rendered,
+    absent by default."""
+
+    def test_an_absent_table_is_no_label(self):
+        self.locate()
+
+        self.assertIsNone(holophyte.config.report_config(self.tgt).host_label)
+
+    def test_a_string_is_read_as_the_label(self):
+        self.locate('[report]\nhost_label = "writer-1"\n')
+
+        self.assertEqual(holophyte.config.report_config(self.tgt).host_label,
+                         "writer-1")
+
+    def test_a_non_string_or_a_mistyped_key_is_a_startup_error_naming_it(self):
+        """`3` names no writer and `hots_label` is a key nobody reads: startup
+        refuses both, naming the key, before anything is claimed."""
+        for line, key in (("host_label = 3", "host_label"),
+                          ('host_label = ""', "host_label"),
+                          ('hots_label = "x"', "hots_label")):
+            with self.subTest(line=line):
+                target = self.locate(f"[report]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[report]", message)
+                self.assertIn(key, message)
+                report.assert_not_called()
 
 
 if __name__ == "__main__":

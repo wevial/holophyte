@@ -274,7 +274,8 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`), a key it does not read is
+(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`), a key it does
+not read is
 a startup
 error naming the file, the table, the key and the keys the table accepts:
 `setup_timeout_min` is a typo, not a timeout, and a typo the factory ignored
@@ -397,6 +398,28 @@ one failure stops the whole queue. The exit status is still nonzero once the
 queue is empty if any run failed. The value must be a boolean, `true` or
 `false`; a string such as `"yes"` is a startup error naming the key, like a
 `[supervisor]` threshold outside its constraint.
+
+```toml
+[report]
+# What the factory prints where it would print the writer host's hostname.
+# Optional; absent, the hostname is printed as recorded.
+host_label = "writer-1"
+```
+
+Accepted keys: `host_label`.
+
+The `host` column of `--report` and `--sweep` and the supervisor's startup
+and refusal lines show the label in place of the hostname when it is set.
+The `FINDINGS.md` window the loop commits renders no host: its run and round
+entries never carried one, so there is nothing there to relabel. The column
+of the report and sweep exists so a reader
+can tell which writer produced a run when there is more than one; a stable
+label does that job without naming a personal machine in a public repository.
+The store keeps recording the real hostname (`runs.host`,
+`supervisorHeartbeats.host`, the lock file), which the supervisor compares
+against its own, so the label can be renamed later without a migration. The
+value must be a non-empty string; anything else is a startup error naming the
+key.
 
 ## Local reviewer boundary
 

@@ -934,7 +934,7 @@ def _startup_sweep(target, conn):
     """
     seen = sweep(target, conn, int(time() * 1000))
     if seen.trips or seen.watched or seen.restarts:
-        print("\n".join(sweep_lines(seen)))
+        print("\n".join(sweep_lines(seen, target)))
         if seen.trips:
             print(SWEEP_HINT.format(target=target.path))
     return seen
@@ -1176,7 +1176,7 @@ def report(target, conn=None, out=None, now=None):
     owned = conn is None
     conn = conn if conn is not None else open_store(target)
     try:
-        print("\n".join(report_lines(conn)), file=out)
+        print("\n".join(report_lines(conn, target)), file=out)
         print(supervisor_liveness_line(target, conn, now), file=out)
     finally:
         if owned:

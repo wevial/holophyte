@@ -17,6 +17,7 @@ from holophyte.config import (
     check_agent_commands,
     check_config_keys,
     loop_config,
+    report_config,
     sweep_config,
 )
 from holophyte.loop import check_worktree_setup, main, report
@@ -95,6 +96,7 @@ def cli(argv=None):
     check_config_keys(target)
     sweep_config(target)
     loop_config(target)
+    report_config(target)
     if args.report:
         return report(target)
     # The board, built once here and handed down: nothing below reaches for

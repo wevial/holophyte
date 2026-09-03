@@ -45,6 +45,7 @@ DEFINED = {
     ],
     holophyte.config: [
         "LoopConfig",
+        "ReportConfig",
         "SweepConfig",
         "agent_command",
         "check_agent_commands",
@@ -54,6 +55,7 @@ DEFINED = {
         "docker_probe",
         "load_config",
         "loop_config",
+        "report_config",
         "setup_commands",
         "setup_timeout",
         "sweep_config",
@@ -99,6 +101,7 @@ DEFINED = {
     ],
     holophyte.report: [
         "format_age",
+        "host_label",
         "host_name",
         "report_lines",
         "report_rows",

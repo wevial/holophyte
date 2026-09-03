@@ -13,7 +13,7 @@ is `--report`'s line about that process, read from the heartbeat rows
 `supervise_pass()` writes. Beyond the standard library it imports `store` and
 `store.read` for the rows, `open_store` from `holophyte.runs`,
 `close_out_failure` from `holophyte.board`, `sweep_config` from
-`holophyte.config`, and `host_name`, `format_age`, `REPORT_GAP` from
+`holophyte.config`, and `host_label`, `format_age`, `REPORT_GAP` from
 `holophyte.report`; nothing from `factory`.
 
 Sixth slice of the phase-2 module split; moved verbatim from `factory.py`,
@@ -36,7 +36,7 @@ import store
 import store.read
 from holophyte.board import close_out_failure
 from holophyte.config import sweep_config
-from holophyte.report import REPORT_GAP, format_age, host_name
+from holophyte.report import REPORT_GAP, format_age, host_label
 from holophyte.runs import open_store
 
 # --- the supervisor's stale-run sweep -----------------------------------------
@@ -401,7 +401,7 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
                 watched.append(
                     f"run {run_id} ({ticket}, {phase}): silent"
                     f" {silent / 60000:.1f} min, strike {strikes} of"
-                    f" {strikes_needed} on {host_name(host)}")
+                    f" {strikes_needed} on {host_label(target, host)}")
     outcomes = []
     if act:
         outcomes = [act_on_trip(target, conn, trip, provider, knobs)
@@ -427,7 +427,7 @@ def _runs(n):
     return "1 run" if n == 1 else f"{n} runs"
 
 
-def sweep_lines(result):
+def sweep_lines(result, target=None):
     """The sweep as lines: a header, one line per trip, a summary.
 
     A clean sweep prints what it checked rather than nothing. Empty output is
@@ -450,7 +450,7 @@ def sweep_lines(result):
     lines too, because "no runs in flight" is exactly what a loop that died
     in its exec leaves behind.
     """
-    return restart_lines(result) + run_lines(result)
+    return restart_lines(result) + run_lines(result, target)
 
 
 def restart_lines(result):
@@ -461,8 +461,12 @@ def restart_lines(result):
             for sha, age in result.restarts]
 
 
-def run_lines(result):
-    """`sweep_lines()` less the restart lines: the per-run report."""
+def run_lines(result, target=None):
+    """`sweep_lines()` less the restart lines: the per-run report.
+
+    `target` supplies the `[report] host_label` the host column shows in
+    place of the hostname; without one the column is the hostname itself.
+    """
     if not result.swept:
         return ["no runs in flight, nothing to sweep"]
     if not result.trips:
@@ -474,7 +478,8 @@ def run_lines(result):
         return [f"{_runs(result.swept)} swept, all healthy"]
     table = [SWEEP_HEADERS]
     table += [(trip.ticket, f"run {trip.run_id}", trip.phase, trip.condition,
-               trip.evidence, host_name(trip.host)) for trip in result.trips]
+               trip.evidence, host_label(target, trip.host))
+              for trip in result.trips]
     widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
         REPORT_GAP.join(cell.ljust(width)
@@ -533,7 +538,8 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
     try:
         if now is None:
             now = int(time() * 1000)
-        print("\n".join(sweep_lines(sweep(target, conn, now, act, provider))),
+        print("\n".join(sweep_lines(sweep(target, conn, now, act, provider),
+                                     target)),
               file=out)
     finally:
         if owned:
@@ -588,7 +594,8 @@ class SupervisorHeld(Exception):
     file.
     """
 
-    def __init__(self, path, repo, pid=None, started_at=None, host=None):
+    def __init__(self, path, repo, pid=None, started_at=None, host=None,
+                 target=None):
         self.path, self.repo, self.pid = path, repo, pid
         self.started_at, self.host = started_at, host
         if pid is None:
@@ -598,7 +605,8 @@ class SupervisorHeld(Exception):
         else:
             since = (f" since {started_at}" if started_at is not None else "")
             what = (f"[holo2] a supervisor is already running for {repo}:"
-                    f" pid {pid} on {host_name(host)}{since} holds {path};"
+                    f" pid {pid} on {host_label(target, host)}{since}"
+                    f" holds {path};"
                     " not starting another")
         super().__init__(what)
 
@@ -658,7 +666,8 @@ def reclaim_turn(path):
         os.close(fd)
 
 
-def acquire_supervisor_lock(path, repo, pid=None, now=None, host=None):
+def acquire_supervisor_lock(path, repo, pid=None, now=None, host=None,
+                            target=None):
     """Take the supervisor lock at `path` for `pid`; raise `SupervisorHeld`.
 
     `repo` is the repository the lock guards, named in the refusal so the
@@ -708,10 +717,10 @@ def acquire_supervisor_lock(path, repo, pid=None, now=None, host=None):
     with reclaim_turn(path):
         holder = read_supervisor_lock(path)
         if holder is None and path.exists():
-            raise SupervisorHeld(path, repo)
+            raise SupervisorHeld(path, repo, target=target)
         if holder is not None:
             if holder[0] != pid and pid_alive(holder[0]):
-                raise SupervisorHeld(path, repo, *holder)
+                raise SupervisorHeld(path, repo, *holder, target=target)
             try:
                 os.unlink(path)
             except FileNotFoundError:
@@ -722,7 +731,7 @@ def acquire_supervisor_lock(path, repo, pid=None, now=None, host=None):
         if created():
             return path
     holder = read_supervisor_lock(path)
-    raise SupervisorHeld(path, repo, *(holder or ()))
+    raise SupervisorHeld(path, repo, *(holder or ()), target=target)
 
 
 def release_supervisor_lock(path, pid=None):
@@ -763,7 +772,7 @@ def supervise_pass(target, pid, started_at, now=None, provider=None, out=None):
     try:
         seen = sweep(target, conn, now, act=True, provider=provider)
         if seen.trips or seen.watched or seen.restarts:
-            print("\n".join(sweep_lines(seen)), file=out)
+            print("\n".join(sweep_lines(seen, target)), file=out)
         store.record_supervisor_heartbeat(conn, pid, started_at, now)
     finally:
         conn.close()
@@ -796,7 +805,7 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
     pid = os.getpid()
     started_at = int(time() * 1000)
     path = acquire_supervisor_lock(supervisor_lock_path(target), target.path,
-                                   pid, started_at)
+                                   pid, started_at, target=target)
     stop = threading.Event()
     wait = stop.wait if wait is None else wait
 
@@ -807,7 +816,8 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
                 for signum in STOP_SIGNALS}
     try:
         print(f"[holo2] supervising {target.path} as pid {pid} on"
-              f" {socket.gethostname()}: acting sweep every {interval}s,"
+              f" {host_label(target, socket.gethostname())}: acting sweep"
+              f" every {interval}s,"
               f" lock at {path}", file=out)
         while not stop.is_set():
             supervise_pass(target, pid, started_at, provider=provider, out=out)
@@ -851,4 +861,4 @@ def supervisor_liveness_line(target, conn=None, now=None):
     state = ("live" if age < sweep_config(target).heartbeat_stale_ms
              else "stale")
     return (f"supervisor: {state}, last heartbeat {format_age(age)} ago"
-            f" (pid {pid} on {host_name(host)})")
+            f" (pid {pid} on {host_label(target, host)})")
