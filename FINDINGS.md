@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[112 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T01:51:11Z — KO-211
-FAILED: terminal adjudication: FAIL; branch task/ko-211-retire-the-c901-exemptions-on preserved at ce43a8b3316b
-actual: 20.0 min · estimate: 30 min · rounds: 3
-
-## 2026-09-03T02:02:47Z — KO-211
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[114 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T02:03:32Z — KO-211
 MERGED to main.
@@ -752,3 +745,10 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T16:18:06Z — KO-220
 MERGED to main.
 actual: 22.7 min · estimate: 30 min · rounds: 2
+
+## 2026-09-03T18:08:28Z — KO-221
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T18:09:15Z — KO-221
+MERGED to main.
+actual: 12.9 min · estimate: 30 min · rounds: 1
