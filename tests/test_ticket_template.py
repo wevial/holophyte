@@ -10,7 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import ticket_template as tt
+import holophyte.board  # noqa: E402 - after the sys.path insert above
+import ticket_template as tt  # noqa: E402 - after the sys.path insert above
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -364,6 +365,145 @@ class CliTests(unittest.TestCase):
 
     def test_no_args_usage_exit_two(self):
         self.assertEqual(self.run_cli().returncode, 2)
+
+
+GITIGNORED_CRITERION = FILLED.replace(
+    "- [ ] Given 3 orders, when GET /orders.csv, then 4 lines including header.",
+    "- [ ] Given 3 orders, when exported, then `artifacts/report.html` lists "
+    "them.")
+# Criterion 1 is already checked off and names the ignored path; criterion 2
+# is still open and reads as a post-merge witness. Both keep their document
+# numbers.
+MIXED_CHECKED_CRITERIA = FILLED.replace(
+    "- [ ] Given 3 orders, when GET /orders.csv, then 4 lines including header.",
+    "- [x] Given 3 orders, when exported, then `artifacts/report.html` lists "
+    "them.").replace(
+    "- [ ] Given no orders, when GET /orders.csv, then only the header row.",
+    "- [ ] Given no orders, when checked after the merge, then only the "
+    "header row.")
+TRACKED_CRITERION = FILLED.replace(
+    "- [ ] Given 3 orders, when GET /orders.csv, then 4 lines including header.",
+    "- [ ] Given 3 orders, when `src/lotuspod/cli.py` runs, then 4 lines.")
+
+
+class GitignoredPathTests(unittest.TestCase):
+    """A path the target repository ignores can never be on the candidate
+    branch the reviewer sees, so naming one in a witnessed field is a
+    blocker -- but only when the repository is named."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name) / "repo"
+        self.repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        (self.repo / ".gitignore").write_text("artifacts/*\n")
+        self.ticket = Path(self.tmp.name) / "TICKET.md"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_cli(self, text, *args):
+        self.ticket.write_text(text)
+        return subprocess.run(
+            [sys.executable, str(ROOT / "ticket_template.py"),
+             str(self.ticket), *args],
+            capture_output=True, text=True)
+
+    def test_gitignored_criterion_path_is_a_blocker_with_repo(self):
+        r = self.run_cli(GITIGNORED_CRITERION, "--repo", str(self.repo))
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("INVALID", r.stdout)
+        self.assertIn("gitignored path in Acceptance criteria #1: "
+                      "artifacts/report.html", r.stdout)
+
+    def test_checked_off_criteria_are_scanned_under_their_document_number(self):
+        problems = tt.validate(tt.parse(MIXED_CHECKED_CRITERIA), repo=self.repo)
+        self.assertIn("gitignored path in Acceptance criteria #1: "
+                      "artifacts/report.html", problems)
+        self.assertIn(
+            f"{tt.ADVISORY_PREFIX}criterion 2 reads as an operator or "
+            "post-merge witness; the reviewer can only witness the "
+            "candidate branch", problems)
+
+    def test_unignored_path_reports_no_path_problem(self):
+        r = self.run_cli(TRACKED_CRITERION, "--repo", str(self.repo))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("gitignored path", r.stdout)
+
+    def test_without_repo_the_check_is_skipped_with_one_advisory(self):
+        r = self.run_cli(GITIGNORED_CRITERION)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("gitignored path", r.stdout)
+        self.assertEqual(r.stdout.count("check skipped"), 1)
+
+    def test_gitignored_verify_command_path_is_a_blocker(self):
+        text = FILLED.replace(".venv/bin/python -m unittest test_orders_export",
+                              ".venv/bin/python artifacts/check.py")
+        problems = tt.validate(tt.parse(text), repo=self.repo)
+        self.assertIn("gitignored path in verify command: artifacts/check.py",
+                      problems)
+
+    def test_dot_prefixed_gitignored_path_is_a_blocker(self):
+        (self.repo / ".gitignore").write_text("artifacts/*\n.cache/*\n")
+        text = FILLED.replace(
+            "- [ ] Given 3 orders, when GET /orders.csv, "
+            "then 4 lines including header.",
+            "- [ ] Given 3 orders, when exported, then `.cache/report.html` "
+            "lists them.")
+        problems = tt.validate(tt.parse(text), repo=self.repo)
+        self.assertIn("gitignored path in Acceptance criteria #1: "
+                      ".cache/report.html", problems)
+
+    def test_the_prescribed_venv_interpreter_is_not_a_path_problem(self):
+        # ticketTemplate.md itself tells verify commands to address the venv
+        # interpreter by path, and every real repository ignores .venv.
+        (self.repo / ".gitignore").write_text(".venv/\n")
+        problems = tt.validate(tt.parse(FILLED), repo=self.repo)
+        self.assertEqual(
+            [p for p in problems if "gitignored path" in p], [])
+
+    def test_a_directory_that_is_not_a_repository_yields_one_advisory(self):
+        elsewhere = Path(self.tmp.name) / "plain"
+        elsewhere.mkdir()
+        problems = tt.validate(tt.parse(GITIGNORED_CRITERION), repo=elsewhere)
+        self.assertEqual(tt.blocking(problems), [])
+        advisories = [p for p in problems if "could not check paths" in p]
+        self.assertEqual(len(advisories), 1, problems)
+
+    def test_body_problem_names_the_gitignored_path_for_the_target(self):
+        problem = holophyte.board.body_problem(
+            {"body": GITIGNORED_CRITERION}, self.repo)
+        self.assertEqual(
+            problem,
+            "gitignored path in Acceptance criteria #1: artifacts/report.html")
+        self.assertIsNone(
+            holophyte.board.body_problem({"body": TRACKED_CRITERION}, self.repo))
+
+
+class PathCandidateTests(unittest.TestCase):
+    def test_code_spans_links_and_prose_yield_relative_paths_only(self):
+        text = ("Given `artifacts/report.html` and [cli.py](http://cli.py) "
+                "at /abs/path or https://x.y/z, when --flag=docs/a.md runs, "
+                "then e.g. 3.5 orders and 'tests/test_*.py' are ignored.")
+        self.assertEqual(tt.path_candidates(text),
+                         ["artifacts/report.html", "cli.py", "docs/a.md"])
+
+
+class OperatorWitnessTests(unittest.TestCase):
+    def test_post_merge_criterion_is_an_advisory_naming_its_number(self):
+        text = FILLED.replace(
+            "- [ ] Given no orders, when GET /orders.csv, then only the header row.",
+            "- [ ] Given no orders, when checked after the merge, then only "
+            "the header row.")
+        problems = tt.validate(tt.parse(text))
+        self.assertEqual(tt.blocking(problems), [])
+        self.assertIn(
+            f"{tt.ADVISORY_PREFIX}criterion 2 reads as an operator or "
+            "post-merge witness; the reviewer can only witness the "
+            "candidate branch", problems)
+
+    def test_plain_criteria_get_no_witness_advisory(self):
+        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
 
 
 if __name__ == "__main__":
