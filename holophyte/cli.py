@@ -86,9 +86,9 @@ def cli(argv=None):
     # failure later.
     modes.add_argument(
         "--serve", metavar=ADDRESS_SHAPE, type=serve_address,
-        help="answer GET /status as JSON on %s until SIGINT/SIGTERM; reads "
-             "the store through a read-only connection per request and "
-             "writes nothing" % ADDRESS_SHAPE)
+        help="answer GET /status and GET /runs as JSON on %s, read-only, "
+             "until SIGINT/SIGTERM; a read-only connection per request, "
+             "no authentication, and writes nothing" % ADDRESS_SHAPE)
     # Not a mode of its own: it says what `--sweep` does with what it finds,
     # so it is refused rather than ignored anywhere else. Silently doing
     # nothing would be the worse answer for the operator who typed

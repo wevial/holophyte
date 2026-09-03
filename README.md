@@ -212,6 +212,38 @@ and if no claim, heartbeat or "no ready tickets" exit follows within
 from <sha>` and records it, once per restart. Nothing is relaunched. Process management (systemd, a tmux pane, `nohup`) is the operator's;
 the factory ships the invocation and nothing around it.
 
+## Serving
+
+`--serve HOST:PORT` runs a read-only HTTP daemon for one target, so a drawer
+or dashboard on another host of the tailnet can poll the factory without
+ssh:
+
+```
+python3 factory.py --serve 100.64.0.1:8787 /path/to/repo
+```
+
+It answers two paths as JSON, every response `Cache-Control: no-store`, and
+opens the store through a read-only connection per request; it never holds
+a connection between requests and never writes. Any other path is 404 and
+any method but GET is 405, both as JSON.
+
+| Path | Body |
+| --- | --- |
+| `GET /status` | `target`, `host`, `now`, `supervisor` (`state` live/stale/none, `pid`, `heartbeat_age_ms`, `host`), `thresholds` (`heartbeat_stale_ms`, `strikes`), and `runs`: one `{id, ticket, phase, heartbeat_age_ms, elapsed_ms, time_box_ms, host}` per live run. 503 when the target has no store yet. |
+| `GET /runs?limit=N` | The `--report` table: `rows` of `{ticket, actual_min, estimate_min, ratio, rounds, outcome, host}`, the same rows in the same order as `--report` prints, oldest first; `?limit=N` keeps the first N and echoes `limit` (null when absent). A `limit` that is not a positive integer is 400 with an `error`. |
+
+Every `host` passes through `[report] host_label`, so a configured label is
+what the network sees rather than the machine name.
+
+The boundary is the bind address and nothing else. The daemon has
+**no authentication**: it binds to the one address the command line names
+and anyone who can reach that port can read run and ticket identifiers,
+phases, heartbeat ages and the estimate-vs-actual history. Bind it to the
+tailnet address only. Binding to `0.0.0.0` publishes that history to every network
+the host is on, and there is no flag, token or allow-list in the factory
+that would narrow it back; the tailnet's membership is the whole access
+control, by design.
+
 ## Linting
 
 `ruff check .` from the repo root; it exits 0 when the tree is clean. Run it
