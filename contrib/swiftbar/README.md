@@ -80,7 +80,9 @@ live row reads `idle · last merge KO-n` without the age until they do; when
 `/runs` does not answer, the row falls back to `idle · queue empty`. The
 supervisor row is the state word alone when it is `live`; `stale · 7m` and
 `none` show the age and turn amber, since the age only says something when
-the state is wrong.
+the state is wrong. These two rows print ages in whole units the way the
+daemon's tables do (`12s`, `7m`, `2h`, `3d`); a working row keeps its
+minute-precise `1h02m of 2h00m`, where the minutes are the point.
 
 Every age in the menu comes from the daemon's own `now` and `_ms` fields,
 never from the Mac's clock, so a reading is never distorted by clock skew.

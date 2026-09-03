@@ -139,6 +139,27 @@ class RenderTests(unittest.TestCase):
         self.assertIn(f"   supervisor none | {amber}", text)
         self.assertNotRegex(text, r"supervisor live · [0-9]")
 
+    def test_supervisor_and_idle_ages_use_whole_units_like_the_daemon(self):
+        # The daemon's tables print `2h` and `3d`, not `2h00m` or `72h00m`.
+        def sup(ms):
+            e = entry("stale_supervisor")
+            e["status"]["supervisor"]["heartbeat_age_ms"] = ms
+            return drawer.target_block(e)[-1].split(" | ")[0].strip()
+
+        self.assertEqual(sup(12000), "supervisor stale · 12s")
+        self.assertEqual(sup(7200000), "supervisor stale · 2h")
+        self.assertEqual(sup(3 * 86400000), "supervisor stale · 3d")
+        e = drawer.fixture_entry(FIXTURES / "idle_last_merge.json")
+        e["status"]["now"] = 1756899280000 + 2 * 3600000
+        self.assertEqual(drawer.target_block(e)[1],
+                         "idle · last merge KO-237 · 2h ago")
+        # The attention row for a stale supervisor reads the same way.
+        stale = entry("stale_supervisor")
+        stale["status"]["supervisor"] = {"state": "stale",
+                                         "heartbeat_age_ms": 7200000}
+        rows, _ = drawer.attention([stale])
+        self.assertEqual(rows[-1][0], "stale_supervisor · supervisor stale · 2h")
+
     def test_idle_row_names_the_last_merge_or_says_nothing_merged(self):
         merged = render_cli("idle_last_merge").splitlines()
         nothing = render_cli("idle_nothing_merged").splitlines()

@@ -82,6 +82,23 @@ def age(ms):
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
+def coarse_age(ms):
+    """An age as the daemon's own tables print one: `12s`, `7m`, `2h`, `3d`,
+    the largest whole unit that fits. For the supervisor and idle rows, where
+    the question is "how long has this been so", not "how many minutes".
+    """
+    if ms is None:
+        return "?"
+    s = max(0, int(ms) // 1000)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h"
+    return f"{s // 86400}d"
+
+
 def attention(statuses):
     """`(rows, level)`: the "needs you" rows as `(text, colour)` and the worst
     level over all targets, `WORKING` counting only when no row exists.
@@ -110,7 +127,7 @@ def attention(statuses):
         if sup.get("state") in ("stale", "none"):
             text = f"{name} · supervisor {sup['state']}"
             if sup.get("heartbeat_age_ms") is not None:
-                text += f" · {age(sup['heartbeat_age_ms'])}"
+                text += f" · {coarse_age(sup['heartbeat_age_ms'])}"
             rows.append((text, AMBER))
             level = max(level, ATTENTION)
     return rows, level
@@ -164,7 +181,7 @@ def idle_row(status, runs):
         return "idle · nothing merged yet"
     text = f"idle · last merge {row['ticket']}"
     if row.get("ended_ms") is not None and status.get("now") is not None:
-        text += f" · {age(status['now'] - row['ended_ms'])} ago"
+        text += f" · {coarse_age(status['now'] - row['ended_ms'])} ago"
     return text
 
 
@@ -179,7 +196,7 @@ def supervisor_row(sup):
         return f"{INDENT}supervisor live | {DETAIL}"
     text = f"supervisor {state}"
     if sup.get("heartbeat_age_ms") is not None:
-        text += f" · {age(sup['heartbeat_age_ms'])}"
+        text += f" · {coarse_age(sup['heartbeat_age_ms'])}"
     return f"{INDENT}{text} | trim=false {HEADER} color={AMBER}"
 
 
