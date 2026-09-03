@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[92 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-02T17:28:28Z — KO-194
-MERGED to main.
-actual: 14.8 min · estimate: 30 min · rounds: 3
-
-## 2026-09-02T17:34:14Z — KO-195
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- FINDINGS.md [p2] [FINDINGS.md](/workspace/FINDINGS.md:259) retains five `with_delivery` references. Therefore, repository-wide `rg` finds a removed API name in the current tre…
-- criteria:1 [p2] CRITERION 1: not met — `rg -n '\b(with_delivery|next_pickable)\b' .` finds `with_delivery` in `FINDINGS.md` Given the merged branch, when `rg` searches the repo…
-
-## 2026-09-02T17:37:39Z — KO-195
-Round 2: pass · reviewer codex-sol-medium · verify passed
+[95 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-02T17:37:39Z — KO-195
 MERGED to main.
@@ -755,3 +742,15 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T02:18:21Z — KO-214
 MERGED to main.
 actual: 8.6 min · estimate: 30 min · rounds: 1
+
+## 2026-09-03T02:28:14Z — KO-215
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- holophyte/review.py:329 [p2] `holophyte/review.py:329`: `Path(root) / path` permits absolute paths and `..` traversal. A test outside the candidate worktree can therefore satisfy a witnes…
+
+## 2026-09-03T02:34:17Z — KO-215
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T02:35:02Z — KO-215
+MERGED to main.
+actual: 16.7 min · estimate: 30 min · rounds: 2
