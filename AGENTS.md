@@ -48,6 +48,8 @@ worktree and merged only after mechanical verification and independent review.
   with `ticket_template.py` when ticket-template behavior changes.
 - Keep credentials only in local environment/configuration; never commit or log
   secrets.
+- The repository is public: code, comments, docs and commit messages name roles
+  (the writer host, the operator seat), never machine names or personal paths.
 - `FINDINGS.md` is regenerated from the store at each close-out: a bounded
   window over `runs`/`reviewRounds` below the frozen pre-store preamble. The
   execution evidence is the rows — do not hand-edit the rendered window or drop

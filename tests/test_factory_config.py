@@ -188,6 +188,30 @@ class ConfigLoadingTests(ConfigTestCase):
         adopt.assert_not_called()
         self.assertEqual(sorted(home.iterdir()), [])
 
+    def test_a_missing_target_is_a_usage_error_that_touches_nothing(self):
+        # No default target: a bare `factory.py` used to name one operator's
+        # checkout, a path that exists on one machine. Now it is an argparse
+        # error -- usage on stderr, a non-zero exit -- and, like `--help`, it
+        # is answered before a target is located or the home is touched.
+        home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, home)
+        stderr = io.StringIO()
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}), \
+                patch.object(holophyte.target.Target, "locate",
+                             autospec=True) as locate, \
+                patch.object(holophyte.target, "adopt_legacy_state",
+                             autospec=True) as adopt:
+            with contextlib.redirect_stderr(stderr), \
+                    self.assertRaises(SystemExit) as raised:
+                holophyte.cli.cli([])
+
+        self.assertNotEqual(raised.exception.code, 0)
+        self.assertIn("usage:", stderr.getvalue())
+        self.assertIn("target", stderr.getvalue())
+        locate.assert_not_called()
+        adopt.assert_not_called()
+        self.assertEqual(sorted(home.iterdir()), [])
+
     def test_unknown_tables_are_left_alone(self):
         # A config written against a later version still loads, and the table
         # this version does read keeps working beside the ones it does not.

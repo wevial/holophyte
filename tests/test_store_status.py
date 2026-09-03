@@ -57,7 +57,7 @@ class TicketStatusTests(unittest.TestCase):
         self.project_id = self.conn.execute(
             "INSERT INTO projects"
             " (linearTeamId, repoPath, defaultBranch, autonomyProfile)"
-            " VALUES ('team_abc', '/srv/dev/holophyte', 'main', 'personal')"
+            " VALUES ('team_abc', '/repos/holophyte', 'main', 'personal')"
         ).lastrowid
         self.conn.commit()
 

@@ -16,7 +16,6 @@ from pathlib import Path
 import ticket_template
 
 HERE = Path(__file__).parent
-TEAM = "Personal Projects"
 GRAPHQL = "https://api.linear.app/graphql"
 
 
@@ -38,6 +37,15 @@ if not PROJECT_ID:
     raise RuntimeError(
         "HOLO2_PROJECT_ID not set — add it to .env next to this file "
         "(Linear project UUID to drive)")
+
+# The Linear team the project belongs to, by name: the workflow states are
+# looked up per team. Configured via HOLO2_TEAM the same way, and for the
+# same reason -- a team name is one operator's board, not this file's.
+TEAM = _load_env_var("HOLO2_TEAM")
+if not TEAM:
+    raise RuntimeError(
+        "HOLO2_TEAM not set — add it to .env next to this file "
+        "(name of the Linear team the project belongs to)")
 
 
 def _load_env_key():

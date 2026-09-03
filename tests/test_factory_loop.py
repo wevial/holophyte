@@ -1219,7 +1219,7 @@ class SelfHostingTests(LoopFixture):
     def test_a_merge_into_the_factory_itself_re_executes_the_loop(self):
         # The original command line, interpreter flags included: a loop
         # launched with -u must keep streaming its log after the restart.
-        orig = ["/usr/bin/python3", "-u", "factory.py", "/srv/dev/holophyte"]
+        orig = ["/usr/bin/python3", "-u", "factory.py", "/repos/holophyte"]
         with patch.object(sys, "orig_argv", orig):
             self.host_the_factory_in(self.target)
             out = self.main_output(Commit("the scripted work"), APPROVE)
@@ -1234,7 +1234,7 @@ class SelfHostingTests(LoopFixture):
         """Before the exec, not after: a re-exec that dies prints nothing,
         so the note is the only witness. It names the merged sha and stands
         unreturned until a loop claims or exits clean."""
-        orig = ["/usr/bin/python3", "factory.py", "/srv/dev/holophyte"]
+        orig = ["/usr/bin/python3", "factory.py", "/repos/holophyte"]
         with patch.object(sys, "orig_argv", orig):
             self.host_the_factory_in(self.target)
             self.loop(Commit("the scripted work"), APPROVE)
@@ -1247,9 +1247,9 @@ class SelfHostingTests(LoopFixture):
     def test_re_exec_resolves_a_bare_interpreter_name_on_path(self):
         """`sys.orig_argv[0]` is whatever the operator typed -- usually the
         bare `python3` -- and `os.execv` does not search PATH: the first live
-        re-exec on gembox died with FileNotFoundError on exactly that. The
+        re-exec on the writer host died with FileNotFoundError on exactly that. The
         program handed to the exec must be a real path; argv stays verbatim."""
-        orig = ["python3", "-u", "factory.py", "/srv/dev/holophyte"]
+        orig = ["python3", "-u", "factory.py", "/repos/holophyte"]
         with patch.object(sys, "orig_argv", orig):
             self.host_the_factory_in(self.target)
             self.loop(Commit("the scripted work"), APPROVE)

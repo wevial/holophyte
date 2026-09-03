@@ -80,7 +80,7 @@ DOCUMENTED_COLUMNS = {
 
 A_PROJECT = (
     "linearTeamId, repoPath, defaultBranch, autonomyProfile",
-    ("team_abc", "/srv/dev/holophyte", "main", "personal"),
+    ("team_abc", "/repos/holophyte", "main", "personal"),
 )
 
 # `supervisorHeartbeats` as it shipped before `host` was added, for the same
@@ -266,7 +266,7 @@ class StoreSchemaTests(unittest.TestCase):
         # executing" can be answered from.
         conn = self.open()
         store.init(conn)
-        project = store.ensure_project(conn, "team-h", "/srv/dev/x")
+        project = store.ensure_project(conn, "team-h", "/repos/x")
         ticket = store.mirror_ticket(
             conn, project, linear_issue_id="iss-h", linear_identifier="KO-9",
             title="a ticket", acceptance_criteria=["Given, then"],

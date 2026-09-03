@@ -4,8 +4,8 @@ A minimal software factory. Two small Python files, no frameworks.
 
 Tickets live in a Linear project; `main` is the only integration point.
 
-Usage: `python3 factory.py /srv/dev/holo2test`, or
-`python3 factory.py --report /srv/dev/holo2test` for the timing table.
+Usage: `python3 factory.py /path/to/repo`, or
+`python3 factory.py --report /path/to/repo` for the timing table.
 `--sweep` reports the runs that have tripped a mechanical condition,
 `--sweep --act` fails them, and `--supervise` keeps doing that on a timer
 (see [Supervising](#supervising)).
@@ -189,7 +189,7 @@ every 60 seconds by default (`[supervisor] sweep_interval_sec`) as a
 long-lived process:
 
 ```
-python3 factory.py --supervise /srv/dev/holo2test
+python3 factory.py --supervise /path/to/repo
 ```
 
 It runs until SIGINT or SIGTERM, finishing the pass in hand and exiting
@@ -234,8 +234,8 @@ ruff is a developer tool, not a dependency: install it on the host with
 
 ## Config
 
-`LINEAR_API_KEY` and `HOLO2_PROJECT_ID` — env vars or `.env` next to
-`linear_provider.py`.
+`LINEAR_API_KEY`, `HOLO2_PROJECT_ID` and `HOLO2_TEAM` (the name of the Linear
+team the project belongs to) — env vars or `.env` next to `linear_provider.py`.
 
 Per-target behavior lives in `~/.holophyte/<slug>/config.toml`. Everything the
 factory keeps about a target sits in that one directory — the store at

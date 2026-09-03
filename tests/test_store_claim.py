@@ -29,7 +29,7 @@ class ClaimLeaseTests(unittest.TestCase):
         self.project_id = self.conn.execute(
             "INSERT INTO projects"
             " (linearTeamId, repoPath, defaultBranch, autonomyProfile)"
-            " VALUES ('team_abc', '/srv/dev/holophyte', 'main', 'personal')"
+            " VALUES ('team_abc', '/repos/holophyte', 'main', 'personal')"
         ).lastrowid
         self.ticket_id = self.add_ticket("iss_1", "HOL-1")
         self.conn.commit()
@@ -151,7 +151,7 @@ class ClaimLeaseTests(unittest.TestCase):
         other_project = self.conn.execute(
             "INSERT INTO projects"
             " (linearTeamId, repoPath, defaultBranch, autonomyProfile)"
-            " VALUES ('team_xyz', '/srv/dev/other', 'main', 'personal')"
+            " VALUES ('team_xyz', '/repos/other', 'main', 'personal')"
         ).lastrowid
         self.conn.commit()
 
@@ -181,7 +181,7 @@ class ContractSnapshotTests(unittest.TestCase):
         self.conn = store.open(Path(tmp.name) / "store.sqlite3")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project_id = store.ensure_project(self.conn, "team_abc", "/srv/dev/x")
+        self.project_id = store.ensure_project(self.conn, "team_abc", "/repos/x")
 
     def mirror(self, title, criteria, commands):
         """Upsert the one issue these tests work with, as the loop mirrors it."""
