@@ -1,0 +1,16 @@
+{
+ "target": "/srv/dev/writer",
+ "host": "writer",
+ "now": 1756900000000,
+ "supervisor": {
+  "state": "stale",
+  "pid": 4242,
+  "heartbeat_age_ms": 250000,
+  "host": "writer"
+ },
+ "thresholds": {
+  "heartbeat_stale_ms": 180000,
+  "strikes": 3
+ },
+ "runs": []
+}
