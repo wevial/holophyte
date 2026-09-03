@@ -653,29 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[127 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T15:28:40Z — KO-217
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T15:29:25Z — KO-217
-MERGED to main.
-actual: 7.0 min · estimate: 30 min · rounds: 1
-
-## 2026-09-03T15:40:52Z — KO-218
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- holophyte/serve.py:122 [p0] BLOCKER: [holophyte/serve.py:122](/workspace/holophyte/serve.py:122) handles only POST/PUT/DELETE/PATCH; HEAD, OPTIONS, TRACE, and CONNECT return 501 HTML inste…
-
-## 2026-09-03T15:46:52Z — KO-218
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T15:47:38Z — KO-218
-MERGED to main.
-actual: 18.2 min · estimate: 30 min · rounds: 2
-
-## 2026-09-03T15:54:39Z — KO-219
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[133 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T15:55:24Z — KO-219
 MERGED to main.
@@ -748,3 +726,29 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-03T19:16:25Z — KO-224
 MERGED to main.
 actual: 8.2 min · estimate: 20 min · rounds: 1
+
+## 2026-09-03T19:24:33Z — KO-227
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):b13fb0ffaae3 [p2] CRITERION 1: met — README line-count, heading-count, and doc-link verify checks CRITERION 2: met — tests/test_docs.py::HeadingTests::test_every_moved_heading_li…
+- criteria:3 [p2] CRITERION 3: not met — `strman.py` exists at the repository root but `docs/development.md` omits it; the test explicitly excludes it from its expected file list…
+
+## 2026-09-03T19:29:17Z — KO-227
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):3c8aeaeb2339 [p2] CRITERION 1: met — README `wc -l`, heading-count, and five-doc link checks CRITERION 2: met — tests/test_docs.py::HeadingTests::test_every_moved_heading_lives_i…
+- criteria:3 [p2] CRITERION 3: not met — `strman.py` exists at the repository root but is omitted from `docs/development.md`; the test explicitly excludes it from its expected in…
+
+## 2026-09-03T19:33:58Z — KO-227
+Round 3: changes_requested · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T19:33:58Z — KO-227
+FAILED: terminal adjudication: FAIL; branch task/ko-227-readme-is-the-front-door-the-m preserved at 22b46360eb22
+actual: 17.4 min · estimate: 30 min · rounds: 3
+
+## 2026-09-03T19:40:01Z — KO-228
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-03T19:40:47Z — KO-228
+MERGED to main.
+actual: 5.1 min · estimate: 10 min · rounds: 1
