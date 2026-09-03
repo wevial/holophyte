@@ -21,7 +21,7 @@ from pathlib import Path
 
 import store
 
-README = Path(__file__).resolve().parent.parent / "README.md"
+README = Path(__file__).resolve().parent.parent / "docs" / "loop.md"
 
 # The §3 drawing plus KO-140's escalation edge, as (from, to) pairs.
 TICKET_EDGES = {
