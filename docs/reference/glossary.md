@@ -1,5 +1,10 @@
 # Glossary
 
+**Across machines.** The optional second-machine setup. Its roles, the
+private network and the port convention live on one page,
+[Across machines](../operating/hosts.md); a single machine needs none of
+it.
+
 **Adjudication.** The terminal PASS/FAIL round after two review rounds
 have asked for changes. Recorded as round 3.
 
@@ -44,10 +49,6 @@ flight. Taken at claim, released at close-out or by the supervisor.
 
 **Ledger.** The comment thread on a Linear ticket recording each run's
 rounds, adjudications and operator steps.
-
-**Operator seat.** In a two-machine setup, the machine tickets are
-written and filed from and `main` is pushed from; the drawer lives there.
-See [Across machines](../operating/hosts.md).
 
 **Preserved branch.** A failed run's branch and worktree, left for a
 human; reused by the next run of the same ticket. Named
@@ -94,7 +95,3 @@ met. Must exist in the candidate tree.
 
 **Worktree.** The sibling checkout under `<repo>.worktrees/` a run works
 in, so the main checkout is untouched until the merge gate.
-
-**Writer host.** In a two-machine setup, the machine running loops,
-supervisors and daemons for a set of targets and holding their stores.
-See [Across machines](../operating/hosts.md).

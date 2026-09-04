@@ -142,7 +142,7 @@ class SingleMachineTests(unittest.TestCase):
 
     IPV4 = re.compile(r"\b[0-9]{1,3}(?:\.[0-9]{1,3}){3}\b")
     ROLE_FREE = ("index.md", "architecture/overview.md",
-                 "architecture/lifecycle.md")
+                 "architecture/lifecycle.md", "reference/glossary.md")
 
     def test_no_dotted_address_outside_the_design_notes(self):
         found = []
