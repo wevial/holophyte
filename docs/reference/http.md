@@ -48,7 +48,7 @@ non-positive or non-integer limit is 400.
 
 ## `GET /attention`
 
-Filed as a ticket; the shape once it lands:
+What needs the operator, computed where the store is:
 
 ```json
 {"level": "attention", "now": 1788450534491, "items": [
@@ -60,8 +60,12 @@ Filed as a ticket; the shape once it lands:
 ```
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it
-is `working` if any run is live. Until it lands, the drawer computes the
-stale-run and supervisor rows itself from `/status`.
+is `working` if any run is live. Items come in this order: `blocked`
+tickets with their question, `stale_run`, `failed` within the last 24
+hours whose ticket has not since merged or been requeued, `supervisor`
+when not live. A daemon older than this endpoint answers 404, and the
+drawer then computes the stale-run and supervisor rows itself from
+`/status`; any other failure of `/attention` is shown, never hidden.
 
 ## Errors
 
