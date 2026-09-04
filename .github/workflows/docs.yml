@@ -1,6 +1,15 @@
 name: docs
 
+# Builds the MkDocs site with --strict as a check. Hosting is Cloudflare Pages
+# connected to this repository (build: pip install mkdocs-material && mkdocs
+# build; output: site), so no deploy step and no secrets live here.
+
 on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yml"
   push:
     branches: [main]
     paths:
@@ -11,12 +20,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -28,15 +31,3 @@ jobs:
           python-version: "3.12"
       - run: pip install --quiet mkdocs-material
       - run: mkdocs build --strict --site-dir site
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4

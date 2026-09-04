@@ -1,6 +1,6 @@
 site_name: Holophyte
 site_description: A minimal, Linear-driven software factory. How the pieces link together, how to operate it, and why each gate exists.
-site_url: https://wevial.github.io/holophyte/
+site_url: https://holophyte.weevil.sh/
 repo_url: https://github.com/wevial/holophyte
 repo_name: wevial/holophyte
 edit_uri: edit/main/docs/
