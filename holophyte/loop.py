@@ -39,6 +39,7 @@ from holophyte.board import (
     store_status,
 )
 from holophyte.config import (
+    branch_prefix,
     loop_config,
     setup_commands,
     setup_timeout,
@@ -101,6 +102,7 @@ def check_worktree_setup(target):
     """
     setup_commands(target)
     setup_timeout(target)
+    branch_prefix(target)
 
 
 def timeout_report(cmd, expired):
@@ -326,13 +328,14 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     task = task["title"]
     # The name carries the ticket identifier ahead of the title slug: two
     # tickets whose titles agree for 30 characters must not share a branch or
-    # a worktree, and a preserved `task/*` branch has to be traceable to its
-    # ticket from `git branch` alone. The title portion keeps its own cap; the
-    # identifier is added on top of it rather than eating into it.
+    # a worktree, and a preserved branch has to be traceable to its ticket
+    # from `git branch` alone, whatever `[worktree] branch_prefix` puts ahead
+    # of the slash. The title portion keeps its own cap; the identifier is
+    # added on top of it rather than eating into it.
     ident = re.sub(r"[^a-z0-9]+", "-", task_id.lower()).strip("-")
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     slug = f"{ident}-{slug}"
-    branch = f"task/{slug}"
+    branch = f"{branch_prefix(target)}/{slug}"
     wt = target.worktrees / slug
     fresh = _cut_worktree(target, conn, run_id, provider, task_id, task,
                           branch, wt)

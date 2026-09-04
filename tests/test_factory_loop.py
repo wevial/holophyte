@@ -707,6 +707,32 @@ class TicketNameTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("merged",), ("merged",)])
 
+    def test_the_prefix_comes_from_the_worktree_table(self):
+        """`[worktree] branch_prefix = "factory"` puts `factory/` ahead of the
+        identifier; the worktree directory does not carry it and is unchanged."""
+        self.configure('[worktree]\nbranch_prefix = "factory"\n')
+        provider = StubProvider({**a_task(), "id": "KO-7000"})
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=provider)
+
+        self.assertEqual(fake.turns[0].cwd.name, "ko-7000-add-a-thing")
+        self.assertEqual(
+            [s for s in self.subjects() if s.startswith("Merge ")],
+            ["Merge factory/ko-7000-add-a-thing: add a thing"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_worktree_table_without_the_key_keeps_the_task_prefix(self):
+        self.configure('[worktree]\nsetup = ["true"]\n')
+        provider = StubProvider({**a_task(), "id": "KO-7000"})
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=provider)
+
+        self.assertEqual(fake.turns[0].cwd.name, "ko-7000-add-a-thing")
+        self.assertEqual(self.merges(),
+                         ["Merge task/ko-7000-add-a-thing: add a thing"])
+
 
 class LeftoverWorktreeTests(LoopFixture):
     def leftover(self):
