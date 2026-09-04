@@ -219,7 +219,7 @@ def cli(argv=None):
     # down: nothing below reaches for Linear by name. Construction touches
     # neither the network nor the module, so a read-only sweep still calls
     # nobody; the first call that posts to the board is what reads the key.
-    # A target with no table and no `HOLO2_*` fallback has no board, which
+    # A target with no table has no board, which
     # a read-only sweep can live with (it calls nobody) and the modes that
     # post to the board cannot: they exit here, naming the key to set.
     settings = board_config(target)
@@ -267,7 +267,7 @@ def require_board(target, board):
     """`board`, or the startup exit for a target that has none.
 
     The loop and `--supervise` post to the board, so a target with no
-    `[board]` table and no `HOLO2_*` fallback cannot start them: the exit
+    `[board]` table cannot start them: the exit
     names the key to set, in the same window as a route that resolves
     nowhere, before anything is claimed.
     """
@@ -275,6 +275,5 @@ def require_board(target, board):
         raise SystemExit(
             f"[holo2] {target.config_path}: [board] project_id is not set -- "
             "add a [board] table with project_id (the Linear project UUID) "
-            "and team (the Linear team name), or for now set HOLO2_PROJECT_ID "
-            "and HOLO2_TEAM in the environment")
+            "and team (the Linear team name)")
     return board

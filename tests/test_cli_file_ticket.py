@@ -133,7 +133,8 @@ class FakeLinear:
 
 
 class FileTicketCliTests(unittest.TestCase):
-    NO_BOARD = {"HOLO2_PROJECT_ID": "", "HOLO2_TEAM": ""}
+    # The retired `HOLO2_*` fallback, set so a stand-in would be caught.
+    RETIRED_ENV = {"HOLO2_PROJECT_ID": "p-env", "HOLO2_TEAM": "Env Team"}
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -141,10 +142,6 @@ class FileTicketCliTests(unittest.TestCase):
         self.root = Path(tmp.name)
         patcher = patch.dict(os.environ,
                              {"HOLOPHYTE_HOME": str(self.root / "home")})
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        patcher = patch.object(holophyte.config.board_config,
-                               "fallback_announced", False)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
@@ -338,7 +335,7 @@ class FileTicketCliTests(unittest.TestCase):
         self.ticket.unlink()
         linear = FakeLinear()
 
-        with patch.dict(os.environ, self.NO_BOARD), \
+        with patch.dict(os.environ, self.RETIRED_ENV), \
                 self.assertRaises(SystemExit) as raised:
             self.cli(linear=linear)
 

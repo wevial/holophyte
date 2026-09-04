@@ -187,11 +187,8 @@ process-wide variable would both claim from the same project, and the second
 would silently work the first's queue. Both values must be non-empty strings.
 `--report`, `--serve` and a read-only `--sweep` need no board and run without
 the table; the loop and `--supervise` exit at startup naming `[board]
-project_id` when it is absent. For one release, `HOLO2_PROJECT_ID` and
-`HOLO2_TEAM` in the environment (or the factory's own `.env`) stand in for an
-absent table, and the factory prints `[board] table absent; using
-HOLO2_PROJECT_ID and HOLO2_TEAM from the environment` once so the setting can
-be moved; a later release removes that fallback.
+project_id` when it is absent. Nothing in the environment stands in for the
+table.
 
 ```toml
 [report]
