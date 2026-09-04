@@ -15,6 +15,9 @@ Seventh and last slice of the phase-2 module split; moved verbatim from
 `__main__` guard.
 """
 import argparse
+import subprocess
+import sys
+from pathlib import Path
 
 from holophyte.board import FILE_TICKET_PRIORITIES, file_ticket
 from holophyte.config import (
@@ -32,10 +35,19 @@ from holophyte.supervisor import (
     SupervisorHeld,
     supervise,
     supervisor_liveness_line,
+    supervisor_running,
     sweep_report,
 )
 from holophyte.target import Target
 from provider import LinearProvider
+
+# The entry point the loop's spawned supervisor is started through: the
+# `factory.py` beside this package, by path, so the supervisor runs the same
+# checkout as the loop that started it whatever the operator's cwd was.
+FACTORY_PATH = Path(__file__).resolve().parent.parent / "factory.py"
+# The seam the spawn goes through, so a test patches `holophyte.cli.SPAWN`
+# and never the `subprocess.Popen` every gate in the process shares.
+SPAWN = subprocess.Popen
 
 # The states `--file-ticket` may create an issue in, the default first.
 FILE_TICKET_STATES = ("Todo", "Backlog")
@@ -262,7 +274,45 @@ def cli(argv=None):
     # Same window, same reason: the `[worktree]` table is read here rather
     # than by the first run that cuts a worktree with it.
     check_worktree_setup(target)
+    # And the watcher, before the first claim: a supervisor is part of the
+    # factory, not a second command to remember, so a target nobody is
+    # supervising gets one started here, detached, unless `[loop]
+    # spawn_supervisor` says a service manager owns that job.
+    if loop_config(target).spawn_supervisor:
+        start_supervisor(target)
     return main(target, require_board(target, board))
+
+
+def start_supervisor(target, out=None):
+    """Start a detached `--supervise` for `target` unless one is watching.
+
+    A live pid in the target's supervisor lock is a watcher already on the
+    job, named on stdout and left alone. Otherwise `factory.py --supervise
+    TARGET` is spawned in its own session, stdin closed, stdout and stderr
+    appended to `supervisor.log` in the target's state directory -- unbuffered
+    (`-u`), so the log reads live under a redirect -- and its pid is named.
+    Nothing waits on it and nothing reads its output: it is meant to outlive
+    the loop, it takes the lock itself, and whether it is still watching is
+    the store's `supervisorHeartbeats` row. Two loops starting at once both
+    spawn, and the second supervisor exits at the lock as any second
+    `--supervise` does.
+    """
+    out = sys.stdout if out is None else out
+    pid = supervisor_running(target)
+    if pid is not None:
+        print(f"[holo2] supervisor pid {pid} is watching {target.path}",
+              file=out, flush=True)
+        return None
+    target.holo_dir.mkdir(parents=True, exist_ok=True)
+    with open(target.holo_dir / "supervisor.log", "ab") as log:
+        child = SPAWN(
+            [sys.executable, "-u", str(FACTORY_PATH), "--supervise",
+             str(target.path)],
+            start_new_session=True, stdin=subprocess.DEVNULL,
+            stdout=log, stderr=log)
+    print(f"[holo2] started a supervisor for {target.path} as pid {child.pid}",
+          file=out, flush=True)
+    return child.pid
 
 
 def require_board(target, board):

@@ -463,13 +463,19 @@ def sweep_config(target):
 # queue with more than one author, where a P1 filed after ten P3s should not
 # wait behind all of them. The file board has no priority and orders by
 # identifier under either value.
+# `spawn_supervisor`: whether the loop starts a detached `--supervise` for
+# its target at startup when no live one holds the supervisor lock. On by
+# default, so one command runs the factory; `false` for an operator whose
+# service manager runs the supervisor as a unit of its own.
 LOOP_KEYS = {
     "stop_on_failure": True,
     "order": "identifier",
+    "spawn_supervisor": True,
 }
 LOOP_ORDERS = ("identifier", "priority")
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
-LoopConfig = collections.namedtuple("LoopConfig", ("stop_on_failure", "order"))
+LoopConfig = collections.namedtuple(
+    "LoopConfig", ("stop_on_failure", "order", "spawn_supervisor"))
 
 
 def loop_config(target):
@@ -477,7 +483,8 @@ def loop_config(target):
 
     Checked at startup beside `sweep_config()`, the same way: an absent table
     is the defaults exactly, and a present value has to be the type the key
-    means. `stop_on_failure` is a boolean, and only a boolean -- `"yes"`,
+    means. `stop_on_failure` and `spawn_supervisor` are booleans, and only
+    booleans -- `"yes"`,
     `1` and `"false"` are all truthy strings or numbers TOML never meant as
     the answer, and a value the factory quietly read as one would run a
     night nobody chose. `order` is one of `LOOP_ORDERS`, and only one of

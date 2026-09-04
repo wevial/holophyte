@@ -699,6 +699,24 @@ def read_supervisor_lock(path):
     return pid, started_at, host
 
 
+
+def supervisor_running(target):
+    """The pid of the live supervisor holding `target`'s lock, or None.
+
+    The loop asks this at startup to decide whether to start one: a lock
+    naming a pid the kernel still knows is a watcher already on the job, and
+    anything else -- no lock, a dead pid, a file that names no pid -- is
+    None. The read only; the spawned `--supervise` takes the lock itself
+    through `acquire_supervisor_lock()`, so a dead or unreadable lock is
+    judged there, with its reclaim turn, not here.
+    """
+    holder = read_supervisor_lock(supervisor_lock_path(target))
+    if holder is None:
+        return None
+    pid = holder[0]
+    return pid if pid_alive(pid) else None
+
+
 @contextlib.contextmanager
 def reclaim_turn(path):
     """Hold the reclaim sidecar of the lock at `path` for the block's span.
