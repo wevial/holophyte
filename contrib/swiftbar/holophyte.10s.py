@@ -2,7 +2,8 @@
 """Holophyte drawer v0: a SwiftBar plugin over one `--serve` daemon per target.
 
 Reads `drawer.toml` from `$HOLOPHYTE_HOME` (default `~/.holophyte`), polls
-`GET /status` on every `[[daemon]]` with a two-second timeout and prints
+`GET /status` and `GET /attention` on every `[[daemon]]` with a two-second
+timeout and prints
 SwiftBar's line format: the two-leaf icon with the state dot drawn inside
 it (a template glyph when idle), a "needs you" section when anything needs
 the operator, then one block per target. Every age is rendered from the
@@ -11,8 +12,15 @@ two renders of the same answer are byte-identical. Standard library only.
 
 `--render FIXTURE.json [...]` prints the menu from files instead of the
 network, so a test and an operator see the exact output. A fixture is a
-`/status` answer, or `{"status": ..., "runs": ...}` carrying the `/runs`
-answer an idle target's "last merge" row reads.
+`/status` answer, or `{"status": ..., "runs": ..., "attention": ...}`
+carrying the `/runs` answer an idle target's "last merge" row reads and the
+`/attention` answer the "needs you" section renders.
+
+"Needs you" is the daemon's own `/attention` items when it answers them;
+a daemon too old for the path (404) gets the local rule over its `/status`
+instead, so a half-upgraded tailnet still renders. Any other `/attention`
+failure (a timeout, a 5xx) is a red row of its own, since the items it hid
+are the ones this side cannot compute.
 """
 from __future__ import annotations
 
@@ -57,16 +65,22 @@ def fetch(url, path="/status"):
     """The parsed JSON of `url + path`, or `{"unreachable": True, "error": TEXT}`.
 
     A 503 (no store yet) is an answer, not an outage: its body comes back as
-    is, and `render()` shows the daemon's own `error` text in the block.
+    is, and `render()` shows the daemon's own `error` text in the block. An
+    error body is tagged with its code as `http_status`, so a caller can
+    tell a 404 (a daemon older than the path) from a 500.
     """
     try:
         with urllib.request.urlopen(url + path, timeout=TIMEOUT_SEC) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         try:
-            return json.load(e)
+            body = json.load(e)
         except ValueError:
-            return {"unreachable": True, "error": f"HTTP {e.code}"}
+            return {"unreachable": True, "error": f"HTTP {e.code}",
+                    "http_status": e.code}
+        if isinstance(body, dict):
+            body.setdefault("http_status", e.code)
+        return body
     except (OSError, ValueError) as e:
         return {"unreachable": True, "error": str(e)}
 
@@ -100,37 +114,132 @@ def coarse_age(ms):
     return f"{s // 86400}d"
 
 
-def attention(statuses):
-    """`(rows, level)`: the "needs you" rows as `(text, colour)` and the worst
-    level over all targets, `WORKING` counting only when no row exists.
+LEVELS = {"none": IDLE, "working": WORKING, "attention": ATTENTION,
+          "critical": CRITICAL}
+QUESTION_CHARS, REASON_CHARS = 60, 40
 
-    Rows, in order per target: unreachable daemon (red), a run whose
-    heartbeat is older than the daemon's own `thresholds.heartbeat_stale_ms`
-    (amber), a supervisor that is `stale` or `none` (amber).
-    """
+
+def cut(text, limit):
+    """`text` on one line, at most `limit` characters, an ellipsis when cut."""
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def item_row(name, item, now):
+    """The "needs you" text for one `/attention` item, target-prefixed, or
+    None for a kind this drawer does not know (a newer daemon's item is
+    skipped rather than misrendered)."""
+    kind, ticket = item.get("kind"), item.get("ticket")
+    if kind == "blocked":
+        question = cut(item.get("question"), QUESTION_CHARS)
+        return f"{name} · {ticket} · blocked: {question}"
+    if kind == "stale_run":
+        return f"{name} · {ticket} · heartbeat {age(item.get('heartbeat_age_ms'))}"
+    if kind == "failed":
+        text = f"{name} · {ticket} · failed"
+        if item.get("ended_ms") is not None and now is not None:
+            text += f" {coarse_age(now - item['ended_ms'])} ago"
+        if item.get("reason"):
+            text += f": {cut(item['reason'], REASON_CHARS)}"
+        return text
+    if kind == "supervisor":
+        text = f"{name} · supervisor {item.get('state', 'none')}"
+        if item.get("heartbeat_age_ms") is not None:
+            text += f" · {coarse_age(item['heartbeat_age_ms'])}"
+        return text
+    return None
+
+
+def daemon_rows(entry):
+    """`(rows, level)` from the daemon's `/attention` answer: one row per
+    item in the daemon's order, the level the daemon's own word."""
+    name, answer = entry["name"], entry["attention"]
+    rows = []
+    for item in answer.get("items", []):
+        text = item_row(name, item, answer.get("now"))
+        if text is not None:
+            rows.append((text, DOT.get(LEVELS.get(item.get("level"), ATTENTION),
+                                       AMBER)))
+    return rows, LEVELS.get(answer.get("level"), ATTENTION if rows else IDLE)
+
+
+def local_rows(entry):
+    """`(rows, level)` computed from `/status` alone, for a daemon that
+    does not answer `/attention`: a run whose heartbeat is older than the
+    daemon's own `thresholds.heartbeat_stale_ms` (amber), a supervisor
+    that is `stale` or `none` (amber)."""
+    name, status = entry["name"], entry["status"]
+    rows, level = [], IDLE
+    stale_ms = status.get("thresholds", {}).get("heartbeat_stale_ms")
+    for run in status.get("runs", []):
+        beat = run.get("heartbeat_age_ms")
+        if stale_ms is not None and beat is not None and beat > stale_ms:
+            rows.append((f"{name} · {run['ticket']} · heartbeat {age(beat)}",
+                         AMBER))
+            level = max(level, ATTENTION)
+        else:
+            level = max(level, WORKING)
+    sup = status.get("supervisor") or {}
+    if sup.get("state") in ("stale", "none"):
+        text = f"{name} · supervisor {sup['state']}"
+        if sup.get("heartbeat_age_ms") is not None:
+            text += f" · {coarse_age(sup['heartbeat_age_ms'])}"
+        rows.append((text, AMBER))
+        level = max(level, ATTENTION)
+    return rows, level
+
+
+def attention_error(answer):
+    """Why an `/attention` answer cannot be rendered, or None when it can
+    or when it is the 404 of a daemon older than the path (a fixture with
+    no `attention` key is that case too). Anything else, a timeout or a
+    5xx after a good `/status`, is a failure the operator must see: the
+    items it would have carried are exactly the ones this drawer cannot
+    compute itself."""
+    if answer is None:
+        return None
+    if not isinstance(answer, dict):
+        return "malformed answer"
+    if isinstance(answer.get("items"), list):
+        return None
+    if answer.get("http_status") == 404:
+        return None
+    if answer.get("unreachable"):
+        return str(answer.get("error") or "unreachable")
+    if answer.get("http_status") is not None:
+        return f"HTTP {answer['http_status']}"
+    return "no items in answer"
+
+
+def attention_rows(entry):
+    """`(rows, level)` for one target: `NAME · unreachable` in red and
+    `CRITICAL` when the daemon did not answer `/status`; else the daemon's
+    own `/attention` items when `entry["attention"]` carries them; else
+    the local rule over `/status` for a daemon that answers 404 there (or
+    a fixture with no `attention` key). Any other `/attention` failure
+    is a red `NAME · /attention failed: WHY` row at `CRITICAL`, followed
+    by whatever the local rule still shows, never a silent fallback."""
+    if entry["status"].get("unreachable"):
+        return [(f"{entry['name']} · unreachable", RED)], CRITICAL
+    answer = entry.get("attention")
+    if isinstance(answer, dict) and isinstance(answer.get("items"), list):
+        return daemon_rows(entry)
+    rows, level = local_rows(entry)
+    why = attention_error(answer)
+    if why is not None:
+        row = (f"{entry['name']} · /attention failed: {cut(why, REASON_CHARS)}", RED)
+        return [row] + rows, CRITICAL
+    return rows, level
+
+
+def attention(statuses):
+    """`(rows, level)`: the "needs you" rows as `(text, colour)` over all
+    targets in config order and the worst level among them."""
     rows, level = [], IDLE
     for entry in statuses:
-        name, status = entry["name"], entry["status"]
-        if status.get("unreachable"):
-            rows.append((f"{name} · unreachable", RED))
-            level = max(level, CRITICAL)
-            continue
-        stale_ms = status.get("thresholds", {}).get("heartbeat_stale_ms")
-        for run in status.get("runs", []):
-            beat = run.get("heartbeat_age_ms")
-            if stale_ms is not None and beat is not None and beat > stale_ms:
-                rows.append((f"{name} · {run['ticket']} · heartbeat {age(beat)}",
-                             AMBER))
-                level = max(level, ATTENTION)
-            else:
-                level = max(level, WORKING)
-        sup = status.get("supervisor") or {}
-        if sup.get("state") in ("stale", "none"):
-            text = f"{name} · supervisor {sup['state']}"
-            if sup.get("heartbeat_age_ms") is not None:
-                text += f" · {coarse_age(sup['heartbeat_age_ms'])}"
-            rows.append((text, AMBER))
-            level = max(level, ATTENTION)
+        got, got_level = attention_rows(entry)
+        rows.extend(got)
+        level = max(level, got_level)
     return rows, level
 
 
@@ -285,23 +394,29 @@ def footer_counts(statuses):
 
 def fixture_entry(path):
     """A `--render` entry from a file: a bare `/status` answer, or an object
-    with `status` and `runs` keys carrying both answers."""
+    with a `status` key and optional `runs` and `attention` keys carrying
+    those answers too."""
     raw = json.loads(Path(path).read_text())
-    if "status" in raw and "runs" in raw and "now" not in raw:
-        status, runs = raw["status"], raw["runs"]
+    if "status" in raw and "now" not in raw:
+        status, runs, att = raw["status"], raw.get("runs"), raw.get("attention")
     else:
-        status, runs = raw, None
+        status, runs, att = raw, None, None
     return {"name": Path(path).stem, "url": str(path), "status": status,
-            "runs": runs}
+            "runs": runs, "attention": att}
 
 
 def poll(daemon):
-    """One daemon's entry: `/status`, then `/runs` only for an idle target,
-    so a working daemon still costs one request."""
+    """One daemon's entry: `/status` and `/attention`, then `/runs` only for
+    an idle target. A daemon that did not answer `/status` is not asked
+    again, so a dead host costs one timeout, not three."""
     status = fetch(daemon["url"])
-    runs = fetch(daemon["url"], "/runs") if status.get("runs") == [] else None
+    if status.get("unreachable"):
+        att, runs = None, None
+    else:
+        att = fetch(daemon["url"], "/attention")
+        runs = fetch(daemon["url"], "/runs") if status.get("runs") == [] else None
     return {"name": daemon["name"], "url": daemon["url"], "status": status,
-            "runs": runs}
+            "runs": runs, "attention": att}
 
 
 def reference_now(statuses):

@@ -42,9 +42,11 @@ To see the exact menu without a network, render fixtures instead:
 python3 contrib/swiftbar/holophyte.10s.py --render tests/fixtures/drawer/idle.json
 ```
 
-A fixture is a `/status` answer, or an object with `status` and `runs` keys
-carrying the `/runs` answer too (`idle_last_merge.json`), which is what an
-idle target's "last merge" row reads.
+A fixture is a `/status` answer, or an object with a `status` key and
+optional `runs` and `attention` keys carrying those answers too:
+`idle_last_merge.json` has the `/runs` answer an idle target's "last merge"
+row reads, `attention_all_kinds.json` the `/attention` answer with one item
+of each kind.
 
 ## The dot
 
@@ -74,17 +76,32 @@ shows. `ok`/`warn`/`bad` is the worst row of the menu:
 |---|---|
 | none | every target is idle with a live supervisor |
 | green | at least one run is live and nothing needs you |
-| amber | something needs you: a run's heartbeat is older than the daemon's `heartbeat_stale_ms`, or a supervisor is `stale` or `none` |
+| amber | something needs you: the daemon's `/attention` has items (a blocked ticket, a stale run, a recent failure, a supervisor that is `stale` or `none`) |
 | red | a daemon did not answer within two seconds (`unreachable`) |
 
 ## What "needs you" means
 
 The `NEEDS YOU` section appears only when it has rows, above the per-target
-blocks. A row is something the factory cannot fix on its own right now: a run
-whose heartbeat has gone stale (the supervisor will sweep it after its strike
-count, but a stuck review is worth a look first), a supervisor that is stale
-or absent (nothing will sweep anything until it is back), or a daemon that
-cannot be reached (you know nothing about that target until it is).
+blocks. The rows are the daemon's own `GET /attention` items, one row each
+in the daemon's order, prefixed with the target name:
+
+| row | meaning |
+|---|---|
+| `NAME · KO-n · blocked: QUESTION` | the ticket is parked `blocked_on_operator`; the question is its own words, cut to one line of 60 characters |
+| `NAME · KO-n · heartbeat 7m` | a run whose heartbeat is older than the daemon's `heartbeat_stale_ms` (the supervisor will sweep it after its strike count, but a stuck review is worth a look first) |
+| `NAME · KO-n · failed 2h ago: REASON` | a run that ended `failed` in the daemon's window and whose ticket is still in flight; the reason cut to 40 characters, the age against the daemon's `now` |
+| `NAME · supervisor stale · 20m` | a supervisor that is stale or absent (nothing will sweep anything until it is back) |
+| `NAME · unreachable` | the daemon did not answer, judged on this side; you know nothing about that target until it does |
+| `NAME · /attention failed: WHY` | `/status` answered but `/attention` did not (a timeout, a 5xx, a body without `items`); the blocked and failed rows it would have carried are the ones this side cannot compute, so the row is red and the local rule's rows follow it |
+
+A daemon older than `/attention` answers 404 there; for that daemon alone
+the plugin falls back to its own rule over `/status` (the stale heartbeat
+and the supervisor rows, never the blocked or failed ones, which only the
+store knows), so a half-upgraded tailnet still renders without an error
+row. Only the 404 earns that fallback: a daemon whose `/status` answers
+but whose `/attention` times out or fails gets the red `/attention failed`
+row, so a healthy-looking target cannot hide a blocked ticket. The menu-bar dot is the worst level any daemon reports, with
+`unreachable` ranked above them all as red.
 
 An idle target's row names what it last shipped: `idle · last merge KO-n ·
 12m ago`, read from a second request, `GET /runs`, that the plugin makes only
@@ -109,5 +126,5 @@ detail is in view instead of behind a hover. The footer counts targets (one
 per daemon) and distinct hosts separately, since several daemons can live on
 one host.
 
-Out of scope for v0: any write action, live streaming (SSE), and
-"failed since you last looked" tracking, which needs client state.
+Out of scope for v0: any write action, live streaming (SSE), and dismissing
+or acknowledging a "needs you" row, which needs client state.
