@@ -1483,7 +1483,7 @@ class WorktreeSetupTests(ConfigTestCase):
         """Empty, slashed, whitespace or git-refused characters: the run that
         discovered it at `git worktree add` would have claimed a ticket first."""
         for value in ('""', '"a/b"', '"a b"', '"a~b"', '"a:b"', '"a..b"',
-                      '".hidden"', '"x.lock"', '"-factory"', '7'):
+                      '".hidden"', '"x.lock"', '"factory."', '"-factory"', '7'):
             with self.subTest(value=value):
                 target = self.locate(f'[worktree]\nbranch_prefix = {value}\n').path
 

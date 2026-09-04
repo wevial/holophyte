@@ -354,11 +354,12 @@ def branch_prefix(target):
 
     The value is held to what `git check-ref-format --branch` would accept
     as a single segment -- non-empty, no whitespace, no slash, none of
-    `~^:?*[` and backslash, no leading `-` (git would read it as an option)
-    -- and a value outside it is a startup error naming the key, for the
-    reason a bad `setup_timeout_sec` is: a prefix the factory only
-    discovered was illegal at `git worktree add` would abandon a claimed
-    ticket over something one sentence at startup could have said.
+    `~^:?*[` and backslash, no leading `.` or `-` (git would read the latter
+    as an option), no trailing `.`, no `..`, `@{` or `.lock` -- and a value
+    outside it is a startup error naming the key, for the reason a bad
+    `setup_timeout_sec` is: a prefix the factory only discovered was illegal
+    at `git worktree add` would abandon a claimed ticket over something one
+    sentence at startup could have said.
     """
     value = (target.config().get("worktree") or {}).get("branch_prefix")
     if value is None:
@@ -373,13 +374,13 @@ def branch_prefix(target):
             "empty")
     if (any(c.isspace() or c in BRANCH_PREFIX_REFUSED or ord(c) < 0x20 or c == "\x7f"
             for c in value)
-            or value.startswith((".", "-")) or value.endswith(".lock")
+            or value.startswith((".", "-")) or value.endswith((".", ".lock"))
             or ".." in value or "@{" in value or value == "@"):
         raise SystemExit(
             f"[holo2] {target.config_path}: [worktree] branch_prefix {value!r} is "
             "not a legal branch segment: no whitespace, no '/', none of "
             "~ ^ : ? * [ \\, no leading '.' or '-', no '..', and not ending in "
-            "'.lock'")
+            "'.' or '.lock'")
     return value
 
 # How old a heartbeat has to be before a sighting counts as silent, and how
