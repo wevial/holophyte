@@ -1,7 +1,8 @@
 # Operating
 
 Supervising a target and serving its state read-only. The operator
-commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md`) are
+commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
+[--update KO-n]`) are
 described by `factory.py --help`, and the escalation ladder they sit on in
 [AGENTS.md](../AGENTS.md). Back to the [README](../README.md).
 

@@ -24,7 +24,18 @@ python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer
 python3 factory.py --serve HOST:PORT /path/to/repo   # read-only JSON daemon
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
+python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 ```
+
+`--file-ticket` validates the file against the target, creates the issue,
+reads the stored body back and validates that again, so a transfer that
+rewrites the body is caught. With `--update KO-n` it replaces that issue's
+title, description and estimate from the file instead of creating one, with
+the same validation on both sides; state, priority and relations are left as
+they are, so `--state` and `--priority` are refused beside it. It prints
+`[holo2] updated KO-n: TITLE`, or exits 1 with the problem and nothing
+changed when the file is invalid and 2 with the identifier and the problem
+when the stored body is.
 
 `--report`, `--sweep` and `--serve` read the store and call nobody; the loop
 and `--supervise` need a `[board]` table. `--help` is safe: the command line

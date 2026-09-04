@@ -51,15 +51,27 @@ def serve_address(text):
 
 
 def _file_ticket_only(parser, args):
-    """Refuse `--state` and `--priority` given without `--file-ticket`: each
-    is a field of the issue that command creates, and names nothing alone."""
-    if args.file_ticket is not None:
+    """Refuse `--state`, `--priority` and `--update` given without
+    `--file-ticket`: each is a field of, or a verb on, the issue that
+    command works with, and names nothing alone. And refuse `--update`
+    beside `--state` or `--priority`: those are create-time fields, and an
+    update leaves them as they are."""
+    if args.file_ticket is None:
+        if args.update is not None:
+            parser.error("--update says which issue --file-ticket replaces "
+                         "the body of; it names nothing by itself")
+        for flag, value in (("--state", args.state),
+                            ("--priority", args.priority)):
+            if value is not None:
+                parser.error(f"{flag} is what --file-ticket creates the "
+                             "issue with; it names nothing by itself")
         return
-    for flag, value in (("--state", args.state),
-                        ("--priority", args.priority)):
-        if value is not None:
-            parser.error(f"{flag} is what --file-ticket creates the issue "
-                         "with; it names nothing by itself")
+    if args.update is not None:
+        for flag, value in (("--state", args.state),
+                            ("--priority", args.priority)):
+            if value is not None:
+                parser.error(f"{flag} is set when --file-ticket creates an "
+                             "issue; --update leaves it as it is")
 
 
 def cli(argv=None):
@@ -158,6 +170,12 @@ def cli(argv=None):
         "--priority", choices=tuple(FILE_TICKET_PRIORITIES),
         help="with --file-ticket: the priority the issue is created with "
              "(default none)")
+    parser.add_argument(
+        "--update", metavar="KO-n",
+        help="with --file-ticket: replace that issue's title, description "
+             "and estimate from the validated file instead of creating one; "
+             "state, priority and relations stay as they are, and the stored "
+             "body is read back and validated as on filing")
     args = parser.parse_args(argv)
     _file_ticket_only(parser, args)
     if args.act and not args.sweep:
@@ -221,7 +239,7 @@ def cli(argv=None):
         require_board(target, board)
         return file_ticket(target, args.file_ticket,
                            args.state or FILE_TICKET_STATES[0], settings,
-                           priority=args.priority)
+                           priority=args.priority, update=args.update)
     # The acting sweep on a timer. Like `--sweep --act` it dispatches nothing
     # and so resolves no route; unlike it, it takes the target's supervisor
     # lock first, and a target that already has one is an exit, not a loop.
