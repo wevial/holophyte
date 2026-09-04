@@ -10,37 +10,37 @@ sequenceDiagram
   autonumber
   participant Op as Operator seat
   participant Lin as Linear
-  participant Loop as loop (writer host)
+  participant Fac as loop (writer host)
   participant Store as store.db
   participant WT as worktree
   participant Imp as implementer
   participant Rev as reviewer (container)
   participant Sup as supervisor
   Op->>Lin: --file-ticket TICKET.md (validate, create, re-read, re-validate)
-  Loop->>Lin: claim_next(): first ready, unblocked, by priority
-  Loop->>Store: mirror ticket (contract snapshot), claim run, lease project
-  Loop->>WT: git worktree add; [worktree] setup commands
-  Loop->>Imp: claude -p with the whole ticket body, budget = estimate
+  Fac->>Lin: claim_next(): first ready, unblocked, by priority
+  Fac->>Store: mirror ticket (contract snapshot), claim run, lease project
+  Fac->>WT: git worktree add, then [worktree] setup commands
+  Fac->>Imp: claude -p with the whole ticket body, budget = estimate
   loop heartbeat thread
-    Loop->>Store: runs.lastHeartbeat every stale/2
+    Fac->>Store: runs.lastHeartbeat every stale/2
     Sup->>Store: sweep every 60 s: stale? over budget? review stuck?
   end
   Imp-->>WT: commits
-  Loop->>WT: verify gate: ticket's command, clause by clause
-  Loop->>Rev: staged export of base and candidate, read-only
-  Rev-->>Loop: CRITERION n: met — test  ·  VERDICT
-  Loop->>Store: reviewRounds row (verdict, findings, fingerprint)
-  alt REQUEST_CHANGES and rounds < 2
-    Loop->>Imp: findings, one fix round
-  else after 2 rounds
-    Loop->>Rev: terminal adjudication PASS/FAIL
+  Fac->>WT: verify gate: ticket's command, clause by clause
+  Fac->>Rev: staged export of base and candidate, read-only
+  Rev-->>Fac: CRITERION n: met — test  ·  VERDICT
+  Fac->>Store: reviewRounds row (verdict, findings, fingerprint)
+  alt REQUEST_CHANGES with a fix round left
+    Fac->>Imp: findings, one fix round
+  else two rounds spent
+    Fac->>Rev: terminal adjudication PASS/FAIL
   end
-  Loop->>WT: verify gate again
-  Loop->>Lin: re-read body; drift vs snapshot? refuse
-  Loop->>Store: release run merged; ticket → merged
-  Loop->>Loop: git merge --no-ff into main; regenerate FINDINGS.md
-  Loop->>Lin: state Done, ledger comment
-  Loop->>Loop: self-merge? re-exec factory.py from the new HEAD
+  Fac->>WT: verify gate again
+  Fac->>Lin: re-read body, refuse on drift from the snapshot
+  Fac->>Store: release run as merged, walk the ticket to merged
+  Fac->>Fac: git merge --no-ff into main, regenerate FINDINGS.md
+  Fac->>Lin: state Done, ledger comment
+  Fac->>Fac: self-merge? re-exec factory.py from the new HEAD
   Op->>Op: git push (the factory never pushes)
 ```
 
