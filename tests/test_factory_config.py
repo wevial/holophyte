@@ -1085,13 +1085,29 @@ class SupervisorSpawnTests(StartupCheckTests):
 
     BOARD = '[board]\nproject_id = "p-1"\nteam = "T"\n'
 
+    class EmptyBoard:
+        """A board with no ready tickets, in the provider's shape.
+
+        Stands in for `LinearProvider` where `cli()` builds it, so the real
+        `main()` runs: opens the store, sweeps, asks for a ticket, is told
+        there is none, and exits on its "no ready tickets" line. The spawn
+        under test sits between the startup checks and that call.
+        """
+
+        def __init__(self, project_id, team):
+            self.team = team
+
+        def claim_next(self, skip=(), order="identifier"):
+            return None
+
     def start_loop(self, target):
         printed = io.StringIO()
-        with patch.object(holophyte.cli, "main") as main, \
+        with patch.object(holophyte.cli, "LinearProvider", self.EmptyBoard), \
                 contextlib.redirect_stdout(printed):
             holophyte.cli.cli([str(target)])
-        main.assert_called_once()
-        return printed.getvalue()
+        out = printed.getvalue()
+        self.assertIn("[holo2] Linear has no ready tickets. done.", out)
+        return out
 
     def hold_lock(self, pid):
         lock = holophyte.supervisor.supervisor_lock_path(self.tgt)
@@ -1155,6 +1171,8 @@ class SupervisorSpawnTests(StartupCheckTests):
                 holophyte.cli.cli([str(target)])
 
         self.assertIn("spawn_supervisor", str(raised.exception))
+        # `main` stays a mock here: the exit is the assertion, and a real
+        # loop reaching it would mean the bad key had been read past.
         main.assert_not_called()
         self.popen.assert_not_called()
 
