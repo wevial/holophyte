@@ -136,8 +136,8 @@ it. Everything after the slash is unchanged — the lowercased ticket identifier
 then the title slug — because the identifier is what makes a preserved branch
 traceable from `git branch` alone. The worktree directory name does not carry
 the prefix and does not change. A prefix that is empty, contains a slash or
-whitespace, or uses a character git refuses in a ref name (`~ ^ : ? * [ \`) is a
-startup error naming the key, before anything is claimed. Branches already
+whitespace, starts with `-`, or uses a character git refuses in a ref name
+(`~ ^ : ? * [ \`) is a startup error naming the key, before anything is claimed. Branches already
 preserved under an older prefix are not renamed; a run that reuses one starts
 from the name the new prefix gives it.
 
