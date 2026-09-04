@@ -921,23 +921,16 @@ class StartupCheckTests(ConfigTestCase):
 class BoardConfigTests(StartupCheckTests):
     """`[board] project_id` and `[board] team`: the board is the target's.
 
-    Four startup outcomes: the table names the board; no table and the
-    `HOLO2_*` variables stand in, saying so once; neither, and the loop exits
-    naming the key while `--report` still prints; a misspelt key is refused
-    like one in any other table. The routes are stubbed by the parent's
-    `setUp()` so the loop path reaches the board, not a missing `claude`.
+    Three startup outcomes: the table names the board; no table, and the
+    loop exits naming the key while `--report` still prints, whatever the
+    environment holds; a misspelt key is refused like one in any other
+    table. The routes are stubbed by the parent's `setUp()` so the loop path
+    reaches the board, not a missing `claude`.
     """
 
-    NO_BOARD = {"HOLO2_PROJECT_ID": "", "HOLO2_TEAM": ""}
-
-    def setUp(self):
-        super().setUp()
-        # Every test says what the environment holds; the fallback line is
-        # printed once per process, so each test starts with it unprinted.
-        patcher = patch.object(holophyte.config.board_config,
-                               "fallback_announced", False)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+    # The retired `HOLO2_*` fallback: set in every test so a stand-in
+    # would be caught if it came back.
+    RETIRED_ENV = {"HOLO2_PROJECT_ID": "p-env", "HOLO2_TEAM": "Env Team"}
 
     def start_loop(self, target):
         """Run `cli([target])` to the point the loop would claim, and hand
@@ -980,63 +973,48 @@ class BoardConfigTests(StartupCheckTests):
     def test_the_table_names_the_project_and_team_the_queries_use(self):
         target = self.locate('[board]\nproject_id = "p-1"\nteam = "T"\n').path
 
-        with patch.dict(os.environ, self.NO_BOARD):
+        with patch.dict(os.environ, self.RETIRED_ENV):
             board, printed = self.start_loop(target)
             calls = self.queries_from(board)
 
         self.assert_queries_name(calls, "p-1", "T")
         self.assertEqual(board.team, "T")
-        self.assertNotIn("[board] table absent", printed)
-
-    def test_the_environment_stands_in_for_an_absent_table_and_says_so_once(self):
-        target = self.locate().path
-        env = {"HOLO2_PROJECT_ID": "p-env", "HOLO2_TEAM": "Env Team"}
-
-        with patch.dict(os.environ, env):
-            board, printed = self.start_loop(target)
-            calls = self.queries_from(board)
-
-        self.assert_queries_name(calls, "p-env", "Env Team")
-        self.assertEqual(
-            printed.count("[board] table absent; using HOLO2_PROJECT_ID and "
-                          "HOLO2_TEAM from the environment"), 1)
-
-    def test_the_table_wins_over_the_environment_without_the_line(self):
-        target = self.locate('[board]\nproject_id = "p-1"\nteam = "T"\n').path
-        env = {"HOLO2_PROJECT_ID": "p-env", "HOLO2_TEAM": "Env Team"}
-
-        with patch.dict(os.environ, env):
-            board, printed = self.start_loop(target)
-
-        self.assertEqual((board.project_id, board.team), ("p-1", "T"))
         self.assertEqual(printed, "")
 
-    def test_neither_is_a_loop_exit_naming_the_key_and_a_report_that_prints(self):
+    def test_no_table_is_a_loop_exit_naming_the_key_despite_the_environment(self):
+        """`HOLO2_PROJECT_ID`/`HOLO2_TEAM` set and no table: the loop and
+        `--supervise` exit naming the key, nothing announces a fallback, and
+        `--report` still prints."""
         target = self.locate().path
 
-        with patch.dict(os.environ, self.NO_BOARD):
-            with patch.object(holophyte.cli, "main") as main:
+        with patch.dict(os.environ, self.RETIRED_ENV):
+            printed = io.StringIO()
+            with patch.object(holophyte.cli, "main") as main, \
+                    contextlib.redirect_stdout(printed):
                 with self.assertRaises(SystemExit) as raised:
                     holophyte.cli.cli([str(target)])
-            with patch.object(holophyte.cli, "supervise") as supervise:
+            with patch.object(holophyte.cli, "supervise") as supervise, \
+                    contextlib.redirect_stdout(printed):
                 with self.assertRaises(SystemExit):
                     holophyte.cli.cli([str(target), "--supervise"])
-            printed = io.StringIO()
-            with contextlib.redirect_stdout(printed):
+            report = io.StringIO()
+            with contextlib.redirect_stdout(report):
                 status = holophyte.cli.cli([str(target), "--report"])
 
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("[board] project_id", str(raised.exception))
         self.assertIn(str(self.tgt.config_path), str(raised.exception))
+        self.assertNotIn("HOLO2_", str(raised.exception))
+        self.assertNotIn("[board] table absent", printed.getvalue())
         main.assert_not_called()
         supervise.assert_not_called()
         self.assertIn(status, (None, 0))
-        self.assertIn("no store", printed.getvalue())
+        self.assertIn("no store", report.getvalue())
 
     def test_a_read_only_sweep_runs_without_a_board(self):
         target = self.locate().path
 
-        with patch.dict(os.environ, self.NO_BOARD), \
+        with patch.dict(os.environ, self.RETIRED_ENV), \
                 patch.object(holophyte.cli, "sweep_report") as sweep_report:
             holophyte.cli.cli([str(target), "--sweep"])
 
@@ -1057,8 +1035,8 @@ class BoardConfigTests(StartupCheckTests):
 
     def test_half_a_table_is_a_startup_error_naming_the_missing_key(self):
         """A table that names only one half of the board is refused where
-        the loop would read it, not filled in from the environment."""
-        env = {"HOLO2_PROJECT_ID": "p-env", "HOLO2_TEAM": "Env Team"}
+        the loop would read it."""
+        env = self.RETIRED_ENV
         for config, key in (('[board]\nproject_id = "p-1"\n', "team"),
                             ('[board]\nteam = "T"\n', "project_id"),
                             ('[board]\nproject_id = ""\nteam = "T"\n', "project_id")):

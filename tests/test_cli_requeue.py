@@ -4,7 +4,9 @@ in the queue with its intervention row, through the command line.
 The mode is the store's `requeue()` behind argparse, so what is tested here
 is the wiring: the identifier resolves in the target's store, the requeued
 line is printed, a refusal is a non-zero exit naming the reason with nothing
-written, and a `--requeue` with no `--note` never reaches the store at all.
+written, a target with no `[board]` table exits naming the key before the
+store is touched, and a `--requeue` with no `--note` never reaches the store
+at all.
 
 Run: python3 -m unittest discover -s tests -p 'test_cli_*' -v
 """
@@ -41,6 +43,7 @@ class RequeueCliTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.target = holophyte.target.Target.locate(self.repo)
+        self.with_board()
         conn = open_store(self.target)
         self.addCleanup(conn.close)
         self.conn = conn
@@ -52,6 +55,11 @@ class RequeueCliTests(unittest.TestCase):
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
         store.transition(conn, self.ticket, "in_flight")
         self.run = store.claim(conn, self.project, self.ticket, now=T0)
+
+    def with_board(self):
+        self.target.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.target.config_path.write_text(
+            '[board]\nproject_id = "p-1"\nteam = "T"\n')
 
     def fail_the_run(self):
         store.release(self.conn, self.run, "failed", "verify failed",
@@ -84,6 +92,21 @@ class RequeueCliTests(unittest.TestCase):
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
             " 'intervention'", (self.run,)).fetchone()
         self.assertIn("contract fixed", summary)
+
+    def test_a_target_with_no_board_exits_naming_the_key_and_writes_nothing(self):
+        self.fail_the_run()
+        self.target.config_path.unlink()
+        before = self.status()
+
+        with patch.dict(os.environ, {"HOLO2_PROJECT_ID": "p-env",
+                                     "HOLO2_TEAM": "T"}), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "contract fixed")
+
+        self.assertNotEqual(raised.exception.code, 0)
+        self.assertIn("[board] project_id", str(raised.exception))
+        self.assertEqual(self.status(), before)
+        self.assertEqual(self.interventions(), [])
 
     def test_each_refusal_exits_non_zero_naming_it_and_writes_nothing(self):
         # A live run first, then the same ticket once it is ready, then an

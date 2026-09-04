@@ -515,57 +515,29 @@ def loop_config(target):
 # claim from the same project, and the second silently works the first's
 # queue. Neither has a default -- a board is one operator's, never this
 # file's -- so a loop with no table exits at startup naming the key.
-#
-# For one release, `HOLO2_PROJECT_ID`/`HOLO2_TEAM` in the environment (or
-# the factory's own `.env`) stand in for an absent table, and say so once
-# on stdout, so today's single-target installs keep running while the
-# operator moves the setting.
 BOARD_KEYS = {
     "project_id": None,
     "team": None,
 }
 KNOWN_KEYS["board"] = frozenset(BOARD_KEYS)
 BoardConfig = collections.namedtuple("BoardConfig", ("project_id", "team"))
-BOARD_FALLBACK_LINE = ("[holo2] [board] table absent; using HOLO2_PROJECT_ID "
-                       "and HOLO2_TEAM from the environment")
-
-
-def _factory_env_var(name):
-    """`name` from the environment, else from the `.env` beside `factory.py`."""
-    if os.environ.get(name):
-        return os.environ[name]
-    env_file = Path(__file__).resolve().parent.parent / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            if line.startswith(name + "="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return None
 
 
 def board_config(target):
-    """The target's `[board]`, or the environment's, or `None`.
+    """The target's `[board]`, or `None` when the table is absent.
 
     A present table has to carry both keys as non-empty strings: half a
     board names no project to claim from or no team to resolve states in,
     and the refusal names the table, the key and the constraint, like a bad
-    `[loop]` value. An absent table falls back to `HOLO2_PROJECT_ID` and
-    `HOLO2_TEAM` when both are set, printing `BOARD_FALLBACK_LINE` once per
-    process so the operator knows to move the setting. With neither, the
-    answer is `None`, and the caller decides whether its mode needs a board:
-    `--report` and a read-only `--sweep` call nobody; the loop exits at
-    startup naming `[board] project_id`. Keys this version does not know are
-    refused by `check_config_keys()`.
+    `[loop]` value. An absent table is `None`, and the caller decides
+    whether its mode needs a board: `--report` and a read-only `--sweep`
+    call nobody; the loop exits at startup naming `[board] project_id`.
+    Nothing is read from the environment. Keys this version does not know
+    are refused by `check_config_keys()`.
     """
     table = target.config().get("board")
     if table is None:
-        project_id = _factory_env_var("HOLO2_PROJECT_ID")
-        team = _factory_env_var("HOLO2_TEAM")
-        if not (project_id and team):
-            return None
-        if not board_config.fallback_announced:
-            board_config.fallback_announced = True
-            print(BOARD_FALLBACK_LINE)
-        return BoardConfig(project_id, team)
+        return None
     if not isinstance(table, dict):
         raise SystemExit(
             f"[holo2] {target.config_path}: [board] must be a table, got "
@@ -580,8 +552,6 @@ def board_config(target):
         values[key] = value
     return BoardConfig(**values)
 
-
-board_config.fallback_announced = False
 
 
 # What the factory prints where it would print the writer host's hostname:

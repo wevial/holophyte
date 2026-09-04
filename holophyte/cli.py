@@ -206,11 +206,6 @@ def cli(argv=None):
     report_config(target)
     if args.report:
         return report(target)
-    # The one mode that writes, and only to the store: no board is built and
-    # no route resolves, the same as `--report`; Linear is mirrored by the
-    # loop when it claims the ticket again.
-    if args.requeue is not None:
-        return requeue(target, args.requeue, args.note)
     # Same window as `--report`: a read-only daemon calls nobody, so no board
     # is built and no route has to resolve.
     if args.serve is not None:
@@ -219,7 +214,7 @@ def cli(argv=None):
     # down: nothing below reaches for Linear by name. Construction touches
     # neither the network nor the module, so a read-only sweep still calls
     # nobody; the first call that posts to the board is what reads the key.
-    # A target with no table and no `HOLO2_*` fallback has no board, which
+    # A target with no table has no board, which
     # a read-only sweep can live with (it calls nobody) and the modes that
     # post to the board cannot: they exit here, naming the key to set.
     settings = board_config(target)
@@ -230,6 +225,13 @@ def cli(argv=None):
     # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
         return sweep_report(target, act=args.act, provider=board)
+    # Writes only to the store and calls nobody, so no route has to resolve;
+    # but it hands the ticket back to a loop that will mirror it to the
+    # board when it claims it again, so a target with no board exits here
+    # naming the key, before anything is written.
+    if args.requeue is not None:
+        require_board(target, board)
+        return requeue(target, args.requeue, args.note)
     # Posts to the board, so a target without one exits here naming the key
     # -- before the file is read, so the error is about the target, not the
     # file. The board is the `[board]` pair itself, not the loop's provider:
@@ -267,7 +269,7 @@ def require_board(target, board):
     """`board`, or the startup exit for a target that has none.
 
     The loop and `--supervise` post to the board, so a target with no
-    `[board]` table and no `HOLO2_*` fallback cannot start them: the exit
+    `[board]` table cannot start them: the exit
     names the key to set, in the same window as a route that resolves
     nowhere, before anything is claimed.
     """
@@ -275,6 +277,5 @@ def require_board(target, board):
         raise SystemExit(
             f"[holo2] {target.config_path}: [board] project_id is not set -- "
             "add a [board] table with project_id (the Linear project UUID) "
-            "and team (the Linear team name), or for now set HOLO2_PROJECT_ID "
-            "and HOLO2_TEAM in the environment")
+            "and team (the Linear team name)")
     return board

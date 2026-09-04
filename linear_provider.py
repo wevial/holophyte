@@ -35,10 +35,10 @@ def _load_env_var(name):
 # Which project to drive and which team's workflow states to resolve in are
 # the caller's to say: `list_ready_issues()`, `_state_id()`, `set_state()`
 # and `claim_next()` take them as parameters, and `provider.LinearProvider`
-# carries the pair the target's `[board]` table names. Nothing is read from
-# the environment at import, so importing this module is not a configuration
-# read; the one variable it still reads, `LINEAR_API_KEY`, is read at the
-# first request.
+# carries the pair the target's `[board]` table names. The only variable
+# this module reads from the environment is `LINEAR_API_KEY`, at the first
+# request; there is no script mode, because a claim outside the loop's
+# store lease is how two loops once claimed from one project.
 
 
 def _load_env_key():
@@ -405,14 +405,3 @@ def fetch_description(identifier):
         raise RuntimeError(f"Linear has no issue {identifier!r}")
     return data["issue"]["description"] or ""
 
-
-if __name__ == "__main__":
-    # Run as a script there is no target config to read `[board]` from, so
-    # the board comes from the environment (or the `.env` beside this file),
-    # the same pair `board_config()` falls back to.
-    _project_id = _load_env_var("HOLO2_PROJECT_ID")
-    _team = _load_env_var("HOLO2_TEAM")
-    if not (_project_id and _team):
-        raise SystemExit("[holo2] linear_provider.py needs HOLO2_PROJECT_ID "
-                         "and HOLO2_TEAM in the environment or .env")
-    print(claim_next(_project_id, _team))
