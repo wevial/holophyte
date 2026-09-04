@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[173 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T22:32:30Z — KO-237
-FAILED: swept by the supervisor in phase addressing: review_stuck (rounds 1 and 2 share 0.50 of their findings (0.5 threshold)); branch and worktree preserved for a human
-actual: 17.6 min · estimate: 20 min · rounds: 2
-
-## 2026-09-03T22:47:51Z — KO-237
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T22:48:38Z — KO-237
-MERGED to main.
-actual: 5.5 min · estimate: 20 min · rounds: 1
+[176 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T23:18:05Z — KO-238
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -753,3 +742,15 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-04T17:42:44Z — KO-246
 MERGED to main.
 actual: 13.0 min · estimate: 30 min · rounds: 1
+
+## 2026-09-04T17:50:56Z — KO-247
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- contrib/swiftbar/holophyte.10s.py:192 [p2] [holophyte.10s.py:192](/workspace/contrib/swiftbar/holophyte.10s.py:192): Fallback is not restricted to HTTP 404. Any `/attention` response without `items`—in…
+
+## 2026-09-04T17:58:33Z — KO-247
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-04T17:59:22Z — KO-247
+MERGED to main as 6376150.
+actual: 16.6 min · estimate: 25 min · rounds: 2
