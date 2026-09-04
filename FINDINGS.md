@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[166 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T21:33:47Z — KO-231
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- (unparsed):27cece043579 [p2] Blocker: The operating notes claim the user service returns after reboot but omit enabling user lingering. Without `loginctl enable-linger`, the user manager—an…
-
-## 2026-09-03T21:38:18Z — KO-231
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T21:39:03Z — KO-231
-MERGED to main.
-actual: 11.7 min · estimate: 20 min · rounds: 2
+[169 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T21:46:40Z — KO-232
 Round 1: pass · reviewer codex-sol-medium · verify passed
@@ -754,9 +742,21 @@ Findings (1):
 
 ## 2026-09-04T17:02:47Z — KO-243
 FAILED: swept by the supervisor in phase reviewing: time_box (15.2 min against a 10 min box (1.5x grace)); branch and worktree preserved for a human
-actual: 15.2 min · estimate: 10 min · rounds: 1
+actual: 15.2 min · estimate: 10 min · rounds: 2
 
 ## 2026-09-04T17:03:17Z — KO-243
 Round 2: changes_requested · reviewer codex-sol-medium · verify passed
 Findings (1):
 - linear_provider.py:409 [p0] Blocker: [linear_provider.py](/workspace/linear_provider.py:409) still reads `HOLO2_PROJECT_ID` and `HOLO2_TEAM`; the contract requires `linear_provider` to r…
+
+## 2026-09-04T17:12:26Z — KO-243
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- linear_provider.py:413 [p2] `linear_provider.py:413-417` still reads `HOLO2_PROJECT_ID` and `HOLO2_TEAM` in its executable path, violating the contract that it retain only `LINEAR_API_KE…
+
+## 2026-09-04T17:19:48Z — KO-243
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-04T17:20:36Z — KO-243
+MERGED to main.
+actual: 14.7 min · estimate: 20 min · rounds: 2
