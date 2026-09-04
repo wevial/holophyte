@@ -76,12 +76,15 @@ EXPECTED_CLASSES = [
 # a read that fetches the same row with a different column subset is not a
 # new function but a wider row type.
 EXPECTED_READ = [
+    # KO-245: the `serve` daemon's `/attention` reads.
+    "blocked_tickets",
     "ended_runs",
     "failed_attempts_since",
     "latest_human_intervention_at",
     "live_runs",
     "newest_ended_rounds",
     "open_readonly",
+    "recent_failed_runs",
     "review_rounds",
     "run_snapshot",
     "strike",
