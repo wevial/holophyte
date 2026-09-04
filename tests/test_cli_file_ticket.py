@@ -102,6 +102,8 @@ class FakeLinear:
                 "id": "new-uuid", "identifier": "KO-9"}}}
         if "issueRelationCreate" in query:
             return {"issueRelationCreate": {"success": True}}
+        if "issueUpdate" in query:
+            return {"issueUpdate": {"success": True}}
         if "{ id }" in query:
             return {"issue": {"id": f"uuid-{variables['id']}"}}
         if "description" in query:
@@ -124,6 +126,10 @@ class FakeLinear:
     def relations(self):
         return [v["input"] for q, v in self.mutations()
                 if "issueRelationCreate" in q]
+
+    def updates(self):
+        return [(v["id"], v["input"]) for q, v in self.mutations()
+                if "issueUpdate" in q]
 
 
 class FileTicketCliTests(unittest.TestCase):
@@ -261,6 +267,72 @@ class FileTicketCliTests(unittest.TestCase):
             holophyte.cli.cli([str(self.repo), "--priority", "high"])
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--file-ticket", err.getvalue())
+
+    def test_update_replaces_title_body_and_estimate_and_creates_nothing(self):
+        self.with_board()
+        revised = TICKET.replace("# Add export endpoint", "# T2").replace(
+            "Estimate: 25 min", "Estimate: 20 min")
+        self.ticket.write_text(revised)
+        linear = FakeLinear(stored=revised)
+
+        status, printed = self.cli("--update", "KO-7000", linear=linear)
+
+        self.assertEqual(status, 0)
+        self.assertEqual(linear.updates(), [("uuid-KO-7000", {
+            "title": "T2", "description": revised, "estimate": 20})])
+        self.assertEqual(len(linear.mutations()), 1)
+        self.assertEqual(linear.relations(), [])
+        self.assertEqual(printed.strip(), "[holo2] updated KO-7000: T2")
+
+    def test_update_of_a_file_with_a_blocker_sends_nothing_and_exits_1(self):
+        self.with_board()
+        self.ticket.write_text(TICKET.replace(
+            "**What:** GET /orders.csv streams the current user's orders as CSV.",
+            "**What:** <What observable behavior are we delivering?>"))
+        linear = FakeLinear()
+
+        status, printed = self.cli("--update", "KO-7000", linear=linear)
+
+        self.assertEqual(status, 1)
+        self.assertIn("placeholder", printed)
+        self.assertEqual(linear.mutations(), [])
+
+    def test_update_whose_stored_body_fails_validation_prints_the_id_and_exits_2(self):
+        self.with_board()
+        rewritten = TICKET.replace(
+            "- Endpoint lives beside the other order routes.",
+            "- <Known constraints>")
+        linear = FakeLinear(stored=rewritten)
+
+        status, printed = self.cli("--update", "KO-7000", linear=linear)
+
+        self.assertEqual(status, 2)
+        lines = printed.strip().splitlines()
+        self.assertEqual(lines[0], "[holo2] updated KO-7000: Add export endpoint")
+        first = ticket_template.blocking(
+            ticket_template.validate(ticket_template.parse(rewritten)))[0]
+        self.assertTrue(lines[1].startswith("[holo2] KO-7000: "), lines[1])
+        self.assertIn(first, lines[1])
+
+    def test_update_without_file_ticket_and_update_with_priority_are_refused(self):
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, \
+                contextlib.redirect_stderr(err):
+            holophyte.cli.cli([str(self.repo), "--update", "KO-7000"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--update", err.getvalue())
+        self.assertIn("--file-ticket", err.getvalue())
+
+        err = io.StringIO()
+        linear = FakeLinear()
+        with self.assertRaises(SystemExit) as raised, \
+                contextlib.redirect_stderr(err):
+            self.cli("--update", "KO-7000", "--priority", "high",
+                     linear=linear)
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--priority", err.getvalue())
+        self.assertIn("--update", err.getvalue())
+        self.assertEqual(linear.calls, [])
 
     def test_a_target_with_no_board_exits_naming_the_key_before_reading_the_file(self):
         self.ticket.unlink()

@@ -557,7 +557,8 @@ def _ticket_problems(text, repo):
         ticket_template.validate(ticket_template.parse(text), repo=repo))
 
 
-def file_ticket(target, path, state, board, out=None, priority=None):
+def file_ticket(target, path, state, board, out=None, priority=None,
+                update=None):
     """`--file-ticket`'s whole body: validate `path`, create the issue in the
     target's `board`, relate it, read it back and validate that.
 
@@ -577,6 +578,15 @@ def file_ticket(target, path, state, board, out=None, priority=None):
     once as written and once as Linear gives it back, and only the second
     pass says the transfer was clean.
 
+    `update` is an identifier (`KO-n`) or None. Given, no issue is created
+    and no relation recorded: that issue's title, description and estimate
+    are replaced from the file (state, priority and relations stay as they
+    are), and the same read-back validates what Linear stored, with the
+    same exits. Every contract revision on 2026-09-03 was a hand patch
+    through a client that rewrote the body, and two of them left a ticket
+    the loop skipped as `needs_spec`; this is the file going to the board
+    checked in both directions, as filing is.
+
     `board` is the target's `[board]` pair (`project_id`, `team`), resolved
     by `cli()` before the file is read: a target with no board exits there,
     naming the key. The module is imported here rather than at the top, the
@@ -592,19 +602,26 @@ def file_ticket(target, path, state, board, out=None, priority=None):
     if problems:
         print(f"[holo2] {path}: {problems[0]}", file=out)
         return 1
-    issue = linear_provider.create_issue(
-        board.project_id, board.team, ticket.title, text,
-        ticket.estimate_min, state,
-        priority=FILE_TICKET_PRIORITIES[priority] if priority else None)
-    for blocker in ticket.depends_on or []:
-        linear_provider.add_blocker(issue["id"], blocker)
-    identifier = issue["identifier"]
-    detail = f"{state}, {ticket.estimate_min} min"
-    if ticket.depends_on:
-        detail += f", blocked by {', '.join(ticket.depends_on)}"
-    if priority:
-        detail += f", {priority}"
-    print(f"[holo2] filed {identifier}: {ticket.title} ({detail})", file=out)
+    if update is not None:
+        linear_provider.update_issue(update, ticket.title, text,
+                                     ticket.estimate_min)
+        identifier = update
+        print(f"[holo2] updated {identifier}: {ticket.title}", file=out)
+    else:
+        issue = linear_provider.create_issue(
+            board.project_id, board.team, ticket.title, text,
+            ticket.estimate_min, state,
+            priority=FILE_TICKET_PRIORITIES[priority] if priority else None)
+        for blocker in ticket.depends_on or []:
+            linear_provider.add_blocker(issue["id"], blocker)
+        identifier = issue["identifier"]
+        detail = f"{state}, {ticket.estimate_min} min"
+        if ticket.depends_on:
+            detail += f", blocked by {', '.join(ticket.depends_on)}"
+        if priority:
+            detail += f", {priority}"
+        print(f"[holo2] filed {identifier}: {ticket.title} ({detail})",
+              file=out)
     stored = _ticket_problems(
         linear_provider.fetch_description(identifier), target.path)
     if stored:

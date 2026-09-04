@@ -377,6 +377,26 @@ def add_blocker(issue_id, blocker_identifier):
             f"issue {issue_id}")
 
 
+def update_issue(identifier, title, body, estimate):
+    """Replace the title, description and estimate of the issue `identifier`.
+
+    Everything else about the issue -- state, priority, relations -- is left
+    as it is: the input names only the three fields a ticket file is the
+    source of truth for. The identifier is resolved the way `add_blocker()`
+    resolves its blocker, so an issue that does not exist raises before any
+    mutation is sent, and a `success: false` is raised like `set_state()`'s:
+    a body that was not stored must not print as one that was.
+    """
+    data = _gql(
+        'mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate('
+        'id: $id, input: $input) { success } }',
+        {"id": _issue_id(identifier),
+         "input": {"title": title, "description": body,
+                   "estimate": estimate}})
+    if not data["issueUpdate"]["success"]:
+        raise RuntimeError(f"Linear refused to update issue {identifier}")
+
+
 def fetch_description(identifier):
     """The description Linear stores for `identifier`, as it stores it."""
     data = _gql('query($id: String!) { issue(id: $id) { description } }',
