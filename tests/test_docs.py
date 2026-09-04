@@ -135,6 +135,37 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(broken, [])
 
 
+class SingleMachineTests(unittest.TestCase):
+    """KO-254: the docs describe one machine first. No page outside the
+    design notes carries a dotted address other than loopback, and the
+    two-host roles are introduced on the across-machines page alone."""
+
+    IPV4 = re.compile(r"\b[0-9]{1,3}(?:\.[0-9]{1,3}){3}\b")
+    ROLE_FREE = ("index.md", "architecture/overview.md",
+                 "architecture/lifecycle.md")
+
+    def test_no_dotted_address_outside_the_design_notes(self):
+        found = []
+        for path in [README, *DOCS.rglob("*.md")]:
+            if DOCS / "design" in path.parents:
+                continue
+            for number, line in enumerate(path.read_text().splitlines(), 1):
+                for hit in self.IPV4.findall(line):
+                    if hit != "127.0.0.1":
+                        found.append(f"{path.relative_to(ROOT)}:{number}: {hit}")
+        self.assertEqual(found, [])
+
+    def test_roles_live_on_the_across_machines_page_only(self):
+        hosts = (DOCS / "operating" / "hosts.md").read_text()
+        self.assertIn("# Across machines", hosts)
+        self.assertIn("writer host", hosts)
+        self.assertIn("operator seat", hosts)
+        for name in self.ROLE_FREE:
+            text = (DOCS / name).read_text().lower()
+            for role in ("writer host", "operator seat"):
+                self.assertNotIn(role, text, f"{name} names the {role}")
+
+
 class UsageTests(unittest.TestCase):
     def test_readme_usage_names_every_mode_the_parser_registers(self):
         text = README.read_text()

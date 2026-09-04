@@ -1,7 +1,7 @@
 # Processes
 
-Six kinds of process touch a target. Three are long-lived and belong to the
-writer host; two are spawned per run; one polls from the operator seat.
+Six kinds of process touch a target. Three are long-lived and live beside
+the store; two are spawned per run; one polls the daemon over HTTP.
 
 ## The loop
 

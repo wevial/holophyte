@@ -219,7 +219,7 @@ table.
 
 ```toml
 [report]
-# What the factory prints where it would print the writer host's hostname.
+# What the factory prints where it would print the machine's hostname.
 # Optional; absent, the hostname is printed as recorded.
 host_label = "writer-1"
 ```

@@ -1,6 +1,6 @@
 # Lifecycle of a ticket
 
-One ticket, from a markdown file on the operator's machine to a commit on
+One ticket, from a markdown file on the operator's disk to a commit on
 `main`, with the module, the table and the process that owns each step.
 The numbers match the [loop](../loop.md) description; this page adds where
 each step leaves its trace.
@@ -8,9 +8,9 @@ each step leaves its trace.
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Op as Operator seat
+  participant Op as Operator
   participant Lin as Linear
-  participant Fac as loop (writer host)
+  participant Fac as loop
   participant Store as store.db
   participant WT as worktree
   participant Imp as implementer
@@ -89,7 +89,7 @@ Trace: `runs.branch`, phase `working`.
 ### 3. Implementer
 
 `agents.agent()` runs the configured implementer command (`claude -p
---model fable --effort medium` on the writer host) in its own process
+--model fable --effort medium` by default) in its own process
 group with the whole ticket body as the prompt and a wall-clock budget from
 the estimate. `runs.heartbeat_while()` beats `runs.lastHeartbeat` on a
 daemon thread at half the supervisor's stale threshold for as long as the

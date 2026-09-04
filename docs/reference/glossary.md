@@ -32,7 +32,7 @@ severity, message. Keyed by `(path, line, severity)` for comparison
 across rounds.
 
 **Host label.** `[report] host_label`: what the factory prints instead of
-the writer host's hostname, so a public repository names roles, not
+the machine's hostname, so a public repository names roles, not
 machines.
 
 **Intervention.** A row recording an operator or supervisor decision on a
@@ -45,8 +45,9 @@ flight. Taken at claim, released at close-out or by the supervisor.
 **Ledger.** The comment thread on a Linear ticket recording each run's
 rounds, adjudications and operator steps.
 
-**Operator seat.** The machine tickets are written and filed from and
-`main` is pushed from; the drawer lives there.
+**Operator seat.** In a two-machine setup, the machine tickets are
+written and filed from and `main` is pushed from; the drawer lives there.
+See [Across machines](../operating/hosts.md).
 
 **Preserved branch.** A failed run's branch and worktree, left for a
 human; reused by the next run of the same ticket. Named
@@ -94,5 +95,6 @@ met. Must exist in the candidate tree.
 **Worktree.** The sibling checkout under `<repo>.worktrees/` a run works
 in, so the main checkout is untouched until the merge gate.
 
-**Writer host.** The machine running loops, supervisors and daemons for a
-set of targets and holding their stores.
+**Writer host.** In a two-machine setup, the machine running loops,
+supervisors and daemons for a set of targets and holding their stores.
+See [Across machines](../operating/hosts.md).
