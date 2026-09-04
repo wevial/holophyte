@@ -1,0 +1,86 @@
+site_name: Holophyte
+site_description: A minimal, Linear-driven software factory. How the pieces link together, how to operate it, and why each gate exists.
+site_url: https://wevial.github.io/holophyte/
+repo_url: https://github.com/wevial/holophyte
+repo_name: wevial/holophyte
+edit_uri: edit/main/docs/
+copyright: Holophyte is public source; docs are rendered from the repository.
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+
+plugins:
+  - search
+
+validation:
+  links:
+    absolute_links: warn
+    unrecognized_links: warn
+    not_found: warn
+
+nav:
+  - Home: index.md
+  - Architecture:
+      - How it links together: architecture/overview.md
+      - Lifecycle of a ticket: architecture/lifecycle.md
+      - Processes: architecture/processes.md
+      - Store and state: architecture/data.md
+      - Seams and modules: architecture/components.md
+  - Operating:
+      - The loop: loop.md
+      - Supervising and serving: operating.md
+      - Runbook: operating/runbook.md
+      - Tickets as contracts: operating/tickets.md
+      - Hosts and network: operating/hosts.md
+      - Reviewing: reviewing.md
+  - Reference:
+      - CLI: reference/cli.md
+      - HTTP endpoints: reference/http.md
+      - Config: config.md
+      - Development: development.md
+      - Glossary: reference/glossary.md
+  - Roadmap: roadmap.md

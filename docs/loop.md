@@ -1,7 +1,7 @@
 # The loop
 
 What one run of the factory does, and the ticket-status and run-phase state
-machines it walks. Back to the [README](../README.md).
+machines it walks. Back to the [README](index.md).
 
 ## The loop
 

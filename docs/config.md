@@ -2,7 +2,7 @@
 
 Every `config.toml` table the factory reads, with a commented example of each.
 A ticket that adds a config table edits this file; one that adds a mode edits
-the README's usage block. Back to the [README](../README.md).
+the README's usage block. Back to the [README](index.md).
 
 ## Config
 

@@ -1,7 +1,7 @@
 # Development
 
 The package map as it is at merge time, the tests, and linting. Back to the
-[README](../README.md).
+[README](index.md).
 
 ## Files
 

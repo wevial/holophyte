@@ -1,7 +1,7 @@
 # Reviewing
 
 The boundary the local reviewer runs inside. Back to the
-[README](../README.md).
+[README](index.md).
 
 ## Local reviewer boundary
 
