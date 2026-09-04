@@ -87,6 +87,9 @@ Give configurable behavior an address before building on top of it.
 
 ## Standing decisions
 
+Decisions made from 2026-09-04 on live in [Design notes](design/index.md);
+the five below predate that section and remain in force.
+
 1. **KISS / evidence-first.** No mechanism without a demonstrated
    consumer. Applies to config knobs, plugin seams, and supervisor
    features alike.

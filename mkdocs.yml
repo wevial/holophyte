@@ -87,4 +87,19 @@ nav:
       - Config: config.md
       - Development: development.md
       - Glossary: reference/glossary.md
+  - Design notes:
+      - Index: design/index.md
+      - 1 · Store: design/0001-store.md
+      - 2 · Single machine: design/0002-single-machine.md
+      - 3 · Branch prefix: design/0003-branch-prefix.md
+      - 4 · Supervisor spawn: design/0004-supervisor-spawn.md
+      - 5 · Frontend before Rust: design/0005-frontend-before-rust.md
+      - 6 · Docs hosting: design/0006-docs-hosting.md
+      - 7 · Merge modes: design/0007-merge-modes.md
+      - 8 · Approval and checks: design/0008-approval-and-checks.md
+      - 9 · Ledger: design/0009-ledger.md
+      - 10 · Lessons: design/0010-lessons.md
+      - 11 · Parallel: design/0011-parallel.md
+      - 12 · Second board: design/0012-second-board.md
+      - 13 · Console: design/0013-console.md
   - Roadmap: roadmap.md
