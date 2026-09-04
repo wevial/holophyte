@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[163 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T20:20:49Z — KO-230
-MERGED to main.
-actual: 17.0 min · estimate: 30 min · rounds: 2
-
-## 2026-09-03T20:26:37Z — KO-229
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T20:27:23Z — KO-229
-MERGED to main.
-actual: 6.5 min · estimate: 15 min · rounds: 1
+[166 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T21:33:47Z — KO-231
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -757,3 +746,17 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-04T16:47:32Z — KO-242
 MERGED to main.
 actual: 7.1 min · estimate: 25 min · rounds: 1
+
+## 2026-09-04T16:55:57Z — KO-243
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- holophyte/cli.py:212 [p0] Blocker: [`--requeue`](/workspace/holophyte/cli.py:212) returns before `board_config()` is called, so it does not produce the required missing-`[board] project_…
+
+## 2026-09-04T17:02:47Z — KO-243
+FAILED: swept by the supervisor in phase reviewing: time_box (15.2 min against a 10 min box (1.5x grace)); branch and worktree preserved for a human
+actual: 15.2 min · estimate: 10 min · rounds: 1
+
+## 2026-09-04T17:03:17Z — KO-243
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- linear_provider.py:409 [p0] Blocker: [linear_provider.py](/workspace/linear_provider.py:409) still reads `HOLO2_PROJECT_ID` and `HOLO2_TEAM`; the contract requires `linear_provider` to r…
