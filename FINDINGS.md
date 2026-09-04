@@ -653,21 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[179 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T23:32:48Z — KO-238
-MERGED to main.
-actual: 21.7 min · estimate: 25 min · rounds: 3
-
-## 2026-09-03T23:40:36Z — KO-239
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T23:41:23Z — KO-239
-MERGED to main.
-actual: 8.5 min · estimate: 20 min · rounds: 1
-
-## 2026-09-03T23:47:09Z — KO-240
-Round 1: pass · reviewer codex-sol-medium · verify passed
+[183 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T23:47:57Z — KO-240
 MERGED to main.
@@ -751,3 +737,20 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-04T19:37:25Z — KO-248
 MERGED to main as bb163b0.
 actual: 19.5 min · estimate: 25 min · rounds: 2
+
+## 2026-09-04T23:38:12Z — KO-253
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- holophyte/config.py:373 [p2] [holophyte/config.py](/workspace/holophyte/config.py:373): prefixes beginning with `-` are accepted despite being invalid branch names. For example, `branch_p…
+
+## 2026-09-04T23:43:20Z — KO-253
+Round 2: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (1):
+- holophyte/config.py:374 [p0] Blocker: [holophyte/config.py](/workspace/holophyte/config.py:374) accepts prefixes ending in `.`, such as `factory.`, although `git check-ref-format --branch…
+
+## 2026-09-04T23:48:09Z — KO-253
+Round 3: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-04T23:48:59Z — KO-253
+MERGED to main as 74c3f4f.
+actual: 17.9 min · estimate: 20 min · rounds: 3
