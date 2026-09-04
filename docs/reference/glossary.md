@@ -49,7 +49,9 @@ rounds, adjudications and operator steps.
 `main` is pushed from; the drawer lives there.
 
 **Preserved branch.** A failed run's branch and worktree, left for a
-human; reused by the next run of the same ticket.
+human; reused by the next run of the same ticket. Named
+`PREFIX/IDENT-SLUG`, where the prefix is `[worktree] branch_prefix`
+(`task` by default) and the identifier keeps it traceable to its ticket.
 
 **Provider.** The board protocol: `claim_next`, `fetch_task`,
 `set_state`, `comment`. Linear in production, files in tests.

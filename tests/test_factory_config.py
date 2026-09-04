@@ -1469,6 +1469,37 @@ class WorktreeSetupTests(ConfigTestCase):
 
         report.assert_called_once_with(self.tgt)
 
+    def test_an_absent_branch_prefix_is_task(self):
+        for config in (None, '[worktree]\nsetup = ["true"]\n'):
+            with self.subTest(config=config):
+                self.locate(config)
+                self.assertEqual(holophyte.config.branch_prefix(self.tgt), "task")
+
+    def test_a_named_branch_prefix_is_read_back(self):
+        self.locate('[worktree]\nbranch_prefix = "factory"\n')
+        self.assertEqual(holophyte.config.branch_prefix(self.tgt), "factory")
+
+    def test_an_illegal_branch_prefix_is_a_startup_error_before_any_claim(self):
+        """Empty, slashed, whitespace or git-refused characters: the run that
+        discovered it at `git worktree add` would have claimed a ticket first."""
+        for value in ('""', '"a/b"', '"a b"', '"a~b"', '"a:b"', '"a..b"',
+                      '".hidden"', '"x.lock"', '7'):
+            with self.subTest(value=value):
+                target = self.locate(f'[worktree]\nbranch_prefix = {value}\n').path
+
+                with patch.object(holophyte.config, "check_default_implementer"), \
+                        patch.object(holophyte.config, "check_default_reviewer"), \
+                        patch.object(holophyte.cli, "main",
+                                     side_effect=AssertionError("claimed work")):
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target)])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[worktree] branch_prefix", message)
+                # The key is known; the refusal is about its value.
+                self.assertNotIn("unknown key", message)
+
 
 class ReviewRefTests(ConfigTestCase):
     """A configured reviewer reviews the same frozen pair as the default one.

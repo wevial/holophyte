@@ -100,9 +100,12 @@ setup = [
 # Wall-clock cap per setup command, in seconds. Optional; the default is the
 # verify gate's 300-second cap.
 setup_timeout_sec = 300
+# The segment ahead of the slash in a task branch name. Optional; `task` when
+# absent, so branches are `task/ko-7000-the-title-slug`.
+branch_prefix = "task"
 ```
 
-Accepted keys: `setup`, `setup_timeout_sec`.
+Accepted keys: `setup`, `setup_timeout_sec`, `branch_prefix`.
 
 They run in the worktree, right after its branch is cut and before the first
 agent turn — the moment that decides what the implementer and the verify gate
@@ -126,6 +129,17 @@ run there, since the worktree they are written against does not exist yet.
 What setup writes into the worktree is untracked, and the implementer is asked
 to commit its work: keep build artifacts (`.venv/`, caches) in the target's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
+
+`branch_prefix` names the segment before the slash in every branch the loop
+cuts, so a repository with its own convention (`factory/`, `ko/`, `bot/`) keeps
+it. Everything after the slash is unchanged — the lowercased ticket identifier,
+then the title slug — because the identifier is what makes a preserved branch
+traceable from `git branch` alone. The worktree directory name does not carry
+the prefix and does not change. A prefix that is empty, contains a slash or
+whitespace, or uses a character git refuses in a ref name (`~ ^ : ? * [ \`) is a
+startup error naming the key, before anything is claimed. Branches already
+preserved under an older prefix are not renamed; a run that reuses one starts
+from the name the new prefix gives it.
 
 ```toml
 [supervisor]

@@ -83,7 +83,7 @@ DOCKER_PROBE_TIMEOUT = 5
 # knobs and their defaults are defined.
 KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()),
-    "worktree": frozenset({"setup", "setup_timeout_sec"}),
+    "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix"}),
 }
 # `[loop]`'s and `[report]`'s entries are filled in beside `LOOP_KEYS` and
 # `REPORT_KEYS`, with `[supervisor]`'s.
@@ -334,6 +334,51 @@ def setup_timeout(target):
             f"finite positive number of seconds, got {value!r}")
     return value
 
+
+
+# Characters git refuses anywhere in a ref name (`git check-ref-format`),
+# plus the slash the prefix must not carry: the branch is exactly
+# `PREFIX/IDENT-SLUG`, one segment before the identifier.
+BRANCH_PREFIX_REFUSED = set("/~^:?*[\\")
+DEFAULT_BRANCH_PREFIX = "task"
+
+
+def branch_prefix(target):
+    """The segment ahead of the slash in a task branch name.
+
+    `[worktree] branch_prefix` when the target names one, else `task` -- so a
+    repository with its own convention (`factory/`, `ko/`) keeps it, and one
+    without keeps today's names byte for byte. Everything after the slash is
+    the ticket identifier and title slug, unchanged: the identifier is what
+    makes a preserved branch traceable, whatever it sits behind.
+
+    The value is held to what `git check-ref-format --branch` would accept
+    as a single segment -- non-empty, no whitespace, no slash, none of
+    `~^:?*[` and backslash -- and a value outside it is a startup error naming the key,
+    for the reason a bad `setup_timeout_sec` is: a prefix the factory only
+    discovered was illegal at `git worktree add` would abandon a claimed
+    ticket over something one sentence at startup could have said.
+    """
+    value = (target.config().get("worktree") or {}).get("branch_prefix")
+    if value is None:
+        return DEFAULT_BRANCH_PREFIX
+    if not isinstance(value, str):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [worktree] branch_prefix must be a "
+            f"string, got {type(value).__name__}")
+    if not value:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [worktree] branch_prefix must not be "
+            "empty")
+    if (any(c.isspace() or c in BRANCH_PREFIX_REFUSED or ord(c) < 0x20 or c == "\x7f"
+            for c in value)
+            or value.startswith(".") or value.endswith(".lock")
+            or ".." in value or "@{" in value or value == "@"):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [worktree] branch_prefix {value!r} is "
+            "not a legal branch segment: no whitespace, no '/', none of "
+            "~ ^ : ? * [ \\, no leading '.', no '..', and not ending in '.lock'")
+    return value
 
 # How old a heartbeat has to be before a sighting counts as silent, and how
 # many consecutive silent sightings trip the run. Two, from the v1 TUI mining:
