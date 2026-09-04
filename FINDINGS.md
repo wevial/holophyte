@@ -653,23 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[176 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T23:18:05Z — KO-238
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):5200c45d6bfd [p2] CRITERION 1: met — tests/test_drawer.py::RenderTests::test_supervisor_row_shows_the_age_only_when_stale_or_none CRITERION 2: not met — Production requests `/run…
-- criteria:2 [p2] CRITERION 2: not met — Production requests `/runs`, not the contracted `/runs?limit=1`; tests/test_drawer.py::LiveTests::test_idle_daemon_is_asked_for_runs_and_…
-
-## 2026-09-03T23:24:28Z — KO-238
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (3):
-- contrib/swiftbar/holophyte.10s.py:259 [p2] [holophyte.10s.py](/workspace/contrib/swiftbar/holophyte.10s.py:259) requests `/runs`, while the frozen contract requires `/runs?limit=1`; the live test expli…
-- contrib/swiftbar/holophyte.10s.py:73 [p2] [holophyte.10s.py](/workspace/contrib/swiftbar/holophyte.10s.py:73) does not implement the contracted daemon-table age format: two hours renders `2h00m`, and…
-- criteria:2 [p2] CRITERION 2: not met — production polling does not issue the contracted `GET /runs?limit=1` Given an idle fixture whose runs fixture has a merged row for `KO-23…
-
-## 2026-09-03T23:32:01Z — KO-238
-Round 3: pass · reviewer codex-sol-medium · verify passed
+[179 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-03T23:32:48Z — KO-238
 MERGED to main.
@@ -754,3 +738,16 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-04T17:59:22Z — KO-247
 MERGED to main as 6376150.
 actual: 16.6 min · estimate: 25 min · rounds: 2
+
+## 2026-09-04T19:28:15Z — KO-248
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):b9523a92b15b [p2] CRITERION 1: unwitnessed — `tests/test_factory_config.py::SupervisorSpawnTests::test_a_free_lock_starts_a_detached_supervisor_for_the_target` mocks `main()`, so…
+- criteria:1 [p2] CRITERION 1: unwitnessed — `tests/test_factory_config.py::SupervisorSpawnTests::test_a_free_lock_starts_a_detached_supervisor_for_the_target` mocks `main()`, so…
+
+## 2026-09-04T19:36:34Z — KO-248
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-04T19:37:25Z — KO-248
+MERGED to main as bb163b0.
+actual: 19.5 min · estimate: 25 min · rounds: 2
