@@ -92,12 +92,15 @@ in the daemon's order, prefixed with the target name:
 | `NAME · KO-n · failed 2h ago: REASON` | a run that ended `failed` in the daemon's window and whose ticket is still in flight; the reason cut to 40 characters, the age against the daemon's `now` |
 | `NAME · supervisor stale · 20m` | a supervisor that is stale or absent (nothing will sweep anything until it is back) |
 | `NAME · unreachable` | the daemon did not answer, judged on this side; you know nothing about that target until it does |
+| `NAME · /attention failed: WHY` | `/status` answered but `/attention` did not (a timeout, a 5xx, a body without `items`); the blocked and failed rows it would have carried are the ones this side cannot compute, so the row is red and the local rule's rows follow it |
 
 A daemon older than `/attention` answers 404 there; for that daemon alone
 the plugin falls back to its own rule over `/status` (the stale heartbeat
 and the supervisor rows, never the blocked or failed ones, which only the
 store knows), so a half-upgraded tailnet still renders without an error
-row. The menu-bar dot is the worst level any daemon reports, with
+row. Only the 404 earns that fallback: a daemon whose `/status` answers
+but whose `/attention` times out or fails gets the red `/attention failed`
+row, so a healthy-looking target cannot hide a blocked ticket. The menu-bar dot is the worst level any daemon reports, with
 `unreachable` ranked above them all as red.
 
 An idle target's row names what it last shipped: `idle · last merge KO-n ·

@@ -302,13 +302,41 @@ class RenderTests(unittest.TestCase):
         expected = ([("stale_heartbeat · KO-232 · heartbeat 7m", drawer.AMBER)],
                     drawer.ATTENTION)
         self.assertEqual(drawer.attention_rows(e), expected)
-        e["attention"] = {"error": "not found", "path": "/attention"}
+        e["attention"] = {"error": "not found", "path": "/attention",
+                          "http_status": 404}
         self.assertEqual(drawer.attention_rows(e), expected)
         lines = render_cli("stale_heartbeat").splitlines()
         needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
         self.assertEqual(lines[needs + 1], "stale_heartbeat · KO-232 · "
                          f"heartbeat 7m | color={drawer.AMBER}")
         self.assertEqual(lines[needs + 2], "---")
+
+
+    def test_an_attention_failure_after_a_good_status_is_a_red_row(self):
+        # Only a 404 earns the local fallback. A timeout or a 5xx on
+        # `/attention` after a 200 on `/status` must stay visible: the
+        # blocked and failed items it hid are the ones this side cannot
+        # compute, so the target may not look green.
+        e = drawer.fixture_entry(FIXTURES / "idle.json")
+        self.assertEqual(drawer.attention_rows(e), ([], drawer.IDLE))
+        for answer, why in (
+                ({"unreachable": True, "error": "timed out"}, "timed out"),
+                ({"error": "store busy", "http_status": 500}, "HTTP 500"),
+                ({"unreachable": True, "error": "HTTP 502", "http_status": 502},
+                 "HTTP 502")):
+            e["attention"] = answer
+            rows, level = drawer.attention_rows(e)
+            self.assertEqual(rows, [(f"idle · /attention failed: {why}", drawer.RED)],
+                             answer)
+            self.assertEqual(level, drawer.CRITICAL, answer)
+        # The local rule's rows still follow the error row.
+        e = drawer.fixture_entry(FIXTURES / "stale_heartbeat.json")
+        e["attention"] = {"unreachable": True, "error": "timed out"}
+        rows, level = drawer.attention_rows(e)
+        self.assertEqual([t for t, _ in rows],
+                         ["stale_heartbeat · /attention failed: timed out",
+                          "stale_heartbeat · KO-232 · heartbeat 7m"])
+        self.assertEqual(level, drawer.CRITICAL)
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -318,6 +346,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     body = b""
     runs_body = b'{"rows": [], "limit": null}'
     attention_body = None
+    attention_code = 200
     paths = []
 
     def do_GET(self):
@@ -329,7 +358,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if self.attention_body is None:
                 code, body = 404, b'{"error": "not found", "path": "/attention"}'
             else:
-                body = self.attention_body
+                code, body = self.attention_code, self.attention_body
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -423,6 +452,32 @@ class LiveTests(unittest.TestCase):
                          ["new · KO-240 · blocked: The ticket names two verify "
                           "commands that disagree about th…",
                           "new · KO-232 · heartbeat 7m"])
+
+    def test_daemon_answering_500_on_attention_shows_the_failure_live(self):
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        Handler.body = json.dumps(fixture("idle")).encode()
+        Handler.attention_body = b'{"error": "store busy"}'
+        Handler.attention_code = 500
+        self.addCleanup(setattr, Handler, "attention_body", None)
+        self.addCleanup(setattr, Handler, "attention_code", 200)
+        with tempfile.TemporaryDirectory() as home:
+            cfg = Path(home) / "drawer.toml"
+            cfg.write_text(f'[[daemon]]\nname = "sick"\nurl = "http://127.0.0.1:'
+                           f'{server.server_port}"\n')
+            out = io.StringIO()
+            with redirect_stdout(out):
+                drawer.main(["--config", str(cfg)])
+        lines = out.getvalue().splitlines()
+        self.assertEqual(embedded(lines[0], "image="),
+                         (ROOT / "assets" / "menubar-bad.pdf").read_bytes())
+        needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
+        self.assertEqual(lines[needs + 1:needs + 3],
+                         [f"sick · /attention failed: HTTP 500 | color={drawer.RED}",
+                          "---"])
+        # The status block itself is unaffected: `/status` did answer.
+        self.assertIn("sick · writer", out.getvalue())
 
     def test_fetch_marks_a_closed_port_unreachable(self):
         got = drawer.fetch(f"http://127.0.0.1:{closed_loopback_port()}")

@@ -18,7 +18,9 @@ carrying the `/runs` answer an idle target's "last merge" row reads and the
 
 "Needs you" is the daemon's own `/attention` items when it answers them;
 a daemon too old for the path (404) gets the local rule over its `/status`
-instead, so a half-upgraded tailnet still renders.
+instead, so a half-upgraded tailnet still renders. Any other `/attention`
+failure (a timeout, a 5xx) is a red row of its own, since the items it hid
+are the ones this side cannot compute.
 """
 from __future__ import annotations
 
@@ -63,16 +65,22 @@ def fetch(url, path="/status"):
     """The parsed JSON of `url + path`, or `{"unreachable": True, "error": TEXT}`.
 
     A 503 (no store yet) is an answer, not an outage: its body comes back as
-    is, and `render()` shows the daemon's own `error` text in the block.
+    is, and `render()` shows the daemon's own `error` text in the block. An
+    error body is tagged with its code as `http_status`, so a caller can
+    tell a 404 (a daemon older than the path) from a 500.
     """
     try:
         with urllib.request.urlopen(url + path, timeout=TIMEOUT_SEC) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         try:
-            return json.load(e)
+            body = json.load(e)
         except ValueError:
-            return {"unreachable": True, "error": f"HTTP {e.code}"}
+            return {"unreachable": True, "error": f"HTTP {e.code}",
+                    "http_status": e.code}
+        if isinstance(body, dict):
+            body.setdefault("http_status", e.code)
+        return body
     except (OSError, ValueError) as e:
         return {"unreachable": True, "error": str(e)}
 
@@ -181,18 +189,47 @@ def local_rows(entry):
     return rows, level
 
 
+def attention_error(answer):
+    """Why an `/attention` answer cannot be rendered, or None when it can
+    or when it is the 404 of a daemon older than the path (a fixture with
+    no `attention` key is that case too). Anything else, a timeout or a
+    5xx after a good `/status`, is a failure the operator must see: the
+    items it would have carried are exactly the ones this drawer cannot
+    compute itself."""
+    if answer is None:
+        return None
+    if not isinstance(answer, dict):
+        return "malformed answer"
+    if isinstance(answer.get("items"), list):
+        return None
+    if answer.get("http_status") == 404:
+        return None
+    if answer.get("unreachable"):
+        return str(answer.get("error") or "unreachable")
+    if answer.get("http_status") is not None:
+        return f"HTTP {answer['http_status']}"
+    return "no items in answer"
+
+
 def attention_rows(entry):
     """`(rows, level)` for one target: `NAME · unreachable` in red and
-    `CRITICAL` when the daemon did not answer; else the daemon's own
-    `/attention` items when `entry["attention"]` carries them, else the
-    local rule over `/status` (an older daemon answers 404 there, whose
-    body has no `items`)."""
+    `CRITICAL` when the daemon did not answer `/status`; else the daemon's
+    own `/attention` items when `entry["attention"]` carries them; else
+    the local rule over `/status` for a daemon that answers 404 there (or
+    a fixture with no `attention` key). Any other `/attention` failure
+    is a red `NAME · /attention failed: WHY` row at `CRITICAL`, followed
+    by whatever the local rule still shows, never a silent fallback."""
     if entry["status"].get("unreachable"):
         return [(f"{entry['name']} · unreachable", RED)], CRITICAL
     answer = entry.get("attention")
     if isinstance(answer, dict) and isinstance(answer.get("items"), list):
         return daemon_rows(entry)
-    return local_rows(entry)
+    rows, level = local_rows(entry)
+    why = attention_error(answer)
+    if why is not None:
+        row = (f"{entry['name']} · /attention failed: {cut(why, REASON_CHARS)}", RED)
+        return [row] + rows, CRITICAL
+    return rows, level
 
 
 def attention(statuses):
