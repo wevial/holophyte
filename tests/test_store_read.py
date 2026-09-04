@@ -21,6 +21,7 @@ import store.read as read
 
 T0 = 1_700_000_000_000
 MIN = 60_000
+MERGE_SHA = "abc1234def5678901234567890abcdef12345678"
 
 # The sweep's phase filter as `factory.py` derives it; restated here so this
 # module does not import the factory to test the store.
@@ -69,7 +70,8 @@ class PopulatedStore(unittest.TestCase):
         store.record_review_round(
             c, self.merged, 2, "pass", "codex-sol-medium",
             started_at=T0 + 3 * MIN)
-        store.release(c, self.merged, "merged", now=T0 + 10 * MIN)
+        store.release(c, self.merged, "merged", now=T0 + 10 * MIN,
+                      merge_sha=MERGE_SHA)
 
         # KO-2: three attempts. The first failed and was closed out by a
         # human; the second failed and was not; the third is infra.
@@ -101,6 +103,25 @@ class PopulatedStore(unittest.TestCase):
 
 class OracleTests(PopulatedStore):
     """Each read against the SELECT `factory.py` embedded before this module."""
+
+    def test_a_merged_run_carries_its_merge_sha_and_a_failed_one_none(self):
+        by_id = {run.id: run for run in read.ended_runs(self.conn)}
+
+        self.assertEqual(by_id[self.merged].mergeSha, MERGE_SHA)
+        self.assertIsNone(by_id[self.failed].mergeSha)
+        # Straight off the column too, so the view is not inventing it.
+        self.assertEqual(
+            self.conn.execute("SELECT mergeSha FROM runs WHERE id = ?",
+                              (self.merged,)).fetchone(), (MERGE_SHA,))
+
+    def test_a_merge_sha_on_a_non_merged_outcome_is_refused_unwritten(self):
+        with self.assertRaises(ValueError):
+            store.release(self.conn, self.live, "failed", reason="crashed",
+                          merge_sha=MERGE_SHA)
+
+        self.assertEqual(
+            self.conn.execute("SELECT endedAt, mergeSha FROM runs WHERE id = ?",
+                              (self.live,)).fetchone(), (None, None))
 
     def test_ended_runs_agree_with_the_report_and_findings_selects(self):
         rows = read.ended_runs(self.conn)

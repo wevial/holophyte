@@ -193,7 +193,8 @@ def mirror_task(conn, project, task, specced=True):
     )
 
 
-def release_run(conn, run_id, merged, reason=None, outcome_class="work"):
+def release_run(conn, run_id, merged, reason=None, outcome_class="work",
+                merge_sha=None):
     """Give the lease back when the loop is done with a run, merged or not.
 
     Called from the loop's `finally`, because the failure paths are the ones
@@ -207,9 +208,13 @@ def release_run(conn, run_id, merged, reason=None, outcome_class="work"):
     is exactly where the run got to. A caller that knows better says so with
     `reason` — the supervisor sweep does, because "stopped in phase working"
     is true of a swept run and says nothing about why it was swept.
+
+    `merge_sha` is the merge commit a merged run landed on main as, stamped
+    on the row in the same transaction that ends the run; None when the
+    caller has none to give.
     """
     if merged:
-        store.release(conn, run_id, "merged")
+        store.release(conn, run_id, "merged", merge_sha=merge_sha)
         return
     # No preservation claim in the default: the paths that delete or keep a
     # branch say so themselves in the reason they pass, and stamping

@@ -344,10 +344,10 @@ class RequeueTests(InterventionFixture):
 
 
 class RequeueMigrationTests(InterventionFixture):
-    def test_a_version_2_store_is_carried_to_3_and_accepts_requeue(self):
+    def test_a_version_2_store_is_carried_forward_and_accepts_requeue(self):
         """A store stamped 2 has 'close_out' in the CHECK and not 'requeue';
         opening it with this build rebuilds the table once, keeps the rows
-        it had, stamps version 3, and a requeue row then lands."""
+        it had, stamps the current version, and a requeue row then lands."""
         store.release(self.conn, self.run, "failed", "crashed",
                       now=T0 + MINUTE)
         self.conn.execute("DROP TABLE interventions")
@@ -366,7 +366,6 @@ class RequeueMigrationTests(InterventionFixture):
         # `init()` is the idempotence check, not what carries it forward.
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
                          store.SCHEMA_VERSION)
-        self.assertEqual(store.SCHEMA_VERSION, 3)
         store.requeue(conn, self.ticket, "contract fixed")
 
         self.assertEqual(

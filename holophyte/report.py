@@ -40,19 +40,21 @@ def report_rows(conn):
     `host` is the machine the run was claimed on, None for a row older than
     the column: a store read from another machine says where each run ran.
     """
-    return [row[:-1] for row in ended_rows(conn)]
+    return [row[:-2] for row in ended_rows(conn)]
 
 
 def ended_rows(conn):
-    """`report_rows()`'s tuple with the run's `endedAt` appended: every
-    ended run, oldest first, as `(ticket, actual_min, estimate_min, ratio,
-    rounds, outcome, host, ended_at)`.
+    """`report_rows()`'s tuple with the run's `endedAt` and `mergeSha`
+    appended: every ended run, oldest first, as `(ticket, actual_min,
+    estimate_min, ratio, rounds, outcome, host, ended_at, merge_sha)`.
 
     The daemon's `/runs` reads this one -- a drawer saying "last merge KO-n
-    · 2h ago" needs to know *when*, which the terminal table never prints
-    -- and `report_rows()` drops the last position, so `--report`'s shape
+    · 2h ago" needs to know *when*, which the terminal table never prints,
+    and a reviewer tracing a ticket to its commit needs the sha -- and
+    `report_rows()` drops the last two positions, so `--report`'s shape
     stays what it was. `ended_at` is epoch milliseconds, never None here:
-    `ended_runs()` lists only runs with an end.
+    `ended_runs()` lists only runs with an end. `merge_sha` is the full
+    merge commit, None unless the run merged under a module that wrote it.
     """
     rows = []
     for run in store.read.ended_runs(conn):
@@ -61,7 +63,7 @@ def ended_rows(conn):
         rows.append((run.linearIdentifier, actual, estimate,
                      actual / estimate if estimate else None,
                      run.reviewRoundCount, run.outcome or "ended", run.host,
-                     run.endedAt))
+                     run.endedAt, run.mergeSha))
     return rows
 
 

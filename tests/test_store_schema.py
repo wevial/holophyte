@@ -33,6 +33,9 @@ DOCUMENTED_COLUMNS = {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
         "providerSessionId", "branch", "prUrl", "startedAt", "lastHeartbeat",
         "endedAt", "reviewRoundCount", "outcome", "outcomeReason",
+        # Store-owned: the merge commit a merged run landed on main as, so
+        # the ticket-to-commit link is a column and not a grep of git log.
+        "mergeSha",
         # Store-owned, not a documented field: §5 requires a resume to
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.
@@ -480,6 +483,39 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
         self.assertEqual(conn.execute("SELECT * FROM projects").fetchall(),
                          before)
+
+    def test_a_version_3_store_gains_merge_sha_and_keeps_its_rows(self):
+        """A store stamped 3 has no `runs.mergeSha`; opening it with this
+        build adds the column, leaves the run it held with a null there,
+        and stamps version 4."""
+        conn = store.open(self.path)
+        store.init(conn)
+        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1")
+        run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        store.release(conn, run_id, "merged", now=1_700_000_060_000)
+        conn.close()
+        raw = self.raw()
+        raw.execute("ALTER TABLE runs DROP COLUMN mergeSha")
+        raw.execute("PRAGMA user_version = 3")
+        raw.commit()
+        columns = {row[1] for row in raw.execute("PRAGMA table_info(runs)")}
+        raw.close()
+        self.assertNotIn("mergeSha", columns)
+        self.assertEqual(self.user_version(), 3)
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertEqual(store.SCHEMA_VERSION, 4)
+        self.assertEqual(self.user_version(), 4)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+        self.assertIn("mergeSha", columns)
+        self.assertEqual(
+            conn.execute("SELECT id, outcome, mergeSha FROM runs").fetchall(),
+            [(run_id, "merged", None)])
 
     def test_a_store_stamped_newer_is_refused_and_untouched(self):
         self.current_unstamped_store()

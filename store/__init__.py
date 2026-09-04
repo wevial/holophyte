@@ -142,6 +142,11 @@ CREATE TABLE IF NOT EXISTS runs (
         CHECK (outcome IS NULL
                OR outcome IN ('merged', 'killed', 'abandoned', 'failed')),
     outcomeReason     TEXT,
+    -- The merge commit a `merged` run landed on main as, the full sha.
+    -- NULL until the merge close-out writes it, and NULL forever on a run
+    -- that ended any other way or was released by a module older than the
+    -- column: FINDINGS renders the entry without a sha in either case.
+    mergeSha          TEXT,
     -- Whether a failure says anything about the ticket. `work` is the
     -- default and the ordinary case: the run got as far as the work and the
     -- work is what failed. `infra` is a run that ended before any work
@@ -291,8 +296,9 @@ CREATE TABLE IF NOT EXISTS interventions (
 # changes shape, so an older build refuses a store it would otherwise read
 # one column short. The ladder itself stays ADDED_COLUMNS; the number is
 # bookkeeping around it, not a replacement for it. Version 3 is the
-# `interventions` action CHECK admitting 'requeue' (KO-223).
-SCHEMA_VERSION = 3
+# `interventions` action CHECK admitting 'requeue' (KO-223); version 4 is
+# `runs.mergeSha`, the merge commit a merged run landed as (KO-246).
+SCHEMA_VERSION = 4
 
 # Every join the loop, the sweep and the FINDINGS renderer perform goes
 # through one of these three foreign keys; without an index each is a full
@@ -406,6 +412,11 @@ ADDED_COLUMNS = (
         "supervisorHeartbeats",
         "host",
         "host TEXT",
+    ),
+    (
+        "runs",
+        "mergeSha",
+        "mergeSha TEXT",
     ),
 )
 
@@ -980,7 +991,7 @@ OUTCOME_CLASSES = frozenset({"work", "infra"})
 
 
 def release(conn, run_id, outcome, reason=None, now=None,
-            outcome_class="work"):
+            outcome_class="work", merge_sha=None):
     """End run `run_id` with `outcome` and give the project's lease back.
 
     The mirror of `claim()`, and the reason a crashed loop does not brick the
@@ -1034,11 +1045,21 @@ def release(conn, run_id, outcome, reason=None, now=None,
     the failure was the factory's own (`infra`), in which case the row is
     kept out of the escalation count. An unknown class raises before any
     write, the same as an unknown outcome.
+
+    `merge_sha` is `runs.mergeSha`: the merge commit a `merged` run landed
+    on main as, written here because this is the transaction that makes the
+    run merged and the loop is the only caller that still knows the sha. It
+    is the one fact FINDINGS cannot recover from the other columns. Only a
+    `merged` outcome may carry one; any other outcome with a sha is a caller
+    bug and raises before any write.
     """
     if outcome not in TERMINAL_PHASES:
         raise ValueError(f"unknown outcome {outcome!r}")
     if outcome_class not in OUTCOME_CLASSES:
         raise ValueError(f"unknown outcome class {outcome_class!r}")
+    if merge_sha is not None and outcome != "merged":
+        raise ValueError(
+            f"merge_sha {merge_sha!r} on a run released as {outcome!r}")
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -1077,12 +1098,12 @@ def release(conn, run_id, outcome, reason=None, now=None,
         # disagreeing with the rounds it summarizes.
         conn.execute(
             "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
-            " outcomeClass = ?, resumePhase = ?,"
+            " outcomeClass = ?, resumePhase = ?, mergeSha = ?,"
             " reviewRoundCount = (SELECT COUNT(*) FROM reviewRounds"
             "                     WHERE runId = ?)"
             " WHERE id = ?",
-            (now, outcome, reason, outcome_class, resume_phase, run_id,
-             run_id),
+            (now, outcome, reason, outcome_class, resume_phase, merge_sha,
+             run_id, run_id),
         )
         conn.execute(
             "UPDATE projects SET activeRunId = NULL"
