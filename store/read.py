@@ -183,20 +183,24 @@ class EndedRun:
     outcomeReason: str | None
     branch: str | None
     host: str | None
+    # The merge commit on main, full sha; None unless the run merged under a
+    # module that wrote the column.
+    mergeSha: str | None
 
 
 def ended_runs(conn):
     """Every run with an `endedAt`, ordered by when it ended, then by id."""
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"
-        " r.reviewRoundCount, r.outcome, r.outcomeReason, r.branch, r.host"
+        " r.reviewRoundCount, r.outcome, r.outcomeReason, r.branch, r.host,"
+        " r.mergeSha"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NOT NULL"
         " ORDER BY r.endedAt, r.id").fetchall()
     return [EndedRun(id=row[0], linearIdentifier=row[1], startedAt=row[2],
                      endedAt=row[3], timeBoxMs=row[4], reviewRoundCount=row[5],
                      outcome=row[6], outcomeReason=row[7], branch=row[8],
-                     host=row[9])
+                     host=row[9], mergeSha=row[10])
             for row in rows]
 
 

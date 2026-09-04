@@ -198,8 +198,10 @@ def runs(target, query=""):
     Same rows, same order as `report_rows()` -- oldest first -- with the
     tuple's positions named, plus `ended_ms`: the run's `endedAt` in epoch
     milliseconds, which the table never prints and a drawer's "last merge
-    KO-n · 2h ago" is read from against `/status`'s `now`. `host` is None
-    for a row older than the column, label or not, as on `/status`.
+    KO-n · 2h ago" is read from against `/status`'s `now`, and `merge_sha`:
+    the full merge commit a merged run landed on main as, null for any
+    other outcome or a row older than the column. `host` is None for a row
+    older than the column, label or not, as on `/status`.
     """
     try:
         limit = parse_limit(query)
@@ -218,9 +220,10 @@ def runs(target, query=""):
         "rows": [{"ticket": ticket, "actual_min": actual,
                   "estimate_min": estimate, "ratio": ratio,
                   "rounds": rounds, "outcome": outcome,
-                  "host": json_host(target, host), "ended_ms": ended_at}
+                  "host": json_host(target, host), "ended_ms": ended_at,
+                  "merge_sha": merge_sha}
                  for ticket, actual, estimate, ratio, rounds, outcome, host,
-                 ended_at in rows],
+                 ended_at, merge_sha in rows],
         "limit": limit,
     }
 

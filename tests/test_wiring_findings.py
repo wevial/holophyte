@@ -70,7 +70,7 @@ class RenderedWindowTests(unittest.TestCase):
         self.project = store.ensure_project(self.conn, "team-1", self.root / "repo")
         self.tgt = holophyte.target.Target.locate(self.root / "repo", adopt=False)
 
-    def complete_run(self, n):
+    def complete_run(self, n, merge_sha=None):
         """One merged run of its own ticket, stamped a minute apart per `n`."""
         ticket = store.mirror_ticket(
             self.conn, self.project,
@@ -78,8 +78,38 @@ class RenderedWindowTests(unittest.TestCase):
             title=f"ticket {n}", time_box_ms=25 * 60 * 1000)
         at = 1_700_000_000_000 + n * 60_000
         run_id = store.claim(self.conn, self.project, ticket, now=at)
-        store.release(self.conn, run_id, "merged", now=at + 30_000)
+        store.release(self.conn, run_id, "merged", now=at + 30_000,
+                      merge_sha=merge_sha)
         return run_id
+
+    def test_a_merged_run_names_its_merge_commit_or_reads_as_before(self):
+        """With a sha the head line carries its first seven characters;
+        without one the entry is byte-for-byte the pre-column rendering."""
+        self.complete_run(1)
+        self.complete_run(2, merge_sha="abc1234def5678901234567890abcdef12345678")
+
+        rendered = holophyte.findings.render_findings(self.conn)
+
+        self.assertIn(
+            "## 2023-11-14T22:14:50Z — KO-1\nMERGED to main.\n"
+            "actual: 0.5 min · estimate: 25 min · rounds: 0\n", rendered)
+        self.assertIn(
+            "## 2023-11-14T22:15:50Z — KO-2\nMERGED to main as abc1234.\n"
+            "actual: 0.5 min · estimate: 25 min · rounds: 0\n", rendered)
+        self.assertNotIn("abc1234def", rendered)
+
+    def test_a_merged_run_entry_names_its_deleted_branch_after_the_sha(self):
+        run_id = self.complete_run(3, merge_sha="0123456789" * 4)
+        self.conn.execute("UPDATE runs SET branch = 'task/ko-3-x' WHERE id = ?",
+                          (run_id,))
+        self.conn.commit()
+
+        (run,) = store.read.ended_runs(self.conn)
+        entry = holophyte.findings.run_entry(run)
+
+        self.assertEqual(
+            entry.splitlines()[1],
+            "MERGED to main as 0123456 (branch task/ko-3-x deleted).")
 
     def test_the_window_keeps_the_newest_entries_and_counts_the_rest(self):
         """30 completed runs render as the newest 25 plus one archive line."""
@@ -241,9 +271,25 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.assertIn("- store.py:7 [p2] store.py:7: the migration is missing",
                       findings)
         self.assertIn("Round 2: pass · reviewer codex-sol-medium", findings)
+        # The merged run's entry names the `--no-ff` merge commit itself --
+        # the close-out's own FINDINGS commit sits above it on main -- and
+        # the sha was stamped on the run by the release, not read from git
+        # at render time.
+        merge_sha = self.git("log", "--merges", "-1", "--format=%H",
+                             "main").strip()
+        self.assertNotEqual(merge_sha, self.git("rev-parse", "main").strip())
         self.assertRegex(findings,
-                         r"MERGED to main\.\nactual: \d+\.\d min · "
+                         rf"MERGED to main as {merge_sha[:7]}\.\n"
+                         r"actual: \d+\.\d min · "
                          r"estimate: 5 min · rounds: 2\n")
+        conn = store.open(str(self.tgt.store_path))
+        try:
+            self.assertEqual(
+                conn.execute("SELECT mergeSha FROM runs"
+                             " WHERE outcome = 'merged'").fetchall(),
+                [(merge_sha,)])
+        finally:
+            conn.close()
         self.assertEqual(len([line for line in findings.splitlines()
                               if line.startswith("## ")]), 3)
         # Committed, not left dirty, and by the task's own close-out commit.

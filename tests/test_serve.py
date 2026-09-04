@@ -37,6 +37,7 @@ import store  # noqa: E402 - after the sys.path insert above
 
 SEC = 1000
 MIN = 60 * SEC
+MERGE_SHA = "abc1234def5678901234567890abcdef12345678"
 # How far the clock may move between seeding and the assertion: the daemon
 # stamps its own `now`, so an age is "about" the seeded distance.
 SLACK = 10 * SEC
@@ -87,10 +88,12 @@ class ServeTestCase(unittest.TestCase):
         try:
             store.init(conn)
             project = store.ensure_project(conn, "team-1", self.target)
-            plan = (("KO-1", 20 * MIN, 10 * MIN, "merged", 1),
-                    ("KO-2", 20 * MIN, 45 * MIN, "failed", 0),
-                    ("KO-3", None, 15 * MIN, "merged", 2))
-            for n, (ident, box, took, outcome, rounds) in enumerate(plan):
+            # KO-3 merged under a module that stamps the merge commit; KO-1
+            # merged before the column existed and carries none.
+            plan = (("KO-1", 20 * MIN, 10 * MIN, "merged", 1, None),
+                    ("KO-2", 20 * MIN, 45 * MIN, "failed", 0, None),
+                    ("KO-3", None, 15 * MIN, "merged", 2, MERGE_SHA))
+            for n, (ident, box, took, outcome, rounds, sha) in enumerate(plan):
                 ticket = store.mirror_ticket(
                     conn, project, linear_issue_id=f"issue-{ident}",
                     linear_identifier=ident, title=f"ticket {ident}",
@@ -103,7 +106,8 @@ class ServeTestCase(unittest.TestCase):
                     store.record_review_round(
                         conn, run, number, "pass", "reviewer-model",
                         started_at=started + number * MIN)
-                store.release(conn, run, outcome, now=started + took)
+                store.release(conn, run, outcome, now=started + took,
+                              merge_sha=sha)
         finally:
             conn.close()
 
@@ -416,20 +420,42 @@ class RunsTests(ServeTestCase):
         finally:
             conn.close()
         keys = ("ticket", "actual_min", "estimate_min", "ratio", "rounds",
-                "outcome", "host", "ended_ms")
-        return [dict(zip(keys, row + (ended,)))
-                for row, ended in zip(rows, self.ended_at())]
+                "outcome", "host", "ended_ms", "merge_sha")
+        return [dict(zip(keys, row + (ended, sha)))
+                for row, ended, sha in zip(rows, self.ended_at(),
+                                           self.merge_shas())]
 
     def ended_at(self):
         """The oracle for `ended_ms`: `runs.endedAt` itself, in the report's
         order, read straight from the table rather than through the report."""
+        return self.column("endedAt")
+
+    def merge_shas(self):
+        """The oracle for `merge_sha`: `runs.mergeSha` itself, same order."""
+        return self.column("mergeSha")
+
+    def column(self, name):
         conn = store.open(str(self.db))
         try:
-            return [ended for (ended,) in conn.execute(
-                "SELECT endedAt FROM runs WHERE endedAt IS NOT NULL"
+            return [value for (value,) in conn.execute(
+                f"SELECT {name} FROM runs WHERE endedAt IS NOT NULL"
                 " ORDER BY endedAt, id")]
         finally:
             conn.close()
+
+    def test_a_merged_run_carries_its_full_merge_sha(self):
+        self.seed_ended()
+        self.start()
+
+        code, _headers, body = self.request("GET", "/runs")
+
+        self.assertEqual(code, 200)
+        # The sha the seed released KO-3 with, whole, not the seven
+        # characters FINDINGS prints; KO-1 merged without one and the failed
+        # KO-2 never has one.
+        self.assertEqual([r["merge_sha"] for r in body["rows"]],
+                         [None, None, MERGE_SHA])
+        self.assertEqual(len(MERGE_SHA), 40)
 
     def test_runs_is_the_report_table_as_json(self):
         self.seed_ended()

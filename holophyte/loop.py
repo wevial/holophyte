@@ -383,7 +383,8 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # pre-merge verify is a run stopped at the gate.
     ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
                      wt, beat_s, sha, verify_cmd, contracts)
-    _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha)
+    merge_sha = _merge(target, conn, run_id, provider, task_id, task, branch,
+                       wt, sha)
     # Nothing tells Linear the ticket is done here any more. The merge makes
     # the ticket `merged` in the store, and `main()` projects that status onto
     # the board through `mirror_push()` once the run has been released — one
@@ -400,7 +401,9 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # the run's close-out entry exists only once the run has been released,
     # which happens after this returns.
     print(f"[holo2] merged: {task}")
-    return True
+    # The merge commit itself, for the close-out to stamp on the run: truthy,
+    # so every caller that read this as "did it merge" still does.
+    return merge_sha
 
 
 def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
@@ -762,7 +765,8 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
 
 def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     """The `merging` phase: the `--no-ff` merge of `branch` into main, its
-    one self-resolved conflict, and the post-merge cleanup."""
+    one self-resolved conflict, and the post-merge cleanup. Returns the full
+    sha of the merge commit main now sits on."""
     # Commit any pending FINDINGS.md changes BEFORE merging so the merge
     # never trips over a dirty index. Nothing is written to the file during a
     # run any more, so this is normally a no-op; what it still catches is a
@@ -778,14 +782,18 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
                         capture_output=True, text=True)
     if mr.returncode != 0:
         _resolve_merge_conflict(target, provider, task_id, branch, sha)
-    # The merge has landed: the branch holds nothing main does not, so the
-    # worktree's stray untracked files are not preserved work — and a cleanup
-    # refusal must not re-classify merged work as a failed run.
+    # The merge has landed: main's HEAD is the merge commit, read now before
+    # the cleanup below and before anything else moves main. The branch
+    # holds nothing main does not, so the worktree's stray untracked files
+    # are not preserved work — and a cleanup refusal must not re-classify
+    # merged work as a failed run.
+    merge_sha = sh(["git", "rev-parse", "HEAD"], target.path)
     try:
         sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
         sh(["git", "branch", "-d", branch], target.path)
     except RuntimeError as e:
         print(f"[holo2] post-merge cleanup left debris: {e}")
+    return merge_sha
 
 
 def _resolve_merge_conflict(target, provider, task_id, branch, sha):
@@ -1075,7 +1083,12 @@ def _claim_run(conn, project, provider, ticket_id, seen):
 
 def _dispatch(target, conn, run_id, provider, task, ticket_id):
     """One run of `task` under `run_id`, with its failure accounting and
-    close-out. Returns whether the run merged."""
+    close-out. Returns whether the run merged.
+
+    `run_task()` answers with the merge commit's sha when it merged, and
+    that sha is what the release stamps on the run; a bare `True` (the
+    supervisor ended the run as merged, or a test's stand-in) merges the
+    run without one."""
     merged = False
     reason = None
     outcome_class = "work"
@@ -1097,7 +1110,8 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
         print(f"[holo2] run crashed: {reason}")
     finally:
         if merged:
-            release_run(conn, run_id, merged)
+            release_run(conn, run_id, True,
+                        merge_sha=merged if isinstance(merged, str) else None)
             # `in_flight -> merged`, projected as Done. A run that did
             # not merge leaves the ticket in flight on purpose: the
             # branch is preserved for a human and the board should go

@@ -198,7 +198,12 @@ def run_entry(row):
     reason, branch, started = row.outcomeReason, row.branch, row.startedAt
     time_box, rounds = row.timeBoxMs, row.reviewRoundCount
     if outcome == "merged":
+        # Seven characters of the merge commit, the way `git log --oneline`
+        # names it; a row released before the column carries none and reads
+        # exactly as it did.
+        sha = row.mergeSha
         head = ("MERGED to main"
+                + (f" as {sha[:7]}" if sha else "")
                 + (f" (branch {branch} deleted)" if branch else "") + ".")
     else:
         head = (outcome or "ended").upper()

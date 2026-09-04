@@ -33,14 +33,17 @@ Every `host` passes through `[report] host_label`.
 ```json
 {"rows": [
   {"ticket": "KO-241", "actual_min": 8.4, "estimate_min": 10.0, "ratio": 0.84,
-   "rounds": 1, "outcome": "merged", "host": "writer-1", "ended_ms": 1788478953000}
+   "rounds": 1, "outcome": "merged", "host": "writer-1", "ended_ms": 1788478953000,
+   "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f"}
 ], "limit": null}
 ```
 
 The `--report` table as JSON, oldest first, the same rows in the same
 order the terminal prints. `ended_ms` is the run's end as epoch
 milliseconds, which the table does not print; the drawer ages the last
-merge from it. `?limit=N` keeps the first N rows and echoes `limit`; a
+merge from it. `merge_sha` is the full merge commit a merged run landed
+on main as, null for any other outcome or a run merged before the store
+recorded it. `?limit=N` keeps the first N rows and echoes `limit`; a
 non-positive or non-integer limit is 400.
 
 ## `GET /attention`
