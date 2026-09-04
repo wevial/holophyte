@@ -156,9 +156,12 @@ supervisor does not pick up an edit.
 # What the claim loop does after a run it closed out as failed. Optional; the
 # value shown is the default.
 stop_on_failure = true   # false: record the failure and claim the next ticket
+# Whether the loop starts a detached --supervise for the target at startup
+# when no live supervisor holds its lock. Optional; the default is true.
+spawn_supervisor = true  # false: a service manager runs the supervisor
 ```
 
-Accepted keys: `stop_on_failure`.
+Accepted keys: `stop_on_failure`, `order`, `spawn_supervisor`.
 
 By default one failed run ends the process after its close-out, with a nonzero
 exit, and an operator relaunches the loop — the right call while the loop is
@@ -171,6 +174,16 @@ one failure stops the whole queue. The exit status is still nonzero once the
 queue is empty if any run failed. The value must be a boolean, `true` or
 `false`; a string such as `"yes"` is a startup error naming the key, like a
 `[supervisor]` threshold outside its constraint.
+
+With `spawn_supervisor = true` (the default) the loop checks the target's
+`supervisor.lock` at startup, after the config and route checks and before
+its first claim, and when no live pid holds it starts `factory.py --supervise`
+for the same target as a detached process, logging to `supervisor.log` in the
+state directory; when a live supervisor holds the lock it names that pid and
+carries on. `spawn_supervisor = false` skips the check and the spawn, for an
+operator whose service manager runs the supervisor as a unit of its own; the
+explicit `--supervise` command is unchanged either way. A boolean, checked
+like `stop_on_failure`.
 
 ```toml
 [board]

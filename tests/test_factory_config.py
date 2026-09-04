@@ -42,6 +42,11 @@ from procs import (  # noqa: E402 - after the sys.path insert above
 from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
+class FakeChild:
+    """What the stubbed `Popen` hands back: a pid and nothing else."""
+    pid = 4242
+
+
 class ConfigTestCase(unittest.TestCase):
     """Build a `Target` at a throwaway repository, optionally with a config.
 
@@ -63,7 +68,20 @@ class ConfigTestCase(unittest.TestCase):
         self.tgt = holophyte.target.Target.locate(self.target)
         if config is not None:
             self.write_config(config)
+        self.stub_supervisor_spawn()
         return self.tgt
+
+    def stub_supervisor_spawn(self):
+        """Replace the `Popen` seam the loop path starts a supervisor through.
+
+        Every test that reaches the loop path goes through here: the real
+        one would leave a detached `--supervise` running against the
+        throwaway home after the test. `self.popen` records the calls, so a
+        test about the spawn reads what would have been started.
+        """
+        patcher = patch.object(holophyte.cli, "SPAWN", return_value=FakeChild())
+        self.popen = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def set_home(self, home):
         """Point HOLOPHYTE_HOME at a throwaway directory for this test.
@@ -979,7 +997,11 @@ class BoardConfigTests(StartupCheckTests):
 
         self.assert_queries_name(calls, "p-1", "T")
         self.assertEqual(board.team, "T")
-        self.assertEqual(printed, "")
+        # Nothing announces a fallback: the only startup line is the
+        # supervisor the loop started.
+        self.assertEqual(
+            [line for line in printed.splitlines()
+             if not line.startswith("[holo2] started a supervisor")], [])
 
     def test_no_table_is_a_loop_exit_naming_the_key_despite_the_environment(self):
         """`HOLO2_PROJECT_ID`/`HOLO2_TEAM` set and no table: the loop and
@@ -1050,6 +1072,107 @@ class BoardConfigTests(StartupCheckTests):
 
                 self.assertIn(f"[board] {key}", str(raised.exception))
                 main.assert_not_called()
+
+
+class SupervisorSpawnTests(StartupCheckTests):
+    """The loop starts a supervisor for its target when none is watching.
+
+    The spawn is a `Popen` the fixture stubs; what these tests read is its
+    argument list and what startup printed. The routes are stubbed by the
+    parent's `setUp()` so the loop path reaches the spawn, not a missing
+    `claude`.
+    """
+
+    BOARD = '[board]\nproject_id = "p-1"\nteam = "T"\n'
+
+    def start_loop(self, target):
+        printed = io.StringIO()
+        with patch.object(holophyte.cli, "main") as main, \
+                contextlib.redirect_stdout(printed):
+            holophyte.cli.cli([str(target)])
+        main.assert_called_once()
+        return printed.getvalue()
+
+    def hold_lock(self, pid):
+        lock = holophyte.supervisor.supervisor_lock_path(self.tgt)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(f"host {pid} 1\n")
+        return lock
+
+    def test_a_free_lock_starts_a_detached_supervisor_for_the_target(self):
+        target = self.locate(self.BOARD).path
+
+        printed = self.start_loop(target)
+
+        self.popen.assert_called_once()
+        argv = self.popen.call_args.args[0]
+        kwargs = self.popen.call_args.kwargs
+        self.assertEqual(argv[-2:], ["--supervise", str(target)])
+        self.assertTrue(argv[-3].endswith("factory.py"), argv)
+        self.assertTrue(kwargs["start_new_session"])
+        log = self.tgt.holo_dir / "supervisor.log"
+        self.assertEqual(Path(kwargs["stdout"].name), log)
+        self.assertEqual(Path(kwargs["stderr"].name), log)
+        self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
+        self.assertIn(f"[holo2] started a supervisor for {target} as pid 4242",
+                      printed)
+
+    def test_a_lock_held_by_a_live_pid_is_left_alone_and_named(self):
+        target = self.locate(self.BOARD).path
+        self.hold_lock(os.getpid())
+
+        printed = self.start_loop(target)
+
+        self.popen.assert_not_called()
+        self.assertIn(f"[holo2] supervisor pid {os.getpid()} is watching {target}",
+                      printed)
+        self.assertNotIn("started a supervisor", printed)
+
+    def test_a_lock_held_by_a_dead_pid_does_not_stop_the_spawn(self):
+        target = self.locate(self.BOARD).path
+        with subprocess.Popen(["true"]) as gone:
+            gone.wait()
+        self.hold_lock(gone.pid)
+
+        printed = self.start_loop(target)
+
+        self.popen.assert_called_once()
+        self.assertIn("started a supervisor", printed)
+
+    def test_spawn_supervisor_false_starts_nothing(self):
+        target = self.locate(self.BOARD + "[loop]\nspawn_supervisor = false\n").path
+
+        printed = self.start_loop(target)
+
+        self.popen.assert_not_called()
+        self.assertNotIn("supervisor", printed)
+
+    def test_a_non_boolean_spawn_supervisor_is_a_startup_error_naming_it(self):
+        target = self.locate(self.BOARD + '[loop]\nspawn_supervisor = "no"\n').path
+
+        with patch.object(holophyte.cli, "main") as main:
+            with self.assertRaises(SystemExit) as raised:
+                holophyte.cli.cli([str(target)])
+
+        self.assertIn("spawn_supervisor", str(raised.exception))
+        main.assert_not_called()
+        self.popen.assert_not_called()
+
+    def test_the_other_modes_start_no_supervisor(self):
+        target = self.locate(self.BOARD).path
+        modes = (["--report"], ["--sweep"], ["--serve", "127.0.0.1:0"],
+                 ["--requeue", "KO-1", "--note", "why"],
+                 ["--file-ticket", str(self.root / "t.md")])
+        for argv in modes:
+            with self.subTest(argv=argv), \
+                    patch.object(holophyte.cli, "report"), \
+                    patch.object(holophyte.cli, "sweep_report"), \
+                    patch.object(holophyte.cli, "serve"), \
+                    patch.object(holophyte.cli, "requeue"), \
+                    patch.object(holophyte.cli, "file_ticket"), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                holophyte.cli.cli([str(target), *argv])
+        self.popen.assert_not_called()
 
 
 class WorktreeSetupTests(ConfigTestCase):

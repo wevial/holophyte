@@ -20,7 +20,7 @@ settings go in `~/.holophyte/<slug>/config.toml`; see [Config](docs/config.md).
 python3 factory.py /path/to/repo                  # run the loop
 python3 factory.py --report /path/to/repo         # estimate-vs-actual table
 python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails them
-python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer
+python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
 python3 factory.py --serve HOST:PORT /path/to/repo   # read-only JSON daemon
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo

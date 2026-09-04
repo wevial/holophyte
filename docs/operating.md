@@ -20,6 +20,19 @@ long-lived process:
 python3 factory.py --supervise /path/to/repo
 ```
 
+Running it by hand is optional: the loop starts one itself. At startup,
+after its config and route checks and before its first claim, the loop reads
+the target's `supervisor.lock`, and when no live pid holds it spawns
+`factory.py --supervise` for the same target in its own session, with stdout
+and stderr appended to `supervisor.log` in the state directory, and prints
+`[holo2] started a supervisor for TARGET as pid N`; when a live supervisor
+already holds the lock it prints `[holo2] supervisor pid N is watching
+TARGET` and carries on. The spawned supervisor outlives the loop on purpose
+and takes the lock itself, so two loops starting at once resolve at the lock
+like two `--supervise`s. `[loop] spawn_supervisor = false` turns the spawn
+off for an operator whose service manager runs the supervisor
+([Config](config.md)).
+
 It runs until SIGINT or SIGTERM, finishing the pass in hand and exiting
 clean. One supervisor per target: the first takes
 `supervisor.lock` in the target's state directory (beside the store) with an
