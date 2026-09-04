@@ -1,0 +1,63 @@
+{
+ "status": {
+  "target": "/srv/dev/writer",
+  "host": "writer",
+  "now": 1756900000000,
+  "supervisor": {
+   "state": "stale",
+   "pid": 4242,
+   "heartbeat_age_ms": 1200000,
+   "host": "writer"
+  },
+  "thresholds": {
+   "heartbeat_stale_ms": 180000,
+   "strikes": 3
+  },
+  "runs": [
+   {
+    "id": 91,
+    "ticket": "KO-232",
+    "phase": "reviewing",
+    "heartbeat_age_ms": 421000,
+    "elapsed_ms": 754000,
+    "time_box_ms": 1800000,
+    "host": "writer"
+   }
+  ]
+ },
+ "runs": null,
+ "attention": {
+  "level": "attention",
+  "now": 1756900000000,
+  "items": [
+   {
+    "kind": "blocked",
+    "ticket": "KO-240",
+    "question": "The ticket names two verify commands that disagree about the fixture path; which one is the contract, the README's or the ticket body's?",
+    "level": "attention"
+   },
+   {
+    "kind": "stale_run",
+    "run": 91,
+    "ticket": "KO-232",
+    "phase": "reviewing",
+    "heartbeat_age_ms": 421000,
+    "level": "attention"
+   },
+   {
+    "kind": "failed",
+    "run": 88,
+    "ticket": "KO-229",
+    "reason": "verify failed: 2 tests errored in test_store_surface after the rename",
+    "ended_ms": 1756892800000,
+    "level": "attention"
+   },
+   {
+    "kind": "supervisor",
+    "state": "stale",
+    "heartbeat_age_ms": 1200000,
+    "level": "attention"
+   }
+  ]
+ }
+}

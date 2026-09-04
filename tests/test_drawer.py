@@ -1,8 +1,10 @@
-"""SwiftBar drawer v0: `contrib/swiftbar/holophyte.10s.py` over `/status`.
+"""SwiftBar drawer v0: `contrib/swiftbar/holophyte.10s.py` over `/status`
+and `/attention`.
 
 The fixtures under `tests/fixtures/drawer/` are `/status` answers with a
-fixed `now`. The script is exercised both through `--render` as a subprocess
-(the exact bytes an operator sees) and through its imported pure functions;
+fixed `now`, some wrapped with the `/runs` and `/attention` answers. The
+script is exercised both through `--render` as a subprocess (the exact
+bytes an operator sees) and through its imported pure functions;
 the live path is exercised against a loopback daemon serving one fixture
 beside a closed loopback port.
 
@@ -255,19 +257,83 @@ class RenderTests(unittest.TestCase):
         self.assertIn("updated 0s ago", once)
         self.assertIn("idle · last merge KO-237 · 12m ago", once)
 
+    def test_daemon_attention_items_render_one_row_each_in_its_order(self):
+        lines = render_cli("attention_all_kinds").splitlines()
+        self.assertEqual(embedded(lines[0], "image="),
+                         (ROOT / "assets" / "menubar-warn.pdf").read_bytes())
+        needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
+        rows = lines[needs + 1:lines.index("---", needs)]
+        amber = f" | color={drawer.AMBER}"
+        self.assertEqual(rows, [
+            "attention_all_kinds · KO-240 · blocked: The ticket names two "
+            "verify commands that disagree about th…" + amber,
+            "attention_all_kinds · KO-232 · heartbeat 7m" + amber,
+            "attention_all_kinds · KO-229 · failed 2h ago: verify failed: "
+            "2 tests errored in test_…" + amber,
+            "attention_all_kinds · supervisor stale · 20m" + amber,
+        ])
+        # The question is cut at 60 characters, the reason at 40; a short
+        # one is kept whole and a multi-line one is flattened.
+        e = drawer.fixture_entry(FIXTURES / "attention_all_kinds.json")
+        e["attention"]["items"][0]["question"] = "Which\nfixture?"
+        e["attention"]["items"][2]["reason"] = "x" * 40
+        rows, level = drawer.attention_rows(e)
+        self.assertEqual(rows[0][0],
+                         "attention_all_kinds · KO-240 · blocked: Which fixture?")
+        self.assertTrue(rows[2][0].endswith("failed 2h ago: " + "x" * 40))
+        self.assertEqual(level, drawer.ATTENTION)
+        # The daemon's own level rules the glyph: `none` with no items is
+        # idle, and an unreachable daemon outranks anything it could say.
+        e["attention"] = {"level": "none", "items": [], "now": 1756900000000}
+        self.assertEqual(drawer.attention_rows(e), ([], drawer.IDLE))
+        gone = {"name": "gone", "url": "gone",
+                "status": {"unreachable": True, "error": "timed out"},
+                "attention": None}
+        rows, level = drawer.attention([e, gone])
+        self.assertEqual((rows, level),
+                         ([("gone · unreachable", drawer.RED)], drawer.CRITICAL))
+
+    def test_without_an_attention_answer_the_local_rule_still_applies(self):
+        # No `attention` key in the fixture: the stale-heartbeat row is
+        # computed from `/status` as before, and a 404 body (no `items`)
+        # is the same case.
+        e = drawer.fixture_entry(FIXTURES / "stale_heartbeat.json")
+        self.assertIsNone(e["attention"])
+        expected = ([("stale_heartbeat · KO-232 · heartbeat 7m", drawer.AMBER)],
+                    drawer.ATTENTION)
+        self.assertEqual(drawer.attention_rows(e), expected)
+        e["attention"] = {"error": "not found", "path": "/attention"}
+        self.assertEqual(drawer.attention_rows(e), expected)
+        lines = render_cli("stale_heartbeat").splitlines()
+        needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
+        self.assertEqual(lines[needs + 1], "stale_heartbeat · KO-232 · "
+                         f"heartbeat 7m | color={drawer.AMBER}")
+        self.assertEqual(lines[needs + 2], "---")
+
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    """A stub daemon: `/status` and `/runs` answer 200 with the bodies set
+    on the class; `/attention` answers 404 like a daemon older than the
+    path unless `attention_body` is set."""
     body = b""
     runs_body = b'{"rows": [], "limit": null}'
+    attention_body = None
     paths = []
 
     def do_GET(self):
         Handler.paths.append(self.path)
-        self.send_response(200)
+        code, body = 200, self.body
+        if self.path.startswith("/runs"):
+            body = self.runs_body
+        elif self.path.startswith("/attention"):
+            if self.attention_body is None:
+                code, body = 404, b'{"error": "not found", "path": "/attention"}'
+            else:
+                body = self.attention_body
+        self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(self.runs_body if self.path.startswith("/runs")
-                         else self.body)
+        self.wfile.write(body)
 
     def log_message(self, *args):
         pass
@@ -312,14 +378,51 @@ class LiveTests(unittest.TestCase):
             fixture("idle_last_merge")["runs"]).encode()
         Handler.paths = []
         got = drawer.poll({"name": "idle", "url": url})
-        self.assertEqual(Handler.paths, ["/status", "/runs"])
+        self.assertEqual(Handler.paths, ["/status", "/attention", "/runs"])
         self.assertEqual(drawer.target_block(got)[1],
                          "idle · last merge KO-237 · 12m ago")
         Handler.body = json.dumps(fixture("working")).encode()
         Handler.paths = []
         got = drawer.poll({"name": "working", "url": url})
-        self.assertEqual(Handler.paths, ["/status"])
+        self.assertEqual(Handler.paths, ["/status", "/attention"])
         self.assertIsNone(got["runs"])
+
+    def test_older_daemon_answering_404_on_attention_gets_the_local_rule(self):
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        Handler.body = json.dumps(fixture("stale_heartbeat")).encode()
+        Handler.attention_body = None
+        Handler.paths = []
+        with tempfile.TemporaryDirectory() as home:
+            cfg = Path(home) / "drawer.toml"
+            cfg.write_text(f'[[daemon]]\nname = "old"\nurl = "http://127.0.0.1:'
+                           f'{server.server_port}"\n')
+            out = io.StringIO()
+            with redirect_stdout(out):
+                drawer.main(["--config", str(cfg)])
+        self.assertIn("/attention", Handler.paths)
+        lines = out.getvalue().splitlines()
+        self.assertEqual(embedded(lines[0], "image="),
+                         (ROOT / "assets" / "menubar-warn.pdf").read_bytes())
+        needs = lines.index(next(x for x in lines if x.startswith("NEEDS YOU")))
+        self.assertEqual(lines[needs + 1:needs + 3],
+                         [f"old · KO-232 · heartbeat 7m | color={drawer.AMBER}",
+                          "---"])
+        text = out.getvalue()
+        self.assertNotIn("not found", text)
+        self.assertNotIn("404", text)
+        self.assertNotIn("unreachable", text)
+        # The same stub answering `/attention` is taken at its word.
+        Handler.attention_body = json.dumps(
+            fixture("attention_all_kinds")["attention"]).encode()
+        self.addCleanup(setattr, Handler, "attention_body", None)
+        got = drawer.poll({"name": "new", "url": f"http://127.0.0.1:{server.server_port}"})
+        rows, _ = drawer.attention_rows(got)
+        self.assertEqual([t for t, _ in rows][:2],
+                         ["new · KO-240 · blocked: The ticket names two verify "
+                          "commands that disagree about th…",
+                          "new · KO-232 · heartbeat 7m"])
 
     def test_fetch_marks_a_closed_port_unreachable(self):
         got = drawer.fetch(f"http://127.0.0.1:{closed_loopback_port()}")
