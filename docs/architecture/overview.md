@@ -6,38 +6,37 @@ kept behind, or a **projection** rendered from the store for someone to
 read. The store is the only thing every other part agrees on.
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph board[Linear · the board]
     L[project: ready tickets]
   end
-  subgraph writer[Writer host · one per target set]
+  subgraph writer[Writer host]
     direction TB
-    LP[provider\nlinear_provider.py]
-    F[loop\nholophyte/loop.py]
-    ST[(store.db\n~/.holophyte/slug/)]
-    SUP[supervisor\n--supervise]
-    D[serve daemon\n--serve HOST:PORT]
-    WT[task worktree\nrepo.worktrees/branch]
-    IMP[implementer\nclaude -p]
-    VG[verify gate\nticket's own command]
-    RR[review runner\ncodex in docker, read-only]
-    M[main\n--no-ff merge]
-    FD[FINDINGS.md\nrendered window]
+    F[loop]
+    SUP[supervisor]
+    D[serve daemon]
+    ST[(store.db)]
+    subgraph run[one run]
+      direction LR
+      WT[worktree] --> IMP[implementer] --> VG[verify gate] --> RR[reviewer] --> M[merge --no-ff]
+    end
+    FD[FINDINGS.md]
   end
-  subgraph seat[Operator seat · Mac]
-    DR[menu-bar drawer\nSwiftBar plugin]
-    OP[operator\n--file-ticket · --requeue · ssh]
+  subgraph seat[Operator seat]
+    DR[drawer]
+    OP[operator]
   end
-  L --> LP --> F
-  F --> WT --> IMP --> VG --> RR --> M
+  L --> F
+  F --> run
   F <--> ST
   SUP <--> ST
   D --> ST
-  M --> ST --> FD
-  ST -. status, comments .-> L
-  DR -- /status /runs over tailnet --> D
-  OP -- over tailnet --> writer
-  OP -- creates, updates --> L
+  M --> ST
+  ST --> FD
+  ST -. status, ledger .-> L
+  DR -- /status /runs --> D
+  OP -- ssh, git push --> writer
+  OP -- file-ticket --> L
 ```
 
 Solid arrows carry work. Dotted arrows are projections: the store is
