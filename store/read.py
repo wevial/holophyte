@@ -76,6 +76,30 @@ def ticket_by_id(conn, ticket_id):
                   status=row[3], activeRunId=row[4], lastRunId=row[5])
 
 
+@dataclass(frozen=True)
+class BlockedTicket:
+    """One ticket parked `blocked_on_operator`, with the question it asks."""
+
+    id: int
+    linearIdentifier: str
+    blockedQuestion: str | None
+
+
+def blocked_tickets(conn):
+    """Every ticket whose status is `blocked_on_operator`, oldest id first.
+
+    The `serve` daemon's `/attention` read: a parked ticket is the one thing
+    the operator must answer, and `blockedQuestion` is what it asks. None
+    when the ticket was parked without one.
+    """
+    rows = conn.execute(
+        "SELECT id, linearIdentifier, blockedQuestion FROM tickets"
+        " WHERE status = 'blocked_on_operator' ORDER BY id").fetchall()
+    return [BlockedTicket(id=row[0], linearIdentifier=row[1],
+                          blockedQuestion=row[2])
+            for row in rows]
+
+
 # --- runs --------------------------------------------------------------------
 
 
@@ -211,6 +235,41 @@ def failed_attempts_since(conn, ticket_id, since):
         "                 AND i.\"action\" = 'close_out')"
         " ORDER BY attempt", (ticket_id, since)).fetchall()
     return [FailedAttempt(attempt=row[0], outcomeReason=row[1]) for row in rows]
+
+
+@dataclass(frozen=True)
+class RecentFailedRun:
+    """One run that ended `failed`, with where its ticket stands now.
+
+    `ticketStatus` is the ticket's current `tickets.status`: a reader that
+    lists failures the operator has not dealt with keeps the `in_flight`
+    ones (a failed run leaves its ticket there with no active run) and
+    drops one whose ticket has since been requeued (`ready`) or merged.
+    """
+
+    id: int
+    linearIdentifier: str
+    outcomeReason: str | None
+    endedAt: int
+    ticketStatus: str
+
+
+def recent_failed_runs(conn, since_ms):
+    """Every run that ended `failed` after `since_ms`, oldest end first.
+
+    The window is the caller's policy -- `/attention` passes its own -- so
+    this module states no opinion about how long a failure stays news.
+    """
+    rows = conn.execute(
+        "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
+        " t.status"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.outcome = 'failed' AND r.endedAt > ?"
+        " ORDER BY r.endedAt, r.id", (since_ms,)).fetchall()
+    return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
+                            outcomeReason=row[2], endedAt=row[3],
+                            ticketStatus=row[4])
+            for row in rows]
 
 
 # --- reviewRounds ------------------------------------------------------------

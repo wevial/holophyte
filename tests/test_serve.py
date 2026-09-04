@@ -271,6 +271,141 @@ class StatusTests(ServeTestCase):
         self.assertIn("error", json.loads(payload))
 
 
+class AttentionTests(ServeTestCase):
+    """`/attention`: the four item kinds, their order, the window, the level."""
+
+    HOUR = 60 * MIN
+
+    def seed_attention(self, failed_ago=2 * HOUR, stale=True):
+        """KO-8 parked with a question; KO-9 failed `failed_ago` ago and
+        still `in_flight`; KO-7 live, beating 20 min ago when `stale`, else
+        30 s ago; a supervisor beating 20 min ago when `stale`, else 5 s."""
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+
+            def ticket(ident):
+                return store.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{ident}",
+                    linear_identifier=ident, title=f"ticket {ident}",
+                    acceptance_criteria=[f"Given {ident}, then it is worked"],
+                    verification_commands=["echo ok"], time_box_ms=25 * MIN)
+
+            blocked = ticket("KO-8")
+            store.transition(conn, blocked, "in_flight")
+            store.transition(conn, blocked, "blocked_on_operator")
+            conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                         ("Which branch is canonical?", blocked))
+            conn.commit()
+
+            self.failed_ticket = ticket("KO-9")
+            store.transition(conn, self.failed_ticket, "in_flight")
+            self.failed = store.claim(conn, project, self.failed_ticket,
+                                      now=self.now - failed_ago - 10 * MIN)
+            store.release(conn, self.failed, "failed", reason="verify red",
+                          now=self.now - failed_ago)
+
+            # Claimed after KO-9 ended: the project lease is one run at a time.
+            live = ticket("KO-7")
+            store.transition(conn, live, "in_flight")
+            self.run = store.claim(conn, project, live, now=self.now - 40 * MIN)
+            store.set_phase(conn, self.run, "working", now=self.now - 40 * MIN)
+            store.heartbeat(conn, self.run,
+                            now=self.now - (20 * MIN if stale else 30 * SEC))
+            store.record_supervisor_heartbeat(
+                conn, 4242, self.now - self.HOUR,
+                now=self.now - (20 * MIN if stale else 5 * SEC))
+        finally:
+            conn.close()
+
+    def test_every_kind_in_order_and_the_level_is_attention(self):
+        self.seed_attention()
+        self.start()
+
+        code, headers, body = self.request("GET", "/attention")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(body["level"], "attention")
+        self.assertGreaterEqual(body["now"], self.now)
+        kinds = [item["kind"] for item in body["items"]]
+        self.assertEqual(kinds, ["blocked", "stale_run", "failed", "supervisor"])
+        blocked, stale_run, failed, supervisor = body["items"]
+        self.assertEqual(blocked, {"kind": "blocked", "ticket": "KO-8",
+                                   "question": "Which branch is canonical?",
+                                   "level": "attention"})
+        self.assertEqual(stale_run["run"], self.run)
+        self.assertEqual(stale_run["ticket"], "KO-7")
+        self.assertEqual(stale_run["phase"], "working")
+        self.assertTrue(
+            20 * MIN <= stale_run["heartbeat_age_ms"] < 20 * MIN + SLACK,
+            stale_run)
+        self.assertEqual(failed["run"], self.failed)
+        self.assertEqual(failed["ticket"], "KO-9")
+        self.assertEqual(failed["reason"], "verify red")
+        self.assertEqual(failed["ended_ms"], self.now - 2 * self.HOUR)
+        self.assertEqual(supervisor["state"], "stale")
+        self.assertTrue(
+            20 * MIN <= supervisor["heartbeat_age_ms"] < 20 * MIN + SLACK,
+            supervisor)
+        for item in body["items"]:
+            self.assertEqual(item["level"], "attention", item)
+
+    def test_a_requeued_failure_drops_out(self):
+        self.seed_attention()
+        conn = store.open(str(self.db))
+        try:
+            store.requeue(conn, self.failed_ticket, "operator requeued")
+        finally:
+            conn.close()
+        self.start()
+
+        _, _, body = self.request("GET", "/attention")
+
+        kinds = [item["kind"] for item in body["items"]]
+        self.assertEqual(kinds, ["blocked", "stale_run", "supervisor"])
+
+    def test_a_failure_older_than_a_day_drops_out(self):
+        self.seed_attention(failed_ago=30 * self.HOUR)
+        self.start()
+
+        _, _, body = self.request("GET", "/attention")
+
+        kinds = [item["kind"] for item in body["items"]]
+        self.assertEqual(kinds, ["blocked", "stale_run", "supervisor"])
+
+    def test_nothing_wrong_is_working_with_a_live_run_else_none(self):
+        self.seed()
+        self.start()
+
+        _, _, body = self.request("GET", "/attention")
+
+        self.assertEqual(body, {"level": "working", "items": [],
+                                "now": body["now"]})
+
+        conn = store.open(str(self.db))
+        try:
+            store.release(conn, self.run, "merged")
+        finally:
+            conn.close()
+
+        _, _, body = self.request("GET", "/attention")
+
+        self.assertEqual(body["items"], [])
+        self.assertEqual(body["level"], "none")
+
+    def test_a_target_with_no_store_answers_503(self):
+        self.start()
+
+        code, _, body = self.request("GET", "/attention")
+
+        self.assertEqual(code, 503)
+        self.assertEqual(body["error"], "no store")
+        self.assertFalse(self.db.exists())
+
+
 class RunsTests(ServeTestCase):
 
     def expected_rows(self):

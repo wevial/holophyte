@@ -1,5 +1,5 @@
-"""`--serve HOST:PORT`: a read-only HTTP daemon answering `/status` and
-`/runs` as JSON.
+"""`--serve HOST:PORT`: a read-only HTTP daemon answering `/status`,
+`/runs` and `/attention` as JSON.
 
 One `ThreadingHTTPServer` per target, bound to the one address the command
 line names, so a drawer or dashboard on another host of the tailnet can poll
@@ -11,7 +11,10 @@ itself. The handler calls the typed read views and formats JSON; no SQL
 lives here, so a later daemon can replace the module wholesale against the
 same store. `/runs` is the `--report` table as JSON: the same rows
 `report_rows()` prints, in the same order, so a dashboard and the terminal
-never disagree about the history.
+never disagree about the history. `/attention` is "what needs the
+operator": one ordered list of items with a level, computed here where the
+store is, so the drawer, a native app and a phone client all show the same
+answer and the rule lives in one place rather than in each client.
 
 Every host the body carries passes through `host_label()`, so a configured
 `[report] host_label` is what the network sees rather than the machine name.
@@ -35,6 +38,9 @@ from holophyte.supervisor import SWEEPABLE_PHASES
 
 ADDRESS_SHAPE = "HOST:PORT"
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
+# How long a failed run stays on `/attention`: a failure the operator has
+# not requeued or merged past in a day is one they have not looked at.
+FAILED_WINDOW_MS = 24 * 60 * 60 * 1000
 
 
 def parse_address(text):
@@ -71,20 +77,11 @@ def status(target, now=None):
     finally:
         conn.close()
     knobs = sweep_config(target)
-    if beat is None:
-        supervisor = {"state": "none", "pid": None, "heartbeat_age_ms": None,
-                      "host": None}
-    else:
-        age = now - beat.lastBeat
-        supervisor = {
-            "state": "live" if age < knobs.heartbeat_stale_ms else "stale",
-            "pid": beat.pid, "heartbeat_age_ms": age,
-            "host": host_label(target, beat.host)}
     return 200, {
         "target": str(target.path),
         "host": host_label(target, socket.gethostname()),
         "now": now,
-        "supervisor": supervisor,
+        "supervisor": supervisor_view(target, beat, now, knobs),
         "thresholds": {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                        "strikes": knobs.stale_strikes},
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,
@@ -95,6 +92,74 @@ def status(target, now=None):
                   "host": json_host(target, run.host)}
                  for run in runs],
     }
+
+
+def supervisor_view(target, beat, now, knobs):
+    """`/status`'s `supervisor` object for `beat` (None when none was ever
+    written): `live` under the stale threshold, `stale` at or past it."""
+    if beat is None:
+        return {"state": "none", "pid": None, "heartbeat_age_ms": None,
+                "host": None}
+    age = now - beat.lastBeat
+    return {"state": "live" if age < knobs.heartbeat_stale_ms else "stale",
+            "pid": beat.pid, "heartbeat_age_ms": age,
+            "host": host_label(target, beat.host)}
+
+
+def attention(target, now=None):
+    """The `/attention` answer: `(http status, JSON-able body)`.
+
+    `items` is what needs the operator, in the order they should read it:
+    every ticket parked `blocked_on_operator` with its question; every live
+    run whose heartbeat age exceeds `heartbeat_stale_ms`; every run that
+    ended `failed` within `FAILED_WINDOW_MS` and whose ticket is still
+    `in_flight` (a requeue walks it to `ready`, a later attempt merges it,
+    and either drops the failure); then the supervisor when it is not
+    live. Each item carries its `level`. `level` on the body is the worst
+    over the items -- `attention` when there is any -- else `working` when
+    a run is live, else `none`. `critical` is in the enum for a client to
+    rank above `attention` (a daemon it cannot reach); nothing here is
+    that bad, since the daemon answering is the proof.
+
+    The stale-run and supervisor rules are `/status`'s numbers compared the
+    way the drawer compared them: a run is stale strictly past the
+    threshold, the supervisor at it.
+    """
+    now = int(time() * 1000) if now is None else now
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        blocked = store.read.blocked_tickets(conn)
+        runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
+        failed = store.read.recent_failed_runs(conn, now - FAILED_WINDOW_MS)
+        beat = store.read.supervisor_beat(conn)
+    finally:
+        conn.close()
+    knobs = sweep_config(target)
+    items = [{"kind": "blocked", "ticket": ticket.linearIdentifier,
+              "question": ticket.blockedQuestion, "level": "attention"}
+             for ticket in blocked]
+    for run in runs:
+        age = now - run.lastHeartbeat
+        if age > knobs.heartbeat_stale_ms:
+            items.append({"kind": "stale_run", "run": run.id,
+                          "ticket": run.linearIdentifier, "phase": run.phase,
+                          "heartbeat_age_ms": age, "level": "attention"})
+    items.extend({"kind": "failed", "run": run.id,
+                  "ticket": run.linearIdentifier, "reason": run.outcomeReason,
+                  "ended_ms": run.endedAt, "level": "attention"}
+                 for run in failed if run.ticketStatus == "in_flight")
+    supervisor = supervisor_view(target, beat, now, knobs)
+    if supervisor["state"] != "live":
+        items.append({"kind": "supervisor", "state": supervisor["state"],
+                      "heartbeat_age_ms": supervisor["heartbeat_age_ms"],
+                      "level": "attention"})
+    if items:
+        level = "attention"
+    else:
+        level = "working" if runs else "none"
+    return 200, {"level": level, "items": items, "now": now}
 
 
 def no_store(target):
@@ -161,7 +226,8 @@ def runs(target, query=""):
 
 
 class StatusHandler(BaseHTTPRequestHandler):
-    """`GET /status` and `GET /runs`: 404 for other paths, 405 otherwise.
+    """`GET /status`, `GET /runs` and `GET /attention`: 404 for other paths,
+    405 otherwise.
 
     "Otherwise" is every other method, HEAD and OPTIONS included: a client
     that speaks anything but GET gets a JSON refusal it can parse, never
@@ -180,6 +246,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             code, body = status(self.server.target)
         elif path == "/runs":
             code, body = runs(self.server.target, parts.query)
+        elif path == "/attention":
+            code, body = attention(self.server.target)
         else:
             code, body = 404, {"error": "not found", "path": path}
         self.answer(code, body)
