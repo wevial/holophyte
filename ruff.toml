@@ -1,14 +1,14 @@
 # Ruff is the repo's linter. Every rule enabled here is a promise the factory
 # keeps forever, so the selection stays deliberately small: pycodestyle errors
 # and warnings, pyflakes, and import ordering. No formatter enforcement.
-[tool.ruff]
+# (top-level ruff.toml: no [tool.ruff] table)
 line-length = 88
 target-version = "py311"
 
-[tool.ruff.lint]
+[lint]
 select = ["E", "F", "W", "I", "C90"]
 
 # McCabe cyclomatic complexity ceiling; existing offenders carry a per-function
 # `noqa: C901` naming the reason and the work that retires it.
-[tool.ruff.lint.mccabe]
+[lint.mccabe]
 max-complexity = 12

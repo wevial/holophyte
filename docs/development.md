@@ -90,7 +90,7 @@ ruff check .
 python3 -m unittest discover -s tests
 ```
 
-The configuration lives in `pyproject.toml` under `[tool.ruff]`: line length
+The configuration lives in `ruff.toml`: line length
 88, target `py311`, and rule sets `E`, `F`, `W`, `I`, `C90` (pycodestyle
 errors and warnings, pyflakes, import ordering, McCabe complexity). Nothing is formatted, only checked.
 Every enabled rule is a promise the factory keeps forever, so the selection
