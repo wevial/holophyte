@@ -653,21 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[188 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-04T16:55:57Z — KO-243
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- holophyte/cli.py:212 [p0] Blocker: [`--requeue`](/workspace/holophyte/cli.py:212) returns before `board_config()` is called, so it does not produce the required missing-`[board] project_…
-
-## 2026-09-04T17:02:47Z — KO-243
-FAILED: swept by the supervisor in phase reviewing: time_box (15.2 min against a 10 min box (1.5x grace)); branch and worktree preserved for a human
-actual: 15.2 min · estimate: 10 min · rounds: 2
-
-## 2026-09-04T17:03:17Z — KO-243
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- linear_provider.py:409 [p0] Blocker: [linear_provider.py](/workspace/linear_provider.py:409) still reads `HOLO2_PROJECT_ID` and `HOLO2_TEAM`; the contract requires `linear_provider` to r…
+[191 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-04T17:12:26Z — KO-243
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -756,3 +742,16 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-05T00:11:46Z — KO-255
 MERGED to main as 30fb907.
 actual: 9.5 min · estimate: 20 min · rounds: 1
+
+## 2026-09-05T00:24:25Z — KO-256
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):995f8adf0d0a [p2] CRITERION 1: not met — the park is immediately closed as `failed`; the final run phase is `failed`, while the test only checks `resumePhase = awaiting_merge_app…
+- criteria:1 [p2] CRITERION 1: not met — the park is immediately closed as `failed`; the final run phase is `failed`, while the test only checks `resumePhase = awaiting_merge_app…
+
+## 2026-09-05T00:34:55Z — KO-256
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-05T00:39:55Z — KO-256
+FAILED: verify failed before merge; branch task/ko-256-merge-approve-human-parks-an preserved at 81843528941b
+actual: 28.1 min · estimate: 30 min · rounds: 2
