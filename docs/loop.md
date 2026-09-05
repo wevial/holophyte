@@ -38,8 +38,10 @@ machines it walks. Back to the [README](index.md).
    enters `awaiting_merge_approval`, the ticket goes `blocked_on_operator`
    asking `merge?`, the ledger names the branch and candidate sha, the
    branch and worktree are preserved, and the lease is released so the loop
-   claims the next ticket. The park is not a failure and is not counted as
-   one; `main` is untouched until an operator releases the run.
+   claims the next ticket. The run stays open in that phase -- no ending, no
+   outcome, no heartbeat, and the sweep leaves it alone as it does a run
+   blocked on an operator -- so it is neither a failure nor counted as one;
+   `main` is untouched until an operator releases the run.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —
@@ -120,7 +122,6 @@ stateDiagram-v2
     claimed --> killed
     claimed --> working
     failed --> addressing
-    failed --> awaiting_merge_approval
     failed --> reviewing
     failed --> verifying
     failed --> working

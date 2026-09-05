@@ -1088,14 +1088,9 @@ def release(conn, run_id, outcome, reason=None, now=None,
         # resumable are worth recording — a run that failed while `claimed` or
         # mid-merge has no work phase to go back to, and `resume()` reads the
         # NULL as §4's edge back to `working`.
-        # `awaiting_merge_approval` is kept too: a run parked there by
-        # `[merge] approve = "human"` is released like a failure so the lease
-        # comes back, and this column is the only place the store still says
-        # the run is an approved candidate waiting for a person, not work
-        # that stopped.
         resume_phase = (stopped_in
                         if TERMINAL_PHASES[outcome] == "failed"
-                        and stopped_in in RESUMABLE_WORK_PHASES | PARKED_PHASES
+                        and stopped_in in RESUMABLE_WORK_PHASES
                         else None)
         # `reviewRoundCount` is stamped here, from the rows themselves, for
         # the same reason the phase is: this is the close-out, so this is the
@@ -1111,6 +1106,51 @@ def release(conn, run_id, outcome, reason=None, now=None,
             (now, outcome, reason, outcome_class, resume_phase, merge_sha,
              run_id, run_id),
         )
+        conn.execute(
+            "UPDATE projects SET activeRunId = NULL"
+            " WHERE id = ? AND activeRunId = ?",
+            (project_id, run_id),
+        )
+        conn.execute(
+            "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
+            " WHERE id = ? AND activeRunId = ?",
+            (run_id, ticket_id, run_id),
+        )
+
+
+def park(conn, run_id, phase, note=None, now=None):
+    """Park the live run `run_id` in `phase` and give its leases back.
+
+    `[merge] approve = "human"`: the reviewer approved and the pre-merge
+    verify passed, and a person now has to say "merge". The run is not over
+    -- nothing failed and nothing merged, and the candidate it holds is the
+    one the answer is about -- so unlike `release()` this stamps no
+    `endedAt` and no outcome: `runs.phase` reads `awaiting_merge_approval`
+    for as long as the run waits, which is what the acceptance criterion and
+    `/attention` read. What it shares with `release()` is the lease half,
+    written the same way and in the same transaction as the phase move:
+    `projects.activeRunId` is cleared so the loop can claim the next ticket,
+    and the ticket's pointer moves from `activeRunId` to `lastRunId` so the
+    parked run stays reachable from its ticket exactly as an ended one is.
+
+    `phase` must be one of `PARKED_PHASES`; the sweep leaves those alone, so
+    a run parked here is not reported dead for having no heartbeat. Parking
+    a run that has already ended raises `RunEnded`, and an unknown `run_id`
+    raises `ValueError`, both before any write.
+    """
+    if phase not in PARKED_PHASES:
+        raise ValueError(f"{phase!r} is not a phase a run is parked in")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT ticketId, projectId FROM runs WHERE id = ?", (run_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        ticket_id, project_id = row
+        # `set_phase()` is what refuses an ended run, with `RunEnded`.
+        set_phase(conn, run_id, phase, note=note, now=now)
         conn.execute(
             "UPDATE projects SET activeRunId = NULL"
             " WHERE id = ? AND activeRunId = ?",
@@ -1616,12 +1656,13 @@ RESUMABLE_WORK_PHASES = frozenset(
     {"working", "verifying", "reviewing", "addressing"}
 )
 RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {"failed", "blocked_on_operator"}
-# The phase `[merge] approve = "human"` parks an approved run in before
-# releasing it. Not resumable as a live phase -- the run is over by then --
-# but recorded as a failed run's `resumePhase`, so a resume re-enters the
-# park rather than `working`: the candidate was approved and verified, and
-# sending it back to the implementer would throw that away.
-PARKED_PHASES = frozenset({"awaiting_merge_approval"})
+# The phases a run is parked *in*, alive and waiting for a person: the loop
+# wrote a question (or, under `[merge] approve = "human"`, an approved
+# candidate), gave the lease back and went home. Neither has a heartbeat by
+# design, so the supervisor sweep leaves both alone; `park()` is the write
+# that puts a run in `awaiting_merge_approval`, and the ticket that releases
+# it (`--approve`) is what moves it on.
+PARKED_PHASES = frozenset({"blocked_on_operator", "awaiting_merge_approval"})
 
 # §4's run graph as an edge table, keyed like `TICKET_TRANSITIONS` so both
 # state machines render through `render_state_graph()` the same way. The
@@ -1633,7 +1674,8 @@ PARKED_PHASES = frozenset({"awaiting_merge_approval"})
 # is a key so a declared phase always renders as a node; `squashing` is
 # declared but has no edge because this loop never enters it (the merge is
 # --no-ff). `awaiting_merge_approval` is entered from `merge_gate` under
-# `[merge] approve = "human"` and left by the release that parks the run.
+# `[merge] approve = "human"` by `park()`; the run stays open there, so the
+# only edges out are the ones a release writes for a run that did not merge.
 RUN_PHASE_TRANSITIONS = {
     "claimed": frozenset({"working", "failed", "killed"}),
     "working": frozenset({"verifying", "failed", "killed"}),
@@ -1646,10 +1688,10 @@ RUN_PHASE_TRANSITIONS = {
     "merging": frozenset({"done", "failed", "killed"}),
     "squashing": frozenset(),
     "done": frozenset(),
-    # `resume()`: a failed run re-enters its `resumePhase` -- a work phase,
-    # or the merge-approval park -- or `working` when none was recorded; a
-    # `blocked_on_operator` run always re-enters `working`.
-    "failed": RESUMABLE_WORK_PHASES | PARKED_PHASES,
+    # `resume()`: a failed run re-enters its `resumePhase`, or `working`
+    # when none was recorded; a `blocked_on_operator` run always re-enters
+    # `working`.
+    "failed": RESUMABLE_WORK_PHASES,
     "blocked_on_operator": frozenset({"working"}),
     "killed": frozenset(),
 }

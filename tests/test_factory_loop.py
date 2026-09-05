@@ -1229,10 +1229,10 @@ class MergeApprovalTests(LoopFixture):
     def test_human_parks_the_approved_run_and_blocks_the_ticket(self):
         """The reviewer approved and the pre-merge verify passed, so this is
         the moment the loop used to merge: instead main is untouched, the
-        branch and worktree stay, the run is parked in
-        `awaiting_merge_approval` with its lease released, the ticket is
-        `blocked_on_operator` asking `merge?`, and the ledger names the
-        branch and candidate sha."""
+        branch and worktree stay, the run is parked alive in
+        `awaiting_merge_approval` -- no ending, no outcome -- with its lease
+        released, the ticket is `blocked_on_operator` asking `merge?`, and
+        the ledger names the branch and candidate sha."""
         self.configure('[merge]\napprove = "human"\n')
         provider = StubProvider(a_task())
 
@@ -1244,15 +1244,17 @@ class MergeApprovalTests(LoopFixture):
         self.assertIn(BRANCH, self.branches())
         self.assertIn("the scripted work", self.subjects(BRANCH))
         self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
-        self.assertEqual(self.transitions()[-3:],
+        self.assertEqual(self.transitions()[-2:],
                          ["reviewing -> merge_gate",
-                          "merge_gate -> awaiting_merge_approval",
-                          "awaiting_merge_approval -> failed"])
+                          "merge_gate -> awaiting_merge_approval"])
         self.assertEqual(
-            self.read("SELECT resumePhase, outcomeClass FROM runs"),
-            [("awaiting_merge_approval", "infra")])
+            self.read("SELECT phase, endedAt, outcome FROM runs"),
+            [("awaiting_merge_approval", None, None)])
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),
                          [(None,)])
+        self.assertEqual(
+            self.read("SELECT activeRunId, lastRunId FROM tickets"),
+            [(None, 1)])
         self.assertEqual(
             self.read("SELECT status, blockedQuestion FROM tickets"),
             [("blocked_on_operator", "merge?")])

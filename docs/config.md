@@ -254,9 +254,11 @@ With `approve = "auto"` a clean merge gate merges, as it always has. With
 question `merge?` (which `/attention` lists under `blocked`, and the drawer
 shows), a ledger comment names the branch and the candidate sha, and the
 branch and worktree are preserved exactly as after a refused merge. The lease
-is released, so the loop claims the next ready ticket; the park is not a
-failure -- it neither stops the pass under `stop_on_failure` nor counts
-toward the escalation that blocks a ticket, and the exit status is not spent
-on it. Nothing merges until the operator says so; releasing a parked run is
-the next ticket's `--approve`. The value must be `"auto"` or `"human"`;
-anything else is a startup error naming the key.
+is released, so the loop claims the next ready ticket, but the run itself is
+not ended: it stays open in `awaiting_merge_approval` with no outcome, the
+supervisor sweep leaves it alone as it does a run blocked on an operator, and
+the park is not a failure -- it neither stops the pass under
+`stop_on_failure` nor counts toward the escalation that blocks a ticket, and
+the exit status is not spent on it. Nothing merges until the operator says
+so; releasing a parked run is the next ticket's `--approve`. The value must
+be `"auto"` or `"human"`; anything else is a startup error naming the key.

@@ -545,15 +545,21 @@ class NotSweptTests(SweepTestCase):
         self.assertEqual(self.strikes(live)[0], 1)
 
     def test_a_run_parked_for_an_operator_is_not_swept(self):
-        """It has no heartbeat by design: it is waiting for a human answer."""
-        parked = self.a_run(phase="blocked_on_operator")
+        """It has no heartbeat by design: it is waiting for a human answer,
+        or (`[merge] approve = "human"`) for a human to say merge."""
+        for phase in ("blocked_on_operator", "awaiting_merge_approval"):
+            with self.subTest(phase=phase):
+                self.setUp()
+                parked = self.a_run(phase=phase)
 
-        first = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 6 * MINUTE)
-        second = holophyte.supervisor.sweep(self.tgt, self.conn, T0 + 12 * MINUTE)
+                first = holophyte.supervisor.sweep(self.tgt, self.conn,
+                                                   T0 + 6 * MINUTE)
+                second = holophyte.supervisor.sweep(self.tgt, self.conn,
+                                                    T0 + 12 * MINUTE)
 
-        self.assertEqual((first.swept, second.swept), (0, 0))
-        self.assertEqual(second.trips, [])
-        self.assertIsNone(self.strikes(parked))
+                self.assertEqual((first.swept, second.swept), (0, 0))
+                self.assertEqual(second.trips, [])
+                self.assertIsNone(self.strikes(parked))
 
 
 class AtomicityTests(SweepTestCase):

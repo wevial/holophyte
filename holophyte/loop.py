@@ -777,17 +777,15 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
     """`[merge] approve = "human"`: stop an approved, verified candidate at
     the gate for a person to say "merge".
 
-    Four writes, in the order a reader of the store needs them: the run's
-    phase becomes `awaiting_merge_approval`; the ticket goes
-    `blocked_on_operator` asking `merge?`, which is what `/attention` shows;
-    the ledger names the branch and the candidate sha the answer is about;
-    then `MergeParked` ends the run through the failure path, which releases
-    the lease and preserves the branch and worktree exactly as a refused
-    merge would. Nothing touches main.
+    Three writes, in the order a reader of the store needs them: the ticket
+    goes `blocked_on_operator` asking `merge?`, which is what `/attention`
+    shows; `store.park()` moves the run to `awaiting_merge_approval` and
+    gives the lease back in one transaction, leaving the run open -- no
+    `endedAt`, no outcome, because nothing failed and nothing merged; the
+    ledger names the branch and the candidate sha the answer is about. Then
+    `MergeParked` unwinds `run_task()` so the branch and worktree are left in
+    place exactly as after a refused merge. Nothing touches main.
     """
-    set_phase(conn, run_id, "awaiting_merge_approval",
-              f"approved and verified; {branch} at {sha[:12]} waits for"
-              " a human to say merge ([merge] approve = \"human\")")
     # The ticket row the run was claimed on, read off the run: the frame
     # carries the board's issue id, and the status move keys on the store's.
     ticket_id = store.read.run_snapshot(conn, run_id).ticketId
@@ -797,6 +795,9 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
         # operator asked to sign off on.
         print(f"[holo2] {task_id} could not be moved to blocked_on_operator;"
               " parking the run anyway")
+    store.park(conn, run_id, "awaiting_merge_approval",
+               f"approved and verified; {branch} at {sha[:12]} waits for"
+               " a human to say merge ([merge] approve = \"human\")")
     print(f"[holo2] approved and verified; parked {branch} at {sha[:12]}"
           " awaiting merge approval")
     ledger(provider, task_id, "AWAITING MERGE APPROVAL: review approved and "
@@ -1161,12 +1162,11 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
     try:
         merged = run_task(target, task, conn, run_id, provider)
     except MergeParked as e:
-        # Not a failure to the loop, though it closes out as one below:
-        # the lease comes back and the branch is preserved the same way.
-        reason = str(e)
-        outcome_class = outcome_class_of(e)
+        # Not a failure and not an ending: `store.park()` has already moved
+        # the run to `awaiting_merge_approval` and given the lease back, so
+        # there is nothing to release and nothing to close out below.
         merged = PARKED
-        print(f"[holo2] run parked: {reason}")
+        print(f"[holo2] run parked: {e}")
     except RunFailure as e:
         reason = str(e)
         outcome_class = outcome_class_of(e)
@@ -1182,7 +1182,11 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
         reason = " ".join(f"{type(e).__name__}: {e}".split())
         print(f"[holo2] run crashed: {reason}")
     finally:
-        if merged:
+        if merged is PARKED:
+            # Parked, alive, lease released: the run's own outcome is still
+            # open, so there is no entry to render and no failure to count.
+            pass
+        elif merged:
             release_run(conn, run_id, True,
                         merge_sha=merged if isinstance(merged, str) else None)
             # `in_flight -> merged`, projected as Done. A run that did
@@ -1196,10 +1200,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
             refresh_findings(target, conn)
         else:
             # The failure close-out: release, escalate if this failure
-            # was one too many, regenerate the window. A `PARKED` run
-            # takes this path too -- same release, same preserved branch;
-            # its ticket is already parked, so the escalation is a no-op
-            # and its `infra` class keeps it out of the count. Shared with the
+            # was one too many, regenerate the window. Shared with the
             # supervisor sweep, which fails runs this loop is no
             # longer around to fail itself. Its own failure (a locked
             # store, say) must not replace what was in flight — a

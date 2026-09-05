@@ -228,5 +228,42 @@ class ContractSnapshotTests(unittest.TestCase):
         self.assertEqual(store.contract_drift(claimed, None), ())
 
 
+class ParkTests(ClaimLeaseTests):
+    """`park()`: the write behind `[merge] approve = "human"`. The run
+    stays alive in the parked phase; the leases come back as `release()`
+    gives them back; so the next claim on the project succeeds."""
+
+    def test_park_frees_the_leases_but_does_not_end_the_run(self):
+        run_id = store.claim(self.conn, self.project_id, self.ticket_id, now=1700)
+        store.set_phase(self.conn, run_id, "merge_gate", now=1800)
+
+        store.park(self.conn, run_id, "awaiting_merge_approval",
+                   note="waiting for a human", now=1900)
+
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT phase, endedAt, outcome, lastHeartbeat FROM runs"
+            ).fetchall(),
+            [("awaiting_merge_approval", None, None, 1900)])
+        self.assertEqual(self.leases(), (None, None))
+        self.assertEqual(
+            self.conn.execute("SELECT lastRunId FROM tickets").fetchone(),
+            (run_id,))
+        other = self.add_ticket("iss_2", "HOL-2")
+        self.conn.commit()
+        self.assertEqual(
+            store.claim(self.conn, self.project_id, other, now=2000), run_id + 1)
+
+    def test_park_refuses_an_ended_run_and_a_phase_that_is_not_a_park(self):
+        run_id = store.claim(self.conn, self.project_id, self.ticket_id, now=1700)
+        with self.assertRaises(ValueError):
+            store.park(self.conn, run_id, "merging")
+        store.release(self.conn, run_id, "failed", now=1800)
+        with self.assertRaises(store.RunEnded):
+            store.park(self.conn, run_id, "awaiting_merge_approval")
+        self.assertEqual(
+            self.conn.execute("SELECT phase FROM runs").fetchone(), ("failed",))
+
+
 if __name__ == "__main__":
     unittest.main()
