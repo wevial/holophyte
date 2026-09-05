@@ -2,7 +2,7 @@
 
 `--report`, `--requeue KO-n --note TEXT`, `--file-ticket PATH [--state]
 [--priority]`,
-`--sweep [--act]`, `--supervise`, `--serve HOST:PORT` and the loop itself
+`--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT` and the loop itself
 dispatch from here to `holophyte.loop`, `holophyte.board`,
 `holophyte.supervisor` and `holophyte.serve`; the `Target`
 is built once from the command line and handed down, and the board
@@ -146,10 +146,10 @@ def cli(argv=None):
              "sweep_interval_sec, default %ds) until SIGINT/SIGTERM, as the "
              "target's one supervisor: a second one for the same target "
              "exits naming the first" % SUPERVISE_INTERVAL_SEC)
-    # The bind address is required and explicit: a default would pick an
-    # interface nobody named, and a read daemon on the wrong one is either
-    # unreachable or public. The value is checked while parsing, so a port
-    # that is not a number is a usage error naming the shape, not a bind
+    # The port is required and a bare one binds loopback: the only default
+    # interface is the one that publishes nothing, and a read daemon on any
+    # other must be named. The value is checked while parsing, so a port
+    # that is not a number is a usage error naming the shapes, not a bind
     # failure later.
     modes.add_argument(
         "--serve", metavar=ADDRESS_SHAPE, type=serve_address,

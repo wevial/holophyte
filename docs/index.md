@@ -82,7 +82,7 @@ settings go in `~/.holophyte/<slug>/config.toml`.
 ```
 python3 factory.py /path/to/repo                  # run the loop
 python3 factory.py --supervise /path/to/repo      # keep it honest
-python3 factory.py --serve HOST:PORT /path/to/repo   # read-only JSON daemon
+python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback
 ```
 
 The full mode list is in the [CLI reference](reference/cli.md); every

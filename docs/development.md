@@ -37,7 +37,7 @@ Each module, one line:
   `mirror_push` says which state each status shows as.
 - `holophyte/supervisor.py` — the stale-run sweep, its report, the lock and
   the `--supervise` loop.
-- `holophyte/serve.py` — `--serve HOST:PORT`, the read-only HTTP daemon.
+- `holophyte/serve.py` — `--serve PORT|HOST:PORT`, the read-only HTTP daemon.
 - `holophyte/loop.py` — the loop: worktree setup and reuse, `run_task`,
   `main`, `report`, `requeue` and the self-merge re-exec.
 - `holophyte/reexec.py` — `reexec_self`, the shared self re-exec the loop

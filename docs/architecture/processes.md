@@ -52,10 +52,11 @@ gets, and never touches a worktree.
 
 ## The serve daemon
 
-`python3 factory.py --serve HOST:PORT /path/to/repo`
+`python3 factory.py --serve 7710 /path/to/repo` (loopback; `HOST:PORT` to bind elsewhere)
 
 One per target, as a systemd user unit (`holophyte-serve@SLUG`). A
-`ThreadingHTTPServer` bound to the one address given; every request opens
+`ThreadingHTTPServer` bound to the one address given, loopback when only
+a port is; every request opens
 the store read-only, answers, closes. It imports `store.read` and nothing
 from `store`, so it cannot write. Endpoints in the
 [HTTP reference](../reference/http.md). It has no authentication; the bind

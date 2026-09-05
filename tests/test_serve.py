@@ -1,4 +1,4 @@
-"""`--serve HOST:PORT`: `/status` and `/runs` over a read-only connection
+"""`--serve PORT|HOST:PORT`: `/status` and `/runs` over a read-only connection
 per request.
 
 A seeded temporary store under a `HOLOPHYTE_HOME` of the test's own, served
@@ -549,19 +549,80 @@ class RunsTests(ServeTestCase):
         self.assertFalse(self.db.exists())
 
 
+class ParseAddressTests(unittest.TestCase):
+
+    def test_a_bare_port_binds_loopback(self):
+        self.assertEqual(holophyte.serve.parse_address("7710"),
+                         ("127.0.0.1", 7710))
+        self.assertEqual(holophyte.serve.parse_address("0"), ("127.0.0.1", 0))
+
+    def test_host_port_is_the_pair_as_typed(self):
+        self.assertEqual(holophyte.serve.parse_address("100.64.0.9:7710"),
+                         ("100.64.0.9", 7710))
+        self.assertEqual(holophyte.serve.parse_address("::1:8787"),
+                         ("::1", 8787))
+
+    def test_anything_else_is_refused_naming_both_shapes(self):
+        for text in (":7710", "host:", "abc", "-1", "7710 ", "host:7a"):
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError) as raised:
+                    holophyte.serve.parse_address(text)
+                message = str(raised.exception)
+                self.assertIn("PORT|HOST:PORT", message)
+                self.assertIn(repr(text), message)
+
+
 class CliTests(ServeTestCase):
 
     def test_a_malformed_address_is_a_usage_error_naming_the_shape(self):
         for argv in (["--serve"], ["--serve", "localhost"],
-                     ["--serve", "127.0.0.1:abc"]):
+                     ["--serve", "127.0.0.1:abc"], ["--serve", ":7710"]):
             with self.subTest(argv=argv):
                 stderr = io.StringIO()
                 with contextlib.redirect_stderr(stderr), \
                         self.assertRaises(SystemExit) as raised:
                     holophyte.cli.cli([str(self.target), *argv])
                 self.assertEqual(raised.exception.code, 2)
-                self.assertIn("HOST:PORT", stderr.getvalue())
+                self.assertIn("PORT|HOST:PORT", stderr.getvalue())
                 self.assertFalse(self.db.exists())
+
+    def test_a_bare_port_serves_status_on_loopback(self):
+        self.seed()
+        out = io.StringIO()
+        seen = {}
+
+        done = threading.Event()
+
+        def poll_then_stop():
+            # A refused address returns before anything is served; stop
+            # polling then rather than hang the test on a usage error.
+            while "serving" not in out.getvalue() and not done.is_set():
+                sleep(0.01)
+            if done.is_set():
+                return
+            host, port = out.getvalue().splitlines()[0].split()[2].split(":")
+            seen["host"] = host
+            conn = http.client.HTTPConnection(host, int(port), timeout=10)
+            conn.request("GET", "/status")
+            seen["status"] = conn.getresponse().status
+            conn.close()
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        stopper = threading.Thread(target=poll_then_stop)
+        stopper.start()
+        self.addCleanup(stopper.join)
+        self.addCleanup(done.set)
+        try:
+            with contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                code = holophyte.cli.cli([str(self.target), "--serve", "0"])
+        finally:
+            done.set()
+        stopper.join()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(seen["host"], "127.0.0.1")
+        self.assertEqual(seen["status"], 200)
 
     def test_serve_announces_the_bound_address_and_stops_on_sigterm(self):
         self.seed()

@@ -1,9 +1,10 @@
-"""`--serve HOST:PORT`: a read-only HTTP daemon answering `/status`,
+"""`--serve PORT|HOST:PORT`: a read-only HTTP daemon answering `/status`,
 `/runs` and `/attention` as JSON.
 
 One `ThreadingHTTPServer` per target, bound to the one address the command
-line names, so a drawer or dashboard on another host of the tailnet can poll
-the factory without ssh. Every request opens the store through
+line names -- loopback when it names only a port -- so a drawer on this
+machine, or on another host of the private network when a host is given,
+can poll the factory without ssh. Every request opens the store through
 `store.read.open_readonly()`, reads, and closes it: the daemon never holds a
 connection between requests and never holds a write connection at all,
 which is why this module imports `store.read` and nothing from `store`
@@ -36,7 +37,8 @@ from holophyte.config import sweep_config
 from holophyte.report import ended_rows, host_label
 from holophyte.supervisor import SWEEPABLE_PHASES
 
-ADDRESS_SHAPE = "HOST:PORT"
+ADDRESS_SHAPE = "PORT|HOST:PORT"
+LOOPBACK = "127.0.0.1"
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 # How long a failed run stays on `/attention`: a failure the operator has
 # not requeued or merged past in a day is one they have not looked at.
@@ -44,16 +46,23 @@ FAILED_WINDOW_MS = 24 * 60 * 60 * 1000
 
 
 def parse_address(text):
-    """`HOST:PORT` as a `(host, port)` pair; ValueError naming the shape.
+    """`PORT` or `HOST:PORT` as a `(host, port)` pair; ValueError naming both.
 
-    The port is a non-negative integer -- 0 asks the kernel for an ephemeral
-    one, which is how the tests bind. The host is whatever precedes the last
+    A bare port binds loopback: the daemon has no authentication and the
+    bind address is its only boundary, so the short form is the safe one
+    and reaching another machine takes typing a host. The port is a
+    non-negative integer -- 0 asks the kernel for an ephemeral one, which
+    is how the tests bind. With a host, it is whatever precedes the last
     colon, so nothing here decides what a valid hostname is: the bind does.
     """
-    host, sep, port = str(text).rpartition(":")
-    if not sep or not host or not port.isdigit():
+    text = str(text)
+    if text.isdecimal():
+        return LOOPBACK, int(text)
+    host, sep, port = text.rpartition(":")
+    if not sep or not host or not port.isdecimal():
         raise ValueError(f"--serve takes {ADDRESS_SHAPE} (a non-negative"
-                         f" integer port), got {text!r}")
+                         f" integer port, loopback when no host is given),"
+                         f" got {text!r}")
     return host, int(port)
 
 

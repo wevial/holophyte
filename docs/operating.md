@@ -61,16 +61,18 @@ the factory ships the invocation and nothing around it.
 
 ## Serving
 
-`--serve HOST:PORT` runs a read-only HTTP daemon for one target, so a drawer
-or dashboard can poll the factory over HTTP instead of reading the store:
+`--serve PORT` runs a read-only HTTP daemon for one target on loopback, so
+a drawer or dashboard can poll the factory over HTTP instead of reading the
+store:
 
 ```
-python3 factory.py --serve 127.0.0.1:8787 /path/to/repo
+python3 factory.py --serve 7710 /path/to/repo
 ```
 
-On one machine, bind to `127.0.0.1`. When the drawer runs on another
-machine, bind to this host's address on the private network between them
-([Across machines](operating/hosts.md)).
+A bare port binds `127.0.0.1`, which is the whole setup on one machine.
+When the drawer runs on another machine, give the host too:
+`--serve HOST:PORT` binds this host's address on the private network
+between them ([Across machines](operating/hosts.md)).
 
 It answers three paths as JSON, every response `Cache-Control: no-store`, and
 opens the store through a read-only connection per request; it never holds
@@ -88,13 +90,14 @@ what the network sees rather than the machine name.
 
 The boundary is the bind address and nothing else. The daemon has
 **no authentication**: it binds to the one address the command line names
-and anyone who can reach that port can read run and ticket identifiers,
-phases, heartbeat ages and the estimate-vs-actual history. Bind it to
-`127.0.0.1`, or to one private-network address when another machine must
-reach it. Binding to the wildcard address (all interfaces) publishes that
-history to every network the host is on, and there is no flag, token or
-allow-list in the factory that would narrow it back; whoever can reach the
-address is the whole access control, by design.
+(loopback when it names only a port) and anyone who can reach that port can
+read run and ticket identifiers, phases, heartbeat ages and the
+estimate-vs-actual history. Keep the bare port unless another machine must
+reach it, and then name one private-network address. Binding to the
+wildcard address (all interfaces) publishes that history to every network
+the host is on, and there is no flag, token or allow-list in the factory
+that would narrow it back; whoever can reach the address is the whole
+access control, by design.
 
 
 ## Serving standing
@@ -114,7 +117,7 @@ The unit reads three keys from `~/.holophyte/SLUG/serve.env`:
 | Key | Value |
 | --- | --- |
 | `HOLOPHYTE_TARGET` | the target repository path |
-| `HOLOPHYTE_SERVE_ADDRESS` | `127.0.0.1`, or the host's private-network address |
+| `HOLOPHYTE_SERVE_ADDRESS` | `127.0.0.1` (what `--serve PORT` binds), or the host's private-network address |
 | `HOLOPHYTE_SERVE_PORT` | the port from the convention below |
 
 The address is `127.0.0.1` on one machine, or the host's address on the
