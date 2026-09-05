@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 docs/v2/
 tmp/
+site/
