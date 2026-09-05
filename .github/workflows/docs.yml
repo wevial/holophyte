@@ -1,8 +1,9 @@
 name: docs
 
-# Builds the MkDocs site with --strict as a check. Hosting is Cloudflare Pages
-# connected to this repository (build: pip install mkdocs-material && mkdocs
-# build; output: site), so no deploy step and no secrets live here.
+# Builds the MkDocs site with --strict as a check. Hosting is Cloudflare
+# Workers Builds connected to this repository (build: pip install
+# mkdocs-material && mkdocs build; deploy: npx wrangler deploy, see
+# wrangler.jsonc), so no deploy step and no secrets live here.
 
 on:
   pull_request:
