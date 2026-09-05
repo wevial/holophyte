@@ -16,7 +16,7 @@ section and remain in force; new ones land here.
 | 3 | [Branch prefix is configurable](0003-branch-prefix.md) | accepted |
 | 4 | [The loop starts its own supervisor](0004-supervisor-spawn.md) | accepted |
 | 5 | [Frontend before the Rust port; v0 served by the daemon](0005-frontend-before-rust.md) | accepted |
-| 6 | [Docs on Cloudflare Pages](0006-docs-hosting.md) | accepted |
+| 6 | [Docs on Cloudflare Workers](0006-docs-hosting.md) | accepted |
 | 7 | [Merge modes: local or PR, with a round cap](0007-merge-modes.md) | proposed |
 | 8 | [Human approval, manual checks, and a checker role](0008-approval-and-checks.md) | proposed |
 | 9 | [The ledger lives in the store](0009-ledger.md) | proposed |
