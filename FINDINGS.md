@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[183 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-03T23:47:57Z — KO-240
-MERGED to main.
-actual: 6.5 min · estimate: 15 min · rounds: 1
-
-## 2026-09-03T23:55:37Z — KO-241
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-03T23:56:24Z — KO-241
-MERGED to main.
-actual: 8.4 min · estimate: 10 min · rounds: 1
+[186 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-04T16:46:44Z — KO-242
 Round 1: pass · reviewer codex-sol-medium · verify passed
@@ -754,3 +743,16 @@ Round 3: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-04T23:48:59Z — KO-253
 MERGED to main as 74c3f4f.
 actual: 17.9 min · estimate: 20 min · rounds: 3
+
+## 2026-09-04T23:55:57Z — KO-254
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):7709bae9d47f [p2] CRITERION 1: met — tests/test_docs.py::SingleMachineTests::test_no_dotted_address_outside_the_design_notes CRITERION 2: not met — `docs/reference/glossary.md` s…
+- criteria:2 [p2] CRITERION 2: not met — `docs/reference/glossary.md` still defines “writer host” and “operator seat,” violating the contract that this vocabulary appears only on…
+
+## 2026-09-05T00:01:26Z — KO-254
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-05T00:02:16Z — KO-254
+MERGED to main as 6ab8bbf.
+actual: 13.3 min · estimate: 30 min · rounds: 2
