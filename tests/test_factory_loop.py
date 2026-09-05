@@ -1303,6 +1303,48 @@ class MergeApprovalTests(LoopFixture):
             self.assertEqual(holophyte.board.failure_history(conn, ticket_id),
                              [])
 
+    def test_approve_then_the_next_claim_merges_the_candidate_unreviewed(self):
+        """`--approve KO-n` releases the parked run, and the loop's next
+        claim takes the preserved candidate straight to the gate: no
+        implementer or reviewer turn (an empty script would raise on any),
+        the pre-merge verify runs again, the candidate lands on main
+        `--no-ff`, the new run walks `claimed -> merge_gate -> merging ->
+        done` and is marked merged, and the parked run is over with its
+        resume point recorded."""
+        self.configure('[merge]\napprove = "human"\n')
+        marker = self.worktrees.parent / "verified"
+        task = dict(a_task(), verify=f"touch {marker}")
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=StubProvider(dict(task)))
+        marker.unlink()
+        out = io.StringIO()
+        holophyte.loop.approve(self.tgt, "KO-131", "ok", out=out)
+        self.assertIn("KO-131 approved: run 1", out.getvalue())
+
+        fake, guard = self.loop(provider=StubProvider(dict(task)))
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(guard.spawned, [])
+        self.assertTrue(marker.exists(), "the pre-merge verify did not run")
+        self.assertIn("the scripted work", self.subjects())
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(
+            self.read("SELECT id, phase, outcome, resumePhase FROM runs"
+                      " ORDER BY id"),
+            [(1, "failed", "abandoned", "merge_gate"),
+             (2, "done", "merged", None)])
+        self.assertEqual(
+            [summary.split(":")[0] for (summary,) in
+             self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                       " AND kind = 'phase_change' ORDER BY seq")],
+            ["claimed -> merge_gate", "merge_gate -> merging",
+             "merging -> done"])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+
     def test_auto_and_an_absent_table_merge_as_before(self):
         for toml in ('[merge]\napprove = "auto"\n', None):
             with self.subTest(config=toml):

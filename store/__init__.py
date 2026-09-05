@@ -282,7 +282,7 @@ CREATE TABLE IF NOT EXISTS interventions (
                              'review_stuck', 'linear_cancelled', 'manual')),
     "action"  TEXT    NOT NULL
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
-                            'close_out', 'requeue')),
+                            'close_out', 'requeue', 'approve')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL
@@ -297,8 +297,10 @@ CREATE TABLE IF NOT EXISTS interventions (
 # one column short. The ladder itself stays ADDED_COLUMNS; the number is
 # bookkeeping around it, not a replacement for it. Version 3 is the
 # `interventions` action CHECK admitting 'requeue' (KO-223); version 4 is
-# `runs.mergeSha`, the merge commit a merged run landed as (KO-246).
-SCHEMA_VERSION = 4
+# `runs.mergeSha`, the merge commit a merged run landed as (KO-246); version
+# 5 is the action CHECK admitting 'approve', the operator's answer to a run
+# parked for merge approval (KO-258).
+SCHEMA_VERSION = 5
 
 # Every join the loop, the sweep and the FINDINGS renderer perform goes
 # through one of these three foreign keys; without an index each is a full
@@ -498,15 +500,16 @@ def init(conn):
 
 
 def _widen_interventions_action(conn):
-    """Rebuild `interventions` when its action CHECK predates 'requeue'.
+    """Rebuild `interventions` when its action CHECK predates 'approve'.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
     cannot ALTER a CHECK, so a store initialized before a value shipped
     would refuse the row forever — which is how the KO-146 incident ended in
     raw SQL and four falsely-labeled 'resume' rows, the precedent that added
-    'close_out' here. 'requeue' (schema version 3) rides the same rebuild:
-    the newest value is the one tested for, so a store from before either
-    shipped is carried forward in one pass. The stored DDL says which world
+    'close_out' here. 'requeue' (schema version 3) and 'approve' (schema
+    version 5) ride the same rebuild: the newest value is the one tested
+    for, so a store from before any of them shipped is carried forward in
+    one pass. The stored DDL says which world
     this store is from; the rebuild is the standard rename-copy-drop from
     `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store and
     a second call both skip it. The column list is unchanged, so existing
@@ -523,7 +526,7 @@ def _widen_interventions_action(conn):
     # literal appearing anywhere else (a future comment, a default) must not
     # skip a rebuild that is still needed.
     (ddl,) = row
-    if "'requeue'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
+    if "'approve'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -1444,6 +1447,87 @@ def requeue(conn, ticket_id, note, now=None):
     return last_run_id
 
 
+class ApproveRefused(Exception):
+    """An approval `approve()` will not do; nothing was written.
+
+    The ticket does not exist, has a live run, or its newest run is not
+    parked in `awaiting_merge_approval` -- each is the same answer to the
+    operator: there is no candidate waiting for "merge?" here, so the
+    message names the ticket's status and its run's phase, and the command
+    line exits on it.
+    """
+
+
+# The phase an approved candidate's next run resumes into: written as the
+# parked run's `resumePhase` by `approve()`, read back by the loop's claim
+# path, which goes straight to the gate (`RUN_PHASE_TRANSITIONS['claimed']`).
+APPROVED_RESUME_PHASE = "merge_gate"
+
+
+def approve(conn, ticket_id, note, now=None):
+    """Release a ticket parked for merge approval; return the parked run's id.
+
+    The operator's answer to `merge?` under `[merge] approve = "human"`, as
+    one transaction: an `interventions` row with action `approve` carrying
+    `note`, the parked run ended -- outcome `abandoned`, because it neither
+    merged nor failed and the next run is what merges its candidate -- with
+    `resumePhase` set to `APPROVED_RESUME_PHASE`, and the ticket walked to
+    `ready`. The loop's next claim reads that `resumePhase` off the ticket's
+    newest run and, its worktree still standing, skips implementation and
+    review and takes the candidate straight to the merge gate.
+
+    Ended rather than left parked: a run is one attempt, and the attempt
+    that merges is the next one, so leaving this row open in
+    `awaiting_merge_approval` would keep `/attention`-style readers pointing
+    at a decision already made. `abandoned` is not `failed`: the escalation
+    count reads `outcome = 'failed'` only, so an approval is never a strike.
+
+    Refuses, with `ApproveRefused` and no write, anything that is not a
+    parked ticket: an unknown ticket, one with a live run, or one whose
+    newest run is in any phase but `awaiting_merge_approval` (ready with no
+    run yet, failed, merged). The refusal names the ticket's status and the
+    run's phase. Touches no board state: the loop mirrors the Linear status
+    when it claims.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT linearIdentifier, status, activeRunId, lastRunId"
+            " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        if row is None:
+            raise ApproveRefused(f"ticket {ticket_id} does not exist")
+        identifier, status, active_run_id, last_run_id = row
+        if active_run_id is not None:
+            raise ApproveRefused(
+                f"{identifier} is {status} with run {active_run_id} still"
+                " live; an approval is for a run parked awaiting merge"
+                " approval")
+        run = (conn.execute("SELECT phase FROM runs WHERE id = ?",
+                            (last_run_id,)).fetchone()
+               if last_run_id is not None else None)
+        if run is None:
+            raise ApproveRefused(
+                f"{identifier} is {status} and has no run; nothing is"
+                " parked awaiting merge approval")
+        (phase,) = run
+        if phase != "awaiting_merge_approval":
+            raise ApproveRefused(
+                f"{identifier} is {status} and its newest run {last_run_id}"
+                f" is {phase}, not awaiting_merge_approval; nothing to"
+                " approve")
+        record_intervention(conn, last_run_id, "approve", note, now=now)
+        release(conn, last_run_id, "abandoned",
+                "approved for merge; the next claim resumes the candidate"
+                " at the merge gate", now=now)
+        # `release()` records a resume point for failed runs only; this one
+        # is the approval's, written once the ending is stamped.
+        conn.execute("UPDATE runs SET resumePhase = ? WHERE id = ?",
+                     (APPROVED_RESUME_PHASE, last_run_id))
+        walk_ticket(conn, ticket_id, "ready")
+    return last_run_id
+
+
 def mirror_ticket(
     conn,
     project_id,
@@ -1677,7 +1761,11 @@ PARKED_PHASES = frozenset({"blocked_on_operator", "awaiting_merge_approval"})
 # `[merge] approve = "human"` by `park()`; the run stays open there, so the
 # only edges out are the ones a release writes for a run that did not merge.
 RUN_PHASE_TRANSITIONS = {
-    "claimed": frozenset({"working", "failed", "killed"}),
+    # `claimed -> merge_gate` is the approved candidate's run: `--approve`
+    # ended the parked run with `resumePhase = 'merge_gate'`, and the claim
+    # that follows reuses its worktree and branch and goes straight to the
+    # gate -- nothing to implement or review, the candidate already was.
+    "claimed": frozenset({"working", "merge_gate", "failed", "killed"}),
     "working": frozenset({"verifying", "failed", "killed"}),
     "verifying": frozenset({"reviewing", "failed", "killed"}),
     "reviewing": frozenset({"addressing", "merge_gate", "failed", "killed"}),
@@ -1823,7 +1911,7 @@ INTERVENTION_SOURCES = ("supervisor", "human")
 INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
                          "review_stuck", "linear_cancelled", "manual")
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
-                        "close_out", "requeue")
+                        "close_out", "requeue", "approve")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

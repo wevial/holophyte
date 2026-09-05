@@ -23,6 +23,7 @@ python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails th
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
 python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback; HOST:PORT to bind elsewhere
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
+python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 ```

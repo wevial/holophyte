@@ -143,6 +143,24 @@ class LiveRun:
     host: str | None
 
 
+def approved_candidate(conn, ticket_id, run_id):
+    """The run whose approved candidate `run_id` should take to the gate.
+
+    The newest run of `ticket_id` other than `run_id` itself, if it ended
+    with `resumePhase` at the merge gate -- which is what `store.approve()`
+    writes on a run parked awaiting merge approval. Returns that run's id,
+    or None when the newest prior run is anything else: the claim then
+    starts the ticket over, as it would after a failed run.
+    """
+    row = conn.execute(
+        "SELECT id, resumePhase FROM runs"
+        " WHERE ticketId = ? AND id <> ?"
+        " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
+    if row is None or row[1] != "merge_gate":
+        return None
+    return row[0]
+
+
 def live_runs(conn, phases):
     """Every run with no `endedAt` whose phase is in `phases`, oldest id first.
 

@@ -49,6 +49,25 @@ an `interventions` row with action `requeue`. If the failure was a contract
 defect, fix the file and `--file-ticket FILE --update KO-n` first; the
 rerun reuses the preserved branch.
 
+### A run is parked awaiting merge approval
+
+```
+python3 factory.py TARGET --approve KO-n --note "looked at the diff; merge"
+# then relaunch the loop
+```
+
+Under `[merge] approve = "human"` an approved, verified candidate stops at
+the gate with the ticket `blocked_on_operator` asking `merge?` (it is what
+`/attention` lists). `--approve` writes an `interventions` row with action
+`approve` (the note defaults to `approved for merge`), ends the parked run
+with its resume point at the merge gate and walks the ticket to `ready`;
+the loop's next claim reuses the preserved worktree and branch, re-runs
+the pre-merge verify against current `main` and merges, with no
+implementer or reviewer turn. Refuses a ticket in any other state --
+ready, in flight, failed, merged -- naming it, and writes nothing then.
+To decline instead, leave the ticket parked or close the run out by hand
+through the store API.
+
 ### The supervisor ended a run that was fine
 
 Read the round findings (`FINDINGS.md`, or the store) and the sweep reason

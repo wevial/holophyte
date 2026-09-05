@@ -41,7 +41,12 @@ machines it walks. Back to the [README](index.md).
    claims the next ticket. The run stays open in that phase -- no ending, no
    outcome, no heartbeat, and the sweep leaves it alone as it does a run
    blocked on an operator -- so it is neither a failure nor counted as one;
-   `main` is untouched until an operator releases the run.
+   `main` is untouched until an operator releases the run with
+   `--approve KO-n` (see [CLI](reference/cli.md)): that ends the parked run
+   with its resume point at the merge gate and returns the ticket to the
+   queue, and the next claim reuses the preserved worktree and branch,
+   re-runs the pre-merge verify against current `main` and merges --
+   `claimed --> merge_gate` below, with no implementer or reviewer turn.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —
@@ -120,6 +125,7 @@ stateDiagram-v2
     blocked_on_operator --> working
     claimed --> failed
     claimed --> killed
+    claimed --> merge_gate
     claimed --> working
     failed --> addressing
     failed --> reviewing

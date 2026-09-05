@@ -24,6 +24,9 @@ import store.read
 # Alphabetical. Edit this list in the same change that adds or removes a
 # public function, and say why in the commit.
 EXPECTED = [
+    # KO-258: the operator's `--approve`, the release of a run parked in
+    # `awaiting_merge_approval`, one transaction like `requeue`.
+    "approve",
     "claim",
     "contract_drift",
     "contract_snapshot",
@@ -66,6 +69,7 @@ EXPECTED = [
 # exceptions a caller matches on are surface too, and each is an error
 # variant the Rust port has to carry.
 EXPECTED_CLASSES = [
+    "ApproveRefused",
     "ClaimConflict",
     "GuidanceNotAccepted",
     "IllegalTransition",
@@ -79,6 +83,9 @@ EXPECTED_CLASSES = [
 # a read that fetches the same row with a different column subset is not a
 # new function but a wider row type.
 EXPECTED_READ = [
+    # KO-258: the loop's claim path asks whether the ticket's newest prior
+    # run left an approved candidate to take to the merge gate.
+    "approved_candidate",
     # KO-245: the `serve` daemon's `/attention` reads.
     "blocked_tickets",
     "ended_runs",
