@@ -36,6 +36,7 @@ DOCUMENTED_COLUMNS = {
         # Store-owned: the merge commit a merged run landed on main as, so
         # the ticket-to-commit link is a column and not a grep of git log.
         "mergeSha",
+        "candidateSha",
         # Store-owned, not a documented field: §5 requires a resume to
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.
@@ -426,10 +427,6 @@ class StoreSchemaTests(unittest.TestCase):
         return run_id
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 # The three indexes the ticket names, by the column each one covers. Named
 # here by hand rather than read from store.INDEXES: the point is that these
 # foreign keys are indexed, whatever the module chooses to call the indexes.
@@ -509,13 +506,62 @@ class StoreSchemaVersionTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertEqual(store.SCHEMA_VERSION, 4)
-        self.assertEqual(self.user_version(), 4)
+        self.assertGreaterEqual(store.SCHEMA_VERSION, 4)
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
         self.assertIn("mergeSha", columns)
         self.assertEqual(
             conn.execute("SELECT id, outcome, mergeSha FROM runs").fetchall(),
             [(run_id, "merged", None)])
+
+    def test_a_version_4_store_gains_approve_and_still_reports(self):
+        """A store stamped 4 has an `interventions` action CHECK without
+        'approve'; opening it with this build rebuilds the table in place,
+        keeps the rows it held, stamps version 5, accepts an 'approve' row,
+        and `--report` renders the runs it held."""
+        conn = store.open(self.path)
+        store.init(conn)
+        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1")
+        run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        store.release(conn, run_id, "failed", "verify", now=1_700_000_060_000)
+        conn.execute("DROP TABLE interventions")
+        conn.executescript(VERSION_4_INTERVENTIONS_TABLE)
+        conn.execute(
+            'INSERT INTO interventions (runId, source, "trigger", "action", at)'
+            " VALUES (?, 'human', 'manual', 'requeue', ?)",
+            (run_id, 1_700_000_120_000))
+        conn.execute("PRAGMA user_version = 4")
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.user_version(), 4)
+        raw = sqlite3.connect(self.path)
+        with self.assertRaises(sqlite3.IntegrityError):
+            raw.execute(
+                'INSERT INTO interventions (runId, source, "trigger",'
+                ' "action", at) VALUES (?, \'human\', \'manual\','
+                ' \'approve\', 1)', (run_id,))
+        raw.close()
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertEqual(store.SCHEMA_VERSION, 5)
+        self.assertEqual(self.user_version(), 5)
+        self.assertEqual(
+            conn.execute('SELECT runId, "action" FROM interventions'
+                         " ORDER BY id").fetchall(),
+            [(run_id, "requeue")])
+        store.record_intervention(conn, run_id, "approve", "ok")
+        self.assertEqual(
+            conn.execute('SELECT "action" FROM interventions ORDER BY id')
+            .fetchall(), [("requeue",), ("approve",)])
+        import holophyte.report
+        table = "\n".join(holophyte.report.report_lines(conn))
+        self.assertIn("KO-1", table)
+        self.assertIn("failed", table)
 
     def test_a_store_stamped_newer_is_refused_and_untouched(self):
         self.current_unstamped_store()
@@ -555,3 +601,28 @@ class StoreSchemaVersionTests(unittest.TestCase):
         expected = {f"{table}_{column}": (table, column)
                     for (table, column) in HOT_FOREIGN_KEYS}
         self.assertEqual({k: named.get(k) for k in expected}, expected)
+
+
+# `interventions` exactly as schema version 4 shipped it: 'requeue' in the
+# action CHECK, 'approve' not yet. Kept verbatim so the migration test is
+# that a real version-4 store is carried to 5 with its rows intact.
+VERSION_4_INTERVENTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS interventions (
+    id        INTEGER PRIMARY KEY,
+    runId     INTEGER NOT NULL REFERENCES runs (id),
+    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human')),
+    "trigger" TEXT    NOT NULL
+        CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
+                             'review_stuck', 'linear_cancelled', 'manual')),
+    "action"  TEXT    NOT NULL
+        CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
+                            'close_out', 'requeue')),
+    question  TEXT,
+    guidance  TEXT,
+    at        INTEGER NOT NULL
+);
+"""
+
+
+if __name__ == "__main__":
+    unittest.main()

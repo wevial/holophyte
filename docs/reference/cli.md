@@ -13,14 +13,15 @@ always the repository path.
 | `--supervise TARGET` | the acting sweep every `sweep_interval_sec`, under the target's supervisor lock; re-execs itself when the factory code moves | store |
 | `--serve PORT TARGET` | the read-only JSON daemon on loopback (`--serve 7710` binds `127.0.0.1:7710`); `--serve HOST:PORT` binds the named address instead | store, read-only |
 | `--requeue KO-n --note TEXT TARGET` | walks a failed ticket back to `ready` with an `interventions` row | store |
+| `--approve KO-n [--note TEXT] TARGET` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer; refuses any other state, naming it | store |
 | `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] TARGET` | validates, creates the issue in the target's `[board]` project, reads it back, validates again | Linear |
 | `--file-ticket TICKET.md --update KO-n TARGET` | same, replacing an existing issue's title, body and estimate | Linear |
 
 ## Startup checks
 
 Every mode validates every `config.toml` table it can see and refuses an
-unknown key. The loop, `--supervise`, `--requeue` and `--file-ticket` need
-a `[board]` table. The loop additionally live-probes each configured agent
+unknown key. The loop, `--supervise`, `--requeue`, `--approve` and
+`--file-ticket` need a `[board]` table. The loop additionally live-probes each configured agent
 route and the reviewer image before claiming, and runs a read-only sweep
 whose output it prints.
 
@@ -29,7 +30,7 @@ whose output it prints.
 | Code | Meaning |
 | --- | --- |
 | 0 | done, or the board was empty |
-| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue |
+| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue or approval |
 | 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors |
 
 ## Output prefix

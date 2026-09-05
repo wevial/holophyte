@@ -340,6 +340,15 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     slug = f"{ident}-{slug}"
     branch = f"{branch_prefix(target)}/{slug}"
     wt = target.worktrees / slug
+    # The approved candidate: `--approve` ended the ticket's parked run with
+    # its resume point at the merge gate, and its worktree still stands.
+    # Nothing to implement or review -- the candidate was, and a person said
+    # merge -- so the run reuses the worktree and goes straight to the gate.
+    carried = _approved_candidate(conn, run_id)
+    if carried is not None and wt.exists():
+        return _resume_at_merge_gate(
+            target, conn, run_id, provider, task_id, issue_id, task, branch,
+            wt, carried, started, verify_cmd, contracts, budget_min)
     fresh = _cut_worktree(target, conn, run_id, provider, task_id, task,
                           branch, wt)
 
@@ -393,6 +402,109 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # candidate is approved and verified, and a person says "merge".
     if merge_config(target).approve == "human":
         _park_for_approval(conn, run_id, provider, task_id, branch, sha)
+    return _land(target, conn, run_id, provider, task_id, task, branch, wt,
+                 sha, ok, started, budget_min, rnd)
+
+
+def _approved_candidate(conn, run_id):
+    """The ticket's prior run whose approved candidate this run carries, or
+    None: a direct call with no store carries nothing."""
+    if conn is None:
+        return None
+    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    return store.read.approved_candidate(conn, ticket_id, run_id)
+
+
+def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
+                          task, branch, wt, carried, started, verify_cmd,
+                          contracts, budget_min):
+    """The approved candidate's run: the preserved worktree, the pre-merge
+    verify against the main of today, the merge. No implementer, no reviewer.
+
+    An approval is of one sha: the candidate the reviewer approved and the
+    pre-merge verify passed, recorded by the park as `runs.candidateSha`.
+    So before anything readies the worktree it is held to that sha -- a
+    clean tree, HEAD and the branch both on it. Anything else (a commit
+    slipped in since the park, uncommitted edits) is not the approved
+    candidate, and merging it here would land unreviewed work with the
+    implementer and reviewer both skipped; the run fails naming both shas,
+    the tree untouched -- no WIP rescue commit, nothing deleted -- for a
+    human to look at. Only then does `reuse_leftover()` ready the worktree
+    exactly as after a failed run -- main merged in when it moved on, so the
+    verify below is against current main. A candidate that turns out to
+    hold nothing beyond main is refused too: an approval is of commits, and
+    a branch with none is not what the operator signed off on. The walk is
+    `claimed -> merge_gate` directly, the one edge §4 draws for this path,
+    with the carried run named on the stream.
+    """
+    why = _candidate_drift(wt, branch, carried.sha)
+    if why is not None:
+        ledger(provider, task_id, f"FAILED to merge the approved candidate"
+                                  f" for: {task}\n{why}\nNothing was"
+                                  " committed or deleted; a human reconciles"
+                                  " the worktree before this ticket is run"
+                                  " again.")
+        raise RunFailure(f"approved candidate on {branch} is not what was"
+                         f" approved: {why}")
+    ok, why = reuse_leftover(target, wt, branch)
+    if not ok:
+        ledger(provider, task_id, f"FAILED to reuse the approved candidate's"
+                                  f" worktree for: {task}\n{why}\nNothing"
+                                  " was deleted.")
+        raise RunFailure(f"cannot reuse the approved candidate's worktree:"
+                         f" {why}")
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if sha == sh(["git", "rev-parse", "main"], target.path):
+        ledger(provider, task_id, f"FAILED to merge the approved candidate"
+                                  f" for: {task}\n{branch} holds nothing"
+                                  " beyond main; nothing to merge.")
+        raise RunFailure(f"approved candidate on {branch} holds nothing"
+                         " beyond main; nothing to merge")
+    # Only reached with a store: a direct call carries no candidate.
+    store.record_event(conn, run_id, "approved_candidate",
+                       f"resuming run {carried.run_id}'s approved candidate"
+                       f" {branch} at {sha[:12]} at the merge gate;"
+                       " no implementer or reviewer runs")
+    print(f"[holo2] {task_id}: approved candidate {branch} at {sha[:12]}"
+          f" from run {carried.run_id}; skipping to the merge gate")
+    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+    ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
+                     wt, beat_s, sha, verify_cmd, contracts)
+    return _land(target, conn, run_id, provider, task_id, task, branch, wt,
+                 sha, ok, started, budget_min, 0)
+
+
+def _candidate_drift(wt, branch, approved):
+    """Why the worktree at `wt` is not the candidate `approved` names, or
+    None when it is: a clean tree with HEAD and `branch` both on that sha.
+
+    `approved` is None only for a run parked by a module older than
+    `runs.candidateSha`; with nothing recorded there is nothing to hold the
+    tree to, so the refusal names that instead of merging on trust.
+    """
+    if approved is None:
+        return ("the park recorded no candidate sha, so nothing vouches for"
+                f" what {branch} now holds")
+    dirty = sh(["git", "status", "--porcelain"], cwd=wt)
+    if dirty:
+        return (f"the worktree holds uncommitted changes on top of the"
+                f" approved {approved[:12]}:\n{dirty}")
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if head != approved:
+        return (f"the worktree is at {head[:12]}, not the approved"
+                f" {approved[:12]}")
+    tip = sh(["git", "rev-parse", "--verify", "--quiet",
+              f"refs/heads/{branch}"], cwd=wt)
+    if tip != approved:
+        return (f"branch {branch} is at {tip[:12]}, not the approved"
+                f" {approved[:12]}")
+    return None
+
+
+def _land(target, conn, run_id, provider, task_id, task, branch, wt, sha, ok,
+          started, budget_min, rnd):
+    """The merge and the merged ledger line; returns the merge commit's sha.
+    Shared by the ordinary run and the approved candidate's."""
     merge_sha = _merge(target, conn, run_id, provider, task_id, task, branch,
                        wt, sha)
     # Nothing tells Linear the ticket is done here any more. The merge makes
@@ -797,7 +909,8 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
               " parking the run anyway")
     store.park(conn, run_id, "awaiting_merge_approval",
                f"approved and verified; {branch} at {sha[:12]} waits for"
-               " a human to say merge ([merge] approve = \"human\")")
+               " a human to say merge ([merge] approve = \"human\")",
+               candidate_sha=sha)
     print(f"[holo2] approved and verified; parked {branch} at {sha[:12]}"
           " awaiting merge approval")
     ledger(provider, task_id, "AWAITING MERGE APPROVAL: review approved and "
@@ -1274,24 +1387,68 @@ def requeue(target, identifier, note, out=None):
     target with no store has nothing to requeue and says so the same way.
     """
     out = out or sys.stdout
-    if not target.store_path.exists():
-        raise SystemExit(f"[holo2] no store at {target.store_path}")
-    conn = open_store(target)
+    conn = _operator_store(target)
     try:
-        rows = conn.execute(
-            "SELECT id FROM tickets WHERE linearIdentifier = ?",
-            (identifier,)).fetchall()
-        if not rows:
-            raise SystemExit(
-                f"[holo2] {identifier}: no such ticket in {target.store_path}")
-        if len(rows) > 1:
-            raise SystemExit(
-                f"[holo2] {identifier} names {len(rows)} tickets in"
-                f" {target.store_path}; refusing to pick one")
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            run_id = store.requeue(conn, rows[0][0], note)
+            run_id = store.requeue(conn, ticket_id, note)
         except (store.RequeueRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} requeued after run {run_id}", file=out)
     finally:
         conn.close()
+
+
+def approve(target, identifier, note, out=None):
+    """Release the ticket `identifier` parked for merge approval. Returns
+    nothing.
+
+    `--approve`'s whole body, `--requeue`'s twin: it opens the store, does
+    `store.approve()`'s one transaction -- the `approve` intervention row
+    carrying `note`, the parked run ended with its resume point at the merge
+    gate, the ticket walked to `ready` -- prints what it did and exits. The
+    loop's next claim of the ticket takes the preserved candidate straight to
+    the merge gate. Every refusal `store.approve()` makes is a `SystemExit`
+    naming the ticket's state, and nothing is written then; an identifier the
+    store has not mirrored, or a target with no store, is refused the same
+    way.
+    """
+    out = out or sys.stdout
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        try:
+            run_id = store.approve(conn, ticket_id, note)
+        except (store.ApproveRefused, ValueError) as refused:
+            raise SystemExit(f"[holo2] {refused}") from None
+        print(f"[holo2] {identifier} approved: run {run_id} released from"
+              " awaiting_merge_approval and the ticket is ready; the loop's"
+              " next claim resumes its candidate at the merge gate",
+              file=out)
+    finally:
+        conn.close()
+
+
+def _operator_store(target):
+    """The store an operator command writes to, or the exit for a target
+    that has none: nothing to requeue or approve, and no file made for the
+    sake of saying so."""
+    if not target.store_path.exists():
+        raise SystemExit(f"[holo2] no store at {target.store_path}")
+    return open_store(target)
+
+
+def _ticket_by_identifier(target, conn, identifier):
+    """The store's ticket id for the Linear identifier `KO-n`, or the exit
+    for one the store has not mirrored or holds more than once."""
+    rows = conn.execute(
+        "SELECT id FROM tickets WHERE linearIdentifier = ?",
+        (identifier,)).fetchall()
+    if not rows:
+        raise SystemExit(
+            f"[holo2] {identifier}: no such ticket in {target.store_path}")
+    if len(rows) > 1:
+        raise SystemExit(
+            f"[holo2] {identifier} names {len(rows)} tickets in"
+            f" {target.store_path}; refusing to pick one")
+    return rows[0][0]

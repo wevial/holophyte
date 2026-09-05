@@ -1250,6 +1250,8 @@ class MergeApprovalTests(LoopFixture):
         self.assertEqual(
             self.read("SELECT phase, endedAt, outcome FROM runs"),
             [("awaiting_merge_approval", None, None)])
+        self.assertEqual(self.read("SELECT candidateSha FROM runs"),
+                         [(self.git("rev-parse", BRANCH).strip(),)])
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),
                          [(None,)])
         self.assertEqual(
@@ -1302,6 +1304,86 @@ class MergeApprovalTests(LoopFixture):
         for (ticket_id,) in conn.execute("SELECT id FROM tickets"):
             self.assertEqual(holophyte.board.failure_history(conn, ticket_id),
                              [])
+
+    def test_approve_then_the_next_claim_merges_the_candidate_unreviewed(self):
+        """`--approve KO-n` releases the parked run, and the loop's next
+        claim takes the preserved candidate straight to the gate: no
+        implementer or reviewer turn (an empty script would raise on any),
+        the pre-merge verify runs again, the candidate lands on main
+        `--no-ff`, the new run walks `claimed -> merge_gate -> merging ->
+        done` and is marked merged, and the parked run is over with its
+        resume point recorded."""
+        self.configure('[merge]\napprove = "human"\n')
+        marker = self.worktrees.parent / "verified"
+        task = dict(a_task(), verify=f"touch {marker}")
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=StubProvider(dict(task)))
+        marker.unlink()
+        out = io.StringIO()
+        holophyte.loop.approve(self.tgt, "KO-131", "ok", out=out)
+        self.assertIn("KO-131 approved: run 1", out.getvalue())
+
+        fake, guard = self.loop(provider=StubProvider(dict(task)))
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(guard.spawned, [])
+        self.assertTrue(marker.exists(), "the pre-merge verify did not run")
+        self.assertIn("the scripted work", self.subjects())
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(
+            self.read("SELECT id, phase, outcome, resumePhase FROM runs"
+                      " ORDER BY id"),
+            [(1, "failed", "abandoned", "merge_gate"),
+             (2, "done", "merged", None)])
+        self.assertEqual(
+            [summary.split(":")[0] for (summary,) in
+             self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                       " AND kind = 'phase_change' ORDER BY seq")],
+            ["claimed -> merge_gate", "merge_gate -> merging",
+             "merging -> done"])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+
+    def test_a_candidate_changed_since_the_park_is_refused_at_the_gate(self):
+        """An approval is of the sha the reviewer approved and the pre-merge
+        verify passed. A worktree that no longer sits on it -- a commit
+        added since the park, or uncommitted edits -- is not that candidate:
+        the next claim fails without merging, without preserving the edits
+        as a WIP commit, and with the branch and worktree left in place for
+        a human, naming the sha it expected."""
+        for tamper in ("commit", "dirty"):
+            with self.subTest(tamper=tamper):
+                self.setUp()
+                self.configure('[merge]\napprove = "human"\n')
+                wt = self.worktrees / "ko-131-add-a-thing"
+                self.loop(Commit("the scripted work"), APPROVE)
+                approved = self.git("rev-parse", "HEAD", cwd=wt).strip()
+                holophyte.loop.approve(self.tgt, "KO-131", "ok",
+                                       out=io.StringIO())
+                (wt / "later.txt").write_text("added after the approval\n")
+                if tamper == "commit":
+                    self.git("add", "-A", cwd=wt)
+                    self.git("-c", "user.name=t", "-c", "user.email=t@x",
+                             "commit", "-m", "slipped in after approval",
+                             cwd=wt)
+
+                fake, _ = self.loop()
+
+                self.assertEqual(fake.roles, [])
+                self.assertEqual(self.git("rev-parse", "main").strip(),
+                                 self.base)
+                self.assertNotIn("the scripted work", self.subjects())
+                self.assertIn(BRANCH, self.branches())
+                self.assertTrue(wt.exists())
+                self.assertNotIn("WIP", self.subjects(BRANCH))
+                (run_id, outcome, reason) = self.read(
+                    "SELECT id, outcome, outcomeReason FROM runs"
+                    " ORDER BY id DESC LIMIT 1")[0]
+                self.assertEqual((run_id, outcome), (2, "failed"))
+                self.assertIn(approved[:12], reason)
 
     def test_auto_and_an_absent_table_merge_as_before(self):
         for toml in ('[merge]\napprove = "auto"\n', None):

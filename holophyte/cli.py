@@ -1,7 +1,7 @@
 """The command line: `cli()` parses the arguments and runs the mode they name.
 
-`--report`, `--requeue KO-n --note TEXT`, `--file-ticket PATH [--state]
-[--priority]`,
+`--report`, `--requeue KO-n --note TEXT`, `--approve KO-n [--note TEXT]`,
+`--file-ticket PATH [--state] [--priority]`,
 `--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT` and the loop itself
 dispatch from here to `holophyte.loop`, `holophyte.board`,
 `holophyte.supervisor` and `holophyte.serve`; the `Target`
@@ -30,7 +30,7 @@ from holophyte.config import (
     report_config,
     sweep_config,
 )
-from holophyte.loop import check_worktree_setup, main, report, requeue
+from holophyte.loop import approve, check_worktree_setup, main, report, requeue
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.supervisor import (
     SupervisorHeld,
@@ -52,6 +52,10 @@ SPAWN = subprocess.Popen
 
 # The states `--file-ticket` may create an issue in, the default first.
 FILE_TICKET_STATES = ("Todo", "Backlog")
+# What `--approve` records when the operator gives no `--note`: the row is
+# the point of the mode, and "merge" is the whole of what a bare approval
+# says, so it needs no reason the way `--requeue` does.
+APPROVE_DEFAULT_NOTE = "approved for merge"
 
 
 def serve_address(text):
@@ -85,6 +89,23 @@ def _file_ticket_only(parser, args):
             if value is not None:
                 parser.error(f"{flag} is set when --file-ticket creates an "
                              "issue; --update leaves it as it is")
+
+
+def _note_checks(parser, args):
+    """`--note` belongs to `--requeue`, which requires it, and `--approve`,
+    which takes it: refuse a requeue without one, a note without either
+    mode, and a blank note on an approval -- the default is what an
+    approval with nothing to add says, and a blank row would say nothing."""
+    if args.requeue is not None and not (args.note or "").strip():
+        parser.error("--requeue records why the ticket goes back in the "
+                     "queue; say so with --note TEXT")
+    if args.note is not None and args.requeue is None and args.approve is None:
+        parser.error("--note is what --requeue and --approve record; it has "
+                     "nothing to annotate by itself")
+    if args.approve is not None and args.note is not None \
+            and not args.note.strip():
+        parser.error("--note with --approve is the approval's own words; "
+                     "leave it off for the default rather than blank")
 
 
 def cli(argv=None):
@@ -124,6 +145,19 @@ def cli(argv=None):
              "the ticket to ready, in one transaction; refuses a ticket with "
              "a live run, one not in_flight, or one whose last run did not "
              "fail, and writes nothing then")
+    # The operator's answer to `merge?`: the same rung-3 pair as `--requeue`
+    # for a ticket parked by `[merge] approve = "human"`, so the loop's next
+    # claim takes the preserved candidate straight to the merge gate.
+    modes.add_argument(
+        "--approve", metavar="KO-n",
+        help="release the ticket parked awaiting merge approval: records an "
+             "'approve' intervention on its parked run carrying --note "
+             f"(default {APPROVE_DEFAULT_NOTE!r}), ends that run with its "
+             "resume point at the merge gate and walks the ticket to ready, "
+             "in one transaction; the loop's next claim reuses the preserved "
+             "worktree and branch, re-runs the pre-merge verify and merges "
+             "without an implementer or a reviewer; refuses a ticket in any "
+             "other state naming it, and writes nothing then")
     # The other writing mode, and it writes to the board, not the store:
     # a ticket file validated against the target becomes a Linear issue,
     # and the body Linear stored is validated again so the transfer is a
@@ -165,13 +199,16 @@ def cli(argv=None):
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "
              "leaving its branch and worktree for a human")
-    # Required with `--requeue` and meaningless without it: the intervention
-    # row is the point of the mode, and a row with no reason is the
-    # unrecorded action the row exists to replace.
+    # Required with `--requeue`, optional with `--approve` and meaningless
+    # without either: the intervention row is the point of both modes, and a
+    # requeue row with no reason is the unrecorded action the row exists to
+    # replace, while an approval says "merge" by itself.
     parser.add_argument(
         "--note", metavar="TEXT",
-        help="with --requeue: why the ticket goes back in the queue, "
-             "recorded on the intervention row's event")
+        help="with --requeue: why the ticket goes back in the queue; with "
+             "--approve: anything the approval should say beyond "
+             f"{APPROVE_DEFAULT_NOTE!r}; recorded on the intervention row's "
+             "event")
     # Only the two states a filed ticket can start in: Todo is ready to
     # claim, Backlog waits on triage. Anything else is a state the loop
     # projects, never one a file declares, so argparse refuses it.
@@ -194,12 +231,7 @@ def cli(argv=None):
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
-    if args.requeue is not None and not (args.note or "").strip():
-        parser.error("--requeue records why the ticket goes back in the "
-                     "queue; say so with --note TEXT")
-    if args.note is not None and args.requeue is None:
-        parser.error("--note is what --requeue records; it has nothing to "
-                     "annotate by itself")
+    _note_checks(parser, args)
     target = Target.locate(args.target)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
@@ -246,6 +278,13 @@ def cli(argv=None):
     if args.requeue is not None:
         require_board(target, board)
         return requeue(target, args.requeue, args.note)
+    # Same shape and the same reason: the released ticket is claimed by a
+    # loop that mirrors it to the board, so a target with no board exits here.
+    if args.approve is not None:
+        require_board(target, board)
+        return approve(target, args.approve,
+                       args.note if args.note is not None
+                       else APPROVE_DEFAULT_NOTE)
     # Posts to the board, so a target without one exits here naming the key
     # -- before the file is read, so the error is about the target, not the
     # file. The board is the `[board]` pair itself, not the loop's provider:
