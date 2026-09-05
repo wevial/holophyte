@@ -7,7 +7,9 @@ Wants=network-online.target
 Type=simple
 # One instance per target: `holophyte-serve@SLUG` reads ~/.holophyte/SLUG/serve.env,
 # which MUST define HOLOPHYTE_TARGET, HOLOPHYTE_SERVE_ADDRESS and
-# HOLOPHYTE_SERVE_PORT (see docs/operating.md, "Serving standing").
+# HOLOPHYTE_SERVE_PORT (see docs/operating.md, "Serving standing"). On one
+# machine the address is 127.0.0.1, and the command run is then what
+# `factory.py TARGET --serve 7710` runs by hand.
 # WorkingDirectory is the factory checkout and ExecStart names factory.py from
 # it, so a self-merge is picked up on the next restart. Adjust it to your layout.
 EnvironmentFile=%h/.holophyte/%i/serve.env

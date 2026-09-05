@@ -1,7 +1,8 @@
 # SwiftBar drawer v0
 
 `holophyte.10s.py` is a [SwiftBar](https://swiftbar.app) plugin that polls one
-`--serve` daemon per target (see `docs/operating.md`, "Serving") and puts
+`--serve` daemon per target (`python3 factory.py --serve 7710 /path/to/repo`;
+see `docs/operating.md`, "Serving") and puts
 "what should I look at next?" one glance away in the menu bar. It needs only
 Python 3.11+ and the standard library.
 

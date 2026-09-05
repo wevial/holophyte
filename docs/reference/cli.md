@@ -11,7 +11,7 @@ always the repository path.
 | `--sweep TARGET` | prints what an acting sweep would do; lists stray review containers | store (sightings only) |
 | `--sweep --act TARGET` | fails tripped runs, releases their leases, removes stray containers | store, Docker |
 | `--supervise TARGET` | the acting sweep every `sweep_interval_sec`, under the target's supervisor lock; re-execs itself when the factory code moves | store |
-| `--serve HOST:PORT TARGET` | the read-only JSON daemon | store, read-only |
+| `--serve PORT TARGET` | the read-only JSON daemon on loopback (`--serve 7710` binds `127.0.0.1:7710`); `--serve HOST:PORT` binds the named address instead | store, read-only |
 | `--requeue KO-n --note TEXT TARGET` | walks a failed ticket back to `ready` with an `interventions` row | store |
 | `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] TARGET` | validates, creates the issue in the target's `[board]` project, reads it back, validates again | Linear |
 | `--file-ticket TICKET.md --update KO-n TARGET` | same, replacing an existing issue's title, body and estimate | Linear |

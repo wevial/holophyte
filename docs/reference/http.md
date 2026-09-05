@@ -1,6 +1,6 @@
 # HTTP endpoints
 
-`--serve HOST:PORT` answers three paths as JSON. Every response carries
+`--serve PORT|HOST:PORT` answers three paths as JSON. Every response carries
 `Cache-Control: no-store` and `Content-Type: application/json`; every
 request opens the store read-only and closes it. Unknown paths are 404 and
 any method but GET is 405, both with a JSON `error`. A target with no
