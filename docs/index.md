@@ -22,7 +22,7 @@ This site is the manual. It is organised by the question you are asking:
 
     ---
 
-    From a markdown file on the operator seat to a `--no-ff` merge, step by
+    From a markdown file on the operator's machine to a `--no-ff` merge, step by
     step, naming the module, the table and the process at each step.
 
     [:octicons-arrow-right-24: Lifecycle of a ticket](architecture/lifecycle.md)
@@ -56,9 +56,9 @@ commands, sends the diff and the ticket to an independent reviewer inside a
 hardened container, gives the implementer at most two fix rounds, asks a
 terminal adjudicator for a PASS or FAIL, and merges with `--no-ff`. A
 separate supervisor sweeps the store for runs that died and frees their
-leases. A read-only daemon serves the store's state over the tailnet, and a
-menu-bar drawer on the operator's Mac answers "what should I look at next?"
-from it. The factory dogfoods itself: it is the target most of its own
+leases. A read-only daemon serves the store's state as JSON, and a
+menu-bar drawer answers "what should I look at next?" from it. All of it
+runs on one machine; a second machine is optional. The factory dogfoods itself: it is the target most of its own
 tickets run against, and it re-executes itself after merging its own code.
 
 ## Where things are
@@ -69,7 +69,7 @@ tickets run against, and it re-executes itself after merging its own code.
 | Durable state | one SQLite file per target under `~/.holophyte/<slug>/` | [Store and state](architecture/data.md) |
 | The board | a Linear project, one-way mirror of the store | [Tickets as contracts](operating/tickets.md) |
 | The review boundary | a read-only Docker container running Codex | [Reviewing](reviewing.md) |
-| Hosts | one writer host on the tailnet, the operator's Mac as the seat | [Hosts and network](operating/hosts.md) |
+| Machines | one, by default; a second for the drawer or the operator is a page of its own | [Across machines](operating/hosts.md) |
 | Evidence | `FINDINGS.md`, rendered from the store at every close-out | [Store and state](architecture/data.md#findings) |
 
 ## Install and run

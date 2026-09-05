@@ -79,7 +79,7 @@ nav:
       - Supervising and serving: operating.md
       - Runbook: operating/runbook.md
       - Tickets as contracts: operating/tickets.md
-      - Hosts and network: operating/hosts.md
+      - Across machines: operating/hosts.md
       - Reviewing: reviewing.md
   - Reference:
       - CLI: reference/cli.md

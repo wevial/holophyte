@@ -24,10 +24,10 @@ infrastructure failure; the third response is a written diagnosis.
 ## Daily shape
 
 ```
-# on the writer host, one tmux session per process
+# one tmux session per process
 tmux new-session -d -s holo-loop  "cd /path/to/holophyte && python3 -u factory.py /path/to/holophyte 2>&1 | tee -a loop.log"
 tmux new-session -d -s holo-sup   "cd /path/to/holophyte && python3 -u factory.py /path/to/holophyte --supervise 2>&1 | tee -a supervise.log"
-# the serve daemons are systemd user units; see Hosts and network
+# the serve daemons are systemd user units; see Serving standing
 ```
 
 The loop idle-exits when the board is empty and stops after a failed run,

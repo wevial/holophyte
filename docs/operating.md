@@ -62,12 +62,15 @@ the factory ships the invocation and nothing around it.
 ## Serving
 
 `--serve HOST:PORT` runs a read-only HTTP daemon for one target, so a drawer
-or dashboard on another host of the tailnet can poll the factory without
-ssh:
+or dashboard can poll the factory over HTTP instead of reading the store:
 
 ```
-python3 factory.py --serve 100.64.0.1:8787 /path/to/repo
+python3 factory.py --serve 127.0.0.1:8787 /path/to/repo
 ```
+
+On one machine, bind to `127.0.0.1`. When the drawer runs on another
+machine, bind to this host's address on the private network between them
+([Across machines](operating/hosts.md)).
 
 It answers three paths as JSON, every response `Cache-Control: no-store`, and
 opens the store through a read-only connection per request; it never holds
@@ -86,17 +89,18 @@ what the network sees rather than the machine name.
 The boundary is the bind address and nothing else. The daemon has
 **no authentication**: it binds to the one address the command line names
 and anyone who can reach that port can read run and ticket identifiers,
-phases, heartbeat ages and the estimate-vs-actual history. Bind it to the
-tailnet address only. Binding to `0.0.0.0` publishes that history to every network
-the host is on, and there is no flag, token or allow-list in the factory
-that would narrow it back; the tailnet's membership is the whole access
-control, by design.
+phases, heartbeat ages and the estimate-vs-actual history. Bind it to
+`127.0.0.1`, or to one private-network address when another machine must
+reach it. Binding to the wildcard address (all interfaces) publishes that
+history to every network the host is on, and there is no flag, token or
+allow-list in the factory that would narrow it back; whoever can reach the
+address is the whole access control, by design.
 
 
 ## Serving standing
 
 A daemon started by hand in a tmux session ends silently at the next reboot,
-and the drawer then reads the host as "attention needed" on every seat.
+and the drawer then reads the target as "attention needed".
 `deploy/holophyte-serve@.service` is a systemd user unit template that keeps
 one daemon per target standing: the instance name is the target slug, the
 unit restarts on failure, and an enabled unit comes back after a reboot or a
@@ -110,21 +114,22 @@ The unit reads three keys from `~/.holophyte/SLUG/serve.env`:
 | Key | Value |
 | --- | --- |
 | `HOLOPHYTE_TARGET` | the target repository path |
-| `HOLOPHYTE_SERVE_ADDRESS` | the host's tailnet address |
+| `HOLOPHYTE_SERVE_ADDRESS` | `127.0.0.1`, or the host's private-network address |
 | `HOLOPHYTE_SERVE_PORT` | the port from the convention below |
 
-The address must be the host's tailnet address, never `0.0.0.0` (see
+The address is `127.0.0.1` on one machine, or the host's address on the
+private network a remote drawer uses; never the wildcard address (see
 "Serving" above for what an open bind publishes).
 
 **Port convention:** 7710 for the first target on a host, counting up by one
-per further target, so a client config is two lines per host. The writer host
-today serves `holophyte` on 7710 and `lotuspod` on 7711.
+per further target, so a client config is two lines per target: a host
+serving `holophyte` and `lotuspod` has them on 7710 and 7711.
 
 An example `~/.holophyte/holophyte/serve.env`:
 
 ```
 HOLOPHYTE_TARGET=/path/to/holophyte
-HOLOPHYTE_SERVE_ADDRESS=100.64.0.1
+HOLOPHYTE_SERVE_ADDRESS=127.0.0.1
 HOLOPHYTE_SERVE_PORT=7710
 ```
 
@@ -141,11 +146,12 @@ journalctl --user -u holophyte-serve@holophyte -f
 The first line matters for an unattended reboot: a user unit is run by the
 operator's user manager, and without lingering that manager only starts when
 the operator logs in, so an enabled unit would wait for a login that never
-comes on a headless writer host. `loginctl enable-linger` starts the user
+comes on a headless host. `loginctl enable-linger` starts the user
 manager at boot; run it once per host, and check with
 `loginctl show-user "$USER" -p Linger` (expect `Linger=yes`).
 
-The unit's `WorkingDirectory` is `%h`-relative and names the checkout
-layout of the writer host; adjust it before enabling if the factory lives
-elsewhere. A client finds a daemon at the host's tailnet address and the
-target's port from the convention, nothing else.
+The unit's `WorkingDirectory` is `%h`-relative and names one checkout
+layout; adjust it before enabling if the factory lives elsewhere. A client
+finds a daemon at the bind address and the target's port from the
+convention, nothing else; splitting the drawer onto a second machine is
+[Across machines](operating/hosts.md).

@@ -17,20 +17,22 @@ Python 3.11+ and the standard library.
 
    The `10s` in the name is SwiftBar's refresh interval.
 3. Write the config file at `~/.holophyte/drawer.toml` (or under
-   `$HOLOPHYTE_HOME` when that is set), one `[[daemon]]` per target. The
-   writer host serves holophyte on 7710 and lotuspod on 7711 on its tailnet
-   address:
+   `$HOLOPHYTE_HOME` when that is set), one `[[daemon]]` per target. A
+   daemon on this machine is at `127.0.0.1` and its port (7710 for the
+   first target, 7711 for the next); a daemon on another machine is at
+   that host's address on the private network between them (see
+   `docs/operating/hosts.md`):
 
    ```toml
    linear = "https://linear.app/your-workspace"
 
    [[daemon]]
    name = "holophyte"
-   url = "http://writer.tailnet:7710"
+   url = "http://127.0.0.1:7710"
 
    [[daemon]]
    name = "lotuspod"
-   url = "http://writer.tailnet:7711"
+   url = "http://HOST:7711"
    ```
 
 4. Refresh SwiftBar. If the icon does not appear, SwiftBar's `PATH` may lack
@@ -97,7 +99,7 @@ in the daemon's order, prefixed with the target name:
 A daemon older than `/attention` answers 404 there; for that daemon alone
 the plugin falls back to its own rule over `/status` (the stale heartbeat
 and the supervisor rows, never the blocked or failed ones, which only the
-store knows), so a half-upgraded tailnet still renders without an error
+store knows), so a half-upgraded set of daemons still renders without an error
 row. Only the 404 earns that fallback: a daemon whose `/status` answers
 but whose `/attention` times out or fails gets the red `/attention failed`
 row, so a healthy-looking target cannot hide a blocked ticket. The menu-bar dot is the worst level any daemon reports, with

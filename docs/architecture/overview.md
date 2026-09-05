@@ -10,7 +10,7 @@ flowchart TB
   subgraph board[Linear · the board]
     L[project: ready tickets]
   end
-  subgraph writer[Writer host]
+  subgraph host[One machine]
     direction TB
     F[loop]
     SUP[supervisor]
@@ -21,8 +21,6 @@ flowchart TB
       WT[worktree] --> IMP[implementer] --> VG[verify gate] --> RR[reviewer] --> M[merge --no-ff]
     end
     FD[FINDINGS.md]
-  end
-  subgraph seat[Operator seat]
     DR[drawer]
     OP[operator]
   end
@@ -35,13 +33,15 @@ flowchart TB
   ST --> FD
   ST -. status, ledger .-> L
   DR -- /status /runs --> D
-  OP -- ssh, git push --> writer
+  OP -- git push --> GH[origin]
   OP -- file-ticket --> L
 ```
 
 Solid arrows carry work. Dotted arrows are projections: the store is
 written by the loop and the supervisor only, and Linear, `FINDINGS.md`, the
-daemon's JSON and the drawer are all views of it.
+daemon's JSON and the drawer are all views of it. Everything in the box
+runs on one machine; splitting the drawer or the operator onto a second
+one is [Across machines](../operating/hosts.md).
 
 ## The four kinds, named
 
@@ -49,9 +49,9 @@ daemon's JSON and the drawer are all views of it.
 
 | Process | Started by | Reads | Writes | Ends when |
 | --- | --- | --- | --- | --- |
-| **loop** (`factory.py TARGET`) | operator, in tmux | Linear, store, config | store, worktrees, `main`, Linear, `FINDINGS.md` | queue empty, a failed run, or after a self-merge (re-execs) |
-| **supervisor** (`--supervise`) | operator, in tmux | store | store (strikes, releases, heartbeats) | SIGTERM; re-execs itself when the factory checkout's HEAD moves |
-| **serve daemon** (`--serve`) | systemd user unit | store, read-only | nothing | never; restart to pick up new code |
+| **loop** (`factory.py TARGET`) | operator, in a terminal | Linear, store, config | store, worktrees, `main`, Linear, `FINDINGS.md` | queue empty, a failed run, or after a self-merge (re-execs) |
+| **supervisor** (`--supervise`) | the loop, or the operator | store | store (strikes, releases, heartbeats) | SIGTERM; re-execs itself when the factory checkout's HEAD moves |
+| **serve daemon** (`--serve`) | operator, or a systemd user unit | store, read-only | nothing | never; restart to pick up new code |
 | **implementer** | the loop, per run | the worktree, the ticket body | the worktree | budget or commit |
 | **reviewer** | the loop, per round | a staged, read-only export of the candidate | its verdict text | verdict or timeout |
 | **drawer** | SwiftBar, every 10 s | the daemons | nothing | never |
@@ -81,7 +81,7 @@ sees. [Store and state](data.md) has the tables and the diagrams.
   read-only, with no credentials and no host home. It can witness only
   what is in that tree. See [Reviewing](../reviewing.md).
 - **The bind address** is the daemon's entire access control: it listens
-  on the tailnet address and nowhere else.
+  on `127.0.0.1`, or on one private-network address, and nowhere else.
 
 ### Projections
 
@@ -104,9 +104,8 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 | loop | reviewer | `docker run`, staged repo mounted read-only; Codex reaches its backend outbound from inside | local + outbound |
 | loop | origin | nothing. The factory never pushes; the operator does | none |
 | supervisor | loop | only through the store: strikes, releases, `loopRestarts` | local |
-| daemon | drawer | HTTP on the tailnet address | inbound, tailnet only |
-| operator | writer host | ssh over the tailnet | inbound, tailnet only |
-| operator | Linear | `--file-ticket`, run on the writer host against the target's `[board]` | outbound |
+| daemon | drawer | HTTP on the bind address | local, or inbound from a private network |
+| operator | Linear | `--file-ticket` against the target's `[board]` | outbound |
 
 ## Why it is shaped this way
 

@@ -45,7 +45,7 @@ operator or post-merge witness.
 ## What the reviewer can witness
 
 The reviewer sees a clean export of the candidate commit, read-only, and
-nothing else: not `main` after the merge, not the writer host, not a
+nothing else: not `main` after the merge, not the host it runs on, not a
 screen, not a store. Every criterion must be witnessable from that tree,
 and the reviewer must name the witness:
 
