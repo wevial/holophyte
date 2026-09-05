@@ -414,6 +414,19 @@ class InfraFailure(RunFailure):
     """
 
 
+class MergeParked(Exception):
+    """An approved, verified candidate parked for a human to say "merge".
+
+    Raised at the merge gate under `[merge] approve = "human"`, after the
+    review approved and the pre-merge verify passed and after `store.park()`
+    has moved the run to `awaiting_merge_approval` and given the lease back.
+    Not a `RunFailure`: nothing went wrong, the run is not over, and the loop
+    must neither release it nor count it. It unwinds `run_task()` the way a
+    failure does only so the branch and worktree are left in place, and the
+    message is the line the loop prints.
+    """
+
+
 def outcome_class_of(exc):
     """The `runs.outcomeClass` a failure that ended in `exc` is written with."""
     return "infra" if isinstance(exc, InfraFailure) else "work"

@@ -451,17 +451,12 @@ def escalate(conn, ticket_id, provider):
     history = failure_history(conn, ticket_id)
     if len(history) < MAX_FAILED_RUNS:
         return False
-    if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
+    if not block_ticket(conn, ticket_id, provider,
+                        f"{len(history)} runs failed on this ticket since the"
+                        " last recorded human intervention and the factory"
+                        " stopped claiming it; a human decides what happens"
+                        " next."):
         return False
-    # The column the schema reserves for exactly this ("set when
-    # blocked_on_operator"), so a supervisor reading the store can see what is
-    # being waited on without going to Linear for it.
-    conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
-                 (f"{len(history)} runs failed on this ticket since the last"
-                  " recorded human intervention and the factory stopped"
-                  " claiming it; a human decides what happens next.",
-                  ticket_id))
-    conn.commit()
     try:
         provider.comment(issue_id, escalation_comment(history))
     except Exception as e:
@@ -469,6 +464,27 @@ def escalate(conn, ticket_id, provider):
                               f"{identifier} ({e}); the store keeps the block"
                               " and Linear is not told why")
     print(f"[holo2] {identifier} blocked after {len(history)} failed runs")
+    return True
+
+
+def block_ticket(conn, ticket_id, provider, question):
+    """Park `ticket_id` as `blocked_on_operator`, asking `question`.
+
+    The status move through `mirror_status()`, then the question into the
+    column the schema reserves for exactly this ("set when
+    blocked_on_operator"), so a supervisor or `/attention` reading the store
+    can see what is being waited on without going to Linear for it. Returns
+    whether the store took the move; a refused move writes no question.
+
+    The one way a ticket is parked, whoever parks it: the escalation after
+    one failure too many, and the merge gate under `[merge] approve =
+    "human"`, whose question is `merge?`.
+    """
+    if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
+        return False
+    conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                 (question, ticket_id))
+    conn.commit()
     return True
 
 

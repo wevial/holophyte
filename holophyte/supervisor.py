@@ -78,19 +78,21 @@ REVIEW_PHASES = ("reviewing", "addressing")
 
 
 # The phases a run can be swept in: everything the store's enum has, less the
-# three a finished run sits in and `blocked_on_operator`. Derived from
-# `store.PHASES` rather than listed, so a phase added there is swept by
-# default -- the safe direction for a check whose failure mode is a hung run
-# nobody looks at.
+# three a finished run sits in and the two a run is parked in
+# (`store.PARKED_PHASES`). Derived from `store.PHASES` rather than listed, so
+# a phase added there is swept by default -- the safe direction for a check
+# whose failure mode is a hung run nobody looks at.
 #
-# `blocked_on_operator` is excluded because a parked run is *supposed* to have
-# no heartbeat: the loop wrote the question, released the process and went
-# home, and the run waits for a human for however long that takes. Sweeping it
-# would report every parked run as dead within five minutes, and 2/5 would
-# then fail the one state the design keeps open for an operator's answer.
+# The parked phases are excluded because a parked run is *supposed* to have
+# no heartbeat: the loop wrote the question (`blocked_on_operator`), or
+# parked an approved candidate for a person to say merge
+# (`awaiting_merge_approval`), released the process and went home, and the
+# run waits for a human for however long that takes. Sweeping it would report
+# every parked run as dead within five minutes, and 2/5 would then fail the
+# states the design keeps open for an operator's answer.
 SWEEPABLE_PHASES = tuple(
     phase for phase in store.PHASES
-    if phase not in store.ENDED_PHASES and phase != "blocked_on_operator")
+    if phase not in store.ENDED_PHASES and phase not in store.PARKED_PHASES)
 
 # The mechanical conditions a run can trip. `time_box` is spelled as the
 # `interventions.trigger` value of the same name, so the name an operator

@@ -609,6 +609,51 @@ def board_config(target):
 
 
 
+# Who says "merge" once the reviewer has approved and the pre-merge verify
+# has passed. `"auto"` is the loop as it has always been: a clean gate merges.
+# `"human"` parks the approved run in `awaiting_merge_approval` instead, moves
+# its ticket to `blocked_on_operator` with `merge?` as the question `/attention`
+# shows, preserves the branch and worktree, and releases the lease so the loop
+# can claim the next ticket. Nothing merges until an operator says so (design
+# note 8). Per target, because whether a person signs off on a merge is a
+# property of the repository, not of the host running the factory.
+MERGE_KEYS = {
+    "approve": "auto",
+}
+MERGE_APPROVALS = ("auto", "human")
+KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
+MergeConfig = collections.namedtuple("MergeConfig", ("approve",))
+
+
+def merge_config(target):
+    """The target's `[merge]` knobs over the defaults.
+
+    Checked at startup beside `loop_config()`, the same way: an absent table
+    (or key) is the defaults exactly -- `approve = "auto"` -- and a present
+    `approve` has to be one of `MERGE_APPROVALS`, and only one of those:
+    `"later"` or `true` names no gate the loop has, and a value the factory
+    quietly read as `auto` would merge work the operator asked to sign off
+    on. The refusal names the table, the key and the constraint, like a bad
+    `[loop]` value. Keys this version does not know are refused by
+    `check_config_keys()`.
+    """
+    table = target.config().get("merge", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [merge] must be a table, got "
+            f"{type(table).__name__}")
+    values = {}
+    for key, default in MERGE_KEYS.items():
+        value = table.get(key, default)
+        if value not in MERGE_APPROVALS:
+            allowed = " or ".join(f'"{o}"' for o in MERGE_APPROVALS)
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [merge] {key} must be one of "
+                f"{allowed}, got {value!r}")
+        values[key] = value
+    return MergeConfig(**values)
+
+
 # What the factory prints where it would print the writer host's hostname:
 # the `host` column of `--report` and `--sweep` and the supervisor's startup
 # and refusal lines. (The FINDINGS window the loop commits to a public

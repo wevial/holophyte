@@ -1622,5 +1622,39 @@ class ReportConfigTests(ConfigTestCase):
                 report.assert_not_called()
 
 
+class MergeConfigTests(ConfigTestCase):
+    """`[merge] approve`: `"auto"` (the default) or `"human"`, nothing else."""
+
+    def test_an_absent_table_is_auto(self):
+        self.locate()
+
+        self.assertEqual(holophyte.config.merge_config(self.tgt).approve, "auto")
+
+    def test_human_is_read(self):
+        self.locate('[merge]\napprove = "human"\n')
+
+        self.assertEqual(holophyte.config.merge_config(self.tgt).approve,
+                         "human")
+
+    def test_any_other_value_or_key_is_a_startup_error_naming_it(self):
+        """`"later"` names no gate and `approve_by` is a key nobody reads:
+        startup refuses both, naming the key, before anything is claimed."""
+        for line, key in (('approve = "later"', "approve"),
+                          ("approve = true", "approve"),
+                          ('approve_by = "human"', "approve_by")):
+            with self.subTest(line=line):
+                target = self.locate(f"[merge]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[merge]", message)
+                self.assertIn(key, message)
+                report.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

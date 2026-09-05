@@ -35,6 +35,9 @@ EXPECTED = [
     "latest_supervisor_heartbeat",
     "mirror_ticket",
     "open",
+    # KO-256: `[merge] approve = "human"` parks a live run in
+    # `awaiting_merge_approval` and frees its lease without ending it.
+    "park",
     "pickable",
     "record_event",
     "record_intervention",
