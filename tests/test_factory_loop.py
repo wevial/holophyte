@@ -1221,6 +1221,103 @@ class StopOnFailureTests(LoopFixture):
         self.goes_on_past(Boom())
 
 
+class MergeApprovalTests(LoopFixture):
+    """`[merge] approve = "human"`: an approved, verified candidate stops at
+    the gate for a person to say "merge", and the loop goes on. `"auto"`,
+    or no table, merges as it always has."""
+
+    def test_human_parks_the_approved_run_and_blocks_the_ticket(self):
+        """The reviewer approved and the pre-merge verify passed, so this is
+        the moment the loop used to merge: instead main is untouched, the
+        branch and worktree stay, the run is parked in
+        `awaiting_merge_approval` with its lease released, the ticket is
+        `blocked_on_operator` asking `merge?`, and the ledger names the
+        branch and candidate sha."""
+        self.configure('[merge]\napprove = "human"\n')
+        provider = StubProvider(a_task())
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=provider)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertIn(BRANCH, self.branches())
+        self.assertIn("the scripted work", self.subjects(BRANCH))
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(self.transitions()[-3:],
+                         ["reviewing -> merge_gate",
+                          "merge_gate -> awaiting_merge_approval",
+                          "awaiting_merge_approval -> failed"])
+        self.assertEqual(
+            self.read("SELECT resumePhase, outcomeClass FROM runs"),
+            [("awaiting_merge_approval", "infra")])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion FROM tickets"),
+            [("blocked_on_operator", "merge?")])
+        sha = self.git("rev-parse", BRANCH).strip()
+        (_, body), = provider.comments
+        self.assertIn("AWAITING MERGE APPROVAL", body)
+        self.assertIn(BRANCH, body)
+        self.assertIn(sha, body)
+
+    def test_a_parked_run_is_listed_by_attention_under_blocked(self):
+        """What the operator sees: `/attention` reads the parked ticket
+        straight out of the store, under `blocked`, with `merge?`."""
+        self.configure('[merge]\napprove = "human"\n')
+
+        self.loop(Commit("the scripted work"), APPROVE)
+
+        import holophyte.serve
+        code, body = holophyte.serve.attention(self.tgt)
+        self.assertEqual(code, 200)
+        blocked = [item for item in body["items"] if item["kind"] == "blocked"]
+        self.assertEqual(blocked, [{"kind": "blocked", "ticket": "KO-131",
+                                    "question": "merge?",
+                                    "level": "attention"}])
+
+    def test_a_park_is_not_a_failure_the_loop_stops_on_or_counts(self):
+        """The loop moves on to the next ready ticket without spending the
+        stop or the exit status, and the park is not a strike: the ticket's
+        failure history stays empty."""
+        self.configure('[merge]\napprove = "human"\n')
+        provider = StubProvider(a_task(1), a_task(2))
+
+        out = self.main_output(Commit("first"), APPROVE,
+                               Commit("second"), APPROVE, provider=provider)
+
+        self.assertIsNone(self.rc)
+        self.assertEqual(provider.queue, [])
+        self.assertIn("KO-131 parked awaiting merge approval", out)
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier, t.status FROM tickets t"
+                      " ORDER BY t.id"),
+            [("KO-131", "blocked_on_operator"),
+             ("KO-132", "blocked_on_operator")])
+        conn = sqlite3.connect(self.db)
+        self.addCleanup(conn.close)
+        for (ticket_id,) in conn.execute("SELECT id FROM tickets"):
+            self.assertEqual(holophyte.board.failure_history(conn, ticket_id),
+                             [])
+
+    def test_auto_and_an_absent_table_merge_as_before(self):
+        for toml in ('[merge]\napprove = "auto"\n', None):
+            with self.subTest(config=toml):
+                self.setUp()
+                if toml is not None:
+                    self.configure(toml)
+
+                self.loop(Commit("the scripted work"), APPROVE)
+
+                self.assertIn("the scripted work", self.subjects())
+                self.assertNotIn(BRANCH, self.branches())
+                self.assertEqual(self.read("SELECT outcome FROM runs"),
+                                 [("merged",)])
+                self.assertEqual(self.read("SELECT status FROM tickets"),
+                                 [("merged",)])
+
+
 class SelfHostingTests(LoopFixture):
     """A loop working on the factory's own repository re-executes itself
     after a merge, so the merged code is what runs the next pass. Through

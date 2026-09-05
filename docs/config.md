@@ -47,7 +47,7 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`), a key it does
+(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`), a key it does
 not read is
 a startup
 error naming the file, the table, the key and the keys the table accepts:
@@ -239,3 +239,24 @@ against its own, so the label can be renamed later without a migration. The
 value must be a non-empty string; anything else is a startup error naming the
 key.
 
+```toml
+[merge]
+# Who says "merge" once the reviewer has approved and the pre-merge verify
+# has passed. Optional; the value shown is the default.
+approve = "auto"   # "human": park the approved run for an operator to release
+```
+
+Accepted keys: `approve`.
+
+With `approve = "auto"` a clean merge gate merges, as it always has. With
+`approve = "human"` the loop stops there instead: the run's phase becomes
+`awaiting_merge_approval`, its ticket goes `blocked_on_operator` with the
+question `merge?` (which `/attention` lists under `blocked`, and the drawer
+shows), a ledger comment names the branch and the candidate sha, and the
+branch and worktree are preserved exactly as after a refused merge. The lease
+is released, so the loop claims the next ready ticket; the park is not a
+failure -- it neither stops the pass under `stop_on_failure` nor counts
+toward the escalation that blocks a ticket, and the exit status is not spent
+on it. Nothing merges until the operator says so; releasing a parked run is
+the next ticket's `--approve`. The value must be `"auto"` or `"human"`;
+anything else is a startup error naming the key.

@@ -414,9 +414,28 @@ class InfraFailure(RunFailure):
     """
 
 
+class MergeParked(RunFailure):
+    """An approved, verified candidate parked for a human to say "merge".
+
+    Raised at the merge gate under `[merge] approve = "human"`, after the
+    review approved and the pre-merge verify passed, so the run ends the way
+    a refused merge ends -- lease released, branch and worktree preserved --
+    except that nothing went wrong. The message is the close-out reason.
+
+    Classed `infra` on the row for the one reason that class exists: the
+    escalation count (`failure_history()`) leaves it out, so a park is never
+    one of the strikes that blocks a ticket. A class of its own (`parked`)
+    is what the row should say; `runs.outcomeClass` carries a CHECK that a
+    migrated store cannot widen without a table rebuild, which is a schema
+    ticket rather than this one. Its ticket is `blocked_on_operator` with
+    the question `merge?`, which is where `/attention` and the operator read
+    what the run is waiting for.
+    """
+
+
 def outcome_class_of(exc):
     """The `runs.outcomeClass` a failure that ended in `exc` is written with."""
-    return "infra" if isinstance(exc, InfraFailure) else "work"
+    return "infra" if isinstance(exc, (InfraFailure, MergeParked)) else "work"
 
 
 def sh(args, cwd=None):

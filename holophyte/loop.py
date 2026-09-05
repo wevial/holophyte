@@ -26,6 +26,7 @@ import store
 import store.read
 from holophyte.agents import agent
 from holophyte.board import (
+    block_ticket,
     body_problem,
     close_out_failure,
     escalate,
@@ -41,6 +42,7 @@ from holophyte.board import (
 from holophyte.config import (
     branch_prefix,
     loop_config,
+    merge_config,
     setup_commands,
     setup_timeout,
     sweep_config,
@@ -48,6 +50,7 @@ from holophyte.config import (
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import (
     InfraFailure,
+    MergeParked,
     RunFailure,
     outcome_class_of,
     run_verify,
@@ -386,6 +389,10 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # pre-merge verify is a run stopped at the gate.
     ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
                      wt, beat_s, sha, verify_cmd, contracts)
+    # The human half of the gate, when the target asks for one: the
+    # candidate is approved and verified, and a person says "merge".
+    if merge_config(target).approve == "human":
+        _park_for_approval(conn, run_id, provider, task_id, branch, sha)
     merge_sha = _merge(target, conn, run_id, provider, task_id, task, branch,
                        wt, sha)
     # Nothing tells Linear the ticket is done here any more. The merge makes
@@ -766,6 +773,40 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
     return ok
 
 
+def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
+    """`[merge] approve = "human"`: stop an approved, verified candidate at
+    the gate for a person to say "merge".
+
+    Four writes, in the order a reader of the store needs them: the run's
+    phase becomes `awaiting_merge_approval`; the ticket goes
+    `blocked_on_operator` asking `merge?`, which is what `/attention` shows;
+    the ledger names the branch and the candidate sha the answer is about;
+    then `MergeParked` ends the run through the failure path, which releases
+    the lease and preserves the branch and worktree exactly as a refused
+    merge would. Nothing touches main.
+    """
+    set_phase(conn, run_id, "awaiting_merge_approval",
+              f"approved and verified; {branch} at {sha[:12]} waits for"
+              " a human to say merge ([merge] approve = \"human\")")
+    # The ticket row the run was claimed on, read off the run: the frame
+    # carries the board's issue id, and the status move keys on the store's.
+    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    if not block_ticket(conn, ticket_id, provider, "merge?"):
+        # The store did not take the move (warned on the run): the run still
+        # parks, so an unmirrored ticket cannot make the loop merge what the
+        # operator asked to sign off on.
+        print(f"[holo2] {task_id} could not be moved to blocked_on_operator;"
+              " parking the run anyway")
+    print(f"[holo2] approved and verified; parked {branch} at {sha[:12]}"
+          " awaiting merge approval")
+    ledger(provider, task_id, "AWAITING MERGE APPROVAL: review approved and "
+                              f"verify passed; branch {branch} preserved at "
+                              f"{sha} and not merged ([merge] approve = "
+                              "\"human\"). Answer merge? to release it.")
+    raise MergeParked(f"awaiting merge approval; branch {branch} preserved"
+                      f" at {sha[:12]}")
+
+
 def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     """The `merging` phase: the `--no-ff` merge of `branch` into main, its
     one self-resolved conflict, and the post-merge cleanup. Returns the full
@@ -902,6 +943,15 @@ def main(target, provider):
             if run_id is None:
                 return
             merged = _dispatch(target, conn, run_id, provider, task, ticket_id)
+            if merged is PARKED:
+                # An approved candidate waiting for a person: not a failure,
+                # so neither the stop nor the exit status is spent on it.
+                # Its ticket is `blocked_on_operator`, which the claim path
+                # refuses, so skipping it is only cheaper than refusing it.
+                skip.add(task["id"])
+                print(f"[holo2] {task['id']} parked awaiting merge approval;"
+                      " continuing to the next ready ticket")
+                continue
             if not merged:
                 # The regenerated window stays uncommitted, like the preserved
                 # branch it describes: a human closes both out. Nonzero so the
@@ -1084,9 +1134,22 @@ def _claim_run(conn, project, provider, ticket_id, seen):
     return run_id
 
 
+class _Parked:
+    """`_dispatch()`'s answer for a run parked awaiting merge approval:
+    falsy, because nothing merged, and its own object, because the loop
+    goes on rather than stopping on a failure."""
+
+    def __bool__(self):
+        return False
+
+
+PARKED = _Parked()
+
+
 def _dispatch(target, conn, run_id, provider, task, ticket_id):
     """One run of `task` under `run_id`, with its failure accounting and
-    close-out. Returns whether the run merged.
+    close-out. Returns whether the run merged, or `PARKED` for a run stopped
+    at the gate by `[merge] approve = "human"`.
 
     `run_task()` answers with the merge commit's sha when it merged, and
     that sha is what the release stamps on the run; a bare `True` (the
@@ -1097,6 +1160,13 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
     outcome_class = "work"
     try:
         merged = run_task(target, task, conn, run_id, provider)
+    except MergeParked as e:
+        # Not a failure to the loop, though it closes out as one below:
+        # the lease comes back and the branch is preserved the same way.
+        reason = str(e)
+        outcome_class = outcome_class_of(e)
+        merged = PARKED
+        print(f"[holo2] run parked: {reason}")
     except RunFailure as e:
         reason = str(e)
         outcome_class = outcome_class_of(e)
@@ -1126,7 +1196,10 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
             refresh_findings(target, conn)
         else:
             # The failure close-out: release, escalate if this failure
-            # was one too many, regenerate the window. Shared with the
+            # was one too many, regenerate the window. A `PARKED` run
+            # takes this path too -- same release, same preserved branch;
+            # its ticket is already parked, so the escalation is a no-op
+            # and its `infra` class keeps it out of the count. Shared with the
             # supervisor sweep, which fails runs this loop is no
             # longer around to fail itself. Its own failure (a locked
             # store, say) must not replace what was in flight — a

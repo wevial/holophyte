@@ -33,7 +33,13 @@ machines it walks. Back to the [README](index.md).
    re-read (Linear down, issue gone) is *not* read as drift: the run records
    that the check had no evidence and the merge goes ahead on the frozen
    contract. On a clean gate: `--no-ff` merge to `main`, worktree and branch
-   cleaned up, ticket → Done.
+   cleaned up, ticket → Done. Under `[merge] approve = "human"` (see
+   [Config](config.md)) the clean gate parks instead of merging: the run
+   enters `awaiting_merge_approval`, the ticket goes `blocked_on_operator`
+   asking `merge?`, the ledger names the branch and candidate sha, the
+   branch and worktree are preserved, and the lease is released so the loop
+   claims the next ticket. The park is not a failure and is not counted as
+   one; `main` is untouched until an operator releases the run.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —
@@ -84,8 +90,9 @@ stateDiagram-v2
     ready --> in_flight
 ```
 <!-- end state-graph: tickets -->
-Run phase (the edges the loop writes; `awaiting_merge_approval` and
-`squashing` are declared but never entered by this loop):
+Run phase (the edges the loop writes; `squashing` is declared but never
+entered by this loop, and `awaiting_merge_approval` is entered only under
+`[merge] approve = "human"`):
 
 <!-- state-graph: runs -->
 ```mermaid
@@ -106,14 +113,18 @@ stateDiagram-v2
     addressing --> failed
     addressing --> killed
     addressing --> verifying
+    awaiting_merge_approval --> failed
+    awaiting_merge_approval --> killed
     blocked_on_operator --> working
     claimed --> failed
     claimed --> killed
     claimed --> working
     failed --> addressing
+    failed --> awaiting_merge_approval
     failed --> reviewing
     failed --> verifying
     failed --> working
+    merge_gate --> awaiting_merge_approval
     merge_gate --> failed
     merge_gate --> killed
     merge_gate --> merging

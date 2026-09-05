@@ -1088,9 +1088,15 @@ def release(conn, run_id, outcome, reason=None, now=None,
         # resumable are worth recording — a run that failed while `claimed` or
         # mid-merge has no work phase to go back to, and `resume()` reads the
         # NULL as §4's edge back to `working`.
+        # `awaiting_merge_approval` is kept too: a run parked there by
+        # `[merge] approve = "human"` is released like a failure so the lease
+        # comes back, and this column is the only place the store still says
+        # the run is an approved candidate waiting for a person, not work
+        # that stopped.
         resume_phase = (stopped_in
                         if TERMINAL_PHASES[outcome] == "failed"
-                        and stopped_in in RESUMABLE_WORK_PHASES else None)
+                        and stopped_in in RESUMABLE_WORK_PHASES | PARKED_PHASES
+                        else None)
         # `reviewRoundCount` is stamped here, from the rows themselves, for
         # the same reason the phase is: this is the close-out, so this is the
         # moment the count is final. Counting the run's own `reviewRounds`
@@ -1610,6 +1616,12 @@ RESUMABLE_WORK_PHASES = frozenset(
     {"working", "verifying", "reviewing", "addressing"}
 )
 RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {"failed", "blocked_on_operator"}
+# The phase `[merge] approve = "human"` parks an approved run in before
+# releasing it. Not resumable as a live phase -- the run is over by then --
+# but recorded as a failed run's `resumePhase`, so a resume re-enters the
+# park rather than `working`: the candidate was approved and verified, and
+# sending it back to the implementer would throw that away.
+PARKED_PHASES = frozenset({"awaiting_merge_approval"})
 
 # §4's run graph as an edge table, keyed like `TICKET_TRANSITIONS` so both
 # state machines render through `render_state_graph()` the same way. The
@@ -1618,23 +1630,26 @@ RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {"failed", "blocked_on_operator"}
 # way back out of a parked run — not a `set_phase()` gate: that function moves
 # a run between any two phases on purpose, so the table is the loop's map and
 # the wiring tests hold the walked streams against it. Every phase in `PHASES`
-# is a key so a declared phase always renders as a node; `awaiting_merge_approval`
-# and `squashing` are declared but have no edge because this loop never enters
-# them (the merge is --no-ff, and the autonomy gate refuses rather than parks).
+# is a key so a declared phase always renders as a node; `squashing` is
+# declared but has no edge because this loop never enters it (the merge is
+# --no-ff). `awaiting_merge_approval` is entered from `merge_gate` under
+# `[merge] approve = "human"` and left by the release that parks the run.
 RUN_PHASE_TRANSITIONS = {
     "claimed": frozenset({"working", "failed", "killed"}),
     "working": frozenset({"verifying", "failed", "killed"}),
     "verifying": frozenset({"reviewing", "failed", "killed"}),
     "reviewing": frozenset({"addressing", "merge_gate", "failed", "killed"}),
     "addressing": frozenset({"verifying", "failed", "killed"}),
-    "merge_gate": frozenset({"merging", "failed", "killed"}),
-    "awaiting_merge_approval": frozenset(),
+    "merge_gate": frozenset({"merging", "awaiting_merge_approval", "failed",
+                             "killed"}),
+    "awaiting_merge_approval": frozenset({"failed", "killed"}),
     "merging": frozenset({"done", "failed", "killed"}),
     "squashing": frozenset(),
     "done": frozenset(),
-    # `resume()`: a failed run re-enters its `resumePhase`, or `working` when
-    # none was recorded; a parked run always re-enters `working`.
-    "failed": RESUMABLE_WORK_PHASES,
+    # `resume()`: a failed run re-enters its `resumePhase` -- a work phase,
+    # or the merge-approval park -- or `working` when none was recorded; a
+    # `blocked_on_operator` run always re-enters `working`.
+    "failed": RESUMABLE_WORK_PHASES | PARKED_PHASES,
     "blocked_on_operator": frozenset({"working"}),
     "killed": frozenset(),
 }
