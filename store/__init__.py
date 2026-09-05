@@ -174,6 +174,13 @@ CREATE TABLE IF NOT EXISTS runs (
                                   'awaiting_merge_approval', 'merging',
                                   'squashing', 'done', 'blocked_on_operator',
                                   'failed', 'killed')),
+    -- The candidate a run parked awaiting merge approval was parked on: the
+    -- full sha the reviewer approved and the pre-merge verify passed.
+    -- Written by `park()` and read by the loop's resume at the merge gate,
+    -- which merges that sha and nothing else -- a worktree that has moved
+    -- on since is not what the operator approved. NULL on every run that
+    -- was never parked there.
+    candidateSha      TEXT,
     UNIQUE (ticketId, attempt)
 );
 
@@ -419,6 +426,11 @@ ADDED_COLUMNS = (
         "runs",
         "mergeSha",
         "mergeSha TEXT",
+    ),
+    (
+        "runs",
+        "candidateSha",
+        "candidateSha TEXT",
     ),
 )
 
@@ -1121,7 +1133,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
         )
 
 
-def park(conn, run_id, phase, note=None, now=None):
+def park(conn, run_id, phase, note=None, candidate_sha=None, now=None):
     """Park the live run `run_id` in `phase` and give its leases back.
 
     `[merge] approve = "human"`: the reviewer approved and the pre-merge
@@ -1135,6 +1147,11 @@ def park(conn, run_id, phase, note=None, now=None):
     `projects.activeRunId` is cleared so the loop can claim the next ticket,
     and the ticket's pointer moves from `activeRunId` to `lastRunId` so the
     parked run stays reachable from its ticket exactly as an ended one is.
+
+    `candidate_sha` is the full sha of the candidate the park is about --
+    the one the reviewer approved and the pre-merge verify passed -- stored
+    as `runs.candidateSha` so the resume that follows an approval can hold
+    the worktree to it rather than merge whatever it finds there.
 
     `phase` must be one of `PARKED_PHASES`; the sweep leaves those alone, so
     a run parked here is not reported dead for having no heartbeat. Parking
@@ -1154,6 +1171,9 @@ def park(conn, run_id, phase, note=None, now=None):
         ticket_id, project_id = row
         # `set_phase()` is what refuses an ended run, with `RunEnded`.
         set_phase(conn, run_id, phase, note=note, now=now)
+        if candidate_sha is not None:
+            conn.execute("UPDATE runs SET candidateSha = ? WHERE id = ?",
+                         (candidate_sha, run_id))
         conn.execute(
             "UPDATE projects SET activeRunId = NULL"
             " WHERE id = ? AND activeRunId = ?",

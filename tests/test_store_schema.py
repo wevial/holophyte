@@ -36,6 +36,7 @@ DOCUMENTED_COLUMNS = {
         # Store-owned: the merge commit a merged run landed on main as, so
         # the ticket-to-commit link is a column and not a grep of git log.
         "mergeSha",
+        "candidateSha",
         # Store-owned, not a documented field: §5 requires a resume to
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.

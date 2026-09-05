@@ -421,14 +421,31 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     """The approved candidate's run: the preserved worktree, the pre-merge
     verify against the main of today, the merge. No implementer, no reviewer.
 
-    `reuse_leftover()` readies the worktree exactly as after a failed run --
-    main merged in when it moved on, so the verify below is against current
-    main -- and refuses the states a human has to look at. A candidate that
-    turns out to hold nothing beyond main is refused too: an approval is of
-    commits, and a branch with none is not what the operator signed off on.
-    The walk is `claimed -> merge_gate` directly, the one edge §4 draws for
-    this path, with the carried run named on the stream.
+    An approval is of one sha: the candidate the reviewer approved and the
+    pre-merge verify passed, recorded by the park as `runs.candidateSha`.
+    So before anything readies the worktree it is held to that sha -- a
+    clean tree, HEAD and the branch both on it. Anything else (a commit
+    slipped in since the park, uncommitted edits) is not the approved
+    candidate, and merging it here would land unreviewed work with the
+    implementer and reviewer both skipped; the run fails naming both shas,
+    the tree untouched -- no WIP rescue commit, nothing deleted -- for a
+    human to look at. Only then does `reuse_leftover()` ready the worktree
+    exactly as after a failed run -- main merged in when it moved on, so the
+    verify below is against current main. A candidate that turns out to
+    hold nothing beyond main is refused too: an approval is of commits, and
+    a branch with none is not what the operator signed off on. The walk is
+    `claimed -> merge_gate` directly, the one edge §4 draws for this path,
+    with the carried run named on the stream.
     """
+    why = _candidate_drift(wt, branch, carried.sha)
+    if why is not None:
+        ledger(provider, task_id, f"FAILED to merge the approved candidate"
+                                  f" for: {task}\n{why}\nNothing was"
+                                  " committed or deleted; a human reconciles"
+                                  " the worktree before this ticket is run"
+                                  " again.")
+        raise RunFailure(f"approved candidate on {branch} is not what was"
+                         f" approved: {why}")
     ok, why = reuse_leftover(target, wt, branch)
     if not ok:
         ledger(provider, task_id, f"FAILED to reuse the approved candidate's"
@@ -445,16 +462,43 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                          " beyond main; nothing to merge")
     # Only reached with a store: a direct call carries no candidate.
     store.record_event(conn, run_id, "approved_candidate",
-                       f"resuming run {carried}'s approved candidate"
+                       f"resuming run {carried.run_id}'s approved candidate"
                        f" {branch} at {sha[:12]} at the merge gate;"
                        " no implementer or reviewer runs")
     print(f"[holo2] {task_id}: approved candidate {branch} at {sha[:12]}"
-          f" from run {carried}; skipping to the merge gate")
+          f" from run {carried.run_id}; skipping to the merge gate")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
     ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
                      wt, beat_s, sha, verify_cmd, contracts)
     return _land(target, conn, run_id, provider, task_id, task, branch, wt,
                  sha, ok, started, budget_min, 0)
+
+
+def _candidate_drift(wt, branch, approved):
+    """Why the worktree at `wt` is not the candidate `approved` names, or
+    None when it is: a clean tree with HEAD and `branch` both on that sha.
+
+    `approved` is None only for a run parked by a module older than
+    `runs.candidateSha`; with nothing recorded there is nothing to hold the
+    tree to, so the refusal names that instead of merging on trust.
+    """
+    if approved is None:
+        return ("the park recorded no candidate sha, so nothing vouches for"
+                f" what {branch} now holds")
+    dirty = sh(["git", "status", "--porcelain"], cwd=wt)
+    if dirty:
+        return (f"the worktree holds uncommitted changes on top of the"
+                f" approved {approved[:12]}:\n{dirty}")
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if head != approved:
+        return (f"the worktree is at {head[:12]}, not the approved"
+                f" {approved[:12]}")
+    tip = sh(["git", "rev-parse", "--verify", "--quiet",
+              f"refs/heads/{branch}"], cwd=wt)
+    if tip != approved:
+        return (f"branch {branch} is at {tip[:12]}, not the approved"
+                f" {approved[:12]}")
+    return None
 
 
 def _land(target, conn, run_id, provider, task_id, task, branch, wt, sha, ok,
@@ -865,7 +909,8 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
               " parking the run anyway")
     store.park(conn, run_id, "awaiting_merge_approval",
                f"approved and verified; {branch} at {sha[:12]} waits for"
-               " a human to say merge ([merge] approve = \"human\")")
+               " a human to say merge ([merge] approve = \"human\")",
+               candidate_sha=sha)
     print(f"[holo2] approved and verified; parked {branch} at {sha[:12]}"
           " awaiting merge approval")
     ledger(provider, task_id, "AWAITING MERGE APPROVAL: review approved and "

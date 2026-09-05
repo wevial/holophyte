@@ -63,8 +63,12 @@ the gate with the ticket `blocked_on_operator` asking `merge?` (it is what
 with its resume point at the merge gate and walks the ticket to `ready`;
 the loop's next claim reuses the preserved worktree and branch, re-runs
 the pre-merge verify against current `main` and merges, with no
-implementer or reviewer turn. Refuses a ticket in any other state --
-ready, in flight, failed, merged -- naming it, and writes nothing then.
+implementer or reviewer turn. The approval is of the sha the park
+recorded: a worktree that has moved on since -- a commit added after the
+park, uncommitted edits -- fails that run naming both shas, with the tree
+left as found for you to reconcile, and merges nothing. Refuses a ticket
+in any other state -- ready, in flight, failed, merged -- naming it, and
+writes nothing then.
 To decline instead, leave the ticket parked or close the run out by hand
 through the store API.
 
