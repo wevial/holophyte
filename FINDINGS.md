@@ -653,15 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[191 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-04T17:12:26Z — KO-243
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- linear_provider.py:413 [p2] `linear_provider.py:413-417` still reads `HOLO2_PROJECT_ID` and `HOLO2_TEAM` in its executable path, violating the contract that it retain only `LINEAR_API_KE…
-
-## 2026-09-04T17:19:48Z — KO-243
-Round 2: pass · reviewer codex-sol-medium · verify passed
+[193 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-04T17:20:36Z — KO-243
 MERGED to main.
@@ -755,3 +747,10 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-05T00:39:55Z — KO-256
 FAILED: verify failed before merge; branch task/ko-256-merge-approve-human-parks-an preserved at 81843528941b
 actual: 28.1 min · estimate: 30 min · rounds: 2
+
+## 2026-09-05T00:47:00Z — KO-256
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-05T00:47:51Z — KO-256
+MERGED to main as a5ba0f8.
+actual: 6.1 min · estimate: 30 min · rounds: 1
