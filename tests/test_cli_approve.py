@@ -145,8 +145,7 @@ class ApproveCliTests(unittest.TestCase):
         store.transition(self.conn, self.ticket, "merged")
         with self.assertRaises(SystemExit) as merged:
             self.cli("--approve", "KO-1", "--note", "ok")
-        self.assertIn("KO-1 is merged", str(merged.exception))
-        self.assertIn("is done, not awaiting_merge_approval",
+        self.assertIn("KO-1 is merged, not blocked_on_operator",
                       str(merged.exception))
         self.assertEqual(self.ticket_row(), ("merged", None, self.run))
 
@@ -158,6 +157,25 @@ class ApproveCliTests(unittest.TestCase):
             self.assertNotEqual(raised.exception.code, 0)
         self.assertEqual(self.interventions(), [])
         self.assertEqual(self.run_row()[2], None)
+
+    def test_a_ticket_walked_off_the_park_by_hand_is_refused_by_status(self):
+        """The run still sits in `awaiting_merge_approval`, but an operator
+        walked the ticket on to `ready` from the REPL: the status decides,
+        the refusal names it, and the parked run is left as it was."""
+        self.park()
+        store.walk_ticket(self.conn, self.ticket, "ready")
+        self.assertEqual(self.run_row()[0], "awaiting_merge_approval")
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertNotEqual(raised.exception.code, 0)
+        self.assertIn("KO-1 is ready, not blocked_on_operator",
+                      str(raised.exception))
+        self.assertEqual(self.interventions(), [])
+        self.assertEqual(self.run_row(),
+                         ("awaiting_merge_approval", None, None, None))
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
 
     def test_a_target_with_no_board_exits_naming_the_key_and_writes_nothing(self):
         self.park()

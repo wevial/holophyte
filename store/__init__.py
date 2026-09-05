@@ -1483,11 +1483,13 @@ def approve(conn, ticket_id, note, now=None):
     count reads `outcome = 'failed'` only, so an approval is never a strike.
 
     Refuses, with `ApproveRefused` and no write, anything that is not a
-    parked ticket: an unknown ticket, one with a live run, or one whose
-    newest run is in any phase but `awaiting_merge_approval` (ready with no
-    run yet, failed, merged). The refusal names the ticket's status and the
-    run's phase. Touches no board state: the loop mirrors the Linear status
-    when it claims.
+    parked ticket: an unknown ticket, one with a live run, one whose status
+    is not `blocked_on_operator` (walked on by hand while its run still sat
+    parked, say), or one whose newest run is in any phase but
+    `awaiting_merge_approval` (ready with no run yet, failed, merged). The
+    refusal names the ticket's status and, past that, the run's phase.
+    Touches no board state: the loop mirrors the Linear status when it
+    claims.
     """
     if now is None:
         now = int(time.time() * 1000)
@@ -1503,6 +1505,10 @@ def approve(conn, ticket_id, note, now=None):
                 f"{identifier} is {status} with run {active_run_id} still"
                 " live; an approval is for a run parked awaiting merge"
                 " approval")
+        if status != "blocked_on_operator":
+            raise ApproveRefused(
+                f"{identifier} is {status}, not blocked_on_operator; nothing"
+                " is parked awaiting merge approval")
         run = (conn.execute("SELECT phase FROM runs WHERE id = ?",
                             (last_run_id,)).fetchone()
                if last_run_id is not None else None)
