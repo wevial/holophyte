@@ -26,6 +26,8 @@ Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
 from __future__ import annotations
 
+import os
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -153,8 +155,18 @@ def untracked_files(worktree, timeout=GIT_TIMEOUT):
 
 
 def count_lines(path):
+    """Lines in an untracked `path` as numstat would count them once staged.
+    A symlink is its link text (one line, never followed: its target may be
+    a FIFO that would block the request, or a file with a different count);
+    anything but a regular file is 0."""
     try:
-        data = path.read_bytes()
+        mode = os.lstat(path).st_mode
+        if stat.S_ISLNK(mode):
+            data = os.readlink(path).encode("utf-8", "surrogateescape")
+        elif stat.S_ISREG(mode):
+            data = path.read_bytes()
+        else:
+            return 0
     except OSError:
         # Gone between the listing and the read: the implementer is at work.
         return 0

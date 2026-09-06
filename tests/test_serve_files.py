@@ -9,6 +9,7 @@ Run: python3 -m unittest discover -s tests -p 'test_serve_files*' -v
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -76,6 +77,27 @@ class LiveRunFilesTests(ServeTestCase):
         self.assertEqual(body["head"], self.git("rev-parse", "HEAD", cwd=self.wt))
         self.assertEqual((body["total_added"], body["total_deleted"]), (6, 1))
         self.assertFalse(body["truncated"])
+
+    def test_untracked_symlink_counts_its_link_text(self):
+        # A link is one line of link text to git, however long its target
+        # is; a link to a FIFO must not be followed or the request blocks.
+        (self.wt / "target.txt").write_text("one\ntwo\nthree\n")
+        (self.wt / "link.txt").symlink_to("target.txt")
+        os.mkfifo(self.wt / "pipe")
+        (self.wt / "pipe-link").symlink_to("pipe")
+
+        code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
+
+        self.assertEqual(code, 200, body)
+        before = {f["path"]: (f["status"], f["added"]) for f in body["files"]}
+        self.git("add", "link.txt", "pipe-link", "target.txt", cwd=self.wt)
+        staged = {}
+        for line in self.git("diff", "--cached", "--numstat",
+                             cwd=self.wt).splitlines():
+            added, _deleted, path = line.split("\t")
+            staged[path] = ("A", int(added))
+        self.assertEqual(staged["link.txt"], ("A", 1))
+        self.assertEqual(before, staged)
 
     def test_empty_and_gone(self):
         code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
