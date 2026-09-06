@@ -67,7 +67,9 @@ non-positive or non-integer limit is 400.
   {"id": 312, "ticket": "KO-241", "title": "Run detail: files touched",
    "rounds": 1, "findings": 2, "started_ms": 1788478449000,
    "ended_ms": 1788478953000, "actual_min": 8.4, "estimate_min": 10.0,
-   "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f", "host": "writer-1"}
+   "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+   "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+   "host": "writer-1"}
 ], "next_before": 298, "limit": 50}
 ```
 
@@ -84,6 +86,18 @@ non-integer `limit`, or a non-integer `before`, is 400 with `error`
 naming the parameter; a `before` no run has is 200 with no rows.
 `/runs` is untouched: it stays the terminal's table, oldest first.
 
+`commit_url` is the merge commit's page on the target's `origin`:
+`https://HOST/OWNER/REPO/commit/SHA` when the `origin` URL is
+`https://HOST/OWNER/REPO(.git)` or `git@HOST:OWNER/REPO(.git)` and the
+sha is an ancestor of `origin/main` in the target's checkout. It is null
+when the row has no `merge_sha`, the target has no `origin`, the remote
+is of another shape (including one carrying a `?` query, `#` fragment
+or credentials, which would otherwise ride into the link), or the sha has not reached `origin/main` (a local
+merge never pushed, one rewritten on the way up, a fresh clone with no
+`origin/main` yet), so a link is only ever to a page that exists. The
+remote is read once per request and the ancestry checked once per row;
+a git failure is null, never an error.
+
 ## `GET /runs/N`
 
 ```json
@@ -92,7 +106,9 @@ naming the parameter; a `before` no run has is 200 with no rows.
          "ended_ms": 1788451661675, "outcome": "merged", "time_box_ms": 1500000,
          "branch": "task/ko-219-the-sweep-frees-a-silent-lease", "host": "writer-1",
          "heartbeat_age_ms": null,
-         "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f", "max_rounds": 2},
+         "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+         "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+         "max_rounds": 2},
  "rounds": [
   {"round": 1, "started_ms": 1788450761675, "ended_ms": 1788450941675,
    "verdict": "changes_requested", "reviewer_model": "reviewer-model",

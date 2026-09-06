@@ -54,7 +54,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import store.read
 from holophyte.config import console_config, split_address, sweep_config
-from holophyte.files import GIT_TIMEOUT, RangeError, touched_files
+from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.supervisor import SWEEPABLE_PHASES
@@ -77,6 +77,19 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
                  ".json": "application/json",
                  ".map": "application/json"}
 OCTET_STREAM = "application/octet-stream"
+# The two `origin` shapes a merge commit can link into: `https://HOST/OWNER/
+# REPO(.git)` and `git@HOST:OWNER/REPO(.git)`. Anything else is not a web
+# page the daemon can name, so its rows carry no link. Each segment is one
+# plain path segment: a `?`, `#`, `@`, `:` or whitespace in it would ride
+# into the link as a query, fragment or credential, so it disqualifies the
+# remote rather than being copied through.
+SEGMENT = r"[^/?#@:\s]+"
+REMOTE_SHAPES = (
+    re.compile(rf"^https://(?P<host>{SEGMENT})/(?P<owner>{SEGMENT})/"
+               rf"(?P<repo>{SEGMENT}?)(?:\.git)?/?$"),
+    re.compile(rf"^git@(?P<host>{SEGMENT}):(?P<owner>{SEGMENT})/"
+               rf"(?P<repo>{SEGMENT}?)(?:\.git)?/?$"),
+)
 # `/runs/N` and `/runs/N/files`: one run by id. The id is captured as typed
 # so a non-integer is 400 rather than the static-file 404; both routes parse
 # it through `parse_run_id()`.
@@ -317,6 +330,46 @@ def json_host(target, host):
     return None if host is None else host_label(target, host)
 
 
+def origin_web_url(target):
+    """`https://HOST/OWNER/REPO` for the target's `origin`, or None.
+
+    Read once per request from `git remote get-url origin` in the target's
+    checkout and normalized from either of `REMOTE_SHAPES`; no `origin`, a
+    remote of another shape, or any git failure is None, so the rows it
+    feeds carry no link rather than a bad one.
+    """
+    try:
+        code, out = git(target.path, "remote", "get-url", "origin")
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if code != 0:
+        return None
+    for shape in REMOTE_SHAPES:
+        found = shape.match(out.strip())
+        if found:
+            return "https://{host}/{owner}/{repo}".format(**found.groupdict())
+    return None
+
+
+def commit_url(target, sha, origin):
+    """`ORIGIN/commit/SHA` when `sha` is an ancestor of `origin/main` in the
+    target's checkout, else None.
+
+    A local merge never pushed, one rewritten on the way up, or a sha the
+    checkout does not hold would link to a page that does not exist, so the
+    ancestry check gates the link; `origin/main` absent (a fresh clone) or
+    git failing for any reason is the same None, never an error.
+    """
+    if not sha or not origin:
+        return None
+    try:
+        code, _ = git(target.path, "merge-base", "--is-ancestor", sha,
+                      "origin/main")
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return f"{origin}/commit/{sha}" if code == 0 else None
+
+
 def runs(target, query=""):
     """The `/runs` answer: `--report`'s rows as JSON, first `limit` of them.
 
@@ -365,10 +418,12 @@ def shipped(target, query=""):
     is the terminal's table, oldest first, and stays that. Each row is the
     run's `id`, `ticket`, `title`, `rounds`, `findings` (the count over its
     review rounds), `started_ms`, `ended_ms`, `actual_min`, `estimate_min`,
-    `merge_sha` and `host`. `limit` defaults to `SHIPPED_LIMIT` and is
-    capped at `SHIPPED_CAP`; `before=RUN_ID` answers the rows that ended
-    before that run (ties by id), and `next_before` is the id to pass back
-    for the next page, null on the last. A bad `limit` or `before` is 400
+    `merge_sha`, `commit_url` (the merge commit's page on `origin` when the
+    sha has reached `origin/main`, `commit_url()`) and `host`. `limit`
+    defaults to `SHIPPED_LIMIT` and is capped at `SHIPPED_CAP`;
+    `before=RUN_ID` answers the rows that ended before that run (ties by
+    id), and `next_before` is the id to pass back for the next page, null
+    on the last. A bad `limit` or `before` is 400
     naming it; a `before` no run has is an empty page.
     """
     try:
@@ -386,6 +441,7 @@ def shipped(target, query=""):
         conn.close()
     more = len(runs) > limit
     runs = runs[:limit]
+    origin = origin_web_url(target)
     return 200, {
         "rows": [{"id": run.id, "ticket": run.linearIdentifier,
                   "title": run.title, "rounds": run.reviewRoundCount,
@@ -395,6 +451,7 @@ def shipped(target, query=""):
                   "estimate_min": (run.timeBoxMs / 60000
                                    if run.timeBoxMs else None),
                   "merge_sha": run.mergeSha,
+                  "commit_url": commit_url(target, run.mergeSha, origin),
                   "host": json_host(target, run.host)}
                  for run in runs],
         "next_before": runs[-1].id if more else None,
@@ -438,7 +495,8 @@ def run_detail(target, run_id, now=None):
     here against `now` while the run is live and null once it has ended --
     an ended run's heartbeat is history, not a liveness signal -- and
     `max_rounds`, the loop's review-round cap, so a client can say "round 2
-    of 3" without knowing the constant. `rounds` is oldest first, each with
+    of 3" without knowing the constant, and `commit_url` as `/shipped`
+    carries it. `rounds` is oldest first, each with
     its findings decoded once here into objects; `events` is the narrative
     level of the stream, oldest first, without the detail rows. `run_id`
     that is not an integer is 400; an integer with no run is 404 carrying
@@ -463,7 +521,10 @@ def run_detail(target, run_id, now=None):
                 "time_box_ms": run.timeBoxMs, "branch": run.branch,
                 "host": json_host(target, run.host),
                 "heartbeat_age_ms": now - run.lastHeartbeat if live else None,
-                "merge_sha": run.mergeSha, "max_rounds": MAX_ROUNDS},
+                "merge_sha": run.mergeSha,
+                "commit_url": commit_url(target, run.mergeSha,
+                                         origin_web_url(target)),
+                "max_rounds": MAX_ROUNDS},
         "rounds": [{"round": r.round, "started_ms": r.startedAt,
                     "ended_ms": r.endedAt, "verdict": r.verdict,
                     "reviewer_model": r.reviewerModel,
