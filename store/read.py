@@ -175,6 +175,10 @@ class ApprovedCandidate:
     run_id: int
     sha: str | None
     pr_url: str | None = None
+    # Whether the release was an approval -- the human's "merge" -- rather
+    # than `--shepherd`'s "look at the pull request again". Only the PR
+    # path reads it: a local candidate the operator released is merged.
+    approved: bool = True
 
 
 def approved_candidate(conn, ticket_id, run_id):
@@ -187,7 +191,8 @@ def approved_candidate(conn, ticket_id, run_id):
     module older than the column) and the `prUrl` the park wrote when
     `[merge] mode = "pr"` opened a pull request for it, or None when the
     newest prior run is anything else: the claim then starts the ticket
-    over, as it would after a failed run.
+    over, as it would after a failed run. `approved` is False when the
+    newest intervention on that run is `shepherd` rather than `approve`.
     """
     row = conn.execute(
         "SELECT id, resumePhase, candidateSha, prUrl FROM runs"
@@ -195,7 +200,11 @@ def approved_candidate(conn, ticket_id, run_id):
         " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
     if row is None or row[1] != "merge_gate":
         return None
-    return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3])
+    last = conn.execute(
+        'SELECT "action" FROM interventions WHERE runId = ?'
+        " ORDER BY id DESC LIMIT 1", (row[0],)).fetchone()
+    return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
+                             approved=last is None or last[0] != "shepherd")
 
 
 def live_runs(conn, phases):

@@ -14,6 +14,7 @@ Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 from __future__ import annotations
 
 import io
+import json
 import os
 import shlex
 import shutil
@@ -44,6 +45,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Commit,
     FakeAgent,
     Idle,
+    Reply,
     no_agent_processes,
 )
 
@@ -52,6 +54,7 @@ import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -1589,18 +1592,25 @@ class SelfHostingTests(LoopFixture):
 
 class MergeModeTests(LoopFixture):
     """`[merge] mode = "pr"`: an approved, verified candidate is pushed and
-    opened as a pull request instead of merged, and the run parks for the
-    answer. `"local"`, or no key, merges as it always has.
+    opened as a pull request instead of merged, and the loop shepherds the
+    PR -- threads verdicted, fixed and answered, checks awaited -- until it
+    merges through the PR's API or the run parks. `"local"`, or no key,
+    merges as it always has.
 
     `git` and `gh` on PATH are fakes that record their argv: the fake `git`
     intercepts `push` alone and hands everything else to the real one, so
     the loop's worktrees, merges and rev-parses are real while the one call
-    that would leave the machine is witnessed instead of made."""
+    that would leave the machine is witnessed instead of made. The fake
+    `gh` answers `pr create` with `URL` and `api` with what the test put in
+    the state files: the PR's threads and checks for the state query, an
+    empty success for the reply and resolve mutations, `MERGE_SHA` for the
+    merge."""
 
     URL = "https://github.com/example/repo/pull/7"
     # The `origin` the fixture target is given: the repository the push
     # goes to and the one `gh pr create` must be pinned to.
     ORIGIN = "https://github.com/example/repo.git"
+    MERGE_SHA = "9f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"
     # A body the claim-time template gate accepts, so the run reaches the
     # gate with a ticket body for the PR to carry.
     BODY = (
@@ -1614,16 +1624,48 @@ class MergeModeTests(LoopFixture):
         "## Implementation notes\n\n* None.\n\n"
         "## Estimate & dependencies\n\nEstimate: 5 min · Depends on: none\n\n"
         "## Open questions\n\n* None\n")
+    # Two threads a review bot might leave: a clear defect and a style nit.
+    DEFECT = ("src/app.py", 10, "review-bot",
+              "`load()` returns None when the file is missing and the"
+              " caller indexes it: a crash on first run.")
+    NIT = ("src/app.py", 20, "style-bot",
+           "Prefer `thing_count` over `n` for this variable name.")
 
-    def fake_route(self, push_exit=0, push_sh=""):
+    @staticmethod
+    def thread(number, path, line, author, body, resolved=False):
+        """One review thread as the GraphQL answer carries it."""
+        return {"id": f"PRRT_{number}", "isResolved": resolved,
+                "isOutdated": False, "path": path, "line": line,
+                "comments": {"nodes": [{"author": {"login": author},
+                                        "body": body,
+                                        "url": f"{MergeModeTests.URL}"
+                                               f"#discussion_r{number}"}]}}
+
+    def pr_state(self, threads=(), checks="SUCCESS", merged=False):
+        """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
+        tuple), the head's check rollup, and whether the PR is merged."""
+        nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
+        return {"data": {"repository": {"pullRequest": {
+            "state": "MERGED" if merged else "OPEN", "merged": merged,
+            "headRefOid": "0" * 40,
+            "mergeCommit": {"oid": self.MERGE_SHA} if merged else None,
+            "commits": {"nodes": [{"commit": {"statusCheckRollup":
+                                              {"state": checks}}}]},
+            "reviewThreads": {"nodes": nodes}}}}}
+
+    def fake_route(self, push_exit=0, push_sh="", states=None):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
-        Each call appends its argv to `self.calls`; `gh` also keeps the body
-        it read on stdin in `self.pr_body` and prints `URL`. `push_exit` is
-        what `git push` answers with -- non-zero is a remote refusing --
-        and `push_sh` is shell the fake push runs first, for a push that
-        takes its time.
+        Each call appends its argv to `self.calls`; `gh pr create` keeps
+        the body it read on stdin in `self.pr_body` and prints `URL`; each
+        `gh api` call keeps its JSON body under `self.api_dir` (read back
+        by `api_calls()`) and answers by what the body asks: the state
+        query gets the first of `states` (each served once until the last,
+        which is served forever), a mutation an empty success, the merge
+        `MERGE_SHA`. `push_exit` is what `git push` answers with --
+        non-zero is a remote refusing -- and `push_sh` is shell the fake
+        push runs first, for a push that takes its time.
         """
         self.git("remote", "add", "origin", self.ORIGIN)
         tmp = tempfile.TemporaryDirectory()
@@ -1631,6 +1673,13 @@ class MergeModeTests(LoopFixture):
         bindir = Path(tmp.name)
         self.calls = bindir / "calls.log"
         self.pr_body = bindir / "pr_body.md"
+        self.api_dir = bindir / "api"
+        self.api_dir.mkdir()
+        answers = bindir / "states"
+        answers.mkdir()
+        for n, state in enumerate([self.pr_state()] if states is None
+                                  else states, 1):
+            (answers / f"{n:03d}.json").write_text(json.dumps(state))
         real_git = shutil.which("git")
         (bindir / "git").write_text(
             "#!/bin/sh\n"
@@ -1644,6 +1693,21 @@ class MergeModeTests(LoopFixture):
         (bindir / "gh").write_text(
             "#!/bin/sh\n"
             f'printf "gh %s\\n" "$*" >> "{self.calls}"\n'
+            'if [ "$1" = api ]; then\n'
+            f'  n=$(ls "{self.api_dir}" | wc -l); n=$((n+1))\n'
+            f'  body="{self.api_dir}/$n.json"; cat > "$body"\n'
+            '  if grep -q resolveReviewThread "$body"; then\n'
+            "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"
+            '  elif grep -q addPullRequestReviewThreadReply "$body"; then\n'
+            "    echo '{\"data\":{\"addPullRequestReviewThreadReply\":{}}}'\n"
+            '  elif grep -q reviewThreads "$body"; then\n'
+            f'    f=$(ls "{answers}"/*.json | head -1); cat "$f"\n'
+            f'    [ $(ls "{answers}"/*.json | wc -l) -gt 1 ] && rm "$f"\n'
+            "  else\n"
+            f"    echo '{{\"sha\":\"{self.MERGE_SHA}\",\"merged\":true}}'\n"
+            "  fi\n"
+            "  exit 0\n"
+            "fi\n"
             f'cat > "{self.pr_body}"\n'
             f"echo {self.URL}\n")
         for script in ("git", "gh"):
@@ -1657,23 +1721,48 @@ class MergeModeTests(LoopFixture):
         return (self.calls.read_text().splitlines()
                 if self.calls.exists() else [])
 
+    def api_calls(self):
+        """Every `gh api` body, in order, as `(kind, variables)`: the kind
+        is `state`, `reply`, `resolve` or `merge`."""
+        calls = []
+        for path in sorted(self.api_dir.iterdir(),
+                           key=lambda p: int(p.stem)):
+            body = json.loads(path.read_text())
+            query = body.get("query", "")
+            kind = ("resolve" if "resolveReviewThread" in query
+                    else "reply" if "addPullRequestReviewThreadReply" in query
+                    else "state" if "reviewThreads" in query else "merge")
+            calls.append((kind, body.get("variables", body)))
+        return calls
+
+    def provider(self):
+        return StubProvider(dict(a_task(), body=self.BODY))
+
+    def question(self):
+        ((status, question),) = self.read(
+            "SELECT status, blockedQuestion FROM tickets")
+        self.assertEqual(status, "blocked_on_operator")
+        return question
+
     def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
         """Push, then create, in that order; the PR is titled `KO-n: TITLE`
         and its body is the ticket body followed by the run's FINDINGS
-        entry; the URL `gh` printed is the run's `prUrl` and the ticket's
+        entry; the shepherd's one pass finds no thread and green checks,
+        and under `approve = "human"` the run parks "ready to merge": the
+        URL `gh` printed is the run's `prUrl` and heads the ticket's
         question; main is untouched, the branch and worktree stay, and the
         run is parked alive in `awaiting_merge_approval` with its lease
         released -- the `approve = "human"` park, with a URL."""
-        self.configure('[merge]\nmode = "pr"\n')
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
-        provider = StubProvider(dict(a_task(), body=self.BODY))
+        provider = self.provider()
 
         fake, _ = self.loop(Commit("the scripted work"), APPROVE,
                             provider=provider)
 
         self.assertEqual(fake.roles, ["implement", "review"])
         calls = self.recorded()
-        self.assertEqual(len(calls), 2, calls)
+        self.assertEqual(len(calls), 3, calls)
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
         # Pinned to the repository the push went to, not `gh`'s own default
         # repository (`gh repo set-default`), which can point elsewhere.
@@ -1681,6 +1770,7 @@ class MergeModeTests(LoopFixture):
             calls[1],
             f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
             " --title KO-131: add a thing --body-file -")
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
         body = self.pr_body.read_text()
         self.assertIn("The thing, added.", body)
         self.assertIn("— KO-131", body)  # the FINDINGS entry heading
@@ -1695,12 +1785,18 @@ class MergeModeTests(LoopFixture):
               self.git("rev-parse", BRANCH).strip())])
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),
                          [(None,)])
-        self.assertEqual(
-            self.read("SELECT status, blockedQuestion FROM tickets"),
-            [("blocked_on_operator", f"PR open: {self.URL}")])
+        question = self.question()
+        self.assertTrue(question.startswith(f"PR open: {self.URL}\n"),
+                        question)
+        self.assertIn("ready to merge", question)
         (_, comment) = provider.comments[-1]
         self.assertIn("PR OPEN", comment)
         self.assertIn(self.URL, comment)
+        # The pass is a round of the run, stamped as the checks' pass.
+        self.assertEqual(
+            self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
+                      " ORDER BY round")[-1],
+            (2, "pass", "github:ci"))
 
     def test_a_slow_push_keeps_the_run_heartbeating(self):
         """The push and the create block for as long as the remote takes,
@@ -1709,7 +1805,7 @@ class MergeModeTests(LoopFixture):
         fail the run before its URL was recorded. The fake push here samples
         the run's `lastHeartbeat` from the store while it takes longer than
         the whole stale budget; the beat must move under it."""
-        self.configure('[merge]\nmode = "pr"\n'
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        "[supervisor]\nheartbeat_stale_min = 0.01\n")
         knobs = holophyte.config.sweep_config(self.tgt)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
@@ -1724,9 +1820,9 @@ class MergeModeTests(LoopFixture):
             ".fetchone()\n"
             f"    open({str(samples)!r}, 'a').write('%s %s\\n' % row)\n")
         self.fake_route(push_sh=f"  {sys.executable} -c {shlex.quote(sampler)}")
-        provider = StubProvider(dict(a_task(), body=self.BODY))
 
-        self.loop(Commit("the scripted work"), APPROVE, provider=provider)
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
 
         seen = [line.split() for line in samples.read_text().splitlines()]
         self.assertGreaterEqual(len(seen), 4, seen)
@@ -1740,43 +1836,245 @@ class MergeModeTests(LoopFixture):
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
 
-    def test_an_approval_of_an_open_pull_request_does_not_merge_locally(self):
-        """Review round: `--approve KO-n` on a run parked with a PR open used
-        to resume at the gate and land the candidate on main -- branch
-        deleted, ticket merged, PR still open. Under `mode = "pr"` the
-        candidate lands through its PR (the mode's second half), so the
-        resumed run pushes nothing, opens nothing, touches neither main nor
-        the worktree, and parks again on the same URL."""
+    def test_a_green_quiet_pr_under_auto_merges_through_the_api(self):
+        """Acceptance: zero unresolved threads and green checks with
+        `approve = "auto"`: the PR is merged through the merge API -- one
+        `PUT .../pulls/7/merge`, never a local merge or a push of main --
+        and the run is marked merged with the sha GitHub answered; the
+        worktree and local branch are cleaned up, local main untouched."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route()
-        provider = StubProvider(dict(a_task(), body=self.BODY))
-        self.loop(Commit("the scripted work"), APPROVE, provider=provider)
+        provider = self.provider()
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=provider)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(self.api_calls(),
+                         [("state", {"owner": "example", "name": "repo",
+                                     "number": 7}),
+                          ("merge", {"merge_method": "merge"})])
+        self.assertIn("gh api --hostname github.com --method PUT"
+                      " repos/example/repo/pulls/7/merge --input -",
+                      self.recorded())
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [f"git push origin {BRANCH}"])
+        # Local main got the close-out's FINDINGS commit, as after a local
+        # merge, and nothing else: the candidate landed on GitHub's main.
+        self.assertEqual(self.subjects(),
+                         ["Complete task KO-131: add a thing", "base"])
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha, prUrl FROM runs"),
+            [("done", "merged", self.MERGE_SHA, None)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        (_, comment) = provider.comments[-1]
+        self.assertIn(f"MERGED through {self.URL} as {self.MERGE_SHA}",
+                      comment)
+
+    def test_pending_checks_are_waited_for_before_the_verdict(self):
+        """A pass with no thread and pending checks reads the PR again
+        after `CHECK_POLL_S` rather than judging a rollup that is not in
+        yet; green on the second read merges."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state(checks="PENDING"),
+                                self.pr_state(checks="SUCCESS")])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("the scripted work"), APPROVE,
+                      provider=self.provider())
+
+        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "state", "merge"])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
+        """Acceptance: two unresolved threads, a clear defect and a style
+        nit, and green checks. One pass: the adjudicator addresses the one
+        and declines the other; the defect gets a fix commit, pushed, a
+        reply opening `---- Comment by MODEL ----` and naming the sha, and
+        is resolved; the nit gets a decline reply and stays open; the pass
+        is a `reviewRounds` row routed `github:LOGIN`; and the run parks
+        with the nit listed in the ticket's question."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT, self.NIT])])
+        provider = self.provider()
+        verdicts = Reply("THREAD 1: ADDRESS -- load() must not return None"
+                         " on a missing file\n"
+                         "THREAD 2: DECLINE -- a naming preference, not a"
+                         " defect")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+                            Commit("fix: default load() to an empty thing"),
+                            provider=provider)
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "adjudicate", "implement"])
+        # The adjudicator judged the candidate as pushed, against main.
+        self.assertEqual(fake.turns[2].base_sha, self.base)
+        self.assertIn(self.URL, fake.turns[2].goal)
+        self.assertIn(self.DEFECT[3], fake.turns[2].goal)
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertNotEqual(fixed, fake.turns[2].candidate_sha)
+        self.assertIn("fix: default load() to an empty thing",
+                      self.subjects(BRANCH))
+        # Two pushes: the candidate, then the fix.
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [f"git push origin {BRANCH}"] * 2)
+        calls = self.api_calls()
+        self.assertEqual([kind for kind, _ in calls],
+                         ["state", "reply", "resolve", "reply"])
+        model = holophyte.agents.agent_route(self.tgt, "adjudicate")
+        self.assertEqual(calls[1][1]["thread"], "PRRT_1")
+        self.assertTrue(calls[1][1]["body"].startswith(
+            f"---- Comment by {model} ----\n"), calls[1][1]["body"])
+        self.assertIn(fixed, calls[1][1]["body"])
+        self.assertEqual(calls[2][1], {"thread": "PRRT_1"})
+        self.assertEqual(calls[3][1]["thread"], "PRRT_2")
+        self.assertIn("Declined:", calls[3][1]["body"])
+        self.assertIn("naming preference", calls[3][1]["body"])
+        self.assertEqual(
+            self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
+                      " ORDER BY round"),
+            [(1, "pass", holophyte.agents.agent_route(self.tgt, "review")),
+             (2, "changes_requested", "github:review-bot+style-bot")])
+        # Every reply and resolve is on the run's stream.
+        events = [summary for (summary,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'pull_request'"
+            " ORDER BY seq")]
+        self.assertEqual(
+            [e.split(" thread ")[0] for e in events if " thread " in e],
+            ["replied on", "resolved", "replied on"])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl, candidateSha FROM runs"),
+            [("awaiting_merge_approval", None, self.URL, fixed)])
+        question = self.question()
+        self.assertTrue(question.startswith(f"PR open: {self.URL}\n"))
+        self.assertIn("1 thread(s) declined", question)
+        self.assertIn(self.NIT[3], question)
+        self.assertNotIn(self.DEFECT[3], question)
+
+    def test_a_human_verdict_posts_nothing_and_parks_with_the_thread(self):
+        """Acceptance: a thread the adjudicator marks `HUMAN`: no reply is
+        posted on it, no fix round runs, the run parks, and the ticket's
+        question quotes the thread."""
+        self.configure('[merge]\nmode = "pr"\n')
+        asks = ("src/app.py", 30, "ko",
+                "Do we want this to be configurable at all?")
+        self.fake_route(states=[self.pr_state([asks])])
+        verdict = Reply("THREAD 1: HUMAN -- a question about the approach"
+                        " for the operator")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdict,
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [f"git push origin {BRANCH}"])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl FROM runs"),
+            [("awaiting_merge_approval", None, self.URL)])
+        question = self.question()
+        self.assertIn("needs a human's answer", question)
+        self.assertIn(f"> {asks[3]}", question)
+        self.assertIn("src/app.py:30 by @ko", question)
+        self.assertEqual(
+            self.read("SELECT verdict, reviewerModel FROM reviewRounds"
+                      " WHERE round = 2"),
+            [("changes_requested", "github:ko")])
+
+    def test_pr_rounds_caps_the_passes_and_parks_naming_the_cap(self):
+        """Acceptance: `pr_rounds = 2` and a thread that keeps reappearing:
+        two passes each fix and answer it, the third pass does not happen,
+        and the run parks naming the cap with the thread listed."""
+        self.configure('[merge]\nmode = "pr"\npr_rounds = 2\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        address = Reply("THREAD 1: ADDRESS -- a real crash")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            address, Commit("fix 1"), address, Commit("fix 2"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+                                      "implement", "adjudicate", "implement"])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "resolve",
+                          "state", "reply", "resolve", "state"])
+        self.assertEqual(
+            self.read("SELECT round, reviewerModel FROM reviewRounds"
+                      " WHERE reviewerModel LIKE 'github:%' ORDER BY round"),
+            [(2, "github:review-bot"), (3, "github:review-bot")])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        question = self.question()
+        self.assertIn("pr_rounds = 2", question)
+        self.assertIn(self.DEFECT[3], question)
+
+    def test_an_approval_of_an_open_pull_request_merges_it_through_the_api(
+            self):
+        """`--approve KO-n` on a run parked with a PR open is the human's
+        "merge": the resumed run shepherds the PR once more and, green and
+        quiet, merges it through the API -- no implementer, no reviewer,
+        no push, no local merge, main untouched."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
         approved = self.git("rev-parse", BRANCH).strip()
         self.calls.unlink()
+        for path in self.api_dir.iterdir():
+            path.unlink()
         holophyte.loop.approve(self.tgt, "KO-131", "looks fine",
                                out=io.StringIO())
 
-        fake, guard = self.loop(provider=StubProvider(dict(a_task(),
-                                                           body=self.BODY)))
+        fake, guard = self.loop(provider=self.provider())
 
         self.assertEqual(fake.roles, [])
         self.assertEqual(guard.spawned, [])
-        self.assertEqual(self.recorded(), [])
-        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
-        self.assertNotIn("the scripted work", self.subjects())
-        self.assertIn(BRANCH, self.branches())
-        self.assertEqual(self.git("rev-parse", BRANCH).strip(), approved)
-        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [])
+        self.assertEqual(self.subjects(),
+                         ["Complete task KO-131: add a thing", "base"])
+        self.assertNotIn(BRANCH, self.branches())
         self.assertEqual(
             self.read("SELECT id, phase, outcome, resumePhase, prUrl,"
-                      " candidateSha FROM runs ORDER BY id"),
-            [(1, "failed", "abandoned", "merge_gate", self.URL, approved),
-             (2, "awaiting_merge_approval", None, None, self.URL, approved)])
+                      " candidateSha, mergeSha FROM runs ORDER BY id"),
+            [(1, "failed", "abandoned", "merge_gate", self.URL, approved,
+              None),
+             (2, "done", "merged", None, None, None, self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+
+    def test_a_shepherd_release_parks_again_rather_than_merging(self):
+        """`--shepherd KO-n` is "look again", not "merge": the resumed run
+        shepherds the PR and, green and quiet under `approve = "human"`,
+        parks again on the same URL."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+        holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "bots are done",
+                                       out=io.StringIO())
+
+        fake, _ = self.loop(provider=self.provider())
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "state"])
         self.assertEqual(
-            self.read("SELECT status, blockedQuestion FROM tickets"),
-            [("blocked_on_operator", f"PR open: {self.URL}")])
-        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
-                         [(None,)])
+            self.read("SELECT id, phase, outcome, prUrl FROM runs"
+                      " ORDER BY id"),
+            [(1, "failed", "abandoned", self.URL),
+             (2, "awaiting_merge_approval", None, self.URL)])
+        self.assertEqual(
+            self.read('SELECT "action" FROM interventions'), [("shepherd",)])
 
     def test_a_refused_push_is_an_infra_failure_with_no_pull_request(self):
         """The remote said no: the run ends as an infra failure naming the

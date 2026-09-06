@@ -1,34 +1,39 @@
 """`[merge] mode = "pr"`: the loop's one GitHub surface.
 
-Design note 7's first half. Instead of the `--no-ff` merge into main, an
-approved, verified candidate is pushed to `origin` and opened as a pull
-request whose body is the ticket body plus the run's FINDINGS entry, so the
-repository's own review bots and CI see the change before it lands; the loop
-then parks the run exactly as `[merge] approve = "human"` does, with the PR's
-URL on the run (`runs.prUrl`) and in the question the ticket asks. Reading
-review threads, waiting for CI and merging the PR are the second half and are
-not here.
+Design note 7. Instead of the `--no-ff` merge into main, an approved,
+verified candidate is pushed to `origin` and opened as a pull request whose
+body is the ticket body plus the run's FINDINGS entry, so the repository's
+own review bots and CI see the change before it lands. The loop then
+shepherds the PR (`holophyte.loop`): `pr_state()` reads its unresolved
+review threads and its checks, `reply_thread()` and `resolve_thread()`
+answer the threads the adjudicator verdicted, `merge_pull_request()` lands
+it through the merge API once it is green and quiet -- never a local push
+of `main`.
 
 Everything that talks to GitHub is in this file, so the surface is one seam
 to port: `check_pr_route()` is the startup preflight, `push_branch()` and
 `create_pull_request()` the two calls the merge path makes, `pr_body()` the
-body they carry. The route is `gh` on PATH, authenticated, or -- with no `gh`
--- the REST API with a token read from `TOKEN_VARS` in the environment. The
-token is read there and only there: never written to the config, the store or
-a log line.
+body they carry, and the shepherd's calls go through `graphql()` and
+`rest()`. The route is `gh` on PATH, authenticated, or -- with no `gh` --
+the REST and GraphQL APIs with a token read from `TOKEN_VARS` in the
+environment. The token is read there and only there: never written to the
+config, the store or a log line.
 
 Failures on the route are `InfraFailure`: a push refused, a PR create that
 did not answer, a `gh` gone missing since startup say nothing about the
 ticket, so they spend none of its strikes, and every one of them leaves the
-branch and worktree as they were.
+branch and worktree as they were. A merge GitHub refuses is `MergeRefused`:
+the PR's own state (a protection rule, a conflict), for the operator.
 """
 import json
 import os
 import re
 import shutil
 import subprocess
+import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 
 import store.read
 from holophyte.findings import run_entry
@@ -49,6 +54,96 @@ API = "https://api.github.com"
 # one API call that has not answered in this long is a route that is down, and
 # the run must end as an infra failure rather than hold its lease forever.
 PR_TIMEOUT = 120
+# How the shepherd waits for pending checks: one `pr_state()` read every
+# `CHECK_POLL_S` seconds, for at most `CHECK_WAIT_S` before the run parks
+# with the checks still pending. `SLEEP` is the seam a test replaces.
+CHECK_POLL_S = 30
+CHECK_WAIT_S = 1800
+SLEEP = time.sleep
+# The shape of a pull request URL, `gh pr create`'s and the API's alike; the
+# host is kept so an Enterprise PR is answered on its own API.
+PR_URL_RE = re.compile(r"^https://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)/?$")
+# What `statusCheckRollup.state` says, folded to the three answers the
+# shepherd acts on. A PR with no checks at all (`null`) has nothing to wait
+# for and reads as green.
+CHECK_STATES = {None: "success", "SUCCESS": "success",
+                "PENDING": "pending", "EXPECTED": "pending"}
+# The reviewer the shepherd stamps a pass with when no thread named one: the
+# pass judged the checks alone.
+NO_AUTHOR = "ci"
+
+STATE_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      state merged headRefOid mergeCommit { oid }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      reviewThreads(first: 100) {
+        nodes {
+          id isResolved isOutdated path line
+          comments(first: 50) { nodes { author { login } body url } }
+        }
+      }
+    }
+  }
+}"""
+REPLY_MUTATION = """
+mutation($thread: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(
+      input: {pullRequestReviewThreadId: $thread, body: $body}) {
+    comment { url }
+  }
+}"""
+RESOLVE_MUTATION = """
+mutation($thread: ID!) {
+  resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
+}"""
+
+
+class MergeRefused(Exception):
+    """GitHub would not merge the pull request: its answer, verbatim."""
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    """A pull request by its URL: the host its API answers on, the
+    repository, and the number."""
+
+    host: str
+    owner: str
+    name: str
+    number: int
+    url: str
+
+    @property
+    def repo(self):
+        return f"{self.owner}/{self.name}"
+
+
+@dataclass(frozen=True)
+class Thread:
+    """One unresolved review thread: where it is, who opened it, what it
+    says (the opening comment's body), and where to read it."""
+
+    id: str
+    path: str
+    line: int | None
+    author: str
+    body: str
+    url: str
+    outdated: bool = False
+
+
+@dataclass(frozen=True)
+class PrState:
+    """The pull request as one `pr_state()` read saw it."""
+
+    threads: tuple  # unresolved `Thread`s, oldest first
+    checks: str  # "success", "pending" or "failure"
+    head_sha: str | None
+    merged: bool = False
+    merge_sha: str | None = None
+    closed: bool = False
 
 
 def origin_url(target):
@@ -261,3 +356,187 @@ def _url_in(text):
     the PR URL as its last line, after any progress it wrote."""
     urls = re.findall(r"https://\S+", text or "")
     return urls[-1] if urls else None
+
+
+def parse_pr_url(url):
+    """The `PullRequest` a PR URL names, or None for a URL of another shape:
+    a parked run whose `prUrl` this cannot read has nothing to shepherd."""
+    m = PR_URL_RE.match((url or "").strip())
+    if m is None:
+        return None
+    host, owner, name, number = m.groups()
+    return PullRequest(host=host, owner=owner, name=name, number=int(number),
+                       url=url.strip())
+
+
+def pr_state(target, pull):
+    """One read of the pull request: its unresolved review threads, the head
+    commit's check rollup, and whether it is already merged or closed.
+
+    One GraphQL query, so the threads and the checks are the same moment's.
+    A thread's author and body are its opening comment's; a thread with no
+    comments (GitHub does not make one) is skipped. Resolved threads are
+    not returned: the shepherd answers what is open.
+    """
+    data = graphql(target, pull, STATE_QUERY,
+                   {"owner": pull.owner, "name": pull.name,
+                    "number": pull.number})
+    node = ((data.get("repository") or {}).get("pullRequest")
+            if isinstance(data, dict) else None)
+    if not isinstance(node, dict):
+        raise InfraFailure(f"GitHub answered without pull request"
+                           f" {pull.url}: {_short(data)}")
+    threads = []
+    for t in ((node.get("reviewThreads") or {}).get("nodes") or ()):
+        if not isinstance(t, dict) or t.get("isResolved"):
+            continue
+        comments = ((t.get("comments") or {}).get("nodes") or ())
+        first = next((c for c in comments if isinstance(c, dict)), None)
+        if first is None:
+            continue
+        author = (first.get("author") or {}).get("login") or "unknown"
+        threads.append(Thread(
+            id=t.get("id") or "", path=t.get("path") or "",
+            line=t.get("line"), author=author, body=first.get("body") or "",
+            url=first.get("url") or pull.url,
+            outdated=bool(t.get("isOutdated"))))
+    commits = ((node.get("commits") or {}).get("nodes") or ())
+    rollup = None
+    if commits and isinstance(commits[-1], dict):
+        rollup = ((commits[-1].get("commit") or {})
+                  .get("statusCheckRollup") or {}).get("state")
+    checks = CHECK_STATES.get(rollup, "failure")
+    merge = node.get("mergeCommit") or {}
+    return PrState(threads=tuple(threads), checks=checks,
+                   head_sha=node.get("headRefOid"),
+                   merged=bool(node.get("merged")),
+                   merge_sha=merge.get("oid") if isinstance(merge, dict)
+                   else None,
+                   closed=node.get("state") == "CLOSED")
+
+
+def reply_thread(target, pull, thread_id, body):
+    """Post `body` as a reply on review thread `thread_id`."""
+    graphql(target, pull, REPLY_MUTATION, {"thread": thread_id, "body": body})
+
+
+def resolve_thread(target, pull, thread_id):
+    """Mark review thread `thread_id` resolved."""
+    graphql(target, pull, RESOLVE_MUTATION, {"thread": thread_id})
+
+
+def merge_pull_request(target, pull):
+    """Merge the pull request through the merge API; return the merge
+    commit's sha. A merge commit, like the loop's `--no-ff` merge, so the
+    branch's history lands as it was reviewed. GitHub declining -- a
+    protection rule, a conflict, a check that turned red -- is
+    `MergeRefused` with its reason; the route not answering is
+    `InfraFailure` as everywhere else."""
+    try:
+        answer = rest(target, pull, "PUT",
+                      f"repos/{pull.repo}/pulls/{pull.number}/merge",
+                      {"merge_method": "merge"})
+    except InfraFailure as e:
+        # A 405 (not mergeable) or 409 (head moved) is the PR refusing, not
+        # the route; `_call` folds every non-2xx into the same exception,
+        # so the status is read off its text.
+        if re.search(r"\b(405|409|422)\b", str(e)):
+            raise MergeRefused(str(e)) from None
+        raise
+    sha = answer.get("sha") if isinstance(answer, dict) else None
+    if not sha or not answer.get("merged"):
+        raise MergeRefused(f"GitHub did not merge {pull.url}:"
+                           f" {_short(answer)}")
+    return sha
+
+
+def graphql(target, pull, query, variables):
+    """One GraphQL call on the PR's host; the `data` object. Errors in the
+    answer (`errors`) are `InfraFailure` naming the first."""
+    answer = _call(target, pull.host, "POST", "graphql",
+                   {"query": query, "variables": variables})
+    if not isinstance(answer, dict):
+        raise InfraFailure(f"GitHub GraphQL answered {_short(answer)}")
+    if answer.get("errors"):
+        first = answer["errors"][0]
+        message = (first.get("message") if isinstance(first, dict)
+                   else str(first))
+        raise InfraFailure(f"GitHub GraphQL refused: {message}")
+    return answer.get("data") or {}
+
+
+def rest(target, pull, method, path, payload=None):
+    """One REST call on the PR's host, `path` relative to the API root."""
+    return _call(target, pull.host, method, path, payload)
+
+
+def _call(target, host, method, path, payload):
+    """The one call shape both APIs go through: `gh api` when `gh` is on
+    PATH, the token and `urllib` otherwise; the decoded JSON answer, or
+    `InfraFailure` for a route that refused or did not answer."""
+    if shutil.which(GH) is not None:
+        return _call_with_gh(target, host, method, path, payload)
+    token = token_from_env()
+    if token is None:
+        raise InfraFailure(f"no {GH!r} on PATH and no "
+                           f"{' or '.join(TOKEN_VARS)} in the environment")
+    return _call_with_api(host, method, path, payload, token)
+
+
+def _call_with_gh(target, host, method, path, payload):
+    argv = [GH, "api", "--hostname", host, "--method", method, path]
+    body = None
+    if payload is not None:
+        argv += ["--input", "-"]
+        body = json.dumps(payload)
+    try:
+        r = subprocess.run(argv, cwd=target.path, input=body,
+                           capture_output=True, text=True, timeout=PR_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise InfraFailure(f"{GH} api {path} did not answer in"
+                           f" {PR_TIMEOUT}s") from None
+    if r.returncode:
+        detail = " ".join((r.stderr or r.stdout).split())[-500:]
+        raise InfraFailure(f"{GH} api {path} failed: {detail or 'no output'}")
+    try:
+        return json.loads(r.stdout) if r.stdout.strip() else {}
+    except ValueError:
+        raise InfraFailure(f"{GH} api {path} answered something that is not"
+                           f" JSON: {_short(r.stdout)}") from None
+
+
+def _call_with_api(host, method, path, payload, token):
+    base = API if host == "github.com" else f"https://{host}/api/v3"
+    if path == "graphql":
+        url = (f"{API}/graphql" if host == "github.com"
+               else f"https://{host}/api/graphql")
+    else:
+        url = f"{base}/{path}"
+    data = json.dumps(payload).encode() if payload is not None else None
+    request = urllib.request.Request(
+        url, data=data, method=method,
+        headers={"Authorization": f"Bearer {token}",
+                 "Accept": "application/vnd.github+json",
+                 "Content-Type": "application/json",
+                 "User-Agent": "holophyte"})
+    try:
+        with urllib.request.urlopen(request, timeout=PR_TIMEOUT) as response:
+            text = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        detail = " ".join(e.read().decode("utf-8", "replace").split())[-500:]
+        raise InfraFailure(f"GitHub refused {method} {path} ({e.code}):"
+                           f" {detail}") from None
+    except (urllib.error.URLError, OSError) as e:
+        raise InfraFailure(f"GitHub did not answer {method} {path}:"
+                           f" {e}") from None
+    try:
+        return json.loads(text) if text.strip() else {}
+    except ValueError:
+        raise InfraFailure(f"GitHub answered {method} {path} with something"
+                           f" that is not JSON: {_short(text)}") from None
+
+
+def _short(value):
+    """A value as one short line, for a message about an answer."""
+    text = value if isinstance(value, str) else json.dumps(value)
+    return " ".join(text.split())[:300]

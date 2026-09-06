@@ -24,6 +24,7 @@ from unittest.mock import patch
 import holophyte.cli
 import holophyte.target
 import store
+import store.read
 from holophyte.runs import open_store
 
 MINUTE = 60 * 1000
@@ -115,6 +116,40 @@ class ApproveCliTests(unittest.TestCase):
         # Released, the ticket is claimable again -- the loop's next pass
         # is what takes the candidate to the gate.
         self.assertTrue(store.pickable(self.conn, self.ticket))
+
+    def test_shepherd_releases_the_parked_run_without_approving(self):
+        """`--shepherd KO-n` is `--approve`'s twin with its own action: the
+        same release and resume point, a `shepherd` intervention row, and
+        the candidate the next claim carries is not marked approved."""
+        self.park()
+
+        out, _ = self.cli("--shepherd", "KO-1", "--note", "bots are done")
+
+        self.assertIn(f"KO-1 sent back to the shepherd: run {self.run}", out)
+        self.assertEqual(self.interventions(), [(self.run, "shepherd")])
+        (summary,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+            " 'intervention'", (self.run,)).fetchone()
+        self.assertEqual(summary, "human shepherd: bots are done")
+        phase, outcome, resume_phase, ended = self.run_row()
+        self.assertEqual((outcome, resume_phase), ("abandoned", "merge_gate"))
+        self.assertIsNotNone(ended)
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+        carried = store.read.approved_candidate(self.conn, self.ticket,
+                                                self.run + 1)
+        self.assertEqual((carried.run_id, carried.approved),
+                         (self.run, False))
+
+    def test_a_bare_shepherd_records_the_default_note_and_refuses_ready(self):
+        self.park()
+        self.cli("--shepherd", "KO-1")
+        self.assertEqual(self.interventions(), [(self.run, "shepherd")])
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--shepherd", "KO-1")
+
+        self.assertIn("KO-1 is ready", str(raised.exception))
+        self.assertEqual(len(self.interventions()), 1)
 
     def test_a_bare_approve_records_the_default_note(self):
         self.park()

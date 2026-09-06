@@ -1790,13 +1790,19 @@ class ConsoleConfigTests(ConfigTestCase):
 
 class MergeConfigTests(ConfigTestCase):
     """`[merge] approve`: `"auto"` (the default) or `"human"`; `[merge] mode`:
-    `"local"` (the default) or `"pr"`; nothing else."""
+    `"local"` (the default) or `"pr"`; `[merge] pr_rounds`: an integer of at
+    least 1 (default 5); nothing else."""
 
     def test_an_absent_table_is_auto_and_local(self):
         self.locate()
 
         self.assertEqual(holophyte.config.merge_config(self.tgt),
-                         ("auto", "local"))
+                         ("auto", "local", 5))
+
+    def test_pr_rounds_is_read(self):
+        self.locate('[merge]\nmode = "pr"\npr_rounds = 2\n')
+
+        self.assertEqual(holophyte.config.merge_config(self.tgt).pr_rounds, 2)
 
     def test_pr_is_read(self):
         self.locate('[merge]\nmode = "pr"\n')
@@ -1815,6 +1821,9 @@ class MergeConfigTests(ConfigTestCase):
         for line, key in (('approve = "later"', "approve"),
                           ("approve = true", "approve"),
                           ('mode = "github"', "mode"),
+                          ("pr_rounds = 0", "pr_rounds"),
+                          ("pr_rounds = true", "pr_rounds"),
+                          ('pr_rounds = "5"', "pr_rounds"),
                           ('approve_by = "human"', "approve_by")):
             with self.subTest(line=line):
                 target = self.locate(f"[merge]\n{line}\n").path

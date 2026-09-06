@@ -308,7 +308,7 @@ CREATE TABLE IF NOT EXISTS interventions (
                              'review_stuck', 'linear_cancelled', 'manual')),
     "action"  TEXT    NOT NULL
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
-                            'close_out', 'requeue', 'approve')),
+                            'close_out', 'requeue', 'approve', 'shepherd')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL
@@ -326,8 +326,10 @@ CREATE TABLE IF NOT EXISTS interventions (
 # `runs.mergeSha`, the merge commit a merged run landed as (KO-246); version
 # 5 is the action CHECK admitting 'approve', the operator's answer to a run
 # parked for merge approval (KO-258); version 6 is the `ledger` table, the
-# run's narrative kept in the store ahead of its board comment (KO-250).
-SCHEMA_VERSION = 6
+# run's narrative kept in the store ahead of its board comment (KO-250);
+# version 7 is the action CHECK admitting 'shepherd', the operator's "look at
+# the pull request again" for a run parked on one (KO-262).
+SCHEMA_VERSION = 7
 
 # Every join the loop, the sweep and the FINDINGS renderer perform goes
 # through one of these foreign keys; without an index each is a full
@@ -534,16 +536,16 @@ def init(conn):
 
 
 def _widen_interventions_action(conn):
-    """Rebuild `interventions` when its action CHECK predates 'approve'.
+    """Rebuild `interventions` when its action CHECK predates 'shepherd'.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
     cannot ALTER a CHECK, so a store initialized before a value shipped
     would refuse the row forever — which is how the KO-146 incident ended in
     raw SQL and four falsely-labeled 'resume' rows, the precedent that added
     'close_out' here. 'requeue' (schema version 3) and 'approve' (schema
-    version 5) ride the same rebuild: the newest value is the one tested
-    for, so a store from before any of them shipped is carried forward in
-    one pass. The stored DDL says which world
+    version 5) and 'shepherd' (schema version 7) ride the same rebuild: the
+    newest value is the one tested for, so a store from before any of them
+    shipped is carried forward in one pass. The stored DDL says which world
     this store is from; the rebuild is the standard rename-copy-drop from
     `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store and
     a second call both skip it. The column list is unchanged, so existing
@@ -560,7 +562,7 @@ def _widen_interventions_action(conn):
     # literal appearing anywhere else (a future comment, a default) must not
     # skip a rebuild that is still needed.
     (ddl,) = row
-    if "'approve'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
+    if "'shepherd'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -1525,7 +1527,11 @@ def approve(conn, ticket_id, note, now=None):
     `resumePhase` set to `APPROVED_RESUME_PHASE`, and the ticket walked to
     `ready`. The loop's next claim reads that `resumePhase` off the ticket's
     newest run and, its worktree still standing, skips implementation and
-    review and takes the candidate straight to the merge gate.
+    review and takes the candidate straight to the merge gate. Under
+    `[merge] mode = "pr"` the candidate lands through its pull request: the
+    resumed run shepherds the PR and, once its checks are green and its
+    threads resolved, merges it through the API -- the approval is the
+    human's "merge" whatever `[merge] approve` says.
 
     Ended rather than left parked: a run is one attempt, and the attempt
     that merges is the next one, so leaving this row open in
@@ -1542,6 +1548,37 @@ def approve(conn, ticket_id, note, now=None):
     Touches no board state: the loop mirrors the Linear status when it
     claims.
     """
+    return _release_parked(
+        conn, ticket_id, "approve", note,
+        "approved for merge; the next claim resumes the candidate"
+        " at the merge gate", now)
+
+
+def shepherd(conn, ticket_id, note, now=None):
+    """Send a ticket parked on its pull request back to the shepherd; return
+    the parked run's id.
+
+    `approve()`'s twin for `[merge] mode = "pr"`, and the same transaction
+    with the action `shepherd` on the `interventions` row: the parked run is
+    ended `abandoned` with its resume point at the merge gate and the ticket
+    walked to `ready`, so the loop's next claim resumes the candidate --
+    and, the run carrying a pull request, shepherds it again: reads the
+    threads that arrived since the park, verdicts them, fixes and replies,
+    waits for the checks. What it is not is an approval: a PR that comes up
+    ready to merge under `[merge] approve = "human"` parks again for the
+    human's "merge" rather than landing on the operator's "look again".
+    The refusals are `approve()`'s, as `ApproveRefused`.
+    """
+    return _release_parked(
+        conn, ticket_id, "shepherd", note,
+        "sent back to the shepherd; the next claim resumes the candidate"
+        " on its pull request", now)
+
+
+def _release_parked(conn, ticket_id, action, note, reason, now):
+    """The transaction `approve()` and `shepherd()` share: the intervention
+    row with `action`, the parked run ended `abandoned` for `reason` with
+    its resume point at the merge gate, the ticket walked to `ready`."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -1573,12 +1610,10 @@ def approve(conn, ticket_id, note, now=None):
                 f"{identifier} is {status} and its newest run {last_run_id}"
                 f" is {phase}, not awaiting_merge_approval; nothing to"
                 " approve")
-        record_intervention(conn, last_run_id, "approve", note, now=now)
-        release(conn, last_run_id, "abandoned",
-                "approved for merge; the next claim resumes the candidate"
-                " at the merge gate", now=now)
+        record_intervention(conn, last_run_id, action, note, now=now)
+        release(conn, last_run_id, "abandoned", reason, now=now)
         # `release()` records a resume point for failed runs only; this one
-        # is the approval's, written once the ending is stamped.
+        # is the operator's, written once the ending is stamped.
         conn.execute("UPDATE runs SET resumePhase = ? WHERE id = ?",
                      (APPROVED_RESUME_PHASE, last_run_id))
         walk_ticket(conn, ticket_id, "ready")
@@ -1968,7 +2003,7 @@ INTERVENTION_SOURCES = ("supervisor", "human")
 INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
                          "review_stuck", "linear_cancelled", "manual")
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
-                        "close_out", "requeue", "approve")
+                        "close_out", "requeue", "approve", "shepherd")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

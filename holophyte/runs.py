@@ -127,7 +127,7 @@ def heartbeat_while(conn, run_id, interval_s):
 
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
-                 started_at=None, criteria=(), root=None):
+                 started_at=None, criteria=(), root=None, route=None):
     """Record one review or adjudication round as a `reviewRounds` row.
 
     The round the loop just ran, as the store holds it: the verdict, the
@@ -156,6 +156,12 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     names a test must exist there (`criteria_findings()`), so a named test
     not found is one more such finding.
 
+    `route` names what issued the round when it was not the role's agent
+    route: a shepherd pass over a pull request is stamped `github:LOGIN`,
+    the reviewer whose threads the pass answered, so FINDINGS shows it
+    beside the Codex rounds as what it was. None is `agent_route()`'s
+    answer for `role`, as before.
+
     A `conn` of None makes this a no-op, like `set_phase()`, so a storeless
     `run_task()` runs the same stages and records nothing.
     """
@@ -181,7 +187,7 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     results = ([{"command": verify_cmd, "exitCode": 0 if ok else 1,
                  "output": out}] if verify_cmd else [])
     store.record_review_round(conn, run_id, rnd, verdict,
-                              agent_route(target, role),
+                              route or agent_route(target, role),
                               findings=findings, verification_results=results,
                               started_at=started_at,
                               ended_at=int(time() * 1000))

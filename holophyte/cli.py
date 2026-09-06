@@ -1,7 +1,7 @@
 """The command line: `cli()` parses the arguments and runs the mode they name.
 
 `--report`, `--requeue KO-n --note TEXT`, `--approve KO-n [--note TEXT]`,
-`--file-ticket PATH [--state] [--priority]`,
+`--shepherd KO-n [--note TEXT]`, `--file-ticket PATH [--state] [--priority]`,
 `--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT` and the loop itself
 dispatch from here to `holophyte.loop`, `holophyte.board`,
 `holophyte.supervisor` and `holophyte.serve`; the `Target`
@@ -31,7 +31,14 @@ from holophyte.config import (
     report_config,
     sweep_config,
 )
-from holophyte.loop import approve, check_worktree_setup, main, report, requeue
+from holophyte.loop import (
+    approve,
+    check_worktree_setup,
+    main,
+    report,
+    requeue,
+    shepherd_ticket,
+)
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.supervisor import (
     SupervisorHeld,
@@ -57,6 +64,8 @@ FILE_TICKET_STATES = ("Todo", "Backlog")
 # the point of the mode, and "merge" is the whole of what a bare approval
 # says, so it needs no reason the way `--requeue` does.
 APPROVE_DEFAULT_NOTE = "approved for merge"
+# And `--shepherd`'s: "look at the pull request again" is all a bare one says.
+SHEPHERD_DEFAULT_NOTE = "sent back to the shepherd"
 
 
 def serve_address(text):
@@ -93,20 +102,23 @@ def _file_ticket_only(parser, args):
 
 
 def _note_checks(parser, args):
-    """`--note` belongs to `--requeue`, which requires it, and `--approve`,
-    which takes it: refuse a requeue without one, a note without either
-    mode, and a blank note on an approval -- the default is what an
-    approval with nothing to add says, and a blank row would say nothing."""
+    """`--note` belongs to `--requeue`, which requires it, and to `--approve`
+    and `--shepherd`, which take it: refuse a requeue without one, a note
+    without any of the three, and a blank note on an approval or a
+    shepherd -- the default is what one with nothing to add says, and a
+    blank row would say nothing."""
     if args.requeue is not None and not (args.note or "").strip():
         parser.error("--requeue records why the ticket goes back in the "
                      "queue; say so with --note TEXT")
-    if args.note is not None and args.requeue is None and args.approve is None:
-        parser.error("--note is what --requeue and --approve record; it has "
-                     "nothing to annotate by itself")
-    if args.approve is not None and args.note is not None \
+    optional = args.approve if args.approve is not None else args.shepherd
+    if args.note is not None and args.requeue is None and optional is None:
+        parser.error("--note is what --requeue, --approve and --shepherd "
+                     "record; it has nothing to annotate by itself")
+    if optional is not None and args.note is not None \
             and not args.note.strip():
-        parser.error("--note with --approve is the approval's own words; "
-                     "leave it off for the default rather than blank")
+        parser.error("--note with --approve or --shepherd is the operator's "
+                     "own words; leave it off for the default rather than "
+                     "blank")
 
 
 def cli(argv=None):
@@ -159,6 +171,21 @@ def cli(argv=None):
              "worktree and branch, re-runs the pre-merge verify and merges "
              "without an implementer or a reviewer; refuses a ticket in any "
              "other state naming it, and writes nothing then")
+    # The PR-mode twin of `--approve`: the same transaction with its own
+    # intervention action, so the loop's next claim shepherds the parked
+    # candidate's pull request again -- new threads, checks -- rather than
+    # reading the release as the human's "merge".
+    modes.add_argument(
+        "--shepherd", metavar="KO-n",
+        help="send the ticket parked on its pull request ([merge] mode = "
+             "\"pr\") back to the shepherd: records a 'shepherd' "
+             "intervention on its parked run carrying --note (default "
+             f"{SHEPHERD_DEFAULT_NOTE!r}), ends that run with its resume "
+             "point at the merge gate and walks the ticket to ready, in one "
+             "transaction; the loop's next claim resumes the candidate on "
+             "the PR and reads its threads and checks again, parking again "
+             "under approve = \"human\" rather than merging; refuses a "
+             "ticket in any other state naming it, and writes nothing then")
     # The other writing mode, and it writes to the board, not the store:
     # a ticket file validated against the target becomes a Linear issue,
     # and the body Linear stored is validated again so the transfer is a
@@ -208,7 +235,8 @@ def cli(argv=None):
         "--note", metavar="TEXT",
         help="with --requeue: why the ticket goes back in the queue; with "
              "--approve: anything the approval should say beyond "
-             f"{APPROVE_DEFAULT_NOTE!r}; recorded on the intervention row's "
+             f"{APPROVE_DEFAULT_NOTE!r}; with --shepherd: anything beyond "
+             f"{SHEPHERD_DEFAULT_NOTE!r}; recorded on the intervention row's "
              "event")
     # Only the two states a filed ticket can start in: Todo is ready to
     # claim, Backlog waits on triage. Anything else is a state the loop
@@ -287,6 +315,11 @@ def cli(argv=None):
         return approve(target, args.approve,
                        args.note if args.note is not None
                        else APPROVE_DEFAULT_NOTE)
+    if args.shepherd is not None:
+        require_board(target, board)
+        return shepherd_ticket(target, args.shepherd,
+                               args.note if args.note is not None
+                               else SHEPHERD_DEFAULT_NOTE)
     # Posts to the board, so a target without one exits here naming the key
     # -- before the file is read, so the error is about the target, not the
     # file. The board is the `[board]` pair itself, not the loop's provider:

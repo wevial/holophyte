@@ -46,3 +46,60 @@ creates on the writable reviewer home before preflight. A run fails closed if
 preflight identity or write rejection fails, the Codex tool host cannot
 execute a local command, the container times out, or the staged repository
 fingerprint changes.
+
+## PR rounds
+
+Under `[merge] mode = "pr"` (see [Config](config.md)) the reviewer's approval
+is not the last word: the candidate is pushed and opened as a pull request,
+and the repository's own review bots and people leave threads on it. The
+loop answers those the way an operator would by hand -- read, judge, fix,
+reply, wait, repeat -- and every pass is a review round of the run, so
+FINDINGS shows the GitHub rounds beside the Codex ones.
+
+One pass:
+
+1. **Read.** One GraphQL query returns the PR's unresolved review threads,
+   the head commit's check rollup, and whether the PR is merged or closed.
+   A PR someone merged by hand lands the run as merged with that sha; one
+   closed without merging fails the run, branch preserved.
+2. **Verdict.** The adjudicator route (`[agents] adjudicator`, or the
+   default container) is given the ticket, the candidate as the same frozen
+   `refs/review/base` and `refs/review/candidate` pair a review round gets,
+   and the threads numbered, and answers one line per thread: `THREAD n:
+   ADDRESS` (a concrete defect), `DECLINE` (a style preference, a
+   duplicate, a request beyond the ticket) or `HUMAN` (a genuine question,
+   a rejection of the approach, anything it would not answer on the
+   operator's behalf). A thread with no verdict line is `HUMAN`. The pass
+   is recorded as a `reviewRounds` row -- route `github:LOGIN`, the
+   threads' authors; `github:ci` for a pass that found none -- before
+   anything is posted, so an interrupted pass has its row.
+3. **Fix.** The addressed threads go to one fix round on the branch (the
+   implementer, under the ticket's budget), the ticket's verify commands
+   run over the fix, and the branch is pushed. A fix round that commits
+   nothing, or one the verify commands fail on, fails the run with the
+   branch preserved and nothing pushed.
+4. **Reply.** Each addressed thread gets a reply opening `---- Comment by
+   MODEL ----` (the adjudicator's route, never a constant), then what
+   changed and the sha it changed in, and is resolved. Each declined thread
+   gets a reply with the reason and is left open for its author to close.
+   A `HUMAN` thread gets no reply at all. Every reply and every resolve is
+   a `runEvents` row.
+5. **Park or go on.** A `HUMAN` verdict ends the pass with the run parked
+   and the thread quoted in the ticket's question; a decline parks the run
+   with the declined threads listed. Otherwise the next pass reads the PR
+   again -- new threads, the checks the fix restarted. A pass with no
+   thread waits for pending checks (`pr.CHECK_POLL_S` between reads, at
+   most `pr.CHECK_WAIT_S`); red checks park the run, green ones are "ready
+   to merge": the PR is merged through its merge API under `[merge]
+   approve = "auto"` or after the operator's `--approve`, and parks for the
+   human under `approve = "human"`. After `[merge] pr_rounds` passes the
+   run parks naming the cap, whatever the PR looks like.
+
+Every park is the `awaiting_merge_approval` park of `approve = "human"`:
+the ticket asks `PR open: URL` with why and the open threads listed, the
+run keeps `runs.prUrl` and `runs.candidateSha`, branch and worktree stay,
+the lease is released. `--approve KO-n` answers "merge": the resumed run
+shepherds once more and merges when green and quiet. `--shepherd KO-n`
+answers "look again": the same resume, parking again rather than merging
+under `approve = "human"`. Merging is GitHub's; local `main` is never moved
+by the factory.
