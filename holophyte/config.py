@@ -48,14 +48,19 @@ VERIFY_TIMEOUT = 300  # per-command wall-clock cap, verify and worktree setup
 
 
 # Role -> harness/model pins. Each gate uses a distinct, live-probed route:
-# Claude Code / Opus High implements; the local container boundary runs Codex /
-# GPT-5.6 Sol Medium against a detached, zero-remote, read-only candidate.
+# Claude Code / Opus High implements; the local container boundary runs Codex
+# at `[agents] review_model` / `review_effort` (GPT-5.6 Sol Medium when the
+# keys are absent) against a detached, zero-remote, read-only candidate.
 # These are the defaults an absent `[agents]` table leaves in place, not
 # assumptions: a target that names its own command for a role gets that one.
 IMPL_MODEL = "opus"
 IMPL_EFFORT = "high"
 IMPL_TIMEOUT = 1800  # hard wall-clock cap on one implementer turn, seconds
-REVIEW_PROFILE = "codex-sol-medium"
+REVIEW_MODEL = review_runner.MODEL
+REVIEW_EFFORT = review_runner.EFFORT
+REVIEW_EFFORTS = review_runner.EFFORTS
+review_profile = review_runner.profile_for
+REVIEW_PROFILE = review_profile(REVIEW_MODEL, REVIEW_EFFORT)
 
 # The loop's internal role names, and the `[agents]` key each one reads. The
 # config speaks the job title an operator writes on a ticket; the loop speaks
@@ -65,6 +70,11 @@ AGENT_CONFIG_KEYS = {
     "review": "reviewer",
     "adjudicate": "adjudicator",
 }
+
+# The `[agents]` keys that choose the Codex route the review container runs,
+# for the reviewer and the adjudicator alike -- they share the container, so
+# they share the pair. Read by `review_route()`.
+REVIEW_ROUTE_KEYS = ("review_model", "review_effort")
 
 # The programs the default routes stand on, and how long the startup probe
 # waits for the Docker daemon to answer. A daemon that takes longer than this
@@ -82,7 +92,7 @@ DOCKER_PROBE_TIMEOUT = 5
 # `[supervisor]`'s entry is filled in beside `SUPERVISOR_KEYS`, where those
 # knobs and their defaults are defined.
 KNOWN_KEYS = {
-    "agents": frozenset(AGENT_CONFIG_KEYS.values()),
+    "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix"}),
 }
 # `[loop]`'s and `[report]`'s entries are filled in beside `LOOP_KEYS` and
@@ -141,6 +151,44 @@ def agent_command(target, role, goal):
     return argv + [goal]
 
 
+def review_route(target):
+    """The `(model, effort)` pair the review container runs, per the config.
+
+    `[agents] review_model` and `review_effort` when set, `REVIEW_MODEL` and
+    `REVIEW_EFFORT` when not. Model routing is explicit factory policy, so a
+    key that is present is held to what the route can run: the model is a
+    non-empty string, the effort one of Codex's `REVIEW_EFFORTS`. A value
+    outside that is a startup error naming the table and the key, not a
+    fallback to the default -- the operator asked for a route, and quietly
+    running another would answer a different question than the config asked.
+
+    Either key beside a `reviewer` command is refused as contradictory: the
+    override opts the reviewer out of the container, and the pair chooses
+    what runs inside it, so one of the two lines is not doing what its author
+    believes. (An `adjudicator` override alone leaves the reviewer in the
+    container, so the pair still has a job.)
+    """
+    agents = target.config().get("agents") or {}
+    model_key, effort_key = REVIEW_ROUTE_KEYS
+    for key in REVIEW_ROUTE_KEYS:
+        if key in agents and "reviewer" in agents:
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [agents] {key} beside [agents] "
+                f"reviewer: the reviewer command opts out of the container "
+                f"the pair routes -- drop one of the two")
+    model = agents.get(model_key, REVIEW_MODEL)
+    if not isinstance(model, str) or not model.strip():
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [agents] {model_key} must be a "
+            f"non-empty Codex model id, got {model!r}")
+    effort = agents.get(effort_key, REVIEW_EFFORT)
+    if effort not in REVIEW_EFFORTS:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [agents] {effort_key} must be one of "
+            f"{', '.join(REVIEW_EFFORTS)}, got {effort!r}")
+    return model, effort
+
+
 def check_agent_commands(target):
     """Resolve every configured `[agents]` command before the loop claims work.
 
@@ -178,6 +226,7 @@ def check_agent_commands(target):
     neither pulled nor built, since the runner builds it on first use; the
     image is only looked up, so a host that has yet to build it hears so.
     """
+    review_route(target)
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
         argv = agent_command(target, role, "")

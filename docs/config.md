@@ -63,9 +63,26 @@ each table below.
 implementer = "claude --model opus --effort high -p"   # default route
 reviewer    = "my-reviewer --diff"                     # see the caveat below
 adjudicator = "my-reviewer --final"
+# The Codex model and reasoning effort the review container runs, for the
+# reviewer and the adjudicator alike. Optional; the values shown are the
+# defaults. The effort is one of low, medium, high, xhigh.
+review_model  = "gpt-5.6-sol"
+review_effort = "medium"
 ```
 
-Accepted keys: `implementer`, `reviewer`, `adjudicator`.
+Accepted keys: `implementer`, `reviewer`, `adjudicator`, `review_model`,
+`review_effort`.
+
+`review_model` and `review_effort` choose what runs inside the hardened
+container when neither review role is overridden by a command. Both reach the
+container script as arguments, never as text spelled into it. The profile a
+review round records is `codex-TAIL-EFFORT`, where TAIL is the model id's last
+dash-separated segment: the default records `codex-sol-medium`, and
+`gpt-6-astra` at medium records `codex-astra-medium`, so the row names what
+actually ran. An effort outside the four above or an empty model is a startup
+error naming the key. Either key beside a `reviewer` command is refused as
+contradictory: the override opts the reviewer out of the container the pair
+routes, so one of the two lines is not doing what it says.
 
 Defaults, in place whenever the key is absent: `claude -p <goal> --model opus
 --effort high` implements; `review` and `adjudicate` go through the hardened

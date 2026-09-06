@@ -788,6 +788,41 @@ class StartupCheckTests(ConfigTestCase):
         self.assertIn("[agents] implementer", message)
         main.assert_not_called()
 
+    def test_a_bad_review_route_is_a_startup_error_naming_the_key(self):
+        # An effort outside Codex's vocabulary, an empty model, or the pair
+        # beside a `reviewer` command that opts out of the container it
+        # routes: each is refused before a ticket is claimed, naming the
+        # table and the key, on the same path the missing-claude check runs.
+        for config, key, reason in (
+            ('[agents]\nreview_effort = "max"\n', "review_effort",
+             "low, medium, high, xhigh"),
+            ('[agents]\nreview_model = ""\n', "review_model", "non-empty"),
+            ('[agents]\nreview_model = "gpt-6-astra"\n'
+             'reviewer = "sh -c"\n', "review_model", "beside [agents] reviewer"),
+        ):
+            with self.subTest(key=key, config=config):
+                target = self.locate(config).path
+                with patch.object(holophyte.cli, "main",
+                                  side_effect=AssertionError("claimed work")) \
+                        as main:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target)])
+                self.assertIn(f"[agents] {key}", str(raised.exception))
+                self.assertIn(reason, str(raised.exception))
+                self.assertNotIn("unknown key", str(raised.exception))
+                main.assert_not_called()
+
+    def test_the_review_route_is_the_configured_pair_or_the_default(self):
+        self.locate('[agents]\nreview_model = "gpt-6-astra"\n'
+                      'review_effort = "xhigh"\n')
+        self.assertEqual(holophyte.config.review_route(self.tgt),
+                         ("gpt-6-astra", "xhigh"))
+        self.assertIsNone(holophyte.config.check_agent_commands(self.tgt))
+
+        self.locate()
+        self.assertEqual(holophyte.config.review_route(self.tgt),
+                         ("gpt-5.6-sol", "medium"))
+
     def test_a_missing_docker_is_a_startup_error_naming_the_override_key(self):
         self.stub_path(docker=None, system=False)
         self.locate()

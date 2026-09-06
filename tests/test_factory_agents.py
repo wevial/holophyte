@@ -95,10 +95,34 @@ class AgentRouteTests(unittest.TestCase):
             base_sha=base,
             candidate_sha=candidate,
             prompt="review the candidate",
+            model="gpt-5.6-sol",
+            effort="medium",
             profile="codex-sol-medium",
             timeout=1800,
             verdicts=review_runner.REVIEW_VERDICTS,
         )
+        self.assertEqual(holophyte.agents.agent_route(self.tgt, "review"),
+                         "codex-sol-medium")
+
+    @patch.object(review_runner, "run_review")
+    def test_reviewer_runs_the_configured_model_and_effort(self, run_review):
+        # `[agents] review_model` / `review_effort` choose the pair the
+        # container runs, and the round records the route that actually ran.
+        self.tgt.config_path.write_text(
+            '[agents]\nreview_model = "gpt-6-astra"\nreview_effort = "medium"\n')
+        run_review.return_value = "VERDICT: APPROVE"
+
+        holophyte.agents.agent(self.tgt, "review", "review the candidate",
+                               self.worktree, base_sha="1" * 40,
+                               candidate_sha="2" * 40)
+
+        kwargs = run_review.call_args.kwargs
+        self.assertEqual((kwargs["model"], kwargs["effort"], kwargs["profile"]),
+                         ("gpt-6-astra", "medium", "codex-astra-medium"))
+        self.assertEqual(holophyte.agents.agent_route(self.tgt, "review"),
+                         "codex-astra-medium")
+        self.assertEqual(holophyte.agents.agent_route(self.tgt, "adjudicate"),
+                         "codex-astra-medium")
 
     @patch.object(review_runner, "run_review")
     def test_a_reviewer_runner_failure_is_an_infra_failure(self, run_review):

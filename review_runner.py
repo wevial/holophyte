@@ -18,7 +18,28 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parent
 IMAGE = "holophyte-reviewer:ubuntu24.04-v1"
-PROFILE = "codex-sol-medium"
+# The Codex route the container runs, and the profile a round records for
+# it. The pair is the default an absent `[agents] review_model` /
+# `review_effort` leaves in place; `holophyte.config` reads the keys and hands
+# the pair to `run_review()`. `EFFORTS` is Codex's own vocabulary for
+# `model_reasoning_effort`.
+MODEL = "gpt-5.6-sol"
+EFFORT = "medium"
+EFFORTS = ("low", "medium", "high", "xhigh")
+
+
+def profile_for(model: str, effort: str) -> str:
+    """The profile a round records for a Codex model and effort.
+
+    `codex-TAIL-EFFORT`, where TAIL is the model id's last dash-separated
+    segment: `gpt-5.6-sol` at medium is `codex-sol-medium`, `gpt-6-astra` at
+    medium is `codex-astra-medium`. The name says what actually ran, which is
+    what a `reviewRounds` row and FINDINGS.md are for.
+    """
+    return f"codex-{model.rsplit('-', 1)[-1]}-{effort}"
+
+
+PROFILE = profile_for(MODEL, EFFORT)
 SCRATCH_ROOT = Path.home() / ".cache" / "holophyte" / "reviews"
 SCRATCH_PREFIX = "review."
 CONTAINER_PREFIX = "holophyte-review-"
@@ -144,8 +165,16 @@ def container_command(
     prompt: str,
     uid: int,
     gid: int,
+    model: str = MODEL,
+    effort: str = EFFORT,
 ) -> list[str]:
-    """Build one fixed Docker invocation; the prompt is a positional argument."""
+    """Build one fixed Docker invocation.
+
+    The prompt, the model and the effort are positional arguments to the
+    container's shell script (`$1`, `$2`, `$3`), never text interpolated into
+    it: the quoting is the shell's, so none of the three can rewrite the
+    command. The effort reaches Codex as its `-c` assignment, already spelled.
+    """
     mounts = [
         f"{workspace.expanduser().resolve(strict=True)}:/workspace:ro",
         f"{reviewer_home.expanduser().resolve(strict=True)}:/home/reviewer:rw",
@@ -166,7 +195,7 @@ fi
 test ! -e /var/run/docker.sock
 echo "PREFLIGHT_OK candidate=$actual" >&2
 exec /opt/codex/bin/codex exec --json -C /workspace \
-  -m gpt-5.6-sol -c 'model_reasoning_effort="medium"' \
+  -m "$2" -c "$3" \
   -s danger-full-access --ephemeral "$1"
 '''.strip()
 
@@ -191,7 +220,8 @@ exec /opt/codex/bin/codex exec --json -C /workspace \
     ]
     for mount in mounts:
         command.extend(["--volume", mount])
-    return command + [image, "/bin/sh", "-eu", "-c", preflight, "review", prompt]
+    return command + [image, "/bin/sh", "-eu", "-c", preflight, "review", prompt,
+                      model, f'model_reasoning_effort="{effort}"']
 
 
 def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) -> str:
@@ -347,12 +377,28 @@ def run_review(
     base_sha: str,
     candidate_sha: str,
     prompt: str,
-    profile: str = PROFILE,
+    model: str = MODEL,
+    effort: str = EFFORT,
+    profile: str | None = None,
     timeout: int = 1800,
     verdicts: Sequence[str] | None = REVIEW_VERDICTS,
 ) -> str:
-    if profile != PROFILE:
-        raise ReviewBoundaryError(f"unknown reviewer profile: {profile}")
+    """Review `candidate_sha` against `base_sha` in the container; the reply.
+
+    `model` and `effort` are the Codex route the container runs. `profile`,
+    when given, is what the caller intends to record for the round, and has
+    to be the profile the pair computes to: a row naming a route other than
+    the one that ran is the one record the runner refuses to help write.
+    """
+    if not model:
+        raise ReviewBoundaryError("empty reviewer model")
+    if effort not in EFFORTS:
+        raise ReviewBoundaryError(
+            f"unknown reasoning effort {effort!r}; one of {', '.join(EFFORTS)}")
+    if profile is not None and profile != profile_for(model, effort):
+        raise ReviewBoundaryError(
+            f"reviewer profile {profile} does not name the route "
+            f"{model} at {effort} ({profile_for(model, effort)})")
     _ensure_image()
     codex = shutil.which("codex")
     if not codex:
@@ -374,6 +420,8 @@ def run_review(
             prompt=prompt,
             uid=os.getuid(),
             gid=os.getgid(),
+            model=model,
+            effort=effort,
         )
         try:
             with _removing_on_signal(name):

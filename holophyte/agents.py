@@ -21,8 +21,9 @@ from holophyte.config import (
     IMPL_EFFORT,
     IMPL_MODEL,
     IMPL_TIMEOUT,
-    REVIEW_PROFILE,
     agent_command,
+    review_profile,
+    review_route,
 )
 from holophyte.gates import InfraFailure, run_capped, sh
 
@@ -30,13 +31,14 @@ from holophyte.gates import InfraFailure, run_capped, sh
 def agent_route(target, role):
     """What ran `role`'s turn, named for the record the round leaves.
 
-    The default reviewer profile, or the configured command when the target
-    named one. A `reviewRounds` row reading `codex-sol-medium` about a round
-    some other harness ran would be evidence of something that did not happen,
+    The profile of the container route the config chooses (`codex-sol-medium`
+    by default), or the configured command when the target named one. A
+    `reviewRounds` row reading `codex-sol-medium` about a round some other
+    harness or model ran would be evidence of something that did not happen,
     and the rows are what FINDINGS.md and the fingerprint are built from.
     """
     return ((target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
-            or REVIEW_PROFILE)
+            or review_profile(*review_route(target)))
 
 
 def publish_review_refs(repo, base_sha, candidate_sha):
@@ -110,13 +112,16 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     cmd = agent_command(target, role, goal)
     if cmd is None:
         if role != "implement":
+            model, effort = review_route(target)
             try:
                 return review_runner.run_review(
                     repo=Path(cwd),
                     base_sha=base_sha,
                     candidate_sha=candidate_sha,
                     prompt=goal,
-                    profile=REVIEW_PROFILE,
+                    model=model,
+                    effort=effort,
+                    profile=review_profile(model, effort),
                     timeout=1800,
                     verdicts=(review_runner.REVIEW_VERDICTS
                               if role == "review" else None),
