@@ -72,7 +72,12 @@ def git(repo, *args, timeout=GIT_TIMEOUT):
 
 def resolve(repo, rev, missing):
     """`rev` as a full commit sha, or `RangeError(missing)` when git cannot
-    resolve it -- the branch was deleted by hand, the merge is gone."""
+    resolve it -- the branch was deleted by hand, the merge is gone.
+
+    A branch is named as `refs/heads/NAME`, never bare: a bare name falls
+    through git's ref search to a same-name tag, so a deleted branch with
+    a leftover tag would answer instead of raising.
+    """
     code, out = git(repo, "rev-parse", "--verify", "--quiet",
                     f"{rev}^{{commit}}")
     if code != 0:
@@ -93,9 +98,9 @@ def run_range(repo, branch, merge_sha):
                        f"merge commit {merge_sha} has no first parent")
         return base, head
     if branch:
-        head = resolve(repo, branch,
+        head = resolve(repo, f"refs/heads/{branch}",
                        f"branch {branch} no longer exists in the repository")
-        code, out = git(repo, "merge-base", MAIN, head)
+        code, out = git(repo, "merge-base", f"refs/heads/{MAIN}", head)
         if code != 0:
             raise RangeError(f"branch {branch} shares no history with {MAIN}")
         return out.strip(), head

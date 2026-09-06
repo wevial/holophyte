@@ -1067,6 +1067,15 @@ class RunFilesTests(ServeTestCase):
         code, _headers, body = self.request("GET", "/runs/abc/files")
         self.assertEqual(code, 400)
 
+    def test_a_deleted_branch_is_409_even_when_a_same_name_tag_survives(self):
+        # A bare name would fall through to the tag and answer 200; the
+        # run's branch is gone and the endpoint must say so.
+        self.git("tag", self.branch, self.branch)
+        self.git("branch", "-D", self.branch)
+        code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 409, body)
+        self.assertIn(self.branch, body["error"])
+
     def test_the_list_is_capped_and_truncated_past_it(self):
         with patch.object(holophyte.files, "MAX_FILES", 2):
             code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
