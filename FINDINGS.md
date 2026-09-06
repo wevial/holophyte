@@ -653,10 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[293 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T05:41:14Z — KO-277
-Round 3: pass · reviewer codex-astra-medium · verify passed
+[294 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T05:41:16Z — KO-277
 MERGED to main as a1190c2.
@@ -760,3 +757,7 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T08:12:55Z — KO-297
 MERGED to main as 35981f4.
 actual: 13.7 min · estimate: 25 min · rounds: 2
+
+## 2026-09-06T14:36:43Z — KO-262
+FAILED: cannot reuse leftover worktree: preserved commits on task/ko-262-merge-mode-pr-2-2-the-shepher conflict with a main that moved on; a human resolves the merge before this ticket is run again
+actual: 0.0 min · estimate: 30 min · rounds: 0
