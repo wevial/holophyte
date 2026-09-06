@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from time import monotonic, time
 
@@ -1790,6 +1791,64 @@ def _claim_run(conn, project, provider, ticket_id, seen):
     return run_id
 
 
+# The repository the factory runs from, for telling its own frames in a
+# crash's traceback from the standard library's and a dependency's.
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _factory_frame(e):
+    """`path:function:line` of the innermost traceback frame of `e` whose
+    file lives under `ROOT` — the deepest place in the factory's own code the
+    exception escaped from — or None when no frame does. Never raises: a
+    reason is worth more than a frame, so any trouble reading the traceback
+    answers None."""
+    try:
+        for frame in reversed(traceback.extract_tb(e.__traceback__)):
+            path = Path(frame.filename)
+            if not path.is_absolute():
+                continue  # `<string>`, `<frozen ...>`: nowhere to point at
+            try:
+                rel = path.resolve().relative_to(ROOT)
+            except ValueError:
+                continue
+            if "site-packages" in rel.parts:
+                continue  # a dependency installed inside the repository
+            return f"{rel.as_posix()}:{frame.name}:{frame.lineno}"
+    except Exception:  # noqa: BLE001 - the frame is a bonus, never a failure
+        pass
+    return None
+
+
+def crash_reason(e):
+    """The one-line close-out reason for an exception that escaped
+    `run_task()`: `TYPE: message`, then `(at path:function:line)` naming the
+    innermost frame in the factory's own code when the traceback has one.
+
+    One line because sh()'s message carries the failed command's whole
+    output, and the reason lands verbatim in an escalation comment's
+    markdown bullet. The frame is what run 103 (KO-273) lacked: `database is
+    locked` with nothing to say which write raised it."""
+    reason = " ".join(f"{type(e).__name__}: {e}".split())
+    frame = _factory_frame(e)
+    return f"{reason} (at {frame})" if frame else reason
+
+
+def _record_crash(conn, run_id, e, reason):
+    """Keep the whole traceback as a `detail` event of kind `crash` before
+    the close-out moves the run to `failed`. Best effort: the store may be
+    the very thing that crashed the run, and its failure must not replace
+    the reason in flight."""
+    if conn is None:
+        return
+    try:
+        store.record_event(
+            conn, run_id, "crash", reason, level="detail",
+            payload="".join(traceback.format_exception(type(e), e,
+                                                       e.__traceback__)))
+    except Exception as err:  # noqa: BLE001 - see the docstring
+        print(f"[holo2] crash event not recorded: {err}")
+
+
 class _Parked:
     """`_dispatch()`'s answer for a run parked awaiting merge approval:
     falsy, because nothing merged, and its own object, because the loop
@@ -1829,13 +1888,13 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
     except Exception as e:  # noqa: BLE001 - crash containment
         # Anything that escapes run_task is this run's failure. The
         # error text becomes the close-out reason — one clean line
-        # instead of a traceback with the reason lost to
-        # release_run()'s generic default (KO-146 incident, run 9).
-        # Collapsed to one line: sh()'s message carries the failed
-        # command's whole output, and the reason lands verbatim in an
-        # escalation comment's markdown bullet.
-        reason = " ".join(f"{type(e).__name__}: {e}".split())
+        # naming the factory frame it escaped from, instead of a
+        # traceback with the reason lost to release_run()'s generic
+        # default (KO-146 incident, run 9). The traceback itself goes
+        # to the run's events, where the close-out below cannot lose it.
+        reason = crash_reason(e)
         print(f"[holo2] run crashed: {reason}")
+        _record_crash(conn, run_id, e, reason)
     finally:
         if merged is PARKED:
             # Parked, alive, lease released: the run's own outcome is still
@@ -2004,10 +2063,40 @@ def shepherd_ticket(target, identifier, note, out=None):
         conn.close()
 
 
+def repoint(target, identifier, sha, note, out=None):
+    """Move the ticket `identifier`'s parked candidate to `sha`. Returns
+    nothing.
+
+    `--repoint`'s whole body, `--approve`'s sibling for the rebuilt-branch
+    case: it opens the store, does `store.repoint()`'s one transaction --
+    the `repoint` intervention row carrying `note`, the narrative event
+    naming both shas, `candidateSha` moved -- prints the old and new shas
+    and exits. The branch itself is the operator's git work, done before
+    this; the merge gate the next approval resumes into holds the branch to
+    the new sha exactly as it held it to the old. Every refusal
+    `store.repoint()` makes is a `SystemExit` naming the ticket and the
+    reason, and nothing is written then; an identifier the store has not
+    mirrored, or a target with no store, is refused the same way.
+    """
+    out = out or sys.stdout
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        try:
+            run_id, old_sha = store.repoint(conn, ticket_id, sha, note)
+        except (store.RepointRefused, ValueError) as refused:
+            raise SystemExit(f"[holo2] {refused}") from None
+        print(f"[holo2] {identifier} re-pointed: run {run_id}'s candidate"
+              f" moved from {old_sha} to {sha}; the merge gate now holds the"
+              " branch to the new sha", file=out)
+    finally:
+        conn.close()
+
+
 def _operator_store(target):
     """The store an operator command writes to, or the exit for a target
-    that has none: nothing to requeue or approve, and no file made for the
-    sake of saying so."""
+    that has none: nothing to requeue, approve or re-point, and no file
+    made for the sake of saying so."""
     if not target.store_path.exists():
         raise SystemExit(f"[holo2] no store at {target.store_path}")
     return open_store(target)

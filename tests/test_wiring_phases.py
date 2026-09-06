@@ -134,7 +134,8 @@ class RunPhaseTests(unittest.TestCase):
         draws: that table is README's run diagram, and this is where the
         loop's real stream is held against it.
         """
-        edges = [summary.split(":")[0] for _, _, _, summary, _ in self.events()]
+        edges = [summary.split(":")[0] for _, _, kind, summary, _ in self.events()
+                 if kind == "phase_change"]
         for edge in edges:
             src, dst = edge.split(" -> ")
             self.assertIn(dst, store.RUN_PHASE_TRANSITIONS[src],

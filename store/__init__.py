@@ -42,6 +42,7 @@ import collections
 import contextlib
 import hashlib
 import json
+import re
 import socket
 import sqlite3
 import time
@@ -308,7 +309,8 @@ CREATE TABLE IF NOT EXISTS interventions (
                              'review_stuck', 'linear_cancelled', 'manual')),
     "action"  TEXT    NOT NULL
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
-                            'close_out', 'requeue', 'approve', 'shepherd')),
+                            'close_out', 'requeue', 'approve', 'repoint',
+                            'shepherd')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL
@@ -327,9 +329,23 @@ CREATE TABLE IF NOT EXISTS interventions (
 # 5 is the action CHECK admitting 'approve', the operator's answer to a run
 # parked for merge approval (KO-258); version 6 is the `ledger` table, the
 # run's narrative kept in the store ahead of its board comment (KO-250);
-# version 7 is the action CHECK admitting 'shepherd', the operator's "look at
-# the pull request again" for a run parked on one (KO-262).
-SCHEMA_VERSION = 7
+# version 7 is the action CHECK admitting 'repoint', a parked candidate
+# moved to a rebuilt branch tip (KO-297); version 8 is the action CHECK
+# admitting 'shepherd', the operator's "look at the pull request again"
+# for a run parked on one (KO-262). 8 rather than a second 7: both
+# shipped as 7 on their own branches, and a store one of them stamped
+# would otherwise never be rebuilt to admit the other's value.
+SCHEMA_VERSION = 8
+
+# How long a connection waits for another writer's lock before raising
+# `database is locked`. WAL admits one writer at a time, and the loop's
+# heartbeat thread, its phase changes and the supervisor's sweep are three
+# writers on one file; the sqlite3 default of five seconds is shorter than a
+# sweep under load, and run 103 (KO-273) died at a phase change on exactly
+# that timing. Both `open()` and `store.read.open_readonly()` open with this
+# value so the two agree. A lock held past it still raises; nothing here
+# masks a real deadlock. Patch it below a second to witness the bound.
+BUSY_TIMEOUT_S = 30
 
 # Every join the loop, the sweep and the FINDINGS renderer perform goes
 # through one of these foreign keys; without an index each is a full
@@ -361,7 +377,7 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
     Shadows the builtin `open` inside this module only; callers say
     `store.open(...)`.
     """
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S)
     # Before anything that writes, including the WAL switch below: a store a
     # newer module stamped is refused without touching it, so the file is
     # still exactly what that newer build left for it to reopen.
@@ -375,6 +391,10 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
     # Referential integrity is off by default in SQLite and is per-connection,
     # so it has to be asserted on every open, not once at init().
     conn.execute("PRAGMA foreign_keys = ON")
+    # The connect() timeout again, as the pragma: it is the value a
+    # `BEGIN IMMEDIATE` waits for on the write lock, and stating it on the
+    # connection keeps it from depending on how sqlite3 applied the argument.
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_S * 1000}")
     mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
     if mode.lower() != "wal":
         conn.close()
@@ -536,17 +556,20 @@ def init(conn):
 
 
 def _widen_interventions_action(conn):
-    """Rebuild `interventions` when its action CHECK predates 'shepherd'.
+    """Rebuild `interventions` when its action CHECK predates 'repoint' or
+    'shepherd'.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
     cannot ALTER a CHECK, so a store initialized before a value shipped
     would refuse the row forever — which is how the KO-146 incident ended in
     raw SQL and four falsely-labeled 'resume' rows, the precedent that added
-    'close_out' here. 'requeue' (schema version 3) and 'approve' (schema
-    version 5) and 'shepherd' (schema version 7) ride the same rebuild: the
-    newest value is the one tested for, so a store from before any of them
-    shipped is carried forward in one pass. The stored DDL says which world
-    this store is from; the rebuild is the standard rename-copy-drop from
+    'close_out' here. 'requeue' (schema version 3), 'approve' (schema
+    version 5), 'repoint' (schema version 7) and 'shepherd' (schema
+    version 8) ride the same rebuild: the two newest values are the ones
+    tested for, so a store from before either shipped -- or from a branch
+    that shipped one of them as its own version 7 -- is carried forward in
+    one pass. The stored DDL says which world this store is from; the
+    rebuild is the standard rename-copy-drop from
     `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store and
     a second call both skip it. The column list is unchanged, so existing
     rows are carried verbatim; `runId`'s foreign key stays enforced through
@@ -562,7 +585,8 @@ def _widen_interventions_action(conn):
     # literal appearing anywhere else (a future comment, a default) must not
     # skip a rebuild that is still needed.
     (ddl,) = row
-    if "'shepherd'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
+    admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
+    if "'repoint'" in admitted and "'shepherd'" in admitted:
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -959,7 +983,7 @@ def run_phase(conn, run_id):
 EVENT_LEVELS = ("narrative", "detail")
 
 
-def _append_event(conn, run_id, level, kind, summary, at):
+def _append_event(conn, run_id, level, kind, summary, at, payload=None):
     """Append one row to run `run_id`'s event stream; return its `seq`.
 
     No transaction of its own, deliberately: an event describes a thing that
@@ -974,22 +998,24 @@ def _append_event(conn, run_id, level, kind, summary, at):
         (run_id,),
     ).fetchone()
     conn.execute(
-        "INSERT INTO runEvents (runId, seq, level, kind, summary, at)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (run_id, seq, level, kind, summary, at),
+        "INSERT INTO runEvents (runId, seq, level, kind, summary, payload, at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (run_id, seq, level, kind, summary, payload, at),
     )
     return seq
 
 
-def record_event(conn, run_id, kind, summary, level="narrative", now=None):
+def record_event(conn, run_id, kind, summary, level="narrative", now=None,
+                 payload=None):
     """Append one event of `kind` to run `run_id`'s stream; return its `seq`.
 
     `set_phase()` writes the stream's `phase_change` rows and is the only
     writer of a run's phase; this is how the loop writes the rows that are not
     transitions — a best-effort projection that failed, say. `kind` is free
     text because §2's column is a label rather than an enum, `level` is one of
-    §2's two, and `payload` stays NULL since that is a `detail`-row field and
-    nothing writing through here has one.
+    §2's two, and `payload` is the `detail`-row field: the text behind the
+    summary (a crash's traceback, say), refused on a `narrative` row so the
+    stream's two levels keep meaning what §2 says they mean.
 
     An unknown `run_id` is a caller bug and raises `ValueError`, the way
     `set_phase()` and `run_phase()` answer the same mistake — the foreign key
@@ -999,13 +1025,16 @@ def record_event(conn, run_id, kind, summary, level="narrative", now=None):
     """
     if level not in EVENT_LEVELS:
         raise ValueError(f"unknown event level {level!r}")
+    if payload is not None and level != "detail":
+        raise ValueError("payload is a detail-level field")
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
         if conn.execute("SELECT 1 FROM runs WHERE id = ?",
                         (run_id,)).fetchone() is None:
             raise ValueError(f"no run {run_id}")
-        return _append_event(conn, run_id, level, kind, summary, now)
+        return _append_event(conn, run_id, level, kind, summary, now,
+                             payload=payload)
 
 
 # The `runs.phase` a run ends in for each `runs.outcome`, so `release()` cannot
@@ -1634,6 +1663,109 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
     return last_run_id
 
 
+class RepointRefused(Exception):
+    """A re-point `repoint()` will not do; nothing was written.
+
+    The ticket does not exist, has a live run, its newest run is already
+    approved or is not parked in `awaiting_merge_approval`, or the sha is
+    not a full commit id --
+    each is the same answer to the operator: there is no parked candidate
+    here to move, or nothing a merge gate could hold a branch to, so the
+    message names the ticket and the reason, and the command line exits
+    on it.
+    """
+
+
+# The shape of the one thing `repoint()` will record as a candidate: a full
+# 40-hex commit id, the form `git rev-parse HEAD` prints and the form the
+# park records. Either case is accepted (git does), and lowercased before
+# it is stored so `_candidate_drift()`'s equality test against the
+# lowercase form git prints holds. An abbreviated sha would pass that test
+# never, and a branch name would pass it only by accident.
+FULL_SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
+
+
+def repoint(conn, ticket_id, sha, note, now=None):
+    """Move a parked candidate to `sha`; return `(run_id, old_sha)`.
+
+    The approve path holds a parked run's branch to the sha its park
+    recorded and fails, tree untouched, when the tip differs -- right for a
+    commit slipped in after the park, wrong for the one legitimate case: the
+    operator rebuilt the branch as the same commits on a rewritten `main`
+    (2026-09-05, three parked candidates after the unpushed history was
+    filtered). Before this the only way to re-point was raw SQL on
+    `runs.candidateSha`. This is that write as a recorded intervention, all
+    in one `_transaction()`: an `interventions` row with action `repoint`
+    carrying `note` as its `guidance`, a narrative `runEvents` row naming
+    the old and new shas, then `candidateSha` set to `sha`. `--approve` is
+    unchanged: the gate still holds the branch to the recorded sha, now the
+    rebuilt one.
+
+    Refuses, with `RepointRefused` and no write, anything that is not a
+    parked, not-yet-approved ticket with a well-formed sha: an unknown
+    ticket, one with a live run, one whose newest run carries a
+    `resumePhase` (approved: its release is already in flight, so the
+    refusal says to requeue instead), one whose newest run is in any phase
+    but `awaiting_merge_approval` (ready with no run yet, failed, merged),
+    or a `sha` that is not 40 hex characters (either case; it is stored
+    lowercased, the form git prints). The refusal names the ticket and the
+    reason. Touches no branch: rebasing the branch itself is the operator's
+    git work, before this call.
+
+    Two holds, both required. `park()` leaves `resumePhase` NULL and
+    `approve()` writes `merge_gate` there as it ends the run, so a run the
+    loop produced is refused by its phase alone; the `resumePhase` check
+    is the contract's own precondition, and it is what catches a row walked
+    by hand into a parked phase with an approval already recorded on it.
+    """
+    if not isinstance(sha, str) or not FULL_SHA.match(sha):
+        raise RepointRefused(
+            f"ticket {ticket_id}: {sha!r} is not a full 40-hex commit id;"
+            " a re-point names the exact commit the gate will hold the"
+            " branch to")
+    sha = sha.lower()
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT linearIdentifier, status, activeRunId, lastRunId"
+            " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        if row is None:
+            raise RepointRefused(f"ticket {ticket_id} does not exist")
+        identifier, status, active_run_id, last_run_id = row
+        if active_run_id is not None:
+            raise RepointRefused(
+                f"{identifier} is {status} with run {active_run_id} still"
+                " live; a re-point is for a run parked awaiting merge"
+                " approval")
+        run = (conn.execute("SELECT phase, candidateSha, resumePhase FROM"
+                            " runs WHERE id = ?", (last_run_id,)).fetchone()
+               if last_run_id is not None else None)
+        if run is None:
+            raise RepointRefused(
+                f"{identifier} is {status} and has no run; nothing is"
+                " parked awaiting merge approval")
+        phase, old_sha, resume_phase = run
+        if resume_phase is not None:
+            raise RepointRefused(
+                f"{identifier} is {status} and its newest run {last_run_id}"
+                f" is already approved (resumes at {resume_phase}); its"
+                " release is in flight, so requeue instead of re-pointing")
+        if phase != "awaiting_merge_approval":
+            raise RepointRefused(
+                f"{identifier} is {status} and its newest run {last_run_id}"
+                f" is {phase}, not awaiting_merge_approval; nothing to"
+                " re-point")
+        record_intervention(conn, last_run_id, "repoint", note,
+                            guidance=note, now=now)
+        _append_event(conn, last_run_id, "narrative", "repoint",
+                      f"candidate re-pointed from {old_sha} to {sha}: {note}",
+                      now)
+        conn.execute("UPDATE runs SET candidateSha = ? WHERE id = ?",
+                     (sha, last_run_id))
+    return last_run_id, old_sha
+
+
 def mirror_ticket(
     conn,
     project_id,
@@ -2017,7 +2149,8 @@ INTERVENTION_SOURCES = ("supervisor", "human")
 INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
                          "review_stuck", "linear_cancelled", "manual")
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
-                        "close_out", "requeue", "approve", "shepherd")
+                        "close_out", "requeue", "approve", "repoint",
+                        "shepherd")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

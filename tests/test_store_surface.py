@@ -53,6 +53,9 @@ EXPECTED = [
     "record_strike",
     "record_supervisor_heartbeat",
     "release",
+    # KO-297: the operator's `--repoint`, a parked candidate moved to a
+    # rebuilt branch tip as a recorded intervention instead of raw SQL.
+    "repoint",
     # KO-223: the operator's requeue-after-failure, one transaction behind
     # `--requeue`, so the ladder's rung-3 pair is a rung-1 command.
     "requeue",
@@ -80,6 +83,7 @@ EXPECTED_CLASSES = [
     "GuidanceNotAccepted",
     "IllegalTransition",
     "Pickability",
+    "RepointRefused",
     "RequeueRefused",
     "ResumeRefused",
     "RunEnded",

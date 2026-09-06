@@ -653,95 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[274 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T03:40:04Z — KO-274
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/store/read.py:293 [p2] [P2] Unknown integer cursors violate the empty-page contract. Reproduced `/shipped?before=9223372036854775808`: [store/read.py:293](/home/reviewer/candidate/s…
-- criteria:3 [p2] CRITERION 3: not met — unknown integer cursors -1 and 9223372036854775808 return 400 or disconnect instead of an empty 200 page. Given `?limit=0`, `?limit=x` or…
-
-## 2026-09-06T03:46:23Z — KO-274
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T03:47:21Z — KO-274
-MERGED to main as f50eeed.
-actual: 16.8 min · estimate: 30 min · rounds: 2
-
-## 2026-09-06T03:53:19Z — KO-275
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/src/components/Shipped.tsx:71 [p2] [P2] [Shipped.tsx:71](/home/reviewer/candidate/console/src/components/Shipped.tsx:71): Polling restores an exhausted pagination cursor. Reproduced loading all…
-
-## 2026-09-06T03:54:46Z — KO-275
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T03:54:46Z — KO-275
-MERGED to main as 4ade71e.
-actual: 7.4 min · estimate: 30 min · rounds: 2
-
-## 2026-09-06T03:59:26Z — KO-276
-FAILED: implementer made no commits; the empty branch and worktree were discarded
-actual: 4.6 min · estimate: 25 min · rounds: 0
-
-## 2026-09-06T04:42:32Z — KO-250
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/holophyte/loop.py:758 [p2] [holophyte/loop.py:758](/home/reviewer/candidate/holophyte/loop.py:758): Clean approval returns before recording a `round` entry. Reproducing `FakeAgent(Commi…
-- /home/reviewer/candidate/store/__init__.py:330 [p2] [store/__init__.py:330](/home/reviewer/candidate/store/__init__.py:330): Migration stamps v6, whereas criterion 3 explicitly requires v5. The base already con…
-- criteria:1 [p2] CRITERION 1: not met — A clean FakeAgent merge has no round ledger entry; the added test covers only REQUEST_CHANGES followed by approval. Given a FakeAgent run…
-- criteria:3 [p2] CRITERION 3: not met — tests/test_store_schema.py::StoreSchemaVersionTests::test_a_version_4_store_migrates_in_place_and_still_reports witnesses migration to v6…
-
-## 2026-09-06T04:50:51Z — KO-250
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- (unparsed):f42a2949bcfb [p2] CRITERION 1: met — tests/test_factory_loop.py::LoopTests::test_the_ledger_row_is_in_the_store_before_its_board_comment CRITERION 2: met — tests/test_cli_requeue…
-- criteria:3 [p2] CRITERION 3: not met — store/__init__.py:331 migrates to v6; tests/test_store_schema.py::StoreSchemaVersionTests::test_a_version_4_store_migrates_in_place_and_s…
-- criteria:4 [p2] CRITERION 4: unwitnessed — all 763 tests passed locally, but `ruff check .` exited 127 (`ruff: command not found`); the supplied lint success could not be indep…
-
-## 2026-09-06T04:56:26Z — KO-250
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T04:56:26Z — KO-250
-FAILED: terminal adjudication: FAIL; branch task/ko-250-the-ledger-lives-in-the-store preserved at f2068c780586
-actual: 25.8 min · estimate: 30 min · rounds: 3
-
-## 2026-09-06T05:02:30Z — KO-250
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T05:03:28Z — KO-250
-MERGED to main as e5170f1.
-actual: 6.3 min · estimate: 30 min · rounds: 1
-
-## 2026-09-06T05:12:46Z — KO-257
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T05:13:45Z — KO-257
-MERGED to main as c5bef57.
-actual: 10.3 min · estimate: 25 min · rounds: 1
-
-## 2026-09-06T05:21:58Z — KO-276
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T05:22:58Z — KO-276
-MERGED to main as 5e516fd.
-actual: 9.2 min · estimate: 25 min · rounds: 1
-
-## 2026-09-06T05:34:06Z — KO-277
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/console/src/App.tsx:63 [p2] [App.tsx:63](/home/reviewer/candidate/console/src/App.tsx:63): Now requires a successful status before rendering. Reproduced with both daemons unreachable on…
-- /home/reviewer/candidate/console/src/hooks/usePeers.ts:77 [p2] [usePeers.ts:77](/home/reviewer/candidate/console/src/hooks/usePeers.ts:77): The next poll starts ten seconds after completion. An eight-second timeout theref…
-- criteria:2 [p2] CRITERION 2: not met — reproduced first-poll failures suppress the entire Now needs-you section when no daemon has answered. Given one daemon times out or answe…
-- criteria:5 [p2] CRITERION 5: unwitnessed — independently reran verification in a temporary candidate copy: install eventually passed and all 77 tests passed, but build exited 1…
-
-## 2026-09-06T05:37:09Z — KO-277
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/console/src/hooks/usePeers.ts:41 [p1] **[P1] Origin timeout falsely marks healthy peers unreachable.** [usePeers.ts:41–48](/home/reviewer/candidate/console/src/hooks/usePeers.ts:41) shares one tim…
-- /home/reviewer/candidate/console/src/components/Now.tsx:27 [p2] **[P2] Run selection lacks daemon identity.** [Now.tsx:27](/home/reviewer/candidate/console/src/components/Now.tsx:27) tracks only the numeric run ID. Two dae…
-- criteria:2 [p2] CRITERION 2: not met — origin discovery timeout also marks healthy known peers unreachable; reproduced with an abort-aware fetch. Given one daemon times out or…
-- criteria:5 [p2] CRITERION 5: unwitnessed — temporary candidate snapshot passed all 79 tests, but frozen install failed finding `@oven/bun-linux-x64`; build failed in `bun-plugi…
+[293 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T05:41:14Z — KO-277
 Round 3: pass · reviewer codex-astra-medium · verify passed
@@ -767,3 +679,84 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T06:12:06Z — KO-259
 MERGED to main as 29eecde.
 actual: 30.8 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T06:34:59Z — KO-262
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/pr.py:81 [p1] [P1] [holophyte/pr.py:81](/home/reviewer/candidate/holophyte/pr.py:81): Thread discovery reads only the first 100 threads without pagination. If those are res…
+- /home/reviewer/candidate/holophyte/pr.py:436 [p1] [P1] [holophyte/pr.py:436](/home/reviewer/candidate/holophyte/pr.py:436): The merge request omits the expected head SHA, and the shepherd never validates `sta…
+
+## 2026-09-06T06:43:44Z — KO-262
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:1227 [p1] **[P1] Verify the committed fix before resolving threads** — [holophyte/loop.py:1227](/home/reviewer/candidate/holophyte/loop.py:1227). Verification runs agai…
+- /home/reviewer/candidate/holophyte/pr.py:397 [p1] **[P1] Include thread follow-ups in adjudication** — [holophyte/pr.py:397](/home/reviewer/candidate/holophyte/pr.py:397). Only the opening comment survives pa…
+
+## 2026-09-06T06:52:11Z — KO-262
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T06:52:11Z — KO-262
+FAILED: terminal adjudication: FAIL; branch task/ko-262-merge-mode-pr-2-2-the-shepher preserved at 4211579b8075
+actual: 40.0 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T06:58:36Z — KO-262
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/store/__init__.py:1572 [p1] **[P1] `--shepherd` bypasses human merge approval for local runs** — [store/__init__.py:1572](/home/reviewer/candidate/store/__init__.py:1572). `shepherd()` r…
+
+## 2026-09-06T07:05:27Z — KO-262
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:1140 [p1] [P1] [holophyte/loop.py:1140](/home/reviewer/candidate/holophyte/loop.py:1140): The shepherd can auto-merge a fix commit without independent review of that co…
+
+## 2026-09-06T07:14:34Z — KO-262
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T07:14:35Z — KO-262
+FAILED: terminal adjudication: FAIL; branch task/ko-262-merge-mode-pr-2-2-the-shepher preserved at 672e2efca0dd
+actual: 21.9 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T07:23:22Z — KO-286
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T07:24:30Z — KO-286
+MERGED to main as 661e5bb.
+actual: 9.0 min · estimate: 20 min · rounds: 1
+
+## 2026-09-06T07:33:48Z — KO-287
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T07:34:55Z — KO-287
+MERGED to main as dd1a023.
+actual: 10.4 min · estimate: 25 min · rounds: 1
+
+## 2026-09-06T07:44:55Z — KO-297
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/store/__init__.py:1653 [p2] [P2] [store/__init__.py:1653](/home/reviewer/candidate/store/__init__.py:1653) rejects valid uppercase hexadecimal SHAs. Reproduced with `55F6D7F0000000000000…
+- criteria:1 [p2] CRITERION 1: not met — valid full uppercase hexadecimal SHAs are refused. Given a ticket whose newest run is parked with a recorded `candidateSha`, when `repoin…
+
+## 2026-09-06T07:51:05Z — KO-297
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/store/__init__.py:1676 [p2] [store/__init__.py:1676](/home/reviewer/candidate/store/__init__.py:1676): `repoint()` omits the contract’s `resumePhase = merge_gate` condition. An in-memory…
+
+## 2026-09-06T07:58:32Z — KO-297
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T07:58:32Z — KO-297
+FAILED: terminal adjudication: FAIL; branch task/ko-297-repoint-ko-n-sha-moves-a-park preserved at 6acbfc6fbaec
+actual: 23.6 min · estimate: 25 min · rounds: 3
+
+## 2026-09-06T08:05:10Z — KO-297
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/store/__init__.py:1683 [p2] [P2] Enforce the approval precondition in [store/__init__.py:1683](/home/reviewer/candidate/store/__init__.py:1683). `repoint()` never reads `resumePhase`. A…
+- criteria:2 [p2] CRITERION 2: not met — parked runs with non-null resumePhase are accepted; approved-run refusals omit required requeue guidance. Given a ticket whose newest run…
+
+## 2026-09-06T08:11:48Z — KO-297
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T08:12:55Z — KO-297
+MERGED to main as 35981f4.
+actual: 13.7 min · estimate: 25 min · rounds: 2

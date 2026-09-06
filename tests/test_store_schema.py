@@ -636,6 +636,63 @@ CREATE TABLE IF NOT EXISTS interventions (
 );
 """
 
+# `interventions` exactly as schema version 6 shipped it: 'approve' in the
+# action CHECK, 'repoint' not yet. The migration test is that a real
+# version-6 store is carried to 7 with its rows intact.
+VERSION_6_INTERVENTIONS_TABLE = VERSION_4_INTERVENTIONS_TABLE.replace(
+    "'requeue'))", "'requeue', 'approve'))")
+
+
+class Version6MigrationTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+
+    def user_version(self):
+        raw = sqlite3.connect(self.path)
+        try:
+            return raw.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            raw.close()
+
+    def test_a_version_6_store_is_rebuilt_to_accept_repoint(self):
+        """A store stamped 6 refuses a 'repoint' row; opening it with this
+        build rebuilds the table in place, keeps the 'approve' row it held,
+        stamps the current version, and a repoint row then lands."""
+        conn = store.open(self.path)
+        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1")
+        run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        conn.execute("DROP TABLE interventions")
+        conn.executescript(VERSION_6_INTERVENTIONS_TABLE)
+        conn.execute(
+            'INSERT INTO interventions (runId, source, "trigger", "action", at)'
+            " VALUES (?, 'human', 'manual', 'approve', ?)",
+            (run_id, 1_700_000_120_000))
+        conn.execute("PRAGMA user_version = 6")
+        conn.commit()
+        conn.close()
+        raw = sqlite3.connect(self.path)
+        with self.assertRaises(sqlite3.IntegrityError):
+            raw.execute(
+                'INSERT INTO interventions (runId, source, "trigger",'
+                ' "action", at) VALUES (?, \'human\', \'manual\','
+                ' \'repoint\', 1)', (run_id,))
+        raw.close()
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertGreaterEqual(store.SCHEMA_VERSION, 7)
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        store.record_intervention(conn, run_id, "repoint", "rebuilt")
+        self.assertEqual(
+            conn.execute('SELECT "action" FROM interventions ORDER BY id')
+            .fetchall(), [("approve",), ("repoint",)])
+
 
 if __name__ == "__main__":
     unittest.main()

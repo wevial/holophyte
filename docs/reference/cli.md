@@ -15,6 +15,7 @@ always the repository path.
 | `--requeue KO-n --note TEXT TARGET` | walks a failed ticket back to `ready` with an `interventions` row | store |
 | `--approve KO-n [--note TEXT] TARGET` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer -- under `[merge] mode = "pr"`, shepherds the pull request once more and merges it through the API when green and quiet; refuses any other state, naming it | store |
 | `--shepherd KO-n [--note TEXT] TARGET` | sends a ticket parked on its pull request (`[merge] mode = "pr"`) back to the shepherd: an `interventions` row with action `shepherd`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim resumes the candidate on the PR and reads its threads and checks again, parking again under `approve = "human"` rather than merging; refuses any other state, naming it | store |
+| `--repoint KO-n SHA --note TEXT TARGET` | moves a parked candidate to a rebuilt branch tip: an `interventions` row with action `repoint` carrying the note, a `runEvents` row naming the old and new shas, then `runs.candidateSha` set to `SHA` (a full 40-hex commit id); the run stays parked and the branch is not touched; the merge gate `--approve` resumes into holds the branch to the new sha; refuses a ticket not parked awaiting merge approval, one already approved (its release is in flight: requeue instead) or a malformed sha, naming it | store |
 | `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] TARGET` | validates, creates the issue in the target's `[board]` project, reads it back, validates again | Linear |
 | `--file-ticket TICKET.md --update KO-n TARGET` | same, replacing an existing issue's title, body and estimate | Linear |
 
@@ -31,7 +32,7 @@ whose output it prints.
 | Code | Meaning |
 | --- | --- |
 | 0 | done, or the board was empty |
-| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval or shepherd |
+| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, shepherd or re-point |
 | 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors |
 
 ## Output prefix
