@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[252 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T02:23:07Z — KO-269
-MERGED to main as eaccb8c.
-actual: 19.3 min · estimate: 30 min · rounds: 3
-
-## 2026-09-06T02:28:22Z — KO-270
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T02:28:23Z — KO-270
-MERGED to main as 5f483f3.
-actual: 5.2 min · estimate: 30 min · rounds: 1
+[255 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T02:34:19Z — KO-271
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -759,3 +748,15 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T03:47:21Z — KO-274
 MERGED to main as f50eeed.
 actual: 16.8 min · estimate: 30 min · rounds: 2
+
+## 2026-09-06T03:53:19Z — KO-275
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/components/Shipped.tsx:71 [p2] [P2] [Shipped.tsx:71](/home/reviewer/candidate/console/src/components/Shipped.tsx:71): Polling restores an exhausted pagination cursor. Reproduced loading all…
+
+## 2026-09-06T03:54:46Z — KO-275
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T03:54:46Z — KO-275
+MERGED to main as 4ade71e.
+actual: 7.4 min · estimate: 30 min · rounds: 2
