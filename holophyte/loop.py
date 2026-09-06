@@ -1082,7 +1082,13 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
     thread listed. A pass with none waits for pending checks, then: red
     checks park; green ones are "ready to merge", which merges through the
     PR's merge API under `approve = "auto"` or after the operator's
-    `--approve` (`approved`), and parks for the human otherwise. Past
+    `--approve` (`approved`), and parks for the human otherwise. A fix
+    round moves the candidate past the sha the reviewer approved, and the
+    fix is the implementer's work nobody independent has judged: before
+    the merge, `_review_fix()` reviews the candidate at its fixed sha, and
+    anything but an approval parks the run (the operator's `--approve`
+    was of the sha it released, so a candidate moved since is a human's
+    to release again). Past
     `pr_rounds` passes the run parks naming the cap. A PR someone merged
     by hand lands the run as merged with that sha; one closed unmerged
     fails it.
@@ -1098,6 +1104,9 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
         raise RunFailure(f"cannot read a pull request off {url!r};"
                          f" branch {branch} preserved at {sha[:12]}")
     model = agent_route(target, "adjudicate")
+    # The sha an independent judgement covers: the reviewer's approval or
+    # the operator's release. A fix round moves `sha` past it.
+    reviewed = sha
     for pass_no in range(1, merge.pr_rounds + 1):
         state = _settled_state(target, conn, run_id, beat_s, pull)
         if state.merged:
@@ -1137,6 +1146,18 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
                         f"checks {state.checks} on the head commit", ())
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
+        if sha != reviewed:
+            if merge.approve != "auto":
+                _park_on_pr(conn, run_id, provider, task_id, branch, sha,
+                            pull, f"the fix rounds moved the candidate from"
+                            f" {reviewed[:12]} to {sha[:12]}; the release"
+                            f" covered {reviewed[:12]}, and a human says"
+                            " merge on the fix ([merge] approve ="
+                            " \"human\")", ())
+            _review_fix(target, conn, run_id, provider, task_id, branch, wt,
+                        sha, reviewed, beat_s, pull, ticket, verify_cmd,
+                        contracts)
+            reviewed = sha
         if merge.approve == "auto" or approved:
             return _merge_pr(target, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull)
@@ -1147,6 +1168,77 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
     _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " shepherd stops here", state.threads)
+
+
+def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
+                reviewed, beat_s, pull, ticket, verify_cmd, contracts):
+    """The independent review of a candidate the shepherd's fix rounds
+    moved from `reviewed` to `sha`, before the merge API is called.
+
+    The fix commits are the implementer's answer to the PR's threads; the
+    reviewer's approval and the adjudicator's verdicts both came before
+    them, so nothing independent has judged the candidate as it stands.
+    The same reviewer route and brief as a review round: verify first,
+    then a read-only review of the candidate at `sha` over the frozen
+    `refs/review/*` pair, recorded as a `reviewRounds` row. Anything but
+    an approval parks the run on the PR with the findings in the ticket's
+    question -- there is no further fix round here; the operator reads
+    the findings and answers with `--shepherd` or by hand."""
+    set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
+              " before its review")
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, out = run_verify(verify_cmd, wt, contracts)
+    if not ok:
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED verify before the review of the fix at {sha} on"
+               f" {pull.url}; branch {branch} preserved, not merged\n\n{out}",
+               provider)
+        raise RunFailure(f"verify failed before the review of the fix on"
+                         f" {pull.url}; branch {branch} preserved at"
+                         f" {sha[:12]}")
+    set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
+    base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
+    rnd = _next_round(conn, run_id)
+    round_started = int(time() * 1000)
+    with heartbeat_while(conn, run_id, beat_s):
+        verdict = agent(target, "review",
+            f"You are a READ-ONLY code reviewer. Review commit {sha} using "
+            "refs/review/base as the frozen base and refs/review/candidate "
+            "as the candidate in this repo against the ticket below. The "
+            f"candidate was approved at {reviewed[:12]} and has since been "
+            "moved by fix commits answering review threads on "
+            f"{pull.url}; nobody independent has judged those commits, so "
+            "read the whole candidate, the fixes included. The ticket is "
+            "the contract, acceptance criteria included: a candidate that "
+            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
+            f"{ticket}\n\n"
+            + _verify_brief(verify_cmd, ok, out)
+            + "Do not modify anything. End your reply with exactly one "
+            "line:\n"
+            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
+            "If REQUEST_CHANGES, list only concrete blockers.", wt,
+            base_sha=base_sha, candidate_sha=sha)
+    record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
+                 ok, out, started_at=round_started, root=wt)
+    if review_runner.terminal_verdict(verdict) == "APPROVE":
+        ledger(conn, run_id, task_id, "round",
+               f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"
+               f"Reviewer verdict:\n{verdict}", provider)
+        print(f"[holo2] the fix at {sha[:12]} is approved")
+        return
+    ledger(conn, run_id, task_id, "round",
+           f"Round {rnd}: REQUEST_CHANGES on the fix at {sha} on"
+           f" {pull.url}; not merged\nReviewer findings:\n{verdict}",
+           provider)
+    _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+                f"the review of the fix at {sha[:12]} asked for changes;"
+                f" not merged. Reviewer findings:\n{verdict}", ())
+
+
+def _next_round(conn, run_id):
+    """The number the run's next `reviewRounds` row takes; 1 with no
+    store."""
+    return len(store.read.rounds_of(conn, run_id)) + 1 if conn else 1
 
 
 def _settled_state(target, conn, run_id, beat_s, pull):

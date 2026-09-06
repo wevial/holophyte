@@ -104,8 +104,20 @@ One pass:
    to merge": the PR is merged through its merge API, pinned to the
    candidate's sha so a push that races the pass is refused rather than
    landed, under `[merge] approve = "auto"` or after the operator's
-   `--approve`, and parks for the human under `approve = "human"`. After `[merge] pr_rounds` passes the
-   run parks naming the cap, whatever the PR looks like.
+   `--approve`, and parks for the human under `approve = "human"`.
+6. **Review the fix.** A fix round moved the candidate past the sha the
+   reviewer approved, and the fix is the implementer's work nobody
+   independent has judged. So before the merge API is called on a moved
+   candidate, the reviewer route reviews it at its fixed sha -- verify
+   first, the same read-only brief and frozen `refs/review/*` pair as a
+   review round, one more `reviewRounds` row -- and only an `APPROVE`
+   merges; `REQUEST_CHANGES` parks the run with the findings in the
+   ticket's question, with no further fix round. The operator's
+   `--approve` was of the sha it released: a candidate moved since parks
+   for the human again under `approve = "human"`.
+
+After `[merge] pr_rounds` passes the run parks naming the cap, whatever
+the PR looks like.
 
 Every park is the `awaiting_merge_approval` park of `approve = "human"`:
 the ticket asks `PR open: URL` with why and the open threads listed, the

@@ -1982,6 +1982,73 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
+    def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
+        """Regression: the shepherd's fix commit is the implementer's work,
+        and the pass after it -- green, quiet -- merged it with no
+        independent look at that commit: both the review and the
+        adjudication came before the fix. Now a candidate that moved
+        since its approval is reviewed at the fixed sha before the merge
+        API is called; the approving round is a `reviewRounds` row like
+        the others."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state()])
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("fix: default load()"), APPROVE,
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+                                      "implement", "review"])
+        merge = [v for kind, v in self.api_calls() if kind == "merge"]
+        self.assertEqual(len(merge), 1)
+        fixed = merge[0]["sha"]
+        self.assertNotEqual(fixed, fake.turns[1].candidate_sha)
+        # The second review judged the fix commit itself, against main.
+        self.assertEqual(fake.turns[4].candidate_sha, fixed)
+        self.assertEqual(fake.turns[4].base_sha, self.base)
+        self.assertIn(fake.turns[1].candidate_sha[:12], fake.turns[4].goal)
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "resolve", "state", "merge"])
+        self.assertEqual(
+            self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
+                      " ORDER BY round"),
+            [(1, "pass", holophyte.agents.agent_route(self.tgt, "review")),
+             (2, "changes_requested", "github:review-bot"),
+             (3, "pass", "github:ci"),
+             (4, "pass", holophyte.agents.agent_route(self.tgt, "review"))])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_a_fix_round_the_reviewer_rejects_parks_instead_of_merging(self):
+        """The review of the fix commit asks for changes: nothing is merged
+        under `approve = "auto"`, no further fix round runs, and the run
+        parks on the PR with the reviewer's findings in the question."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state()])
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("fix: default load()"), REQUEST_CHANGES,
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+                                      "implement", "review"])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "resolve", "state"])
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(
+            self.read("SELECT phase, outcome, candidateSha FROM runs"),
+            [("awaiting_merge_approval", None, fixed)])
+        self.assertEqual(
+            self.read("SELECT verdict FROM reviewRounds WHERE round = 4"),
+            [("changes_requested",)])
+        question = self.question()
+        self.assertIn(fixed[:12], question)
+        self.assertIn("scripted change is incomplete", question)
+
     def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
         """Acceptance: two unresolved threads, a clear defect and a style
         nit, and green checks. One pass: the adjudicator addresses the one
