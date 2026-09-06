@@ -64,6 +64,7 @@ EXPECTED = [
     "resume",
     "run_contract",
     "run_phase",
+    "set_branch",
     "set_phase",
     # KO-262: `--shepherd`, the release of a run parked on its pull request
     # back to the shepherd; `approve`'s transaction with its own action.

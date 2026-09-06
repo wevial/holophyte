@@ -2,25 +2,32 @@
 
 The store records a run's branch and, once it merged, the merge commit on
 main; git holds which paths changed and by how many lines. This module
-turns the two store columns into a commit range and asks the target's
-checkout -- never a task worktree -- for `git diff --numstat` and
-`git diff --name-status` over it, merged by path. It runs git through
-`gates.run_capped()` so a wedged repository cannot hang the daemon: every
-git call is under `GIT_TIMEOUT` and dies with its process group.
+turns the two store columns into a commit range and asks git for
+`git diff --numstat` and `git diff --name-status` over it, merged by path.
+It runs git through `gates.run_capped()` so a wedged repository cannot
+hang the daemon: every git call is under `GIT_TIMEOUT` and dies with its
+process group.
 
 The range is the run's own history. A merged run (a recorded `mergeSha`)
-is its merge commit's first parent to the merge commit: exactly what the
-`--no-ff` landing added to main. Any other run with a branch is the merge
-base of `main` and that branch to the branch head: what the branch has
-that main does not, unaffected by what main gained since. `serve.py` maps
-the outcomes here to HTTP: `RangeError` is its 409, a `TimeoutExpired` its
-504.
+is its merge commit's first parent to the merge commit, read in the
+target's checkout: exactly what the `--no-ff` landing added to main. A
+run with a branch whose worktree still stands is live: the diff is taken
+inside the worktree, from the merge base of `main` and its HEAD to the
+working tree -- commits and uncommitted edits together, untracked files
+listed as added -- so the panel fills in as the implementer works, and a
+worktree with nothing changed yet is an empty list, not an error (KO-304).
+A run with a branch but no worktree (a preserved branch after close-out)
+is the merge base of `main` and that branch to the branch head, read in
+the checkout: what the branch has that main does not, unaffected by what
+main gained since. `serve.py` maps the outcomes here to HTTP: `RangeError`
+is its 409, a `TimeoutExpired` its 504.
 
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from holophyte.gates import run_capped
 
@@ -107,6 +114,55 @@ def run_range(repo, branch, merge_sha):
     raise RangeError("the run recorded neither a branch nor a merge commit")
 
 
+def worktree_range(worktree):
+    """The `(base, head)` shas of a live run's worktree: the merge base of
+    `main` and the worktree's HEAD, and that HEAD. The diff a caller takes
+    over `base` in the worktree then reaches the working tree, so it holds
+    the uncommitted edits too; `head` says which commit they sit on."""
+    code, out = git(worktree, "rev-parse", "--verify", "--quiet", "HEAD")
+    if code != 0:
+        raise RangeError(f"worktree {worktree} has no HEAD")
+    head = out.strip()
+    code, out = git(worktree, "merge-base", f"refs/heads/{MAIN}", head)
+    if code != 0:
+        raise RangeError(f"worktree {worktree} shares no history with {MAIN}")
+    return out.strip(), head
+
+
+def untracked_files(worktree, timeout=GIT_TIMEOUT):
+    """The untracked paths in `worktree` as `{path: (added, 0)}`, lines
+    counted the way numstat counts them (a final unterminated line is one),
+    a binary file as 0: what `git diff` against a commit cannot see and a
+    live run's panel would otherwise miss until the implementer staged."""
+    code, out = git(worktree, "status", "--porcelain", "-z",
+                    "--untracked-files=all", timeout=timeout)
+    if code != 0:
+        raise RuntimeError(f"git status in {worktree} failed with {code}:\n{out}")
+    counts = {}
+    fields = out.split("\0")
+    i = 0
+    while i < len(fields) and fields[i]:
+        entry = fields[i]
+        i += 1
+        if entry[:2] == "??":
+            counts[entry[3:]] = (count_lines(Path(worktree) / entry[3:]), 0)
+        elif entry[0] == "R" or entry[1] == "R":
+            # A staged rename carries its source as the next record.
+            i += 1
+    return counts
+
+
+def count_lines(path):
+    try:
+        data = path.read_bytes()
+    except OSError:
+        # Gone between the listing and the read: the implementer is at work.
+        return 0
+    if not data or b"\0" in data:
+        return 0
+    return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
+
+
 def parse_numstat(text):
     """`git diff --numstat -z` as `{path: (added, deleted)}`.
 
@@ -149,9 +205,15 @@ def parse_name_status(text):
     return statuses
 
 
-def touched_files(repo, branch, merge_sha, cap=None, timeout=GIT_TIMEOUT):
+def touched_files(repo, branch, merge_sha, worktree=None, cap=None,
+                  timeout=GIT_TIMEOUT):
     """The `TouchedFiles` of a run, from its store columns and `repo`,
     listing the first `cap` files (`MAX_FILES` when None) by path.
+
+    `worktree` is where the run's worktree would stand; when it does and
+    the run has no merge sha, the run is live and the diff is read there,
+    working tree included (see the module docstring). Otherwise the range
+    is `run_range()` over `repo`.
 
     Raises `RangeError` when no range can be found and
     `subprocess.TimeoutExpired` when a git call outlives `timeout`; a git
@@ -160,17 +222,31 @@ def touched_files(repo, branch, merge_sha, cap=None, timeout=GIT_TIMEOUT):
     way to fail.
     """
     cap = MAX_FILES if cap is None else cap
-    base, head = run_range(repo, branch, merge_sha)
+    live = (not merge_sha and branch and worktree is not None
+            and Path(worktree).is_dir())
+    if live:
+        cwd = worktree
+        base, head = worktree_range(worktree)
+        # No `head`: the diff runs on to the working tree.
+        range_args = (base,)
+    else:
+        cwd = repo
+        base, head = run_range(repo, branch, merge_sha)
+        range_args = (base, head)
     outputs = []
     for mode in ("--numstat", "--name-status"):
-        code, out = git(repo, "diff", mode, "-z", f"--diff-filter={DIFF_FILTER}",
-                        base, head, timeout=timeout)
+        code, out = git(cwd, "diff", mode, "-z", f"--diff-filter={DIFF_FILTER}",
+                        *range_args, timeout=timeout)
         if code != 0:
             raise RuntimeError(f"git diff {mode} {base}..{head} failed"
                                f" with {code}:\n{out}")
         outputs.append(out)
     counts = parse_numstat(outputs[0])
     statuses = parse_name_status(outputs[1])
+    if live:
+        for path, added in untracked_files(worktree, timeout=timeout).items():
+            counts[path] = added
+            statuses[path] = "A"
     files = [TouchedFile(path=path, status=statuses.get(path, "M"),
                          added=added, deleted=deleted)
              for path, (added, deleted) in sorted(counts.items())]

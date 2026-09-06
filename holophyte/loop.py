@@ -76,6 +76,7 @@ from holophyte.supervisor import (
     sweep,
     sweep_lines,
 )
+from holophyte.target import worktree_path
 
 # The paths a run works against, plus the config they carry, are a `Target`
 # (below): built once by `cli()` from the command line and passed to every
@@ -342,7 +343,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
     slug = f"{ident}-{slug}"
     branch = f"{branch_prefix(target)}/{slug}"
-    wt = target.worktrees / slug
+    wt = worktree_path(target, branch)
     # The approved candidate: `--approve` ended the ticket's parked run with
     # its resume point at the merge gate, and its worktree still stands.
     # Nothing to implement or review -- the candidate was, and a person said
@@ -660,7 +661,11 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
     # §4's one edge out of `claimed`, taken before the first git command:
     # cutting the worktree is already this run doing the ticket's work, so a
     # crash in it belongs to `working` and not to a run that still looks
-    # freshly claimed.
+    # freshly claimed. The branch is recorded first: the files panel reads
+    # `runs.branch` to find the worktree, and a `working` run without one
+    # answered 409 for the whole phase the panel exists to show (KO-304).
+    if conn is not None:
+        store.set_branch(conn, run_id, branch)
     set_phase(conn, run_id, "working", f"cutting {branch} and implementing")
     if wt.exists():
         # leftover from a previous failed run — reuse it so preserved work

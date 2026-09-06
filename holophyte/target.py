@@ -220,3 +220,15 @@ class Target:
         if self._config is None:
             self._config = load_config(self.config_path)
         return self._config
+
+
+def worktree_path(target, branch):
+    """Where the loop keeps the worktree for task `branch` under `target`.
+
+    A task branch is `PREFIX/SLUG` with a single-segment prefix
+    (`config.branch_prefix()`), and its worktree is `TARGET.worktrees/SLUG`.
+    The loop names both from here, and the daemon answering `/runs/N/files`
+    for a live run derives the worktree from the recorded branch the same
+    way, so neither guesses at the other's layout.
+    """
+    return target.worktrees / branch.split("/", 1)[-1]

@@ -153,18 +153,26 @@ through `[report] host_label`.
  "total_added": 261, "total_deleted": 16, "truncated": false}
 ```
 
-The files a run touched, read from git in the target's checkout: what
-the console's "files touched" panel shows under a run. The store holds
-only the run's branch and, once it landed, its merge commit; the daemon
-resolves those to a commit range and runs `git diff --numstat` and
-`git diff --name-status` over it, each under a timeout, so the answer is
-what git says today, not a snapshot. For a merged run (a recorded
-`merge_sha`) the range is the merge commit's first parent to the merge
-commit: exactly what the `--no-ff` landing added to main, whether or not
-the branch still exists. For any other run it is the merge base of
-`main` and the run's branch to the branch head: what the branch has that
-main does not, unaffected by what main gained since. `base` and `head`
-are the full shas the range resolved to.
+The files a run touched, read from git: what the console's "files
+touched" panel shows under a run. The store holds only the run's branch,
+recorded the moment the loop cuts its worktree, and, once it landed, its
+merge commit; the daemon resolves those to a commit range and runs
+`git diff --numstat` and `git diff --name-status` over it, each under a
+timeout, so the answer is what git says today, not a snapshot. For a
+merged run (a recorded `merge_sha`) the range is the merge commit's first
+parent to the merge commit in the target's checkout: exactly what the
+`--no-ff` landing added to main, whether or not the branch still exists.
+For a live run, one whose branch still has its worktree beside the
+target, the diff is taken inside that worktree from the merge base of
+`main` and its HEAD to the working tree: commits and uncommitted edits
+together, untracked files listed as added, so the panel fills in as the
+implementer works, and a worktree with nothing changed yet answers an
+empty `files` with 200. For a run whose branch survives without a
+worktree it is the merge base of `main` and the branch to the branch head
+in the checkout: what the branch has that main does not, unaffected by
+what main gained since. `base` and `head` are the full shas the range
+resolved to; for a live run `head` is the worktree's HEAD, and the edits
+beyond it are in the counts.
 
 `files` is sorted by path. `status` is `A` (added), `M` (modified), `D`
 (deleted) or `R` (renamed, listed under the new path); a binary file
@@ -175,8 +183,9 @@ how big the run was.
 
 `N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
 is 404 carrying `run`. 409 with an `error` when no range can be found:
-the run recorded neither a branch nor a merge sha, or the ref it recorded
-is gone (a preserved branch deleted by hand; the error names the branch).
+the run recorded neither a branch nor a merge sha, or the branch it
+recorded has neither a worktree nor a ref (a preserved branch deleted by
+hand; the error names the branch).
 504 when git does not answer within its cap. The endpoint serves no file
 contents or diff hunks and writes nothing to the repository.
 

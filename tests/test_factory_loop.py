@@ -700,6 +700,26 @@ class LoopTests(LoopFixture):
                       " JOIN tickets t ON t.id = r.ticketId ORDER BY r.id"),
             [("KO-131", "failed"), ("KO-131", "failed"), ("KO-132", "merged")])
 
+    def test_branch_is_recorded_at_worktree_cut(self):
+        """`runs.branch` names the task branch before the first `working`
+        phase change lands, so a live run's files panel has a worktree to
+        read from the moment the run starts implementing."""
+        seen = []
+        real = holophyte.loop.set_phase
+
+        def watching(conn, run_id, phase, note=None):
+            (branch,) = conn.execute(
+                "SELECT branch FROM runs WHERE id = ?", (run_id,)).fetchone()
+            seen.append((phase, branch))
+            return real(conn, run_id, phase, note)
+
+        with patch.object(holophyte.loop, "set_phase", watching):
+            self.loop(Commit("the scripted work"), APPROVE)
+
+        first_working = next(entry for entry in seen if entry[0] == "working")
+        self.assertEqual(first_working, ("working", BRANCH))
+        self.assertEqual(self.read("SELECT branch FROM runs"), [(BRANCH,)])
+
 
 class WorktreeSetupLoopTests(LoopFixture):
     """`[worktree] setup` as a whole run walks it: real repo, real worktree.
