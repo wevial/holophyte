@@ -73,3 +73,18 @@ test("a short list has no toggle, an empty one says No files yet, and a refusal 
   expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch no longer on disk");
   expect(document.querySelector("[data-file]")).toBeNull();
 });
+
+test("a 409 after a good fetch replaces the kept rows with branch no longer on disk; a plain failure keeps them", () => {
+  const { rerender } = render(<FilesTouched files={TWELVE} error={null} loading={false} />);
+  expect(rows().length).toBe(6);
+  rerender(<FilesTouched files={TWELVE} error="branch no longer on disk" loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch no longer on disk");
+  expect(document.querySelector("[data-file]")).toBeNull();
+  expect(document.querySelector("[data-files-label]")).toBeNull();
+  rerender(<FilesTouched files={TWELVE} error="run not in the store" loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("run not in the store");
+  expect(document.querySelector("[data-file]")).toBeNull();
+  rerender(<FilesTouched files={TWELVE} error="/runs/7/files answered 500" loading={false} />);
+  expect(rows().length).toBe(6);
+  expect(document.querySelector("[data-files-note]")).toBeNull();
+});

@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { capFiles, filesLabel, statusLetter, type StatusLetter } from "../lib/files";
 import type { RunFilesBody } from "../lib/types";
+import { FILES_BRANCH_GONE, FILES_RUN_UNKNOWN } from "../hooks/useRunFiles";
+
+/** The daemon's two named refusals mean the rows are gone for good, so they
+ *  replace a body kept from an earlier poll; any other failure leaves it. */
+const REFUSALS: ReadonlySet<string> = new Set([FILES_BRANCH_GONE, FILES_RUN_UNKNOWN]);
 
 const LETTER_TONE: Record<StatusLetter, string> = {
   M: "text-muted",
@@ -22,18 +27,20 @@ export function FilesTouched({
   loading: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const refused = error !== null && REFUSALS.has(error);
+  const body = refused ? null : files;
   return (
     <section data-files aria-label="Files touched" className="min-w-0">
       <div className="flex items-baseline gap-3">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Files touched</span>
-        {files && (
+        {body && (
           <span data-files-label className="font-mono text-[12px] text-muted">
-            {filesLabel(files)}
+            {filesLabel(body)}
           </span>
         )}
       </div>
-      {files ? (
-        <Rows body={files} showAll={showAll} onToggle={() => setShowAll((previous) => !previous)} />
+      {body ? (
+        <Rows body={body} showAll={showAll} onToggle={() => setShowAll((previous) => !previous)} />
       ) : (
         <p data-files-note className={`mt-2 text-[12px] ${error ? "font-semibold text-bad" : "text-muted"}`}>
           {error ?? (loading ? "loading…" : "No files yet")}
