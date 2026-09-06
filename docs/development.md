@@ -104,3 +104,37 @@ retires it.
 ruff is a developer tool, not a dependency: install it on the host with
 `pip install --user ruff` (or `uv tool install ruff`). It is never vendored.
 
+
+## Console
+
+The console is the browser page the daemon serves at `/`. It lives in
+`console/` as its own package: Bun is the runtime, test runner and bundler;
+the page is React 19 with TypeScript, styled with Tailwind v4. The three
+commands, run from the repo root with Bun's global `--cwd` flag:
+
+```
+bun --cwd=console install --frozen-lockfile
+bun --cwd=console test
+bun --cwd=console run build
+```
+
+The `=` is load-bearing: `bun --cwd console install` (space-separated) is
+parsed by Bun 1.3 and 1.4 as `bun run install` inside `console/`, which
+fails with "Script not found", and the same form of `run build` only
+prints Bun's usage. Only `--cwd=console` selects the subcommand.
+
+`install` reads the committed `console/bun.lock` and refuses to drift from
+it. `test` runs `bun test` with `console/tests/setup.ts` preloaded (see
+`console/bunfig.toml`), which registers `happy-dom` so component tests
+render with `@testing-library/react` and no browser; `console/src/lib/`
+tests stay free of the DOM. `build` runs `console/build.ts`, which hands
+`console/index.html` to `Bun.build` with `bun-plugin-tailwind` and writes the
+static bundle to `console/dist/` — `index.html` is the stable entry the
+daemon serves, next to its hashed script and stylesheet. `console/dist/` and
+`console/node_modules/` are git-ignored.
+
+Bun is a developer tool like ruff, never vendored. The operator step for the
+writer host: install it with the upstream installer
+(`curl -fsSL https://bun.sh/install | bash`) as the factory's user, so the
+loop's login shell sees `bun` on PATH. The factory's verify step inherits
+that PATH, so nothing in the loop changes.
