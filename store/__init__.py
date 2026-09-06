@@ -1621,9 +1621,11 @@ class RepointRefused(Exception):
 
 # The shape of the one thing `repoint()` will record as a candidate: a full
 # 40-hex commit id, the form `git rev-parse HEAD` prints and the form the
-# park records. An abbreviated sha would pass `_candidate_drift()`'s
-# equality test never, and a branch name would pass it only by accident.
-FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
+# park records. Either case is accepted (git does), and lowercased before
+# it is stored so `_candidate_drift()`'s equality test against the
+# lowercase form git prints holds. An abbreviated sha would pass that test
+# never, and a branch name would pass it only by accident.
+FULL_SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
 
 
 def repoint(conn, ticket_id, sha, note, now=None):
@@ -1646,8 +1648,9 @@ def repoint(conn, ticket_id, sha, note, now=None):
     parked ticket with a well-formed sha: an unknown ticket, one with a live
     run, one whose newest run is in any phase but `awaiting_merge_approval`
     (ready with no run yet, failed, merged, already approved and waiting
-    for its claim), or a `sha` that is not 40 lowercase hex characters. The
-    refusal names the ticket and the reason. Touches no branch: rebasing
+    for its claim), or a `sha` that is not 40 hex characters (either case;
+    it is stored lowercased, the form git prints). The refusal names the
+    ticket and the reason. Touches no branch: rebasing
     the branch itself is the operator's git work, before this call.
     """
     if not isinstance(sha, str) or not FULL_SHA.match(sha):
@@ -1655,6 +1658,7 @@ def repoint(conn, ticket_id, sha, note, now=None):
             f"ticket {ticket_id}: {sha!r} is not a full 40-hex commit id;"
             " a re-point names the exact commit the gate will hold the"
             " branch to")
+    sha = sha.lower()
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):

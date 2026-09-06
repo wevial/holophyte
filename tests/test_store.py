@@ -135,7 +135,10 @@ class RepointTests(unittest.TestCase):
     def test_moves_the_sha_and_records_both_rows(self):
         self.park()
 
-        result = store.repoint(self.conn, self.ticket, NEW_SHA,
+        # Upper case is what a pasted sha may arrive as; git accepts it,
+        # and the gate compares against the lowercase form git prints, so
+        # the store must keep the lowercase form.
+        result = store.repoint(self.conn, self.ticket, NEW_SHA.upper(),
                                "rebuilt on the filtered main",
                                now=T0 + 3 * MINUTE)
 
@@ -178,8 +181,8 @@ class RepointTests(unittest.TestCase):
         self.assertIn(str(self.ticket + 1), str(unknown.exception))
         self.assertEqual(self.candidate_sha(), None)
 
-        # Parked, but the sha is not a full commit id: abbreviated, upper
-        # case, a branch name, not text.
+        # Parked, but the sha is not a full commit id: abbreviated, a
+        # branch name, too long, not text.
         self.conn.execute("UPDATE runs SET endedAt = NULL, outcome = NULL"
                           " WHERE id = ?", (self.run,))
         self.conn.execute("UPDATE runs SET phase = 'merge_gate' WHERE id = ?",
@@ -189,7 +192,7 @@ class RepointTests(unittest.TestCase):
             " WHERE id = ?", (self.run, self.ticket))
         self.conn.commit()
         self.park()
-        for bad in (NEW_SHA[:7], NEW_SHA.upper(), "main", NEW_SHA + "0", None):
+        for bad in (NEW_SHA[:7], "main", NEW_SHA + "0", None):
             with self.subTest(sha=bad):
                 with self.assertRaises(store.RepointRefused) as malformed:
                     store.repoint(self.conn, self.ticket, bad, "rebuilt")
