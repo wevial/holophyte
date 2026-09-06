@@ -104,7 +104,10 @@ the five below predate that section and remain in force.
 4. **Every failure becomes a mechanical gate.** Failure classes 1–6 and
    their gates are documented in FINDINGS.md history; new failure
    classes get the same treatment.
-5. **The factory never pushes.** Pushes are manual, human-initiated.
+5. **The factory never pushes `main`.** Pushes of `main` are manual,
+   human-initiated. Under `[merge] mode = "pr"` the loop pushes a *task
+   branch* to `origin` and opens a pull request for it (design note 7,
+   KO-259); what lands on `main`, and when, is still not the loop's call.
 
 ## Failure lineage (why each gate exists)
 

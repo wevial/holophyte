@@ -42,6 +42,8 @@ Each module, one line:
   target's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: worktree setup and reuse, `run_task`,
   `main`, `report`, `requeue` and the self-merge re-exec.
+- `holophyte/pr.py` — `[merge] mode = "pr"`'s one GitHub surface: the
+  startup route check, the push, the pull request and its body.
 - `holophyte/reexec.py` — `reexec_self`, the shared self re-exec the loop
   and the supervisor both restart themselves through.
 

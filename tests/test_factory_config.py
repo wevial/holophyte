@@ -20,6 +20,7 @@ import holophyte.cli
 import holophyte.config
 import holophyte.gates
 import holophyte.loop
+import holophyte.pr
 import holophyte.runs
 import holophyte.supervisor
 import holophyte.target
@@ -743,6 +744,59 @@ class StartupCheckTests(ConfigTestCase):
     def stub(script, body):
         script.write_text("#!/bin/sh\n" + body)
         script.chmod(0o755)
+
+    def repo(self, *, origin):
+        """Make the fixture target a git repository, with or without `origin`."""
+        subprocess.run(["git", "init", "-q"], cwd=self.target, check=True)
+        if origin:
+            subprocess.run(["git", "remote", "add", "origin",
+                            "https://github.com/example/repo.git"],
+                           cwd=self.target, check=True)
+
+    def test_pr_mode_with_no_origin_is_a_startup_error_naming_both(self):
+        """`[merge] mode = "pr"` pushes to `origin`; a target without one is
+        refused before anything is claimed, naming the key and the remote."""
+        self.locate('[merge]\nmode = "pr"\n')
+        self.repo(origin=False)
+
+        with self.assertRaises(SystemExit) as raised:
+            holophyte.config.check_agent_commands(self.tgt)
+
+        message = str(raised.exception)
+        self.assertIn("[merge] mode", message)
+        self.assertIn("origin", message)
+        self.assertIn(str(self.tgt.config_path), message)
+
+    def test_pr_mode_probes_gh_auth_and_refuses_a_failed_one(self):
+        """With `origin` in place the route is `gh auth status`: a stub that
+        answers is a pass, one that refuses is a startup error naming `gh`;
+        with no `gh` and no token in the environment, the error names both."""
+        bindir = self.stub_path()
+        self.locate('[merge]\nmode = "pr"\n')
+        self.repo(origin=True)
+        self.stub(bindir / "gh", 'if [ "$1" = auth ]; then exit 0; fi\nexit 1\n')
+        self.assertIsNone(holophyte.config.check_agent_commands(self.tgt))
+
+        self.stub(bindir / "gh", 'echo "You are not logged into any GitHub '
+                                 'hosts" >&2\nexit 1\n')
+        with self.assertRaises(SystemExit) as raised:
+            holophyte.config.check_agent_commands(self.tgt)
+        self.assertIn("gh auth status", str(raised.exception))
+        self.assertIn("not logged into", str(raised.exception))
+
+        # No `gh` at all: the program is renamed to one nothing on PATH
+        # answers to, since the host running this may well have a real,
+        # authenticated `gh` in a system directory the stubs sit ahead of.
+        with patch.object(holophyte.pr, "GH", "gh-absent-under-test"), \
+                patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}):
+            with self.assertRaises(SystemExit) as raised:
+                holophyte.config.check_agent_commands(self.tgt)
+            self.assertIn("'gh-absent-under-test' on PATH",
+                          str(raised.exception))
+            self.assertIn("GH_TOKEN or GITHUB_TOKEN", str(raised.exception))
+            with patch.dict(os.environ, {"GITHUB_TOKEN": "ghp_test"}):
+                self.assertIsNone(
+                    holophyte.config.check_agent_commands(self.tgt))
 
     def test_a_startup_check_of_a_resolvable_command_passes(self):
         # `sh` is on PATH everywhere the factory runs; a bare name is the
@@ -1735,12 +1789,19 @@ class ConsoleConfigTests(ConfigTestCase):
 
 
 class MergeConfigTests(ConfigTestCase):
-    """`[merge] approve`: `"auto"` (the default) or `"human"`, nothing else."""
+    """`[merge] approve`: `"auto"` (the default) or `"human"`; `[merge] mode`:
+    `"local"` (the default) or `"pr"`; nothing else."""
 
-    def test_an_absent_table_is_auto(self):
+    def test_an_absent_table_is_auto_and_local(self):
         self.locate()
 
-        self.assertEqual(holophyte.config.merge_config(self.tgt).approve, "auto")
+        self.assertEqual(holophyte.config.merge_config(self.tgt),
+                         ("auto", "local"))
+
+    def test_pr_is_read(self):
+        self.locate('[merge]\nmode = "pr"\n')
+
+        self.assertEqual(holophyte.config.merge_config(self.tgt).mode, "pr")
 
     def test_human_is_read(self):
         self.locate('[merge]\napprove = "human"\n')
@@ -1753,6 +1814,7 @@ class MergeConfigTests(ConfigTestCase):
         startup refuses both, naming the key, before anything is claimed."""
         for line, key in (('approve = "later"', "approve"),
                           ("approve = true", "approve"),
+                          ('mode = "github"', "mode"),
                           ('approve_by = "human"', "approve_by")):
             with self.subTest(line=line):
                 target = self.locate(f"[merge]\n{line}\n").path

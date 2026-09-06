@@ -47,6 +47,16 @@ machines it walks. Back to the [README](index.md).
    queue, and the next claim reuses the preserved worktree and branch,
    re-runs the pre-merge verify against current `main` and merges --
    `claimed --> merge_gate` below, with no implementer or reviewer turn.
+   Under `[merge] mode = "pr"` the clean gate leaves the machine instead of
+   landing on `main`: `git push origin BRANCH`, then a pull request against
+   `main` titled `KO-n: TITLE` whose body is the ticket body plus the run's
+   FINDINGS entry, in that order. The run then parks as `approve = "human"`
+   does, with the PR's URL on the run (`runs.prUrl`), in the ticket's
+   question (`PR open: URL`) and in the ledger. A push the remote refuses
+   or a PR create that fails is an infra failure -- no strike, branch and
+   worktree preserved, no PR recorded. The factory still never pushes
+   `main`; reading the PR's threads and merging it are the mode's second
+   half.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —

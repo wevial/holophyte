@@ -25,6 +25,7 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
@@ -187,6 +188,17 @@ DEFINED = {
     ],
     holophyte.cli: [
         "cli",
+    ],
+    # KO-259: the one GitHub surface, `[merge] mode = "pr"`'s push and PR.
+    holophyte.pr: [
+        "check_pr_route",
+        "create_pull_request",
+        "origin_url",
+        "pr_body",
+        "pr_title",
+        "push_branch",
+        "repo_of",
+        "token_from_env",
     ],
 }
 

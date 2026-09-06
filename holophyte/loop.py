@@ -24,6 +24,7 @@ from time import monotonic, time
 import review_runner
 import store
 import store.read
+from holophyte import pr
 from holophyte.agents import agent
 from holophyte.board import (
     block_ticket,
@@ -399,9 +400,16 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # pre-merge verify is a run stopped at the gate.
     ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
                      wt, beat_s, sha, verify_cmd, contracts)
+    merge = merge_config(target)
+    # Under `mode = "pr"` the candidate leaves the machine instead of landing
+    # on main: pushed, opened as a pull request, and parked for the answer
+    # -- whatever `approve` says, since the PR is what the answer is about.
+    if merge.mode == "pr":
+        _open_pr_and_park(target, conn, run_id, provider, task_id, task,
+                          branch, sha, body)
     # The human half of the gate, when the target asks for one: the
     # candidate is approved and verified, and a person says "merge".
-    if merge_config(target).approve == "human":
+    if merge.approve == "human":
         _park_for_approval(conn, run_id, provider, task_id, branch, sha)
     return _land(target, conn, run_id, provider, task_id, task, branch, wt,
                  sha, ok, started, budget_min, rnd)
@@ -936,6 +944,53 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
            f"{sha} and not merged ([merge] approve = "
            "\"human\"). Answer merge? to release it.", provider)
     raise MergeParked(f"awaiting merge approval; branch {branch} preserved"
+                      f" at {sha[:12]}")
+
+
+def _open_pr_and_park(target, conn, run_id, provider, task_id, task, branch,
+                      sha, body):
+    """`[merge] mode = "pr"`: push the approved candidate, open its pull
+    request, and park the run for the answer.
+
+    `git push origin BRANCH`, then the PR with the title `KO-n: TITLE` and
+    the ticket body plus the run's FINDINGS entry as its body -- in that
+    order, so a PR never names a branch the remote does not hold. Either
+    refusing is `InfraFailure` out of `holophyte.pr`: the route gave out,
+    not the ticket, so no strike is spent and the branch and worktree stay
+    exactly as after a refused merge. With the URL in hand the park is
+    `_park_for_approval()`'s, with the URL where that park has `merge?`:
+    the ticket asks `PR open: URL`, `store.park()` writes `runs.prUrl` in
+    the transaction that moves the run to `awaiting_merge_approval`, and the
+    ledger carries the URL. Nothing touches main, and nothing here merges
+    the PR: that is the mode's second half.
+    """
+    # Still the `merge_gate` phase: the push and the create are the mode's
+    # way out of the gate, named on the stream rather than as a phase move.
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "pull_request",
+                           f"pushing {branch} to {pr.REMOTE} and opening its"
+                           " pull request")
+    pr.push_branch(target, branch)
+    print(f"[holo2] pushed {branch} to {pr.REMOTE}")
+    now = int(time() * 1000)
+    url = pr.create_pull_request(target, branch, pr.pr_title(task_id, task),
+                                 pr.pr_body(conn, run_id, body, now))
+    print(f"[holo2] pull request open: {url}")
+    if conn is not None and run_id is not None:
+        ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+        if not block_ticket(conn, ticket_id, provider, f"PR open: {url}"):
+            print(f"[holo2] {task_id} could not be moved to"
+                  " blocked_on_operator; parking the run anyway")
+        store.park(conn, run_id, "awaiting_merge_approval",
+                   f"approved and verified; {branch} at {sha[:12]} is open as"
+                   f" {url} ([merge] mode = \"pr\")",
+                   candidate_sha=sha, pr_url=url)
+    ledger(conn, run_id, task_id, "note",
+           f"PR OPEN: {url}\nReview approved and verify passed; branch "
+           f"{branch} pushed to {pr.REMOTE} at {sha} and not merged "
+           "([merge] mode = \"pr\"). The run waits in "
+           "awaiting_merge_approval.", provider)
+    raise MergeParked(f"pull request open: {url}; branch {branch} preserved"
                       f" at {sha[:12]}")
 
 

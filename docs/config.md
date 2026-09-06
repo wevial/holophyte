@@ -291,9 +291,12 @@ or a private network.
 # Who says "merge" once the reviewer has approved and the pre-merge verify
 # has passed. Optional; the value shown is the default.
 approve = "auto"   # "human": park the approved run for an operator to release
+# Where an approved, verified candidate goes. Optional; the value shown is
+# the default.
+mode = "local"     # "pr": push the branch to origin and open a pull request
 ```
 
-Accepted keys: `approve`.
+Accepted keys: `approve`, `mode`.
 
 With `approve = "auto"` a clean merge gate merges, as it always has. With
 `approve = "human"` the loop stops there instead: the run's phase becomes
@@ -309,3 +312,26 @@ the park is not a failure -- it neither stops the pass under
 the exit status is not spent on it. Nothing merges until the operator says
 so; releasing a parked run is the next ticket's `--approve`. The value must
 be `"auto"` or `"human"`; anything else is a startup error naming the key.
+
+With `mode = "local"` a clean merge gate lands the candidate on `main` with a
+`--no-ff` merge, as it always has. With `mode = "pr"` the loop pushes the task
+branch to `origin` instead and opens a pull request against `main` titled
+`KO-n: TITLE`, whose body is the ticket body followed by the run's FINDINGS
+entry, so the repository's own review bots and CI see the change before it
+lands (design note 7). The run then parks exactly as `approve = "human"` does
+-- phase `awaiting_merge_approval`, ticket `blocked_on_operator`, branch and
+worktree preserved, lease released -- with the PR's URL recorded on the run
+(`runs.prUrl`), in the ticket's question (`PR open: URL`) and in the ledger
+comment. Nothing here reads the PR's review threads, waits for its checks or
+merges it. The pull request is opened through `gh` when it is on PATH, and
+otherwise through the GitHub API with a token read from `GH_TOKEN` or
+`GITHUB_TOKEN` in the environment; the token is never written to the config,
+the store or a log. Startup checks the route before anything is claimed: a
+target with no `origin` remote, a `gh` whose `gh auth status` fails, or
+neither `gh` nor a token is a startup error naming `[merge] mode`. At the
+gate, a refused push, a PR create that fails, or a route that has gone missing
+since startup ends the run as an infra failure -- no strike against the
+ticket, branch and worktree preserved, and no pull request recorded that was
+not opened. The value must be `"local"` or `"pr"`; anything else is a startup
+error naming the key. "The factory never pushes" is, under this mode, "the
+factory never pushes `main`".
