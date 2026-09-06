@@ -653,27 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[230 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T00:49:02Z — KO-265
-MERGED to main as 880b964.
-actual: 13.8 min · estimate: 30 min · rounds: 2
-
-## 2026-09-06T00:56:51Z — KO-266
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (5):
-- docs/development.md:116 [p0] Blocker: [docs/development.md:116](/workspace/docs/development.md:116) substitutes `--cwd=console` and explicitly says the contract’s exact commands fail. Provi…
-- criteria:1 [p2] CRITERION 1: unwitnessed — Bun is unavailable here; no generated bundle or evidence resolving the documented command incompatibility. Given a fresh clone with B…
-- criteria:2 [p2] CRITERION 2: unwitnessed — `console/tests/format.test.ts` asserts all four required results, but Bun execution could not be reproduced. Given `formatDuration`,…
-- criteria:3 [p2] CRITERION 3: unwitnessed — `console/tests/App.test.tsx` contains the required render assertion and happy-dom preload exists, but Bun execution could not be repr…
-- criteria:5 [p2] CRITERION 5: unwitnessed — Local Python discovery ran 737 tests with 25 failures and 19 errors, including missing CLI/environment failures; ruff is unavailable.…
-
-## 2026-09-06T01:08:28Z — KO-266
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- console/install.ts:28 [p2] [console/install.ts:28](/workspace/console/install.ts:28): Building during installation masks a broken build command. On Bun 1.4.2, `bun --cwd console run bui…
-- console/bun.lock:2 [p2] [console/bun.lock:2](/workspace/console/bun.lock:2): Bun 1.3.14, explicitly named in the ticket, rejects lockfile version 2. The required frozen install fails…
-- criteria:1 [p2] CRITERION 1: not met — frozen install fails on Bun 1.3.14; the required build command produces no bundle on Bun 1.4.2. Given a fresh clone with Bun installed, w…
+[233 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T01:15:13Z — KO-266
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
@@ -766,3 +746,16 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T02:28:23Z — KO-270
 MERGED to main as 5f483f3.
 actual: 5.2 min · estimate: 30 min · rounds: 1
+
+## 2026-09-06T02:34:19Z — KO-271
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- console/src/components/RoundTimeline.tsx:20 [p2] [RoundTimeline.tsx:20](/workspace/console/src/components/RoundTimeline.tsx:20): Segment widths total 100%, but the flex container adds 3px gaps and every segm…
+- criteria:2 [p2] CRITERION 2: not met — Numeric widths and header are witnessed, but the rendered timeline exceeds its box by 9px because gaps are excluded from sizing. Given a…
+
+## 2026-09-06T02:36:23Z — KO-271
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T02:36:24Z — KO-271
+MERGED to main as fb1a5b2.
+actual: 8.0 min · estimate: 30 min · rounds: 2
