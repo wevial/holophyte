@@ -653,21 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[243 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T01:53:57Z — KO-267
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (5):
-- console/src/components/ViewButton.tsx:21 [p2] [ViewButton.tsx:21](/workspace/console/src/components/ViewButton.tsx:21): Selected labels use `text-paper`, which becomes `#141210` in dark mode, making them…
-- console/tests/App.test.tsx:75 [p2] [App.test.tsx:75](/workspace/console/tests/App.test.tsx:75): The theme test neither establishes a dark system preference nor loads/checks CSS. It witnesses at…
-- console/tests/theme.test.ts:8 [p2] [theme.test.ts:8](/workspace/console/tests/theme.test.ts:8): The dark selector search matches the introductory comment, then reads bare `:root`. Reproduced: b…
-- criteria:4 [p2] CRITERION 4: unwitnessed — No test establishes dark system preference and verifies that dark tokens apply. Given no stored theme and a dark `prefers-color-schem…
-- criteria:5 [p2] CRITERION 5: unwitnessed — The token parser reads the paper block for both selectors, so the required parity test is ineffective. Given every colour token, when…
-
-## 2026-09-06T01:56:50Z — KO-267
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- console/src/App.tsx:25 [p2] **[P2] Constrain the shell to the viewport** — [console/src/App.tsx:25](/workspace/console/src/App.tsx:25). `min-h-screen` allows the shell to grow with its c…
+[245 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T01:58:25Z — KO-267
 Round 3: pass · reviewer codex-astra-medium · verify passed
@@ -766,3 +752,10 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T03:13:53Z — KO-273
 FAILED: terminal adjudication: FAIL; branch task/ko-273-run-detail-files-touched-and-t preserved at 60288ae248c3
 actual: 5.6 min · estimate: 25 min · rounds: 3
+
+## 2026-09-06T03:21:54Z — KO-288
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T03:22:50Z — KO-288
+MERGED to main as 694af5a.
+actual: 7.6 min · estimate: 20 min · rounds: 1
