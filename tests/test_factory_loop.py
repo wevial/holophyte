@@ -2130,6 +2130,48 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
+    def test_a_ticket_edited_during_the_fix_round_is_not_merged(self):
+        """Regression: the review of the fix vouched for the merge gate
+        too -- the fixed candidate went to the merge API on the review's
+        verify alone, with no drift check, so a ticket edited while the
+        fix round ran was merged against a contract that no longer
+        existed. Now the fixed candidate goes through the gate: the run
+        stops there, nothing is merged, and the ticket is told which
+        fields moved."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state()])
+        provider = self.provider()
+
+        class CommitAndEditTheTicket(Commit):
+            """The fix commit, with the board edited under it."""
+
+            def play(self, cwd, turn):
+                provider.live["iss-131"] = dict(
+                    provider.live["iss-131"],
+                    title="add a thing, and a second thing")
+                return super().play(cwd, turn)
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            CommitAndEditTheTicket("fix: default load()"),
+                            APPROVE, provider=provider)
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+                                      "implement", "review"])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "resolve", "state"])
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(fake.turns[4].candidate_sha, fixed)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("failed", "failed", None)])
+        self.assertIn(BRANCH, self.branches())
+        (_, comment) = provider.comments[-1]
+        self.assertIn("MERGE REFUSED", comment)
+        self.assertIn("title", comment)
+        self.assertIn(fixed, comment)
+
     def test_a_fix_round_the_reviewer_rejects_parks_instead_of_merging(self):
         """The review of the fix commit asks for changes: nothing is merged
         under `approve = "auto"`, no further fix round runs, and the run

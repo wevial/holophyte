@@ -1224,7 +1224,11 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
             _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                         sha, reviewed, beat_s, pull, ticket, verify_cmd,
                         contracts, criteria)
-            reviewed = verified = sha
+            # The review vouches for the fix, not for the gate: `verified`
+            # stays behind, so the fixed candidate goes through
+            # `_merge_gate()` below -- the drift check as well as the verify
+            # -- before the merge API is called.
+            reviewed = sha
         if merge.approve == "auto" or approved:
             if sha != verified:
                 _merge_gate(target, conn, run_id, provider, task_id, issue_id,
