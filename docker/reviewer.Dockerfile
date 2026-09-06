@@ -26,6 +26,26 @@ RUN set -eu \
     && rm /tmp/bun-linux-x64.zip
 ENV PATH=/opt/bun/bin:$PATH
 
+# Go is pinned to one release so a Go target's `go test` criteria can be
+# witnessed inside the container. The tarball's SHA-256 is copied from the Go
+# downloads page; a mismatch fails the build. GOTOOLCHAIN=local makes a module
+# asking for another toolchain fail loudly instead of downloading one, and
+# every Go cache lives under the writable reviewer home because root is
+# mounted read-only.
+ARG GO_TARBALL=go1.26.6.linux-amd64.tar.gz
+ARG GO_SHA256=708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89
+RUN set -eu \
+    && curl -fsSL -o /tmp/go.linux-amd64.tar.gz \
+        "https://go.dev/dl/${GO_TARBALL}" \
+    && echo "${GO_SHA256}  /tmp/go.linux-amd64.tar.gz" | sha256sum -c - \
+    && tar -C /usr/local -xzf /tmp/go.linux-amd64.tar.gz \
+    && rm /tmp/go.linux-amd64.tar.gz
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOTOOLCHAIN=local \
+    GOPATH=/home/reviewer/go \
+    GOMODCACHE=/home/reviewer/go/pkg/mod \
+    GOCACHE=/home/reviewer/.cache/go-build
+
 RUN mkdir -p /home/reviewer /workspace \
     && chmod 0755 /home/reviewer /workspace
 

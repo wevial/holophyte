@@ -350,12 +350,12 @@ class ContainerLifetimeTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v2_and_nothing_still_names_v1(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v2")
+    def test_image_tag_is_v3_and_nothing_still_names_v1_or_v2(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v3")
         stale = [
             path
             for path in [*ROOT.glob("*.py"), *(ROOT / "docs").glob("*.md")]
-            if "ubuntu24.04-v1" in path.read_text()
+            if re.search(r"ubuntu24\.04-v[12]\b", path.read_text())
         ]
         self.assertEqual(stale, [])
 
@@ -371,3 +371,23 @@ class ReviewerImageTests(unittest.TestCase):
         )
         self.assertRegex(text, r"(?m)^ENV PATH=/opt/bun/bin:\$PATH$")
         self.assertRegex(text, r"(?m)^\s*&& ln -s bun /opt/bun/bin/bunx")
+
+    def test_dockerfile_installs_pinned_checksummed_go_with_local_toolchain(self):
+        text = self.DOCKERFILE.read_text()
+        tarball = re.search(
+            r"^ARG GO_TARBALL=go(\d+\.\d+\.\d+)\.linux-amd64\.tar\.gz$", text, re.M
+        )
+        checksum = re.search(r"^ARG GO_SHA256=([0-9a-f]{64})$", text, re.M)
+        self.assertIsNotNone(tarball, "Dockerfile pins no Go tarball")
+        self.assertEqual(tarball.group(1), "1.26.6")
+        self.assertIsNotNone(checksum, "Dockerfile pins no Go SHA-256")
+        self.assertIn("https://go.dev/dl/${GO_TARBALL}", text)
+        self.assertRegex(
+            text, r"(?m)^\s*&& echo \"\$\{GO_SHA256\}  .*\| sha256sum -c -"
+        )
+        self.assertRegex(text, r"(?m)^\s*&& tar -C /usr/local -xzf ")
+        self.assertRegex(text, r"(?m)^ENV PATH=/usr/local/go/bin:\$PATH")
+        self.assertRegex(text, r"(?m)^\s*GOTOOLCHAIN=local\b")
+        self.assertRegex(text, r"(?m)^\s*GOPATH=/home/reviewer/go\b")
+        self.assertRegex(text, r"(?m)^\s*GOMODCACHE=/home/reviewer/go/pkg/mod\b")
+        self.assertRegex(text, r"(?m)^\s*GOCACHE=/home/reviewer/\.cache/go-build\b")

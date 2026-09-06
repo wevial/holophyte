@@ -22,10 +22,13 @@ are mounted; the copy and all reviewer state are removed afterward. Outbound
 network remains enabled because Codex uses remote inference, but no GitHub,
 SSH, Linear, Docker, or unrelated host credentials are exposed.
 
-The first review builds `holophyte-reviewer:ubuntu24.04-v2` automatically from
-the digest-pinned Ubuntu image; it carries git, python3, ripgrep and a pinned
+The first review builds `holophyte-reviewer:ubuntu24.04-v3` automatically from
+the digest-pinned Ubuntu image; it carries git, python3, ripgrep, a pinned
 Bun (checksum-verified, on `PATH` under `/opt/bun/bin`) so console `bun`
-criteria can be witnessed inside the container. A run fails closed if
+criteria can be witnessed inside the container, and a pinned Go 1.26.6
+(checksum-verified, under `/usr/local/go`, `GOTOOLCHAIN=local` so no other
+toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
+Go target's `go test` criteria can be witnessed too. A run fails closed if
 preflight identity or write rejection fails, the Codex tool host cannot
 execute a local command, the container times out, or the staged repository
 fingerprint changes.
