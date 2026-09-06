@@ -1,6 +1,219 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. The raw values live on `:root` (the handoff's paper theme)
+ * and again on `:root[data-theme="dark"]`; `main.tsx` stamps `data-theme`
+ * from the persisted choice before first paint, and with no stamp the
+ * system preference picks the set. `@theme inline` below maps the raw
+ * tokens to Tailwind names, so components write `bg-paper` / `text-ink` /
+ * `border-line` and never a literal colour. tests/theme.test.ts holds the
+ * two sets to the same names.
+ */
+
+:root {
+  color-scheme: light;
+
+  --paper: #f4f1ea;
+  --card: #fffdf9;
+  --card-header: #faf7f1;
+  --hover: #f7f3ec;
+  --line: #e3ddd2;
+  --line-faint: #eee9df;
+  --track: #e9e4da;
+  --well: #ebe6dc;
+  --rail: #1d1b17;
+
+  --ink: #1d1b17;
+  --body: #3b362f;
+  --muted: #6e675c;
+  --faint: #8a8275;
+
+  --rail-text: #c9c1b3;
+  --rail-sub: #a89f90;
+  --rail-faint: #8a8275;
+  --rail-selected: rgba(244, 241, 234, 0.12);
+  --rail-card: rgba(244, 241, 234, 0.06);
+  --rail-bad-text: oklch(0.75 0.14 25);
+  --badge-text: #1d1b17;
+
+  --accent: oklch(0.62 0.16 200);
+  --link: oklch(0.5 0.14 200);
+  --ok: oklch(0.6 0.14 150);
+  --ok-text: oklch(0.45 0.12 150);
+  --warn: oklch(0.72 0.15 70);
+  --warn-bg: oklch(0.93 0.06 70);
+  --warn-text: oklch(0.4 0.12 70);
+  --bad: oklch(0.58 0.2 25);
+  --bad-bg: oklch(0.93 0.05 25);
+  --bad-text: oklch(0.45 0.16 25);
+  --review: oklch(0.55 0.14 300);
+
+  /* The needs-you band's paper values are provisional: the handoff fixes
+     the dark set below, and the Now view ticket settles the paper set. */
+  --needs-you-bg: oklch(0.96 0.03 70);
+  --needs-you-border: oklch(0.88 0.06 70);
+  --needs-you-rule: oklch(0.92 0.04 70);
+
+  --card-shadow: 0 1px 2px rgba(40, 30, 10, 0.05);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #141210;
+  --card: #1c1915;
+  --card-header: #211d17;
+  --hover: #262119;
+  --line: #2f2a22;
+  --line-faint: #272219;
+  --track: #2b261e;
+  --well: #221e17;
+  --rail: #0e0d0a;
+
+  --ink: #ece7dc;
+  --body: #cfc8ba;
+  --muted: #9a9284;
+  --faint: #7a7367;
+
+  --rail-text: #c9c1b3;
+  --rail-sub: #a89f90;
+  --rail-faint: #8a8275;
+  --rail-selected: rgba(244, 241, 234, 0.12);
+  --rail-card: rgba(244, 241, 234, 0.06);
+  --rail-bad-text: oklch(0.78 0.13 25);
+  --badge-text: #1d1b17;
+
+  --accent: oklch(0.7 0.14 200);
+  --link: oklch(0.76 0.12 200);
+  --ok: oklch(0.66 0.13 150);
+  --ok-text: oklch(0.76 0.12 150);
+  --warn: oklch(0.76 0.14 70);
+  --warn-bg: oklch(0.3 0.06 70);
+  --warn-text: oklch(0.86 0.12 70);
+  --bad: oklch(0.66 0.18 25);
+  --bad-bg: oklch(0.29 0.06 25);
+  --bad-text: oklch(0.82 0.12 25);
+  --review: oklch(0.72 0.12 300);
+
+  --needs-you-bg: oklch(0.23 0.03 70);
+  --needs-you-border: oklch(0.33 0.06 70);
+  --needs-you-rule: oklch(0.29 0.04 70);
+
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* No stored choice: follow the system. The block repeats the dark set
+   because CSS has no way to reference one declaration block from another;
+   tests/theme.test.ts checks the two copies agree. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --paper: #141210;
+    --card: #1c1915;
+    --card-header: #211d17;
+    --hover: #262119;
+    --line: #2f2a22;
+    --line-faint: #272219;
+    --track: #2b261e;
+    --well: #221e17;
+    --rail: #0e0d0a;
+
+    --ink: #ece7dc;
+    --body: #cfc8ba;
+    --muted: #9a9284;
+    --faint: #7a7367;
+
+    --rail-text: #c9c1b3;
+    --rail-sub: #a89f90;
+    --rail-faint: #8a8275;
+    --rail-selected: rgba(244, 241, 234, 0.12);
+    --rail-card: rgba(244, 241, 234, 0.06);
+    --rail-bad-text: oklch(0.78 0.13 25);
+    --badge-text: #1d1b17;
+
+    --accent: oklch(0.7 0.14 200);
+    --link: oklch(0.76 0.12 200);
+    --ok: oklch(0.66 0.13 150);
+    --ok-text: oklch(0.76 0.12 150);
+    --warn: oklch(0.76 0.14 70);
+    --warn-bg: oklch(0.3 0.06 70);
+    --warn-text: oklch(0.86 0.12 70);
+    --bad: oklch(0.66 0.18 25);
+    --bad-bg: oklch(0.29 0.06 25);
+    --bad-text: oklch(0.82 0.12 25);
+    --review: oklch(0.72 0.12 300);
+
+    --needs-you-bg: oklch(0.23 0.03 70);
+    --needs-you-border: oklch(0.33 0.06 70);
+    --needs-you-rule: oklch(0.29 0.04 70);
+
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+}
+
 @theme inline {
   --font-sans: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-card-header: var(--card-header);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line-faint: var(--line-faint);
+  --color-track: var(--track);
+  --color-well: var(--well);
+  --color-rail: var(--rail);
+
+  --color-ink: var(--ink);
+  --color-body: var(--body);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-rail-text: var(--rail-text);
+  --color-rail-sub: var(--rail-sub);
+  --color-rail-faint: var(--rail-faint);
+  --color-rail-selected: var(--rail-selected);
+  --color-rail-card: var(--rail-card);
+  --color-rail-bad-text: var(--rail-bad-text);
+  --color-badge-text: var(--badge-text);
+
+  --color-accent: var(--accent);
+  --color-link: var(--link);
+  --color-ok: var(--ok);
+  --color-ok-text: var(--ok-text);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-text: var(--warn-text);
+  --color-bad: var(--bad);
+  --color-bad-bg: var(--bad-bg);
+  --color-bad-text: var(--bad-text);
+  --color-review: var(--review);
+
+  --color-needs-you-bg: var(--needs-you-bg);
+  --color-needs-you-border: var(--needs-you-border);
+  --color-needs-you-rule: var(--needs-you-rule);
+
+  --shadow-card: var(--card-shadow);
+
+  --radius-pill: 5px;
+  --radius-chip: 99px;
+  --radius-button: 7px;
+  --radius-card: 8px;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
 }
