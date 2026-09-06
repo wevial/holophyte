@@ -1,5 +1,5 @@
 """`--serve PORT|HOST:PORT`: a read-only HTTP daemon answering `/status`,
-`/runs` and `/attention` as JSON.
+`/runs` and `/attention` as JSON and serving the console at `/`.
 
 One `ThreadingHTTPServer` per target, bound to the one address the command
 line names -- loopback when it names only a port -- so a drawer on this
@@ -20,6 +20,13 @@ answer and the rule lives in one place rather than in each client.
 Every host the body carries passes through `host_label()`, so a configured
 `[report] host_label` is what the network sees rather than the machine name.
 
+The console is the static bundle the renderer's build writes to the
+repository's own `console/dist/` (`CONSOLE_DIR`, found from this package,
+never the target's checkout); `/` and any path no JSON route claims are
+answered from it, so opening the daemon's address in a browser is the
+console with no second process. Without a built console, `/` is a 404
+naming that, and the JSON routes answer as before.
+
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
 from __future__ import annotations
@@ -30,8 +37,9 @@ import signal
 import socket
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from time import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import store.read
 from holophyte.config import sweep_config
@@ -44,6 +52,18 @@ STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 # How long a failed run stays on `/attention`: a failure the operator has
 # not requeued or merged past in a day is one they have not looked at.
 FAILED_WINDOW_MS = 24 * 60 * 60 * 1000
+# The console's built bundle: the repository's own, found from this package.
+CONSOLE_DIR = Path(__file__).resolve().parent.parent / "console" / "dist"
+# Content type by extension for the files under it; anything else is bytes.
+CONTENT_TYPES = {".html": "text/html; charset=utf-8",
+                 ".js": "text/javascript",
+                 ".css": "text/css",
+                 ".svg": "image/svg+xml",
+                 ".woff2": "font/woff2",
+                 ".png": "image/png",
+                 ".json": "application/json",
+                 ".map": "application/json"}
+OCTET_STREAM = "application/octet-stream"
 
 
 def parse_address(text):
@@ -260,8 +280,36 @@ def runs(target, query=""):
     }
 
 
+def static_file(console_dir, path):
+    """The console file for request `path`: `(bytes, content type)`, or
+    `(404 status, JSON body)` when there is none to serve.
+
+    `/` is `index.html`. The path is percent-decoded and resolved under
+    `console_dir`, symlinks followed, and refused unless the result is a
+    regular file inside the directory: `..`, an encoded `..`, an absolute
+    path and a symlink pointing out are all the plain 404, indistinguishable
+    from a missing file. With no `console_dir` at all the 404 says the
+    console is not built, so a daemon on a host without the renderer's
+    toolchain still answers its JSON and says why `/` does not.
+    """
+    if not console_dir.is_dir():
+        return 404, {"error": "not found", "path": path,
+                     "detail": "the console is not built: "
+                               f"{console_dir} does not exist"}
+    relative = unquote(path).lstrip("/") or "index.html"
+    root = console_dir.resolve()
+    try:
+        file = (root / relative).resolve()
+    except OSError:
+        file = None
+    if file is None or not file.is_relative_to(root) or not file.is_file():
+        return 404, {"error": "not found", "path": path}
+    return file.read_bytes(), CONTENT_TYPES.get(file.suffix, OCTET_STREAM)
+
+
 class StatusHandler(BaseHTTPRequestHandler):
-    """`GET /status`, `GET /runs` and `GET /attention`: 404 for other paths,
+    """`GET /status`, `GET /runs` and `GET /attention` as JSON; any other
+    GET is a console file under the server's `console_dir` or 404 JSON;
     405 otherwise.
 
     "Otherwise" is every other method, HEAD and OPTIONS included: a client
@@ -285,7 +333,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif path == "/attention":
             code, body = attention(self.server.target)
         else:
-            code, body = 404, {"error": "not found", "path": path}
+            found = static_file(self.server.console_dir, path)
+            if isinstance(found[0], bytes):
+                return self.answer_bytes(*found)
+            code, body = found
         self.answer(code, body)
 
     def refuse(self):
@@ -303,9 +354,12 @@ class StatusHandler(BaseHTTPRequestHandler):
         raise AttributeError(name)
 
     def answer(self, code, body, allow=None):
-        payload = json.dumps(body).encode()
+        self.answer_bytes(json.dumps(body).encode(), "application/json",
+                          code=code, allow=allow)
+
+    def answer_bytes(self, payload, content_type, code=200, allow=None):
         self.send_response(code)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(payload)))
         if allow is not None:
@@ -318,25 +372,28 @@ class StatusHandler(BaseHTTPRequestHandler):
 
 
 class StatusServer(ThreadingHTTPServer):
-    """The bound server, carrying the one target its handler answers for
-    and the moment it was bound, which `/status` reports as the daemon's
-    `started_ms`."""
+    """The bound server, carrying the one target its handler answers for,
+    the directory it serves the console from and the moment it was bound,
+    which `/status` reports as the daemon's `started_ms`."""
 
     daemon_threads = True
 
-    def __init__(self, target, address):
+    def __init__(self, target, address, console_dir=CONSOLE_DIR):
         self.target = target
+        self.console_dir = Path(console_dir)
         self.started_ms = int(time() * 1000)
         super().__init__(address, StatusHandler)
 
 
-def make_server(target, host, port):
+def make_server(target, host, port, console_dir=CONSOLE_DIR):
     """Bind a `StatusServer` for `target` at `host:port` and return it.
 
     Port 0 binds an ephemeral port; the address actually bound is
     `server.server_address`. The caller runs `serve_forever()` and closes it.
+    `console_dir` is where `/` is served from -- the repository's own
+    `console/dist/` unless a test points it elsewhere.
     """
-    return StatusServer(target, (host, port))
+    return StatusServer(target, (host, port), console_dir)
 
 
 class _Stopped(Exception):

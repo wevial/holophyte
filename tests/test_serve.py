@@ -111,12 +111,16 @@ class ServeTestCase(unittest.TestCase):
         finally:
             conn.close()
 
-    def start(self, config=None):
-        """Bind the daemon for the target on a loopback ephemeral port."""
+    def start(self, config=None, console_dir=None):
+        """Bind the daemon for the target on a loopback ephemeral port,
+        serving `/` from `console_dir` -- an absent directory under the
+        test root by default, never the repository's own build."""
         if config is not None:
             (self.db.parent / "config.toml").write_text(config)
         self.tgt = holophyte.target.Target.locate(self.target)
-        server = holophyte.serve.make_server(self.tgt, "127.0.0.1", 0)
+        console_dir = console_dir or self.root / "console" / "dist"
+        server = holophyte.serve.make_server(self.tgt, "127.0.0.1", 0,
+                                             console_dir=console_dir)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
@@ -126,6 +130,12 @@ class ServeTestCase(unittest.TestCase):
 
     def request(self, method, path):
         """`(status, headers, decoded JSON body)` for one request."""
+        status, headers, raw = self.fetch(method, path)
+        self.raw_body = raw.decode()
+        return status, headers, json.loads(raw)
+
+    def fetch(self, method, path):
+        """`(status, headers, raw bytes)` for one request."""
         conn = http.client.HTTPConnection(self.host, self.port, timeout=10)
         try:
             conn.request(method, path)
@@ -133,8 +143,7 @@ class ServeTestCase(unittest.TestCase):
             raw = response.read()
         finally:
             conn.close()
-        self.raw_body = raw.decode()
-        return response.status, dict(response.getheaders()), json.loads(raw)
+        return response.status, dict(response.getheaders()), raw
 
     def null_host(self, run_id):
         """Age run `run_id` past the host column: a row with no recorded host."""
@@ -323,6 +332,82 @@ class StatusTests(ServeTestCase):
         self.assertTrue(head.startswith(b"HTTP/1.0 405 "), head)
         self.assertIn(b"Content-Type: application/json", head)
         self.assertIn("error", json.loads(payload))
+
+
+class ConsoleTests(ServeTestCase):
+    """`/` and the paths no JSON route claims: the console's built files."""
+
+    INDEX = b"<!doctype html><title>holophyte</title>"
+    APP = b"console.log('holophyte');\n"
+
+    def build(self):
+        """A `dist/` with an `index.html` and `app.js` under the test root."""
+        dist = self.root / "console" / "dist"
+        dist.mkdir(parents=True)
+        (dist / "index.html").write_bytes(self.INDEX)
+        (dist / "app.js").write_bytes(self.APP)
+        return dist
+
+    def test_root_and_a_file_answer_their_bytes_typed_and_uncached(self):
+        self.seed()
+        self.build()
+        self.start()
+        for path, payload, mime in (("/", self.INDEX, "text/html"),
+                                    ("/index.html", self.INDEX, "text/html"),
+                                    ("/app.js", self.APP, "javascript")):
+            with self.subTest(path=path):
+                code, headers, raw = self.fetch("GET", path)
+                self.assertEqual(code, 200)
+                self.assertEqual(raw, payload)
+                self.assertIn(mime, headers["Content-Type"])
+                self.assertEqual(headers["Cache-Control"], "no-store")
+
+    def test_a_path_that_escapes_the_directory_is_404_json(self):
+        self.seed()
+        dist = self.build()
+        # A real file just outside `dist/` and a symlink inside pointing at
+        # it: neither must come back.
+        secret = self.root / "console" / "secret.txt"
+        secret.write_text("not for the network")
+        (dist / "link.txt").symlink_to(secret)
+        (dist / "escape").symlink_to(self.root / "console")
+        self.start()
+        for path in ("/../secret.txt", "/%2e%2e/secret.txt",
+                     "/..%2fsecret.txt", "/link.txt", "/escape/secret.txt",
+                     "/" + str(secret), "/missing.js"):
+            with self.subTest(path=path):
+                code, headers, body = self.request("GET", path)
+                self.assertEqual(code, 404)
+                self.assertEqual(headers["Content-Type"], "application/json")
+                self.assertEqual(body["error"], "not found")
+                self.assertNotIn("not for the network", self.raw_body)
+
+    def test_an_unbuilt_console_is_404_and_the_json_still_answers(self):
+        self.seed()
+        self.start()
+        code, headers, body = self.request("GET", "/")
+        self.assertEqual(code, 404)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertIn("not built", body["detail"])
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["target"], str(self.target))
+
+    def test_the_json_routes_take_precedence_over_files(self):
+        self.seed()
+        dist = self.build()
+        # A file shadows each JSON route by name; none of them is served.
+        for name in ("status", "runs", "attention"):
+            (dist / name).write_text("a file named " + name)
+        self.start()
+        for path, key in (("/status", "runs"), ("/runs", "rows"),
+                          ("/attention", "items")):
+            with self.subTest(path=path):
+                code, headers, body = self.request("GET", path)
+                self.assertEqual(code, 200)
+                self.assertEqual(headers["Content-Type"], "application/json")
+                self.assertIn(key, body)
+                self.assertNotIn("a file named", self.raw_body)
 
 
 class AttentionTests(ServeTestCase):
