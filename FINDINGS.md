@@ -653,21 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[270 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T03:28:10Z — KO-289
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T03:29:06Z — KO-289
-MERGED to main as aff5f20.
-actual: 6.2 min · estimate: 20 min · rounds: 1
-
-## 2026-09-06T03:30:26Z — KO-273
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T03:30:28Z — KO-273
-MERGED to main as 3fd66b6.
-actual: 1.3 min · estimate: 25 min · rounds: 1
+[274 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T03:40:04Z — KO-274
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -763,3 +749,21 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T05:41:16Z — KO-277
 MERGED to main as a1190c2.
 actual: 18.3 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T05:57:23Z — KO-259
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:407 [p1] [P1] **Resumed approvals bypass PR mode** — [holophyte/loop.py:407](/home/reviewer/candidate/holophyte/loop.py:407). The mode check only covers fresh runs; `_…
+
+## 2026-09-06T06:04:22Z — KO-259
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:989 [p2] **[P2] Keep the run heartbeating during push and PR creation** — [holophyte/loop.py:989](/home/reviewer/candidate/holophyte/loop.py:989). Both blocking networ…
+- /home/reviewer/candidate/holophyte/pr.py:183 [p2] **[P2] Pin PR creation to the repository receiving the push** — [holophyte/pr.py:183](/home/reviewer/candidate/holophyte/pr.py:183). The branch is pushed expl…
+
+## 2026-09-06T06:11:03Z — KO-259
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T06:12:06Z — KO-259
+MERGED to main as 29eecde.
+actual: 30.8 min · estimate: 30 min · rounds: 3
