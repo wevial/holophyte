@@ -653,29 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[255 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T02:34:19Z — KO-271
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- console/src/components/RoundTimeline.tsx:20 [p2] [RoundTimeline.tsx:20](/workspace/console/src/components/RoundTimeline.tsx:20): Segment widths total 100%, but the flex container adds 3px gaps and every segm…
-- criteria:2 [p2] CRITERION 2: not met — Numeric widths and header are witnessed, but the rendered timeline exceeds its box by 9px because gaps are excluded from sizing. Given a…
-
-## 2026-09-06T02:36:23Z — KO-271
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T02:36:24Z — KO-271
-MERGED to main as fb1a5b2.
-actual: 8.0 min · estimate: 30 min · rounds: 2
-
-## 2026-09-06T02:48:08Z — KO-272
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- holophyte/files.py:96 [p2] [holophyte/files.py:96](/workspace/holophyte/files.py:96): Resolve branches explicitly under `refs/heads/`. Currently, deleting `task/ko-7` while retaining a…
-- criteria:3 [p2] CRITERION 3: not met — a deleted branch with a surviving same-name tag returns 200 instead of 409; reproduced through HTTP. Given a run whose branch was deleted…
-
-## 2026-09-06T02:53:10Z — KO-272
-Round 2: pass · reviewer codex-astra-medium · verify passed
+[260 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T02:54:05Z — KO-272
 MERGED to main as e8ec3c7.
@@ -760,3 +738,29 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T03:54:46Z — KO-275
 MERGED to main as 4ade71e.
 actual: 7.4 min · estimate: 30 min · rounds: 2
+
+## 2026-09-06T03:59:26Z — KO-276
+FAILED: implementer made no commits; the empty branch and worktree were discarded
+actual: 4.6 min · estimate: 25 min · rounds: 0
+
+## 2026-09-06T04:42:32Z — KO-250
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (4):
+- /home/reviewer/candidate/holophyte/loop.py:758 [p2] [holophyte/loop.py:758](/home/reviewer/candidate/holophyte/loop.py:758): Clean approval returns before recording a `round` entry. Reproducing `FakeAgent(Commi…
+- /home/reviewer/candidate/store/__init__.py:330 [p2] [store/__init__.py:330](/home/reviewer/candidate/store/__init__.py:330): Migration stamps v6, whereas criterion 3 explicitly requires v5. The base already con…
+- criteria:1 [p2] CRITERION 1: not met — A clean FakeAgent merge has no round ledger entry; the added test covers only REQUEST_CHANGES followed by approval. Given a FakeAgent run…
+- criteria:3 [p2] CRITERION 3: not met — tests/test_store_schema.py::StoreSchemaVersionTests::test_a_version_4_store_migrates_in_place_and_still_reports witnesses migration to v6…
+
+## 2026-09-06T04:50:51Z — KO-250
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- (unparsed):f42a2949bcfb [p2] CRITERION 1: met — tests/test_factory_loop.py::LoopTests::test_the_ledger_row_is_in_the_store_before_its_board_comment CRITERION 2: met — tests/test_cli_requeue…
+- criteria:3 [p2] CRITERION 3: not met — store/__init__.py:331 migrates to v6; tests/test_store_schema.py::StoreSchemaVersionTests::test_a_version_4_store_migrates_in_place_and_s…
+- criteria:4 [p2] CRITERION 4: unwitnessed — all 763 tests passed locally, but `ruff check .` exited 127 (`ruff: command not found`); the supplied lint success could not be indep…
+
+## 2026-09-06T04:56:26Z — KO-250
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T04:56:26Z — KO-250
+FAILED: terminal adjudication: FAIL; branch task/ko-250-the-ledger-lives-in-the-store preserved at f2068c780586
+actual: 25.8 min · estimate: 30 min · rounds: 3
