@@ -68,7 +68,9 @@ export function Shipped({
         if (!alive) return;
         setLedger((previous) => ({
           rows: mergeRows(previous.rows, body.rows),
-          more: previous.rows.length > 0 ? previous.more || hasMore(body) : hasMore(body),
+          // A refresh only reveals newer rows: the first page's cursor says
+          // nothing about pages already fetched, so exhaustion survives it.
+          more: previous.rows.length > 0 ? previous.more : hasMore(body),
           error: null,
           loading: false,
         }));

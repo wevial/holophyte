@@ -108,6 +108,28 @@ test("Load older asks for before= the smallest id shown and the page appends und
   expect(screen.queryByRole("button", { name: "Load older" })).toBeNull();
 });
 
+test("a poll after the ledger is exhausted keeps Load older gone and the subtitle whole", async () => {
+  const first = { rows: ROWS.slice(0, 4), limit: 4, next_before: 228 };
+  const older = { rows: ROWS.slice(4), limit: 4, next_before: null };
+  const { fetchImpl, requests } = pagedFetch({ "": first, "228": older });
+  const view = render(<Shipped base={BASE} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
+  await act(settle);
+  fireEvent.click(screen.getByRole("button", { name: "Load older" }));
+  await act(settle);
+  expect(screen.queryByRole("button", { name: "Load older" })).toBeNull();
+
+  view.rerender(<Shipped base={BASE} now={now} polls={1} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
+  await act(settle);
+  expect(requests).toEqual([
+    `${BASE}/shipped?limit=4`,
+    `${BASE}/shipped?limit=4&before=228`,
+    `${BASE}/shipped?limit=4`,
+  ]);
+  expect(dayHeaders().map((group) => group.rows)).toEqual([[236, 235, 234], [228, 227], [224, 223]]);
+  expect(document.querySelector("[data-subtitle]")!.textContent).toBe("7 merges · last 3 days · median 2 rounds");
+  expect(screen.queryByRole("button", { name: "Load older" })).toBeNull();
+});
+
 test("an empty page reads Nothing merged yet with no Load older", async () => {
   const { fetchImpl } = pagedFetch({ "": { rows: [], limit: 50, next_before: null } });
   render(<Shipped base={BASE} now={now} deps={{ fetch: fetchImpl }} tz="UTC" />);
