@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[214 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-05T00:34:55Z — KO-256
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-05T00:39:55Z — KO-256
-FAILED: verify failed before merge; branch task/ko-256-merge-approve-human-parks-an preserved at 81843528941b
-actual: 28.1 min · estimate: 30 min · rounds: 2
+[216 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-05T00:47:00Z — KO-256
 Round 1: pass · reviewer codex-sol-medium · verify passed
@@ -763,3 +756,10 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T01:33:10Z — KO-284
 FAILED: terminal adjudication: FAIL; branch task/ko-284-the-reviewer-image-carries-bun preserved at 967cb2389738
 actual: 15.1 min · estimate: 25 min · rounds: 3
+
+## 2026-09-06T01:38:44Z — KO-284
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T01:39:34Z — KO-284
+MERGED to main as 5801348.
+actual: 4.9 min · estimate: 25 min · rounds: 1
