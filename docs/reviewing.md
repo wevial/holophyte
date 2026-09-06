@@ -113,5 +113,7 @@ run keeps `runs.prUrl` and `runs.candidateSha`, branch and worktree stay,
 the lease is released. `--approve KO-n` answers "merge": the resumed run
 shepherds once more and merges when green and quiet. `--shepherd KO-n`
 answers "look again": the same resume, parking again rather than merging
-under `approve = "human"`. Merging is GitHub's; local `main` is never moved
-by the factory.
+under `approve = "human"`. It is refused on a run parked with no pull
+request (parked under `mode = "local"`): there are no threads to look at,
+and the local gate merges on release, so that answer is `--approve`'s only.
+Merging is GitHub's; local `main` is never moved by the factory.

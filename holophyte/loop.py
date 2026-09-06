@@ -449,7 +449,12 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     the human under `approve = "human"` as it did before. A candidate
     parked with no PR (parked under `mode = "local"` before the mode
     changed) goes through the gate below and then leaves the machine as a
-    fresh run's would, pushed and opened.
+    fresh run's would, pushed and opened -- but only on an approval. The
+    gate below merges, so a candidate carried here with `carried.approved`
+    False (a `shepherd` intervention as the newest on its run, which
+    `store.shepherd()` refuses to write on a PR-less run but a hand-written
+    store row could) is not taken through it: the run fails naming the
+    release, the tree untouched, and a human answers with `--approve`.
 
     An approval is of one sha: the candidate the reviewer approved and the
     pre-merge verify passed, recorded by the park as `runs.candidateSha`.
@@ -472,6 +477,16 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
         return _resume_on_pr(target, conn, run_id, provider, task_id, task,
                              branch, wt, carried, started, verify_cmd,
                              contracts, budget_min, body)
+    if not carried.approved:
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED to merge the candidate for: {task}\nrun"
+               f" {carried.run_id} was released by --shepherd, which is not"
+               " an approval, and the candidate has no pull request to"
+               " shepherd; nothing was merged, committed or deleted."
+               " --approve KO-n is the release that merges it.", provider)
+        raise RunFailure(f"run {carried.run_id}'s candidate on {branch} was"
+                         " released by --shepherd, not approved, and has no"
+                         " pull request; not merging")
     why = _candidate_drift(wt, branch, carried.sha)
     if why is not None:
         ledger(conn, run_id, task_id, "failure",

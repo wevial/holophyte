@@ -63,9 +63,10 @@ class ApproveCliTests(unittest.TestCase):
         self.run = store.claim(self.conn, self.project, self.ticket, now=T0)
         return self.run
 
-    def park(self):
+    def park(self, pr_url=None):
         """The state `[merge] approve = "human"` leaves: the run walked to
-        the gate and parked there, the ticket blocked asking `merge?`."""
+        the gate and parked there, the ticket blocked asking `merge?`;
+        `pr_url` is what `[merge] mode = "pr"` records on the run."""
         self.claim()
         for phase in ("working", "verifying", "reviewing", "merge_gate"):
             store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
@@ -75,7 +76,7 @@ class ApproveCliTests(unittest.TestCase):
             (self.ticket,))
         self.conn.commit()
         store.park(self.conn, self.run, "awaiting_merge_approval",
-                   now=T0 + 2 * MINUTE)
+                   now=T0 + 2 * MINUTE, pr_url=pr_url)
 
     def cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
@@ -121,7 +122,7 @@ class ApproveCliTests(unittest.TestCase):
         """`--shepherd KO-n` is `--approve`'s twin with its own action: the
         same release and resume point, a `shepherd` intervention row, and
         the candidate the next claim carries is not marked approved."""
-        self.park()
+        self.park(pr_url="https://example.test/pull/7")
 
         out, _ = self.cli("--shepherd", "KO-1", "--note", "bots are done")
 
@@ -140,8 +141,31 @@ class ApproveCliTests(unittest.TestCase):
         self.assertEqual((carried.run_id, carried.approved),
                          (self.run, False))
 
-    def test_a_bare_shepherd_records_the_default_note_and_refuses_ready(self):
+    def test_a_shepherd_of_a_run_parked_with_no_pull_request_is_refused(self):
+        """A run parked under `[merge] mode = "local"` has no threads to look
+        at again, and releasing it would take the candidate through the
+        local gate, which merges: `--shepherd` exits naming the missing PR
+        with nothing written, and the ticket stays parked for `--approve`."""
         self.park()
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--shepherd", "KO-1", "--note", "bots are done")
+
+        self.assertIn("no pull request", str(raised.exception))
+        self.assertIn("--approve", str(raised.exception))
+        self.assertEqual(self.interventions(), [])
+        phase, outcome, resume_phase, ended = self.run_row()
+        self.assertEqual((phase, outcome, resume_phase, ended),
+                         ("awaiting_merge_approval", None, None, None))
+        self.assertEqual(self.ticket_row(),
+                         ("blocked_on_operator", None, self.run))
+        self.assertFalse(store.pickable(self.conn, self.ticket))
+        # `--approve` is still the answer for it.
+        self.cli("--approve", "KO-1", "--note", "ok")
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
+
+    def test_a_bare_shepherd_records_the_default_note_and_refuses_ready(self):
+        self.park(pr_url="https://example.test/pull/7")
         self.cli("--shepherd", "KO-1")
         self.assertEqual(self.interventions(), [(self.run, "shepherd")])
 

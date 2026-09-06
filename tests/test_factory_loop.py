@@ -1426,6 +1426,46 @@ class MergeApprovalTests(LoopFixture):
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),
                          [(None,)])
 
+    def test_a_shepherd_release_of_a_local_park_does_not_merge(self):
+        """`--shepherd` is not an approval. `store.shepherd()` refuses a run
+        parked with no pull request, but the resumed claim holds the line
+        on its own: a parked local candidate whose newest intervention is
+        `shepherd` (written here through the store API, the way an operator
+        at the REPL rung could) is not taken through the gate -- the next
+        run fails naming the release, main is untouched, the branch and
+        worktree stay for `--approve`."""
+        self.configure('[merge]\nmode = "local"\napprove = "human"\n')
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=StubProvider(a_task()))
+        with self.assertRaises(SystemExit) as refused:
+            holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "look again",
+                                           out=io.StringIO())
+        self.assertIn("no pull request", str(refused.exception))
+        conn = holophyte.runs.open_store(self.tgt)
+        try:
+            store.record_intervention(conn, 1, "shepherd", "look again")
+            store.release(conn, 1, "abandoned", "released by hand")
+            conn.execute("UPDATE runs SET resumePhase = 'merge_gate'"
+                         " WHERE id = 1")
+            store.walk_ticket(conn, 1, "ready")
+            conn.commit()
+        finally:
+            conn.close()
+
+        fake, _ = self.loop(provider=StubProvider(a_task()))
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertIn(BRANCH, self.branches())
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
+        rows = self.read("SELECT id, phase, outcome, outcomeReason FROM runs"
+                         " ORDER BY id")
+        self.assertEqual([row[:3] for row in rows],
+                         [(1, "failed", "abandoned"), (2, "failed", "failed")])
+        self.assertIn("released by --shepherd", rows[1][3])
+        self.assertNotIn("merged", [s for (s,) in
+                                    self.read("SELECT status FROM tickets")])
+
     def test_a_candidate_changed_since_the_park_is_refused_at_the_gate(self):
         """An approval is of the sha the reviewer approved and the pre-merge
         verify passed. A worktree that no longer sits on it -- a commit

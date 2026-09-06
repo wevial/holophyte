@@ -1567,18 +1567,26 @@ def shepherd(conn, ticket_id, note, now=None):
     waits for the checks. What it is not is an approval: a PR that comes up
     ready to merge under `[merge] approve = "human"` parks again for the
     human's "merge" rather than landing on the operator's "look again".
-    The refusals are `approve()`'s, as `ApproveRefused`.
+    The refusals are `approve()`'s, as `ApproveRefused`, plus one of its
+    own: a run parked with no pull request (`runs.prUrl` NULL -- parked
+    under `[merge] mode = "local"`) has no threads to look at again, and
+    releasing it would send the candidate down the local gate, where a
+    release is a merge; that is `approve()`'s to do, so the shepherd
+    refuses it with nothing written.
     """
     return _release_parked(
         conn, ticket_id, "shepherd", note,
         "sent back to the shepherd; the next claim resumes the candidate"
-        " on its pull request", now)
+        " on its pull request", now, require_pr=True)
 
 
-def _release_parked(conn, ticket_id, action, note, reason, now):
+def _release_parked(conn, ticket_id, action, note, reason, now,
+                    require_pr=False):
     """The transaction `approve()` and `shepherd()` share: the intervention
     row with `action`, the parked run ended `abandoned` for `reason` with
-    its resume point at the merge gate, the ticket walked to `ready`."""
+    its resume point at the merge gate, the ticket walked to `ready`.
+    `require_pr` refuses, before the first write, a parked run that has no
+    `prUrl`."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -1597,19 +1605,25 @@ def _release_parked(conn, ticket_id, action, note, reason, now):
             raise ApproveRefused(
                 f"{identifier} is {status}, not blocked_on_operator; nothing"
                 " is parked awaiting merge approval")
-        run = (conn.execute("SELECT phase FROM runs WHERE id = ?",
+        run = (conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
                             (last_run_id,)).fetchone()
                if last_run_id is not None else None)
         if run is None:
             raise ApproveRefused(
                 f"{identifier} is {status} and has no run; nothing is"
                 " parked awaiting merge approval")
-        (phase,) = run
+        phase, pr_url = run
         if phase != "awaiting_merge_approval":
             raise ApproveRefused(
                 f"{identifier} is {status} and its newest run {last_run_id}"
                 f" is {phase}, not awaiting_merge_approval; nothing to"
                 " approve")
+        if require_pr and pr_url is None:
+            raise ApproveRefused(
+                f"{identifier} is parked with no pull request (run"
+                f" {last_run_id} was parked under [merge] mode = \"local\");"
+                " there are no threads to shepherd, and a release here would"
+                " merge the candidate -- that is --approve's to say")
         record_intervention(conn, last_run_id, action, note, now=now)
         release(conn, last_run_id, "abandoned", reason, now=now)
         # `release()` records a resume point for failed runs only; this one
