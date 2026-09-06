@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[233 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T01:15:13Z — KO-266
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T01:15:13Z — KO-266
-FAILED: terminal adjudication: FAIL; branch task/ko-266-scaffold-the-console-package-b preserved at 4b53b1fe0732
-actual: 26.1 min · estimate: 30 min · rounds: 3
-
-## 2026-09-06T01:24:27Z — KO-284
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- (unparsed):db0db8f524a7 [p2] CRITERION 1: met — `tests/test_review_runner.py::ReviewerImageTests::test_dockerfile_installs_pinned_checksummed_bun_on_path` passed; pinned checksum matches th…
-- criteria:3 [p2] CRITERION 3: unwitnessed — Full suite ran 739 tests with 25 failures and 19 errors, including unavailable Claude and Docker execution failures; `ruff check .` c…
+[236 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T01:28:52Z — KO-284
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -759,3 +746,16 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T02:36:24Z — KO-271
 MERGED to main as fb1a5b2.
 actual: 8.0 min · estimate: 30 min · rounds: 2
+
+## 2026-09-06T02:48:08Z — KO-272
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- holophyte/files.py:96 [p2] [holophyte/files.py:96](/workspace/holophyte/files.py:96): Resolve branches explicitly under `refs/heads/`. Currently, deleting `task/ko-7` while retaining a…
+- criteria:3 [p2] CRITERION 3: not met — a deleted branch with a surviving same-name tag returns 200 instead of 409; reproduced through HTTP. Given a run whose branch was deleted…
+
+## 2026-09-06T02:53:10Z — KO-272
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T02:54:05Z — KO-272
+MERGED to main as e8ec3c7.
+actual: 17.7 min · estimate: 30 min · rounds: 2
