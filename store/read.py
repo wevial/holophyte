@@ -257,6 +257,67 @@ def ended_runs(conn):
 
 
 @dataclass(frozen=True)
+class MergedRun:
+    """One merged run, joined to its ticket, with its findings counted: what
+    `/shipped` draws a row from."""
+
+    id: int
+    linearIdentifier: str
+    title: str
+    startedAt: int
+    endedAt: int
+    timeBoxMs: int | None
+    reviewRoundCount: int
+    # The count of findings over the run's review rounds, summed in SQL
+    # (`json_array_length(findings)`) so a page never loads the rounds.
+    findingCount: int
+    host: str | None
+    mergeSha: str | None
+
+
+# The range of a SQLite INTEGER, and so of any run id a cursor can name.
+SQLITE_INT64_MIN = -(2 ** 63)
+SQLITE_INT64_MAX = 2 ** 63 - 1
+
+
+def merged_runs(conn, limit, before=None):
+    """Up to `limit` runs with outcome `merged`, newest end first (ties by
+    id descending), keyset-paged on `(endedAt, id)`.
+
+    `before` is a run id: only runs that ended before that run's end (or
+    at the same instant with a smaller id) are answered, so a client pages
+    by passing the last id it saw. An id no run has is an empty page, not
+    an error: the run may have been the last on a page that is now gone.
+    """
+    if (before is not None
+            and not SQLITE_INT64_MIN <= before <= SQLITE_INT64_MAX):
+        # Past what an INTEGER column can hold, so no run has it; binding
+        # it would raise OverflowError rather than answer the empty page.
+        return []
+    where = "r.outcome = 'merged' AND r.endedAt IS NOT NULL"
+    params = []
+    if before is not None:
+        where += (" AND (r.endedAt, r.id) < (SELECT endedAt, id FROM runs"
+                  " WHERE id = ? AND endedAt IS NOT NULL)")
+        params.append(before)
+    rows = conn.execute(
+        "SELECT r.id, t.linearIdentifier, t.title, r.startedAt, r.endedAt,"
+        " r.timeBoxMs, r.reviewRoundCount,"
+        " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
+        "    FROM reviewRounds rr WHERE rr.runId = r.id),"
+        " r.host, r.mergeSha"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        f" WHERE {where}"
+        " ORDER BY r.endedAt DESC, r.id DESC LIMIT ?",
+        (*params, limit)).fetchall()
+    return [MergedRun(id=row[0], linearIdentifier=row[1], title=row[2],
+                      startedAt=row[3], endedAt=row[4], timeBoxMs=row[5],
+                      reviewRoundCount=row[6], findingCount=row[7],
+                      host=row[8], mergeSha=row[9])
+            for row in rows]
+
+
+@dataclass(frozen=True)
 class FailedAttempt:
     """One failed run of a ticket, by lifetime attempt number."""
 

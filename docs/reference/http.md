@@ -55,6 +55,30 @@ on main as, null for any other outcome or a run merged before the store
 recorded it. `?limit=N` keeps the first N rows and echoes `limit`; a
 non-positive or non-integer limit is 400.
 
+## `GET /shipped?limit=N&before=RUN_ID`
+
+```json
+{"rows": [
+  {"id": 312, "ticket": "KO-241", "title": "Run detail: files touched",
+   "rounds": 1, "findings": 2, "started_ms": 1788478449000,
+   "ended_ms": 1788478953000, "actual_min": 8.4, "estimate_min": 10.0,
+   "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f", "host": "writer-1"}
+], "next_before": 298, "limit": 50}
+```
+
+The merge ledger, newest end first: only runs whose outcome is `merged`,
+ordered by `ended_ms` descending then `id` descending. The console's
+Shipped view scrolls back over it grouped by day; the Board's "shipped
+today" is its first page. `findings` is the count of findings over the
+run's review rounds. `limit` defaults to 50 and is capped at 200; the
+body echoes the limit applied. `before=RUN_ID` answers the rows that
+ended before that run's end (ties broken by id), so a client pages by
+passing `next_before` back; `next_before` is the last row's id while
+more rows remain and null on the last page. A non-positive or
+non-integer `limit`, or a non-integer `before`, is 400 with `error`
+naming the parameter; a `before` no run has is 200 with no rows.
+`/runs` is untouched: it stays the terminal's table, oldest first.
+
 ## `GET /runs/N`
 
 ```json
@@ -196,7 +220,7 @@ on a host without the renderer's toolchain still serves its JSON.
 
 | Status | When |
 | --- | --- |
-| 400 | `/runs` with a bad `limit`; `/runs/N` or `/runs/N/files` with a non-integer `N` |
+| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/runs/N` or `/runs/N/files` with a non-integer `N` |
 | 404 | `/runs/N` or `/runs/N/files` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |

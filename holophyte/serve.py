@@ -268,8 +268,15 @@ def no_store(target):
             "target": str(target.path)}
 
 
-def parse_limit(query):
-    """`?limit=N` as a positive int, None when absent; ValueError otherwise.
+# An optional sign and digits: what `int()` accepts minus its leniencies
+# (whitespace, underscores), so a cursor is exactly what the client typed.
+INTEGER = re.compile(r"-?[0-9]+")
+
+
+def parse_limit(query, default=None, cap=None):
+    """`?limit=N` as a positive int, `default` when absent; ValueError
+    otherwise. A limit past `cap` is answered as `cap`, not refused: a
+    client asking for more than a page is a client asking for a page.
 
     The shape is the report's: a dashboard asks for the newest few rows,
     and `limit=0` or `limit=abc` is a client bug to be told about, not a
@@ -277,10 +284,27 @@ def parse_limit(query):
     """
     values = parse_qs(query, keep_blank_values=True).get("limit")
     if values is None:
-        return None
+        return default
     text = values[-1]
     if not text.isdigit() or int(text) < 1:
         raise ValueError(f"limit must be a positive integer, got {text!r}")
+    limit = int(text)
+    return limit if cap is None else min(limit, cap)
+
+
+def parse_before(query):
+    """`?before=ID` as an int, None when absent; ValueError otherwise.
+
+    Any integer parses, sign and size included: whether a run has that id
+    is the view's question, and an id no run has is an empty page, not a
+    400. Only a non-integer is a client bug to be told about.
+    """
+    values = parse_qs(query, keep_blank_values=True).get("before")
+    if values is None:
+        return None
+    text = values[-1]
+    if not INTEGER.fullmatch(text):
+        raise ValueError(f"before must be an integer run id, got {text!r}")
     return int(text)
 
 
@@ -322,6 +346,55 @@ def runs(target, query=""):
                   "merge_sha": merge_sha}
                  for ticket, actual, estimate, ratio, rounds, outcome, host,
                  ended_at, merge_sha in rows],
+        "limit": limit,
+    }
+
+
+SHIPPED_LIMIT = 50
+SHIPPED_CAP = 200
+
+
+def shipped(target, query=""):
+    """The `/shipped` answer: merged runs newest end first, one page.
+
+    The console's Shipped view is the merge ledger scrolling back over
+    older days, and the Board's "shipped today" is its first page; `/runs`
+    is the terminal's table, oldest first, and stays that. Each row is the
+    run's `id`, `ticket`, `title`, `rounds`, `findings` (the count over its
+    review rounds), `started_ms`, `ended_ms`, `actual_min`, `estimate_min`,
+    `merge_sha` and `host`. `limit` defaults to `SHIPPED_LIMIT` and is
+    capped at `SHIPPED_CAP`; `before=RUN_ID` answers the rows that ended
+    before that run (ties by id), and `next_before` is the id to pass back
+    for the next page, null on the last. A bad `limit` or `before` is 400
+    naming it; a `before` no run has is an empty page.
+    """
+    try:
+        limit = parse_limit(query, default=SHIPPED_LIMIT, cap=SHIPPED_CAP)
+        before = parse_before(query)
+    except ValueError as bad:
+        return 400, {"error": str(bad)}
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        # One past the page tells whether there is a next one.
+        runs = store.read.merged_runs(conn, limit + 1, before)
+    finally:
+        conn.close()
+    more = len(runs) > limit
+    runs = runs[:limit]
+    return 200, {
+        "rows": [{"id": run.id, "ticket": run.linearIdentifier,
+                  "title": run.title, "rounds": run.reviewRoundCount,
+                  "findings": run.findingCount,
+                  "started_ms": run.startedAt, "ended_ms": run.endedAt,
+                  "actual_min": (run.endedAt - run.startedAt) / 60000,
+                  "estimate_min": (run.timeBoxMs / 60000
+                                   if run.timeBoxMs else None),
+                  "merge_sha": run.mergeSha,
+                  "host": json_host(target, run.host)}
+                 for run in runs],
+        "next_before": runs[-1].id if more else None,
         "limit": limit,
     }
 
@@ -481,6 +554,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                                 started_ms=self.server.started_ms)
         elif path == "/runs":
             code, body = runs(self.server.target, parts.query)
+        elif path == "/shipped":
+            code, body = shipped(self.server.target, parts.query)
         elif path == "/attention":
             code, body = attention(self.server.target)
         elif (run := RUN_PATH.match(path)) is not None:

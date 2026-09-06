@@ -749,6 +749,132 @@ class RunsTests(ServeTestCase):
         self.assertFalse(self.db.exists())
 
 
+class ShippedTests(ServeTestCase):
+    """`/shipped`: the merge ledger newest end first, paged by `before`."""
+
+    FINDING = {"path": "holophyte/serve.py", "line": 1, "severity": "p2",
+               "criterion": None, "message": "a finding"}
+
+    def seed_shipped(self):
+        """Three merged runs and one failed: KO-1 merged first with one
+        round of two findings; KO-2 failed; KO-3 merged last with two
+        rounds of one and three findings; KO-4 merged between KO-1 and
+        KO-3 by end though claimed after KO-3, with no round at all, so
+        the ledger's order is not the id order."""
+        self.now = int(time() * 1000)
+        H = 60 * MIN
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+            plan = (("KO-1", 10 * H, 9 * H, "merged", (2,), MERGE_SHA),
+                    ("KO-2", 8 * H, 7 * H, "failed", (), None),
+                    ("KO-3", 6 * H, 1 * H, "merged", (1, 3), "b" * 40),
+                    ("KO-4", 5 * H, 4 * H, "merged", (), "c" * 40))
+            self.runs = {}
+            for ident, started_ago, ended_ago, outcome, findings, sha in plan:
+                ticket = store.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{ident}",
+                    linear_identifier=ident, title=f"ticket {ident}",
+                    acceptance_criteria=[f"Given {ident}, then it is worked"],
+                    verification_commands=["echo ok"], time_box_ms=30 * MIN)
+                store.transition(conn, ticket, "in_flight")
+                started = self.now - started_ago
+                run = store.claim(conn, project, ticket, now=started)
+                for number, count in enumerate(findings, start=1):
+                    store.record_review_round(
+                        conn, run, number, "changes_requested",
+                        "reviewer-model", findings=[self.FINDING] * count,
+                        started_at=started + number * MIN)
+                store.release(conn, run, outcome, now=self.now - ended_ago,
+                              merge_sha=sha)
+                self.runs[ident] = run
+        finally:
+            conn.close()
+
+    def test_merged_runs_newest_end_first_with_findings_counted(self):
+        self.seed_shipped()
+        self.start()
+
+        code, headers, body = self.request("GET", "/shipped")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(body["limit"], 50)
+        self.assertIsNone(body["next_before"])
+        self.assertEqual([r["ticket"] for r in body["rows"]],
+                         ["KO-3", "KO-4", "KO-1"])
+        self.assertEqual([r["id"] for r in body["rows"]],
+                         [self.runs["KO-3"], self.runs["KO-4"],
+                          self.runs["KO-1"]])
+        self.assertEqual([r["findings"] for r in body["rows"]], [4, 0, 2])
+        self.assertEqual([r["rounds"] for r in body["rows"]], [2, 0, 1])
+        self.assertEqual([r["merge_sha"] for r in body["rows"]],
+                         ["b" * 40, "c" * 40, MERGE_SHA])
+        self.assertNotIn("KO-2", json.dumps(body))
+        newest = body["rows"][0]
+        self.assertEqual(newest["title"], "ticket KO-3")
+        self.assertEqual(newest["started_ms"], self.now - 6 * 60 * MIN)
+        self.assertEqual(newest["ended_ms"], self.now - 60 * MIN)
+        self.assertEqual(newest["actual_min"], 300.0)
+        self.assertEqual(newest["estimate_min"], 30.0)
+        self.assertEqual(newest["host"], socket.gethostname())
+
+    def test_a_client_pages_to_the_end_with_next_before(self):
+        self.seed_shipped()
+        self.start()
+
+        code, _headers, first = self.request("GET", "/shipped?limit=2")
+        self.assertEqual(code, 200)
+        self.assertEqual(first["limit"], 2)
+        self.assertEqual([r["ticket"] for r in first["rows"]],
+                         ["KO-3", "KO-4"])
+        self.assertEqual(first["next_before"], self.runs["KO-4"])
+
+        code, _headers, second = self.request(
+            "GET", f"/shipped?limit=2&before={first['next_before']}")
+        self.assertEqual(code, 200)
+        self.assertEqual([r["ticket"] for r in second["rows"]], ["KO-1"])
+        self.assertIsNone(second["next_before"])
+
+    def test_bad_parameters_are_400_and_an_unknown_before_is_empty(self):
+        self.seed_shipped()
+        self.start()
+
+        for query, name in (("limit=0", "limit"), ("limit=x", "limit"),
+                            ("before=x", "before")):
+            with self.subTest(query=query):
+                code, headers, body = self.request("GET", f"/shipped?{query}")
+                self.assertEqual(code, 400)
+                self.assertEqual(headers["Content-Type"], "application/json")
+                self.assertIn(name, body["error"])
+                self.assertNotIn("rows", body)
+
+        # An integer no run has is an empty page, whichever side of the id
+        # range it falls on: negative, or past what SQLite can bind.
+        for cursor in ("99999", "-1", "0", str(2 ** 63), str(-(2 ** 63) - 1)):
+            with self.subTest(before=cursor):
+                code, _headers, body = self.request(
+                    "GET", f"/shipped?before={cursor}")
+                self.assertEqual(code, 200)
+                self.assertEqual(body["rows"], [])
+                self.assertIsNone(body["next_before"])
+
+        code, _headers, body = self.request("GET", "/shipped?limit=500")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["limit"], 200)
+
+    def test_shipped_without_a_store_is_503_and_creates_none(self):
+        self.start()
+
+        code, _headers, body = self.request("GET", "/shipped")
+
+        self.assertEqual(code, 503)
+        self.assertIn("no store", body["error"])
+        self.assertFalse(self.db.exists())
+
+
 class RunDetailTests(ServeTestCase):
     """`/runs/N`: one run's row, rounds with findings as objects, and the
     narrative half of its event stream."""
