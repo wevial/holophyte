@@ -88,3 +88,18 @@ test("a 409 after a good fetch replaces the kept rows with branch no longer on d
   expect(rows().length).toBe(6);
   expect(document.querySelector("[data-files-note]")).toBeNull();
 });
+
+test("the panel's three answers: an empty list reads No files yet, a 409 and a 404 read their message; loading… only before the first", () => {
+  const { rerender } = render(<FilesTouched files={null} error={null} loading={true} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("loading…");
+  rerender(<FilesTouched files={{ files: [], total_added: 0, total_deleted: 0 }} error={null} loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("No files yet");
+  expect(document.querySelector("[data-files-note]")!.className).not.toContain("text-bad");
+  rerender(<FilesTouched files={null} error="branch no longer on disk" loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch no longer on disk");
+  expect(document.querySelector("[data-files-note]")!.className).toContain("text-bad");
+  rerender(<FilesTouched files={null} error="run not in the store" loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("run not in the store");
+  rerender(<FilesTouched files={null} error="/runs/7/files answered 500" loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("No files yet");
+});

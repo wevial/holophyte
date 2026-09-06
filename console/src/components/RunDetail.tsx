@@ -101,7 +101,7 @@ function Card({ body, files, now }: { body: RunDetailBody; files: RunFilesState;
         <ActionButton>Kill run</ActionButton>
         <ActionButton>Requeue ticket</ActionButton>
       </footer>
-      <RunLog events={body.events} now={now} />
+      <RunLog events={body.events} rounds={rounds} now={now} />
     </article>
   );
 }

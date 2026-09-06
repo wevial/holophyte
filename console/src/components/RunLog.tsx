@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { formatClock } from "../lib/format";
-import { logSummary, orderEvents, timeRange } from "../lib/log";
-import type { RunEvent } from "../lib/types";
+import { logSummary, orderEvents, summarize, timeRange } from "../lib/log";
+import type { Round, RunEvent } from "../lib/types";
 
 /** The card's footer: the run's narrative events from `/runs/N`, newest
  *  last, under a header that folds them away. Open by default; the fold
- *  lives with the mounted card, so a re-expanded row opens again. */
-export function RunLog({ events, now }: { events: RunEvent[]; now: number }) {
+ *  lives with the mounted card, so a re-expanded row opens again. Each
+ *  row is the event's short line (`summarize`), with `rounds` lending
+ *  the finding counts to the review transitions. */
+export function RunLog({ events, rounds = [], now }: { events: RunEvent[]; rounds?: Round[]; now: number }) {
   const [open, setOpen] = useState(true);
   const rows = orderEvents(events);
   return (
@@ -22,7 +24,7 @@ export function RunLog({ events, now }: { events: RunEvent[]; now: number }) {
         </span>
         <span className="text-[12px] font-semibold uppercase tracking-wide text-rail-sub">Run log</span>
         <span data-log-summary className="truncate text-rail-text">
-          {logSummary(events, now)}
+          {logSummary(events, now, rounds)}
         </span>
         <span data-log-range className="ml-auto whitespace-nowrap text-rail-faint">
           {timeRange(events)}
@@ -33,7 +35,7 @@ export function RunLog({ events, now }: { events: RunEvent[]; now: number }) {
           {rows.map((event, index) => (
             <li key={`${event.at}:${index}`} data-log-row className="grid grid-cols-[52px_1fr] gap-x-2">
               <span className="text-rail-faint">{formatClock(event.at)}</span>
-              <span className="min-w-0 break-words text-rail-text">{event.summary || event.kind}</span>
+              <span className="min-w-0 break-words text-rail-text">{summarize(event, rounds)}</span>
             </li>
           ))}
         </ol>

@@ -3,8 +3,10 @@ import { capFiles, filesLabel, statusLetter, type StatusLetter } from "../lib/fi
 import type { RunFilesBody } from "../lib/types";
 import { FILES_BRANCH_GONE, FILES_RUN_UNKNOWN } from "../hooks/useRunFiles";
 
-/** The daemon's two named refusals mean the rows are gone for good, so they
- *  replace a body kept from an earlier poll; any other failure leaves it. */
+/** The daemon's two named refusals (404, 409) mean the rows are gone for
+ *  good, so they replace a body kept from an earlier poll and are the
+ *  only failures the column names; any other failure leaves the last
+ *  body, or reads as no files yet when there is none. */
 const REFUSALS: ReadonlySet<string> = new Set([FILES_BRANCH_GONE, FILES_RUN_UNKNOWN]);
 
 const LETTER_TONE: Record<StatusLetter, string> = {
@@ -15,8 +17,9 @@ const LETTER_TONE: Record<StatusLetter, string> = {
 };
 
 /** The detail's right column: the paths the run touched with their line
- *  counts from `/runs/N/files`, six rows until "Show all N files". The
- *  three one-liners cover no files yet, a refused fetch, and loading. */
+ *  counts from `/runs/N/files`, six rows until "Show all N files". Without
+ *  rows it is one line: the refusal's message for a 404 or 409, `loading…`
+ *  before the first answer, else `No files yet`. */
 export function FilesTouched({
   files,
   error,
@@ -42,8 +45,8 @@ export function FilesTouched({
       {body ? (
         <Rows body={body} showAll={showAll} onToggle={() => setShowAll((previous) => !previous)} />
       ) : (
-        <p data-files-note className={`mt-2 text-[12px] ${error ? "font-semibold text-bad" : "text-muted"}`}>
-          {error ?? (loading ? "loading…" : "No files yet")}
+        <p data-files-note className={`mt-2 text-[12px] ${refused ? "font-semibold text-bad" : "text-muted"}`}>
+          {refused ? error : loading ? "loading…" : "No files yet"}
         </p>
       )}
     </section>
