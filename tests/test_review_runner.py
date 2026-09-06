@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -344,3 +345,29 @@ class ContainerLifetimeTests(unittest.TestCase):
         with patch.dict(os.environ, {"PATH": str(self.root / "empty")}):
             with self.assertRaises(review_runner.ReviewBoundaryError):
                 review_runner.stray_containers()
+
+
+class ReviewerImageTests(unittest.TestCase):
+    DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
+
+    def test_image_tag_is_v2_and_nothing_still_names_v1(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v2")
+        stale = [
+            path
+            for path in [*ROOT.glob("*.py"), *(ROOT / "docs").glob("*.md")]
+            if "ubuntu24.04-v1" in path.read_text()
+        ]
+        self.assertEqual(stale, [])
+
+    def test_dockerfile_installs_pinned_checksummed_bun_on_path(self):
+        text = self.DOCKERFILE.read_text()
+        version = re.search(r"^ARG BUN_VERSION=(\d+\.\d+\.\d+)$", text, re.M)
+        checksum = re.search(r"^ARG BUN_SHA256=([0-9a-f]{64})$", text, re.M)
+        self.assertIsNotNone(version, "Dockerfile pins no Bun version")
+        self.assertIsNotNone(checksum, "Dockerfile pins no Bun SHA-256")
+        self.assertIn("bun-v${BUN_VERSION}/bun-linux-x64.zip", text)
+        self.assertRegex(
+            text, r"(?m)^\s*&& echo \"\$\{BUN_SHA256\}  .*\| sha256sum -c -"
+        )
+        self.assertRegex(text, r"(?m)^ENV PATH=/opt/bun/bin:\$PATH$")
+        self.assertRegex(text, r"(?m)^\s*&& ln -s bun /opt/bun/bin/bunx")
