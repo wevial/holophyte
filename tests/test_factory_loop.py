@@ -1691,6 +1691,44 @@ class MergeModeTests(LoopFixture):
         self.assertIn("PR OPEN", comment)
         self.assertIn(self.URL, comment)
 
+    def test_an_approval_of_an_open_pull_request_does_not_merge_locally(self):
+        """Review round: `--approve KO-n` on a run parked with a PR open used
+        to resume at the gate and land the candidate on main -- branch
+        deleted, ticket merged, PR still open. Under `mode = "pr"` the
+        candidate lands through its PR (the mode's second half), so the
+        resumed run pushes nothing, opens nothing, touches neither main nor
+        the worktree, and parks again on the same URL."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        provider = StubProvider(dict(a_task(), body=self.BODY))
+        self.loop(Commit("the scripted work"), APPROVE, provider=provider)
+        approved = self.git("rev-parse", BRANCH).strip()
+        self.calls.unlink()
+        holophyte.loop.approve(self.tgt, "KO-131", "looks fine",
+                               out=io.StringIO())
+
+        fake, guard = self.loop(provider=StubProvider(dict(a_task(),
+                                                           body=self.BODY)))
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(guard.spawned, [])
+        self.assertEqual(self.recorded(), [])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertNotIn("the scripted work", self.subjects())
+        self.assertIn(BRANCH, self.branches())
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), approved)
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(
+            self.read("SELECT id, phase, outcome, resumePhase, prUrl,"
+                      " candidateSha FROM runs ORDER BY id"),
+            [(1, "failed", "abandoned", "merge_gate", self.URL, approved),
+             (2, "awaiting_merge_approval", None, None, self.URL, approved)])
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion FROM tickets"),
+            [("blocked_on_operator", f"PR open: {self.URL}")])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+
     def test_a_refused_push_is_an_infra_failure_with_no_pull_request(self):
         """The remote said no: the run ends as an infra failure naming the
         push, the branch and worktree are preserved, `gh` was never called

@@ -56,7 +56,10 @@ machines it walks. Back to the [README](index.md).
    or a PR create that fails is an infra failure -- no strike, branch and
    worktree preserved, no PR recorded. The factory still never pushes
    `main`; reading the PR's threads and merging it are the mode's second
-   half.
+   half -- so `--approve KO-n` on a run parked with a PR open resumes at
+   the gate without merging: the next claim parks again on the same URL,
+   main and the worktree untouched, rather than landing the candidate
+   locally behind its pull request.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —

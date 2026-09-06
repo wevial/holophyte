@@ -350,7 +350,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     if carried is not None and wt.exists():
         return _resume_at_merge_gate(
             target, conn, run_id, provider, task_id, issue_id, task, branch,
-            wt, carried, started, verify_cmd, contracts, budget_min)
+            wt, carried, started, verify_cmd, contracts, budget_min, body)
     fresh = _cut_worktree(target, conn, run_id, provider, task_id, task,
                           branch, wt)
 
@@ -426,9 +426,18 @@ def _approved_candidate(conn, run_id):
 
 def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                           task, branch, wt, carried, started, verify_cmd,
-                          contracts, budget_min):
+                          contracts, budget_min, body):
     """The approved candidate's run: the preserved worktree, the pre-merge
     verify against the main of today, the merge. No implementer, no reviewer.
+
+    Under `[merge] mode = "pr"` nothing here lands on main either. A
+    candidate the park already opened as a pull request (`carried.pr_url`)
+    is parked again with that URL before the worktree is touched: the PR is
+    the thing the answer is about, and answering it -- merging the PR -- is
+    the mode's second half, not a local merge behind the PR's back. A
+    candidate parked with no PR (parked under `mode = "local"` before the
+    mode changed) goes through the gate below and then leaves the machine
+    as a fresh run's would, pushed and opened, instead of landing.
 
     An approval is of one sha: the candidate the reviewer approved and the
     pre-merge verify passed, recorded by the park as `runs.candidateSha`.
@@ -446,6 +455,10 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     `claimed -> merge_gate` directly, the one edge §4 draws for this path,
     with the carried run named on the stream.
     """
+    merge = merge_config(target)
+    if merge.mode == "pr" and carried.pr_url is not None:
+        _park_open_pr(conn, run_id, provider, task_id, branch, carried.sha,
+                      carried.pr_url, resumed_from=carried.run_id)
     why = _candidate_drift(wt, branch, carried.sha)
     if why is not None:
         ledger(conn, run_id, task_id, "failure",
@@ -482,6 +495,9 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
     ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
                      wt, beat_s, sha, verify_cmd, contracts)
+    if merge.mode == "pr":
+        _open_pr_and_park(target, conn, run_id, provider, task_id, task,
+                          branch, sha, body)
     return _land(target, conn, run_id, provider, task_id, task, branch, wt,
                  sha, ok, started, budget_min, 0)
 
@@ -976,22 +992,53 @@ def _open_pr_and_park(target, conn, run_id, provider, task_id, task, branch,
     url = pr.create_pull_request(target, branch, pr.pr_title(task_id, task),
                                  pr.pr_body(conn, run_id, body, now))
     print(f"[holo2] pull request open: {url}")
+    _park_open_pr(conn, run_id, provider, task_id, branch, sha, url)
+
+
+def _park_open_pr(conn, run_id, provider, task_id, branch, sha, url,
+                  resumed_from=None):
+    """Park the run for the pull request `url` that holds `branch` at `sha`:
+    the ticket asks `PR open: URL`, `store.park()` writes `runs.prUrl` with
+    the phase move, the ledger carries the URL, and `MergeParked` unwinds
+    the run with branch and worktree left standing.
+
+    `resumed_from` is the parked run an approval released when this run is
+    the resume of a candidate already open as `url`: the approval answered
+    nothing the PR asked -- merging it is the mode's second half -- so the
+    run parks again on the same URL rather than landing on main behind the
+    PR's back, and the stream and ledger say so.
+    """
+    short = sha[:12] if sha else "an unrecorded sha"
     if conn is not None and run_id is not None:
+        if resumed_from is not None:
+            store.record_event(conn, run_id, "pull_request",
+                               f"run {resumed_from}'s candidate {branch} is"
+                               f" already open as {url}; parking again"
+                               " rather than merging it locally")
         ticket_id = store.read.run_snapshot(conn, run_id).ticketId
         if not block_ticket(conn, ticket_id, provider, f"PR open: {url}"):
             print(f"[holo2] {task_id} could not be moved to"
                   " blocked_on_operator; parking the run anyway")
         store.park(conn, run_id, "awaiting_merge_approval",
-                   f"approved and verified; {branch} at {sha[:12]} is open as"
+                   f"approved and verified; {branch} at {short} is open as"
                    f" {url} ([merge] mode = \"pr\")",
                    candidate_sha=sha, pr_url=url)
-    ledger(conn, run_id, task_id, "note",
-           f"PR OPEN: {url}\nReview approved and verify passed; branch "
-           f"{branch} pushed to {pr.REMOTE} at {sha} and not merged "
-           "([merge] mode = \"pr\"). The run waits in "
-           "awaiting_merge_approval.", provider)
+    if resumed_from is None:
+        ledger(conn, run_id, task_id, "note",
+               f"PR OPEN: {url}\nReview approved and verify passed; branch "
+               f"{branch} pushed to {pr.REMOTE} at {sha} and not merged "
+               "([merge] mode = \"pr\"). The run waits in "
+               "awaiting_merge_approval.", provider)
+    else:
+        ledger(conn, run_id, task_id, "note",
+               f"PR STILL OPEN: {url}\nThe approval released run "
+               f"{resumed_from}, but under [merge] mode = \"pr\" the "
+               f"candidate on {branch} lands through its pull request, not "
+               "a local merge; merging the PR is the mode's second half. "
+               "Nothing was merged and the run waits again in "
+               "awaiting_merge_approval.", provider)
     raise MergeParked(f"pull request open: {url}; branch {branch} preserved"
-                      f" at {sha[:12]}")
+                      f" at {short}")
 
 
 def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):

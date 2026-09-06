@@ -323,7 +323,9 @@ lands (design note 7). The run then parks exactly as `approve = "human"` does
 worktree preserved, lease released -- with the PR's URL recorded on the run
 (`runs.prUrl`), in the ticket's question (`PR open: URL`) and in the ledger
 comment. Nothing here reads the PR's review threads, waits for its checks or
-merges it. The pull request is opened through `gh` when it is on PATH, and
+merges it, and neither does `--approve KO-n` on the parked run: under this
+mode the resumed claim parks again on the same URL instead of merging the
+candidate locally. The pull request is opened through `gh` when it is on PATH, and
 otherwise through the GitHub API with a token read from `GH_TOKEN` or
 `GITHUB_TOKEN` in the environment; the token is never written to the config,
 the store or a log. Startup checks the route before anything is claimed: a
