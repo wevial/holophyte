@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { Floor } from "../src/components/Floor";
 import { Now } from "../src/components/Now";
 import type { Attention, Run, Status } from "../src/lib/types";
-import { NO_ATTENTION, fixture } from "./harness";
+import { NO_ATTENTION, fixture, hostOf } from "./harness";
 
 const working = await fixture<Status>("working.json");
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
@@ -84,7 +84,7 @@ test("a heartbeat past the threshold is red bold and the stale supervisor names 
 test("clicking the first row then the second leaves only the second expanded", () => {
   const two: Status = { ...extended, runs: [RUN_52, { ...RUN_52, id: 53, ticket: "KO-220" }] };
   const missing = async () => new Response("not found", { status: 404 });
-  render(<Now attention={NO_ATTENTION} status={two} project="all" base="http://writer:7710" deps={{ fetch: missing }} />);
+  render(<Now hosts={[hostOf(two, NO_ATTENTION, "http://writer:7710")]} project="all" now={two.now} deps={{ fetch: missing }} />);
   const toggles = () => rows().map((row) => within(row).getByRole("button").getAttribute("aria-expanded"));
   expect(toggles()).toEqual(["false", "false"]);
   fireEvent.click(within(rows()[0]!).getByRole("button"));

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { isSupervisorStale } from "../lib/derive";
 import { formatDuration } from "../lib/format";
 import type { ProjectGroup } from "../lib/runs";
-import type { Run } from "../lib/types";
+import type { Run, Status } from "../lib/types";
 import { RunRow } from "./RunRow";
 
 /** One project's card: the daemon's host and supervisor line over a row
@@ -15,8 +15,8 @@ export function ProjectBlock({
 }: {
   group: ProjectGroup;
   expandedRun: number | null;
-  onToggleRun: (id: number) => void;
-  renderDetail?: (run: Run) => ReactNode;
+  onToggleRun: (id: number, status: Status) => void;
+  renderDetail?: (run: Run, status: Status) => ReactNode;
 }) {
   const { status } = group;
   const { supervisor, thresholds } = status;
@@ -48,8 +48,8 @@ export function ProjectBlock({
             run={run}
             thresholds={thresholds}
             expanded={expandedRun === run.id}
-            onToggle={() => onToggleRun(run.id)}
-            detail={expandedRun === run.id ? renderDetail?.(run) : undefined}
+            onToggle={() => onToggleRun(run.id, status)}
+            detail={expandedRun === run.id ? renderDetail?.(run, status) : undefined}
           />
         ))}
       </ul>

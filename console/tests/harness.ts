@@ -1,3 +1,4 @@
+import { addressOf, type HostRecord } from "../src/lib/hosts";
 import { POLL_INTERVAL_MS, type Fetch, type PollDeps } from "../src/lib/poll";
 import type { Attention, Status } from "../src/lib/types";
 
@@ -11,12 +12,55 @@ export async function fixture<T = unknown>(name: string): Promise<T> {
 
 export const NO_ATTENTION: Attention = { level: "none", now: 0, items: [] };
 
-/** A `fetch` answering `/status` and `/attention` from the given bodies. */
+/** A `fetch` answering `/status` and `/attention` from the given bodies,
+ *  and `/peers` with no peers. */
 export function stubFetch(bodies: { status: Status; attention: Attention }): Fetch {
   return async (url) => {
     if (url.endsWith("/status")) return Response.json(bodies.status);
     if (url.endsWith("/attention")) return Response.json(bodies.attention);
+    if (url.endsWith("/peers")) return Response.json({ self: addressOf(url.slice(0, -"/peers".length)), peers: [] });
     return new Response("not found", { status: 404 });
+  };
+}
+
+/** A daemon a multi-daemon stub answers for: its bodies, or `down` with
+ *  the error every request to it rejects with. */
+export type StubDaemon = { status: Status; attention: Attention } | { down: Error };
+
+/** A `fetch` for several daemons keyed by base URL: `/peers` from the
+ *  origin names every other base, and each base answers its own bodies
+ *  or rejects when marked down. */
+export function peersFetch(origin: string, daemons: Record<string, StubDaemon>): Fetch {
+  return async (url) => {
+    const base = Object.keys(daemons).find((candidate) => url.startsWith(`${candidate}/`));
+    if (!base) return new Response("not found", { status: 404 });
+    const path = url.slice(base.length);
+    if (path === "/peers") {
+      const peers = Object.keys(daemons)
+        .filter((candidate) => candidate !== origin)
+        .map(addressOf);
+      return Response.json({ self: addressOf(origin), peers });
+    }
+    const daemon = daemons[base]!;
+    if ("down" in daemon) throw daemon.down;
+    if (path === "/status") return Response.json(daemon.status);
+    if (path === "/attention") return Response.json(daemon.attention);
+    return new Response("not found", { status: 404 });
+  };
+}
+
+/** A host record as one good poll of `base` would leave it. */
+export function hostOf(status: Status, attention: Attention, base = "http://writer:7710", polledMs = 0): HostRecord {
+  return {
+    address: addressOf(base),
+    base,
+    label: addressOf(base),
+    project: status.project ?? status.target,
+    status,
+    attention,
+    polled_ms: polledMs,
+    seen_ms: polledMs,
+    error: null,
   };
 }
 

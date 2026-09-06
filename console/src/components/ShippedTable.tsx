@@ -106,7 +106,7 @@ export function ShippedTable({
         <div key={group.key} data-day={group.key}>
           <DayHeader group={group} />
           {group.rows.map((row) => (
-            <Row key={row.id} row={row} />
+            <Row key={`${row.daemon ?? ""}#${row.id}`} row={row} />
           ))}
         </div>
       ))}

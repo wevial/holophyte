@@ -19,8 +19,8 @@ export function Floor({
   statuses: Status[];
   project: ProjectChoice;
   expandedRun: number | null;
-  onToggleRun: (id: number) => void;
-  renderDetail?: (run: Run) => ReactNode;
+  onToggleRun: (id: number, status: Status) => void;
+  renderDetail?: (run: Run, status: Status) => ReactNode;
 }) {
   const groups = groupByProject(statuses).filter((group) => project === "all" || group.path === project);
   const runs = groups.reduce((total, group) => total + group.runs.length, 0);

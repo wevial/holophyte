@@ -127,6 +127,8 @@ export interface ShippedRow {
   estimate_min: number | null;
   merge_sha: string | null;
   host: string | null;
+  /** The console's stamp: the base of the daemon the row came from. */
+  daemon?: string;
 }
 
 /** The daemon's `/shipped` body: one page and the cursor for the next,
