@@ -8,13 +8,13 @@ the loop's only writers of a Linear workflow state (`MIRROR_STATES` says which),
 `warn()` records a best-effort failure against the ticket's run,
 `failure_history()`, `escalation_comment()` and `escalate()` park a ticket whose
 failed runs reached `MAX_FAILED_RUNS`, `close_out_failure()` ends a failed run
-the one way the factory ends them, `ledger()` archives one record as a
-comment on the ticket, and `file_ticket()` is `--file-ticket`'s body: a
-validated markdown file becomes a Linear issue and is validated again as
-stored. Beyond the standard library it imports `store` and
-`store.read` for the rows, `ticket_template` for the claim-time body gate,
-`warn_on_run` from `holophyte.runs` and `refresh_findings` from
-`holophyte.findings`.
+the one way the factory ends them, `ledger()` writes one entry of the run's
+narrative to the store and projects it as a comment on the ticket, and
+`file_ticket()` is `--file-ticket`'s body: a validated markdown file becomes a
+Linear issue and is validated again as stored. Beyond the standard library it
+imports `store` and `store.read` for the rows, `ticket_template` for the
+claim-time body gate, `warn_on_run` from `holophyte.runs` and
+`refresh_findings` from `holophyte.findings`.
 
 Fifth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
@@ -541,26 +541,40 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
     return True
 
 
-def ledger(provider, task_id, entry):
-    """Archive one record as a comment on the ticket, on `provider`'s board.
+def ledger(conn, run_id, task_id, kind, text, provider):
+    """Record one entry of the run's narrative: the store row, then the
+    board comment that projects it.
 
-    Nothing is appended to FINDINGS.md here any more: that file is rendered
-    from the store's rows at close-out (`write_findings`), so it stays a
-    bounded window instead of growing by one full transcript per turn. Board
-    comments are unchanged and stay the per-ticket archive of the whole prose
-    — the store keeps the structure, the board keeps the words.
+    The row comes first, always, and on the connection the run already
+    holds: the store is where the narrative lives (design note 9), and the
+    comment on the ticket is the board's copy of it -- the same relation
+    ticket status has to the store's `tickets.status`. A board that is
+    down, slow or absent loses its copy and nothing else; the run's story
+    is intact in `ledger` and is what a frontend reads. `kind` is one of
+    `store.LEDGER_KINDS` (a round, a merge, a failure, an adjudication, a
+    note), so the row says what shape of entry it is rather than making a
+    reader parse the prose.
 
-    The board is the one the run was handed, never a module reached for
-    here: a `run_task()` called directly with no provider has no board to
-    archive to, and says so once per record instead of failing.
+    Nothing is appended to FINDINGS.md here: that file is rendered from the
+    store's rows at close-out (`write_findings`), so it stays a bounded
+    window instead of growing by one full transcript per turn.
+
+    A `run_task()` called directly with no store (`conn` or `run_id` None)
+    has no run to write against and says so; the board is the one the run
+    was handed, never a module reached for here, and a call with no board
+    keeps the row and says so once per record instead of failing.
     """
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if conn is not None and run_id is not None:
+        store.record_ledger(conn, run_id, kind, text)
+    else:
+        print("[holo2] no store to record the ledger entry in")
     if provider is None:
         print("[holo2] no board to archive to; record kept in the store")
         return
     try:
-        provider.comment(task_id, f"**{ts}**\n\n{entry}")
+        provider.comment(task_id, f"**{ts}**\n\n{text}")
     except Exception as e:
         print(f"[holo2] board comment failed ({e}); record kept in the store")
 

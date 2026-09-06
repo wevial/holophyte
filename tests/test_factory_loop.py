@@ -222,6 +222,48 @@ class LoopTests(LoopFixture):
         self.assertNotIn(BRANCH, self.branches())  # merged, so deleted
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
+    # --- the ledger: store row first, board comment second ---------------
+
+    def test_the_ledger_row_is_in_the_store_before_its_board_comment(self):
+        """A round and a merge each land in `ledger` -- in that order, for
+        this run -- and each row is committed before the comment that
+        projects it is posted: the provider stub reads the table over its
+        own connection at every `comment()` and finds the entry already
+        there. The comment is the projection; the row is the record."""
+        db = self.db
+
+        class ReadingProvider(StubProvider):
+            def comment(self, task_id, body):
+                raw = sqlite3.connect(db)
+                try:
+                    self.seen.append([
+                        (kind, text) for (kind, text) in raw.execute(
+                            "SELECT kind, text FROM ledger ORDER BY id")])
+                finally:
+                    raw.close()
+                super().comment(task_id, body)
+
+        provider = ReadingProvider(a_task())
+        provider.seen = []
+        self.loop(Commit("first cut"), REQUEST_CHANGES, Commit("fix round 1"),
+                  APPROVE, provider=provider)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        (run_id,) = self.read("SELECT id FROM runs")[0]
+        entries = self.read(
+            "SELECT runId, kind, source FROM ledger ORDER BY at, id")
+        self.assertEqual(entries, [(run_id, "round", "loop"),
+                                   (run_id, "merge", "loop")])
+        # Two comments, and at each one the table already held the entry the
+        # comment carries: one row at the round's comment, two at the merge's.
+        self.assertEqual(len(provider.comments), 2)
+        self.assertEqual([len(seen) for seen in provider.seen], [1, 2])
+        for (_task, body), seen in zip(provider.comments, provider.seen):
+            kind, text = seen[-1]
+            self.assertIn(text, body)
+        self.assertEqual([seen[-1][0] for seen in provider.seen],
+                         ["round", "merge"])
+
     # --- both rounds spent, then a terminal PASS -------------------------
 
     def test_two_findings_rounds_then_adjudication_pass_merges_the_fixes(self):

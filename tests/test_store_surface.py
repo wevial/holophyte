@@ -44,6 +44,9 @@ EXPECTED = [
     "pickable",
     "record_event",
     "record_intervention",
+    # KO-250: the run's narrative lives in the store; `board.ledger()` writes
+    # the row here before it posts the board comment that projects it.
+    "record_ledger",
     "record_loop_restart",
     "record_loop_return",
     "record_review_round",
@@ -91,6 +94,8 @@ EXPECTED_READ = [
     "ended_runs",
     "failed_attempts_since",
     "latest_human_intervention_at",
+    # KO-250: a run's ledger entries, oldest first.
+    "ledger",
     "live_runs",
     # KO-274: the `serve` daemon's `/shipped` page of merged runs.
     "merged_runs",
