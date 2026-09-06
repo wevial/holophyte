@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[247 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T02:03:46Z — KO-268
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T02:03:47Z — KO-268
-MERGED to main as 124241f.
-actual: 5.3 min · estimate: 30 min · rounds: 1
+[249 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T02:10:27Z — KO-269
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -759,3 +752,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T03:29:06Z — KO-289
 MERGED to main as aff5f20.
 actual: 6.2 min · estimate: 20 min · rounds: 1
+
+## 2026-09-06T03:30:26Z — KO-273
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T03:30:28Z — KO-273
+MERGED to main as 3fd66b6.
+actual: 1.3 min · estimate: 25 min · rounds: 1
