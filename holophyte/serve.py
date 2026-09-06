@@ -167,7 +167,8 @@ def attention(target, now=None):
         conn.close()
     knobs = sweep_config(target)
     items = [{"kind": "blocked", "ticket": ticket.linearIdentifier,
-              "question": ticket.blockedQuestion, "level": "attention"}
+              "question": ticket.blockedQuestion, "run": ticket.runId,
+              "asked_ms": ticket.askedMs, "level": "attention"}
              for ticket in blocked]
     for run in runs:
         age = now - run.lastHeartbeat
@@ -177,7 +178,8 @@ def attention(target, now=None):
                           "heartbeat_age_ms": age, "level": "attention"})
     items.extend({"kind": "failed", "run": run.id,
                   "ticket": run.linearIdentifier, "reason": run.outcomeReason,
-                  "ended_ms": run.endedAt, "level": "attention"}
+                  "ended_ms": run.endedAt, "attempt": run.attempt,
+                  "level": "attention"}
                  for run in failed if run.ticketStatus == "in_flight")
     supervisor = supervisor_view(target, beat, now, knobs)
     if supervisor["state"] != "live":
@@ -188,7 +190,8 @@ def attention(target, now=None):
         level = "attention"
     else:
         level = "working" if runs else "none"
-    return 200, {"level": level, "items": items, "now": now}
+    return 200, {"level": level, "items": items, "now": now,
+                 "target": str(target.path), "project": str(target.path)}
 
 
 def no_store(target):
