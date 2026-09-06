@@ -653,32 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[296 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T06:04:22Z — KO-259
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/loop.py:989 [p2] **[P2] Keep the run heartbeating during push and PR creation** — [holophyte/loop.py:989](/home/reviewer/candidate/holophyte/loop.py:989). Both blocking networ…
-- /home/reviewer/candidate/holophyte/pr.py:183 [p2] **[P2] Pin PR creation to the repository receiving the push** — [holophyte/pr.py:183](/home/reviewer/candidate/holophyte/pr.py:183). The branch is pushed expl…
-
-## 2026-09-06T06:11:03Z — KO-259
-Round 3: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T06:12:06Z — KO-259
-MERGED to main as 29eecde.
-actual: 30.8 min · estimate: 30 min · rounds: 3
-
-## 2026-09-06T06:34:59Z — KO-262
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/pr.py:81 [p1] [P1] [holophyte/pr.py:81](/home/reviewer/candidate/holophyte/pr.py:81): Thread discovery reads only the first 100 threads without pagination. If those are res…
-- /home/reviewer/candidate/holophyte/pr.py:436 [p1] [P1] [holophyte/pr.py:436](/home/reviewer/candidate/holophyte/pr.py:436): The merge request omits the expected head SHA, and the shepherd never validates `sta…
-
-## 2026-09-06T06:43:44Z — KO-262
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/loop.py:1227 [p1] **[P1] Verify the committed fix before resolving threads** — [holophyte/loop.py:1227](/home/reviewer/candidate/holophyte/loop.py:1227). Verification runs agai…
-- /home/reviewer/candidate/holophyte/pr.py:397 [p1] **[P1] Include thread follow-ups in adjudication** — [holophyte/pr.py:397](/home/reviewer/candidate/holophyte/pr.py:397). Only the opening comment survives pa…
+[301 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T06:52:11Z — KO-262
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
@@ -759,3 +734,26 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T14:50:13Z — KO-299
 MERGED to main as aae62f3.
 actual: 11.7 min · estimate: 30 min · rounds: 1
+
+## 2026-09-06T14:56:49Z — KO-262
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:1140 [p1] [P1] Preserve review rejection across shepherd re-entry — [holophyte/loop.py:1140](/home/reviewer/candidate/holophyte/loop.py:1140). `_resume_on_pr()` passes…
+
+## 2026-09-06T15:09:10Z — KO-262
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:1463 [p1] **[P1] Restore pre-merge verification on PR re-entry** — [holophyte/loop.py:1463](/home/reviewer/candidate/holophyte/loop.py:1463). A resumed, approved PR rea…
+- /home/reviewer/candidate/holophyte/loop.py:1281 [p1] **[P1] Enforce acceptance criteria in fix reviews** — [holophyte/loop.py:1281](/home/reviewer/candidate/holophyte/loop.py:1281). `_review_fix()` omits the cri…
+
+## 2026-09-06T15:18:05Z — KO-262
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:1227 [p1] [P1] [holophyte/loop.py:1227](/home/reviewer/candidate/holophyte/loop.py:1227): `reviewed = verified = sha` bypasses `_merge_gate()` after a fix review. `_rev…
+
+## 2026-09-06T15:25:40Z — KO-262
+Round 4: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T15:26:51Z — KO-262
+MERGED to main as 689d460.
+actual: 36.6 min · estimate: 30 min · rounds: 4
