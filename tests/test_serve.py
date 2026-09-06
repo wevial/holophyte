@@ -18,6 +18,7 @@ import os
 import signal
 import socket
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -30,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.files  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
@@ -954,6 +956,125 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(code, 503)
         self.assertIn("error", body)
         self.assertFalse(self.db.exists())
+
+
+class RunFilesTests(ServeTestCase):
+    """`/runs/N/files`: the paths a run touched, from git in the target's
+    checkout, for a live branch and for a landed merge."""
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.target, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def build_repo(self):
+        """`main` with two files; `task/ko-7` adding `new.txt` (2 lines)
+        and rewriting one of `kept.txt`'s three lines; a binary blob too,
+        on the branch, so its zero counts are witnessed."""
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "factory@example.invalid")
+        self.git("config", "user.name", "factory")
+        (self.target / "kept.txt").write_text("one\ntwo\nthree\n")
+        (self.target / "other.txt").write_text("untouched\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "base")
+        self.branch = "task/ko-7"
+        self.git("checkout", "-q", "-b", self.branch)
+        (self.target / "new.txt").write_text("alpha\nbeta\n")
+        (self.target / "kept.txt").write_text("one\nTWO\nthree\n")
+        (self.target / "blob.bin").write_bytes(bytes(range(256)))
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "work")
+        self.git("checkout", "-q", "main")
+        # main moves on after the branch was cut: a live run's range must
+        # start at the merge base, not at main's head.
+        (self.target / "other.txt").write_text("main moved\n")
+        self.git("commit", "-q", "-am", "main moves on")
+
+    EXPECTED = [
+        {"path": "blob.bin", "status": "A", "added": 0, "deleted": 0},
+        {"path": "kept.txt", "status": "M", "added": 1, "deleted": 1},
+        {"path": "new.txt", "status": "A", "added": 2, "deleted": 0},
+    ]
+
+    def set_branch(self, branch):
+        conn = sqlite3.connect(str(self.db))
+        try:
+            conn.execute("UPDATE runs SET branch = ? WHERE id = ?",
+                         (branch, self.run))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def merge(self):
+        """Land the branch on main with `--no-ff` and release the run as
+        merged with the merge commit's sha, as the loop does."""
+        self.git("merge", "--no-ff", "-q", "-m", "land ko-7", self.branch)
+        sha = self.git("rev-parse", "HEAD")
+        conn = store.open(str(self.db))
+        try:
+            store.release(conn, self.run, "merged", now=self.now,
+                          merge_sha=sha)
+        finally:
+            conn.close()
+        return sha
+
+    def setUp(self):
+        super().setUp()
+        self.build_repo()
+        self.seed()
+        self.set_branch(self.branch)
+        self.start()
+
+    def test_a_live_run_lists_its_branch_against_the_merge_base(self):
+        code, headers, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 200, body)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body["files"], self.EXPECTED)
+        self.assertEqual(body["run"], self.run)
+        self.assertEqual(body["base"], self.git("merge-base", "main", self.branch))
+        self.assertEqual(body["head"], self.git("rev-parse", self.branch))
+        self.assertEqual(body["total_added"], 3)
+        self.assertEqual(body["total_deleted"], 1)
+        self.assertFalse(body["truncated"])
+
+    def test_a_merged_run_lists_the_merge_against_its_first_parent(self):
+        sha = self.merge()
+        # The branch is gone, as a close-out may leave it: the merge sha
+        # alone must carry the answer.
+        self.git("branch", "-D", self.branch)
+        code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 200, body)
+        self.assertEqual(body["head"], sha)
+        self.assertEqual(body["base"], self.git("rev-parse", f"{sha}^1"))
+        self.assertEqual(body["files"], self.EXPECTED)
+        self.assertEqual((body["total_added"], body["total_deleted"]), (3, 1))
+
+    def test_a_deleted_branch_is_409_naming_it_and_no_run_is_404(self):
+        self.git("branch", "-D", self.branch)
+        code, headers, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 409, body)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertIn(self.branch, body["error"])
+
+        self.set_branch(None)
+        code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 409, body)
+        self.assertIn("error", body)
+
+        code, _headers, body = self.request("GET", "/runs/999/files")
+        self.assertEqual(code, 404)
+        self.assertEqual(body, {"error": "no such run", "run": 999})
+        code, _headers, body = self.request("GET", "/runs/abc/files")
+        self.assertEqual(code, 400)
+
+    def test_the_list_is_capped_and_truncated_past_it(self):
+        with patch.object(holophyte.files, "MAX_FILES", 2):
+            code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 200, body)
+        self.assertEqual(body["files"], self.EXPECTED[:2])
+        self.assertTrue(body["truncated"])
+        # The totals still count the whole diff.
+        self.assertEqual((body["total_added"], body["total_deleted"]), (3, 1))
 
 
 class ParseAddressTests(unittest.TestCase):
