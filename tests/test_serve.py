@@ -396,12 +396,18 @@ class ConsoleTests(ServeTestCase):
     def test_the_json_routes_take_precedence_over_files(self):
         self.seed()
         dist = self.build()
-        (dist / "status").write_text("a file named status")
+        # A file shadows each JSON route by name; none of them is served.
+        for name in ("status", "runs", "attention"):
+            (dist / name).write_text("a file named " + name)
         self.start()
-        code, headers, body = self.request("GET", "/status")
-        self.assertEqual(code, 200)
-        self.assertEqual(headers["Content-Type"], "application/json")
-        self.assertIn("runs", body)
+        for path, key in (("/status", "runs"), ("/runs", "rows"),
+                          ("/attention", "items")):
+            with self.subTest(path=path):
+                code, headers, body = self.request("GET", path)
+                self.assertEqual(code, 200)
+                self.assertEqual(headers["Content-Type"], "application/json")
+                self.assertIn(key, body)
+                self.assertNotIn("a file named", self.raw_body)
 
 
 class AttentionTests(ServeTestCase):
