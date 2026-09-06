@@ -653,40 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[206 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-04T23:48:09Z — KO-253
-Round 3: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-04T23:48:59Z — KO-253
-MERGED to main as 74c3f4f.
-actual: 17.9 min · estimate: 20 min · rounds: 3
-
-## 2026-09-04T23:55:57Z — KO-254
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):7709bae9d47f [p2] CRITERION 1: met — tests/test_docs.py::SingleMachineTests::test_no_dotted_address_outside_the_design_notes CRITERION 2: not met — `docs/reference/glossary.md` s…
-- criteria:2 [p2] CRITERION 2: not met — `docs/reference/glossary.md` still defines “writer host” and “operator seat,” violating the contract that this vocabulary appears only on…
-
-## 2026-09-05T00:01:26Z — KO-254
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-05T00:02:16Z — KO-254
-MERGED to main as 6ab8bbf.
-actual: 13.3 min · estimate: 30 min · rounds: 2
-
-## 2026-09-05T00:10:57Z — KO-255
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-05T00:11:46Z — KO-255
-MERGED to main as 30fb907.
-actual: 9.5 min · estimate: 20 min · rounds: 1
-
-## 2026-09-05T00:24:25Z — KO-256
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):995f8adf0d0a [p2] CRITERION 1: not met — the park is immediately closed as `failed`; the final run phase is `failed`, while the test only checks `resumePhase = awaiting_merge_app…
-- criteria:1 [p2] CRITERION 1: not met — the park is immediately closed as `failed`; the final run phase is `failed`, while the test only checks `resumePhase = awaiting_merge_app…
+[214 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-05T00:34:55Z — KO-256
 Round 2: pass · reviewer codex-sol-medium · verify passed
@@ -754,3 +721,45 @@ Round 2: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-06T00:49:02Z — KO-265
 MERGED to main as 880b964.
 actual: 13.8 min · estimate: 30 min · rounds: 2
+
+## 2026-09-06T00:56:51Z — KO-266
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (5):
+- docs/development.md:116 [p0] Blocker: [docs/development.md:116](/workspace/docs/development.md:116) substitutes `--cwd=console` and explicitly says the contract’s exact commands fail. Provi…
+- criteria:1 [p2] CRITERION 1: unwitnessed — Bun is unavailable here; no generated bundle or evidence resolving the documented command incompatibility. Given a fresh clone with B…
+- criteria:2 [p2] CRITERION 2: unwitnessed — `console/tests/format.test.ts` asserts all four required results, but Bun execution could not be reproduced. Given `formatDuration`,…
+- criteria:3 [p2] CRITERION 3: unwitnessed — `console/tests/App.test.tsx` contains the required render assertion and happy-dom preload exists, but Bun execution could not be repr…
+- criteria:5 [p2] CRITERION 5: unwitnessed — Local Python discovery ran 737 tests with 25 failures and 19 errors, including missing CLI/environment failures; ruff is unavailable.…
+
+## 2026-09-06T01:08:28Z — KO-266
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- console/install.ts:28 [p2] [console/install.ts:28](/workspace/console/install.ts:28): Building during installation masks a broken build command. On Bun 1.4.2, `bun --cwd console run bui…
+- console/bun.lock:2 [p2] [console/bun.lock:2](/workspace/console/bun.lock:2): Bun 1.3.14, explicitly named in the ticket, rejects lockfile version 2. The required frozen install fails…
+- criteria:1 [p2] CRITERION 1: not met — frozen install fails on Bun 1.3.14; the required build command produces no bundle on Bun 1.4.2. Given a fresh clone with Bun installed, w…
+
+## 2026-09-06T01:15:13Z — KO-266
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T01:15:13Z — KO-266
+FAILED: terminal adjudication: FAIL; branch task/ko-266-scaffold-the-console-package-b preserved at 4b53b1fe0732
+actual: 26.1 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T01:24:27Z — KO-284
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- (unparsed):db0db8f524a7 [p2] CRITERION 1: met — `tests/test_review_runner.py::ReviewerImageTests::test_dockerfile_installs_pinned_checksummed_bun_on_path` passed; pinned checksum matches th…
+- criteria:3 [p2] CRITERION 3: unwitnessed — Full suite ran 739 tests with 25 failures and 19 errors, including unavailable Claude and Docker execution failures; `ruff check .` c…
+
+## 2026-09-06T01:28:52Z — KO-284
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- (unparsed):e384ef44aa30 [p2] CRITERION 1: met — `tests/test_review_runner.py::ReviewerImageTests::test_dockerfile_installs_pinned_checksummed_bun_on_path` passed. CRITERION 2: met — `tests/…
+- criteria:3 [p2] CRITERION 3: unwitnessed — Full suite ran 739 tests with 25 failures and 19 errors, including unavailable `claude`/`docker` and executable permission failures;…
+
+## 2026-09-06T01:33:09Z — KO-284
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T01:33:10Z — KO-284
+FAILED: terminal adjudication: FAIL; branch task/ko-284-the-reviewer-image-carries-bun preserved at 967cb2389738
+actual: 15.1 min · estimate: 25 min · rounds: 3
