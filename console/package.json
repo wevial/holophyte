@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "install": "bun run install.ts",
     "build": "bun run build.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"

@@ -110,18 +110,24 @@ ruff is a developer tool, not a dependency: install it on the host with
 The console is the browser page the daemon serves at `/`. It lives in
 `console/` as its own package: Bun is the runtime, test runner and bundler;
 the page is React 19 with TypeScript, styled with Tailwind v4. The three
-commands, run from the repo root with Bun's global `--cwd` flag:
+commands, run from the repo root:
 
 ```
-bun --cwd=console install --frozen-lockfile
-bun --cwd=console test
-bun --cwd=console run build
+bun --cwd console install --frozen-lockfile
+bun --cwd console test
+bun --cwd console run build
 ```
 
-The `=` is load-bearing: `bun --cwd console install` (space-separated) is
-parsed by Bun 1.3 and 1.4 as `bun run install` inside `console/`, which
-fails with "Script not found", and the same form of `run build` only
-prints Bun's usage. Only `--cwd=console` selects the subcommand.
+Bun 1.3 and 1.4 parse a space-separated `--cwd` as `bun run` inside the
+directory, so `install` and `test` above resolve to the `install` and `test`
+scripts in `console/package.json`, and `run build` prints `bun run` usage and
+exits 0 without building. The `install` script (`console/install.ts`) runs
+the real `bun install` with the flags it was handed, then the build, so the
+sequence above always ends with `console/dist/` populated; a bare
+`bun install` inside `console/` reaches the same file as a lifecycle hook and
+skips it. To drive Bun's subcommands directly, use the `=` form:
+`bun --cwd=console install --frozen-lockfile`, `bun --cwd=console test`,
+`bun --cwd=console run build`.
 
 `install` reads the committed `console/bun.lock` and refuses to drift from
 it. `test` runs `bun test` with `console/tests/setup.ts` preloaded (see
