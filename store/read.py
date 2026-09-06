@@ -394,6 +394,86 @@ def newest_ended_rounds(conn, run_id):
     return [EndedRound(round=row[0], findings=row[1]) for row in rows]
 
 
+@dataclass(frozen=True)
+class RunDetail:
+    """One run in full, joined to its ticket: what `/runs/N` answers."""
+
+    id: int
+    linearIdentifier: str
+    title: str
+    phase: str
+    attempt: int
+    startedAt: int
+    endedAt: int | None
+    lastHeartbeat: int
+    outcome: str | None
+    timeBoxMs: int | None
+    branch: str | None
+    host: str | None
+    mergeSha: str | None
+
+
+def run_detail(conn, run_id):
+    """The run row for `run_id` with its ticket's label and title, or None."""
+    row = conn.execute(
+        "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.attempt,"
+        " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
+        " r.branch, r.host, r.mergeSha"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.id = ?", (run_id,)).fetchone()
+    if row is None:
+        return None
+    return RunDetail(id=row[0], linearIdentifier=row[1], title=row[2],
+                     phase=row[3], attempt=row[4], startedAt=row[5],
+                     endedAt=row[6], lastHeartbeat=row[7], outcome=row[8],
+                     timeBoxMs=row[9], branch=row[10], host=row[11],
+                     mergeSha=row[12])
+
+
+@dataclass(frozen=True)
+class RunRound:
+    """One review round of a run, as the run detail lists it: `findings` is
+    the store's JSON document, undecoded, as on `ReviewRound`."""
+
+    round: int
+    startedAt: int
+    endedAt: int | None
+    verdict: str
+    reviewerModel: str
+    findings: str
+
+
+def rounds_of(conn, run_id):
+    """Every review round of `run_id`, oldest first; `[]` for a run with none
+    or no such run."""
+    rows = conn.execute(
+        "SELECT round, startedAt, endedAt, verdict, reviewerModel, findings"
+        " FROM reviewRounds WHERE runId = ? ORDER BY round", (run_id,)).fetchall()
+    return [RunRound(round=row[0], startedAt=row[1], endedAt=row[2],
+                     verdict=row[3], reviewerModel=row[4], findings=row[5])
+            for row in rows]
+
+
+@dataclass(frozen=True)
+class NarrativeEvent:
+    """One `narrative`-level row of a run's event stream."""
+
+    at: int
+    kind: str
+    summary: str
+
+
+def narrative_events(conn, run_id):
+    """The `narrative` events of `run_id` in `seq` order, oldest first; the
+    `detail` rows and their payloads are left out."""
+    rows = conn.execute(
+        "SELECT at, kind, summary FROM runEvents"
+        " WHERE runId = ? AND level = 'narrative' ORDER BY seq",
+        (run_id,)).fetchall()
+    return [NarrativeEvent(at=row[0], kind=row[1], summary=row[2])
+            for row in rows]
+
+
 # --- sweepStrikes ------------------------------------------------------------
 
 

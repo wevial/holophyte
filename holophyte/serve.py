@@ -1,5 +1,5 @@
 """`--serve PORT|HOST:PORT`: a read-only HTTP daemon answering `/status`,
-`/runs` and `/attention` as JSON and serving the console at `/`.
+`/runs`, `/runs/N` and `/attention` as JSON and serving the console at `/`.
 
 One `ThreadingHTTPServer` per target, bound to the one address the command
 line names -- loopback when it names only a port -- so a drawer on this
@@ -12,7 +12,11 @@ itself. The handler calls the typed read views and formats JSON; no SQL
 lives here, so a later daemon can replace the module wholesale against the
 same store. `/runs` is the `--report` table as JSON: the same rows
 `report_rows()` prints, in the same order, so a dashboard and the terminal
-never disagree about the history. `/attention` is "what needs the
+never disagree about the history. `/runs/N` is one run in full: its row
+joined to its ticket, its review rounds with their findings as objects,
+and the narrative half of its event stream, so the console's run detail
+reads the rounds from the store and never reconstructs them from the
+ledger prose. `/attention` is "what needs the
 operator": one ordered list of items with a level, computed here where the
 store is, so the drawer, a native app and a phone client all show the same
 answer and the rule lives in one place rather than in each client.
@@ -33,6 +37,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import socket
 import sys
@@ -44,6 +49,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import store.read
 from holophyte.config import sweep_config
 from holophyte.report import ended_rows, host_label
+from holophyte.runs import MAX_ROUNDS
 from holophyte.supervisor import SWEEPABLE_PHASES
 
 ADDRESS_SHAPE = "PORT|HOST:PORT"
@@ -64,6 +70,10 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
                  ".json": "application/json",
                  ".map": "application/json"}
 OCTET_STREAM = "application/octet-stream"
+# `/runs/N`: one run by id. The id is captured as typed so a non-integer is
+# 400 rather than the static-file 404, and the shape is general enough for
+# a sibling `/runs/N/ledger` to share.
+RUN_PATH = re.compile(r"^/runs/([^/]+)$")
 
 
 def parse_address(text):
@@ -280,6 +290,54 @@ def runs(target, query=""):
     }
 
 
+def run_detail(target, run_id, now=None):
+    """The `/runs/N` answer: `(http status, JSON-able body)`.
+
+    `run` is the row joined to its ticket, with `heartbeat_age_ms` computed
+    here against `now` while the run is live and null once it has ended --
+    an ended run's heartbeat is history, not a liveness signal -- and
+    `max_rounds`, the loop's review-round cap, so a client can say "round 2
+    of 3" without knowing the constant. `rounds` is oldest first, each with
+    its findings decoded once here into objects; `events` is the narrative
+    level of the stream, oldest first, without the detail rows. `run_id`
+    that is not an integer is 400; an integer with no run is 404 carrying
+    `run`.
+    """
+    if not run_id.isdigit():
+        return 400, {"error": f"run id must be an integer, got {run_id!r}"}
+    run_id = int(run_id)
+    now = int(time() * 1000) if now is None else now
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        run = store.read.run_detail(conn, run_id)
+        if run is None:
+            return 404, {"error": "no such run", "run": run_id}
+        rounds = store.read.rounds_of(conn, run_id)
+        events = store.read.narrative_events(conn, run_id)
+    finally:
+        conn.close()
+    live = run.endedAt is None
+    return 200, {
+        "run": {"id": run.id, "ticket": run.linearIdentifier,
+                "title": run.title, "phase": run.phase,
+                "attempt": run.attempt, "started_ms": run.startedAt,
+                "ended_ms": run.endedAt, "outcome": run.outcome,
+                "time_box_ms": run.timeBoxMs, "branch": run.branch,
+                "host": json_host(target, run.host),
+                "heartbeat_age_ms": now - run.lastHeartbeat if live else None,
+                "merge_sha": run.mergeSha, "max_rounds": MAX_ROUNDS},
+        "rounds": [{"round": r.round, "started_ms": r.startedAt,
+                    "ended_ms": r.endedAt, "verdict": r.verdict,
+                    "reviewer_model": r.reviewerModel,
+                    "findings": json.loads(r.findings)}
+                   for r in rounds],
+        "events": [{"at": e.at, "kind": e.kind, "summary": e.summary}
+                   for e in events],
+    }
+
+
 def static_file(console_dir, path):
     """The console file for request `path`: `(bytes, content type)`, or
     `(404 status, JSON body)` when there is none to serve.
@@ -308,8 +366,8 @@ def static_file(console_dir, path):
 
 
 class StatusHandler(BaseHTTPRequestHandler):
-    """`GET /status`, `GET /runs` and `GET /attention` as JSON; any other
-    GET is a console file under the server's `console_dir` or 404 JSON;
+    """`GET /status`, `GET /runs`, `GET /runs/N` and `GET /attention` as
+    JSON; any other GET is a console file under the server's `console_dir` or 404 JSON;
     405 otherwise.
 
     "Otherwise" is every other method, HEAD and OPTIONS included: a client
@@ -332,6 +390,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             code, body = runs(self.server.target, parts.query)
         elif path == "/attention":
             code, body = attention(self.server.target)
+        elif (run := RUN_PATH.match(path)) is not None:
+            code, body = run_detail(self.server.target, run.group(1))
         else:
             found = static_file(self.server.console_dir, path)
             if isinstance(found[0], bytes):

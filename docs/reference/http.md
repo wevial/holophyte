@@ -1,6 +1,6 @@
 # HTTP endpoints
 
-`--serve PORT|HOST:PORT` answers three paths as JSON and serves the
+`--serve PORT|HOST:PORT` answers four paths as JSON and serves the
 console's built files at `/`. Every response carries
 `Cache-Control: no-store`; the JSON ones `Content-Type: application/json`;
 every request opens the store read-only and closes it. Unknown paths are
@@ -54,6 +54,42 @@ merge from it. `merge_sha` is the full merge commit a merged run landed
 on main as, null for any other outcome or a run merged before the store
 recorded it. `?limit=N` keeps the first N rows and echoes `limit`; a
 non-positive or non-integer limit is 400.
+
+## `GET /runs/N`
+
+```json
+{"run": {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease",
+         "phase": "done", "attempt": 1, "started_ms": 1788450461675,
+         "ended_ms": 1788451661675, "outcome": "merged", "time_box_ms": 1500000,
+         "branch": "task/ko-219-the-sweep-frees-a-silent-lease", "host": "writer-1",
+         "heartbeat_age_ms": null,
+         "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f", "max_rounds": 2},
+ "rounds": [
+  {"round": 1, "started_ms": 1788450761675, "ended_ms": 1788450941675,
+   "verdict": "changes_requested", "reviewer_model": "reviewer-model",
+   "findings": [{"path": "holophyte/serve.py", "line": 12, "severity": "p1",
+                 "criterion": "AC1", "message": "the route is unmatched"}]},
+  {"round": 2, "started_ms": 1788451061675, "ended_ms": 1788451181675,
+   "verdict": "pass", "reviewer_model": "reviewer-model", "findings": []}
+ ],
+ "events": [
+  {"at": 1788450461675, "kind": "phase_change", "summary": "claimed"},
+  {"at": 1788450941675, "kind": "review", "summary": "round 1 asked for changes"}
+ ]}
+```
+
+One run in full, by id: what the console shows when a run is expanded.
+`run` is the row joined to its ticket. `ended_ms` is null while the run
+is live; `heartbeat_age_ms` is the daemon's `now` minus the run's last
+heartbeat while it is live and null once it has ended. `max_rounds` is
+the loop's review-round cap, so a client can say "round 2 of 3" without
+knowing the constant. `rounds` lists the run's review rounds oldest
+first, each with its `findings` decoded into objects (`path`, `line`,
+`severity`, `criterion`, `message`) rather than the stored JSON string.
+`events` is the `narrative` level of the run's event stream, oldest
+first; `detail` events and their payloads are not served. An `N` that is
+not an integer is 400; an integer with no run behind it is 404 carrying
+`run`. `host` passes through `[report] host_label`.
 
 ## `GET /attention`
 
@@ -116,7 +152,7 @@ on a host without the renderer's toolchain still serves its JSON.
 
 | Status | When |
 | --- | --- |
-| 400 | `/runs` with a bad `limit` |
-| 404 | any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
+| 400 | `/runs` with a bad `limit`; `/runs/N` with a non-integer `N` |
+| 404 | `/runs/N` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET; `Allow: GET` |
 | 503 | the target has no store yet |

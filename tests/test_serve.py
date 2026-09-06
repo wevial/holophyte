@@ -747,6 +747,186 @@ class RunsTests(ServeTestCase):
         self.assertFalse(self.db.exists())
 
 
+class RunDetailTests(ServeTestCase):
+    """`/runs/N`: one run's row, rounds with findings as objects, and the
+    narrative half of its event stream."""
+
+    FINDINGS = [
+        {"path": "holophyte/serve.py", "line": 12, "severity": "p1",
+         "criterion": "AC1", "message": "the route is unmatched"},
+        {"path": "docs/reference/http.md", "line": None, "severity": "nit",
+         "criterion": None, "message": "no example"},
+    ]
+
+    def seed_reviewed(self):
+        """One merged run: two ended rounds, `changes_requested` with two
+        findings then `pass`; three narrative events and one detail event."""
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+            ticket = store.mirror_ticket(
+                conn, project, linear_issue_id="issue-9",
+                linear_identifier="KO-9", title="ticket 9",
+                acceptance_criteria=["Given ticket 9, then it is worked"],
+                verification_commands=["echo ok"], time_box_ms=25 * MIN)
+            store.transition(conn, ticket, "in_flight")
+            started = self.now - 30 * MIN
+            self.run = store.claim(conn, project, ticket, now=started)
+            # `claim()` writes the first narrative rows itself; the seed's
+            # own are appended after and are what the test names.
+            self.seeded_events = [
+                ("verify", "verify passed", "narrative"),
+                ("tool_use", "ran ruff", "detail"),
+                ("review", "round 1 asked for changes", "narrative"),
+                ("review", "round 2 passed", "narrative"),
+            ]
+            for n, (kind, summary, level) in enumerate(self.seeded_events):
+                store.record_event(conn, self.run, kind, summary, level=level,
+                                   now=started + (n + 1) * MIN)
+            store.record_review_round(
+                conn, self.run, 1, "changes_requested", "reviewer-a",
+                findings=self.FINDINGS, started_at=started + 5 * MIN,
+                ended_at=started + 8 * MIN)
+            store.record_review_round(
+                conn, self.run, 2, "pass", "reviewer-b",
+                started_at=started + 10 * MIN, ended_at=started + 12 * MIN)
+            store.release(conn, self.run, "merged", now=started + 20 * MIN,
+                          merge_sha=MERGE_SHA)
+        finally:
+            conn.close()
+
+    def stored_events(self, level):
+        """The oracle: the run's `runEvents` rows of `level` in `seq` order,
+        read straight from the table."""
+        conn = sqlite3.connect(str(self.db))
+        try:
+            return conn.execute(
+                "SELECT at, kind, summary FROM runEvents"
+                " WHERE runId = ? AND level = ? ORDER BY seq",
+                (self.run, level)).fetchall()
+        finally:
+            conn.close()
+
+    def test_rounds_oldest_first_with_findings_as_objects(self):
+        self.seed_reviewed()
+        self.start()
+
+        code, headers, body = self.request("GET", f"/runs/{self.run}")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual([r["round"] for r in body["rounds"]], [1, 2])
+        self.assertEqual([r["verdict"] for r in body["rounds"]],
+                         ["changes_requested", "pass"])
+        self.assertEqual([r["reviewer_model"] for r in body["rounds"]],
+                         ["reviewer-a", "reviewer-b"])
+        # Objects, not the stored JSON string, and the two the seed wrote.
+        self.assertEqual(body["rounds"][0]["findings"], self.FINDINGS)
+        self.assertEqual(body["rounds"][1]["findings"], [])
+        self.assertLess(body["rounds"][0]["started_ms"],
+                        body["rounds"][0]["ended_ms"])
+        self.assertLess(body["rounds"][0]["ended_ms"],
+                        body["rounds"][1]["started_ms"])
+
+    def test_events_are_the_narrative_rows_oldest_first_without_detail(self):
+        self.seed_reviewed()
+        self.start()
+
+        code, _headers, body = self.request("GET", f"/runs/{self.run}")
+
+        self.assertEqual(code, 200)
+        got = [(e["at"], e["kind"], e["summary"]) for e in body["events"]]
+        self.assertEqual(got, self.stored_events("narrative"))
+        # The three the seed wrote are there, in order, among the
+        # `phase_change` rows `claim()` and `release()` write themselves; the
+        # detail one is not: a store with detail rows still answers the
+        # narrative ones.
+        narrative = [(k, s) for k, s, level in self.seeded_events
+                     if level == "narrative"]
+        self.assertEqual([(k, s) for _at, k, s in got if k != "phase_change"],
+                         narrative)
+        self.assertEqual(len(self.stored_events("detail")), 1)
+        self.assertNotIn("ran ruff", [s for _at, _k, s in got])
+
+    def test_the_run_is_the_row_joined_to_its_ticket(self):
+        self.seed_reviewed()
+        self.start()
+
+        _code, _headers, body = self.request("GET", f"/runs/{self.run}")
+
+        run = body["run"]
+        self.assertEqual(run["id"], self.run)
+        self.assertEqual(run["ticket"], "KO-9")
+        self.assertEqual(run["title"], "ticket 9")
+        self.assertEqual(run["phase"], "done")
+        self.assertEqual(run["attempt"], 1)
+        self.assertEqual(run["outcome"], "merged")
+        self.assertEqual(run["time_box_ms"], 25 * MIN)
+        self.assertEqual(run["merge_sha"], MERGE_SHA)
+        self.assertEqual(run["started_ms"], self.now - 30 * MIN)
+        self.assertEqual(run["ended_ms"], self.now - 10 * MIN)
+        self.assertEqual(run["max_rounds"], holophyte.serve.MAX_ROUNDS)
+        self.assertIsInstance(run["max_rounds"], int)
+        self.assertIn("branch", run)
+
+    def test_a_live_run_has_a_heartbeat_age_and_an_ended_one_null(self):
+        self.seed()  # KO-7, live in `working`, beating 30 s ago
+        self.start()
+
+        code, _headers, body = self.request("GET", f"/runs/{self.run}")
+
+        self.assertEqual(code, 200)
+        self.assertIsNone(body["run"]["ended_ms"])
+        self.assertIsNone(body["run"]["outcome"])
+        age = body["run"]["heartbeat_age_ms"]
+        self.assertGreaterEqual(age, 30 * SEC)
+        self.assertLess(age, 30 * SEC + SLACK)
+
+    def test_an_ended_run_has_no_heartbeat_age(self):
+        self.seed_reviewed()
+        self.start()
+
+        code, _headers, body = self.request("GET", f"/runs/{self.run}")
+
+        self.assertEqual(code, 200)
+        self.assertIsNotNone(body["run"]["ended_ms"])
+        self.assertIsNone(body["run"]["heartbeat_age_ms"])
+
+    def test_no_such_run_is_404_and_a_non_integer_is_400(self):
+        self.seed()
+        self.start()
+
+        code, headers, body = self.request("GET", "/runs/999")
+        self.assertEqual(code, 404)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertIn("error", body)
+        self.assertEqual(body["run"], 999)
+
+        code, headers, body = self.request("GET", "/runs/abc")
+        self.assertEqual(code, 400)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertIn("error", body)
+
+        # `/runs` and `/runs?limit=N` answer as before.
+        code, _headers, body = self.request("GET", "/runs")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["rows"], [])
+        code, _headers, body = self.request("GET", "/runs?limit=2")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["limit"], 2)
+
+    def test_a_target_with_no_store_answers_503(self):
+        self.start()
+
+        code, _headers, body = self.request("GET", "/runs/1")
+
+        self.assertEqual(code, 503)
+        self.assertIn("error", body)
+        self.assertFalse(self.db.exists())
+
+
 class ParseAddressTests(unittest.TestCase):
 
     def test_a_bare_port_binds_loopback(self):

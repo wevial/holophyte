@@ -92,10 +92,14 @@ EXPECTED_READ = [
     "failed_attempts_since",
     "latest_human_intervention_at",
     "live_runs",
+    # KO-269: the `serve` daemon's `/runs/N` reads.
+    "narrative_events",
     "newest_ended_rounds",
     "open_readonly",
     "recent_failed_runs",
     "review_rounds",
+    "rounds_of",
+    "run_detail",
     "run_snapshot",
     "strike",
     # KO-218: the `serve` daemon's supervisor read, so it needs nothing from
