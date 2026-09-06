@@ -653,23 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[264 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T03:10:22Z — KO-273
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- console/src/components/FilesTouched.tsx:35 [p2] [FilesTouched.tsx:35](/workspace/console/src/components/FilesTouched.tsx:35): A successful fetch followed by a poll returning 409 still displays cached files…
-- criteria:3 [p2] CRITERION 3: not met — a 409 after a successful fetch hides the required message; the existing component test covers only an initial 409. Given a files endpoint…
-
-## 2026-09-06T03:11:57Z — KO-273
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (6):
-- (unparsed):c4d281a0a12e [p2] Verification is blocked: install failed with `EROFS` creating `console/node_modules`; tests reported 0 pass and 17 errors because `@happy-dom/global-registrator…
-- criteria:1 [p2] CRITERION 1: unwitnessed — component assertions exist in console/tests/FilesTouched.test.tsx, but could not execute. Given a files fixture of 12 entries with to…
-- criteria:2 [p2] CRITERION 2: unwitnessed — library and tone assertions exist in console/tests/files.test.ts and console/tests/FilesTouched.test.tsx, but could not execute. Give…
-- criteria:3 [p2] CRITERION 3: unwitnessed — endpoint-409 and remaining-card assertions exist in console/tests/RunDetail.test.tsx, but could not execute. Given a files endpoint a…
-- criteria:4 [p2] CRITERION 4: unwitnessed — summary, range, rows and chevron assertions exist in console/tests/RunLog.test.tsx, but could not execute. Given six narrative events…
-- criteria:5 [p2] CRITERION 5: unwitnessed — expand and shared-poll fetch assertions exist in console/tests/useRunFiles.test.tsx, but could not execute. Given a detail expanded w…
+[266 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T03:13:53Z — KO-273
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
@@ -763,3 +747,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T05:13:45Z — KO-257
 MERGED to main as c5bef57.
 actual: 10.3 min · estimate: 25 min · rounds: 1
+
+## 2026-09-06T05:21:58Z — KO-276
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T05:22:58Z — KO-276
+MERGED to main as 5e516fd.
+actual: 9.2 min · estimate: 25 min · rounds: 1
