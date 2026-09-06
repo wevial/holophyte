@@ -25,6 +25,7 @@ from holophyte.config import (
     board_config,
     check_agent_commands,
     check_config_keys,
+    console_config,
     loop_config,
     merge_config,
     report_config,
@@ -250,6 +251,7 @@ def cli(argv=None):
     loop_config(target)
     report_config(target)
     merge_config(target)
+    console_config(target)
     if args.report:
         return report(target)
     # Same window as `--report`: a read-only daemon calls nobody, so no board

@@ -53,7 +53,7 @@ from time import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import store.read
-from holophyte.config import sweep_config
+from holophyte.config import console_config, split_address, sweep_config
 from holophyte.files import GIT_TIMEOUT, RangeError, touched_files
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
@@ -122,16 +122,18 @@ def parse_address(text):
     non-negative integer -- 0 asks the kernel for an ephemeral one, which
     is how the tests bind. With a host, it is whatever precedes the last
     colon, so nothing here decides what a valid hostname is: the bind does.
+    The `HOST:PORT` rule is `config.split_address()`'s, the one `[console]
+    daemons` entries are held to.
     """
     text = str(text)
     if text.isdecimal():
         return LOOPBACK, int(text)
-    host, sep, port = text.rpartition(":")
-    if not sep or not host or not port.isdecimal():
+    try:
+        return split_address(text)
+    except ValueError:
         raise ValueError(f"--serve takes {ADDRESS_SHAPE} (a non-negative"
                          f" integer port, loopback when no host is given),"
-                         f" got {text!r}")
-    return host, int(port)
+                         f" got {text!r}") from None
 
 
 def status(target, now=None, started_ms=None):
@@ -558,16 +560,21 @@ def static_file(console_dir, path):
 
 
 class StatusHandler(BaseHTTPRequestHandler):
-    """`GET /status`, `GET /runs`, `GET /runs/N`, `GET /runs/N/files` and
-    `GET /attention` as JSON; any other GET is a console file under the
-    server's `console_dir` or 404 JSON; 405 otherwise.
+    """`GET /status`, `GET /runs`, `GET /runs/N`, `GET /runs/N/files`,
+    `GET /attention` and `GET /peers` as JSON; any other GET is a console
+    file under the server's `console_dir` or 404 JSON; 405 otherwise.
 
     "Otherwise" is every other method, HEAD and OPTIONS included: a client
     that speaks anything but GET gets a JSON refusal it can parse, never
     the library's HTML 501 page.
 
     Every answer is JSON with `Cache-Control: no-store`, the error ones
-    included, so a client can parse whatever comes back. The default access
+    included, so a client can parse whatever comes back, and carries
+    `Access-Control-Allow-Origin: *`: the console page is served by one
+    daemon and fetches the others from the browser, which refuses a
+    cross-origin answer without the header. The daemon is read-only and
+    bound to loopback or a private-network host, so the open origin gives
+    away nothing the bind address does not. The default access
     log to stderr is silenced: the daemon shares a terminal with the loop,
     and a line per poll would bury the lines that matter.
     """
@@ -584,6 +591,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             code, body = shipped(self.server.target, parts.query)
         elif path == "/attention":
             code, body = attention(self.server.target)
+        elif path == "/peers":
+            code, body = 200, {"self": self.server.self_address,
+                               "peers": list(self.server.peers)}
         elif (run := RUN_PATH.match(path)) is not None:
             code, body = run_detail(self.server.target, run.group(1))
         elif (run := RUN_FILES_PATH.match(path)) is not None:
@@ -619,6 +629,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(payload)))
         if allow is not None:
             self.send_header("Allow", allow)
@@ -631,16 +642,23 @@ class StatusHandler(BaseHTTPRequestHandler):
 
 class StatusServer(ThreadingHTTPServer):
     """The bound server, carrying the one target its handler answers for,
-    the directory it serves the console from and the moment it was bound,
-    which `/status` reports as the daemon's `started_ms`."""
+    the directory it serves the console from, the moment it was bound,
+    which `/status` reports as the daemon's `started_ms`, and what `/peers`
+    answers: the target's `[console] daemons`, read once at bind, and the
+    address the daemon bound as `HOST:PORT` -- the label it announces, so a
+    page loaded from it can tell this daemon from the peers, not the
+    machine's name."""
 
     daemon_threads = True
 
     def __init__(self, target, address, console_dir=CONSOLE_DIR):
         self.target = target
         self.console_dir = Path(console_dir)
+        self.peers = console_config(target).daemons
         self.started_ms = int(time() * 1000)
         super().__init__(address, StatusHandler)
+        host, port = self.server_address[:2]
+        self.self_address = f"{host}:{port}"
 
 
 def make_server(target, host, port, console_dir=CONSOLE_DIR):

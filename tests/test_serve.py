@@ -157,6 +157,32 @@ class ServeTestCase(unittest.TestCase):
             conn.close()
 
 
+class PeersTests(ServeTestCase):
+    """`GET /peers`: the target's `[console] daemons` beside the address
+    this daemon bound, so a page loaded from it knows where to fan out."""
+
+    def test_peers_is_the_configured_list_and_self_the_bound_address(self):
+        self.seed()
+        self.start('[console]\ndaemons = ["writer-2:7710", "writer-3:7710"]\n')
+
+        code, headers, body = self.request("GET", "/peers")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body, {"self": f"{self.host}:{self.port}",
+                                "peers": ["writer-2:7710", "writer-3:7710"]})
+
+    def test_no_console_table_is_an_empty_list_not_an_error(self):
+        self.seed()
+        self.start()
+
+        code, _headers, body = self.request("GET", "/peers")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(body["peers"], [])
+        self.assertEqual(body["self"], f"{self.host}:{self.port}")
+
+
 class StatusTests(ServeTestCase):
 
     def test_status_lists_the_live_run_and_the_supervisor(self):
@@ -349,6 +375,20 @@ class ConsoleTests(ServeTestCase):
         (dist / "index.html").write_bytes(self.INDEX)
         (dist / "app.js").write_bytes(self.APP)
         return dist
+
+    def test_every_json_answer_allows_any_origin(self):
+        """The console page, served by one daemon, fetches the others from
+        the browser, which refuses a cross-origin answer without the header:
+        a 200 and a 404 both carry it."""
+        self.seed()
+        self.start()
+
+        for path, expected in (("/status", 200), ("/peers", 200),
+                               ("/nope", 404)):
+            with self.subTest(path=path):
+                code, headers, _body = self.request("GET", path)
+                self.assertEqual(code, expected)
+                self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
 
     def test_root_and_a_file_answer_their_bytes_typed_and_uncached(self):
         self.seed()

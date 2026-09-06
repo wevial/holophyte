@@ -267,6 +267,26 @@ value must be a non-empty string; anything else is a startup error naming the
 key.
 
 ```toml
+[console]
+# The other daemons the console fans out to, as HOST:PORT strings. Optional;
+# absent, the page shows this daemon's project alone.
+daemons = ["writer-2:7710", "writer-3:7710"]
+```
+
+Accepted keys: `daemons`.
+
+One daemon serves one project; the console shows every project on every
+host, so the page has to be told where the others are, and the daemon it was
+loaded from tells it: `GET /peers` answers this list as `peers` beside the
+address the daemon itself bound as `self`. The entries are strings the page
+fetches from the browser; the daemon never connects to them. Each is checked
+at startup like `--serve`'s address -- a non-empty host, a decimal port -- and
+none may appear twice; a bad entry is a startup error naming `[console]
+daemons` and the entry, before anything is served. The daemon is reached
+without authentication, so a peer, like `--serve`'s bind, belongs on loopback
+or a private network.
+
+```toml
 [merge]
 # Who says "merge" once the reviewer has approved and the pre-merge verify
 # has passed. Optional; the value shown is the default.
