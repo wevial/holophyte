@@ -28,7 +28,7 @@ afterEach(cleanup);
 const rows = () => Array.from(document.querySelectorAll("[data-file]")) as HTMLElement[];
 
 test("twelve files read 12 · +156 −86, show six, and Show all 12 files reveals them all then reads Show fewer", () => {
-  render(<FilesTouched files={TWELVE} error={null} loading={false} />);
+  render(<FilesTouched files={TWELVE} error={null} status={null} loading={false} />);
   expect(document.querySelector("[data-files-label]")!.textContent).toBe("12 · +156 −86");
   expect(rows().length).toBe(6);
   expect(rows().map((row) => row.querySelector("[data-path]")!.textContent)).toEqual(
@@ -44,7 +44,7 @@ test("twelve files read 12 · +156 −86, show six, and Show all 12 files reveal
 });
 
 test("rows carry the status letter in its tone: M grey, A green, D red, R grey; adds green, deletes red", () => {
-  render(<FilesTouched files={TWELVE} error={null} loading={false} />);
+  render(<FilesTouched files={TWELVE} error={null} status={null} loading={false} />);
   const first = rows().slice(0, 4);
   expect(first.map((row) => row.querySelector("[data-letter]")!.textContent)).toEqual(["M", "A", "D", "R"]);
   const tones = first.map((row) => row.querySelector("[data-letter]")!.className);
@@ -61,45 +61,45 @@ test("rows carry the status letter in its tone: M grey, A green, D red, R grey; 
 
 test("a short list has no toggle, an empty one says No files yet, and a refusal is the one line given", () => {
   const { unmount } = render(
-    <FilesTouched files={{ ...TWELVE, files: TWELVE.files.slice(0, 3) }} error={null} loading={false} />,
+    <FilesTouched files={{ ...TWELVE, files: TWELVE.files.slice(0, 3) }} error={null} status={null} loading={false} />,
   );
   expect(rows().length).toBe(3);
   expect(document.querySelector("[data-files-toggle]")).toBeNull();
   unmount();
-  render(<FilesTouched files={{ files: [], total_added: 0, total_deleted: 0 }} error={null} loading={false} />);
+  render(<FilesTouched files={{ files: [], total_added: 0, total_deleted: 0 }} error={null} status={null} loading={false} />);
   expect(document.querySelector("[data-files-note]")!.textContent).toBe("No files yet");
   cleanup();
-  render(<FilesTouched files={null} error="branch no longer on disk" loading={false} />);
-  expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch no longer on disk");
+  render(<FilesTouched files={null} error="branch refs/heads/task/ko-232 cannot be resolved" status={409} loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch refs/heads/task/ko-232 cannot be resolved");
   expect(document.querySelector("[data-file]")).toBeNull();
 });
 
-test("a 409 after a good fetch replaces the kept rows with branch no longer on disk; a plain failure keeps them", () => {
-  const { rerender } = render(<FilesTouched files={TWELVE} error={null} loading={false} />);
+test("a 409 after a good fetch replaces the kept rows with the endpoint's message; a plain failure keeps them", () => {
+  const { rerender } = render(<FilesTouched files={TWELVE} error={null} status={null} loading={false} />);
   expect(rows().length).toBe(6);
-  rerender(<FilesTouched files={TWELVE} error="branch no longer on disk" loading={false} />);
-  expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch no longer on disk");
+  rerender(<FilesTouched files={TWELVE} error="branch refs/heads/task/ko-232 cannot be resolved" status={409} loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch refs/heads/task/ko-232 cannot be resolved");
   expect(document.querySelector("[data-file]")).toBeNull();
   expect(document.querySelector("[data-files-label]")).toBeNull();
-  rerender(<FilesTouched files={TWELVE} error="run not in the store" loading={false} />);
-  expect(document.querySelector("[data-files-note]")!.textContent).toBe("run not in the store");
+  rerender(<FilesTouched files={TWELVE} error="no such run" status={404} loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("no such run");
   expect(document.querySelector("[data-file]")).toBeNull();
-  rerender(<FilesTouched files={TWELVE} error="/runs/7/files answered 500" loading={false} />);
+  rerender(<FilesTouched files={TWELVE} error="/runs/7/files answered 500" status={500} loading={false} />);
   expect(rows().length).toBe(6);
   expect(document.querySelector("[data-files-note]")).toBeNull();
 });
 
-test("the panel's three answers: an empty list reads No files yet, a 409 and a 404 read their message; loading… only before the first", () => {
-  const { rerender } = render(<FilesTouched files={null} error={null} loading={true} />);
+test("the panel's three answers: an empty list reads No files yet, a 409 and a 404 read the endpoint's message; loading… only before the first", () => {
+  const { rerender } = render(<FilesTouched files={null} error={null} status={null} loading={true} />);
   expect(document.querySelector("[data-files-note]")!.textContent).toBe("loading…");
-  rerender(<FilesTouched files={{ files: [], total_added: 0, total_deleted: 0 }} error={null} loading={false} />);
+  rerender(<FilesTouched files={{ files: [], total_added: 0, total_deleted: 0 }} error={null} status={null} loading={false} />);
   expect(document.querySelector("[data-files-note]")!.textContent).toBe("No files yet");
   expect(document.querySelector("[data-files-note]")!.className).not.toContain("text-bad");
-  rerender(<FilesTouched files={null} error="branch no longer on disk" loading={false} />);
-  expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch no longer on disk");
+  rerender(<FilesTouched files={null} error="branch refs/heads/task/ko-232 cannot be resolved" status={409} loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("branch refs/heads/task/ko-232 cannot be resolved");
   expect(document.querySelector("[data-files-note]")!.className).toContain("text-bad");
-  rerender(<FilesTouched files={null} error="run not in the store" loading={false} />);
-  expect(document.querySelector("[data-files-note]")!.textContent).toBe("run not in the store");
-  rerender(<FilesTouched files={null} error="/runs/7/files answered 500" loading={false} />);
+  rerender(<FilesTouched files={null} error="no such run" status={404} loading={false} />);
+  expect(document.querySelector("[data-files-note]")!.textContent).toBe("no such run");
+  rerender(<FilesTouched files={null} error="/runs/7/files answered 500" status={500} loading={false} />);
   expect(document.querySelector("[data-files-note]")!.textContent).toBe("No files yet");
 });

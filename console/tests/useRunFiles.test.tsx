@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { useRunDetail } from "../src/hooks/useRunDetail";
-import { FILES_BRANCH_GONE, useRunFiles } from "../src/hooks/useRunFiles";
+import { useRunFiles } from "../src/hooks/useRunFiles";
 import { usePeers } from "../src/hooks/usePeers";
 import type { Fetch } from "../src/lib/poll";
 import type { RunDetailBody, RunFilesBody, Status } from "../src/lib/types";
@@ -52,7 +52,7 @@ test("/runs/N/files is requested on expand and again on each poll tick, alongsid
   await act(settle);
   expect(count("/runs/91/files")).toBe(1);
   expect(count("/runs/91")).toBe(1);
-  expect(result.current.files).toEqual({ files, error: null, loading: false });
+  expect(result.current.files).toEqual({ files, error: null, status: null, loading: false });
 
   clock.now += 10_000;
   await act(async () => {
@@ -76,16 +76,34 @@ test("/runs/N/files is requested on expand and again on each poll tick, alongsid
   expect(count("/runs/91/files")).toBe(2);
 });
 
-test("404 and 409 are named in the column's words; another status by its code", async () => {
-  const answer = (status: number): Fetch => async () => new Response("no", { status });
+test("404 and 409 carry the daemon's own error text with their status; another status is named by its code", async () => {
+  const answer = (status: number, body: BodyInit): Fetch => async () => new Response(body, { status });
+  const json = (status: number, error: string) => answer(status, JSON.stringify({ error, run: 7 }));
   const hook = (fetchImpl: Fetch) => renderHook(() => useRunFiles(BASE, 7, 1, { fetch: fetchImpl }));
-  const gone = hook(answer(409));
+  const gone = hook(json(409, "branch refs/heads/task/ko-232 cannot be resolved"));
   await act(settle);
-  expect(gone.result.current).toEqual({ files: null, error: FILES_BRANCH_GONE, loading: false });
-  const missing = hook(answer(404));
+  expect(gone.result.current).toEqual({
+    files: null,
+    error: "branch refs/heads/task/ko-232 cannot be resolved",
+    status: 409,
+    loading: false,
+  });
+  const noRange = hook(json(409, "the run recorded neither a branch nor a merge commit"));
   await act(settle);
-  expect(missing.result.current.error).toBe("run not in the store");
-  const broken = hook(answer(504));
+  expect(noRange.result.current.error).toBe("the run recorded neither a branch nor a merge commit");
+  const missing = hook(json(404, "no such run"));
+  await act(settle);
+  expect(missing.result.current).toEqual({ files: null, error: "no such run", status: 404, loading: false });
+  const broken = hook(answer(504, JSON.stringify({ error: "git did not answer within 10s", run: 7 })));
   await act(settle);
   expect(broken.result.current.error).toBe(`${BASE}/runs/7/files answered 504`);
+  expect(broken.result.current.status).toBe(504);
+  const bodiless = hook(answer(404, "<html>gone</html>"));
+  await act(settle);
+  expect(bodiless.result.current).toEqual({
+    files: null,
+    error: `${BASE}/runs/7/files answered 404`,
+    status: 404,
+    loading: false,
+  });
 });

@@ -168,11 +168,11 @@ test("a newest round that passed shows no open findings and zero counts", async 
   expect(document.querySelector("[data-finding]")).toBeNull();
 });
 
-test("a files endpoint answering 409 leaves one line, branch no longer on disk, and the rest of the card renders", async () => {
+test("a files endpoint answering 409 leaves one line, its own message, and the rest of the card renders", async () => {
   const gone = () => Response.json({ error: "branch task/ko-232 is not on disk", run: 91 }, { status: 409 });
   await mount({ ...DETAIL, events: [{ at: T, kind: "claimed", summary: "claimed KO-232" }] }, T + 20 * MINUTE, gone);
   const column = screen.getByRole("region", { name: "Files touched" });
-  expect(column.querySelector("[data-files-note]")!.textContent).toBe("branch no longer on disk");
+  expect(column.querySelector("[data-files-note]")!.textContent).toBe("branch task/ko-232 is not on disk");
   expect(column.querySelector("[data-file]")).toBeNull();
   expect(column.querySelector("[data-files-label]")).toBeNull();
   expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();

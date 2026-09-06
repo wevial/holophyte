@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { capFiles, filesLabel, statusLetter, type StatusLetter } from "../lib/files";
 import type { RunFilesBody } from "../lib/types";
-import { FILES_BRANCH_GONE, FILES_RUN_UNKNOWN } from "../hooks/useRunFiles";
 
-/** The daemon's two named refusals (404, 409) mean the rows are gone for
- *  good, so they replace a body kept from an earlier poll and are the
- *  only failures the column names; any other failure leaves the last
- *  body, or reads as no files yet when there is none. */
-const REFUSALS: ReadonlySet<string> = new Set([FILES_BRANCH_GONE, FILES_RUN_UNKNOWN]);
+/** The daemon's two named refusals (404 unknown run, 409 no range to diff)
+ *  mean the rows are gone for good, so they replace a body kept from an
+ *  earlier poll and are the only failures the column names, in the
+ *  endpoint's own words; any other failure leaves the last body, or reads
+ *  as no files yet when there is none. */
+const REFUSALS: ReadonlySet<number> = new Set([404, 409]);
 
 const LETTER_TONE: Record<StatusLetter, string> = {
   M: "text-muted",
@@ -23,14 +23,17 @@ const LETTER_TONE: Record<StatusLetter, string> = {
 export function FilesTouched({
   files,
   error,
+  status,
   loading,
 }: {
   files: RunFilesBody | null;
   error: string | null;
+  /** The HTTP status behind `error`, null for a failure with no answer. */
+  status: number | null;
   loading: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const refused = error !== null && REFUSALS.has(error);
+  const refused = error !== null && status !== null && REFUSALS.has(status);
   const body = refused ? null : files;
   return (
     <section data-files aria-label="Files touched" className="min-w-0">
