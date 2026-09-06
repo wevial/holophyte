@@ -1555,6 +1555,31 @@ class MergeApprovalTests(LoopFixture):
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),
                          [(None,)])
 
+    def test_the_resumed_run_records_its_branch_before_the_gate(self):
+        """The resumed run reuses the candidate's worktree rather than
+        cutting one, and still names the branch before its first phase
+        change: the files panel reads `runs.branch` to find the worktree
+        on this path as on a fresh cut."""
+        self.configure('[merge]\napprove = "human"\n')
+        self.loop(Commit("the scripted work"), APPROVE)
+        holophyte.loop.approve(self.tgt, "KO-131", "ok", out=io.StringIO())
+        seen = []
+        real = holophyte.loop.set_phase
+
+        def watching(conn, run_id, phase, note=None):
+            (branch,) = conn.execute(
+                "SELECT branch FROM runs WHERE id = ?", (run_id,)).fetchone()
+            seen.append((run_id, phase, branch))
+            return real(conn, run_id, phase, note)
+
+        with patch.object(holophyte.loop, "set_phase", watching):
+            self.loop()
+
+        self.assertEqual(seen[0], (2, "merge_gate", BRANCH))
+        self.assertEqual(
+            self.read("SELECT id, branch, outcome FROM runs ORDER BY id"),
+            [(1, BRANCH, "abandoned"), (2, BRANCH, "merged")])
+
     def test_a_shepherd_release_of_a_local_park_does_not_merge(self):
         """`--shepherd` is not an approval. `store.shepherd()` refuses a run
         parked with no pull request, but the resumed claim holds the line

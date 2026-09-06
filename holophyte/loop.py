@@ -478,6 +478,10 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     `claimed -> merge_gate` directly, the one edge §4 draws for this path,
     with the carried run named on the stream.
     """
+    # The branch is recorded first, as `_cut_worktree()` records it: the
+    # worktree stands from the run's first moment, and the files panel reads
+    # `runs.branch` to find it whichever way the resume goes (KO-304).
+    store.set_branch(conn, run_id, branch)
     merge = merge_config(target)
     if merge.mode == "pr" and carried.pr_url is not None:
         return _resume_on_pr(target, conn, run_id, provider, task_id,
