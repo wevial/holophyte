@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parent
-IMAGE = "holophyte-reviewer:ubuntu24.04-v3"
+IMAGE = "holophyte-reviewer:ubuntu24.04-v4"
 # The Codex route the container runs, and the profile a round records for
 # it. The pair is the default an absent `[agents] review_model` /
 # `review_effort` leaves in place; `holophyte.config` reads the keys and hands
@@ -184,6 +184,7 @@ def container_command(
         raise ReviewBoundaryError("bind source paths may not contain ':'")
 
     preflight = r'''
+mkdir -p -m 0700 "$TMPDIR"
 actual=$(git rev-parse HEAD)
 test "$actual" = "$(git rev-parse refs/review/candidate)"
 test -z "$(git remote)"
