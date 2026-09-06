@@ -373,6 +373,43 @@ class ContainerCommandTests(unittest.TestCase):
         self.assertTrue(tmpfs.startswith("/tmp:"))
         self.assertIn("noexec", tmpfs.split(":", 1)[1].split(","))
 
+    @staticmethod
+    def _rendered(root):
+        for name in ("candidate", "home", "toolchain"):
+            (root / name).mkdir()
+        return review_runner.container_command(
+            image="holophyte-reviewer:test",
+            workspace=root / "candidate",
+            reviewer_home=root / "home",
+            toolchain=root / "toolchain",
+            name="holophyte-review-test",
+            prompt="review",
+            uid=1000,
+            gid=1000,
+        )
+
+    def test_codex_runs_in_a_writable_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command = self._rendered(Path(tmp))
+        lines = command[command.index("-c") + 1].splitlines()
+        preflight_ok = next(i for i, line in enumerate(lines) if "PREFLIGHT_OK" in line)
+        copy = next(i for i, line in enumerate(lines) if line.startswith("cp -a "))
+        run = next(i for i, line in enumerate(lines) if line.startswith("exec "))
+        self.assertLess(preflight_ok, copy)
+        self.assertLess(copy, run)
+        self.assertEqual(lines[copy], "cp -a /workspace /home/reviewer/candidate")
+        self.assertIn(" -C /home/reviewer/candidate", lines[run])
+        self.assertNotIn("-C /workspace", lines[run])
+
+    def test_workspace_stays_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command = self._rendered(Path(tmp))
+        script = command[command.index("-c") + 1]
+        self.assertIn("touch /workspace/.holophyte-write-probe", script)
+        mounts = [command[i + 1] for i, a in enumerate(command) if a == "--volume"]
+        self.assertTrue(any(m.endswith(":/workspace:ro") for m in mounts), mounts)
+        self.assertFalse(any(":/workspace:rw" in m for m in mounts), mounts)
+
 
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"

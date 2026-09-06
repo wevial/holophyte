@@ -195,7 +195,8 @@ if touch /workspace/.holophyte-write-probe 2>/tmp/write-probe.err; then
 fi
 test ! -e /var/run/docker.sock
 echo "PREFLIGHT_OK candidate=$actual" >&2
-exec /opt/codex/bin/codex exec --json -C /workspace \
+cp -a /workspace /home/reviewer/candidate
+exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
   -m "$2" -c "$3" \
   -s danger-full-access --ephemeral "$1"
 '''.strip()
