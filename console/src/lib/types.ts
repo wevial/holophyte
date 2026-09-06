@@ -112,3 +112,28 @@ export interface RunFilesBody {
   total_deleted: number;
   truncated?: boolean;
 }
+
+/** One merged run of `/shipped` (holophyte/serve.py `shipped()`), newest
+ *  end first on the wire. `estimate_min` is null for a run with no box. */
+export interface ShippedRow {
+  id: number;
+  ticket: string;
+  title: string | null;
+  rounds: number;
+  findings: number;
+  started_ms: number;
+  ended_ms: number;
+  actual_min: number;
+  estimate_min: number | null;
+  merge_sha: string | null;
+  host: string | null;
+}
+
+/** The daemon's `/shipped` body: one page and the cursor for the next,
+ *  null on the last page. */
+export interface ShippedBody {
+  rows: ShippedRow[];
+  limit: number;
+  before?: number | null;
+  next_before?: number | null;
+}

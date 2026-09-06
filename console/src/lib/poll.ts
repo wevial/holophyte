@@ -48,7 +48,8 @@ export interface PollState {
   polls: number;
 }
 
-async function fetchJson<T>(fetchImpl: Fetch, url: string): Promise<T> {
+/** One JSON GET; a non-2xx answer throws naming the url and status. */
+export async function fetchJson<T>(fetchImpl: Fetch, url: string): Promise<T> {
   const response = await fetchImpl(url, { headers: { accept: "application/json" } });
   if (!response.ok) throw new Error(`${url} answered ${response.status}`);
   return (await response.json()) as T;
