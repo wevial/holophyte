@@ -203,7 +203,23 @@ class RepointTests(unittest.TestCase):
                               (self.run,)).fetchone(), ("merge_gate",))
         with self.assertRaises(store.RepointRefused) as approved:
             store.repoint(self.conn, self.ticket, NEW_SHA, "rebuilt")
-        self.assertIn("not awaiting_merge_approval", str(approved.exception))
+        self.assertIn("KO-1", str(approved.exception))
+        self.assertIn("already approved", str(approved.exception))
+        self.assertIn("requeue", str(approved.exception))
+        self.assertEqual(self.candidate_sha(), OLD_SHA)
+        # Parked phase with an approval already on the row (a hand-walked
+        # store, not one the loop produces): the approval, not the phase,
+        # is what holds the sha, so this is refused the same way.
+        self.conn.execute(
+            "UPDATE runs SET phase = 'awaiting_merge_approval', endedAt ="
+            " NULL, outcome = NULL WHERE id = ?", (self.run,))
+        self.conn.execute(
+            "UPDATE tickets SET status = 'blocked_on_operator' WHERE id = ?",
+            (self.ticket,))
+        self.conn.commit()
+        with self.assertRaises(store.RepointRefused) as walked:
+            store.repoint(self.conn, self.ticket, NEW_SHA, "rebuilt")
+        self.assertIn("requeue", str(walked.exception))
         self.assertEqual(self.candidate_sha(), OLD_SHA)
 
         # Parked, but the sha is not a full commit id: abbreviated, a

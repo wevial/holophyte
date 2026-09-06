@@ -1610,8 +1610,9 @@ def approve(conn, ticket_id, note, now=None):
 class RepointRefused(Exception):
     """A re-point `repoint()` will not do; nothing was written.
 
-    The ticket does not exist, has a live run, its newest run is not parked
-    in `awaiting_merge_approval`, or the sha is not a full commit id --
+    The ticket does not exist, has a live run, its newest run is already
+    approved or is not parked in `awaiting_merge_approval`, or the sha is
+    not a full commit id --
     each is the same answer to the operator: there is no parked candidate
     here to move, or nothing a merge gate could hold a branch to, so the
     message names the ticket and the reason, and the command line exits
@@ -1645,20 +1646,21 @@ def repoint(conn, ticket_id, sha, note, now=None):
     rebuilt one.
 
     Refuses, with `RepointRefused` and no write, anything that is not a
-    parked ticket with a well-formed sha: an unknown ticket, one with a live
-    run, one whose newest run is in any phase but `awaiting_merge_approval`
-    (ready with no run yet, failed, merged, already approved and waiting
-    for its claim), or a `sha` that is not 40 hex characters (either case;
-    it is stored lowercased, the form git prints). The refusal names the
-    ticket and the reason. Touches no branch: rebasing
-    the branch itself is the operator's git work, before this call.
+    parked, not-yet-approved ticket with a well-formed sha: an unknown
+    ticket, one with a live run, one whose newest run carries a
+    `resumePhase` (approved: its release is already in flight, so the
+    refusal says to requeue instead), one whose newest run is in any phase
+    but `awaiting_merge_approval` (ready with no run yet, failed, merged),
+    or a `sha` that is not 40 hex characters (either case; it is stored
+    lowercased, the form git prints). The refusal names the ticket and the
+    reason. Touches no branch: rebasing the branch itself is the operator's
+    git work, before this call.
 
-    The parked phase, not `resumePhase`, is the hold. `park()` leaves
-    `resumePhase` NULL; `approve()` is what writes `merge_gate` there, and
-    it does so as it ends the run, so the only row carrying that resume
-    point is one already past the point of re-pointing -- refused here by
-    its phase. A check on `resumePhase = 'merge_gate'` would refuse every
-    parked run and admit none.
+    Two holds, both required. `park()` leaves `resumePhase` NULL and
+    `approve()` writes `merge_gate` there as it ends the run, so a run the
+    loop produced is refused by its phase alone; the `resumePhase` check
+    is the contract's own precondition, and it is what catches a row walked
+    by hand into a parked phase with an approval already recorded on it.
     """
     if not isinstance(sha, str) or not FULL_SHA.match(sha):
         raise RepointRefused(
@@ -1680,14 +1682,19 @@ def repoint(conn, ticket_id, sha, note, now=None):
                 f"{identifier} is {status} with run {active_run_id} still"
                 " live; a re-point is for a run parked awaiting merge"
                 " approval")
-        run = (conn.execute("SELECT phase, candidateSha FROM runs"
-                            " WHERE id = ?", (last_run_id,)).fetchone()
+        run = (conn.execute("SELECT phase, candidateSha, resumePhase FROM"
+                            " runs WHERE id = ?", (last_run_id,)).fetchone()
                if last_run_id is not None else None)
         if run is None:
             raise RepointRefused(
                 f"{identifier} is {status} and has no run; nothing is"
                 " parked awaiting merge approval")
-        phase, old_sha = run
+        phase, old_sha, resume_phase = run
+        if resume_phase is not None:
+            raise RepointRefused(
+                f"{identifier} is {status} and its newest run {last_run_id}"
+                f" is already approved (resumes at {resume_phase}); its"
+                " release is in flight, so requeue instead of re-pointing")
         if phase != "awaiting_merge_approval":
             raise RepointRefused(
                 f"{identifier} is {status} and its newest run {last_run_id}"

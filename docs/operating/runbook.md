@@ -91,6 +91,7 @@ sets `runs.candidateSha`, in one transaction, and prints both shas. The
 run stays parked and the branch is not touched -- the rebase is your git
 work, before the call. The sha must be the full 40-hex commit id; either case is accepted and it is stored lowercased.
 Refuses a ticket whose newest run is not parked awaiting merge approval,
+one already approved (its release is in flight; `--requeue` it instead),
 or a malformed sha, naming it, and writes nothing then. Never re-point
 with raw SQL on `runs.candidateSha` now that this verb exists.
 
