@@ -53,6 +53,18 @@ plans. The board needs the provider's blocks relations.
 ## Tickets
 
 Filed 2026-09-05 in two tracks, daemon and renderer, interleaved so the
-first renderer ticket runs against the daemon as it is. The identifiers
-are in the ticket ledger of each; the plan is in
-[console/README.md](console/README.md).
+first renderer ticket runs against the daemon as it is. The handoff is
+kept under [console/](console/README.md).
+
+Daemon: KO-263 (`/status` run fields and the daemon block), KO-264
+(`/attention` asked time, run, attempt), KO-265 (the daemon serves
+`console/dist/`), KO-269 (`/runs/N`), KO-272 (`/runs/N/files`), KO-274
+(`/shipped`), KO-276 (`[console] daemons`, `/peers`, CORS); in Backlog
+KO-278 (`/ledger` window, after the ledger notes) and KO-280 (`/board`,
+low).
+
+Renderer: KO-266 (scaffold), KO-267 (shell and themes), KO-268
+(needs-you band), KO-270 (floor), KO-271 (run detail), KO-273 (files and
+run log), KO-275 (Shipped), KO-277 (hosts and fan-out); in Backlog
+KO-279 (threads and resolved fold), KO-281 (Board, low), KO-282
+(Electron wrapper).
