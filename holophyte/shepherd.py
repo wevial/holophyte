@@ -57,6 +57,16 @@ def where(thread):
     return f"{thread.path}:{thread.line}" if thread.line else thread.path
 
 
+def conversation(thread):
+    """A thread's text as the adjudicator and the implementer read it: the
+    opening comment, then each follow-up under a line naming who wrote
+    it, so a later rejection or question is judged, not the opener alone."""
+    parts = [thread.body.strip()]
+    parts.extend(f"@{c.author} replied:\n{c.body.strip()}"
+                 for c in thread.replies)
+    return "\n\n".join(parts)
+
+
 def thread_line(number, thread):
     """One thread as one line: its number, where it is, who opened it, and
     the gist of what it says."""
@@ -69,7 +79,9 @@ def adjudication_brief(pull, threads, ticket, sha):
     listing = "\n\n".join(
         f"THREAD {n} -- {where(t)} by @{t.author}"
         + (" (outdated: the lines it was left on have changed)"
-           if t.outdated else "") + f"\n{t.body.strip()}"
+           if t.outdated else "")
+        + (f" ({len(t.replies)} follow-up(s))" if t.replies else "")
+        + f"\n{conversation(t)}"
         for n, t in enumerate(threads, 1))
     return (
         f"You are a READ-ONLY adjudicator of the review threads on pull "
@@ -88,8 +100,10 @@ def adjudication_brief(pull, threads, ticket, sha):
         "ADDRESS is for a concrete defect in the candidate. DECLINE is for a "
         "style preference, a duplicate, or a request beyond the ticket. "
         "HUMAN is for a genuine question, a rejection of the approach, or "
-        "anything you would not answer on the operator's behalf. Do not "
-        "modify anything.")
+        "anything you would not answer on the operator's behalf. Judge each "
+        "thread by its whole conversation: a follow-up can withdraw, "
+        "sharpen, or turn a finding into a question. Do not modify "
+        "anything.")
 
 
 def parse_verdicts(reply, count):
@@ -111,7 +125,7 @@ def fix_brief(pull, addressed, ticket):
     numbered as the adjudicator saw them, and the summary line to end with
     for each."""
     listing = "\n\n".join(
-        f"THREAD {n} -- {where(t)} by @{t.author}\n{t.body.strip()}\n"
+        f"THREAD {n} -- {where(t)} by @{t.author}\n{conversation(t)}\n"
         f"Adjudicator: {reason}"
         for n, t, reason in addressed)
     return (
@@ -177,7 +191,8 @@ def open_threads_question(pull, why, threads):
 
 
 def quoted(thread):
-    """A thread quoted whole, for the parked question and the ledger."""
-    body = "\n".join(f"> {line}" for line in (thread.body or "").strip()
+    """A thread quoted whole -- follow-ups included -- for the parked
+    question and the ledger."""
+    body = "\n".join(f"> {line}" for line in conversation(thread)
                      .splitlines()) or "> (empty)"
     return f"{where(thread)} by @{thread.author} ({thread.url}):\n{body}"

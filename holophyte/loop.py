@@ -556,6 +556,8 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, task, branch, wt,
 def _candidate_drift(wt, branch, approved):
     """Why the worktree at `wt` is not the candidate `approved` names, or
     None when it is: a clean tree with HEAD and `branch` both on that sha.
+    The approved candidate at the merge gate and the fix round's commit
+    under a pull request are held to the same test.
 
     `approved` is None only for a run parked by a module older than
     `runs.candidateSha`; with nothing recorded there is nothing to hold the
@@ -566,17 +568,15 @@ def _candidate_drift(wt, branch, approved):
                 f" what {branch} now holds")
     dirty = sh(["git", "status", "--porcelain"], cwd=wt)
     if dirty:
-        return (f"the worktree holds uncommitted changes on top of the"
-                f" approved {approved[:12]}:\n{dirty}")
+        return (f"the worktree holds uncommitted changes on top of"
+                f" {approved[:12]}:\n{dirty}")
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if head != approved:
-        return (f"the worktree is at {head[:12]}, not the approved"
-                f" {approved[:12]}")
+        return f"the worktree is at {head[:12]}, not {approved[:12]}"
     tip = sh(["git", "rev-parse", "--verify", "--quiet",
               f"refs/heads/{branch}"], cwd=wt)
     if tip != approved:
-        return (f"branch {branch} is at {tip[:12]}, not the approved"
-                f" {approved[:12]}")
+        return f"branch {branch} is at {tip[:12]}, not {approved[:12]}"
     return None
 
 
@@ -1225,6 +1225,21 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                          f" progress; branch {branch} preserved at"
                          f" {sha[:12]}")
     fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    # The verify runs over the working tree, so it vouches for the commit
+    # only when the tree is that commit: a fix half committed and half
+    # left in the tree would verify green here and push a commit that
+    # does not hold it -- and resolve the thread on it. The tree is left
+    # as it is for a human; nothing is committed, deleted or pushed.
+    unclean = _candidate_drift(wt, branch, fixed)
+    if unclean:
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED after the fix round for {pull.url}: the fix is not"
+               f" one clean commit -- {unclean}\nBranch {branch} preserved"
+               f" at {fixed}, not pushed; nothing was posted or resolved.",
+               provider)
+        raise RunFailure(f"fix round for {pull.url} left the worktree"
+                         f" unclean ({unclean.splitlines()[0]}); branch"
+                         f" {branch} preserved at {fixed[:12]}")
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts)
     if not ok:

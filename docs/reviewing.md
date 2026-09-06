@@ -62,15 +62,19 @@ One pass:
    the head commit's check rollup, and whether the PR is merged or closed;
    the threads are paged, and every page is read before anything is
    decided, so a PR is never "quiet" because its open thread was past the
-   first page. A PR someone merged by hand lands the run as merged with
-   that sha; one closed without merging fails the run, branch preserved.
+   first page. Each thread is read whole: the opening comment and every
+   follow-up, paged to the last one, since a reply can withdraw a finding
+   or turn it into a question the opener alone does not show. A PR
+   someone merged by hand lands the run as merged with that sha; one
+   closed without merging fails the run, branch preserved.
    A head that is not the candidate this run pushed -- someone else pushed
    to the branch -- parks the run naming both shas: the checks and threads
    are about their commit, and the shepherd judges and merges only its own.
 2. **Verdict.** The adjudicator route (`[agents] adjudicator`, or the
    default container) is given the ticket, the candidate as the same frozen
    `refs/review/base` and `refs/review/candidate` pair a review round gets,
-   and the threads numbered, and answers one line per thread: `THREAD n:
+   and the threads numbered with their whole conversation, and answers one
+   line per thread: `THREAD n:
    ADDRESS` (a concrete defect), `DECLINE` (a style preference, a
    duplicate, a request beyond the ticket) or `HUMAN` (a genuine question,
    a rejection of the approach, anything it would not answer on the
@@ -79,10 +83,12 @@ One pass:
    threads' authors; `github:ci` for a pass that found none -- before
    anything is posted, so an interrupted pass has its row.
 3. **Fix.** The addressed threads go to one fix round on the branch (the
-   implementer, under the ticket's budget), the ticket's verify commands
-   run over the fix, and the branch is pushed. A fix round that commits
-   nothing, or one the verify commands fail on, fails the run with the
-   branch preserved and nothing pushed.
+   implementer, under the ticket's budget). The fix must be one clean
+   commit -- the tree, `HEAD` and the branch all on it -- before the
+   ticket's verify commands run over it, so what verified is what is
+   pushed; then the branch is pushed. A fix round that commits nothing,
+   leaves edits uncommitted, or one the verify commands fail on, fails
+   the run with the branch preserved, nothing pushed, nothing posted.
 4. **Reply.** Each addressed thread gets a reply opening `---- Comment by
    MODEL ----` (the adjudicator's route, never a constant), then what
    changed and the sha it changed in, and is resolved. Each declined thread

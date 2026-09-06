@@ -1632,14 +1632,37 @@ class MergeModeTests(LoopFixture):
            "Prefer `thing_count` over `n` for this variable name.")
 
     @staticmethod
-    def thread(number, path, line, author, body, resolved=False):
-        """One review thread as the GraphQL answer carries it."""
+    def comment(number, author, body):
+        """One comment as the GraphQL answer carries it."""
+        return {"author": {"login": author}, "body": body,
+                "url": f"{MergeModeTests.URL}#discussion_r{number}"}
+
+    @classmethod
+    def thread(cls, number, path, line, author, body, replies=(),
+               resolved=False, next_cursor=None):
+        """One review thread as the GraphQL answer carries it: the opening
+        comment, then `replies` (each `(author, body)`) as the follow-ups
+        on its first page of comments; `next_cursor` names a further page
+        the shepherd must fetch."""
+        nodes = [cls.comment(number, author, body)]
+        nodes += [cls.comment(f"{number}_{n}", who, text)
+                  for n, (who, text) in enumerate(replies, 1)]
         return {"id": f"PRRT_{number}", "isResolved": resolved,
                 "isOutdated": False, "path": path, "line": line,
-                "comments": {"nodes": [{"author": {"login": author},
-                                        "body": body,
-                                        "url": f"{MergeModeTests.URL}"
-                                               f"#discussion_r{number}"}]}}
+                "comments": {"pageInfo": {"hasNextPage": next_cursor
+                                          is not None,
+                                          "endCursor": next_cursor},
+                             "nodes": nodes}}
+
+    @classmethod
+    def comments_page(cls, number, replies, next_cursor=None):
+        """A later page of one thread's comments, as the thread query
+        answers it."""
+        return {"data": {"node": {"comments": {
+            "pageInfo": {"hasNextPage": next_cursor is not None,
+                         "endCursor": next_cursor},
+            "nodes": [cls.comment(f"{number}_p{n}", who, text)
+                      for n, (who, text) in enumerate(replies, 1)]}}}}
 
     # What the fake `gh` swaps for the branch's real tip when it serves a
     # state: the PR's head is the candidate the loop pushed, unless a test
@@ -1653,7 +1676,7 @@ class MergeModeTests(LoopFixture):
         check rollup, whether the PR is merged, and -- for a page that is
         not the last -- the cursor of the next."""
         nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
-        nodes += [self.thread(n, *t, resolved=True)
+        nodes += [self.thread(n, *t[:4], resolved=True)
                   for n, t in enumerate(resolved, len(nodes) + 1)]
         return {"data": {"repository": {"pullRequest": {
             "state": "MERGED" if merged else "OPEN", "merged": merged,
@@ -1666,7 +1689,8 @@ class MergeModeTests(LoopFixture):
                              "endCursor": next_cursor},
                 "nodes": nodes}}}}}
 
-    def fake_route(self, push_exit=0, push_sh="", states=None):
+    def fake_route(self, push_exit=0, push_sh="", states=None,
+                   comments=()):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -1676,7 +1700,9 @@ class MergeModeTests(LoopFixture):
         by `api_calls()`) and answers by what the body asks: the state
         query gets the first of `states` (each served once until the last,
         which is served forever), a mutation an empty success, the merge
-        `MERGE_SHA`. `push_exit` is what `git push` answers with --
+        `MERGE_SHA`, a thread's further comments page the next of
+        `comments` (each a `comments_page()`). `push_exit` is what `git
+        push` answers with --
         non-zero is a remote refusing -- and `push_sh` is shell the fake
         push runs first, for a push that takes its time.
         """
@@ -1693,6 +1719,10 @@ class MergeModeTests(LoopFixture):
         for n, state in enumerate([self.pr_state()] if states is None
                                   else states, 1):
             (answers / f"{n:03d}.json").write_text(json.dumps(state))
+        pages = bindir / "comments"
+        pages.mkdir()
+        for n, page in enumerate(comments, 1):
+            (pages / f"{n:03d}.json").write_text(json.dumps(page))
         real_git = shutil.which("git")
         (bindir / "git").write_text(
             "#!/bin/sh\n"
@@ -1713,6 +1743,8 @@ class MergeModeTests(LoopFixture):
             "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"
             '  elif grep -q addPullRequestReviewThreadReply "$body"; then\n'
             "    echo '{\"data\":{\"addPullRequestReviewThreadReply\":{}}}'\n"
+            '  elif grep -q PullRequestReviewThread "$body"; then\n'
+            f'    f=$(ls "{pages}"/*.json | head -1); cat "$f"; rm "$f"\n'
             '  elif grep -q reviewThreads "$body"; then\n'
             f'    f=$(ls "{answers}"/*.json | head -1)\n'
             f'    tip=$("{real_git}" -C "{self.target}" rev-parse {BRANCH})\n'
@@ -1746,6 +1778,7 @@ class MergeModeTests(LoopFixture):
             query = body.get("query", "")
             kind = ("resolve" if "resolveReviewThread" in query
                     else "reply" if "addPullRequestReviewThreadReply" in query
+                    else "comments" if "PullRequestReviewThread" in query
                     else "state" if "reviewThreads" in query else "merge")
             calls.append((kind, body.get("variables", body)))
         return calls
@@ -1974,6 +2007,108 @@ class MergeModeTests(LoopFixture):
         self.assertIn("1 thread(s) declined", question)
         self.assertIn(self.NIT[3], question)
         self.assertNotIn(self.DEFECT[3], question)
+
+    def test_a_fix_round_that_leaves_edits_is_not_pushed_or_resolved(self):
+        """Regression: the fix round commits part of its fix and leaves the
+        rest uncommitted. The verify ran over the working tree, so it
+        passed on a fix the commit does not hold, and the branch was pushed
+        and the thread resolved on a partial fix. Now the candidate must be
+        clean -- HEAD, the branch and the tree on one commit -- before it is
+        verified; otherwise the run fails with nothing pushed, nothing
+        posted, and the edits left in place for a human."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        wt = self.worktrees / "ko-131-add-a-thing"
+
+        class CommitLeavingEdits(Commit):
+            def play(self, cwd, turn):
+                out = super().play(cwd, turn)
+                (cwd / "rest-of-the-fix.py").write_text("not committed\n")
+                return out
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            CommitLeavingEdits("fix: half of it"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "adjudicate", "implement"])
+        # The candidate's push only; the fix never left the machine.
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [f"git push origin {BRANCH}"])
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertIn("fix: half of it", self.subjects(BRANCH))
+        self.assertTrue((wt / "rest-of-the-fix.py").exists())
+        self.assertNotIn("WIP", self.subjects(BRANCH))
+        ((outcome, reason),) = self.read(
+            "SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("uncommitted", reason)
+
+    def test_a_thread_follow_up_reaches_the_adjudicator_and_the_question(self):
+        """Regression: a thread's later comments were dropped, so a bot's
+        finding that the operator had since turned into a question read to
+        the adjudicator as the finding alone -- answerable, fixable,
+        resolvable. The whole conversation reaches the adjudicator, and a
+        `HUMAN` park quotes it."""
+        self.configure('[merge]\nmode = "pr"\n')
+        follow_up = ("Hold on: do we want load() to default at all? Asking"
+                     " before anything is changed here.")
+        thread = self.DEFECT + ([("ko", follow_up)],)
+        self.fake_route(states=[self.pr_state([thread])])
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: HUMAN -- the operator asked"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        goal = fake.turns[2].goal
+        self.assertIn(self.DEFECT[3], goal)
+        self.assertIn(follow_up, goal)
+        self.assertLess(goal.index(self.DEFECT[3]), goal.index(follow_up))
+        self.assertIn("@ko", goal)
+        question = self.question()
+        self.assertIn(f"> {self.DEFECT[3]}", question)
+        self.assertIn(f"> {follow_up}", question)
+        self.assertIn("@ko", question)
+
+    def test_a_thread_with_a_second_page_of_comments_is_read_to_the_end(self):
+        """A thread with more comments than one page holds: the shepherd
+        fetches the next page of that thread's comments (`after` its
+        cursor) before the adjudicator judges it, so the latest word in
+        the thread is in the brief."""
+        self.configure('[merge]\nmode = "pr"\n')
+        first_reply = ("the-bot", "Still applies after the rebase.")
+        last_word = "Please leave this exactly as it is; I will explain in" \
+                    " the ticket."
+        self.fake_route(
+            states=[self.pr_state([self.NIT])],
+            comments=[self.comments_page(1, [("ko", last_word)])])
+        state = json.loads((Path(self.calls).parent / "states"
+                            / "001.json").read_text())
+        thread = state["data"]["repository"]["pullRequest"][
+            "reviewThreads"]["nodes"][0]
+        thread["comments"]["nodes"].append(
+            self.comment("1_1", *first_reply))
+        thread["comments"]["pageInfo"] = {"hasNextPage": True,
+                                          "endCursor": "k1"}
+        (Path(self.calls).parent / "states" / "001.json").write_text(
+            json.dumps(state))
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: HUMAN -- the operator said so"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        calls = self.api_calls()
+        self.assertEqual([kind for kind, _ in calls],
+                         ["state", "comments"])
+        self.assertEqual(calls[1][1]["thread"], "PRRT_1")
+        self.assertEqual(calls[1][1]["after"], "k1")
+        goal = fake.turns[2].goal
+        self.assertIn(first_reply[1], goal)
+        self.assertIn(last_word, goal)
+        self.assertLess(goal.index(first_reply[1]), goal.index(last_word))
 
     def test_a_human_verdict_posts_nothing_and_parks_with_the_thread(self):
         """Acceptance: a thread the adjudicator marks `HUMAN`: no reply is

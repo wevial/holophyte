@@ -76,6 +76,10 @@ NO_AUTHOR = "ci"
 # than `THREADS_PAGE` threads is read to the end before the shepherd decides
 # it has nothing open.
 THREADS_PAGE = 100
+# One page of a thread's comments in the state query; a thread with more
+# is read to its last page (`THREAD_COMMENTS_QUERY`) before it is judged,
+# so the latest word in a long thread is in the brief.
+COMMENTS_PAGE = 50
 STATE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
@@ -86,12 +90,26 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id isResolved isOutdated path line
-          comments(first: 50) { nodes { author { login } body url } }
+          comments(first: %d) {
+            pageInfo { hasNextPage endCursor }
+            nodes { author { login } body url }
+          }
         }
       }
     }
   }
-}""" % THREADS_PAGE
+}""" % (THREADS_PAGE, COMMENTS_PAGE)
+THREAD_COMMENTS_QUERY = """
+query($thread: ID!, $after: String) {
+  node(id: $thread) {
+    ... on PullRequestReviewThread {
+      comments(first: %d, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { author { login } body url }
+      }
+    }
+  }
+}""" % COMMENTS_PAGE
 REPLY_MUTATION = """
 mutation($thread: ID!, $body: String!) {
   addPullRequestReviewThreadReply(
@@ -126,9 +144,20 @@ class PullRequest:
 
 
 @dataclass(frozen=True)
+class Comment:
+    """One comment in a thread: who wrote it and what it says."""
+
+    author: str
+    body: str
+
+
+@dataclass(frozen=True)
 class Thread:
     """One unresolved review thread: where it is, who opened it, what it
-    says (the opening comment's body), and where to read it."""
+    says (the opening comment's body), where to read it, and the
+    follow-ups (`replies`, oldest first) -- the conversation as it stands,
+    since a thread's latest comment may turn a finding into a question or
+    a rejection that the opening comment alone does not show."""
 
     id: str
     path: str
@@ -137,6 +166,7 @@ class Thread:
     body: str
     url: str
     outdated: bool = False
+    replies: tuple = ()  # `Comment`s after the opening one
 
 
 @dataclass(frozen=True)
@@ -383,9 +413,12 @@ def pr_state(target, pull):
     resolved and whose open thread is on the next must not read as quiet.
     The head, the checks and the merged/closed answer are the first
     page's, so the threads and the checks are the same moment's. A
-    thread's author and body are its opening comment's; a thread with no
-    comments (GitHub does not make one) is skipped. Resolved threads are
-    not returned: the shepherd answers what is open.
+    thread's author and body are its opening comment's and its `replies`
+    the rest of the conversation, read to the last page of comments
+    (`COMMENTS_PAGE` per read) so a long thread's latest word is not
+    dropped; a thread with no comments (GitHub does not make one) is
+    skipped. Resolved threads are not returned: the shepherd answers what
+    is open.
     """
     first_page = node = _pull_request_page(target, pull, None)
     threads = []
@@ -394,22 +427,51 @@ def pr_state(target, pull):
         for t in (page.get("nodes") or ()):
             if not isinstance(t, dict) or t.get("isResolved"):
                 continue
-            comments = ((t.get("comments") or {}).get("nodes") or ())
-            first = next((c for c in comments if isinstance(c, dict)), None)
-            if first is None:
+            comments = _comments_of(target, pull, t)
+            if not comments:
                 continue
-            author = (first.get("author") or {}).get("login") or "unknown"
+            first, *rest = comments
             threads.append(Thread(
                 id=t.get("id") or "", path=t.get("path") or "",
-                line=t.get("line"), author=author,
-                body=first.get("body") or "",
-                url=first.get("url") or pull.url,
-                outdated=bool(t.get("isOutdated"))))
+                line=t.get("line"), author=first.author, body=first.body,
+                url=_comment_url(t) or pull.url,
+                outdated=bool(t.get("isOutdated")), replies=tuple(rest)))
         info = page.get("pageInfo") or {}
         if not (info.get("hasNextPage") and info.get("endCursor")):
             break
         node = _pull_request_page(target, pull, info["endCursor"])
     return _state_of(first_page, threads)
+
+
+def _comments_of(target, pull, node):
+    """Every comment of thread `node`, oldest first: the page the state
+    query carried, then each further page by the thread's id."""
+    page = node.get("comments") or {}
+    comments = _comment_nodes(page)
+    info = page.get("pageInfo") or {}
+    while info.get("hasNextPage") and info.get("endCursor"):
+        data = graphql(target, pull, THREAD_COMMENTS_QUERY,
+                       {"thread": node.get("id") or "",
+                        "after": info["endCursor"]})
+        page = ((data.get("node") or {}).get("comments")
+                if isinstance(data, dict) else None) or {}
+        comments.extend(_comment_nodes(page))
+        info = page.get("pageInfo") or {}
+    return comments
+
+
+def _comment_nodes(page):
+    """The `Comment`s of one comments page, in the order GitHub gave."""
+    return [Comment(author=(c.get("author") or {}).get("login") or "unknown",
+                    body=c.get("body") or "")
+            for c in (page.get("nodes") or ()) if isinstance(c, dict)]
+
+
+def _comment_url(node):
+    """The opening comment's URL off a thread node, or None."""
+    nodes = (node.get("comments") or {}).get("nodes") or ()
+    first = next((c for c in nodes if isinstance(c, dict)), None)
+    return first.get("url") if first else None
 
 
 def _pull_request_page(target, pull, after):
