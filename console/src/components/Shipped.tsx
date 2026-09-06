@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { defaultPollDeps, fetchJson, type Fetch } from "../lib/poll";
-import { groupByDay, medianRounds, mergeRows } from "../lib/shipped";
+import type { HostRecord } from "../lib/hosts";
+import { groupByDay, medianRounds, mergeRows, tagRows } from "../lib/shipped";
 import type { ShippedBody, ShippedRow } from "../lib/types";
 import { ShippedTable } from "./ShippedTable";
 
@@ -34,10 +35,6 @@ interface Ledger {
 
 const EMPTY: Ledger = { rows: [], more: false, error: null, loading: true };
 
-/** One daemon's rows, each stamped with the daemon it came from so two
- *  daemons' ids never collide in the table. */
-const stamp = (base: string, rows: ShippedRow[]): ShippedRow[] => rows.map((row) => ({ ...row, daemon: base }));
-
 /** Every daemon's rows as one ledger, newest end first, ties by id. */
 export function concatLedgers(ledgers: Record<string, Ledger>, bases: string[]): ShippedRow[] {
   return bases
@@ -51,18 +48,19 @@ export function concatLedgers(ledgers: Record<string, Ledger>, bases: string[]):
  * ledger per base: its first page is fetched on mount and again each time
  * `polls` advances (the shell's poll count), merged by id so it stays
  * live; "Load older" fetches, for every daemon with more, the page before
- * the oldest id it has shown. `now` is the clock naming "Today"; `tz` pins
- * the zone for tests.
+ * the oldest id it has shown. Each row is tagged with its daemon's project
+ * name (`tagRows`) for the table's Project column. `now` is the clock
+ * naming "Today"; `tz` pins the zone for tests.
  */
 export function Shipped({
-  bases,
+  hosts,
   now,
   polls = 0,
   deps = defaultPollDeps,
   tz,
   limit = SHIPPED_PAGE,
 }: {
-  bases: string[];
+  hosts: Pick<HostRecord, "base" | "project">[];
   now: number;
   polls?: number;
   deps?: { fetch: Fetch };
@@ -73,20 +71,24 @@ export function Shipped({
   fetchRef.current = deps.fetch;
   const [ledgers, setLedgers] = useState<Record<string, Ledger>>({});
   const [paging, setPaging] = useState(false);
-  const key = bases.join("\n");
+  const bases = hosts.map((host) => host.base);
+  // The project is part of the key: a host whose `/status` first names it
+  // after the page mounts gets its rows fetched, and stamped, again.
+  const key = hosts.map((host) => `${host.base}\t${host.project ?? ""}`).join("\n");
 
   const update = (base: string, change: (previous: Ledger) => Ledger) =>
     setLedgers((all) => ({ ...all, [base]: change(all[base] ?? EMPTY) }));
 
   useEffect(() => {
     let alive = true;
-    for (const base of key.split("\n").filter((candidate) => candidate.length > 0)) {
+    for (const line of key.split("\n").filter((candidate) => candidate.length > 0)) {
+      const [base = "", project = ""] = line.split("\t");
       void (async () => {
         try {
           const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit));
           if (!alive) return;
           update(base, (previous) => ({
-            rows: mergeRows(previous.rows, stamp(base, body.rows)),
+            rows: mergeRows(previous.rows, tagRows({ base, project: project || null }, body.rows)),
             // A refresh only reveals newer rows: the first page's cursor says
             // nothing about pages already fetched, so exhaustion survives it.
             more: previous.rows.length > 0 ? previous.more : hasMore(body),
@@ -109,7 +111,8 @@ export function Shipped({
     if (paging) return;
     setPaging(true);
     await Promise.all(
-      bases.map(async (base) => {
+      hosts.map(async (host) => {
+        const { base } = host;
         const ledger = ledgers[base];
         if (!ledger?.more) return;
         const oldest = ledger.rows.reduce((least, row) => Math.min(least, row.id), Number.POSITIVE_INFINITY);
@@ -117,7 +120,7 @@ export function Shipped({
         try {
           const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit, oldest));
           update(base, (previous) => ({
-            rows: mergeRows(previous.rows, stamp(base, body.rows)),
+            rows: mergeRows(previous.rows, tagRows(host, body.rows)),
             more: hasMore(body),
             error: null,
             loading: false,
