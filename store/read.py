@@ -168,10 +168,13 @@ class LiveRun:
 
 @dataclass(frozen=True)
 class ApprovedCandidate:
-    """The prior run an approval released, and the sha it was parked on."""
+    """The prior run an approval released, the sha it was parked on, and
+    the pull request `[merge] mode = "pr"` opened for it (None when the park
+    opened none)."""
 
     run_id: int
     sha: str | None
+    pr_url: str | None = None
 
 
 def approved_candidate(conn, ticket_id, run_id):
@@ -181,17 +184,18 @@ def approved_candidate(conn, ticket_id, run_id):
     with `resumePhase` at the merge gate -- which is what `store.approve()`
     writes on a run parked awaiting merge approval. Returns that run's id
     with the `candidateSha` its park recorded (None on a run parked by a
-    module older than the column), or None when the newest prior run is
-    anything else: the claim then starts the ticket over, as it would after
-    a failed run.
+    module older than the column) and the `prUrl` the park wrote when
+    `[merge] mode = "pr"` opened a pull request for it, or None when the
+    newest prior run is anything else: the claim then starts the ticket
+    over, as it would after a failed run.
     """
     row = conn.execute(
-        "SELECT id, resumePhase, candidateSha FROM runs"
+        "SELECT id, resumePhase, candidateSha, prUrl FROM runs"
         " WHERE ticketId = ? AND id <> ?"
         " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
     if row is None or row[1] != "merge_gate":
         return None
-    return ApprovedCandidate(run_id=row[0], sha=row[2])
+    return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3])
 
 
 def live_runs(conn, phases):

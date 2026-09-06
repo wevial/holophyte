@@ -248,6 +248,15 @@ def check_agent_commands(target):
                 f"{program!r} on PATH")
     if default_container_keys:
         check_default_reviewer(target, default_container_keys)
+    # And the merge route, when it leaves the machine: `[merge] mode = "pr"`
+    # pushes to `origin` and opens a pull request, so a target with no
+    # `origin`, or a host with neither an authenticated `gh` nor a token, is
+    # found here rather than by the first approved run reaching the gate with
+    # its lease held. Imported at the call: `holophyte.pr` imports the gates,
+    # which import this module.
+    if merge_config(target).mode == "pr":
+        from holophyte.pr import check_pr_route
+        check_pr_route(target)
 
 
 def check_default_implementer(target):
@@ -666,25 +675,39 @@ def board_config(target):
 # can claim the next ticket. Nothing merges until an operator says so (design
 # note 8). Per target, because whether a person signs off on a merge is a
 # property of the repository, not of the host running the factory.
+#
+# `mode` is where an approved, verified candidate goes (design note 7).
+# `"local"` is the `--no-ff` merge into main the loop has always made.
+# `"pr"` pushes the task branch to `origin` and opens a pull request instead
+# -- the ticket body and the run's FINDINGS entry as its body -- so the
+# repository's own review bots and CI see the change before it lands; the run
+# then parks in `awaiting_merge_approval` exactly as `approve = "human"`
+# does, with the PR's URL on the run and in the question the ticket asks.
+# "The factory never pushes" becomes "the factory never pushes `main`":
+# nothing here merges the PR (that is the mode's second half).
 MERGE_KEYS = {
     "approve": "auto",
+    "mode": "local",
 }
 MERGE_APPROVALS = ("auto", "human")
+MERGE_MODES = ("local", "pr")
+MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES}
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
-MergeConfig = collections.namedtuple("MergeConfig", ("approve",))
+MergeConfig = collections.namedtuple("MergeConfig", ("approve", "mode"))
 
 
 def merge_config(target):
     """The target's `[merge]` knobs over the defaults.
 
     Checked at startup beside `loop_config()`, the same way: an absent table
-    (or key) is the defaults exactly -- `approve = "auto"` -- and a present
-    `approve` has to be one of `MERGE_APPROVALS`, and only one of those:
-    `"later"` or `true` names no gate the loop has, and a value the factory
-    quietly read as `auto` would merge work the operator asked to sign off
-    on. The refusal names the table, the key and the constraint, like a bad
-    `[loop]` value. Keys this version does not know are refused by
-    `check_config_keys()`.
+    (or key) is the defaults exactly -- `approve = "auto"`, `mode = "local"`
+    -- and a present key has to be one of its `MERGE_VALUES`, and only one
+    of those: `"later"` or `true` names no gate the loop has, `"github"`
+    names no merge path, and a value the factory quietly read as the default
+    would merge work the operator asked to sign off on, or land locally what
+    they asked to see as a pull request. The refusal names the table, the
+    key and the constraint, like a bad `[loop]` value. Keys this version
+    does not know are refused by `check_config_keys()`.
     """
     table = target.config().get("merge", {})
     if not isinstance(table, dict):
@@ -694,8 +717,8 @@ def merge_config(target):
     values = {}
     for key, default in MERGE_KEYS.items():
         value = table.get(key, default)
-        if value not in MERGE_APPROVALS:
-            allowed = " or ".join(f'"{o}"' for o in MERGE_APPROVALS)
+        if value not in MERGE_VALUES[key]:
+            allowed = " or ".join(f'"{o}"' for o in MERGE_VALUES[key])
             raise SystemExit(
                 f"[holo2] {target.config_path}: [merge] {key} must be one of "
                 f"{allowed}, got {value!r}")

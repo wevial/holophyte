@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -1583,6 +1584,233 @@ class SelfHostingTests(LoopFixture):
         self.assertEqual(self.rc, 1)
         self.assertEqual(len(provider.queue), 1)  # the loop stopped
         self.assertEqual(self.execs, [])
+
+
+
+class MergeModeTests(LoopFixture):
+    """`[merge] mode = "pr"`: an approved, verified candidate is pushed and
+    opened as a pull request instead of merged, and the run parks for the
+    answer. `"local"`, or no key, merges as it always has.
+
+    `git` and `gh` on PATH are fakes that record their argv: the fake `git`
+    intercepts `push` alone and hands everything else to the real one, so
+    the loop's worktrees, merges and rev-parses are real while the one call
+    that would leave the machine is witnessed instead of made."""
+
+    URL = "https://github.com/example/repo/pull/7"
+    # The `origin` the fixture target is given: the repository the push
+    # goes to and the one `gh pr create` must be pinned to.
+    ORIGIN = "https://github.com/example/repo.git"
+    # A body the claim-time template gate accepts, so the run reaches the
+    # gate with a ticket body for the PR to carry.
+    BODY = (
+        "# Add a thing\n\n## Summary\n\nThe thing, added.\n\n"
+        "## What / Why / How\n\n**What:** Add the thing.\n\n"
+        "**Why:** The thing is wanted.\n\n**How:** Write the thing.\n\n"
+        "## In scope\n\n* The thing.\n\n## Out of scope\n\n"
+        "* Everything else.\n\n## Acceptance criteria\n\n"
+        "- [ ] Given the thing, when it runs, then it works (a test witnesses"
+        " this)\n\n## Verify command(s)\n\n```\necho ok\n```\n\n"
+        "## Implementation notes\n\n* None.\n\n"
+        "## Estimate & dependencies\n\nEstimate: 5 min · Depends on: none\n\n"
+        "## Open questions\n\n* None\n")
+
+    def fake_route(self, push_exit=0, push_sh=""):
+        """Put a recording `git` and `gh` ahead of the real PATH, and give
+        the target an `origin` for them to name.
+
+        Each call appends its argv to `self.calls`; `gh` also keeps the body
+        it read on stdin in `self.pr_body` and prints `URL`. `push_exit` is
+        what `git push` answers with -- non-zero is a remote refusing --
+        and `push_sh` is shell the fake push runs first, for a push that
+        takes its time.
+        """
+        self.git("remote", "add", "origin", self.ORIGIN)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        bindir = Path(tmp.name)
+        self.calls = bindir / "calls.log"
+        self.pr_body = bindir / "pr_body.md"
+        real_git = shutil.which("git")
+        (bindir / "git").write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = push ]; then\n'
+            f'  printf "git %s\\n" "$*" >> "{self.calls}"\n'
+            f"{push_sh}\n"
+            f'  [ {push_exit} -eq 0 ] || echo "remote: refused" >&2\n'
+            f"  exit {push_exit}\n"
+            "fi\n"
+            f'exec "{real_git}" "$@"\n')
+        (bindir / "gh").write_text(
+            "#!/bin/sh\n"
+            f'printf "gh %s\\n" "$*" >> "{self.calls}"\n'
+            f'cat > "{self.pr_body}"\n'
+            f"echo {self.URL}\n")
+        for script in ("git", "gh"):
+            (bindir / script).chmod(0o755)
+        patcher = patch.dict(os.environ,
+                             {"PATH": f"{bindir}:{os.environ['PATH']}"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def recorded(self):
+        return (self.calls.read_text().splitlines()
+                if self.calls.exists() else [])
+
+    def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
+        """Push, then create, in that order; the PR is titled `KO-n: TITLE`
+        and its body is the ticket body followed by the run's FINDINGS
+        entry; the URL `gh` printed is the run's `prUrl` and the ticket's
+        question; main is untouched, the branch and worktree stay, and the
+        run is parked alive in `awaiting_merge_approval` with its lease
+        released -- the `approve = "human"` park, with a URL."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        provider = StubProvider(dict(a_task(), body=self.BODY))
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=provider)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        calls = self.recorded()
+        self.assertEqual(len(calls), 2, calls)
+        self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        # Pinned to the repository the push went to, not `gh`'s own default
+        # repository (`gh repo set-default`), which can point elsewhere.
+        self.assertEqual(
+            calls[1],
+            f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
+            " --title KO-131: add a thing --body-file -")
+        body = self.pr_body.read_text()
+        self.assertIn("The thing, added.", body)
+        self.assertIn("— KO-131", body)  # the FINDINGS entry heading
+        self.assertIn("estimate: 5 min · rounds: 1", body)
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertIn(BRANCH, self.branches())
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(
+            self.read("SELECT phase, endedAt, outcome, prUrl, candidateSha"
+                      " FROM runs"),
+            [("awaiting_merge_approval", None, None, self.URL,
+              self.git("rev-parse", BRANCH).strip())])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion FROM tickets"),
+            [("blocked_on_operator", f"PR open: {self.URL}")])
+        (_, comment) = provider.comments[-1]
+        self.assertIn("PR OPEN", comment)
+        self.assertIn(self.URL, comment)
+
+    def test_a_slow_push_keeps_the_run_heartbeating(self):
+        """The push and the create block for as long as the remote takes,
+        outside any agent turn or verify: a push longer than the stale
+        budget was a `stale_heartbeat` trip for the supervisor, which could
+        fail the run before its URL was recorded. The fake push here samples
+        the run's `lastHeartbeat` from the store while it takes longer than
+        the whole stale budget; the beat must move under it."""
+        self.configure('[merge]\nmode = "pr"\n'
+                       "[supervisor]\nheartbeat_stale_min = 0.01\n")
+        knobs = holophyte.config.sweep_config(self.tgt)
+        budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
+        samples = self.db.parent / "heartbeats.log"
+        sampler = (
+            "import sqlite3, sys, time\n"
+            f"deadline = time.monotonic() + {budget_s * 5 / 3}\n"
+            f"conn = sqlite3.connect({str(self.db)!r})\n"
+            "while time.monotonic() < deadline:\n"
+            "    time.sleep(0.2)\n"
+            "    row = conn.execute('SELECT phase, lastHeartbeat FROM runs')"
+            ".fetchone()\n"
+            f"    open({str(samples)!r}, 'a').write('%s %s\\n' % row)\n")
+        self.fake_route(push_sh=f"  {sys.executable} -c {shlex.quote(sampler)}")
+        provider = StubProvider(dict(a_task(), body=self.BODY))
+
+        self.loop(Commit("the scripted work"), APPROVE, provider=provider)
+
+        seen = [line.split() for line in samples.read_text().splitlines()]
+        self.assertGreaterEqual(len(seen), 4, seen)
+        self.assertEqual({phase for phase, _ in seen}, {"merge_gate"})
+        beats = [int(beat) for _, beat in seen]
+        self.assertGreater(beats[-1], beats[0])
+        # No gap between beats reached the stale threshold.
+        self.assertLess(max(b - a for a, b in zip(beats, beats[1:])),
+                        knobs.heartbeat_stale_ms)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl FROM runs"),
+            [("awaiting_merge_approval", None, self.URL)])
+
+    def test_an_approval_of_an_open_pull_request_does_not_merge_locally(self):
+        """Review round: `--approve KO-n` on a run parked with a PR open used
+        to resume at the gate and land the candidate on main -- branch
+        deleted, ticket merged, PR still open. Under `mode = "pr"` the
+        candidate lands through its PR (the mode's second half), so the
+        resumed run pushes nothing, opens nothing, touches neither main nor
+        the worktree, and parks again on the same URL."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        provider = StubProvider(dict(a_task(), body=self.BODY))
+        self.loop(Commit("the scripted work"), APPROVE, provider=provider)
+        approved = self.git("rev-parse", BRANCH).strip()
+        self.calls.unlink()
+        holophyte.loop.approve(self.tgt, "KO-131", "looks fine",
+                               out=io.StringIO())
+
+        fake, guard = self.loop(provider=StubProvider(dict(a_task(),
+                                                           body=self.BODY)))
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(guard.spawned, [])
+        self.assertEqual(self.recorded(), [])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertNotIn("the scripted work", self.subjects())
+        self.assertIn(BRANCH, self.branches())
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), approved)
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(
+            self.read("SELECT id, phase, outcome, resumePhase, prUrl,"
+                      " candidateSha FROM runs ORDER BY id"),
+            [(1, "failed", "abandoned", "merge_gate", self.URL, approved),
+             (2, "awaiting_merge_approval", None, None, self.URL, approved)])
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion FROM tickets"),
+            [("blocked_on_operator", f"PR open: {self.URL}")])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+
+    def test_a_refused_push_is_an_infra_failure_with_no_pull_request(self):
+        """The remote said no: the run ends as an infra failure naming the
+        push, the branch and worktree are preserved, `gh` was never called
+        and nothing is recorded as a PR."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(push_exit=1)
+
+        self.loop(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.recorded(), [f"git push origin {BRANCH}"])
+        self.assertFalse(self.pr_body.exists())
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertIn(BRANCH, self.branches())
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
+        rows = self.read("SELECT phase, outcome, outcomeClass, outcomeReason,"
+                         " prUrl FROM runs")
+        (phase, outcome, klass, reason, url), = rows
+        self.assertEqual((phase, outcome, klass, url),
+                         ("failed", "failed", "infra", None))
+        self.assertIn(f"git push origin {BRANCH} failed", reason)
+        self.assertIn("refused", reason)
+
+    def test_local_merges_as_today_and_pushes_nothing(self):
+        self.configure('[merge]\nmode = "local"\n')
+        self.fake_route()
+
+        self.loop(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.recorded(), [])
+        self.assertIn("the scripted work", self.subjects())
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertEqual(self.read("SELECT outcome, prUrl FROM runs"),
+                         [("merged", None)])
 
 
 if __name__ == "__main__":
