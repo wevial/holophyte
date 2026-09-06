@@ -1622,10 +1622,40 @@ def approve(target, identifier, note, out=None):
         conn.close()
 
 
+def repoint(target, identifier, sha, note, out=None):
+    """Move the ticket `identifier`'s parked candidate to `sha`. Returns
+    nothing.
+
+    `--repoint`'s whole body, `--approve`'s sibling for the rebuilt-branch
+    case: it opens the store, does `store.repoint()`'s one transaction --
+    the `repoint` intervention row carrying `note`, the narrative event
+    naming both shas, `candidateSha` moved -- prints the old and new shas
+    and exits. The branch itself is the operator's git work, done before
+    this; the merge gate the next approval resumes into holds the branch to
+    the new sha exactly as it held it to the old. Every refusal
+    `store.repoint()` makes is a `SystemExit` naming the ticket and the
+    reason, and nothing is written then; an identifier the store has not
+    mirrored, or a target with no store, is refused the same way.
+    """
+    out = out or sys.stdout
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        try:
+            run_id, old_sha = store.repoint(conn, ticket_id, sha, note)
+        except (store.RepointRefused, ValueError) as refused:
+            raise SystemExit(f"[holo2] {refused}") from None
+        print(f"[holo2] {identifier} re-pointed: run {run_id}'s candidate"
+              f" moved from {old_sha} to {sha}; the merge gate now holds the"
+              " branch to the new sha", file=out)
+    finally:
+        conn.close()
+
+
 def _operator_store(target):
     """The store an operator command writes to, or the exit for a target
-    that has none: nothing to requeue or approve, and no file made for the
-    sake of saying so."""
+    that has none: nothing to requeue, approve or re-point, and no file
+    made for the sake of saying so."""
     if not target.store_path.exists():
         raise SystemExit(f"[holo2] no store at {target.store_path}")
     return open_store(target)
