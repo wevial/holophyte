@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[249 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T02:10:27Z — KO-269
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- holophyte/serve.py:306 [p2] [P2] Fix integer ID handling in [holophyte/serve.py](/workspace/holophyte/serve.py:306). Reproduced: `-1` returns 400, while `9223372036854775808` raises an u…
-
-## 2026-09-06T02:15:56Z — KO-269
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- holophyte/serve.py:313 [p2] **P2 — Handle long integer IDs before conversion** ([holophyte/serve.py:313](/workspace/holophyte/serve.py:313)). `int(run_id)` raises `ValueError` above Pyth…
-
-## 2026-09-06T02:22:14Z — KO-269
-Round 3: pass · reviewer codex-astra-medium · verify passed
+[252 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T02:23:07Z — KO-269
 MERGED to main as eaccb8c.
@@ -759,3 +746,16 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T03:30:28Z — KO-273
 MERGED to main as 3fd66b6.
 actual: 1.3 min · estimate: 25 min · rounds: 1
+
+## 2026-09-06T03:40:04Z — KO-274
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/store/read.py:293 [p2] [P2] Unknown integer cursors violate the empty-page contract. Reproduced `/shipped?before=9223372036854775808`: [store/read.py:293](/home/reviewer/candidate/s…
+- criteria:3 [p2] CRITERION 3: not met — unknown integer cursors -1 and 9223372036854775808 return 400 or disconnect instead of an empty 200 page. Given `?limit=0`, `?limit=x` or…
+
+## 2026-09-06T03:46:23Z — KO-274
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T03:47:21Z — KO-274
+MERGED to main as f50eeed.
+actual: 16.8 min · estimate: 30 min · rounds: 2
