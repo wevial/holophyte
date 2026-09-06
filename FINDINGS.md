@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[301 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T06:52:11Z — KO-262
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T06:52:11Z — KO-262
-FAILED: terminal adjudication: FAIL; branch task/ko-262-merge-mode-pr-2-2-the-shepher preserved at 4211579b8075
-actual: 40.0 min · estimate: 30 min · rounds: 3
-
-## 2026-09-06T06:58:36Z — KO-262
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/store/__init__.py:1572 [p1] **[P1] `--shepherd` bypasses human merge approval for local runs** — [store/__init__.py:1572](/home/reviewer/candidate/store/__init__.py:1572). `shepherd()` r…
+[304 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T07:05:27Z — KO-262
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -757,3 +745,15 @@ Round 4: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T15:26:51Z — KO-262
 MERGED to main as 689d460.
 actual: 36.6 min · estimate: 30 min · rounds: 4
+
+## 2026-09-06T15:41:04Z — KO-300
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- (unparsed):cd59a0c6eca4 [p2] Verification blocker: the exact commands did not all pass in a temporary candidate export. Installation failed because `@oven/bun-linux-x64` was missing; build…
+
+## 2026-09-06T15:42:37Z — KO-300
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T15:42:39Z — KO-300
+MERGED to main as 892c0af.
+actual: 5.4 min · estimate: 15 min · rounds: 2
