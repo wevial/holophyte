@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[201 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-04T19:28:15Z — KO-248
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):b9523a92b15b [p2] CRITERION 1: unwitnessed — `tests/test_factory_config.py::SupervisorSpawnTests::test_a_free_lock_starts_a_detached_supervisor_for_the_target` mocks `main()`, so…
-- criteria:1 [p2] CRITERION 1: unwitnessed — `tests/test_factory_config.py::SupervisorSpawnTests::test_a_free_lock_starts_a_detached_supervisor_for_the_target` mocks `main()`, so…
-
-## 2026-09-04T19:36:34Z — KO-248
-Round 2: pass · reviewer codex-sol-medium · verify passed
+[203 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-04T19:37:25Z — KO-248
 MERGED to main as bb163b0.
@@ -757,3 +748,10 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-06T00:23:53Z — KO-264
 MERGED to main as bebf562.
 actual: 9.5 min · estimate: 25 min · rounds: 1
+
+## 2026-09-06T00:34:20Z — KO-283
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-06T00:35:11Z — KO-283
+MERGED to main as 9838868.
+actual: 11.3 min · estimate: 25 min · rounds: 1
