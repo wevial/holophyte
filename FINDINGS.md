@@ -653,24 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[315 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T08:05:10Z — KO-297
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/store/__init__.py:1683 [p2] [P2] Enforce the approval precondition in [store/__init__.py:1683](/home/reviewer/candidate/store/__init__.py:1683). `repoint()` never reads `resumePhase`. A…
-- criteria:2 [p2] CRITERION 2: not met — parked runs with non-null resumePhase are accepted; approved-run refusals omit required requeue guidance. Given a ticket whose newest run…
-
-## 2026-09-06T08:11:48Z — KO-297
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T08:12:55Z — KO-297
-MERGED to main as 35981f4.
-actual: 13.7 min · estimate: 25 min · rounds: 2
-
-## 2026-09-06T14:36:43Z — KO-262
-FAILED: cannot reuse leftover worktree: preserved commits on task/ko-262-merge-mode-pr-2-2-the-shepher conflict with a main that moved on; a human resolves the merge before this ticket is run again
-actual: 0.0 min · estimate: 30 min · rounds: 0
+[319 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T14:49:05Z — KO-299
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -756,3 +739,22 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T16:35:25Z — KO-304
 MERGED to main as d2b09dc.
 actual: 29.2 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T16:39:52Z — KO-305
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/src/components/FilesTouched.tsx:33 [p2] [FilesTouched.tsx:33](/home/reviewer/candidate/console/src/components/FilesTouched.tsx:33) recognizes refusals by hardcoded message strings. `fetchRunFiles` d…
+- criteria:3 [p2] CRITERION 3: not met — Endpoint messages are replaced with hardcoded strings; the component test supplies those strings directly and misses the failure. Given `…
+
+## 2026-09-06T16:42:57Z — KO-305
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- (unparsed):adf0dc121a3d [p2] Criterion 2’s test never establishes a 40 px segment: it renders without a fixed-width container and asserts `calc(4% - 0.24px)`. Add a bounded-width fixture th…
+- criteria:2 [p2] CRITERION 2: unwitnessed — The component test checks text and classes but never establishes the required 40 px segment. Given a run whose first segment is 40 px…
+
+## 2026-09-06T16:45:23Z — KO-305
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T16:45:24Z — KO-305
+MERGED to main as 2a3fc80 (branch task/ko-305-the-expanded-run-reads-like-th deleted).
+actual: 10.0 min · estimate: 25 min · rounds: 3
