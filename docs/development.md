@@ -118,19 +118,25 @@ bun --cwd console test
 bun --cwd console run build
 ```
 
-Bun 1.3 and 1.4 parse a space-separated `--cwd` as `bun run` inside the
+Bun 1.3.14 and 1.4.2 parse a space-separated `--cwd` as `bun run` inside the
 directory, so `install` and `test` above resolve to the `install` and `test`
 scripts in `console/package.json`, and `run build` prints `bun run` usage and
-exits 0 without building. The `install` script (`console/install.ts`) runs
-the real `bun install` with the flags it was handed, then the build, so the
+exits 0 without building — no script name reaches the package, so nothing in
+`console/` can make that line build. The `install` script
+(`console/install.ts`) runs the real `bun install` with the flags it was
+handed, then the build, printing a notice that it is doing so, so the
 sequence above always ends with `console/dist/` populated; a bare
 `bun install` inside `console/` reaches the same file as a lifecycle hook and
-skips it. To drive Bun's subcommands directly, use the `=` form:
+skips it. The build is witnessed by `console/tests/build.test.ts` under the
+`test` line, which bundles into a temporary directory and checks that
+`index.html` points at an emitted script and stylesheet. After editing
+sources, rebuild with the `=` form, which drives Bun's subcommands directly:
 `bun --cwd=console install --frozen-lockfile`, `bun --cwd=console test`,
 `bun --cwd=console run build`.
 
 `install` reads the committed `console/bun.lock` and refuses to drift from
-it. `test` runs `bun test` with `console/tests/setup.ts` preloaded (see
+it; the lockfile is written in the version-1 format so Bun 1.3 and 1.4 both
+accept it frozen (1.3 rejects a version-2 lockfile outright). `test` runs `bun test` with `console/tests/setup.ts` preloaded (see
 `console/bunfig.toml`), which registers `happy-dom` so component tests
 render with `@testing-library/react` and no browser; `console/src/lib/`
 tests stay free of the DOM. `build` runs `console/build.ts`, which hands
