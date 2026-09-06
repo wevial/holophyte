@@ -91,7 +91,8 @@ naming the parameter; a `before` no run has is 200 with no rows.
 `https://HOST/OWNER/REPO(.git)` or `git@HOST:OWNER/REPO(.git)` and the
 sha is an ancestor of `origin/main` in the target's checkout. It is null
 when the row has no `merge_sha`, the target has no `origin`, the remote
-is of another shape, or the sha has not reached `origin/main` (a local
+is of another shape (including one carrying a `?` query, `#` fragment
+or credentials, which would otherwise ride into the link), or the sha has not reached `origin/main` (a local
 merge never pushed, one rewritten on the way up, a fresh clone with no
 `origin/main` yet), so a link is only ever to a page that exists. The
 remote is read once per request and the ancestry checked once per row;

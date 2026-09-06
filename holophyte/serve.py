@@ -79,12 +79,16 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
 OCTET_STREAM = "application/octet-stream"
 # The two `origin` shapes a merge commit can link into: `https://HOST/OWNER/
 # REPO(.git)` and `git@HOST:OWNER/REPO(.git)`. Anything else is not a web
-# page the daemon can name, so its rows carry no link.
+# page the daemon can name, so its rows carry no link. Each segment is one
+# plain path segment: a `?`, `#`, `@`, `:` or whitespace in it would ride
+# into the link as a query, fragment or credential, so it disqualifies the
+# remote rather than being copied through.
+SEGMENT = r"[^/?#@:\s]+"
 REMOTE_SHAPES = (
-    re.compile(r"^https://(?P<host>[^/@]+)/(?P<owner>[^/]+)/"
-               r"(?P<repo>[^/]+?)(?:\.git)?/?$"),
-    re.compile(r"^git@(?P<host>[^:/]+):(?P<owner>[^/]+)/"
-               r"(?P<repo>[^/]+?)(?:\.git)?/?$"),
+    re.compile(rf"^https://(?P<host>{SEGMENT})/(?P<owner>{SEGMENT})/"
+               rf"(?P<repo>{SEGMENT}?)(?:\.git)?/?$"),
+    re.compile(rf"^git@(?P<host>{SEGMENT}):(?P<owner>{SEGMENT})/"
+               rf"(?P<repo>{SEGMENT}?)(?:\.git)?/?$"),
 )
 # `/runs/N` and `/runs/N/files`: one run by id. The id is captured as typed
 # so a non-integer is 400 rather than the static-file 404; both routes parse

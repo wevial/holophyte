@@ -156,6 +156,24 @@ class CommitUrlTests(ServeTestCase):
         self.assertEqual(code, 200)
         self.assertIsNone(body["rows"][0]["commit_url"])
 
+    def test_a_remote_with_a_query_or_fragment_does_not_link(self):
+        # A fragment or query in the remote would ride into the link and
+        # address the repository page, not the commit; the row links nowhere.
+        self.build_repository("https://github.com/example/repo#readme")
+        self.seed_merged([self.pushed])
+        self.start()
+        for remote in ("https://github.com/example/repo#readme",
+                       "https://github.com/example/repo?ref=main",
+                       "https://github.com/example?x/repo.git",
+                       "git@github.com:example/repo.git#readme"):
+            with self.subTest(remote=remote):
+                self.git("remote", "set-url", "origin", remote)
+                code, _, body = self.request("GET", "/shipped")
+                self.assertEqual(code, 200)
+                [row] = body["rows"]
+                self.assertEqual(row["merge_sha"], self.pushed)
+                self.assertIsNone(row["commit_url"])
+
 
 if __name__ == "__main__":
     import unittest
