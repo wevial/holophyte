@@ -1,6 +1,7 @@
 import logo from "../../../assets/menubar-template.svg";
 import { formatDuration } from "../lib/format";
 import { isSupervisorStale, portOf, projectName, supervisorLabel } from "../lib/derive";
+import type { ProjectChoice } from "../lib/attention";
 import type { PollState } from "../lib/poll";
 import type { Theme } from "../lib/theme";
 import { HostCard } from "./HostCard";
@@ -18,7 +19,7 @@ export const VIEWS: { id: View; label: string }[] = [
 ];
 
 /** `all`, or the selected project's path. */
-export type ProjectChoice = "all" | string;
+export type { ProjectChoice } from "../lib/attention";
 
 export function Rail({
   base,
