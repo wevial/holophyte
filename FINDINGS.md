@@ -653,25 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[311 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T07:44:55Z — KO-297
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/store/__init__.py:1653 [p2] [P2] [store/__init__.py:1653](/home/reviewer/candidate/store/__init__.py:1653) rejects valid uppercase hexadecimal SHAs. Reproduced with `55F6D7F0000000000000…
-- criteria:1 [p2] CRITERION 1: not met — valid full uppercase hexadecimal SHAs are refused. Given a ticket whose newest run is parked with a recorded `candidateSha`, when `repoin…
-
-## 2026-09-06T07:51:05Z — KO-297
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/store/__init__.py:1676 [p2] [store/__init__.py:1676](/home/reviewer/candidate/store/__init__.py:1676): `repoint()` omits the contract’s `resumePhase = merge_gate` condition. An in-memory…
-
-## 2026-09-06T07:58:32Z — KO-297
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T07:58:32Z — KO-297
-FAILED: terminal adjudication: FAIL; branch task/ko-297-repoint-ko-n-sha-moves-a-park preserved at 6acbfc6fbaec
-actual: 23.6 min · estimate: 25 min · rounds: 3
+[315 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T08:05:10Z — KO-297
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -757,3 +739,20 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T16:06:09Z — KO-303
 MERGED to main as 1c05b8a.
 actual: 2.8 min · estimate: 25 min · rounds: 1
+
+## 2026-09-06T16:19:28Z — KO-304
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/files.py:157 [p2] [P2] [holophyte/files.py:157](/home/reviewer/candidate/holophyte/files.py:157): `read_bytes()` follows untracked symlinks. Reproduced a link reporting 3 added…
+
+## 2026-09-06T16:27:00Z — KO-304
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:668 [p2] [P2 — Record the branch on approved-candidate reuse](/home/reviewer/candidate/holophyte/loop.py:668). `set_branch()` runs only inside `_cut_worktree()`, which…
+
+## 2026-09-06T16:34:10Z — KO-304
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T16:35:25Z — KO-304
+MERGED to main as d2b09dc.
+actual: 29.2 min · estimate: 30 min · rounds: 3
