@@ -1,4 +1,5 @@
 import { useRunDetail } from "../hooks/useRunDetail";
+import { useRunFiles, type RunFilesState } from "../hooks/useRunFiles";
 import { openFindings, severityCounts } from "../lib/findings";
 import { formatClock, formatSpan } from "../lib/format";
 import type { Fetch } from "../lib/poll";
@@ -6,8 +7,10 @@ import { phaseLabel } from "../lib/runs";
 import { boxRemaining, segments } from "../lib/timeline";
 import type { RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
+import { FilesTouched } from "./FilesTouched";
 import { FindingCard } from "./FindingCard";
 import { RoundTimeline } from "./RoundTimeline";
+import { RunLog } from "./RunLog";
 
 /** "Round R of MAX": R is the rounds seen (the first one is coming while
  *  none is), MAX the loop's cap from the wire, else the rounds seen. */
@@ -18,8 +21,9 @@ export function roundLine(body: RunDetailBody): string {
   return `Round ${current} of ${max} · ${phaseLabel(body.run.phase)}`;
 }
 
-/** The expanded run's card: header line, round timeline and the newest
- *  round's open findings, read from `/runs/N` on expand and each poll. */
+/** The expanded run's card: header line, round timeline, the newest
+ *  round's open findings and the run log from `/runs/N`, the files touched
+ *  from `/runs/N/files`; both read on expand and again each poll. */
 export function RunDetail({
   base,
   id,
@@ -35,6 +39,7 @@ export function RunDetail({
   deps?: { fetch: Fetch };
 }) {
   const { detail, error, loading } = useRunDetail(base, id, polls, deps);
+  const files = useRunFiles(base, id, polls, deps);
   return (
     <div data-detail className="pr-4 pb-[14px] pl-[44px]">
       {loading && <p className="text-[12px] text-muted">loading…</p>}
@@ -43,12 +48,12 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && <Card body={detail} now={now} />}
+      {detail && <Card body={detail} files={files} now={now} />}
     </div>
   );
 }
 
-function Card({ body, now }: { body: RunDetailBody; now: number }) {
+function Card({ body, files, now }: { body: RunDetailBody; files: RunFilesState; now: number }) {
   const { run, rounds } = body;
   const remaining = boxRemaining(run, now);
   const over = remaining < 0;
@@ -88,12 +93,13 @@ function Card({ body, now }: { body: RunDetailBody; now: number }) {
             </ul>
           )}
         </div>
-        <div data-files-slot className="min-w-0" />
+        <FilesTouched files={files.files} error={files.error} loading={files.loading} />
       </div>
       <footer className="mt-3 flex gap-2">
         <ActionButton>Kill run</ActionButton>
         <ActionButton>Requeue ticket</ActionButton>
       </footer>
+      <RunLog events={body.events} now={now} />
     </article>
   );
 }

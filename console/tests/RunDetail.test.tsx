@@ -4,7 +4,7 @@ import { Now } from "../src/components/Now";
 import { RunDetail } from "../src/components/RunDetail";
 import { formatClock } from "../src/lib/format";
 import type { Fetch } from "../src/lib/poll";
-import type { Run, RunDetailBody, Status } from "../src/lib/types";
+import type { Run, RunDetailBody, RunFilesBody, Status } from "../src/lib/types";
 import { NO_ATTENTION, fixture, settle } from "./harness";
 
 const MINUTE = 60_000;
@@ -54,13 +54,24 @@ const DETAIL: RunDetailBody = {
   events: [],
 };
 
-const answering = (body: RunDetailBody): Fetch => async (url) =>
-  url.endsWith("/runs/91") ? Response.json(body) : new Response("not found", { status: 404 });
+/** Files as `/runs/91/files` serves them: the branch has one change so far. */
+const FILES: RunFilesBody = {
+  files: [{ path: "holophyte/serve.py", status: "M", added: 12, deleted: 3 }],
+  total_added: 12,
+  total_deleted: 3,
+};
+
+const answering =
+  (body: RunDetailBody, files: Response | (() => Response) = () => Response.json(FILES)): Fetch =>
+  async (url) => {
+    if (url.endsWith("/runs/91/files")) return typeof files === "function" ? files() : files;
+    return url.endsWith("/runs/91") ? Response.json(body) : new Response("not found", { status: 404 });
+  };
 
 afterEach(cleanup);
 
-async function mount(body: RunDetailBody, now: number) {
-  render(<RunDetail base={BASE} id={91} now={now} polls={1} deps={{ fetch: answering(body) }} />);
+async function mount(body: RunDetailBody, now: number, files?: () => Response) {
+  render(<RunDetail base={BASE} id={91} now={now} polls={1} deps={{ fetch: answering(body, files) }} />);
   await settle();
 }
 
@@ -83,6 +94,8 @@ test("the newest round's findings are cards pilled must, should, nit with path:l
   ]);
   expect(within(cards[0]!).getByText("Lease is never released")).toBeTruthy();
   expect(document.querySelector("[data-severity-counts]")!.textContent).toBe("1 must · 1 should");
+  expect(document.querySelector("[data-files-label]")!.textContent).toBe("1 · +12 −3");
+  expect(document.querySelector("[data-file] [data-path]")!.textContent).toBe("holophyte/serve.py");
   expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();
   expect(document.querySelector("[data-started]")!.textContent).toBe(`started ${formatClock(T)} · writer`);
   const box = document.querySelector("[data-box]")!;
@@ -94,7 +107,8 @@ test("the newest round's findings are cards pilled must, should, nit with path:l
   expect(items[3]!.getAttribute("data-running")).toBe("true");
   expect(items[3]!.querySelector(".segment-running")).toBeTruthy();
   expect(items[0]!.querySelector(".segment-running")).toBeNull();
-  const buttons = screen.getAllByRole("button").map((button) => [button.textContent, (button as HTMLButtonElement).disabled]);
+  const actions = Array.from(document.querySelectorAll("footer button")) as HTMLButtonElement[];
+  const buttons = actions.map((button) => [button.textContent, button.disabled]);
   expect(buttons).toEqual([
     ["Kill run", true],
     ["Requeue ticket", true],
@@ -131,6 +145,20 @@ test("a newest round that passed shows no open findings and zero counts", async 
   expect(screen.getByText("No open findings")).toBeTruthy();
   expect(document.querySelector("[data-severity-counts]")!.textContent).toBe("0 must · 0 should");
   expect(document.querySelector("[data-finding]")).toBeNull();
+});
+
+test("a files endpoint answering 409 leaves one line, branch no longer on disk, and the rest of the card renders", async () => {
+  const gone = () => Response.json({ error: "branch task/ko-232 is not on disk", run: 91 }, { status: 409 });
+  await mount({ ...DETAIL, events: [{ at: T, kind: "claimed", summary: "claimed KO-232" }] }, T + 20 * MINUTE, gone);
+  const column = screen.getByRole("region", { name: "Files touched" });
+  expect(column.querySelector("[data-files-note]")!.textContent).toBe("branch no longer on disk");
+  expect(column.querySelector("[data-file]")).toBeNull();
+  expect(column.querySelector("[data-files-label]")).toBeNull();
+  expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();
+  expect(document.querySelectorAll("[data-finding]").length).toBe(3);
+  expect(document.querySelector("[data-log-summary]")!.textContent).toBe("1 event · last: claimed KO-232 20m ago");
+  expect(document.querySelectorAll("[data-log-row]").length).toBe(1);
+  expect(document.querySelector("[data-detail-error]")).toBeNull();
 });
 
 test("a 404 says the run is not in the store and the Floor row still collapses and re-expands", async () => {

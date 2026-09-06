@@ -21,6 +21,7 @@
   --line-faint: #eee9df;
   --track: #e9e4da;
   --well: #ebe6dc;
+  --list-box: #f4f1ea;
   --rail: #1d1b17;
 
   --ink: #1d1b17;
@@ -77,6 +78,7 @@
   --line-faint: #272219;
   --track: #2b261e;
   --well: #221e17;
+  --list-box: #221e17;
   --rail: #0e0d0a;
 
   --ink: #ece7dc;
@@ -137,6 +139,7 @@
     --line-faint: #272219;
     --track: #2b261e;
     --well: #221e17;
+    --list-box: #221e17;
     --rail: #0e0d0a;
 
     --ink: #ece7dc;
@@ -195,6 +198,7 @@
   --color-line-faint: var(--line-faint);
   --color-track: var(--track);
   --color-well: var(--well);
+  --color-list-box: var(--list-box);
   --color-rail: var(--rail);
 
   --color-ink: var(--ink);
