@@ -278,8 +278,11 @@ class CloseOutRegenerationTests(unittest.TestCase):
         merge_sha = self.git("log", "--merges", "-1", "--format=%H",
                              "main").strip()
         self.assertNotEqual(merge_sha, self.git("rev-parse", "main").strip())
+        # The branch is on the row since the loop records it at the
+        # worktree cut (KO-304), and the merge close-out deleted it.
         self.assertRegex(findings,
-                         rf"MERGED to main as {merge_sha[:7]}\.\n"
+                         rf"MERGED to main as {merge_sha[:7]}"
+                         r" \(branch task/ko-131-add-a-thing deleted\)\.\n"
                          r"actual: \d+\.\d min · "
                          r"estimate: 5 min · rounds: 2\n")
         conn = store.open(str(self.tgt.store_path))

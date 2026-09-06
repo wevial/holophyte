@@ -700,6 +700,26 @@ class LoopTests(LoopFixture):
                       " JOIN tickets t ON t.id = r.ticketId ORDER BY r.id"),
             [("KO-131", "failed"), ("KO-131", "failed"), ("KO-132", "merged")])
 
+    def test_branch_is_recorded_at_worktree_cut(self):
+        """`runs.branch` names the task branch before the first `working`
+        phase change lands, so a live run's files panel has a worktree to
+        read from the moment the run starts implementing."""
+        seen = []
+        real = holophyte.loop.set_phase
+
+        def watching(conn, run_id, phase, note=None):
+            (branch,) = conn.execute(
+                "SELECT branch FROM runs WHERE id = ?", (run_id,)).fetchone()
+            seen.append((phase, branch))
+            return real(conn, run_id, phase, note)
+
+        with patch.object(holophyte.loop, "set_phase", watching):
+            self.loop(Commit("the scripted work"), APPROVE)
+
+        first_working = next(entry for entry in seen if entry[0] == "working")
+        self.assertEqual(first_working, ("working", BRANCH))
+        self.assertEqual(self.read("SELECT branch FROM runs"), [(BRANCH,)])
+
 
 class WorktreeSetupLoopTests(LoopFixture):
     """`[worktree] setup` as a whole run walks it: real repo, real worktree.
@@ -1534,6 +1554,31 @@ class MergeApprovalTests(LoopFixture):
                          [("merged",)])
         self.assertEqual(self.read("SELECT activeRunId FROM projects"),
                          [(None,)])
+
+    def test_the_resumed_run_records_its_branch_before_the_gate(self):
+        """The resumed run reuses the candidate's worktree rather than
+        cutting one, and still names the branch before its first phase
+        change: the files panel reads `runs.branch` to find the worktree
+        on this path as on a fresh cut."""
+        self.configure('[merge]\napprove = "human"\n')
+        self.loop(Commit("the scripted work"), APPROVE)
+        holophyte.loop.approve(self.tgt, "KO-131", "ok", out=io.StringIO())
+        seen = []
+        real = holophyte.loop.set_phase
+
+        def watching(conn, run_id, phase, note=None):
+            (branch,) = conn.execute(
+                "SELECT branch FROM runs WHERE id = ?", (run_id,)).fetchone()
+            seen.append((run_id, phase, branch))
+            return real(conn, run_id, phase, note)
+
+        with patch.object(holophyte.loop, "set_phase", watching):
+            self.loop()
+
+        self.assertEqual(seen[0], (2, "merge_gate", BRANCH))
+        self.assertEqual(
+            self.read("SELECT id, branch, outcome FROM runs ORDER BY id"),
+            [(1, BRANCH, "abandoned"), (2, BRANCH, "merged")])
 
     def test_a_shepherd_release_of_a_local_park_does_not_merge(self):
         """`--shepherd` is not an approval. `store.shepherd()` refuses a run

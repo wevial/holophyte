@@ -951,6 +951,30 @@ def set_phase(conn, run_id, phase, note=None, now=None):
     return previous
 
 
+def set_branch(conn, run_id, branch):
+    """Record `branch` as the task branch of the live run `run_id`.
+
+    Written by the loop the moment it names the branch it is about to cut,
+    before the first phase change to `working`: the console's files panel
+    reads `runs.branch` to find the run's worktree, and a run whose branch
+    was only known at its end answered "no branch" for the whole phase the
+    panel exists to show (KO-304, run 127). An ended run is refused with
+    `RunEnded`, as `set_phase()` refuses it: the branch of a finished run is
+    history, and the close-out that ended it is the last word.
+    """
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
+            (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        ended_at, outcome, reason = row
+        if ended_at is not None:
+            raise RunEnded(run_id, outcome, reason)
+        conn.execute("UPDATE runs SET branch = ? WHERE id = ?",
+                     (branch, run_id))
+
+
 def heartbeat(conn, run_id, now=None):
     """Stamp `lastHeartbeat` on the live run `run_id`; return True if it did.
 

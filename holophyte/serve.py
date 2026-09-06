@@ -58,6 +58,7 @@ from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.supervisor import SWEEPABLE_PHASES
+from holophyte.target import worktree_path
 
 ADDRESS_SHAPE = "PORT|HOST:PORT"
 LOOPBACK = "127.0.0.1"
@@ -564,19 +565,25 @@ def run_files(target, run_id):
     """The `/runs/N/files` answer: `(http status, JSON-able body)`.
 
     The paths the run touched with a status letter and line counts, from
-    `holophyte.files.touched_files()` over the target's checkout: a merged
-    run's merge commit against its first parent, a live run's branch against
-    its merge base with main. `files` is sorted by path and capped at
-    `files.MAX_FILES` with `truncated` set past that; the totals are over the
-    whole diff. 400, 404 and 503 as `/runs/N`; 409 carrying `error` when the
-    run has no range to diff (no branch and no merge sha, or a ref deleted
-    by hand); 504 when git outlives its cap.
+    `holophyte.files.touched_files()`: a merged run's merge commit against
+    its first parent in the target's checkout; a live run's worktree (found
+    from its branch as the loop names it, `target.worktree_path()`) against
+    the merge base with main, uncommitted edits and untracked files
+    included, an empty list when nothing changed yet; a run whose branch
+    survives without a worktree, that branch against its merge base.
+    `files` is sorted by path and capped at `files.MAX_FILES` with
+    `truncated` set past that; the totals are over the whole diff. 400, 404
+    and 503 as `/runs/N`; 409 carrying `error` when the run has no range to
+    diff (no branch and no merge sha, or a branch with neither a worktree
+    nor a ref); 504 when git outlives its cap.
     """
     failed, run = locate_run(target, run_id)
     if failed is not None:
         return failed
+    worktree = worktree_path(target, run.branch) if run.branch else None
     try:
-        touched = touched_files(target.path, run.branch, run.mergeSha)
+        touched = touched_files(target.path, run.branch, run.mergeSha,
+                                worktree=worktree)
     except RangeError as error:
         return 409, {"error": str(error), "run": run.id}
     except subprocess.TimeoutExpired:
