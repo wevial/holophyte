@@ -63,10 +63,10 @@ from holophyte.reexec import reexec_self
 from holophyte.report import report_lines
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import (
-    MAX_ROUNDS,
     heartbeat_while,
     open_store,
     record_round,
+    review_round_cap,
     set_phase,
     warn_on_run,
 )
@@ -381,17 +381,19 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     sha = _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
                      start_sha, ticket, verify_cmd, budget_min)
 
-    # 2. review rounds (MAX_ROUNDS). Verify runs before each review and its
-    # result goes into the brief; every round that is not a clean approval —
-    # round 2 included — gets a fix round, because a round-2 blocker is the
-    # cheapest fix in the loop and used to need a human to close it out.
+    # 2. review rounds, up to the cap the candidate's size earns it. Verify
+    # runs before each review and its result goes into the brief; every
+    # round that is not a clean approval — the last one included — gets a
+    # fix round, because a last-round blocker is the cheapest fix in the
+    # loop and used to need a human to close it out.
+    cap = _review_cap(target, conn, run_id, provider, task_id, wt)
     sha, rnd, approved = _review_rounds(
         target, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
-        sha, ticket, verify_cmd, contracts, criteria, budget_min)
+        sha, ticket, verify_cmd, contracts, criteria, budget_min, cap)
     if not approved:
         _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
-                               verify_cmd, contracts)
+                               verify_cmd, contracts, cap)
 
     # 4. pre-merge verify (catches fix-round regressions), then merge. Both
     # happen under `merge_gate`: §4's gate node is the one edge out of a
@@ -728,17 +730,45 @@ def _verify_brief(verify_cmd, ok, out):
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n")
 
 
+def _changed_lines(wt):
+    """Insertions plus deletions of the candidate against its merge base
+    with main. The merge base rather than main itself, so a preserved
+    branch that already merged main is not charged for main's own lines.
+    Binary files show `-` in `--numstat` and count for nothing.
+    """
+    base = sh(["git", "merge-base", "main", "HEAD"], cwd=wt)
+    total = 0
+    for line in sh(["git", "diff", "--numstat", base, "HEAD"], cwd=wt).splitlines():
+        added, removed, *_ = line.split("\t")
+        total += sum(int(n) for n in (added, removed) if n.isdigit())
+    return total
+
+
+def _review_cap(target, conn, run_id, provider, task_id, wt):
+    """The review-round cap for this run, from the candidate's size and the
+    target's `[loop]` review keys (`review_round_cap()`). Measured once,
+    before round 1, and written to the run's narrative so the store says how
+    many rounds the candidate was given and why.
+    """
+    lines = _changed_lines(wt)
+    cap = review_round_cap(lines, loop_config(target))
+    print(f"[holo2] review cap {cap} for {lines} changed lines")
+    ledger(conn, run_id, task_id, "note",
+           f"Review cap {cap} for {lines} changed lines", provider)
+    return cap
+
+
 def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
-                   budget_min):
-    """The review phase: up to MAX_ROUNDS of verify, review and fix round.
+                   budget_min, cap):
+    """The review phase: up to `cap` rounds of verify, review and fix round.
 
     Returns `(sha, rnd, approved)`: the candidate's sha after the last fix
     round, the number of the round that ended the phase, and whether that
-    round was a clean approval. `approved` False means both rounds and their
-    fixes are spent and the terminal adjudication is next.
+    round was a clean approval. `approved` False means every round and its
+    fix is spent and the terminal adjudication is next.
     """
-    for rnd in range(1, MAX_ROUNDS + 1):
+    for rnd in range(1, cap + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
         with heartbeat_while(conn, run_id, beat_s):
             ok, out = run_verify(verify_cmd, wt, contracts)
@@ -816,9 +846,9 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
 
 def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                            branch, wt, beat_s, base_sha, sha, ticket,
-                           verify_cmd, contracts):
-    """3b. Terminal adjudication: both review rounds and their fixes are
-    spent, so one fresh independent run issues a bare verdict on the
+                           verify_cmd, contracts, cap):
+    """3b. Terminal adjudication: all `cap` review rounds and their fixes
+    are spent, so one fresh independent run issues a bare verdict on the
     final state. There is no further fix round under any outcome —
     anything but PASS preserves the branch and stops the loop.
     """
@@ -830,7 +860,7 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
               f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
         ledger(conn, run_id, task_id, "failure",
                f"FAILED verify before terminal adjudication after "
-               f"{MAX_ROUNDS} review rounds; branch {branch} preserved "
+               f"{cap} review rounds (the run's cap); branch {branch} preserved "
                f"at {sha}\n\n{out}", provider)
         raise RunFailure(f"verify failed before terminal adjudication;"
                          f" branch {branch} preserved at {sha[:12]}")
@@ -862,7 +892,7 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
     # The adjudication is a round of the run like the reviews before it —
     # numbered after them, so the run's rounds read in the order they
     # happened.
-    record_round(target, conn, run_id, MAX_ROUNDS + 1, "adjudicate", reply,
+    record_round(target, conn, run_id, cap + 1, "adjudicate", reply,
                  verify_cmd, ok, out, started_at=round_started)
     try:
         decision = review_runner.terminal_verdict(
@@ -873,14 +903,14 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
         print(f"[holo2] terminal adjudication: {decision}; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
         ledger(conn, run_id, task_id, "adjudication",
-               f"Terminal adjudication after {MAX_ROUNDS} review "
+               f"Terminal adjudication after {cap} review "
                f"rounds: {decision}; branch {branch} preserved at "
                f"{sha}\n\nAdjudicator reply:\n{reply}", provider)
         raise RunFailure(f"terminal adjudication: {decision};"
                          f" branch {branch} preserved at {sha[:12]}")
     print("[holo2] terminal adjudication: PASS")
     ledger(conn, run_id, task_id, "adjudication",
-           f"Terminal adjudication after {MAX_ROUNDS} review "
+           f"Terminal adjudication after {cap} review "
            f"rounds: PASS\n\nAdjudicator reply:\n{reply}", provider)
 
 

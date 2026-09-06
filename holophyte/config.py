@@ -573,15 +573,35 @@ def sweep_config(target):
 # its target at startup when no live one holds the supervisor lock. On by
 # default, so one command runs the factory; `false` for an operator whose
 # service manager runs the supervisor as a unit of its own.
+# `review_rounds`, `review_rounds_per_lines`, `review_rounds_max`: the
+# review-round cap, computed per run from the candidate's diff as
+# `min(review_rounds_max, review_rounds + lines // review_rounds_per_lines)`
+# (`holophyte.runs.review_round_cap()`); `review_rounds_per_lines = 0`
+# turns the scaling off. The base defaults to `MAX_ROUNDS`, so a target
+# with no table pays the two rounds it always has.
 LOOP_KEYS = {
     "stop_on_failure": True,
     "order": "identifier",
     "spawn_supervisor": True,
+    "review_rounds": 2,
+    "review_rounds_per_lines": 800,
+    "review_rounds_max": 4,
 }
 LOOP_ORDERS = ("identifier", "priority")
+# The keys that must be integers, and the least each may be: a run with no
+# review round is not a run, and a ceiling under the base is a cap the
+# formula could never reach. `review_rounds_per_lines` may be `0`, the
+# documented switch for "never scale".
+LOOP_INTEGER_FLOORS = {
+    "review_rounds": 1,
+    "review_rounds_per_lines": 0,
+    "review_rounds_max": 1,
+}
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
 LoopConfig = collections.namedtuple(
-    "LoopConfig", ("stop_on_failure", "order", "spawn_supervisor"))
+    "LoopConfig", ("stop_on_failure", "order", "spawn_supervisor",
+                   "review_rounds", "review_rounds_per_lines",
+                   "review_rounds_max"))
 
 
 def loop_config(target):
@@ -594,7 +614,11 @@ def loop_config(target):
     `1` and `"false"` are all truthy strings or numbers TOML never meant as
     the answer, and a value the factory quietly read as one would run a
     night nobody chose. `order` is one of `LOOP_ORDERS`, and only one of
-    those -- `"urgent"` or `1` names no sort the loop has. The refusal names
+    those -- `"urgent"` or `1` names no sort the loop has. The three
+    `review_rounds*` keys are integers at or above `LOOP_INTEGER_FLOORS`
+    (a boolean is refused too: TOML's `true` is not a count), and
+    `review_rounds_max` is at least `review_rounds`, or the cap is one the
+    formula could never reach. The refusal names
     the table, the key and the constraint, like a bad `[supervisor]`
     threshold. Keys this version does not know are refused by
     `check_config_keys()`.
@@ -616,7 +640,19 @@ def loop_config(target):
             raise SystemExit(
                 f"[holo2] {target.config_path}: [loop] {key} must be one of "
                 f"{allowed}, got {value!r}")
+        floor = LOOP_INTEGER_FLOORS.get(key)
+        if floor is not None and (isinstance(value, bool)
+                                  or not isinstance(value, int)
+                                  or value < floor):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [loop] {key} must be an "
+                f"integer of at least {floor}, got {value!r}")
         values[key] = value
+    if values["review_rounds_max"] < values["review_rounds"]:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [loop] review_rounds_max must be "
+            f"at least review_rounds ({values['review_rounds']}), got "
+            f"{values['review_rounds_max']!r}")
     return LoopConfig(**values)
 
 
