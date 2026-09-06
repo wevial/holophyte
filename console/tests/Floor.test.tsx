@@ -83,7 +83,8 @@ test("a heartbeat past the threshold is red bold and the stale supervisor names 
 
 test("clicking the first row then the second leaves only the second expanded", () => {
   const two: Status = { ...extended, runs: [RUN_52, { ...RUN_52, id: 53, ticket: "KO-220" }] };
-  render(<Now attention={NO_ATTENTION} status={two} project="all" />);
+  const missing = async () => new Response("not found", { status: 404 });
+  render(<Now attention={NO_ATTENTION} status={two} project="all" base="http://writer:7710" deps={{ fetch: missing }} />);
   const toggles = () => rows().map((row) => within(row).getByRole("button").getAttribute("aria-expanded"));
   expect(toggles()).toEqual(["false", "false"]);
   fireEvent.click(within(rows()[0]!).getByRole("button"));

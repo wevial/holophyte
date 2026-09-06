@@ -253,6 +253,18 @@
   }
 }
 
+/* The round timeline's running segment breathes; a reduced-motion
+   preference holds it steady. */
+.segment-running {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segment-running {
+    animation: none;
+  }
+}
+
 body {
   background: var(--paper);
   color: var(--ink);

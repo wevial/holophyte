@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { isStale } from "../lib/derive";
 import { formatDuration } from "../lib/format";
 import type { Run } from "../lib/types";
@@ -6,18 +7,20 @@ import { StrikePill } from "./StrikePill";
 import { TimeBoxBar } from "./TimeBoxBar";
 
 /** One live run: chevron, `#id`, ticket, title with its strike pill, phase,
- *  time box, heartbeat. Clicking toggles the detail slot beneath, which
- *  stays empty until the detail ticket fills it. */
+ *  time box, heartbeat. Clicking toggles the detail slot beneath, where
+ *  `detail` renders while the row is expanded. */
 export function RunRow({
   run,
   thresholds,
   expanded,
   onToggle,
+  detail,
 }: {
   run: Run;
   thresholds: { heartbeat_stale_ms: number; strikes: number };
   expanded: boolean;
   onToggle: () => void;
+  detail?: ReactNode;
 }) {
   const stale = isStale(run.heartbeat_age_ms, thresholds.heartbeat_stale_ms);
   return (
@@ -48,7 +51,7 @@ export function RunRow({
           hb {formatDuration(run.heartbeat_age_ms)}
         </span>
       </button>
-      {expanded && <div data-detail className="border-t border-line-faint px-4 py-3" />}
+      {expanded && (detail ?? <div data-detail className="border-t border-line-faint px-4 py-3" />)}
     </li>
   );
 }

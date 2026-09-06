@@ -44,3 +44,45 @@ export interface AttentionItem {
   level: string;
   [key: string]: unknown;
 }
+
+/** One review finding as the daemon decodes it from `reviewRounds.findings`. */
+export interface Finding {
+  path: string;
+  line?: number | null;
+  severity: string;
+  criterion?: string;
+  message: string;
+}
+
+/** One review round of `/runs/N`, oldest first on the wire. */
+export interface Round {
+  round: number;
+  started_ms: number;
+  ended_ms: number | null;
+  verdict: "pass" | "changes_requested" | "error" | string;
+  reviewer_model?: string | null;
+  findings: Finding[];
+}
+
+/** The daemon's `/runs/N` body (holophyte/serve.py `run_detail()`). */
+export interface RunDetailBody {
+  run: {
+    id: number;
+    ticket: string;
+    title?: string | null;
+    phase: string;
+    attempt?: number;
+    started_ms: number;
+    ended_ms: number | null;
+    outcome?: string | null;
+    time_box_ms: number;
+    branch?: string | null;
+    host: string | null;
+    heartbeat_age_ms?: number | null;
+    merge_sha?: string | null;
+    /** The loop's review-round cap; a body without it falls back to the rounds seen. */
+    max_rounds?: number;
+  };
+  rounds: Round[];
+  events: { at: number; kind: string; summary: string }[];
+}

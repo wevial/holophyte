@@ -37,7 +37,14 @@ export function App({ base = servingBase(), pollDeps = defaultPollDeps }: { base
       <main className="min-w-0 flex-1 overflow-y-auto">
         <h1 className="px-6 pt-6 pb-4 text-2xl font-semibold">{heading}</h1>
         {view === "now" && poll.status && poll.attention ? (
-          <Now attention={poll.attention} status={poll.status} project={project} />
+          <Now
+            attention={poll.attention}
+            status={poll.status}
+            project={project}
+            base={base}
+            polls={poll.polls}
+            deps={pollDeps}
+          />
         ) : (
           <p className="px-6 text-[13px] text-muted">Nothing to show here yet.</p>
         )}
