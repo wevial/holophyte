@@ -757,6 +757,11 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                   "witnessed; treating as REQUEST_CHANGES")
         if (ok and not unwitnessed
                 and review_runner.terminal_verdict(verdict) == "APPROVE"):
+            # The approving round is a round like any other: the narrative
+            # of a clean merge is a `round` entry and then a `merge` one.
+            ledger(conn, run_id, task_id, "round",
+                   f"Round {rnd}: APPROVE\nReviewer verdict:\n{verdict}",
+                   provider)
             return sha, rnd, True
 
         # 3. implementer addresses findings (same branch, new commit)

@@ -224,12 +224,10 @@ class LoopTests(LoopFixture):
 
     # --- the ledger: store row first, board comment second ---------------
 
-    def test_the_ledger_row_is_in_the_store_before_its_board_comment(self):
-        """A round and a merge each land in `ledger` -- in that order, for
-        this run -- and each row is committed before the comment that
-        projects it is posted: the provider stub reads the table over its
-        own connection at every `comment()` and finds the entry already
-        there. The comment is the projection; the row is the record."""
+    def _ledger_reading_provider(self):
+        """A provider stub that, at every `comment()`, reads `ledger` over
+        its own connection before posting, so the test can see what the
+        store held at the moment each comment went out."""
         db = self.db
 
         class ReadingProvider(StubProvider):
@@ -245,6 +243,34 @@ class LoopTests(LoopFixture):
 
         provider = ReadingProvider(a_task())
         provider.seen = []
+        return provider
+
+    def test_a_clean_approval_records_its_round_before_the_merge(self):
+        """A run approved on its first review still has a `round` entry --
+        the approving round -- ahead of its `merge` entry, and each row is in
+        the store before the comment that projects it."""
+        provider = self._ledger_reading_provider()
+        self.loop(Commit("first cut"), APPROVE, provider=provider)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        (run_id,) = self.read("SELECT id FROM runs")[0]
+        self.assertEqual(
+            self.read("SELECT runId, kind FROM ledger ORDER BY at, id"),
+            [(run_id, "round"), (run_id, "merge")])
+        self.assertEqual([len(seen) for seen in provider.seen], [1, 2])
+        self.assertEqual([seen[-1][0] for seen in provider.seen],
+                         ["round", "merge"])
+        for (_task, body), seen in zip(provider.comments, provider.seen):
+            self.assertIn(seen[-1][1], body)
+
+    def test_the_ledger_row_is_in_the_store_before_its_board_comment(self):
+        """A findings round, the approving round and the merge each land in
+        `ledger` -- in that order, for this run -- and each row is committed
+        before the comment that projects it is posted: the provider stub
+        reads the table over its own connection at every `comment()` and
+        finds the entry already there. The comment is the projection; the
+        row is the record."""
+        provider = self._ledger_reading_provider()
         self.loop(Commit("first cut"), REQUEST_CHANGES, Commit("fix round 1"),
                   APPROVE, provider=provider)
 
@@ -253,16 +279,18 @@ class LoopTests(LoopFixture):
         entries = self.read(
             "SELECT runId, kind, source FROM ledger ORDER BY at, id")
         self.assertEqual(entries, [(run_id, "round", "loop"),
+                                   (run_id, "round", "loop"),
                                    (run_id, "merge", "loop")])
-        # Two comments, and at each one the table already held the entry the
-        # comment carries: one row at the round's comment, two at the merge's.
-        self.assertEqual(len(provider.comments), 2)
-        self.assertEqual([len(seen) for seen in provider.seen], [1, 2])
+        # Three comments, and at each one the table already held the entry
+        # the comment carries: one row at the findings round's comment, two
+        # at the approving round's, three at the merge's.
+        self.assertEqual(len(provider.comments), 3)
+        self.assertEqual([len(seen) for seen in provider.seen], [1, 2, 3])
         for (_task, body), seen in zip(provider.comments, provider.seen):
             kind, text = seen[-1]
             self.assertIn(text, body)
         self.assertEqual([seen[-1][0] for seen in provider.seen],
-                         ["round", "merge"])
+                         ["round", "round", "merge"])
 
     # --- both rounds spent, then a terminal PASS -------------------------
 
@@ -347,7 +375,8 @@ class LoopTests(LoopFixture):
         self.assertIn("the scripted work", self.subjects(BRANCH))
         self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
-        (_, body), = provider.comments
+        # The approving round's comment precedes the refusal's.
+        (_, body) = provider.comments[-1]
         self.assertIn("MERGE REFUSED", body)
         for field in ("title", "acceptanceCriteria"):
             self.assertIn(field, body)
@@ -1303,7 +1332,8 @@ class MergeApprovalTests(LoopFixture):
             self.read("SELECT status, blockedQuestion FROM tickets"),
             [("blocked_on_operator", "merge?")])
         sha = self.git("rev-parse", BRANCH).strip()
-        (_, body), = provider.comments
+        # The approving round's comment precedes the parking notice.
+        (_, body) = provider.comments[-1]
         self.assertIn("AWAITING MERGE APPROVAL", body)
         self.assertIn(BRANCH, body)
         self.assertIn(sha, body)
