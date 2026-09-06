@@ -329,6 +329,16 @@ CREATE TABLE IF NOT EXISTS interventions (
 # run's narrative kept in the store ahead of its board comment (KO-250).
 SCHEMA_VERSION = 6
 
+# How long a connection waits for another writer's lock before raising
+# `database is locked`. WAL admits one writer at a time, and the loop's
+# heartbeat thread, its phase changes and the supervisor's sweep are three
+# writers on one file; the sqlite3 default of five seconds is shorter than a
+# sweep under load, and run 103 (KO-273) died at a phase change on exactly
+# that timing. Both `open()` and `store.read.open_readonly()` open with this
+# value so the two agree. A lock held past it still raises; nothing here
+# masks a real deadlock. Patch it below a second to witness the bound.
+BUSY_TIMEOUT_S = 30
+
 # Every join the loop, the sweep and the FINDINGS renderer perform goes
 # through one of these foreign keys; without an index each is a full
 # scan of the child table. `ledger_runId` is for the read view, which is
@@ -359,7 +369,7 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
     Shadows the builtin `open` inside this module only; callers say
     `store.open(...)`.
     """
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S)
     # Before anything that writes, including the WAL switch below: a store a
     # newer module stamped is refused without touching it, so the file is
     # still exactly what that newer build left for it to reopen.
@@ -373,6 +383,10 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
     # Referential integrity is off by default in SQLite and is per-connection,
     # so it has to be asserted on every open, not once at init().
     conn.execute("PRAGMA foreign_keys = ON")
+    # The connect() timeout again, as the pragma: it is the value a
+    # `BEGIN IMMEDIATE` waits for on the write lock, and stating it on the
+    # connection keeps it from depending on how sqlite3 applied the argument.
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_S * 1000}")
     mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
     if mode.lower() != "wal":
         conn.close()
