@@ -38,9 +38,7 @@ export function App({
   /** Now opens as soon as any host record exists: a daemon that never
    *  answered is itself the page's most urgent row. */
   const polled = hosts.length > 0;
-  const shownBases = visibleHosts(hosts, project)
-    .filter((host) => host.status != null)
-    .map((host) => host.base);
+  const shownHosts = visibleHosts(hosts, project).filter((host) => host.status != null);
   const daemonNow = hosts.reduce((latest, host) => Math.max(latest, host.status?.now ?? 0), 0) || pollDeps.now();
   const heading = VIEWS.find((candidate) => candidate.id === view)?.label ?? view;
   return (
@@ -59,7 +57,7 @@ export function App({
           <h1 className="px-6 pt-6 pb-4 text-2xl font-semibold">{heading}</h1>
         )}
         {view === "shipped" ? (
-          <Shipped bases={shownBases} now={daemonNow} polls={polls} deps={pollDeps} />
+          <Shipped hosts={shownHosts} now={daemonNow} polls={polls} deps={pollDeps} />
         ) : view === "hosts" ? (
           <Hosts hosts={hosts} project={project} now={now} />
         ) : view === "now" && polled ? (

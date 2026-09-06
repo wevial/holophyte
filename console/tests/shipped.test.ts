@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
-import { boxFill, boxRatio, deltaLabel, deltaTone, groupByDay, medianRounds, minutesLabel, withinDays } from "../src/lib/shipped";
+import { boxFill, boxRatio, deltaLabel, deltaTone, groupByDay, medianRounds, minutesLabel, tagRows, withinDays } from "../src/lib/shipped";
 import type { ShippedBody } from "../src/lib/types";
 import { fixture } from "./harness";
 
 const threeDays = await fixture<{ now: number; shipped: ShippedBody }>("shipped_three_days.json");
+const ROWS = tagRows({ base: "http://writer:7710", project: "/srv/dev/writer" }, threeDays.shipped.rows);
 
 test("rows spanning three days group newest-first under Today, Yesterday and the bare date, in the daemon's day", () => {
-  const groups = groupByDay(threeDays.shipped.rows, threeDays.now, "UTC");
+  const groups = groupByDay(ROWS, threeDays.now, "UTC");
   expect(groups.map((group) => group.label)).toEqual(["Today · Sat Sep 5", "Yesterday · Fri Sep 4", "Thu Sep 3"]);
   expect(groups.map((group) => group.daysAgo)).toEqual([0, 1, 2]);
   expect(groups.map((group) => group.rows.map((row) => row.id))).toEqual([[236, 235, 234], [228, 227], [224, 223]]);
@@ -14,7 +15,7 @@ test("rows spanning three days group newest-first under Today, Yesterday and the
 });
 
 test("the day is the viewer's local one: 23:30 UTC on the 4th is the 5th in Tokyo", () => {
-  const late = { ...threeDays.shipped.rows[0]!, ended_ms: Date.UTC(2026, 8, 4, 23, 30) };
+  const late = { ...ROWS[0]!, ended_ms: Date.UTC(2026, 8, 4, 23, 30) };
   expect(groupByDay([late], threeDays.now, "UTC")[0]!.label).toBe("Yesterday · Fri Sep 4");
   expect(groupByDay([late], threeDays.now, "Asia/Tokyo")[0]!.label).toBe("Today · Sat Sep 5");
 });
@@ -41,4 +42,16 @@ test("medianRounds is the middle value, the mean of the middle two when even, nu
   expect(medianRounds([{ rounds: 1 }, { rounds: 3 }])).toBe(2);
   expect(medianRounds([{ rounds: 1 }, { rounds: 1 }, { rounds: 3 }, { rounds: 5 }])).toBe(2);
   expect(medianRounds([])).toBeNull();
+});
+
+test("rows from two daemons each carry the name of that daemon's /status project", () => {
+  const wire = threeDays.shipped.rows.map((row) => ({ ...row, host: "writer-1" }));
+  const merged = [
+    ...tagRows({ base: "http://writer:7710", project: "/srv/dev/holophyte" }, wire.slice(0, 2)),
+    ...tagRows({ base: "http://writer:7711", project: "/srv/dev/croton-mcp/" }, wire.slice(2, 4)),
+  ];
+  expect(merged.map((row) => row.project)).toEqual(["holophyte", "holophyte", "croton-mcp", "croton-mcp"]);
+  expect(merged.map((row) => row.daemon)).toEqual(["http://writer:7710", "http://writer:7710", "http://writer:7711", "http://writer:7711"]);
+  expect(merged.map((row) => row.id)).toEqual(wire.slice(0, 4).map((row) => row.id));
+  expect(tagRows({ base: "http://writer:7712", project: null }, wire.slice(0, 1))[0]!.project).toBe("");
 });

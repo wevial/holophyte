@@ -1,4 +1,14 @@
-import type { ShippedRow } from "./types";
+import { projectName } from "./derive";
+import type { ShippedRow, ShippedWireRow } from "./types";
+
+/** One daemon's `/shipped` rows stamped for the ledger: `daemon` is the
+ *  base they came from, so two daemons' ids never collide in the table,
+ *  and `project` is the name of the project that daemon's `/status`
+ *  reports (its last path segment), blank before the first good answer. */
+export function tagRows(host: { base: string; project: string | null }, rows: ShippedWireRow[]): ShippedRow[] {
+  const project = host.project == null ? "" : projectName(host.project);
+  return rows.map((row) => ({ ...row, daemon: host.base, project }));
+}
 
 const DAY_MS = 86_400_000;
 

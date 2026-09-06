@@ -56,7 +56,7 @@ function Row({ row }: { row: ShippedRow }) {
       <span className="font-mono text-[12px] text-muted">{formatClock(row.ended_ms)}</span>
       <span className="truncate font-mono text-[13px] font-semibold text-ink">{row.ticket}</span>
       <span className="truncate text-[13px] text-body">{row.title ?? ""}</span>
-      <span className="truncate text-[13px] text-muted">{row.host ?? ""}</span>
+      <span className="truncate text-[13px] text-muted">{row.project}</span>
       <span className="font-mono text-[13px] text-body">{row.rounds}</span>
       <span className="font-mono text-[13px] text-body">{row.findings}</span>
       <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} />

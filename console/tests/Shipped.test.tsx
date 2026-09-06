@@ -4,13 +4,15 @@ import { Shipped } from "../src/components/Shipped";
 import { ShippedTable } from "../src/components/ShippedTable";
 import { formatClock } from "../src/lib/format";
 import type { Fetch } from "../src/lib/poll";
+import { tagRows } from "../src/lib/shipped";
 import type { ShippedBody, ShippedRow } from "../src/lib/types";
 import { fixture, settle } from "./harness";
 
 const BASE = "http://writer:7710";
+const HOST = { base: BASE, project: "/srv/dev/writer" };
 const threeDays = await fixture<{ now: number; shipped: ShippedBody }>("shipped_three_days.json");
 const { now } = threeDays;
-const ROWS = threeDays.shipped.rows;
+const ROWS = tagRows(HOST, threeDays.shipped.rows);
 
 afterEach(cleanup);
 
@@ -47,6 +49,14 @@ test("the table renders three day sub-headers with their merge counts and the ro
   expect(within(first as HTMLElement).getByText("writer")).toBeTruthy();
   expect(first.querySelector("[data-sha]")!.textContent).toBe("3f9c2ab");
   expect(first.querySelector("[data-sha]")!.className).toContain("text-link");
+});
+
+test("the Project cell names the daemon's project, and the host label appears nowhere in the row", () => {
+  const row: ShippedRow = { ...ROWS[0]!, host: "writer-1", project: "holophyte" };
+  render(<ShippedTable rows={[row]} now={now} tz="UTC" />);
+  const cells = Array.from(document.querySelector("[data-row='236']")!.children).map((cell) => cell.textContent);
+  expect(cells[3]).toBe("holophyte");
+  expect(cells.some((text) => text!.includes("writer-1"))).toBe(false);
 });
 
 test("days=1 keeps only today's group", () => {
@@ -87,7 +97,7 @@ test("Load older asks for before= the smallest id shown and the page appends und
   const first = { rows: ROWS.slice(0, 4), limit: 4, next_before: 228 };
   const older = { rows: ROWS.slice(4), limit: 4, next_before: null };
   const { fetchImpl, requests } = pagedFetch({ "": first, "228": older });
-  render(<Shipped bases={[BASE]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
+  render(<Shipped hosts={[HOST]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
   await act(settle);
   expect(requests).toEqual([`${BASE}/shipped?limit=4`]);
   expect(dayHeaders()).toEqual([
@@ -112,13 +122,13 @@ test("a poll after the ledger is exhausted keeps Load older gone and the subtitl
   const first = { rows: ROWS.slice(0, 4), limit: 4, next_before: 228 };
   const older = { rows: ROWS.slice(4), limit: 4, next_before: null };
   const { fetchImpl, requests } = pagedFetch({ "": first, "228": older });
-  const view = render(<Shipped bases={[BASE]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
+  const view = render(<Shipped hosts={[HOST]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
   await act(settle);
   fireEvent.click(screen.getByRole("button", { name: "Load older" }));
   await act(settle);
   expect(screen.queryByRole("button", { name: "Load older" })).toBeNull();
 
-  view.rerender(<Shipped bases={[BASE]} now={now} polls={1} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
+  view.rerender(<Shipped hosts={[HOST]} now={now} polls={1} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
   await act(settle);
   expect(requests).toEqual([
     `${BASE}/shipped?limit=4`,
@@ -132,7 +142,7 @@ test("a poll after the ledger is exhausted keeps Load older gone and the subtitl
 
 test("an empty page reads Nothing merged yet with no Load older", async () => {
   const { fetchImpl } = pagedFetch({ "": { rows: [], limit: 50, next_before: null } });
-  render(<Shipped bases={[BASE]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" />);
+  render(<Shipped hosts={[HOST]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" />);
   await act(settle);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Shipped");
   expect(screen.getByText("Nothing merged yet")).toBeTruthy();
