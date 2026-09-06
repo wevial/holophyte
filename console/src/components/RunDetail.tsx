@@ -4,7 +4,7 @@ import { openFindings, severityCounts } from "../lib/findings";
 import { formatClock, formatSpan } from "../lib/format";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel } from "../lib/runs";
-import { boxRemaining, segments } from "../lib/timeline";
+import { boxRemaining, buildTimeline } from "../lib/timeline";
 import type { RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
 import { FilesTouched } from "./FilesTouched";
@@ -78,7 +78,7 @@ function Card({ body, files, now }: { body: RunDetailBody; files: RunFilesState;
       </header>
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">
         <div className="min-w-0">
-          <RoundTimeline segments={segments({ ...run, rounds }, now)} />
+          <RoundTimeline segments={buildTimeline({ ...run, rounds, events: body.events }, now)} />
           <div className="mt-4 flex items-baseline gap-3">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Open findings</span>
             <span data-severity-counts className="font-mono text-[12px] text-muted">

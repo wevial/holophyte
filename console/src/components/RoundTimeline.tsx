@@ -6,6 +6,7 @@ const FILLS: Record<SegmentKind, string> = {
   review: "bg-review",
   fix: "bg-accent",
   verify: "bg-ok",
+  merge: "bg-ok",
 };
 
 /** Gap between bar items, in px; each item gives up its share of the
