@@ -110,8 +110,16 @@ test("past the box the header reads 10m 00s over the box in the bad tone and the
   const timeline = screen.getByRole("list", { name: "Round timeline" });
   const items = Array.from(timeline.children) as HTMLElement[];
   expect(items.map((item) => item.getAttribute("data-segment"))).toEqual(["implement", "review", "fix", "review"]);
-  const widths = items.map((item) => parseFloat(item.style.width));
-  expect(widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(100, 6);
+  // Each item is `calc(P% - Qpx)`: the percentages sum to 100 and the px
+  // subtractions sum to the three 3px gaps, so items plus gaps fit the bar.
+  const parts = items.map((item) => {
+    const match = /^calc\((\S+)% - (\S+)px\)$/.exec(item.style.width);
+    expect(match).toBeTruthy();
+    return { percent: parseFloat(match![1]!), px: parseFloat(match![2]!) };
+  });
+  expect(parts.reduce((sum, part) => sum + part.percent, 0)).toBeCloseTo(100, 6);
+  expect(parts.reduce((sum, part) => sum + part.px, 0)).toBeCloseTo(3 * (items.length - 1), 6);
+  expect(timeline.style.gap).toBe("3px");
 });
 
 test("a newest round that passed shows no open findings and zero counts", async () => {
