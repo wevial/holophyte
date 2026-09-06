@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[294 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T05:41:16Z — KO-277
-MERGED to main as a1190c2.
-actual: 18.3 min · estimate: 30 min · rounds: 3
-
-## 2026-09-06T05:57:23Z — KO-259
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:407 [p1] [P1] **Resumed approvals bypass PR mode** — [holophyte/loop.py:407](/home/reviewer/candidate/holophyte/loop.py:407). The mode check only covers fresh runs; `_…
+[296 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T06:04:22Z — KO-259
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -761,3 +752,10 @@ actual: 13.7 min · estimate: 25 min · rounds: 2
 ## 2026-09-06T14:36:43Z — KO-262
 FAILED: cannot reuse leftover worktree: preserved commits on task/ko-262-merge-mode-pr-2-2-the-shepher conflict with a main that moved on; a human resolves the merge before this ticket is run again
 actual: 0.0 min · estimate: 30 min · rounds: 0
+
+## 2026-09-06T14:49:05Z — KO-299
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T14:50:13Z — KO-299
+MERGED to main as aae62f3.
+actual: 11.7 min · estimate: 30 min · rounds: 1
