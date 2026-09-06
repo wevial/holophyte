@@ -95,13 +95,13 @@ function Card({ body, files, now }: { body: RunDetailBody; files: RunFilesState;
             </ul>
           )}
         </div>
-        <FilesTouched files={files.files} error={files.error} loading={files.loading} />
+        <FilesTouched files={files.files} error={files.error} status={files.status} loading={files.loading} />
       </div>
       <footer className="mt-3 flex gap-2">
         <ActionButton>Kill run</ActionButton>
         <ActionButton>Requeue ticket</ActionButton>
       </footer>
-      <RunLog events={body.events} now={now} />
+      <RunLog events={body.events} rounds={rounds} now={now} />
     </article>
   );
 }
