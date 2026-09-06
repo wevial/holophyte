@@ -57,7 +57,7 @@ export function Rail({
     >
       <div className="flex items-center gap-2 px-2">
         <img src={logo} alt="" width={20} height={20} className="size-5 invert" />
-        <span className="text-[15px] font-bold text-paper">Holophyte</span>
+        <span className="text-[15px] font-bold text-rail-fg">Holophyte</span>
       </div>
 
       <RailGroup label="Projects">

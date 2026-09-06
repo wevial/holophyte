@@ -28,6 +28,7 @@
   --muted: #6e675c;
   --faint: #8a8275;
 
+  --rail-fg: #f4f1ea;
   --rail-text: #c9c1b3;
   --rail-sub: #a89f90;
   --rail-faint: #8a8275;
@@ -75,6 +76,7 @@
   --muted: #9a9284;
   --faint: #7a7367;
 
+  --rail-fg: #f4f1ea;
   --rail-text: #c9c1b3;
   --rail-sub: #a89f90;
   --rail-faint: #8a8275;
@@ -124,6 +126,7 @@
     --muted: #9a9284;
     --faint: #7a7367;
 
+    --rail-fg: #f4f1ea;
     --rail-text: #c9c1b3;
     --rail-sub: #a89f90;
     --rail-faint: #8a8275;
@@ -171,6 +174,7 @@
   --color-muted: var(--muted);
   --color-faint: var(--faint);
 
+  --color-rail-fg: var(--rail-fg);
   --color-rail-text: var(--rail-text);
   --color-rail-sub: var(--rail-sub);
   --color-rail-faint: var(--rail-faint);

@@ -13,7 +13,7 @@ export function ThemeToggle({ theme, onChange }: { theme: Theme; onChange: (them
           aria-pressed={theme === option}
           onClick={() => onChange(option)}
           className={`flex-1 rounded-button px-2 py-1 text-[11px] font-semibold ${
-            theme === option ? "bg-rail-selected text-paper" : "text-rail-text hover:bg-rail-card"
+            theme === option ? "bg-rail-selected text-rail-fg" : "text-rail-text hover:bg-rail-card"
           }`}
         >
           {LABELS[option]}

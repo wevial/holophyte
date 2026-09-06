@@ -18,7 +18,7 @@ export function ViewButton({
       aria-pressed={selected}
       onClick={onClick}
       className={`flex w-full items-center justify-between rounded-button p-2 text-left text-[13px] font-semibold ${
-        selected ? "bg-rail-selected text-paper" : "text-rail-text hover:bg-rail-card"
+        selected ? "bg-rail-selected text-rail-fg" : "text-rail-text hover:bg-rail-card"
       }`}
     >
       <span>{children}</span>

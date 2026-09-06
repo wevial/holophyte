@@ -7,6 +7,8 @@ import { NO_ATTENTION, fakeDeps, fixture, settle, stubFetch } from "./harness";
 
 const BASE = "http://writer:7710";
 
+const themeCss = await Bun.file(new URL("../src/theme.css", import.meta.url)).text();
+
 const working = await fixture<Status>("working.json");
 const idle = await fixture<Status>("idle.json");
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
@@ -17,11 +19,31 @@ async function mount(bodies: { status: Status; attention: Attention }) {
   await act(settle);
 }
 
+/** happy-dom's device settings; `prefersColorScheme` feeds its
+ *  `@media (prefers-color-scheme)` evaluation. */
+const device = (window as unknown as { happyDOM: { settings: { device: { prefersColorScheme: string } } } })
+  .happyDOM.settings.device;
+
+/** Attach theme.css (minus the Tailwind import, which the plugin resolves at
+ *  build time) so `getComputedStyle` answers with the live token values. */
+function loadThemeCss() {
+  const style = document.createElement("style");
+  style.textContent = themeCss.replace(/@import[^;]*;/, "");
+  document.head.appendChild(style);
+  return style;
+}
+
+const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  device.prefersColorScheme = "light";
+  document.head.querySelectorAll("style").forEach((style) => style.remove());
+});
 
 test("the rail lists the project from the daemon's path and the four views", async () => {
   await mount({ status: working, attention: NO_ATTENTION });
@@ -72,13 +94,21 @@ test("with nothing needing attention the Now button has no badge", async () => {
   expect(screen.getByRole("region", { name: "Hosts" }).querySelector("[data-stale]")).toBeNull();
 });
 
-test("no stored theme leaves the document unstamped; choosing Light stamps and persists it", async () => {
+test("no stored theme under a dark system preference leaves the document unstamped with the dark tokens; choosing Light stamps and persists it", async () => {
+  device.prefersColorScheme = "dark";
+  loadThemeCss();
   await mount({ status: idle, attention: NO_ATTENTION });
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   expect(screen.getByRole("button", { name: "System" }).getAttribute("aria-pressed")).toBe("true");
+  // The dark set applies through the media query alone.
+  expect(token("--paper")).toBe("#141210");
+  expect(token("--ink")).toBe("#ece7dc");
   fireEvent.click(screen.getByRole("button", { name: "Light" }));
   expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   expect(localStorage.getItem(THEME_KEY)).toBe("light");
+  // The stamp overrides the system preference: paper tokens now apply.
+  expect(token("--paper")).toBe("#f4f1ea");
+  expect(token("--ink")).toBe("#1d1b17");
   expect(screen.getByRole("button", { name: "Light" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "System" }));
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
