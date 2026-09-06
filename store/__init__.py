@@ -971,7 +971,7 @@ def run_phase(conn, run_id):
 EVENT_LEVELS = ("narrative", "detail")
 
 
-def _append_event(conn, run_id, level, kind, summary, at):
+def _append_event(conn, run_id, level, kind, summary, at, payload=None):
     """Append one row to run `run_id`'s event stream; return its `seq`.
 
     No transaction of its own, deliberately: an event describes a thing that
@@ -986,22 +986,24 @@ def _append_event(conn, run_id, level, kind, summary, at):
         (run_id,),
     ).fetchone()
     conn.execute(
-        "INSERT INTO runEvents (runId, seq, level, kind, summary, at)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (run_id, seq, level, kind, summary, at),
+        "INSERT INTO runEvents (runId, seq, level, kind, summary, payload, at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (run_id, seq, level, kind, summary, payload, at),
     )
     return seq
 
 
-def record_event(conn, run_id, kind, summary, level="narrative", now=None):
+def record_event(conn, run_id, kind, summary, level="narrative", now=None,
+                 payload=None):
     """Append one event of `kind` to run `run_id`'s stream; return its `seq`.
 
     `set_phase()` writes the stream's `phase_change` rows and is the only
     writer of a run's phase; this is how the loop writes the rows that are not
     transitions — a best-effort projection that failed, say. `kind` is free
     text because §2's column is a label rather than an enum, `level` is one of
-    §2's two, and `payload` stays NULL since that is a `detail`-row field and
-    nothing writing through here has one.
+    §2's two, and `payload` is the `detail`-row field: the text behind the
+    summary (a crash's traceback, say), refused on a `narrative` row so the
+    stream's two levels keep meaning what §2 says they mean.
 
     An unknown `run_id` is a caller bug and raises `ValueError`, the way
     `set_phase()` and `run_phase()` answer the same mistake — the foreign key
@@ -1011,13 +1013,16 @@ def record_event(conn, run_id, kind, summary, level="narrative", now=None):
     """
     if level not in EVENT_LEVELS:
         raise ValueError(f"unknown event level {level!r}")
+    if payload is not None and level != "detail":
+        raise ValueError("payload is a detail-level field")
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
         if conn.execute("SELECT 1 FROM runs WHERE id = ?",
                         (run_id,)).fetchone() is None:
             raise ValueError(f"no run {run_id}")
-        return _append_event(conn, run_id, level, kind, summary, now)
+        return _append_event(conn, run_id, level, kind, summary, now,
+                             payload=payload)
 
 
 # The `runs.phase` a run ends in for each `runs.outcome`, so `release()` cannot
