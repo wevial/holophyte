@@ -22,6 +22,16 @@ are mounted; the copy and all reviewer state are removed afterward. Outbound
 network remains enabled because Codex uses remote inference, but no GitHub,
 SSH, Linear, Docker, or unrelated host credentials are exposed.
 
+Two directories matter inside the container. `/workspace` is the read-only
+staged checkout: the identity check, the write probe and the `PREFLIGHT_OK`
+line all run there, and nothing ever writes to it. Once preflight passes the
+script copies the whole tree (including `.git`, so `refs/review/base` and
+`refs/review/candidate` resolve) to `/home/reviewer/candidate` and runs Codex
+from that writable copy, so a package install or a `go build` beside the
+sources can succeed and the ticket's criteria can actually be witnessed. The
+copy is discarded with the reviewer home at the end of the round; the merge
+takes the host worktree's SHA, never the container's files.
+
 The first review builds `holophyte-reviewer:ubuntu24.04-v4` automatically from
 the digest-pinned Ubuntu image; it carries git, python3, ripgrep, a pinned
 Bun (checksum-verified, on `PATH` under `/opt/bun/bin`) so console `bun`
