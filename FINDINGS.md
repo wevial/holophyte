@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[284 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T04:56:26Z — KO-250
-FAILED: terminal adjudication: FAIL; branch task/ko-250-the-ledger-lives-in-the-store preserved at f2068c780586
-actual: 25.8 min · estimate: 30 min · rounds: 3
-
-## 2026-09-06T05:02:30Z — KO-250
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[286 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T05:03:28Z — KO-250
 MERGED to main as e5170f1.
@@ -763,3 +756,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T07:24:30Z — KO-286
 MERGED to main as 661e5bb.
 actual: 9.0 min · estimate: 20 min · rounds: 1
+
+## 2026-09-06T07:33:48Z — KO-287
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T07:34:55Z — KO-287
+MERGED to main as dd1a023.
+actual: 10.4 min · estimate: 25 min · rounds: 1
