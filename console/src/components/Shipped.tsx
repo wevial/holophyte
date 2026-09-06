@@ -32,23 +32,37 @@ interface Ledger {
   loading: boolean;
 }
 
+const EMPTY: Ledger = { rows: [], more: false, error: null, loading: true };
+
+/** One daemon's rows, each stamped with the daemon it came from so two
+ *  daemons' ids never collide in the table. */
+const stamp = (base: string, rows: ShippedRow[]): ShippedRow[] => rows.map((row) => ({ ...row, daemon: base }));
+
+/** Every daemon's rows as one ledger, newest end first, ties by id. */
+export function concatLedgers(ledgers: Record<string, Ledger>, bases: string[]): ShippedRow[] {
+  return bases
+    .flatMap((base) => ledgers[base]?.rows ?? [])
+    .sort((a, b) => b.ended_ms - a.ended_ms || b.id - a.id);
+}
+
 /**
- * The Shipped view: the merge ledger from `/shipped`, newest first under a
- * sub-header per day. The first page is fetched on mount and again each
- * time `polls` advances (the shell's poll count), merged by id so the
- * ledger stays live; "Load older" fetches the page before the oldest id
- * shown and appends it under its days. `now` is the daemon's clock from
- * the last `/status`, naming "Today"; `tz` pins the zone for tests.
+ * The Shipped view: the merge ledger from each daemon's `/shipped`,
+ * concatenated and re-sorted newest first under a sub-header per day. One
+ * ledger per base: its first page is fetched on mount and again each time
+ * `polls` advances (the shell's poll count), merged by id so it stays
+ * live; "Load older" fetches, for every daemon with more, the page before
+ * the oldest id it has shown. `now` is the clock naming "Today"; `tz` pins
+ * the zone for tests.
  */
 export function Shipped({
-  base,
+  bases,
   now,
   polls = 0,
   deps = defaultPollDeps,
   tz,
   limit = SHIPPED_PAGE,
 }: {
-  base: string;
+  bases: string[];
   now: number;
   polls?: number;
   deps?: { fetch: Fetch };
@@ -57,55 +71,70 @@ export function Shipped({
 }) {
   const fetchRef = useRef(deps.fetch);
   fetchRef.current = deps.fetch;
-  const [ledger, setLedger] = useState<Ledger>({ rows: [], more: false, error: null, loading: true });
+  const [ledgers, setLedgers] = useState<Record<string, Ledger>>({});
   const [paging, setPaging] = useState(false);
+  const key = bases.join("\n");
+
+  const update = (base: string, change: (previous: Ledger) => Ledger) =>
+    setLedgers((all) => ({ ...all, [base]: change(all[base] ?? EMPTY) }));
 
   useEffect(() => {
     let alive = true;
-    void (async () => {
-      try {
-        const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit));
-        if (!alive) return;
-        setLedger((previous) => ({
-          rows: mergeRows(previous.rows, body.rows),
-          // A refresh only reveals newer rows: the first page's cursor says
-          // nothing about pages already fetched, so exhaustion survives it.
-          more: previous.rows.length > 0 ? previous.more : hasMore(body),
-          error: null,
-          loading: false,
-        }));
-      } catch (failure) {
-        if (!alive) return;
-        const message = failure instanceof Error ? failure.message : String(failure);
-        setLedger((previous) => ({ ...previous, error: message, loading: false }));
-      }
-    })();
+    for (const base of key.split("\n").filter((candidate) => candidate.length > 0)) {
+      void (async () => {
+        try {
+          const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit));
+          if (!alive) return;
+          update(base, (previous) => ({
+            rows: mergeRows(previous.rows, stamp(base, body.rows)),
+            // A refresh only reveals newer rows: the first page's cursor says
+            // nothing about pages already fetched, so exhaustion survives it.
+            more: previous.rows.length > 0 ? previous.more : hasMore(body),
+            error: null,
+            loading: false,
+          }));
+        } catch (failure) {
+          if (!alive) return;
+          const message = failure instanceof Error ? failure.message : String(failure);
+          update(base, (previous) => ({ ...previous, error: message, loading: false }));
+        }
+      })();
+    }
     return () => {
       alive = false;
     };
-  }, [base, limit, polls]);
+  }, [key, limit, polls]);
 
   const loadOlder = async () => {
-    const oldest = ledger.rows.reduce((least, row) => Math.min(least, row.id), Number.POSITIVE_INFINITY);
-    if (!Number.isFinite(oldest) || paging) return;
+    if (paging) return;
     setPaging(true);
-    try {
-      const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit, oldest));
-      setLedger((previous) => ({
-        rows: mergeRows(previous.rows, body.rows),
-        more: hasMore(body),
-        error: null,
-        loading: false,
-      }));
-    } catch (failure) {
-      const message = failure instanceof Error ? failure.message : String(failure);
-      setLedger((previous) => ({ ...previous, error: message }));
-    } finally {
-      setPaging(false);
-    }
+    await Promise.all(
+      bases.map(async (base) => {
+        const ledger = ledgers[base];
+        if (!ledger?.more) return;
+        const oldest = ledger.rows.reduce((least, row) => Math.min(least, row.id), Number.POSITIVE_INFINITY);
+        if (!Number.isFinite(oldest)) return;
+        try {
+          const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit, oldest));
+          update(base, (previous) => ({
+            rows: mergeRows(previous.rows, stamp(base, body.rows)),
+            more: hasMore(body),
+            error: null,
+            loading: false,
+          }));
+        } catch (failure) {
+          const message = failure instanceof Error ? failure.message : String(failure);
+          update(base, (previous) => ({ ...previous, error: message }));
+        }
+      }),
+    );
+    setPaging(false);
   };
 
-  const { rows, more, error, loading } = ledger;
+  const rows = concatLedgers(ledgers, bases);
+  const more = bases.some((base) => ledgers[base]?.more);
+  const errors = bases.flatMap((base) => (ledgers[base]?.error ? [ledgers[base]!.error!] : []));
+  const loading = bases.some((base) => (ledgers[base] ?? EMPTY).loading);
   const days = groupByDay(rows, now, tz).length;
   const median = medianRounds(rows);
   const subtitle =
@@ -123,11 +152,11 @@ export function Shipped({
           </span>
         )}
       </div>
-      {error && (
-        <p role="alert" className="mt-2 font-mono text-[11px] text-bad-text">
+      {errors.map((error) => (
+        <p key={error} role="alert" className="mt-2 font-mono text-[11px] text-bad-text">
           shipped failed: {error}
         </p>
-      )}
+      ))}
       {!loading && rows.length === 0 ? (
         <p className="mt-3 text-[13px] text-muted">Nothing merged yet</p>
       ) : (

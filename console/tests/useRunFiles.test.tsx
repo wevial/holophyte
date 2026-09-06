@@ -2,7 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { useRunDetail } from "../src/hooks/useRunDetail";
 import { FILES_BRANCH_GONE, useRunFiles } from "../src/hooks/useRunFiles";
-import { usePoll, type Fetch } from "../src/lib/poll";
+import { usePeers } from "../src/hooks/usePeers";
+import type { Fetch } from "../src/lib/poll";
 import type { RunDetailBody, RunFilesBody, Status } from "../src/lib/types";
 import { NO_ATTENTION, fakeDeps, fixture, settle, stubFetch } from "./harness";
 
@@ -32,7 +33,7 @@ test("/runs/N/files is requested on expand and again on each poll tick, alongsid
   clock.now = 1_000_000;
   const { result, rerender } = renderHook(
     ({ id }: { id: number | null }) => {
-      const poll = usePoll(BASE, deps);
+      const poll = usePeers(BASE, deps);
       return {
         poll,
         detail: useRunDetail(BASE, id, poll.polls, deps),

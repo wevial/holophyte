@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { NeedsYou } from "../src/components/NeedsYou";
 import { WRITES_LATER } from "../src/components/ActionButton";
 import type { Attention, AttentionItem, Status } from "../src/lib/types";
-import { fixture } from "./harness";
+import { fixture, hostOf } from "./harness";
 
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
 
@@ -17,7 +17,7 @@ const chips = () =>
     .map((chip) => chip.textContent);
 
 test("the fixture renders four things, one chip per kind with counts, rows in daemon order", () => {
-  render(<NeedsYou attention={allKinds.attention} status={allKinds.status} project="all" />);
+  render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
   expect(screen.getByText("4").hasAttribute("data-count")).toBe(true);
   expect(screen.getByText("things need you")).toBeTruthy();
   expect(screen.getByText("oldest 2h · KO-229")).toBeTruthy();
@@ -30,7 +30,7 @@ test("the fixture renders four things, one chip per kind with counts, rows in da
 });
 
 test("the Failed chip keeps only KO-229; All brings the four back", () => {
-  render(<NeedsYou attention={allKinds.attention} status={allKinds.status} project="all" />);
+  render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
   fireEvent.click(screen.getByRole("button", { name: "Failed 1" }));
   expect(rows().length).toBe(1);
   const [row] = rows();
@@ -49,7 +49,7 @@ test("six questions cap at four with Show all 6, expand, and a chip choice caps 
     ticket: `KO-${300 + index}`,
     question: `Question ${index + 1}?`,
   }));
-  render(<NeedsYou attention={{ level: "attention", now: allKinds.status.now, items }} status={allKinds.status} project="all" />);
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { level: "attention", now: allKinds.status.now, items })]} project="all" now={allKinds.status.now} />);
   expect(rows().length).toBe(4);
   expect(chips()).toEqual(["All 6", "Questions 6"]);
   fireEvent.click(screen.getByRole("button", { name: "Show all 6" }));
@@ -61,7 +61,7 @@ test("six questions cap at four with Show all 6, expand, and a chip choice caps 
 });
 
 test("every action button is disabled and says writes come later", () => {
-  render(<NeedsYou attention={allKinds.attention} status={allKinds.status} project="all" />);
+  render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
   const actions = rows().flatMap((row) => within(row).getAllByRole("button"));
   expect(actions.map((button) => button.textContent)).toEqual([
     "Answer",
@@ -79,12 +79,12 @@ test("every action button is disabled and says writes come later", () => {
 });
 
 test("another project's selection empties the band with the level word; one item reads singular", () => {
-  render(<NeedsYou attention={allKinds.attention} status={allKinds.status} project="/srv/dev/other" />);
+  render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="/srv/dev/other" now={allKinds.status.now} />);
   expect(screen.getByText("Nothing needs you")).toBeTruthy();
   expect(screen.getByText("attention")).toBeTruthy();
   cleanup();
   const one = { ...allKinds.attention, items: allKinds.attention.items.slice(0, 1) };
-  render(<NeedsYou attention={one} status={allKinds.status} project={allKinds.status.target} />);
+  render(<NeedsYou hosts={[hostOf(allKinds.status, one)]} project={allKinds.status.target} now={allKinds.status.now} />);
   expect(screen.getByText("thing needs you")).toBeTruthy();
   expect(rows().length).toBe(1);
 });

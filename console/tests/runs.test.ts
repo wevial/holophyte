@@ -33,11 +33,19 @@ test("strikes are amber until the run stands on its last one, red from there, no
   expect(strikeTone(1, 4)).toBe("amber");
 });
 
-test("groupByProject keys one block per project path and names it by its last segment", () => {
+test("groupByProject keys one block per project path and daemon, and names it by its last segment", () => {
   const other: Status = { ...working, target: "/srv/dev/other", runs: [{ ...working.runs[0]!, id: 7 }] };
-  const groups = groupByProject([working, other, working]);
-  expect(groups.map((group) => [group.path, group.name, group.runs.map((run) => run.id)])).toEqual([
-    ["/srv/dev/writer", "writer", [91, 91]],
-    ["/srv/dev/other", "other", [7]],
+  const writer = "http://writer:7710";
+  const second = "http://second:7710";
+  const groups = groupByProject([
+    { base: writer, status: working },
+    { base: writer, status: other },
+    { base: writer, status: working },
+    { base: second, status: working },
+  ]);
+  expect(groups.map((group) => [group.path, group.name, group.base, group.runs.map((run) => run.id)])).toEqual([
+    ["/srv/dev/writer", "writer", writer, [91, 91]],
+    ["/srv/dev/other", "other", writer, [7]],
+    ["/srv/dev/writer", "writer", second, [91]],
   ]);
 });

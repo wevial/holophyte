@@ -1,9 +1,11 @@
 import { formatAge, formatClock, formatSpan } from "./format";
 import type { AttentionItem, Run, Status } from "./types";
 
-/** The item kinds `/attention` sends today (holophyte/serve.py `attention()`). */
-export type Kind = "blocked" | "stale_run" | "failed" | "supervisor";
-export const KINDS: Kind[] = ["blocked", "stale_run", "failed", "supervisor"];
+/** The item kinds `/attention` sends today (holophyte/serve.py `attention()`),
+ *  plus `unreachable`, which the console adds for a daemon that stopped
+ *  answering (lib/hosts.ts `hostItems`). */
+export type Kind = "blocked" | "stale_run" | "failed" | "supervisor" | "unreachable";
+export const KINDS: Kind[] = ["blocked", "stale_run", "failed", "supervisor", "unreachable"];
 
 /** A chip: every kind, or one of them. */
 export type KindFilter = "all" | Kind;
@@ -14,6 +16,7 @@ export const CHIP_LABELS: Record<KindFilter, string> = {
   stale_run: "Stale runs",
   failed: "Failed",
   supervisor: "Supervisor",
+  unreachable: "Unreachable",
 };
 
 export const PILL_TEXT: Record<Kind, string> = {
@@ -21,6 +24,7 @@ export const PILL_TEXT: Record<Kind, string> = {
   stale_run: "stale run",
   failed: "failed",
   supervisor: "supervisor",
+  unreachable: "unreachable",
 };
 
 const ACTIONS: Record<Kind, string[]> = {
@@ -28,6 +32,7 @@ const ACTIONS: Record<Kind, string[]> = {
   stale_run: ["Kill run", "Requeue"],
   failed: ["Requeue", "Mark needs_spec"],
   supervisor: ["Restart supervisor"],
+  unreachable: [],
 };
 
 /** `"all"`, or a project path as the rail selects it. An item belongs to
@@ -44,7 +49,7 @@ export function filterItems(items: AttentionItem[], kind: KindFilter, project: P
 export type Counts = Record<KindFilter, number>;
 
 export function countsByKind(items: AttentionItem[]): Counts {
-  const counts: Counts = { all: items.length, blocked: 0, stale_run: 0, failed: 0, supervisor: 0 };
+  const counts: Counts = { all: items.length, blocked: 0, stale_run: 0, failed: 0, supervisor: 0, unreachable: 0 };
   for (const item of items) {
     if ((KINDS as string[]).includes(item.kind)) counts[item.kind as Kind] += 1;
   }
@@ -65,11 +70,15 @@ export function ageOf(item: AttentionItem, now: number): number | null {
 }
 
 /** The item that has waited longest, with its age; null when no item
- *  carries an age. */
-export function oldest(items: AttentionItem[], now: number): { ageMs: number; ticket: string | null } | null {
+ *  carries an age. `at` is the clock every item is aged against, or a
+ *  function answering each item's own age (a `describe` per host). */
+export function oldest(
+  items: AttentionItem[],
+  at: number | ((item: AttentionItem) => { ageMs: number | null }),
+): { ageMs: number; ticket: string | null } | null {
   let best: { ageMs: number; ticket: string | null } | null = null;
   for (const item of items) {
-    const ageMs = ageOf(item, now);
+    const ageMs = typeof at === "number" ? ageOf(item, at) : at(item).ageMs;
     if (ageMs != null && (best == null || ageMs > best.ageMs)) best = { ageMs, ticket: str(item.ticket) };
   }
   return best;
@@ -159,6 +168,19 @@ export function describe(
           age == null
             ? `Supervisor is ${str(item.state) ?? "not live"}`
             : `Supervisor heartbeat is ${formatSpan(age)} old (threshold ${formatAge(thresholds.heartbeat_stale_ms)})`,
+      };
+    }
+    case "unreachable": {
+      const seen = num(item.last_seen_ms);
+      return {
+        ...base,
+        ticket: null,
+        body: `${str(item.host) ?? str(item.daemon) ?? "Daemon"} is not answering`,
+        meta: joinMeta(
+          str(item.daemon),
+          seen == null ? "never answered" : `last seen ${formatAge(now - seen)} ago`,
+          str(item.error),
+        ),
       };
     }
     default:

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { Floor } from "../src/components/Floor";
 import { Now } from "../src/components/Now";
 import type { Attention, Run, Status } from "../src/lib/types";
-import { NO_ATTENTION, fixture } from "./harness";
+import { NO_ATTENTION, fixture, hostOf, settle } from "./harness";
 
 const working = await fixture<Status>("working.json");
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
@@ -28,9 +28,11 @@ afterEach(cleanup);
 
 const rows = () => screen.getAllByRole("listitem");
 const noop = () => {};
+const BASE = "http://writer:7710";
+const on = (status: Status) => [{ base: BASE, status }];
 
 test("working.json extended with the daemon fields renders one live block and run #52's seven cells", () => {
-  render(<Floor statuses={[extended]} project="all" expandedRun={null} onToggleRun={noop} />);
+  render(<Floor daemons={on(extended)} project="all" expandedRun={null} onToggleRun={noop} />);
   expect(screen.getByText("1 run · 1 project")).toBeTruthy();
   const block = screen.getByRole("region", { name: "writer" });
   expect(block.getAttribute("data-supervisor")).toBe("live");
@@ -55,7 +57,7 @@ test("working.json extended with the daemon fields renders one live block and ru
 test("strike 2/3 is red, 1/3 amber, 0 absent", () => {
   const at = (strikes: number) => {
     cleanup();
-    render(<Floor statuses={[{ ...extended, runs: [{ ...RUN_52, strikes }] }]} project="all" expandedRun={null} onToggleRun={noop} />);
+    render(<Floor daemons={on({ ...extended, runs: [{ ...RUN_52, strikes }] })} project="all" expandedRun={null} onToggleRun={noop} />);
     return rows()[0]!.querySelector("[data-strike]");
   };
   const two = at(2);
@@ -68,7 +70,7 @@ test("strike 2/3 is red, 1/3 amber, 0 absent", () => {
 });
 
 test("a heartbeat past the threshold is red bold and the stale supervisor names itself in red", () => {
-  render(<Floor statuses={[allKinds.status]} project="all" expandedRun={null} onToggleRun={noop} />);
+  render(<Floor daemons={on(allKinds.status)} project="all" expandedRun={null} onToggleRun={noop} />);
   const heartbeat = within(rows()[0]!).getByText("hb 7m 1s");
   expect(heartbeat.getAttribute("data-heartbeat")).toBe("stale");
   expect(heartbeat.className).toContain("text-bad");
@@ -84,7 +86,7 @@ test("a heartbeat past the threshold is red bold and the stale supervisor names 
 test("clicking the first row then the second leaves only the second expanded", () => {
   const two: Status = { ...extended, runs: [RUN_52, { ...RUN_52, id: 53, ticket: "KO-220" }] };
   const missing = async () => new Response("not found", { status: 404 });
-  render(<Now attention={NO_ATTENTION} status={two} project="all" base="http://writer:7710" deps={{ fetch: missing }} />);
+  render(<Now hosts={[hostOf(two, NO_ATTENTION, "http://writer:7710")]} project="all" now={two.now} deps={{ fetch: missing }} />);
   const toggles = () => rows().map((row) => within(row).getByRole("button").getAttribute("aria-expanded"));
   expect(toggles()).toEqual(["false", "false"]);
   fireEvent.click(within(rows()[0]!).getByRole("button"));
@@ -98,11 +100,37 @@ test("clicking the first row then the second leaves only the second expanded", (
 });
 
 test("an empty floor says so, and another project's selection empties it", () => {
-  render(<Floor statuses={[{ ...working, runs: [] }]} project="all" expandedRun={null} onToggleRun={noop} />);
+  render(<Floor daemons={on({ ...working, runs: [] })} project="all" expandedRun={null} onToggleRun={noop} />);
   expect(screen.getByText("Nothing on the floor")).toBeTruthy();
   expect(screen.getByText("0 runs · 1 project")).toBeTruthy();
   cleanup();
-  render(<Floor statuses={[extended]} project="/srv/dev/other" expandedRun={null} onToggleRun={noop} />);
+  render(<Floor daemons={on(extended)} project="/srv/dev/other" expandedRun={null} onToggleRun={noop} />);
   expect(screen.getByText("Nothing on the floor")).toBeTruthy();
   expect(screen.getByText("0 runs · 0 projects")).toBeTruthy();
+});
+
+test("run #52 on two daemons of one project is two rows; expanding one leaves the other shut and reads its own daemon's detail", async () => {
+  const SECOND = "http://second:7710";
+  const asked: string[] = [];
+  const missing = async (url: string) => {
+    asked.push(url);
+    return new Response("not found", { status: 404 });
+  };
+  const onSecond: Status = { ...extended, host: "second", runs: [{ ...RUN_52, host: "second" }] };
+  render(
+    <Now
+      hosts={[hostOf(extended, NO_ATTENTION, BASE), hostOf(onSecond, NO_ATTENTION, SECOND)]}
+      project="all"
+      now={extended.now}
+      deps={{ fetch: missing }}
+    />,
+  );
+  expect(screen.getByText("2 runs · 1 project")).toBeTruthy();
+  const toggles = () => rows().map((row) => within(row).getByRole("button").getAttribute("aria-expanded"));
+  expect(rows().length).toBe(2);
+  fireEvent.click(within(rows()[1]!).getByRole("button"));
+  await settle();
+  expect(toggles()).toEqual(["false", "true"]);
+  expect(asked.every((url) => url.startsWith(`${SECOND}/runs/52`))).toBe(true);
+  expect(asked.length).toBeGreaterThan(0);
 });

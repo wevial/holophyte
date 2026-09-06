@@ -3,7 +3,8 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { App } from "../src/App";
 import { THEME_KEY } from "../src/lib/theme";
 import type { Attention, Status } from "../src/lib/types";
-import { NO_ATTENTION, fakeDeps, fixture, settle, stubFetch } from "./harness";
+import type { Fetch } from "../src/lib/poll";
+import { NO_ATTENTION, fakeDeps, fixture, peersFetch, settle, stubFetch } from "./harness";
 
 const BASE = "http://writer:7710";
 
@@ -113,4 +114,126 @@ test("no stored theme under a dark system preference leaves the document unstamp
   fireEvent.click(screen.getByRole("button", { name: "System" }));
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   expect(localStorage.getItem(THEME_KEY)).toBeNull();
+});
+
+const second = await fixture<Status>("idle_second_host.json");
+const ORIGIN = "http://writer:7710";
+const PEER = "http://writer-2:7710";
+
+const hostCards = () =>
+  Array.from(screen.getByRole("region", { name: "Hosts" }).querySelectorAll("[data-host]")).map((card) => ({
+    address: card.getAttribute("data-host"),
+    heartbeat: card.querySelector("[data-heartbeat]")!.textContent,
+    unreachable: card.hasAttribute("data-unreachable"),
+    border: card.className.includes("border-bad/50"),
+    second: card.lastElementChild!.textContent,
+  }));
+
+const projectRows = () =>
+  within(screen.getByRole("region", { name: "Projects" }))
+    .getAllByRole("button")
+    .map((row) => row.textContent);
+
+test("two daemons in /peers: the rail lists both hosts with their heartbeats and two project rows with live run counts", async () => {
+  const fetchImpl = peersFetch(ORIGIN, {
+    [ORIGIN]: { status: working, attention: NO_ATTENTION },
+    [PEER]: { status: second, attention: NO_ATTENTION },
+  });
+  const { deps } = fakeDeps(fetchImpl);
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  expect(hostCards()).toEqual([
+    { address: "writer:7710", heartbeat: ":7710 · hb 12s", unreachable: false, border: false, second: "1 run" },
+    { address: "writer-2:7710", heartbeat: ":7710 · hb 9s", unreachable: false, border: false, second: "0 runs" },
+  ]);
+  expect(projectRows()).toEqual(["All projects", "writerwriter · supervisor live1", "writer-2writer-2 · supervisor live0"]);
+  // "All projects" shows every run on the Floor: the total across both daemons.
+  expect(screen.getByText("1 run · 2 projects")).toBeTruthy();
+});
+
+test("a peer that times out reads unreachable with the bad border, keeps its last status with last seen, and adds one critical item", async () => {
+  let peerDown = false;
+  const good = peersFetch(ORIGIN, {
+    [ORIGIN]: { status: working, attention: NO_ATTENTION },
+    [PEER]: { status: second, attention: NO_ATTENTION },
+  });
+  const fetchImpl: Fetch = (url, init) => {
+    if (peerDown && url.startsWith(PEER)) {
+      return Promise.reject(new DOMException("The operation timed out", "TimeoutError"));
+    }
+    return good(url, init);
+  };
+  const { deps, clock, firePoll } = fakeDeps(fetchImpl);
+  clock.now = 1_000_000;
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  expect(screen.queryByRole("alert")).toBeNull();
+
+  peerDown = true;
+  clock.now = 1_040_000;
+  await act(async () => {
+    firePoll();
+    await settle();
+  });
+  const [, lost] = hostCards();
+  expect(lost).toEqual({
+    address: "writer-2:7710",
+    heartbeat: "unreachable",
+    unreachable: true,
+    border: true,
+    second: "last seen 40s ago · 0 runs",
+  });
+  expect(screen.getByRole("alert").textContent).toBe("poll failed: http://writer-2:7710/status timed out");
+  // The project row stays, on the faint dot, since its last status is kept.
+  expect(projectRows()[2]).toBe("writer-2writer-2 · supervisor live0");
+  // The Now view counts the lost daemon as one critical thing needing you.
+  const band = screen.getByRole("region", { name: "Needs you" });
+  expect(within(band).getByText("1").hasAttribute("data-count")).toBe(true);
+  const row = within(band).getByRole("listitem");
+  expect(row.getAttribute("data-kind")).toBe("unreachable");
+  expect(within(row).getByText("writer-2 is not answering")).toBeTruthy();
+  expect(within(row).getByText("writer-2:7710 · last seen 40s ago · http://writer-2:7710/status timed out")).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "Views" })).getByText("1").getAttribute("aria-label")).toBe("1 needing you");
+});
+
+test("selecting a project in the rail narrows the Floor and the Hosts view to its daemon; All projects restores both", async () => {
+  const fetchImpl = peersFetch(ORIGIN, {
+    [ORIGIN]: { status: working, attention: NO_ATTENTION },
+    [PEER]: { status: { ...second, runs: [{ ...working.runs[0]!, id: 7, ticket: "KO-7", host: "writer-2" }] }, attention: NO_ATTENTION },
+  });
+  const { deps } = fakeDeps(fetchImpl);
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  const floorBlocks = () => Array.from(screen.getByRole("region", { name: "Floor" }).querySelectorAll("section")).map((block) => block.getAttribute("aria-label"));
+  expect(floorBlocks()).toEqual(["writer", "writer-2"]);
+
+  fireEvent.click(screen.getByRole("button", { name: /^writer-2/ }));
+  expect(floorBlocks()).toEqual(["writer-2"]);
+  expect(screen.getByText("1 run · 1 project")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Hosts" }));
+  expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual(["writer-2"]);
+
+  fireEvent.click(screen.getByRole("button", { name: "All projects" }));
+  expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual(["writer", "writer-2"]);
+  fireEvent.click(screen.getByRole("button", { name: /^Now/ }));
+  expect(floorBlocks()).toEqual(["writer", "writer-2"]);
+});
+
+test("both daemons failing on the first poll: Now still opens with one critical unreachable row per daemon", async () => {
+  const fetchImpl = peersFetch(ORIGIN, {
+    [ORIGIN]: { down: new DOMException("The operation timed out", "TimeoutError") },
+    [PEER]: { down: new TypeError("Failed to fetch") },
+  });
+  const { deps } = fakeDeps(fetchImpl);
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  expect(hostCards().map((card) => card.heartbeat)).toEqual(["unreachable", "unreachable"]);
+  expect(screen.queryByText("Nothing to show here yet.")).toBeNull();
+  const band = screen.getByRole("region", { name: "Needs you" });
+  expect(within(band).getByText("2").hasAttribute("data-count")).toBe(true);
+  const rows = within(band).getAllByRole("listitem");
+  expect(rows.map((row) => row.getAttribute("data-kind"))).toEqual(["unreachable", "unreachable"]);
+  expect(within(rows[0]!).getByText("writer:7710 · never answered · http://writer:7710/status timed out")).toBeTruthy();
+  expect(within(rows[1]!).getByText("writer-2:7710 · never answered · Failed to fetch")).toBeTruthy();
 });

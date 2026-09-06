@@ -5,7 +5,7 @@ import { RunDetail } from "../src/components/RunDetail";
 import { formatClock } from "../src/lib/format";
 import type { Fetch } from "../src/lib/poll";
 import type { Run, RunDetailBody, RunFilesBody, Status } from "../src/lib/types";
-import { NO_ATTENTION, fixture, settle } from "./harness";
+import { NO_ATTENTION, fixture, hostOf, settle } from "./harness";
 
 const MINUTE = 60_000;
 const T = 1_756_900_000_000;
@@ -165,7 +165,7 @@ test("a 404 says the run is not in the store and the Floor row still collapses a
   const run: Run = { ...working.runs[0]!, id: 91, started_ms: T };
   const status: Status = { ...working, now: T + 20 * MINUTE, runs: [run] };
   const missing: Fetch = async () => Response.json({ error: "no such run", run: 91 }, { status: 404 });
-  render(<Now attention={NO_ATTENTION} status={status} project="all" base={BASE} deps={{ fetch: missing }} />);
+  render(<Now hosts={[hostOf(status, NO_ATTENTION, BASE)]} project="all" now={status.now} deps={{ fetch: missing }} />);
   const row = screen.getByRole("listitem");
   const toggle = within(row).getByRole("button");
   fireEvent.click(toggle);

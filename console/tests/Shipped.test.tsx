@@ -87,7 +87,7 @@ test("Load older asks for before= the smallest id shown and the page appends und
   const first = { rows: ROWS.slice(0, 4), limit: 4, next_before: 228 };
   const older = { rows: ROWS.slice(4), limit: 4, next_before: null };
   const { fetchImpl, requests } = pagedFetch({ "": first, "228": older });
-  render(<Shipped base={BASE} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
+  render(<Shipped bases={[BASE]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
   await act(settle);
   expect(requests).toEqual([`${BASE}/shipped?limit=4`]);
   expect(dayHeaders()).toEqual([
@@ -112,13 +112,13 @@ test("a poll after the ledger is exhausted keeps Load older gone and the subtitl
   const first = { rows: ROWS.slice(0, 4), limit: 4, next_before: 228 };
   const older = { rows: ROWS.slice(4), limit: 4, next_before: null };
   const { fetchImpl, requests } = pagedFetch({ "": first, "228": older });
-  const view = render(<Shipped base={BASE} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
+  const view = render(<Shipped bases={[BASE]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
   await act(settle);
   fireEvent.click(screen.getByRole("button", { name: "Load older" }));
   await act(settle);
   expect(screen.queryByRole("button", { name: "Load older" })).toBeNull();
 
-  view.rerender(<Shipped base={BASE} now={now} polls={1} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
+  view.rerender(<Shipped bases={[BASE]} now={now} polls={1} deps={{ fetch: fetchImpl }} tz="UTC" limit={4} />);
   await act(settle);
   expect(requests).toEqual([
     `${BASE}/shipped?limit=4`,
@@ -132,7 +132,7 @@ test("a poll after the ledger is exhausted keeps Load older gone and the subtitl
 
 test("an empty page reads Nothing merged yet with no Load older", async () => {
   const { fetchImpl } = pagedFetch({ "": { rows: [], limit: 50, next_before: null } });
-  render(<Shipped base={BASE} now={now} deps={{ fetch: fetchImpl }} tz="UTC" />);
+  render(<Shipped bases={[BASE]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" />);
   await act(settle);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Shipped");
   expect(screen.getByText("Nothing merged yet")).toBeTruthy();

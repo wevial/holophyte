@@ -1,8 +1,9 @@
 import logo from "../../../assets/menubar-template.svg";
 import { formatDuration } from "../lib/format";
-import { isSupervisorStale, portOf, projectName, supervisorLabel } from "../lib/derive";
+import { projectName, supervisorLabel } from "../lib/derive";
 import type { ProjectChoice } from "../lib/attention";
-import type { PollState } from "../lib/poll";
+import { hostItems, hostTone, type HostRecord, type HostTone } from "../lib/hosts";
+import type { PeersState } from "../hooks/usePeers";
 import type { Theme } from "../lib/theme";
 import { HostCard } from "./HostCard";
 import { ProjectRow } from "./ProjectRow";
@@ -21,9 +22,38 @@ export const VIEWS: { id: View; label: string }[] = [
 /** `all`, or the selected project's path. */
 export type { ProjectChoice } from "../lib/attention";
 
+interface ProjectEntry {
+  path: string;
+  name: string;
+  sub: string;
+  count: number;
+  tone: HostTone;
+}
+
+/** One row per project a host has answered for, in host order; a second
+ *  host serving the same path pools its runs under the first. */
+export function projectRows(hosts: HostRecord[]): ProjectEntry[] {
+  const rows: ProjectEntry[] = [];
+  for (const host of hosts) {
+    if (!host.status || host.project == null) continue;
+    const existing = rows.find((row) => row.path === host.project);
+    if (existing) {
+      existing.count += host.status.runs.length;
+      continue;
+    }
+    rows.push({
+      path: host.project,
+      name: projectName(host.project),
+      sub: supervisorLabel(host.status),
+      count: host.status.runs.length,
+      tone: host.error != null ? "faint" : hostTone(host),
+    });
+  }
+  return rows;
+}
+
 export function Rail({
-  base,
-  poll,
+  peers,
   view,
   onView,
   project,
@@ -31,8 +61,7 @@ export function Rail({
   theme,
   onTheme,
 }: {
-  base: string;
-  poll: PollState;
+  peers: PeersState;
   view: View;
   onView: (view: View) => void;
   project: ProjectChoice;
@@ -40,16 +69,9 @@ export function Rail({
   theme: Theme;
   onTheme: (theme: Theme) => void;
 }) {
-  const { status, attention, error, polledAgo } = poll;
-  const path = status ? (status.project ?? status.target) : null;
-  const attentionCount = attention?.items.length ?? 0;
-  const tone = !status
-    ? "faint"
-    : isSupervisorStale(status.supervisor, status.thresholds.heartbeat_stale_ms)
-      ? "bad"
-      : status.supervisor.state === "live"
-        ? "ok"
-        : "faint";
+  const { hosts, polledAgo, now } = peers;
+  const attentionCount = hosts.reduce((total, host) => total + hostItems(host, now).length, 0);
+  const failures = hosts.filter((host) => host.error != null);
 
   return (
     <nav
@@ -68,16 +90,17 @@ export function Rail({
           selected={project === "all"}
           onClick={() => onProject("all")}
         />
-        {status && path && (
+        {projectRows(hosts).map((row) => (
           <ProjectRow
-            name={projectName(path)}
-            sub={supervisorLabel(status)}
-            count={status.runs.length}
-            tone={tone}
-            selected={project === path}
-            onClick={() => onProject(path)}
+            key={row.path}
+            name={row.name}
+            sub={row.sub}
+            count={row.count}
+            tone={row.tone}
+            selected={project === row.path}
+            onClick={() => onProject(row.path)}
           />
-        )}
+        ))}
       </RailGroup>
 
       <RailGroup label="Views">
@@ -103,15 +126,19 @@ export function Rail({
       </RailGroup>
 
       <div className="mt-auto flex flex-col gap-2">
-        <RailGroup label="Hosts">{status && <HostCard status={status} port={portOf(base)} />}</RailGroup>
+        <RailGroup label="Hosts">
+          {hosts.map((host) => (
+            <HostCard key={host.address} host={host} now={now} />
+          ))}
+        </RailGroup>
         <p className="px-2 font-mono text-[11px] text-rail-faint">
           {polledAgo == null ? "polling…" : `polled ${formatDuration(polledAgo)} ago`}
         </p>
-        {error && (
-          <p role="alert" className="px-2 font-mono text-[10px] text-rail-bad-text">
-            poll failed: {error}
+        {failures.map((host) => (
+          <p key={host.address} role="alert" className="px-2 font-mono text-[10px] text-rail-bad-text">
+            poll failed: {host.error}
           </p>
-        )}
+        ))}
         <ThemeToggle theme={theme} onChange={onTheme} />
       </div>
     </nav>

@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { useRunDetail } from "../src/hooks/useRunDetail";
-import { usePoll, type Fetch } from "../src/lib/poll";
+import { usePeers } from "../src/hooks/usePeers";
+import type { Fetch } from "../src/lib/poll";
 import type { RunDetailBody, Status } from "../src/lib/types";
 import { NO_ATTENTION, fakeDeps, fixture, settle, stubFetch } from "./harness";
 
@@ -25,7 +26,7 @@ test("/runs/N is fetched once on expand and once per poll while expanded; collap
   clock.now = 1_000_000;
   const { result, rerender } = renderHook(
     ({ id }: { id: number | null }) => {
-      const poll = usePoll(BASE, deps);
+      const poll = usePeers(BASE, deps);
       return { poll, detail: useRunDetail(BASE, id, poll.polls, deps) };
     },
     { initialProps: { id: null as number | null } },

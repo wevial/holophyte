@@ -22,14 +22,3 @@ export function projectName(path: string): string {
 export function supervisorLabel(status: Status): string {
   return `${status.host} · supervisor ${status.supervisor.state}`;
 }
-
-/** The port the page came from, for the host card (`:7710`), or "" when
- *  the URL carries none. */
-export function portOf(base: string): string {
-  try {
-    const port = new URL(base).port;
-    return port ? `:${port}` : "";
-  } catch {
-    return "";
-  }
-}
