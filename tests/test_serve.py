@@ -909,14 +909,14 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn("error", body)
 
-        # Integers no run can have are still integers: 404 carrying `run`,
-        # not 400, and not a crash past SQLite's INTEGER range.
+        # Integers no run can have are still integers: 404 carrying `run`
+        # as typed, not 400, and not a crash past SQLite's INTEGER range.
         code, _headers, body = self.request("GET", "/runs/-1")
         self.assertEqual(code, 404)
-        self.assertEqual(body["run"], -1)
+        self.assertEqual(body["run"], "-1")
         code, _headers, body = self.request("GET", "/runs/9223372036854775808")
         self.assertEqual(code, 404)
-        self.assertEqual(body["run"], 9223372036854775808)
+        self.assertEqual(body["run"], "9223372036854775808")
 
         # `/runs` and `/runs?limit=N` answer as before.
         code, _headers, body = self.request("GET", "/runs")
@@ -925,6 +925,26 @@ class RunDetailTests(ServeTestCase):
         code, _headers, body = self.request("GET", "/runs?limit=2")
         self.assertEqual(code, 200)
         self.assertEqual(body["limit"], 2)
+
+    def test_a_run_id_of_thousands_of_digits_answers_not_disconnects(self):
+        # Regression: `int()` refuses strings past Python's digit limit
+        # (4300 by default), and the handler used to die on the ValueError
+        # and drop the connection. Leading zeros are normalized away, so
+        # the padded existing id is that run; an id of that many
+        # significant digits is 404 like any other absent one.
+        self.seed()
+        self.start()
+        padding = "0" * 5000
+
+        code, _headers, body = self.request(
+            "GET", f"/runs/{padding}{self.run}")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["run"]["id"], self.run)
+
+        code, headers, body = self.request("GET", f"/runs/1{padding}")
+        self.assertEqual(code, 404)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body["run"], f"1{padding}")
 
     def test_a_target_with_no_store_answers_503(self):
         self.start()

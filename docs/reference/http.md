@@ -89,7 +89,10 @@ first, each with its `findings` decoded into objects (`path`, `line`,
 `events` is the `narrative` level of the run's event stream, oldest
 first; `detail` events and their payloads are not served. An `N` that is
 not an integer is 400; an integer with no run behind it is 404 carrying
-`run`. `host` passes through `[report] host_label`.
+`run`. Leading zeros are ignored, so `/runs/007` is run 7. An integer no
+run can have (negative, or wider than SQLite's 64-bit INTEGER, however
+long) is 404 with `run` echoing the path segment as typed. `host` passes
+through `[report] host_label`.
 
 ## `GET /attention`
 

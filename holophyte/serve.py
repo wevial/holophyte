@@ -77,8 +77,31 @@ RUN_PATH = re.compile(r"^/runs/([^/]+)$")
 # The captured id is an integer when it is an optionally signed run of
 # digits; anything else is 400. Integers no run can have (negative, or past
 # SQLite's INTEGER range) are 404 like any other absent id.
-RUN_ID = re.compile(r"^[+-]?\d+$")
+RUN_ID = re.compile(r"^([+-]?)0*(\d+)$")
 SQLITE_MAX_INT = 2**63 - 1
+# Any integer of more significant digits than this is past SQLite's range,
+# so it is judged on its length, before `int()` -- which refuses strings
+# past Python's digit limit -- ever sees it.
+SQLITE_MAX_DIGITS = len(str(SQLITE_MAX_INT))
+
+
+def parse_run_id(text):
+    """The `/runs/N` id as an int, or `None` when it names no possible run.
+
+    Leading zeros are normalized away so `/runs/007` is run 7. A negative
+    id, or one with more significant digits than SQLite's INTEGER holds,
+    is `None`: the length check comes first so a path of thousands of
+    digits is a 404, not a `ValueError` from `int()` past Python's limit.
+    Raises ValueError when `text` is not an integer at all.
+    """
+    match = RUN_ID.match(text)
+    if match is None:
+        raise ValueError(f"run id must be an integer, got {text!r}")
+    sign, digits = match.groups()
+    if len(digits) > SQLITE_MAX_DIGITS:
+        return None
+    run_id = int(sign + digits)
+    return run_id if 0 <= run_id <= SQLITE_MAX_INT else None
 
 
 def parse_address(text):
@@ -308,19 +331,23 @@ def run_detail(target, run_id, now=None):
     that is not an integer is 400; an integer with no run is 404 carrying
     `run`.
     """
-    if not RUN_ID.match(run_id):
-        return 400, {"error": f"run id must be an integer, got {run_id!r}"}
-    run_id = int(run_id)
+    text = run_id
+    try:
+        run_id = parse_run_id(text)
+    except ValueError as error:
+        return 400, {"error": str(error)}
     now = int(time() * 1000) if now is None else now
     if not target.store_path.exists():
         return 503, no_store(target)
-    conn = store.read.open_readonly(target.store_path)
-    try:
+    if run_id is None:
         # A negative id or one past SQLite's 64-bit INTEGER can name no
         # run, so it is 404 without asking the store (which would raise
-        # OverflowError binding an out-of-range integer).
-        run = (store.read.run_detail(conn, run_id)
-               if 0 <= run_id <= SQLITE_MAX_INT else None)
+        # OverflowError binding an out-of-range integer). `run` echoes the
+        # path as typed: the id may be too long to be a JSON number.
+        return 404, {"error": "no such run", "run": text}
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        run = store.read.run_detail(conn, run_id)
         if run is None:
             return 404, {"error": "no such run", "run": run_id}
         rounds = store.read.rounds_of(conn, run_id)
