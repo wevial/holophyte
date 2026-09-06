@@ -159,6 +159,31 @@ is gone (a preserved branch deleted by hand; the error names the branch).
 504 when git does not answer within its cap. The endpoint serves no file
 contents or diff hunks and writes nothing to the repository.
 
+## `GET /runs/N/ledger`
+
+```json
+{"run_id": 52, "ticket": "KO-219",
+ "entries": [
+  {"at": 1788450941675, "kind": "round",
+   "text": "Round 1: changes_requested · reviewer reviewer-model · verify passed",
+   "source": "loop"},
+  {"at": 1788451181675, "kind": "round",
+   "text": "Round 2: pass · reviewer reviewer-model", "source": "loop"},
+  {"at": 1788451661675, "kind": "merge",
+   "text": "MERGED to main as 5acc138.", "source": "loop"}
+ ]}
+```
+
+One run's ledger: the narrative the store holds for it (design note 9),
+which is what a frontend reads and what the Linear comments and the
+`FINDINGS.md` window are projections of. `entries` is oldest first, each
+its `at` in epoch milliseconds, its `kind` (`round`, `merge`, `failure`,
+`adjudication`, `intervention` or `note`), its `text` and its `source`
+(`loop` for an entry the factory wrote, `operator` for one recorded out of
+band). A run with no entries answers an empty list. `N` parses as on
+`/runs/N`: a non-integer is 400, an integer with no run is 404 carrying
+`run`. Nothing here is rendered; the endpoint serves the rows.
+
 ## `GET /attention`
 
 What needs the operator, computed where the store is:
@@ -220,8 +245,8 @@ on a host without the renderer's toolchain still serves its JSON.
 
 | Status | When |
 | --- | --- |
-| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/runs/N` or `/runs/N/files` with a non-integer `N` |
-| 404 | `/runs/N` or `/runs/N/files` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
+| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
+| 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | the target has no store yet |

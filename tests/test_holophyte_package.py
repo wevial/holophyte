@@ -91,6 +91,7 @@ DEFINED = {
         "commit_findings",
         "finding_line",
         "findings_entries",
+        "findings_off",
         "frozen_preamble",
         "refresh_findings",
         "render_findings",

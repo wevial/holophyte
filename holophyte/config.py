@@ -713,11 +713,21 @@ def merge_config(target):
 # (`runs.host`, `supervisorHeartbeats.host`, the lock file), which the
 # supervisor compares against its own -- and the label stays out of the
 # store on purpose, so it can be renamed later without a migration.
+#
+# `findings` is whether the loop keeps FINDINGS.md at all: `window` renders
+# and commits the bounded window at every close-out, as it always has;
+# `off` skips both, leaving whatever file is there untouched. The ledger
+# lives in the store either way (design note 9) and the daemon serves it
+# from `/runs/N/ledger`; the file is a projection some repositories want
+# and others do not.
+FINDINGS_MODES = ("window", "off")
 REPORT_KEYS = {
     "host_label": None,
+    "findings": "window",
 }
 KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
-ReportConfig = collections.namedtuple("ReportConfig", ("host_label",))
+ReportConfig = collections.namedtuple("ReportConfig",
+                                      ("host_label", "findings"))
 
 
 def report_config(target):
@@ -728,8 +738,9 @@ def report_config(target):
     it always was -- and a present `host_label` has to be a string, and a
     non-empty one: `3` names no writer, and `""` would render every host as
     nothing, which is the invisible blank `host_name()`'s `?` exists to
-    avoid. The refusal names the table, the key and the constraint, like a
-    bad `[loop]` value. Keys this version does not know are refused by
+    avoid. `findings` is one of `FINDINGS_MODES`, `window` when absent. The
+    refusal names the table, the key and the constraint, like a bad
+    `[loop]` value. Keys this version does not know are refused by
     `check_config_keys()`.
     """
     table = target.config().get("report", {})
@@ -745,4 +756,9 @@ def report_config(target):
                 f"[holo2] {target.config_path}: [report] {key} must be a "
                 f"non-empty string, got {value!r}")
         values[key] = value
+    if values["findings"] not in FINDINGS_MODES:
+        allowed = ", ".join(FINDINGS_MODES)
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [report] findings must be one of "
+            f"{allowed}, got {values['findings']!r}")
     return ReportConfig(**values)

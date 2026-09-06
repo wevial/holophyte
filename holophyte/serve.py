@@ -82,6 +82,7 @@ OCTET_STREAM = "application/octet-stream"
 # it through `parse_run_id()`.
 RUN_PATH = re.compile(r"^/runs/([^/]+)$")
 RUN_FILES_PATH = re.compile(r"^/runs/([^/]+)/files$")
+RUN_LEDGER_PATH = re.compile(r"^/runs/([^/]+)/ledger$")
 # The captured id is an integer when it is an optionally signed run of
 # digits; anything else is 400. Integers no run can have (negative, or past
 # SQLite's INTEGER range) are 404 like any other absent id.
@@ -471,6 +472,31 @@ def run_detail(target, run_id, now=None):
     }
 
 
+def run_ledger(target, run_id):
+    """The `/runs/N/ledger` answer: `(http status, JSON-able body)`.
+
+    The run's narrative as the store holds it (design note 9): `entries`
+    oldest first, each its `at` in epoch milliseconds, `kind` (one of
+    `store.LEDGER_KINDS`), `text` and `source` (`loop` or `operator`), with
+    `run_id` and the run's `ticket`. A merged run with no rows answers an
+    empty list. `run_id` parses as on `/runs/N` (`locate_run()`): a
+    non-integer is 400, an integer with no run is 404 carrying `run`.
+    """
+    failed, run = locate_run(target, run_id)
+    if failed is not None:
+        return failed
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        entries = store.read.ledger(conn, run.id)
+    finally:
+        conn.close()
+    return 200, {
+        "run_id": run.id, "ticket": run.linearIdentifier,
+        "entries": [{"at": e.at, "kind": e.kind, "text": e.text,
+                     "source": e.source} for e in entries],
+    }
+
+
 def run_files(target, run_id):
     """The `/runs/N/files` answer: `(http status, JSON-able body)`.
 
@@ -562,6 +588,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             code, body = run_detail(self.server.target, run.group(1))
         elif (run := RUN_FILES_PATH.match(path)) is not None:
             code, body = run_files(self.server.target, run.group(1))
+        elif (run := RUN_LEDGER_PATH.match(path)) is not None:
+            code, body = run_ledger(self.server.target, run.group(1))
         else:
             found = static_file(self.server.console_dir, path)
             if isinstance(found[0], bytes):

@@ -325,11 +325,13 @@ class ReportTests(ReportStoreCase):
 
         printed = out.getvalue().splitlines()
         self.assertEqual(printed[0].split()[0], "ticket")
-        # The table is the five lines it always was, and below it the one
-        # line on the supervisor: none has ever beaten in this store.
+        # The table is the five lines it always was, and below it the
+        # `[report] findings` mode -- the default, nothing configured -- and
+        # the one line on the supervisor: none has ever beaten in this store.
         self.assertEqual(printed[:5], holophyte.report.report_lines(self.conn))
-        self.assertEqual(printed[5], "supervisor: none recorded")
-        self.assertEqual(len(printed), 6)
+        self.assertEqual(printed[5], "findings: window")
+        self.assertEqual(printed[6], "supervisor: none recorded")
+        self.assertEqual(len(printed), 7)
         # Nothing was claimed: three runs went in, three are there, all ended,
         # and the lease the loop would have taken is free.
         self.assertEqual(
