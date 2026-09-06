@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[197 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-04T17:42:44Z — KO-246
-MERGED to main.
-actual: 13.0 min · estimate: 30 min · rounds: 1
-
-## 2026-09-04T17:50:56Z — KO-247
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- contrib/swiftbar/holophyte.10s.py:192 [p2] [holophyte.10s.py:192](/workspace/contrib/swiftbar/holophyte.10s.py:192): Fallback is not restricted to HTTP 404. Any `/attention` response without `items`—in…
+[199 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-04T17:58:33Z — KO-247
 Round 2: pass · reviewer codex-sol-medium · verify passed
@@ -759,3 +750,10 @@ Round 3: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-05T01:20:52Z — KO-258
 MERGED to main as 6628590.
 actual: 33.0 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T00:13:33Z — KO-263
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-06T00:14:23Z — KO-263
+MERGED to main as b52e585.
+actual: 7.9 min · estimate: 25 min · rounds: 1
