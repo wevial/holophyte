@@ -1,6 +1,6 @@
 # Frontend before the Rust port; v0 served by the daemon
 
-**Status:** accepted · 2026-09-04
+**Status:** accepted · 2026-09-04 · amended 2026-09-05
 
 ## Context
 
@@ -16,9 +16,16 @@ client is what shapes the API (`/attention` exists because the drawer
 needed it). Rust waits until the JSON and the schema stop moving.
 
 v0 is a page served by the daemon at `/`, read-only over `/status`,
-`/runs`, `/attention` and the ledger, with no build step, so it works on
-one machine with nothing installed. Writes come behind a serve token.
+`/runs`, `/attention` and the ledger. It is built, not hand-written: a
+`console/` package on Bun, React and Tailwind, bundled to a static
+directory the daemon serves, so the writer host needs Bun to build it
+and nothing to run it. Bun is runtime, test runner and bundler; there is
+no second toolchain. The choice trades "nothing installed" for a
+renderer that can grow into the app Ko wants without a rewrite. An
+Electron wrapper, if wanted, loads the daemon URL and changes nothing in
+the renderer. Writes come behind a serve token.
 
 ## Tickets
 
-Depends on [note 13](0013-console.md) for the page's shape.
+Shape settled by [note 13](0013-console.md), accepted 2026-09-05; the
+tickets are filed there.

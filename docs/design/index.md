@@ -23,7 +23,7 @@ section and remain in force; new ones land here.
 | 10 | [Learning from recurring findings](0010-lessons.md) | proposed |
 | 11 | [Per-ticket leases and parallel loops](0011-parallel.md) | proposed |
 | 12 | [A second board behind the provider protocol](0012-second-board.md) | proposed |
-| 13 | [The console's shape](0013-console.md) | open |
+| 13 | [The console's shape](0013-console.md) | accepted |
 
 ## Writing one
 
