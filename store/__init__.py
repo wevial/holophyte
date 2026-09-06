@@ -182,6 +182,14 @@ CREATE TABLE IF NOT EXISTS runs (
     -- on since is not what the operator approved. NULL on every run that
     -- was never parked there.
     candidateSha      TEXT,
+    -- The candidate the last independent judgement covered: the reviewer's
+    -- approval, or the operator's `--approve`. Written by `park()` under
+    -- `[merge] mode = "pr"` beside `candidateSha`, which a fix round or a
+    -- rejected fix can move past it; read by the shepherd a `--shepherd`
+    -- resumes, which reviews a candidate at any other sha again before
+    -- the merge API is called rather than merging on the branch's word.
+    -- NULL on every run parked with no judgement to record.
+    approvedSha       TEXT,
     UNIQUE (ticketId, attempt)
 );
 
@@ -309,7 +317,8 @@ CREATE TABLE IF NOT EXISTS interventions (
                              'review_stuck', 'linear_cancelled', 'manual')),
     "action"  TEXT    NOT NULL
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
-                            'close_out', 'requeue', 'approve', 'repoint')),
+                            'close_out', 'requeue', 'approve', 'repoint',
+                            'shepherd')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL
@@ -329,8 +338,15 @@ CREATE TABLE IF NOT EXISTS interventions (
 # parked for merge approval (KO-258); version 6 is the `ledger` table, the
 # run's narrative kept in the store ahead of its board comment (KO-250);
 # version 7 is the action CHECK admitting 'repoint', a parked candidate
-# moved to a rebuilt branch tip (KO-297).
-SCHEMA_VERSION = 7
+# moved to a rebuilt branch tip (KO-297); version 8 is the action CHECK
+# admitting 'shepherd', the operator's "look at the pull request again"
+# for a run parked on one (KO-262). 8 rather than a second 7: both
+# shipped as 7 on their own branches, and a store one of them stamped
+# would otherwise never be rebuilt to admit the other's value. Version 9
+# is `runs.approvedSha`, the sha the last independent judgement covered,
+# so a shepherd resumed by `--shepherd` knows what still needs a review
+# (KO-262).
+SCHEMA_VERSION = 9
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -471,6 +487,11 @@ ADDED_COLUMNS = (
         "candidateSha",
         "candidateSha TEXT",
     ),
+    (
+        "runs",
+        "approvedSha",
+        "approvedSha TEXT",
+    ),
 )
 
 
@@ -551,17 +572,20 @@ def init(conn):
 
 
 def _widen_interventions_action(conn):
-    """Rebuild `interventions` when its action CHECK predates 'repoint'.
+    """Rebuild `interventions` when its action CHECK predates 'repoint' or
+    'shepherd'.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
     cannot ALTER a CHECK, so a store initialized before a value shipped
     would refuse the row forever — which is how the KO-146 incident ended in
     raw SQL and four falsely-labeled 'resume' rows, the precedent that added
     'close_out' here. 'requeue' (schema version 3), 'approve' (schema
-    version 5) and 'repoint' (schema version 7) ride the same rebuild: the
-    newest value is the one tested for, so a store from before any of them
-    shipped is carried forward in one pass. The stored DDL says which world
-    this store is from; the rebuild is the standard rename-copy-drop from
+    version 5), 'repoint' (schema version 7) and 'shepherd' (schema
+    version 8) ride the same rebuild: the two newest values are the ones
+    tested for, so a store from before either shipped -- or from a branch
+    that shipped one of them as its own version 7 -- is carried forward in
+    one pass. The stored DDL says which world this store is from; the
+    rebuild is the standard rename-copy-drop from
     `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store and
     a second call both skip it. The column list is unchanged, so existing
     rows are carried verbatim; `runId`'s foreign key stays enforced through
@@ -577,7 +601,8 @@ def _widen_interventions_action(conn):
     # literal appearing anywhere else (a future comment, a default) must not
     # skip a rebuild that is still needed.
     (ddl,) = row
-    if "'repoint'" in ddl.partition('"action" IN (')[2].partition(")")[0]:
+    admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
+    if "'repoint'" in admitted and "'shepherd'" in admitted:
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -1178,7 +1203,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
 
 
 def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
-         now=None):
+         now=None, approved_sha=None):
     """Park the live run `run_id` in `phase` and give its leases back.
 
     `[merge] approve = "human"`: the reviewer approved and the pre-merge
@@ -1202,6 +1227,12 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
     candidate before parking it, stored as `runs.prUrl` in the same
     transaction as the phase move: the URL is what the park is waiting on,
     so a reader never sees a run parked for a PR without knowing which.
+
+    `approved_sha` is the sha the last independent judgement covered -- the
+    reviewer's approval or the operator's release -- stored as
+    `runs.approvedSha`. Under `mode = "pr"` it and `candidate_sha` part
+    ways once a fix round moves the candidate: the resumed shepherd merges
+    the candidate only at this sha, and reviews it again at any other.
 
     `phase` must be one of `PARKED_PHASES`; the sweep leaves those alone, so
     a run parked here is not reported dead for having no heartbeat. Parking
@@ -1227,6 +1258,9 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
         if pr_url is not None:
             conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
                          (pr_url, run_id))
+        if approved_sha is not None:
+            conn.execute("UPDATE runs SET approvedSha = ? WHERE id = ?",
+                         (approved_sha, run_id))
         conn.execute(
             "UPDATE projects SET activeRunId = NULL"
             " WHERE id = ? AND activeRunId = ?",
@@ -1547,7 +1581,11 @@ def approve(conn, ticket_id, note, now=None):
     `resumePhase` set to `APPROVED_RESUME_PHASE`, and the ticket walked to
     `ready`. The loop's next claim reads that `resumePhase` off the ticket's
     newest run and, its worktree still standing, skips implementation and
-    review and takes the candidate straight to the merge gate.
+    review and takes the candidate straight to the merge gate. Under
+    `[merge] mode = "pr"` the candidate lands through its pull request: the
+    resumed run shepherds the PR and, once its checks are green and its
+    threads resolved, merges it through the API -- the approval is the
+    human's "merge" whatever `[merge] approve` says.
 
     Ended rather than left parked: a run is one attempt, and the attempt
     that merges is the next one, so leaving this row open in
@@ -1564,6 +1602,45 @@ def approve(conn, ticket_id, note, now=None):
     Touches no board state: the loop mirrors the Linear status when it
     claims.
     """
+    return _release_parked(
+        conn, ticket_id, "approve", note,
+        "approved for merge; the next claim resumes the candidate"
+        " at the merge gate", now)
+
+
+def shepherd(conn, ticket_id, note, now=None):
+    """Send a ticket parked on its pull request back to the shepherd; return
+    the parked run's id.
+
+    `approve()`'s twin for `[merge] mode = "pr"`, and the same transaction
+    with the action `shepherd` on the `interventions` row: the parked run is
+    ended `abandoned` with its resume point at the merge gate and the ticket
+    walked to `ready`, so the loop's next claim resumes the candidate --
+    and, the run carrying a pull request, shepherds it again: reads the
+    threads that arrived since the park, verdicts them, fixes and replies,
+    waits for the checks. What it is not is an approval: a PR that comes up
+    ready to merge under `[merge] approve = "human"` parks again for the
+    human's "merge" rather than landing on the operator's "look again".
+    The refusals are `approve()`'s, as `ApproveRefused`, plus one of its
+    own: a run parked with no pull request (`runs.prUrl` NULL -- parked
+    under `[merge] mode = "local"`) has no threads to look at again, and
+    releasing it would send the candidate down the local gate, where a
+    release is a merge; that is `approve()`'s to do, so the shepherd
+    refuses it with nothing written.
+    """
+    return _release_parked(
+        conn, ticket_id, "shepherd", note,
+        "sent back to the shepherd; the next claim resumes the candidate"
+        " on its pull request", now, require_pr=True)
+
+
+def _release_parked(conn, ticket_id, action, note, reason, now,
+                    require_pr=False):
+    """The transaction `approve()` and `shepherd()` share: the intervention
+    row with `action`, the parked run ended `abandoned` for `reason` with
+    its resume point at the merge gate, the ticket walked to `ready`.
+    `require_pr` refuses, before the first write, a parked run that has no
+    `prUrl`."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -1582,25 +1659,29 @@ def approve(conn, ticket_id, note, now=None):
             raise ApproveRefused(
                 f"{identifier} is {status}, not blocked_on_operator; nothing"
                 " is parked awaiting merge approval")
-        run = (conn.execute("SELECT phase FROM runs WHERE id = ?",
+        run = (conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
                             (last_run_id,)).fetchone()
                if last_run_id is not None else None)
         if run is None:
             raise ApproveRefused(
                 f"{identifier} is {status} and has no run; nothing is"
                 " parked awaiting merge approval")
-        (phase,) = run
+        phase, pr_url = run
         if phase != "awaiting_merge_approval":
             raise ApproveRefused(
                 f"{identifier} is {status} and its newest run {last_run_id}"
                 f" is {phase}, not awaiting_merge_approval; nothing to"
                 " approve")
-        record_intervention(conn, last_run_id, "approve", note, now=now)
-        release(conn, last_run_id, "abandoned",
-                "approved for merge; the next claim resumes the candidate"
-                " at the merge gate", now=now)
+        if require_pr and pr_url is None:
+            raise ApproveRefused(
+                f"{identifier} is parked with no pull request (run"
+                f" {last_run_id} was parked under [merge] mode = \"local\");"
+                " there are no threads to shepherd, and a release here would"
+                " merge the candidate -- that is --approve's to say")
+        record_intervention(conn, last_run_id, action, note, now=now)
+        release(conn, last_run_id, "abandoned", reason, now=now)
         # `release()` records a resume point for failed runs only; this one
-        # is the approval's, written once the ending is stamped.
+        # is the operator's, written once the ending is stamped.
         conn.execute("UPDATE runs SET resumePhase = ? WHERE id = ?",
                      (APPROVED_RESUME_PHASE, last_run_id))
         walk_ticket(conn, ticket_id, "ready")
@@ -2093,7 +2174,8 @@ INTERVENTION_SOURCES = ("supervisor", "human")
 INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
                          "review_stuck", "linear_cancelled", "manual")
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
-                        "close_out", "requeue", "approve", "repoint")
+                        "close_out", "requeue", "approve", "repoint",
+                        "shepherd")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

@@ -50,16 +50,23 @@ machines it walks. Back to the [README](index.md).
    Under `[merge] mode = "pr"` the clean gate leaves the machine instead of
    landing on `main`: `git push origin BRANCH`, then a pull request against
    `main` titled `KO-n: TITLE` whose body is the ticket body plus the run's
-   FINDINGS entry, in that order. The run then parks as `approve = "human"`
-   does, with the PR's URL on the run (`runs.prUrl`), in the ticket's
-   question (`PR open: URL`) and in the ledger. A push the remote refuses
-   or a PR create that fails is an infra failure -- no strike, branch and
-   worktree preserved, no PR recorded. The factory still never pushes
-   `main`; reading the PR's threads and merging it are the mode's second
-   half -- so `--approve KO-n` on a run parked with a PR open resumes at
-   the gate without merging: the next claim parks again on the same URL,
-   main and the worktree untouched, rather than landing the candidate
-   locally behind its pull request.
+   FINDINGS entry, in that order. A push the remote refuses or a PR create
+   that fails is an infra failure -- no strike, branch and worktree
+   preserved, no PR recorded. Then the loop shepherds the pull request for
+   up to `[merge] pr_rounds` passes (see [PR rounds](reviewing.md#pr-rounds)):
+   each pass reads the unresolved review threads and the checks, the
+   adjudicator verdicts each thread `ADDRESS`, `DECLINE` or `HUMAN`, the
+   addressed ones get a fix round, a push and a reply naming the sha and
+   are resolved, the declined ones a reply and are left open. Every pass is
+   a `reviewRounds` row with route `github:LOGIN`. Green checks and no
+   open thread merge the PR through its merge API under `approve = "auto"`;
+   under `approve = "human"`, a decline, a `HUMAN` thread, red checks or
+   the cap park the run as above, with the PR's URL on the run
+   (`runs.prUrl`), in the ticket's question (`PR open: URL`, the open
+   threads listed) and in the ledger. `--approve KO-n` resumes the run on
+   the PR and merges it when green and quiet; `--shepherd KO-n` resumes it
+   for another round of passes. The factory still never pushes `main`, and
+   never moves the local one under this mode: the merge is GitHub's.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —

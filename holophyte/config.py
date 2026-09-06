@@ -719,17 +719,25 @@ def board_config(target):
 # repository's own review bots and CI see the change before it lands; the run
 # then parks in `awaiting_merge_approval` exactly as `approve = "human"`
 # does, with the PR's URL on the run and in the question the ticket asks.
-# "The factory never pushes" becomes "the factory never pushes `main`":
-# nothing here merges the PR (that is the mode's second half).
+# "The factory never pushes" becomes "the factory never pushes `main`".
+#
+# `pr_rounds` caps the shepherd passes the loop makes over an open pull
+# request -- threads read, verdicted, fixed and answered, checks awaited --
+# before it parks the run for the operator with the open threads listed: the
+# cap that keeps the loop from arguing with a review bot forever (design
+# note 7). An integer of at least 1; `pr_rounds = 1` is one pass and then
+# the park.
 MERGE_KEYS = {
     "approve": "auto",
     "mode": "local",
+    "pr_rounds": 5,
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
 MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES}
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
-MergeConfig = collections.namedtuple("MergeConfig", ("approve", "mode"))
+MergeConfig = collections.namedtuple("MergeConfig",
+                                     ("approve", "mode", "pr_rounds"))
 
 
 def merge_config(target):
@@ -741,9 +749,11 @@ def merge_config(target):
     of those: `"later"` or `true` names no gate the loop has, `"github"`
     names no merge path, and a value the factory quietly read as the default
     would merge work the operator asked to sign off on, or land locally what
-    they asked to see as a pull request. The refusal names the table, the
-    key and the constraint, like a bad `[loop]` value. Keys this version
-    does not know are refused by `check_config_keys()`.
+    they asked to see as a pull request. `pr_rounds` is held to an integer
+    of at least 1 -- a `true`, a `"5"` or a `0` names no number of passes
+    a shepherd can make. The refusal names the table, the key and the
+    constraint, like a bad `[loop]` value. Keys this version does not know
+    are refused by `check_config_keys()`.
     """
     table = target.config().get("merge", {})
     if not isinstance(table, dict):
@@ -753,6 +763,14 @@ def merge_config(target):
     values = {}
     for key, default in MERGE_KEYS.items():
         value = table.get(key, default)
+        if key == "pr_rounds":
+            if isinstance(value, bool) or not isinstance(value, int) \
+                    or value < 1:
+                raise SystemExit(
+                    f"[holo2] {target.config_path}: [merge] {key} must be an"
+                    f" integer of at least 1, got {value!r}")
+            values[key] = value
+            continue
         if value not in MERGE_VALUES[key]:
             allowed = " or ".join(f'"{o}"' for o in MERGE_VALUES[key])
             raise SystemExit(
