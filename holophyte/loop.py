@@ -414,7 +414,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
                        beat_s)
         merge_sha = _shepherd(target, conn, run_id, provider, task_id, task,
                               branch, wt, sha, beat_s, url, ticket,
-                              verify_cmd, contracts, budget_min)
+                              verify_cmd, contracts, budget_min, reviewed=sha)
         return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                           merge_sha, started, budget_min, rnd)
     # The human half of the gate, when the target asks for one: the
@@ -532,7 +532,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
         merge_sha = _shepherd(target, conn, run_id, provider, task_id, task,
                               branch, wt, sha, beat_s, url,
                               f"{task}\n\n{body}" if body else task,
-                              verify_cmd, contracts, budget_min)
+                              verify_cmd, contracts, budget_min, reviewed=sha)
         return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                           merge_sha, started, budget_min, 0)
     return _land(target, conn, run_id, provider, task_id, task, branch, wt,
@@ -543,9 +543,19 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, task, branch, wt,
                   carried, started, verify_cmd, contracts, budget_min, body):
     """The resumed run of a candidate open as a pull request: the shepherd
     again, from the branch as it stands, with the release's answer
-    (`carried.approved`) deciding what a green, quiet PR does."""
+    (`carried.approved`) deciding what a green, quiet PR does.
+
+    What the shepherd may merge without another review is not the branch
+    as it stands but the sha an independent judgement covered: the
+    operator's `--approve` is of the sha the park recorded, and
+    `--shepherd` is no judgement at all, so it carries the park's
+    `approvedSha` -- the reviewer's approval, or None when the park had
+    none to record (a fix the reviewer rejected, a store older than the
+    column). A branch at any other sha is reviewed again before the merge
+    API is called; that is `_shepherd()`'s `reviewed`."""
     url = carried.pr_url
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    reviewed = carried.sha if carried.approved else carried.approved_sha
     if sh(["git", "status", "--porcelain"], cwd=wt):
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to shepherd {url} for: {task}\nthe worktree holds"
@@ -566,7 +576,8 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, task, branch, wt,
     merge_sha = _shepherd(target, conn, run_id, provider, task_id, task,
                           branch, wt, sha, beat_s, url,
                           f"{task}\n\n{body}" if body else task, verify_cmd,
-                          contracts, budget_min, approved=carried.approved)
+                          contracts, budget_min, approved=carried.approved,
+                          reviewed=reviewed)
     return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                       merge_sha, started, budget_min, 0)
 
@@ -1098,7 +1109,7 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s):
 
 def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
               beat_s, url, ticket, verify_cmd, contracts, budget_min,
-              approved=False):
+              approved=False, reviewed=None):
     """Shepherd the pull request `url` until it merges or the run parks;
     return the merge commit's sha.
 
@@ -1119,7 +1130,11 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
     the merge, `_review_fix()` reviews the candidate at its fixed sha, and
     anything but an approval parks the run (the operator's `--approve`
     was of the sha it released, so a candidate moved since is a human's
-    to release again). Past
+    to release again). `reviewed` is that sha as the caller knows it: the
+    candidate just approved and verified on a fresh run, the park's
+    `approvedSha` on a `--shepherd` resume, None when nothing on record
+    covers the branch -- which reads as "moved" and gets the review. Every
+    park records it, so the next resume starts from the same fact. Past
     `pr_rounds` passes the run parks naming the cap. A PR someone merged
     by hand lands the run as merged with that sha; one closed unmerged
     fails it.
@@ -1135,9 +1150,8 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
         raise RunFailure(f"cannot read a pull request off {url!r};"
                          f" branch {branch} preserved at {sha[:12]}")
     model = agent_route(target, "adjudicate")
-    # The sha an independent judgement covers: the reviewer's approval or
-    # the operator's release. A fix round moves `sha` past it.
-    reviewed = sha
+    # `reviewed`: the sha an independent judgement covers -- the reviewer's
+    # approval or the operator's release. A fix round moves `sha` past it.
     for pass_no in range(1, merge.pr_rounds + 1):
         state = _settled_state(target, conn, run_id, beat_s, pull)
         if state.merged:
@@ -1157,13 +1171,13 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
                         f" not the candidate {sha[:12]} this run pushed;"
                         " someone else pushed to the branch, and the"
                         " shepherd does not judge or merge their commit",
-                        state.threads)
+                        state.threads, reviewed=reviewed)
         rnd = len(store.read.rounds_of(conn, run_id)) + 1 if conn else pass_no
         if state.threads:
             sha = _answer_threads(target, conn, run_id, provider, task_id,
                                   branch, wt, sha, beat_s, pull, state, rnd,
                                   pass_no, model, ticket, verify_cmd,
-                                  contracts, budget_min)
+                                  contracts, budget_min, reviewed=reviewed)
             continue
         reply = shepherd.round_reply(pull, pass_no, (), {}, state.checks, sha)
         record_round(target, conn, run_id, rnd, "review", reply, None, True,
@@ -1174,37 +1188,49 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
                f" {state.checks}", provider)
         if state.checks != "success":
             _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
-                        f"checks {state.checks} on the head commit", ())
+                        f"checks {state.checks} on the head commit", (),
+                        reviewed=reviewed)
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
         if sha != reviewed:
             if merge.approve != "auto":
                 _park_on_pr(conn, run_id, provider, task_id, branch, sha,
-                            pull, f"the fix rounds moved the candidate from"
-                            f" {reviewed[:12]} to {sha[:12]}; the release"
-                            f" covered {reviewed[:12]}, and a human says"
-                            " merge on the fix ([merge] approve ="
-                            " \"human\")", ())
+                            pull, f"{_moved(sha, reviewed)}, and a human"
+                            " says merge on the candidate as it stands"
+                            " ([merge] approve = \"human\")", (),
+                            reviewed=reviewed)
             _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                         sha, reviewed, beat_s, pull, ticket, verify_cmd,
                         contracts)
             reviewed = sha
         if merge.approve == "auto" or approved:
             return _merge_pr(target, conn, run_id, provider, task_id, branch,
-                             wt, sha, beat_s, pull)
+                             wt, sha, beat_s, pull, reviewed=reviewed)
         _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
                     "ready to merge; waiting for a human to say merge"
-                    " ([merge] approve = \"human\")", ())
+                    " ([merge] approve = \"human\")", (), reviewed=reviewed)
     state = _settled_state(target, conn, run_id, beat_s, pull)
     _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
-                " shepherd stops here", state.threads)
+                " shepherd stops here", state.threads, reviewed=reviewed)
+
+
+def _moved(sha, reviewed):
+    """Why the candidate at `sha` needs an independent look: it sits past
+    the sha the last judgement covered, or nothing on record covers it."""
+    if reviewed is None:
+        return (f"no approval on record covers the candidate at {sha[:12]}"
+                " (the last review asked for changes, or the park recorded"
+                " none)")
+    return (f"the fix rounds moved the candidate from {reviewed[:12]} to"
+            f" {sha[:12]}; the release covered {reviewed[:12]}")
 
 
 def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts):
     """The independent review of a candidate the shepherd's fix rounds
-    moved from `reviewed` to `sha`, before the merge API is called.
+    moved from `reviewed` to `sha` (None: nothing on record covers it),
+    before the merge API is called.
 
     The fix commits are the implementer's answer to the PR's threads; the
     reviewer's approval and the adjudicator's verdicts both came before
@@ -1236,9 +1262,12 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             "refs/review/base as the frozen base and refs/review/candidate "
             "as the candidate in this repo against the ticket below. The "
-            f"candidate was approved at {reviewed[:12]} and has since been "
-            "moved by fix commits answering review threads on "
-            f"{pull.url}; nobody independent has judged those commits, so "
+            + (f"candidate was approved at {reviewed[:12]} and has since "
+               "been moved by fix commits answering review threads on "
+               if reviewed else
+               "candidate has been moved by fix commits answering review "
+               "threads, and the last review of it asked for changes, on ")
+            + f"{pull.url}; nobody independent has judged those commits, so "
             "read the whole candidate, the fixes included. The ticket is "
             "the contract, acceptance criteria included: a candidate that "
             "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
@@ -1261,6 +1290,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
            f"Round {rnd}: REQUEST_CHANGES on the fix at {sha} on"
            f" {pull.url}; not merged\nReviewer findings:\n{verdict}",
            provider)
+    # No `reviewed`: the judgement on record is this rejection, so the
+    # resume that follows reviews the candidate again before any merge.
     _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
                 f"the review of the fix at {sha[:12]} asked for changes;"
                 f" not merged. Reviewer findings:\n{verdict}", ())
@@ -1293,7 +1324,7 @@ def _settled_state(target, conn, run_id, beat_s, pull):
 
 def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                     beat_s, pull, state, rnd, pass_no, model, ticket,
-                    verify_cmd, contracts, budget_min):
+                    verify_cmd, contracts, budget_min, reviewed=None):
     """One pass over the PR's unresolved threads; return the candidate's
     sha after the fix round, or park.
 
@@ -1335,7 +1366,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                               for _, t, _ in by_verdict["HUMAN"])
         _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
                     "a thread needs a human's answer; nothing was posted on"
-                    f" it:\n{quoted}", threads)
+                    f" it:\n{quoted}", threads, reviewed=reviewed)
     if by_verdict["ADDRESS"]:
         sha = _fix_threads(target, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
@@ -1347,7 +1378,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         open_threads = tuple(t for _, t, _ in by_verdict["DECLINE"])
         _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
                     f"{len(open_threads)} thread(s) declined and left open"
-                    " for their authors", open_threads)
+                    " for their authors", open_threads, reviewed=reviewed)
     return sha
 
 
@@ -1418,7 +1449,7 @@ def _post(target, conn, run_id, beat_s, pull, thread, body, resolve):
 
 
 def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
-              pull):
+              pull, reviewed=None):
     """The `merging` phase under `mode = "pr"`: the PR merged through the
     merge API -- never a local push of main -- pinned to the candidate `sha`
     the pass judged, then the worktree and local branch removed as after a
@@ -1432,7 +1463,8 @@ def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
             merge_sha = pr.merge_pull_request(target, pull, sha)
     except pr.MergeRefused as refused:
         _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
-                    f"GitHub refused the merge: {refused}", ())
+                    f"GitHub refused the merge: {refused}", (),
+                    reviewed=reviewed)
     print(f"[holo2] merged {pull.url} as {merge_sha[:12]}")
     # Local main is not moved: the factory never pushes it, and pulling it
     # here would make the writer host's checkout the loop's business. The
@@ -1460,13 +1492,15 @@ def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
 
 
 def _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull, why,
-                threads):
+                threads, reviewed=None):
     """Park the run on its pull request: the ticket asks `PR open: URL`
     with `why` and the open `threads` listed, `store.park()` writes
-    `runs.prUrl` and `runs.candidateSha` with the phase move, the ledger
-    carries the same, and `MergeParked` unwinds the run with branch and
-    worktree left standing. The operator's ways on are `--approve KO-n`
-    (merge it) and `--shepherd KO-n` (look again)."""
+    `runs.prUrl`, `runs.candidateSha` and -- `reviewed`, the sha the last
+    independent judgement covered, when there is one -- `runs.approvedSha`
+    with the phase move, the ledger carries the same, and `MergeParked`
+    unwinds the run with branch and worktree left standing. The operator's
+    ways on are `--approve KO-n` (merge it) and `--shepherd KO-n` (look
+    again, which merges at `reviewed` alone and reviews anything else)."""
     short = sha[:12] if sha else "an unrecorded sha"
     question = shepherd.open_threads_question(pull, why, threads)
     if conn is not None and run_id is not None:
@@ -1477,7 +1511,7 @@ def _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull, why,
         store.park(conn, run_id, "awaiting_merge_approval",
                    f"{shepherd.gist(why)}; {branch} at {short} is open as"
                    f" {pull.url} ([merge] mode = \"pr\")",
-                   candidate_sha=sha, pr_url=pull.url)
+                   candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed)
     print(f"[holo2] parked on {pull.url}: {shepherd.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"

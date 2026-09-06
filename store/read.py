@@ -185,6 +185,11 @@ class ApprovedCandidate:
     # than `--shepherd`'s "look at the pull request again". Only the PR
     # path reads it: a local candidate the operator released is merged.
     approved: bool = True
+    # The sha the last independent judgement covered when the run parked:
+    # the reviewer's approval or an operator's release. Under `mode = "pr"`
+    # a fix round or a rejected fix leaves `sha` past it; None when the
+    # park recorded none (a store older than the column).
+    approved_sha: str | None = None
 
 
 def approved_candidate(conn, ticket_id, run_id):
@@ -198,10 +203,11 @@ def approved_candidate(conn, ticket_id, run_id):
     `[merge] mode = "pr"` opened a pull request for it, or None when the
     newest prior run is anything else: the claim then starts the ticket
     over, as it would after a failed run. `approved` is False when the
-    newest intervention on that run is `shepherd` rather than `approve`.
+    newest intervention on that run is `shepherd` rather than `approve`;
+    `approved_sha` is the `approvedSha` the park recorded.
     """
     row = conn.execute(
-        "SELECT id, resumePhase, candidateSha, prUrl FROM runs"
+        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha FROM runs"
         " WHERE ticketId = ? AND id <> ?"
         " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
     if row is None or row[1] != "merge_gate":
@@ -210,7 +216,8 @@ def approved_candidate(conn, ticket_id, run_id):
         'SELECT "action" FROM interventions WHERE runId = ?'
         " ORDER BY id DESC LIMIT 1", (row[0],)).fetchone()
     return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
-                             approved=last is None or last[0] != "shepherd")
+                             approved=last is None or last[0] != "shepherd",
+                             approved_sha=row[4])
 
 
 def live_runs(conn, phases):

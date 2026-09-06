@@ -182,6 +182,14 @@ CREATE TABLE IF NOT EXISTS runs (
     -- on since is not what the operator approved. NULL on every run that
     -- was never parked there.
     candidateSha      TEXT,
+    -- The candidate the last independent judgement covered: the reviewer's
+    -- approval, or the operator's `--approve`. Written by `park()` under
+    -- `[merge] mode = "pr"` beside `candidateSha`, which a fix round or a
+    -- rejected fix can move past it; read by the shepherd a `--shepherd`
+    -- resumes, which reviews a candidate at any other sha again before
+    -- the merge API is called rather than merging on the branch's word.
+    -- NULL on every run parked with no judgement to record.
+    approvedSha       TEXT,
     UNIQUE (ticketId, attempt)
 );
 
@@ -334,8 +342,11 @@ CREATE TABLE IF NOT EXISTS interventions (
 # admitting 'shepherd', the operator's "look at the pull request again"
 # for a run parked on one (KO-262). 8 rather than a second 7: both
 # shipped as 7 on their own branches, and a store one of them stamped
-# would otherwise never be rebuilt to admit the other's value.
-SCHEMA_VERSION = 8
+# would otherwise never be rebuilt to admit the other's value. Version 9
+# is `runs.approvedSha`, the sha the last independent judgement covered,
+# so a shepherd resumed by `--shepherd` knows what still needs a review
+# (KO-262).
+SCHEMA_VERSION = 9
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -475,6 +486,11 @@ ADDED_COLUMNS = (
         "runs",
         "candidateSha",
         "candidateSha TEXT",
+    ),
+    (
+        "runs",
+        "approvedSha",
+        "approvedSha TEXT",
     ),
 )
 
@@ -1187,7 +1203,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
 
 
 def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
-         now=None):
+         now=None, approved_sha=None):
     """Park the live run `run_id` in `phase` and give its leases back.
 
     `[merge] approve = "human"`: the reviewer approved and the pre-merge
@@ -1211,6 +1227,12 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
     candidate before parking it, stored as `runs.prUrl` in the same
     transaction as the phase move: the URL is what the park is waiting on,
     so a reader never sees a run parked for a PR without knowing which.
+
+    `approved_sha` is the sha the last independent judgement covered -- the
+    reviewer's approval or the operator's release -- stored as
+    `runs.approvedSha`. Under `mode = "pr"` it and `candidate_sha` part
+    ways once a fix round moves the candidate: the resumed shepherd merges
+    the candidate only at this sha, and reviews it again at any other.
 
     `phase` must be one of `PARKED_PHASES`; the sweep leaves those alone, so
     a run parked here is not reported dead for having no heartbeat. Parking
@@ -1236,6 +1258,9 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
         if pr_url is not None:
             conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
                          (pr_url, run_id))
+        if approved_sha is not None:
+            conn.execute("UPDATE runs SET approvedSha = ? WHERE id = ?",
+                         (approved_sha, run_id))
         conn.execute(
             "UPDATE projects SET activeRunId = NULL"
             " WHERE id = ? AND activeRunId = ?",

@@ -120,15 +120,19 @@ One pass:
    merges; `REQUEST_CHANGES` parks the run with the findings in the
    ticket's question, with no further fix round. The operator's
    `--approve` was of the sha it released: a candidate moved since parks
-   for the human again under `approve = "human"`.
+   for the human again under `approve = "human"`. The sha the last
+   approval covered survives the park as `runs.approvedSha`, so a
+   `--shepherd` re-entry merges the candidate only at that sha and
+   reviews it again at any other -- a fix the reviewer rejected has none
+   on record, and is reviewed again before anything merges it.
 
 After `[merge] pr_rounds` passes the run parks naming the cap, whatever
 the PR looks like.
 
 Every park is the `awaiting_merge_approval` park of `approve = "human"`:
 the ticket asks `PR open: URL` with why and the open threads listed, the
-run keeps `runs.prUrl` and `runs.candidateSha`, branch and worktree stay,
-the lease is released. `--approve KO-n` answers "merge": the resumed run
+run keeps `runs.prUrl`, `runs.candidateSha` and `runs.approvedSha`, branch
+and worktree stay, the lease is released. `--approve KO-n` answers "merge": the resumed run
 shepherds once more and merges when green and quiet. `--shepherd KO-n`
 answers "look again": the same resume, parking again rather than merging
 under `approve = "human"`. It is refused on a run parked with no pull

@@ -2158,6 +2158,69 @@ class MergeModeTests(LoopFixture):
         self.assertIn(fixed[:12], question)
         self.assertIn("scripted change is incomplete", question)
 
+    def test_a_rejected_fix_is_reviewed_again_on_shepherd_re_entry(self):
+        """Regression: `--shepherd` on a run parked because the review of
+        the fix asked for changes resumed with the branch's HEAD taken as
+        reviewed, so a green, quiet PR under `approve = "auto"` merged the
+        rejected fix, unchanged, with no reviewer turn. The park now
+        records the sha the last approval covered (none, here), and the
+        resumed shepherd reviews the candidate again before any merge:
+        another `REQUEST_CHANGES` parks it, unmerged, once more."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state()])
+        self.loop(Commit("the scripted work"), APPROVE,
+                  Reply("THREAD 1: ADDRESS -- a real crash"),
+                  Commit("fix: default load()"), REQUEST_CHANGES,
+                  provider=self.provider())
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.read("SELECT approvedSha FROM runs"),
+                         [(None,)])
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "look again",
+                                       out=io.StringIO())
+
+        fake, _ = self.loop(REQUEST_CHANGES, provider=self.provider())
+
+        self.assertEqual(fake.roles, ["review"])
+        self.assertEqual(fake.turns[0].candidate_sha, fixed)
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual(
+            self.read("SELECT id, phase, outcome, candidateSha, approvedSha,"
+                      " mergeSha FROM runs ORDER BY id"),
+            [(1, "failed", "abandoned", fixed, None, None),
+             (2, "awaiting_merge_approval", None, fixed, None, None)])
+        self.assertIn("scripted change is incomplete", self.question())
+
+    def test_shepherd_re_entry_merges_the_approved_sha_without_a_review(self):
+        """The counterpart: a run parked on a declined nit with its
+        candidate still at the sha the reviewer approved carries that sha
+        through `--shepherd`, so the resumed pass, green and quiet once the
+        nit's author closed it, merges under `approve = "auto"` with no
+        second review."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.NIT]), self.pr_state()])
+        self.loop(Commit("the scripted work"), APPROVE,
+                  Reply("THREAD 1: DECLINE -- a naming preference"),
+                  provider=self.provider())
+        approved = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.read("SELECT candidateSha, approvedSha FROM"
+                                   " runs"), [(approved, approved)])
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "nit closed",
+                                       out=io.StringIO())
+
+        fake, _ = self.loop(provider=self.provider())
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"
+                                   " WHERE id = 2"),
+                         [("merged", self.MERGE_SHA)])
+
     def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
         """Acceptance: two unresolved threads, a clear defect and a style
         nit, and green checks. One pass: the adjudicator addresses the one
