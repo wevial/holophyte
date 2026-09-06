@@ -72,13 +72,18 @@ CHECK_STATES = {None: "success", "SUCCESS": "success",
 # pass judged the checks alone.
 NO_AUTHOR = "ci"
 
+# One page of threads per call; `$after` walks the rest, so a PR with more
+# than `THREADS_PAGE` threads is read to the end before the shepherd decides
+# it has nothing open.
+THREADS_PAGE = 100
 STATE_QUERY = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       state merged headRefOid mergeCommit { oid }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-      reviewThreads(first: 100) {
+      reviewThreads(first: %d, after: $after) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           id isResolved isOutdated path line
           comments(first: 50) { nodes { author { login } body url } }
@@ -86,7 +91,7 @@ query($owner: String!, $name: String!, $number: Int!) {
       }
     }
   }
-}"""
+}""" % THREADS_PAGE
 REPLY_MUTATION = """
 mutation($thread: ID!, $body: String!) {
   addPullRequestReviewThreadReply(
@@ -373,33 +378,56 @@ def pr_state(target, pull):
     """One read of the pull request: its unresolved review threads, the head
     commit's check rollup, and whether it is already merged or closed.
 
-    One GraphQL query, so the threads and the checks are the same moment's.
-    A thread's author and body are its opening comment's; a thread with no
+    One GraphQL query per page of threads (`THREADS_PAGE`), walked to the
+    last page before anything is decided: a PR whose first page is all
+    resolved and whose open thread is on the next must not read as quiet.
+    The head, the checks and the merged/closed answer are the first
+    page's, so the threads and the checks are the same moment's. A
+    thread's author and body are its opening comment's; a thread with no
     comments (GitHub does not make one) is skipped. Resolved threads are
     not returned: the shepherd answers what is open.
     """
+    first_page = node = _pull_request_page(target, pull, None)
+    threads = []
+    while True:
+        page = node.get("reviewThreads") or {}
+        for t in (page.get("nodes") or ()):
+            if not isinstance(t, dict) or t.get("isResolved"):
+                continue
+            comments = ((t.get("comments") or {}).get("nodes") or ())
+            first = next((c for c in comments if isinstance(c, dict)), None)
+            if first is None:
+                continue
+            author = (first.get("author") or {}).get("login") or "unknown"
+            threads.append(Thread(
+                id=t.get("id") or "", path=t.get("path") or "",
+                line=t.get("line"), author=author,
+                body=first.get("body") or "",
+                url=first.get("url") or pull.url,
+                outdated=bool(t.get("isOutdated"))))
+        info = page.get("pageInfo") or {}
+        if not (info.get("hasNextPage") and info.get("endCursor")):
+            break
+        node = _pull_request_page(target, pull, info["endCursor"])
+    return _state_of(first_page, threads)
+
+
+def _pull_request_page(target, pull, after):
+    """The `pullRequest` node of one `STATE_QUERY` read, its threads the
+    page after cursor `after` (None for the first)."""
     data = graphql(target, pull, STATE_QUERY,
                    {"owner": pull.owner, "name": pull.name,
-                    "number": pull.number})
+                    "number": pull.number, "after": after})
     node = ((data.get("repository") or {}).get("pullRequest")
             if isinstance(data, dict) else None)
     if not isinstance(node, dict):
         raise InfraFailure(f"GitHub answered without pull request"
                            f" {pull.url}: {_short(data)}")
-    threads = []
-    for t in ((node.get("reviewThreads") or {}).get("nodes") or ()):
-        if not isinstance(t, dict) or t.get("isResolved"):
-            continue
-        comments = ((t.get("comments") or {}).get("nodes") or ())
-        first = next((c for c in comments if isinstance(c, dict)), None)
-        if first is None:
-            continue
-        author = (first.get("author") or {}).get("login") or "unknown"
-        threads.append(Thread(
-            id=t.get("id") or "", path=t.get("path") or "",
-            line=t.get("line"), author=author, body=first.get("body") or "",
-            url=first.get("url") or pull.url,
-            outdated=bool(t.get("isOutdated"))))
+    return node
+
+
+def _state_of(node, threads):
+    """`PrState` from the first page's node and every page's threads."""
     commits = ((node.get("commits") or {}).get("nodes") or ())
     rollup = None
     if commits and isinstance(commits[-1], dict):
@@ -425,17 +453,20 @@ def resolve_thread(target, pull, thread_id):
     graphql(target, pull, RESOLVE_MUTATION, {"thread": thread_id})
 
 
-def merge_pull_request(target, pull):
-    """Merge the pull request through the merge API; return the merge
-    commit's sha. A merge commit, like the loop's `--no-ff` merge, so the
-    branch's history lands as it was reviewed. GitHub declining -- a
-    protection rule, a conflict, a check that turned red -- is
-    `MergeRefused` with its reason; the route not answering is
-    `InfraFailure` as everywhere else."""
+def merge_pull_request(target, pull, sha):
+    """Merge the pull request through the merge API, pinned to head `sha`;
+    return the merge commit's sha. A merge commit, like the loop's
+    `--no-ff` merge, so the branch's history lands as it was reviewed.
+    `sha` is the candidate whose checks and threads the shepherd judged:
+    the API's `sha` field makes GitHub refuse (409) if the head has moved
+    since, so a push that raced the pass never lands on its verdict.
+    GitHub declining -- a protection rule, a conflict, a check that turned
+    red, the head moved -- is `MergeRefused` with its reason; the route not
+    answering is `InfraFailure` as everywhere else."""
     try:
         answer = rest(target, pull, "PUT",
                       f"repos/{pull.repo}/pulls/{pull.number}/merge",
-                      {"merge_method": "merge"})
+                      {"merge_method": "merge", "sha": sha})
     except InfraFailure as e:
         # A 405 (not mergeable) or 409 (head moved) is the PR refusing, not
         # the route; `_call` folds every non-2xx into the same exception,

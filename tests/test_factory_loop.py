@@ -1641,17 +1641,30 @@ class MergeModeTests(LoopFixture):
                                         "url": f"{MergeModeTests.URL}"
                                                f"#discussion_r{number}"}]}}
 
-    def pr_state(self, threads=(), checks="SUCCESS", merged=False):
+    # What the fake `gh` swaps for the branch's real tip when it serves a
+    # state: the PR's head is the candidate the loop pushed, unless a test
+    # says otherwise (`head=`).
+    HEAD = "HEAD_SHA"
+
+    def pr_state(self, threads=(), checks="SUCCESS", merged=False,
+                 head=HEAD, resolved=(), next_cursor=None):
         """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
-        tuple), the head's check rollup, and whether the PR is merged."""
+        tuple) open, `resolved` the same shape but resolved, the head's
+        check rollup, whether the PR is merged, and -- for a page that is
+        not the last -- the cursor of the next."""
         nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
+        nodes += [self.thread(n, *t, resolved=True)
+                  for n, t in enumerate(resolved, len(nodes) + 1)]
         return {"data": {"repository": {"pullRequest": {
             "state": "MERGED" if merged else "OPEN", "merged": merged,
-            "headRefOid": "0" * 40,
+            "headRefOid": head,
             "mergeCommit": {"oid": self.MERGE_SHA} if merged else None,
             "commits": {"nodes": [{"commit": {"statusCheckRollup":
                                               {"state": checks}}}]},
-            "reviewThreads": {"nodes": nodes}}}}}
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": next_cursor is not None,
+                             "endCursor": next_cursor},
+                "nodes": nodes}}}}}
 
     def fake_route(self, push_exit=0, push_sh="", states=None):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
@@ -1701,7 +1714,9 @@ class MergeModeTests(LoopFixture):
             '  elif grep -q addPullRequestReviewThreadReply "$body"; then\n'
             "    echo '{\"data\":{\"addPullRequestReviewThreadReply\":{}}}'\n"
             '  elif grep -q reviewThreads "$body"; then\n'
-            f'    f=$(ls "{answers}"/*.json | head -1); cat "$f"\n'
+            f'    f=$(ls "{answers}"/*.json | head -1)\n'
+            f'    tip=$("{real_git}" -C "{self.target}" rev-parse {BRANCH})\n'
+            f'    sed "s/{self.HEAD}/$tip/" "$f"\n'
             f'    [ $(ls "{answers}"/*.json | wc -l) -gt 1 ] && rm "$f"\n'
             "  else\n"
             f"    echo '{{\"sha\":\"{self.MERGE_SHA}\",\"merged\":true}}'\n"
@@ -1852,8 +1867,10 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(fake.roles, ["implement", "review"])
         self.assertEqual(self.api_calls(),
                          [("state", {"owner": "example", "name": "repo",
-                                     "number": 7}),
-                          ("merge", {"merge_method": "merge"})])
+                                     "number": 7, "after": None}),
+                          # Pinned to the candidate the reviewer approved.
+                          ("merge", {"merge_method": "merge",
+                                     "sha": fake.turns[1].candidate_sha})])
         self.assertIn("gh api --hostname github.com --method PUT"
                       " repos/example/repo/pulls/7/merge --input -",
                       self.recorded())
@@ -2014,6 +2031,52 @@ class MergeModeTests(LoopFixture):
         question = self.question()
         self.assertIn("pr_rounds = 2", question)
         self.assertIn(self.DEFECT[3], question)
+
+    def test_threads_past_the_first_page_keep_the_pr_from_reading_quiet(self):
+        """Regression: a PR whose first page of threads is all resolved and
+        whose open thread is on the second page is not quiet. The shepherd
+        walks the pages (`after` the first's cursor) before deciding, finds
+        the thread and parks on it -- no merge, under `approve = "auto"`."""
+        self.configure('[merge]\nmode = "pr"\n')
+        full_page = [self.NIT] * holophyte.pr.THREADS_PAGE
+        self.fake_route(states=[self.pr_state(resolved=full_page,
+                                              next_cursor="c1"),
+                                self.pr_state([self.DEFECT])])
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: HUMAN -- not mine to answer"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        calls = self.api_calls()
+        self.assertEqual([kind for kind, _ in calls], ["state", "state"])
+        self.assertEqual([v["after"] for _, v in calls], [None, "c1"])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn(self.DEFECT[3], self.question())
+
+    def test_a_head_that_is_not_the_candidate_parks_instead_of_merging(self):
+        """Regression: the PR's head is a commit this run did not push (a
+        concurrent push to the branch). Its green checks are that commit's,
+        not the candidate's, so the pass judges nothing and parks naming
+        both shas -- no adjudicator, no merge, under `approve = "auto"`."""
+        self.configure('[merge]\nmode = "pr"\n')
+        other = "a" * 40
+        self.fake_route(states=[self.pr_state(head=other)])
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        candidate = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(
+            self.read("SELECT phase, outcome, candidateSha FROM runs"),
+            [("awaiting_merge_approval", None, candidate)])
+        question = self.question()
+        self.assertIn(other[:12], question)
+        self.assertIn(candidate[:12], question)
+        self.assertIn(BRANCH, self.branches())
 
     def test_an_approval_of_an_open_pull_request_merges_it_through_the_api(
             self):

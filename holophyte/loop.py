@@ -1092,6 +1092,17 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
         if state.closed:
             raise RunFailure(f"{pull.url} was closed without merging;"
                              f" branch {branch} preserved at {sha[:12]}")
+        if state.head_sha and state.head_sha != sha:
+            # The PR's head is not the candidate this run pushed: someone
+            # else pushed to the branch. Its checks and threads are about
+            # their commit, not the one verified and reviewed here, so
+            # nothing is judged, fixed or merged on it -- the operator looks.
+            _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+                        f"the pull request's head is {state.head_sha[:12]},"
+                        f" not the candidate {sha[:12]} this run pushed;"
+                        " someone else pushed to the branch, and the"
+                        " shepherd does not judge or merge their commit",
+                        state.threads)
         rnd = len(store.read.rounds_of(conn, run_id)) + 1 if conn else pass_no
         if state.threads:
             sha = _answer_threads(target, conn, run_id, provider, task_id,
@@ -1256,14 +1267,16 @@ def _post(target, conn, run_id, beat_s, pull, thread, body, resolve):
 def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
               pull):
     """The `merging` phase under `mode = "pr"`: the PR merged through the
-    merge API -- never a local push of main -- then the worktree and local
-    branch removed as after a local merge; return the merge commit's sha.
-    GitHub declining the merge parks the run with its reason."""
+    merge API -- never a local push of main -- pinned to the candidate `sha`
+    the pass judged, then the worktree and local branch removed as after a
+    local merge; return the merge commit's sha. GitHub declining the merge,
+    the head having moved since the pass included, parks the run with its
+    reason."""
     set_phase(conn, run_id, "merging", f"merging {pull.url} through the"
               " pull request API")
     try:
         with heartbeat_while(conn, run_id, beat_s):
-            merge_sha = pr.merge_pull_request(target, pull)
+            merge_sha = pr.merge_pull_request(target, pull, sha)
     except pr.MergeRefused as refused:
         _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
                     f"GitHub refused the merge: {refused}", ())

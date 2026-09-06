@@ -59,9 +59,14 @@ FINDINGS shows the GitHub rounds beside the Codex ones.
 One pass:
 
 1. **Read.** One GraphQL query returns the PR's unresolved review threads,
-   the head commit's check rollup, and whether the PR is merged or closed.
-   A PR someone merged by hand lands the run as merged with that sha; one
-   closed without merging fails the run, branch preserved.
+   the head commit's check rollup, and whether the PR is merged or closed;
+   the threads are paged, and every page is read before anything is
+   decided, so a PR is never "quiet" because its open thread was past the
+   first page. A PR someone merged by hand lands the run as merged with
+   that sha; one closed without merging fails the run, branch preserved.
+   A head that is not the candidate this run pushed -- someone else pushed
+   to the branch -- parks the run naming both shas: the checks and threads
+   are about their commit, and the shepherd judges and merges only its own.
 2. **Verdict.** The adjudicator route (`[agents] adjudicator`, or the
    default container) is given the ticket, the candidate as the same frozen
    `refs/review/base` and `refs/review/candidate` pair a review round gets,
@@ -90,9 +95,10 @@ One pass:
    again -- new threads, the checks the fix restarted. A pass with no
    thread waits for pending checks (`pr.CHECK_POLL_S` between reads, at
    most `pr.CHECK_WAIT_S`); red checks park the run, green ones are "ready
-   to merge": the PR is merged through its merge API under `[merge]
-   approve = "auto"` or after the operator's `--approve`, and parks for the
-   human under `approve = "human"`. After `[merge] pr_rounds` passes the
+   to merge": the PR is merged through its merge API, pinned to the
+   candidate's sha so a push that races the pass is refused rather than
+   landed, under `[merge] approve = "auto"` or after the operator's
+   `--approve`, and parks for the human under `approve = "human"`. After `[merge] pr_rounds` passes the
    run parks naming the cap, whatever the PR looks like.
 
 Every park is the `awaiting_merge_approval` park of `approve = "human"`:
