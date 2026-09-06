@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[282 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T04:50:51Z — KO-250
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- (unparsed):f42a2949bcfb [p2] CRITERION 1: met — tests/test_factory_loop.py::LoopTests::test_the_ledger_row_is_in_the_store_before_its_board_comment CRITERION 2: met — tests/test_cli_requeue…
-- criteria:3 [p2] CRITERION 3: not met — store/__init__.py:331 migrates to v6; tests/test_store_schema.py::StoreSchemaVersionTests::test_a_version_4_store_migrates_in_place_and_s…
-- criteria:4 [p2] CRITERION 4: unwitnessed — all 763 tests passed locally, but `ruff check .` exited 127 (`ruff: command not found`); the supplied lint success could not be indep…
-
-## 2026-09-06T04:56:26Z — KO-250
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+[284 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T04:56:26Z — KO-250
 FAILED: terminal adjudication: FAIL; branch task/ko-250-the-ledger-lives-in-the-store preserved at f2068c780586
@@ -766,3 +756,10 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T07:14:35Z — KO-262
 FAILED: terminal adjudication: FAIL; branch task/ko-262-merge-mode-pr-2-2-the-shepher preserved at 672e2efca0dd
 actual: 21.9 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T07:23:22Z — KO-286
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T07:24:30Z — KO-286
+MERGED to main as 661e5bb.
+actual: 9.0 min · estimate: 20 min · rounds: 1
