@@ -92,6 +92,8 @@ EXPECTED_READ = [
     "failed_attempts_since",
     "latest_human_intervention_at",
     "live_runs",
+    # KO-274: the `serve` daemon's `/shipped` page of merged runs.
+    "merged_runs",
     # KO-269: the `serve` daemon's `/runs/N` reads.
     "narrative_events",
     "newest_ended_rounds",
