@@ -256,12 +256,14 @@ class LoopTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         (run_id,) = self.read("SELECT id FROM runs")[0]
+        # The review-cap note opens the narrative (KO-299), then the
+        # approving round, then the merge.
         self.assertEqual(
             self.read("SELECT runId, kind FROM ledger ORDER BY at, id"),
-            [(run_id, "round"), (run_id, "merge")])
-        self.assertEqual([len(seen) for seen in provider.seen], [1, 2])
+            [(run_id, "note"), (run_id, "round"), (run_id, "merge")])
+        self.assertEqual([len(seen) for seen in provider.seen], [1, 2, 3])
         self.assertEqual([seen[-1][0] for seen in provider.seen],
-                         ["round", "merge"])
+                         ["note", "round", "merge"])
         for (_task, body), seen in zip(provider.comments, provider.seen):
             self.assertIn(seen[-1][1], body)
 
@@ -280,19 +282,21 @@ class LoopTests(LoopFixture):
         (run_id,) = self.read("SELECT id FROM runs")[0]
         entries = self.read(
             "SELECT runId, kind, source FROM ledger ORDER BY at, id")
-        self.assertEqual(entries, [(run_id, "round", "loop"),
+        self.assertEqual(entries, [(run_id, "note", "loop"),
+                                   (run_id, "round", "loop"),
                                    (run_id, "round", "loop"),
                                    (run_id, "merge", "loop")])
-        # Three comments, and at each one the table already held the entry
-        # the comment carries: one row at the findings round's comment, two
-        # at the approving round's, three at the merge's.
-        self.assertEqual(len(provider.comments), 3)
-        self.assertEqual([len(seen) for seen in provider.seen], [1, 2, 3])
+        # Four comments, and at each one the table already held the entry
+        # the comment carries: one row at the review-cap note's comment, two
+        # at the findings round's, three at the approving round's, four at
+        # the merge's.
+        self.assertEqual(len(provider.comments), 4)
+        self.assertEqual([len(seen) for seen in provider.seen], [1, 2, 3, 4])
         for (_task, body), seen in zip(provider.comments, provider.seen):
             kind, text = seen[-1]
             self.assertIn(text, body)
         self.assertEqual([seen[-1][0] for seen in provider.seen],
-                         ["round", "round", "merge"])
+                         ["note", "round", "round", "merge"])
 
     # --- both rounds spent, then a terminal PASS -------------------------
 
@@ -323,6 +327,49 @@ class LoopTests(LoopFixture):
         self.assertIn("fix round 1", subjects)
         self.assertIn("fix round 2", subjects)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_review_cap_from_config_admits_a_third_round(self):
+        """The round cap is the target's `[loop]` review keys applied to
+        the candidate's diff (KO-299). With one extra round per changed line
+        and a ceiling of 3, a one-line candidate earns a third round, so a
+        reviewer that requests changes twice and approves on round 3 merges
+        without an adjudicator; the run's narrative carries the cap it was
+        given. Under the default config the same script hits the cap after
+        round 2 and the third turn is the terminal adjudication, as today.
+        """
+        self.configure("[loop]\nreview_rounds = 2\n"
+                       "review_rounds_per_lines = 1\nreview_rounds_max = 3\n")
+        fake, _ = self.loop(Commit("first cut"), REQUEST_CHANGES,
+                            Commit("fix round 1"), REQUEST_CHANGES,
+                            Commit("fix round 2"), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "review", "implement", "review"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(
+            self.read("SELECT round, verdict FROM reviewRounds ORDER BY round"),
+            [(1, "changes_requested"), (2, "changes_requested"),
+             (3, "pass")])
+        self.assertIn("fix round 2", self.subjects())
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE kind = 'note'"),
+            [("Review cap 3 for 1 changed lines",)])
+
+        # The same script under the default config: two rounds, then the
+        # adjudicator's turn, which an APPROVE reply is no verdict for.
+        self.setUp()
+        fake, _ = self.loop(Commit("first cut"), REQUEST_CHANGES,
+                            Commit("fix round 1"), REQUEST_CHANGES,
+                            Commit("fix round 2"), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "review", "implement", "adjudicate"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE kind = 'note'"),
+            [("Review cap 2 for 1 changed lines",)])
+        self.assertIn("after 2 review rounds", self.read(
+            "SELECT text FROM ledger WHERE kind = 'adjudication'")[0][0])
 
     # --- adjudication refuses --------------------------------------------
 
