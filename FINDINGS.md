@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[304 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T07:05:27Z — KO-262
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:1140 [p1] [P1] [holophyte/loop.py:1140](/home/reviewer/candidate/holophyte/loop.py:1140): The shepherd can auto-merge a fix commit without independent review of that co…
-
-## 2026-09-06T07:14:34Z — KO-262
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T07:14:35Z — KO-262
-FAILED: terminal adjudication: FAIL; branch task/ko-262-merge-mode-pr-2-2-the-shepher preserved at 672e2efca0dd
-actual: 21.9 min · estimate: 30 min · rounds: 3
+[307 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T07:23:22Z — KO-286
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -757,3 +745,15 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T15:42:39Z — KO-300
 MERGED to main as 892c0af.
 actual: 5.4 min · estimate: 15 min · rounds: 2
+
+## 2026-09-06T15:52:05Z — KO-301
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/serve.py:84 [p2] [P2] [holophyte/serve.py:84](/home/reviewer/candidate/holophyte/serve.py:84): The remote regex accepts query strings and fragments. With `origin=https://githu…
+
+## 2026-09-06T15:59:06Z — KO-301
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T16:00:20Z — KO-301
+MERGED to main as bd6a042.
+actual: 17.6 min · estimate: 25 min · rounds: 2
