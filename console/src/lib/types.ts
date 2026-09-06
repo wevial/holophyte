@@ -80,6 +80,8 @@ export interface RunDetailBody {
     host: string | null;
     heartbeat_age_ms?: number | null;
     merge_sha?: string | null;
+    /** The merge commit's page on origin when the sha has reached it, else null. */
+    commit_url?: string | null;
     /** The loop's review-round cap; a body without it falls back to the rounds seen. */
     max_rounds?: number;
   };
@@ -126,6 +128,9 @@ export interface ShippedRow {
   actual_min: number;
   estimate_min: number | null;
   merge_sha: string | null;
+  /** The merge commit's page on the repository's origin when the sha has
+   *  reached `origin/main`, else null (holophyte/serve.py `commit_url()`). */
+  commit_url: string | null;
   host: string | null;
   /** The console's stamp: the base of the daemon the row came from. */
   daemon?: string;

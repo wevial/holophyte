@@ -155,3 +155,10 @@ export function mergeRows(existing: ShippedRow[], incoming: ShippedRow[]): Shipp
 export function shortSha(sha: string | null): string {
   return sha ? sha.slice(0, 7) : "";
 }
+
+/** Where the sha cell points: `commit_url` when the daemon found the merge
+ *  commit on origin, else null and the cell stays plain text. A url with
+ *  no sha to show is nothing to link. */
+export function commitLink(row: { merge_sha: string | null; commit_url?: string | null }): string | null {
+  return row.merge_sha && row.commit_url ? row.commit_url : null;
+}

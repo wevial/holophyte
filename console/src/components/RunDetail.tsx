@@ -11,6 +11,7 @@ import { FilesTouched } from "./FilesTouched";
 import { FindingCard } from "./FindingCard";
 import { RoundTimeline } from "./RoundTimeline";
 import { RunLog } from "./RunLog";
+import { Sha } from "./ShippedTable";
 
 /** "Round R of MAX": R is the rounds seen (the first one is coming while
  *  none is), MAX the loop's cap from the wire, else the rounds seen. */
@@ -67,6 +68,7 @@ function Card({ body, files, now }: { body: RunDetailBody; files: RunFilesState;
           started {formatClock(run.started_ms)}
           {run.host ? ` · ${run.host}` : ""}
         </span>
+        {run.merge_sha && <Sha row={{ merge_sha: run.merge_sha, commit_url: run.commit_url }} />}
         <span
           data-box={over ? "over" : "left"}
           className={`ml-auto font-mono text-[12px] ${over ? "font-semibold text-bad" : "text-muted"}`}

@@ -13,6 +13,7 @@
     "actual_min": 18.0,
     "estimate_min": 30.0,
     "merge_sha": "3f9c2ab0c1d2e3f4",
+    "commit_url": "https://github.com/example/writer/commit/3f9c2ab0c1d2e3f4",
     "host": "writer"
    },
    {
@@ -26,6 +27,7 @@
     "actual_min": 9.0,
     "estimate_min": 30.0,
     "merge_sha": "b71e04d5a6b7c8d9",
+    "commit_url": null,
     "host": "writer"
    },
    {
@@ -39,6 +41,7 @@
     "actual_min": 38.0,
     "estimate_min": 30.0,
     "merge_sha": "9a0c5e1f2a3b4c5d",
+    "commit_url": null,
     "host": "kernel"
    },
    {
@@ -52,6 +55,7 @@
     "actual_min": 12.0,
     "estimate_min": 30.0,
     "merge_sha": "7be1a40e5f6a7b8c",
+    "commit_url": null,
     "host": "writer"
    },
    {
@@ -65,6 +69,7 @@
     "actual_min": 26.0,
     "estimate_min": 30.0,
     "merge_sha": "c02d9e7a8b9c0d1e",
+    "commit_url": null,
     "host": "kernel"
    },
    {
@@ -78,6 +83,7 @@
     "actual_min": 21.0,
     "estimate_min": 30.0,
     "merge_sha": "e5d0f88b9c0d1e2f",
+    "commit_url": null,
     "host": "kernel"
    },
    {
@@ -91,6 +97,7 @@
     "actual_min": 15.0,
     "estimate_min": null,
     "merge_sha": "2c8b6a3c0d1e2f3a",
+    "commit_url": null,
     "host": "writer"
    }
   ],
