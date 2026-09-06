@@ -27,6 +27,8 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+import store
+
 
 def open_readonly(path) -> sqlite3.Connection:
     """Open the store at `path` read-only and return the connection.
@@ -40,9 +42,13 @@ def open_readonly(path) -> sqlite3.Connection:
 
     `row_factory` is left unset on purpose: the functions below build their
     rows themselves, column by column, so the tuple shape is the contract.
+
+    Waits `store.BUSY_TIMEOUT_S` for a lock, the same as the writable
+    opener, so a reader is not the one that dies when a checkpoint or a
+    long write holds the file.
     """
     uri = Path(path).resolve().as_uri() + "?mode=ro"
-    return sqlite3.connect(uri, uri=True)
+    return sqlite3.connect(uri, uri=True, timeout=store.BUSY_TIMEOUT_S)
 
 
 # --- tickets -----------------------------------------------------------------

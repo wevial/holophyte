@@ -285,6 +285,18 @@ class OracleTests(PopulatedStore):
         self.assertEqual((beat.pid, beat.passes), (41, 2))
 
 
+class OpenReadonlyTests(PopulatedStore):
+    def test_shares_the_busy_timeout(self):
+        # The pragma reads back what connect(timeout=) installed, so this is
+        # the connection's own account of its wait, not the argument echoed.
+        ro = read.open_readonly(self.path)
+        self.addCleanup(ro.close)
+        self.assertEqual(
+            ro.execute("PRAGMA busy_timeout").fetchone(),
+            (store.BUSY_TIMEOUT_S * 1000,))
+        self.assertNotEqual(store.BUSY_TIMEOUT_S, 5, "the sqlite3 default")
+
+
 class ReadonlyTests(PopulatedStore):
     def test_a_write_through_open_readonly_is_refused_and_changes_nothing(self):
         before = self.conn.execute(
