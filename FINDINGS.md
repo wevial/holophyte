@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[228 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T00:43:07Z — KO-265
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):838ea08c0811 [p2] CRITERION 1: met — tests/test_serve.py::ConsoleTests::test_root_and_a_file_answer_their_bytes_typed_and_uncached CRITERION 2: met — tests/test_serve.py::Console…
-- criteria:4 [p2] CRITERION 4: unwitnessed — no test fetches `/runs` and `/attention` with `dist/` present; the new precedence test covers only `/status` Given `/status`, `/runs`…
-
-## 2026-09-06T00:48:11Z — KO-265
-Round 2: pass · reviewer codex-sol-medium · verify passed
+[230 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T00:49:02Z — KO-265
 MERGED to main as 880b964.
@@ -768,3 +759,10 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T02:23:07Z — KO-269
 MERGED to main as eaccb8c.
 actual: 19.3 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T02:28:22Z — KO-270
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T02:28:23Z — KO-270
+MERGED to main as 5f483f3.
+actual: 5.2 min · estimate: 30 min · rounds: 1
