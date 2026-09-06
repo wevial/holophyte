@@ -762,3 +762,71 @@ def report_config(target):
             f"[holo2] {target.config_path}: [report] findings must be one of "
             f"{allowed}, got {values['findings']!r}")
     return ReportConfig(**values)
+
+
+# Where the other daemons are. One daemon serves one project; the console
+# shows every project on every host, so the page needs to be told where to
+# fan out, and the daemon it was loaded from tells it (`GET /peers`). The
+# entries are `HOST:PORT` strings the page fetches, never addresses this
+# daemon connects to. Config on the writer host is where the operator
+# already writes such things (design note 13).
+CONSOLE_KEYS = {
+    "daemons": (),
+}
+KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
+ConsoleConfig = collections.namedtuple("ConsoleConfig", ("daemons",))
+
+
+def split_address(text):
+    """`HOST:PORT` as a `(host, port)` pair; ValueError otherwise.
+
+    The host is whatever precedes the last colon, non-empty; the port a
+    decimal integer. Nothing here decides what a valid hostname is: the
+    bind (or the browser's fetch) does. `--serve` and `[console] daemons`
+    hold their addresses to this one rule, so an entry the console cannot
+    reach for want of a port is refused where `--serve` would refuse it.
+    """
+    host, sep, port = str(text).rpartition(":")
+    if not sep or not host or not port.isdecimal():
+        raise ValueError(f"expected HOST:PORT, got {text!r}")
+    return host, int(port)
+
+
+def console_config(target):
+    """The target's `[console]` knobs over the defaults.
+
+    Checked at startup beside `report_config()`, the same way: an absent
+    table (or key) is the defaults exactly -- no other daemons -- and a
+    present `daemons` has to be a list of `HOST:PORT` strings, each one
+    `split_address()` accepts and none of them twice: `"nope"` names no
+    port to fetch, `""` nothing at all, and a duplicate would draw one
+    host's projects twice. The refusal names the table, the key and the
+    entry, like a bad `[report]` value. Keys this version does not know
+    are refused by `check_config_keys()`.
+    """
+    table = target.config().get("console", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [console] must be a table, got "
+            f"{type(table).__name__}")
+    daemons = table.get("daemons", CONSOLE_KEYS["daemons"])
+    if not isinstance(daemons, (list, tuple)):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [console] daemons must be a list "
+            f"of HOST:PORT strings, got {daemons!r}")
+    seen = set()
+    for entry in daemons:
+        try:
+            if not isinstance(entry, str):
+                raise ValueError(f"expected HOST:PORT, got {entry!r}")
+            split_address(entry)
+        except ValueError as error:
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [console] daemons: {error}"
+            ) from None
+        if entry in seen:
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [console] daemons: {entry!r} "
+                f"is listed twice")
+        seen.add(entry)
+    return ConsoleConfig(daemons=tuple(daemons))

@@ -276,6 +276,7 @@ class KnownKeyTests(ConfigTestCase):
                        '[supervisor]\nstale_heartbeat_min = 7\n',
                        '[loop]\nstop_on_failures = false\n',
                        '[report]\nhots_label = "x"\n',
+                       '[console]\nother = 1\n',
                        '[board]\nprojet_id = "x"\n'):
             with self.subTest(config=config):
                 self.locate(config)
@@ -1680,6 +1681,57 @@ class ReportConfigTests(ConfigTestCase):
                 self.assertIn("[report]", message)
                 self.assertIn("findings", message)
                 report.assert_not_called()
+
+
+class ConsoleConfigTests(ConfigTestCase):
+    """`[console] daemons`: the other daemons as `HOST:PORT` strings, each
+    held to `--serve`'s address rule, none twice; empty by default."""
+
+    def test_an_absent_table_is_no_daemons(self):
+        self.locate()
+
+        self.assertEqual(holophyte.config.console_config(self.tgt).daemons, ())
+
+    def test_a_list_of_addresses_is_read_in_order(self):
+        self.locate('[console]\ndaemons = ["writer-2:7710", "writer-3:7711"]\n')
+
+        self.assertEqual(holophyte.config.console_config(self.tgt).daemons,
+                         ("writer-2:7710", "writer-3:7711"))
+
+    def test_a_bad_entry_is_a_startup_error_naming_the_key_and_the_entry(self):
+        """`"nope"` names no port, `""` nothing, and a duplicate would draw
+        one host twice: startup refuses each, naming `[console] daemons` and
+        the entry, before anything is served."""
+        for line, entry in (('daemons = ["nope"]', "'nope'"),
+                            ('daemons = [""]', "''"),
+                            ('daemons = ["writer-2:7710", "writer-2:7710"]',
+                             "'writer-2:7710'"),
+                            ('daemons = "writer-2:7710"', "'writer-2:7710'")):
+            with self.subTest(line=line):
+                target = self.locate(f"[console]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[console] daemons", message)
+                self.assertIn(entry, message)
+                report.assert_not_called()
+
+    def test_an_unknown_key_is_a_startup_error(self):
+        target = self.locate("[console]\nother = 1\n").path
+
+        with patch.object(holophyte.cli, "report") as report:
+            with self.assertRaises(SystemExit) as raised:
+                holophyte.cli.cli([str(target), "--report"])
+
+        message = str(raised.exception)
+        self.assertIn("[console]", message)
+        self.assertIn("other", message)
+        self.assertIn("unknown key", message)
+        report.assert_not_called()
 
 
 class MergeConfigTests(ConfigTestCase):

@@ -1,9 +1,14 @@
 # HTTP endpoints
 
-`--serve PORT|HOST:PORT` answers five paths as JSON and serves the
+`--serve PORT|HOST:PORT` answers the JSON paths below and serves the
 console's built files at `/`. Every response carries
-`Cache-Control: no-store`; the JSON ones `Content-Type: application/json`;
-every request opens the store read-only and closes it. Unknown paths are
+`Cache-Control: no-store` and `Access-Control-Allow-Origin: *`; the JSON
+ones `Content-Type: application/json`; every request opens the store
+read-only and closes it. The open origin is for the console page, which
+one daemon serves and which fetches the others from the browser: without
+the header the browser refuses a cross-origin answer. The daemon is
+read-only and bound to loopback or a private-network host, so the header
+gives away nothing the bind address does not. Unknown paths are
 404 and any method but GET is 405, both with a JSON `error`. A target with
 no store answers 503.
 
@@ -212,6 +217,22 @@ hours whose ticket has not since merged or been requeued, `supervisor`
 when not live. A daemon older than this endpoint answers 404, and the
 drawer then computes the stale-run and supervisor rows itself from
 `/status`; any other failure of `/attention` is shown, never hidden.
+
+## `GET /peers`
+
+Where the other daemons are, so the page can fan out from whichever
+daemon it was loaded from:
+
+```json
+{"self": "127.0.0.1:7710", "peers": ["writer-2:7710", "writer-3:7710"]}
+```
+
+`self` is the address this daemon bound, `HOST:PORT` as `--serve`
+announced it, not the machine's name. `peers` is the target's `[console]
+daemons` list (see `docs/config.md`) in its configured order, empty when
+the table is absent: an empty list, never an error. The daemon answers
+from config and never contacts a peer; it needs no store, so a target
+with none still answers 200 here.
 
 ## Static files
 
