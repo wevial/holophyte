@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[199 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-04T17:58:33Z — KO-247
-Round 2: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-04T17:59:22Z — KO-247
-MERGED to main as 6376150.
-actual: 16.6 min · estimate: 25 min · rounds: 2
+[201 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-04T19:28:15Z — KO-248
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -757,3 +750,10 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-06T00:14:23Z — KO-263
 MERGED to main as b52e585.
 actual: 7.9 min · estimate: 25 min · rounds: 1
+
+## 2026-09-06T00:23:02Z — KO-264
+Round 1: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-06T00:23:53Z — KO-264
+MERGED to main as bebf562.
+actual: 9.5 min · estimate: 25 min · rounds: 1
