@@ -115,8 +115,59 @@ class ReviewerBoundaryTests(unittest.TestCase):
         self.assertFalse(any("docker.sock" in mount for mount in mounts))
         rendered = "\n".join(command)
         self.assertIn("--json", rendered)
-        self.assertIn("gpt-5.6-sol", rendered)
-        self.assertIn('model_reasoning_effort="medium"', rendered)
+        # With no route named, the container runs today's pair, handed to the
+        # script as arguments after the goal rather than spelled into it.
+        self.assertEqual(command[-4:], ["review", "review", "gpt-5.6-sol",
+                                        'model_reasoning_effort="medium"'])
+        self.assertIn('-m "$2" -c "$3"', rendered)
+        self.assertNotIn("gpt-5.6-sol", command[command.index("-c") + 1])
+
+    def test_container_runs_the_model_and_effort_it_is_handed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("candidate", "home", "toolchain"):
+                (root / name).mkdir()
+            command = review_runner.container_command(
+                image="holophyte-reviewer:test",
+                workspace=root / "candidate",
+                reviewer_home=root / "home",
+                toolchain=root / "toolchain",
+                name="holophyte-review-test",
+                prompt="review",
+                uid=1000,
+                gid=1000,
+                model="gpt-6-astra",
+                effort="medium",
+            )
+
+        # `-m "$2"` and `-c "$3"` in the script, the pair as the arguments the
+        # script reads them from: the quoting stays the shell's, not Python's.
+        self.assertEqual(command[-2:], ["gpt-6-astra",
+                                        'model_reasoning_effort="medium"'])
+        self.assertIn('-m "$2" -c "$3"', "\n".join(command))
+        self.assertNotIn("gpt-5.6-sol", "\n".join(command))
+        self.assertEqual(review_runner.profile_for("gpt-6-astra", "medium"),
+                         "codex-astra-medium")
+        self.assertEqual(review_runner.PROFILE, "codex-sol-medium")
+
+    def test_run_review_refuses_a_route_the_profile_does_not_name(self):
+        # Refused before any staging: a `reviewRounds` row naming one route
+        # about a round another ran is the record the runner will not help
+        # write, and an effort outside Codex's vocabulary is not a route.
+        with patch.object(review_runner, "_ensure_image",
+                          side_effect=AssertionError("staged")):
+            for kwargs, expected in (
+                (dict(model="gpt-6-astra", effort="medium",
+                      profile="codex-sol-medium"), "codex-astra-medium"),
+                (dict(model="gpt-6-astra", effort="max"), "max"),
+                (dict(model=""), "empty"),
+            ):
+                with self.subTest(**kwargs):
+                    with self.assertRaises(review_runner.ReviewBoundaryError) as e:
+                        review_runner.run_review(
+                            repo=ROOT, base_sha="1" * 40, candidate_sha="2" * 40,
+                            prompt="review", **kwargs)
+                    self.assertIn(expected, str(e.exception))
 
     def test_structured_events_require_command_success_and_terminal_verdict(self):
         events = [
