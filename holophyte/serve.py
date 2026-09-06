@@ -268,6 +268,11 @@ def no_store(target):
             "target": str(target.path)}
 
 
+# An optional sign and digits: what `int()` accepts minus its leniencies
+# (whitespace, underscores), so a cursor is exactly what the client typed.
+INTEGER = re.compile(r"-?[0-9]+")
+
+
 def parse_limit(query, default=None, cap=None):
     """`?limit=N` as a positive int, `default` when absent; ValueError
     otherwise. A limit past `cap` is answered as `cap`, not refused: a
@@ -288,12 +293,17 @@ def parse_limit(query, default=None, cap=None):
 
 
 def parse_before(query):
-    """`?before=ID` as an int, None when absent; ValueError otherwise."""
+    """`?before=ID` as an int, None when absent; ValueError otherwise.
+
+    Any integer parses, sign and size included: whether a run has that id
+    is the view's question, and an id no run has is an empty page, not a
+    400. Only a non-integer is a client bug to be told about.
+    """
     values = parse_qs(query, keep_blank_values=True).get("before")
     if values is None:
         return None
     text = values[-1]
-    if not text.isdigit():
+    if not INTEGER.fullmatch(text):
         raise ValueError(f"before must be an integer run id, got {text!r}")
     return int(text)
 

@@ -851,10 +851,15 @@ class ShippedTests(ServeTestCase):
                 self.assertIn(name, body["error"])
                 self.assertNotIn("rows", body)
 
-        code, _headers, body = self.request("GET", "/shipped?before=99999")
-        self.assertEqual(code, 200)
-        self.assertEqual(body["rows"], [])
-        self.assertIsNone(body["next_before"])
+        # An integer no run has is an empty page, whichever side of the id
+        # range it falls on: negative, or past what SQLite can bind.
+        for cursor in ("99999", "-1", "0", str(2 ** 63), str(-(2 ** 63) - 1)):
+            with self.subTest(before=cursor):
+                code, _headers, body = self.request(
+                    "GET", f"/shipped?before={cursor}")
+                self.assertEqual(code, 200)
+                self.assertEqual(body["rows"], [])
+                self.assertIsNone(body["next_before"])
 
         code, _headers, body = self.request("GET", "/shipped?limit=500")
         self.assertEqual(code, 200)

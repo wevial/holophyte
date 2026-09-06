@@ -275,6 +275,11 @@ class MergedRun:
     mergeSha: str | None
 
 
+# The range of a SQLite INTEGER, and so of any run id a cursor can name.
+SQLITE_INT64_MIN = -(2 ** 63)
+SQLITE_INT64_MAX = 2 ** 63 - 1
+
+
 def merged_runs(conn, limit, before=None):
     """Up to `limit` runs with outcome `merged`, newest end first (ties by
     id descending), keyset-paged on `(endedAt, id)`.
@@ -284,6 +289,11 @@ def merged_runs(conn, limit, before=None):
     by passing the last id it saw. An id no run has is an empty page, not
     an error: the run may have been the last on a page that is now gone.
     """
+    if (before is not None
+            and not SQLITE_INT64_MIN <= before <= SQLITE_INT64_MAX):
+        # Past what an INTEGER column can hold, so no run has it; binding
+        # it would raise OverflowError rather than answer the empty page.
+        return []
     where = "r.outcome = 'merged' AND r.endedAt IS NOT NULL"
     params = []
     if before is not None:
