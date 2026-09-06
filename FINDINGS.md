@@ -653,21 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[203 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-04T19:37:25Z — KO-248
-MERGED to main as bb163b0.
-actual: 19.5 min · estimate: 25 min · rounds: 2
-
-## 2026-09-04T23:38:12Z — KO-253
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- holophyte/config.py:373 [p2] [holophyte/config.py](/workspace/holophyte/config.py:373): prefixes beginning with `-` are accepted despite being invalid branch names. For example, `branch_p…
-
-## 2026-09-04T23:43:20Z — KO-253
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (1):
-- holophyte/config.py:374 [p0] Blocker: [holophyte/config.py](/workspace/holophyte/config.py:374) accepts prefixes ending in `.`, such as `factory.`, although `git check-ref-format --branch…
+[206 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-04T23:48:09Z — KO-253
 Round 3: pass · reviewer codex-sol-medium · verify passed
@@ -755,3 +741,16 @@ Round 1: pass · reviewer codex-sol-medium · verify passed
 ## 2026-09-06T00:35:11Z — KO-283
 MERGED to main as 9838868.
 actual: 11.3 min · estimate: 25 min · rounds: 1
+
+## 2026-09-06T00:43:07Z — KO-265
+Round 1: changes_requested · reviewer codex-sol-medium · verify passed
+Findings (2):
+- (unparsed):838ea08c0811 [p2] CRITERION 1: met — tests/test_serve.py::ConsoleTests::test_root_and_a_file_answer_their_bytes_typed_and_uncached CRITERION 2: met — tests/test_serve.py::Console…
+- criteria:4 [p2] CRITERION 4: unwitnessed — no test fetches `/runs` and `/attention` with `dist/` present; the new precedence test covers only `/status` Given `/status`, `/runs`…
+
+## 2026-09-06T00:48:11Z — KO-265
+Round 2: pass · reviewer codex-sol-medium · verify passed
+
+## 2026-09-06T00:49:02Z — KO-265
+MERGED to main as 880b964.
+actual: 13.8 min · estimate: 30 min · rounds: 2
