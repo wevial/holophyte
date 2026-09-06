@@ -115,6 +115,27 @@ test("the newest round's findings are cards pilled must, should, nit with path:l
   ]);
 });
 
+test("the header shows no sha for an unmerged run, the plain short sha when merged, and an anchor when commit_url is set", async () => {
+  await mount(DETAIL, T + 20 * MINUTE);
+  expect(document.querySelector("[data-sha]")).toBeNull();
+  cleanup();
+
+  await mount({ ...DETAIL, run: { ...DETAIL.run, merge_sha: "3f9c2ab0c1d2e3f4", commit_url: null } }, T + 20 * MINUTE);
+  const plain = document.querySelector("header [data-sha]")!;
+  expect(plain.tagName).toBe("SPAN");
+  expect(plain.textContent).toBe("3f9c2ab");
+  cleanup();
+
+  const url = "https://github.com/example/writer/commit/3f9c2ab0c1d2e3f4";
+  await mount({ ...DETAIL, run: { ...DETAIL.run, merge_sha: "3f9c2ab0c1d2e3f4", commit_url: url } }, T + 20 * MINUTE);
+  const linked = document.querySelector("header [data-sha]") as HTMLAnchorElement;
+  expect(linked.tagName).toBe("A");
+  expect(linked.getAttribute("href")).toBe(url);
+  expect(linked.getAttribute("target")).toBe("_blank");
+  expect(linked.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(linked.textContent).toBe("3f9c2ab");
+});
+
 test("past the box the header reads 10m 00s over the box in the bad tone and the segments fill the bar", async () => {
   await mount(DETAIL, T + 40 * MINUTE);
   const box = document.querySelector("[data-box]")!;

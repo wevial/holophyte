@@ -2,6 +2,7 @@ import { formatClock } from "../lib/format";
 import {
   boxFill,
   boxRatio,
+  commitLink,
   deltaLabel,
   deltaTone,
   groupByDay,
@@ -50,6 +51,27 @@ export function ActualVsBox({ actualMin, estimateMin }: { actualMin: number; est
   );
 }
 
+const SHA_CLASS = "font-mono text-[12px] text-link";
+
+/** The short sha in the mono teal style: an anchor to the commit on origin
+ *  opening in a new tab where the daemon served `commit_url`, else plain. */
+export function Sha({ row }: { row: { merge_sha: string | null; commit_url?: string | null } }) {
+  const href = commitLink(row);
+  const text = shortSha(row.merge_sha);
+  if (href == null) {
+    return (
+      <span data-sha className={SHA_CLASS}>
+        {text}
+      </span>
+    );
+  }
+  return (
+    <a data-sha href={href} target="_blank" rel="noopener noreferrer" className={`${SHA_CLASS} hover:underline`}>
+      {text}
+    </a>
+  );
+}
+
 function Row({ row }: { row: ShippedRow }) {
   return (
     <div data-row={row.id} className={`${GRID} border-t border-line-faint py-[11px] hover:bg-hover`}>
@@ -60,9 +82,7 @@ function Row({ row }: { row: ShippedRow }) {
       <span className="font-mono text-[13px] text-body">{row.rounds}</span>
       <span className="font-mono text-[13px] text-body">{row.findings}</span>
       <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} />
-      <span data-sha className="font-mono text-[12px] text-link">
-        {shortSha(row.merge_sha)}
-      </span>
+      <Sha row={row} />
     </div>
   );
 }

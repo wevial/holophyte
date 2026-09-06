@@ -59,6 +59,29 @@ test("the Project cell names the daemon's project, and the host label appears no
   expect(cells.some((text) => text!.includes("writer-1"))).toBe(false);
 });
 
+test("a row with commit_url renders its short sha as a new-tab anchor to the commit on origin", () => {
+  const row: ShippedRow = { ...ROWS[0]!, commit_url: "https://github.com/example/writer/commit/3f9c2ab0c1d2e3f4" };
+  render(<ShippedTable rows={[row]} now={now} tz="UTC" />);
+  const sha = document.querySelector("[data-row='236'] [data-sha]") as HTMLAnchorElement;
+  expect(sha.tagName).toBe("A");
+  expect(sha.getAttribute("href")).toBe("https://github.com/example/writer/commit/3f9c2ab0c1d2e3f4");
+  expect(sha.getAttribute("target")).toBe("_blank");
+  expect(sha.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(sha.textContent).toBe("3f9c2ab");
+  expect(sha.className).toContain("text-link");
+  expect(sha.className).toContain("hover:underline");
+});
+
+test("a row with commit_url null renders the plain short sha with no anchor", () => {
+  const row: ShippedRow = { ...ROWS[0]!, commit_url: null };
+  render(<ShippedTable rows={[row]} now={now} tz="UTC" />);
+  const sha = document.querySelector("[data-row='236'] [data-sha]")!;
+  expect(sha.tagName).toBe("SPAN");
+  expect(sha.textContent).toBe("3f9c2ab");
+  expect(sha.className).toContain("text-link");
+  expect(document.querySelector("[data-row='236'] a")).toBeNull();
+});
+
 test("days=1 keeps only today's group", () => {
   render(<ShippedTable rows={ROWS} now={now} tz="UTC" days={1} />);
   expect(dayHeaders().map((group) => group.label)).toEqual(["Today · Sat Sep 5"]);
