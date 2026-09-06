@@ -74,6 +74,11 @@ OCTET_STREAM = "application/octet-stream"
 # 400 rather than the static-file 404, and the shape is general enough for
 # a sibling `/runs/N/ledger` to share.
 RUN_PATH = re.compile(r"^/runs/([^/]+)$")
+# The captured id is an integer when it is an optionally signed run of
+# digits; anything else is 400. Integers no run can have (negative, or past
+# SQLite's INTEGER range) are 404 like any other absent id.
+RUN_ID = re.compile(r"^[+-]?\d+$")
+SQLITE_MAX_INT = 2**63 - 1
 
 
 def parse_address(text):
@@ -303,7 +308,7 @@ def run_detail(target, run_id, now=None):
     that is not an integer is 400; an integer with no run is 404 carrying
     `run`.
     """
-    if not run_id.isdigit():
+    if not RUN_ID.match(run_id):
         return 400, {"error": f"run id must be an integer, got {run_id!r}"}
     run_id = int(run_id)
     now = int(time() * 1000) if now is None else now
@@ -311,7 +316,11 @@ def run_detail(target, run_id, now=None):
         return 503, no_store(target)
     conn = store.read.open_readonly(target.store_path)
     try:
-        run = store.read.run_detail(conn, run_id)
+        # A negative id or one past SQLite's 64-bit INTEGER can name no
+        # run, so it is 404 without asking the store (which would raise
+        # OverflowError binding an out-of-range integer).
+        run = (store.read.run_detail(conn, run_id)
+               if 0 <= run_id <= SQLITE_MAX_INT else None)
         if run is None:
             return 404, {"error": "no such run", "run": run_id}
         rounds = store.read.rounds_of(conn, run_id)

@@ -909,6 +909,15 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn("error", body)
 
+        # Integers no run can have are still integers: 404 carrying `run`,
+        # not 400, and not a crash past SQLite's INTEGER range.
+        code, _headers, body = self.request("GET", "/runs/-1")
+        self.assertEqual(code, 404)
+        self.assertEqual(body["run"], -1)
+        code, _headers, body = self.request("GET", "/runs/9223372036854775808")
+        self.assertEqual(code, 404)
+        self.assertEqual(body["run"], 9223372036854775808)
+
         # `/runs` and `/runs?limit=N` answer as before.
         code, _headers, body = self.request("GET", "/runs")
         self.assertEqual(code, 200)
