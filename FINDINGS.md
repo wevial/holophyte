@@ -653,44 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[274 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T03:40:04Z — KO-274
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/store/read.py:293 [p2] [P2] Unknown integer cursors violate the empty-page contract. Reproduced `/shipped?before=9223372036854775808`: [store/read.py:293](/home/reviewer/candidate/s…
-- criteria:3 [p2] CRITERION 3: not met — unknown integer cursors -1 and 9223372036854775808 return 400 or disconnect instead of an empty 200 page. Given `?limit=0`, `?limit=x` or…
-
-## 2026-09-06T03:46:23Z — KO-274
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T03:47:21Z — KO-274
-MERGED to main as f50eeed.
-actual: 16.8 min · estimate: 30 min · rounds: 2
-
-## 2026-09-06T03:53:19Z — KO-275
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/src/components/Shipped.tsx:71 [p2] [P2] [Shipped.tsx:71](/home/reviewer/candidate/console/src/components/Shipped.tsx:71): Polling restores an exhausted pagination cursor. Reproduced loading all…
-
-## 2026-09-06T03:54:46Z — KO-275
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T03:54:46Z — KO-275
-MERGED to main as 4ade71e.
-actual: 7.4 min · estimate: 30 min · rounds: 2
-
-## 2026-09-06T03:59:26Z — KO-276
-FAILED: implementer made no commits; the empty branch and worktree were discarded
-actual: 4.6 min · estimate: 25 min · rounds: 0
-
-## 2026-09-06T04:42:32Z — KO-250
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/holophyte/loop.py:758 [p2] [holophyte/loop.py:758](/home/reviewer/candidate/holophyte/loop.py:758): Clean approval returns before recording a `round` entry. Reproducing `FakeAgent(Commi…
-- /home/reviewer/candidate/store/__init__.py:330 [p2] [store/__init__.py:330](/home/reviewer/candidate/store/__init__.py:330): Migration stamps v6, whereas criterion 3 explicitly requires v5. The base already con…
-- criteria:1 [p2] CRITERION 1: not met — A clean FakeAgent merge has no round ledger entry; the added test covers only REQUEST_CHANGES followed by approval. Given a FakeAgent run…
-- criteria:3 [p2] CRITERION 3: not met — tests/test_store_schema.py::StoreSchemaVersionTests::test_a_version_4_store_migrates_in_place_and_still_reports witnesses migration to v6…
+[282 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T04:50:51Z — KO-250
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -767,3 +730,39 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T06:12:06Z — KO-259
 MERGED to main as 29eecde.
 actual: 30.8 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T06:34:59Z — KO-262
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/pr.py:81 [p1] [P1] [holophyte/pr.py:81](/home/reviewer/candidate/holophyte/pr.py:81): Thread discovery reads only the first 100 threads without pagination. If those are res…
+- /home/reviewer/candidate/holophyte/pr.py:436 [p1] [P1] [holophyte/pr.py:436](/home/reviewer/candidate/holophyte/pr.py:436): The merge request omits the expected head SHA, and the shepherd never validates `sta…
+
+## 2026-09-06T06:43:44Z — KO-262
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:1227 [p1] **[P1] Verify the committed fix before resolving threads** — [holophyte/loop.py:1227](/home/reviewer/candidate/holophyte/loop.py:1227). Verification runs agai…
+- /home/reviewer/candidate/holophyte/pr.py:397 [p1] **[P1] Include thread follow-ups in adjudication** — [holophyte/pr.py:397](/home/reviewer/candidate/holophyte/pr.py:397). Only the opening comment survives pa…
+
+## 2026-09-06T06:52:11Z — KO-262
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T06:52:11Z — KO-262
+FAILED: terminal adjudication: FAIL; branch task/ko-262-merge-mode-pr-2-2-the-shepher preserved at 4211579b8075
+actual: 40.0 min · estimate: 30 min · rounds: 3
+
+## 2026-09-06T06:58:36Z — KO-262
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/store/__init__.py:1572 [p1] **[P1] `--shepherd` bypasses human merge approval for local runs** — [store/__init__.py:1572](/home/reviewer/candidate/store/__init__.py:1572). `shepherd()` r…
+
+## 2026-09-06T07:05:27Z — KO-262
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:1140 [p1] [P1] [holophyte/loop.py:1140](/home/reviewer/candidate/holophyte/loop.py:1140): The shepherd can auto-merge a fix commit without independent review of that co…
+
+## 2026-09-06T07:14:34Z — KO-262
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T07:14:35Z — KO-262
+FAILED: terminal adjudication: FAIL; branch task/ko-262-merge-mode-pr-2-2-the-shepher preserved at 672e2efca0dd
+actual: 21.9 min · estimate: 30 min · rounds: 3
