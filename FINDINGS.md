@@ -653,25 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[238 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T01:33:10Z — KO-284
-FAILED: terminal adjudication: FAIL; branch task/ko-284-the-reviewer-image-carries-bun preserved at 967cb2389738
-actual: 15.1 min · estimate: 25 min · rounds: 3
-
-## 2026-09-06T01:38:44Z — KO-284
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T01:39:34Z — KO-284
-MERGED to main as 5801348.
-actual: 4.9 min · estimate: 25 min · rounds: 1
-
-## 2026-09-06T01:46:33Z — KO-266
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T01:47:24Z — KO-266
-MERGED to main as 8719a64.
-actual: 7.8 min · estimate: 30 min · rounds: 1
+[243 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T01:53:57Z — KO-267
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -757,3 +739,30 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T03:00:53Z — KO-285
 MERGED to main as 541c368.
 actual: 6.8 min · estimate: 25 min · rounds: 1
+
+## 2026-09-06T03:05:53Z — KO-273
+FAILED: OperationalError: database is locked
+actual: 4.9 min · estimate: 25 min · rounds: 0
+
+## 2026-09-06T03:10:22Z — KO-273
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- console/src/components/FilesTouched.tsx:35 [p2] [FilesTouched.tsx:35](/workspace/console/src/components/FilesTouched.tsx:35): A successful fetch followed by a poll returning 409 still displays cached files…
+- criteria:3 [p2] CRITERION 3: not met — a 409 after a successful fetch hides the required message; the existing component test covers only an initial 409. Given a files endpoint…
+
+## 2026-09-06T03:11:57Z — KO-273
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (6):
+- (unparsed):c4d281a0a12e [p2] Verification is blocked: install failed with `EROFS` creating `console/node_modules`; tests reported 0 pass and 17 errors because `@happy-dom/global-registrator…
+- criteria:1 [p2] CRITERION 1: unwitnessed — component assertions exist in console/tests/FilesTouched.test.tsx, but could not execute. Given a files fixture of 12 entries with to…
+- criteria:2 [p2] CRITERION 2: unwitnessed — library and tone assertions exist in console/tests/files.test.ts and console/tests/FilesTouched.test.tsx, but could not execute. Give…
+- criteria:3 [p2] CRITERION 3: unwitnessed — endpoint-409 and remaining-card assertions exist in console/tests/RunDetail.test.tsx, but could not execute. Given a files endpoint a…
+- criteria:4 [p2] CRITERION 4: unwitnessed — summary, range, rows and chevron assertions exist in console/tests/RunLog.test.tsx, but could not execute. Given six narrative events…
+- criteria:5 [p2] CRITERION 5: unwitnessed — expand and shared-poll fetch assertions exist in console/tests/useRunFiles.test.tsx, but could not execute. Given a detail expanded w…
+
+## 2026-09-06T03:13:53Z — KO-273
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T03:13:53Z — KO-273
+FAILED: terminal adjudication: FAIL; branch task/ko-273-run-detail-files-touched-and-t preserved at 60288ae248c3
+actual: 5.6 min · estimate: 25 min · rounds: 3
