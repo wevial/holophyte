@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { isSupervisorStale } from "../lib/derive";
 import { formatDuration } from "../lib/format";
-import type { ProjectGroup } from "../lib/runs";
-import type { Run, Status } from "../lib/types";
+import { runKey, type ProjectGroup } from "../lib/runs";
+import type { Run } from "../lib/types";
 import { RunRow } from "./RunRow";
 
 /** One project's card: the daemon's host and supervisor line over a row
@@ -14,9 +14,9 @@ export function ProjectBlock({
   renderDetail,
 }: {
   group: ProjectGroup;
-  expandedRun: number | null;
-  onToggleRun: (id: number, status: Status) => void;
-  renderDetail?: (run: Run, status: Status) => ReactNode;
+  expandedRun: string | null;
+  onToggleRun: (key: string) => void;
+  renderDetail?: (run: Run, group: ProjectGroup) => ReactNode;
 }) {
   const { status } = group;
   const { supervisor, thresholds } = status;
@@ -42,16 +42,20 @@ export function ProjectBlock({
         </span>
       </header>
       <ul>
-        {group.runs.map((run) => (
-          <RunRow
-            key={run.id}
-            run={run}
-            thresholds={thresholds}
-            expanded={expandedRun === run.id}
-            onToggle={() => onToggleRun(run.id, status)}
-            detail={expandedRun === run.id ? renderDetail?.(run, status) : undefined}
-          />
-        ))}
+        {group.runs.map((run) => {
+          const key = runKey(group.base, run.id);
+          const expanded = expandedRun === key;
+          return (
+            <RunRow
+              key={run.id}
+              run={run}
+              thresholds={thresholds}
+              expanded={expanded}
+              onToggle={() => onToggleRun(key)}
+              detail={expanded ? renderDetail?.(run, group) : undefined}
+            />
+          );
+        })}
       </ul>
     </section>
   );

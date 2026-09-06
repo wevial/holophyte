@@ -29,9 +29,13 @@ interface Inner {
 
 const message = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure));
 
-/** One tick: `/peers` from the origin, then `/status` + `/attention` from
- *  the origin and every peer in parallel, each request bounded by
- *  `timeoutMs`. A failed `/peers` keeps polling the addresses last known. */
+/** One tick: `/status` + `/attention` from every daemon last known (the
+ *  origin alone before the first answer) start at once, beside `GET
+ *  /peers` from the origin; a daemon `/peers` newly names is polled as
+ *  soon as it is known. Every request of the tick shares one deadline,
+ *  `timeoutMs` from its start, so a `/peers` that hangs neither delays
+ *  nor pre-empts the known daemons' polls. A failed `/peers` reports the
+ *  addresses last known, in their order. */
 export async function pollPeers(
   origin: string,
   known: HostRecord[],
@@ -39,19 +43,26 @@ export async function pollPeers(
   timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<PollResult[]> {
   const signal = AbortSignal.timeout(timeoutMs);
-  let addresses: { address: string; base: string }[];
+  const inFlight = new Map<string, Promise<PollResult>>();
+  const start = ({ address, base }: { address: string; base: string }): Promise<PollResult> => {
+    let pending = inFlight.get(address);
+    if (!pending) {
+      pending = pollOnce(base, deps.fetch, signal).then(
+        (answer) => ({ address, base, ok: true, ...answer }),
+        (failure: unknown) => ({ address, base, ok: false, error: message(failure) }),
+      );
+      inFlight.set(address, pending);
+    }
+    return pending;
+  };
+  let addresses = known.length > 0 ? known.map(({ address, base }) => ({ address, base })) : peerAddresses(origin, null);
+  addresses.forEach(start);
   try {
     addresses = peerAddresses(origin, await fetchJson<PeersBody>(deps.fetch, `${origin}/peers`, signal));
   } catch {
-    addresses = known.length > 0 ? known.map(({ address, base }) => ({ address, base })) : peerAddresses(origin, null);
+    // Discovery failed: the tick reports the addresses it started with.
   }
-  const settled = await Promise.allSettled(addresses.map(({ base }) => pollOnce(base, deps.fetch, signal)));
-  return addresses.map(({ address, base }, index) => {
-    const outcome = settled[index]!;
-    return outcome.status === "fulfilled"
-      ? { address, base, ok: true, ...outcome.value }
-      : { address, base, ok: false, error: message(outcome.reason) };
-  });
+  return Promise.all(addresses.map(start));
 }
 
 /** Fan out to every daemon `/peers` names every `POLL_INTERVAL_MS`, keeping

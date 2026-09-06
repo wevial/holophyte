@@ -50,24 +50,41 @@ export function strikeTone(strikes: number, max: number): StrikeTone | null {
   return strikes >= max - 1 ? "red" : "amber";
 }
 
-/** One project's block: the daemon that serves it and its live runs. */
+/** One `/status` body and the base URL of the daemon that answered it. */
+export interface DaemonStatus {
+  base: string;
+  status: Status;
+}
+
+/** One project's block on the Floor: the daemon that serves it and its
+ *  live runs. Two daemons serving one project path are two blocks, each
+ *  under its own daemon's supervisor line. */
 export interface ProjectGroup {
   /** The project's path, as the rail selects it. */
   path: string;
   name: string;
+  /** The daemon's base URL: where the block's run details are read. */
+  base: string;
   status: Status;
   runs: Run[];
 }
 
-/** One group per project across the given `/status` bodies, in the order
- *  first seen; two bodies for the same path pool their runs under the first. */
-export function groupByProject(statuses: Status[]): ProjectGroup[] {
+/** One group per (project, daemon) across the given bodies, in the order
+ *  first seen; two bodies from one daemon for one path pool their runs
+ *  under the first. */
+export function groupByProject(daemons: DaemonStatus[]): ProjectGroup[] {
   const groups: ProjectGroup[] = [];
-  for (const status of statuses) {
+  for (const { base, status } of daemons) {
     const path = status.project ?? status.target;
-    const existing = groups.find((group) => group.path === path);
+    const existing = groups.find((group) => group.path === path && group.base === base);
     if (existing) existing.runs.push(...status.runs);
-    else groups.push({ path, name: projectName(path), status, runs: [...status.runs] });
+    else groups.push({ path, name: projectName(path), base, status, runs: [...status.runs] });
   }
   return groups;
+}
+
+/** The Floor's selection key for a run: the same id on two daemons is two
+ *  rows, so the key names the daemon the run belongs to. */
+export function runKey(base: string, id: number): string {
+  return `${base}#${id}`;
 }
