@@ -49,6 +49,13 @@
   --bad-text: oklch(0.45 0.16 25);
   --review: oklch(0.55 0.14 300);
 
+  --phase-implementing-bg: oklch(0.93 0.04 200);
+  --phase-implementing-text: oklch(0.4 0.12 200);
+  --phase-reviewing-bg: oklch(0.93 0.05 300);
+  --phase-reviewing-text: oklch(0.42 0.14 300);
+  --phase-verifying-bg: oklch(0.93 0.05 150);
+  --phase-verifying-text: oklch(0.4 0.12 150);
+
   --chip-border: #d8d1c4;
 
   --needs-you-bg: oklch(0.96 0.03 70);
@@ -97,6 +104,13 @@
   --bad-bg: oklch(0.29 0.06 25);
   --bad-text: oklch(0.82 0.12 25);
   --review: oklch(0.72 0.12 300);
+
+  --phase-implementing-bg: oklch(0.3 0.05 200);
+  --phase-implementing-text: oklch(0.84 0.1 200);
+  --phase-reviewing-bg: oklch(0.3 0.06 300);
+  --phase-reviewing-text: oklch(0.84 0.1 300);
+  --phase-verifying-bg: oklch(0.3 0.05 150);
+  --phase-verifying-text: oklch(0.84 0.1 150);
 
   --chip-border: #3a342b;
 
@@ -151,6 +165,13 @@
     --bad-text: oklch(0.82 0.12 25);
     --review: oklch(0.72 0.12 300);
 
+    --phase-implementing-bg: oklch(0.3 0.05 200);
+    --phase-implementing-text: oklch(0.84 0.1 200);
+    --phase-reviewing-bg: oklch(0.3 0.06 300);
+    --phase-reviewing-text: oklch(0.84 0.1 300);
+    --phase-verifying-bg: oklch(0.3 0.05 150);
+    --phase-verifying-text: oklch(0.84 0.1 150);
+
     --chip-border: #3a342b;
 
     --needs-you-bg: oklch(0.23 0.03 70);
@@ -201,6 +222,12 @@
   --color-bad-bg: var(--bad-bg);
   --color-bad-text: var(--bad-text);
   --color-review: var(--review);
+  --color-phase-implementing-bg: var(--phase-implementing-bg);
+  --color-phase-implementing-text: var(--phase-implementing-text);
+  --color-phase-reviewing-bg: var(--phase-reviewing-bg);
+  --color-phase-reviewing-text: var(--phase-reviewing-text);
+  --color-phase-verifying-bg: var(--phase-verifying-bg);
+  --color-phase-verifying-text: var(--phase-verifying-text);
 
   --color-needs-you-bg: var(--needs-you-bg);
   --color-needs-you-border: var(--needs-you-border);
