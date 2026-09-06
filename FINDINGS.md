@@ -653,15 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[262 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T03:00:53Z — KO-285
-MERGED to main as 541c368.
-actual: 6.8 min · estimate: 25 min · rounds: 1
-
-## 2026-09-06T03:05:53Z — KO-273
-FAILED: OperationalError: database is locked
-actual: 4.9 min · estimate: 25 min · rounds: 0
+[264 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T03:10:22Z — KO-273
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -764,3 +756,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T05:03:28Z — KO-250
 MERGED to main as e5170f1.
 actual: 6.3 min · estimate: 30 min · rounds: 1
+
+## 2026-09-06T05:12:46Z — KO-257
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T05:13:45Z — KO-257
+MERGED to main as c5bef57.
+actual: 10.3 min · estimate: 25 min · rounds: 1
