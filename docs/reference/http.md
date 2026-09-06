@@ -1,10 +1,11 @@
 # HTTP endpoints
 
-`--serve PORT|HOST:PORT` answers three paths as JSON. Every response carries
-`Cache-Control: no-store` and `Content-Type: application/json`; every
-request opens the store read-only and closes it. Unknown paths are 404 and
-any method but GET is 405, both with a JSON `error`. A target with no
-store answers 503.
+`--serve PORT|HOST:PORT` answers three paths as JSON and serves the
+console's built files at `/`. Every response carries
+`Cache-Control: no-store`; the JSON ones `Content-Type: application/json`;
+every request opens the store read-only and closes it. Unknown paths are
+404 and any method but GET is 405, both with a JSON `error`. A target with
+no store answers 503.
 
 ## `GET /status`
 
@@ -83,11 +84,39 @@ when not live. A daemon older than this endpoint answers 404, and the
 drawer then computes the stale-run and supervisor rows itself from
 `/status`; any other failure of `/attention` is shown, never hidden.
 
+## Static files
+
+`GET /` answers `console/dist/index.html` and `GET /PATH` answers
+`console/dist/PATH` for a regular file under that directory: the
+repository's own `console/dist/`, where the renderer's build writes the
+console, found from the package rather than the target's checkout. The
+JSON routes above, and any added later, take precedence over a file of
+the same name. The content type follows the extension:
+
+| Extension | Content-Type |
+| --- | --- |
+| `.html` | `text/html; charset=utf-8` |
+| `.js` | `text/javascript` |
+| `.css` | `text/css` |
+| `.svg` | `image/svg+xml` |
+| `.woff2` | `font/woff2` |
+| `.png` | `image/png` |
+| `.json`, `.map` | `application/json` |
+| anything else | `application/octet-stream` |
+
+Every file answer is `Cache-Control: no-store`; there is no compression,
+no other caching header and no range support. A path that resolves outside
+the directory (`..`, an encoded `..`, an absolute path, a symlink pointing
+out) or names no regular file is the same 404 JSON as an unknown route.
+When `console/dist/` does not exist, `/` is 404 JSON whose `detail` says
+the console is not built, and the JSON routes answer as before: a daemon
+on a host without the renderer's toolchain still serves its JSON.
+
 ## Errors
 
 | Status | When |
 | --- | --- |
 | 400 | `/runs` with a bad `limit` |
-| 404 | any other path; body carries `path` |
+| 404 | any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET; `Allow: GET` |
 | 503 | the target has no store yet |
