@@ -53,7 +53,7 @@ export function Rail({
   return (
     <nav
       aria-label="Console"
-      className="flex h-screen w-[220px] shrink-0 flex-col gap-[22px] overflow-y-auto bg-rail px-[14px] py-[18px]"
+      className="flex h-full w-[220px] shrink-0 flex-col gap-[22px] overflow-y-auto bg-rail px-[14px] py-[18px]"
     >
       <div className="flex items-center gap-2 px-2">
         <img src={logo} alt="" width={20} height={20} className="size-5 invert" />

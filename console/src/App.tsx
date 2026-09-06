@@ -22,7 +22,7 @@ export function App({ base = servingBase(), pollDeps = defaultPollDeps }: { base
 
   const heading = VIEWS.find((candidate) => candidate.id === view)?.label ?? view;
   return (
-    <div className="flex min-h-screen bg-paper font-sans text-ink">
+    <div className="flex h-screen overflow-hidden bg-paper font-sans text-ink">
       <Rail
         base={base}
         poll={poll}
