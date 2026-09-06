@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -1597,6 +1598,9 @@ class MergeModeTests(LoopFixture):
     that would leave the machine is witnessed instead of made."""
 
     URL = "https://github.com/example/repo/pull/7"
+    # The `origin` the fixture target is given: the repository the push
+    # goes to and the one `gh pr create` must be pinned to.
+    ORIGIN = "https://github.com/example/repo.git"
     # A body the claim-time template gate accepts, so the run reaches the
     # gate with a ticket body for the PR to carry.
     BODY = (
@@ -1611,13 +1615,17 @@ class MergeModeTests(LoopFixture):
         "## Estimate & dependencies\n\nEstimate: 5 min · Depends on: none\n\n"
         "## Open questions\n\n* None\n")
 
-    def fake_route(self, push_exit=0):
-        """Put a recording `git` and `gh` ahead of the real PATH.
+    def fake_route(self, push_exit=0, push_sh=""):
+        """Put a recording `git` and `gh` ahead of the real PATH, and give
+        the target an `origin` for them to name.
 
         Each call appends its argv to `self.calls`; `gh` also keeps the body
         it read on stdin in `self.pr_body` and prints `URL`. `push_exit` is
-        what `git push` answers with -- non-zero is a remote refusing.
+        what `git push` answers with -- non-zero is a remote refusing --
+        and `push_sh` is shell the fake push runs first, for a push that
+        takes its time.
         """
+        self.git("remote", "add", "origin", self.ORIGIN)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         bindir = Path(tmp.name)
@@ -1628,6 +1636,7 @@ class MergeModeTests(LoopFixture):
             "#!/bin/sh\n"
             'if [ "$1" = push ]; then\n'
             f'  printf "git %s\\n" "$*" >> "{self.calls}"\n'
+            f"{push_sh}\n"
             f'  [ {push_exit} -eq 0 ] || echo "remote: refused" >&2\n'
             f"  exit {push_exit}\n"
             "fi\n"
@@ -1666,10 +1675,12 @@ class MergeModeTests(LoopFixture):
         calls = self.recorded()
         self.assertEqual(len(calls), 2, calls)
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        # Pinned to the repository the push went to, not `gh`'s own default
+        # repository (`gh repo set-default`), which can point elsewhere.
         self.assertEqual(
             calls[1],
-            f"gh pr create --base main --head {BRANCH} --title KO-131: add a "
-            "thing --body-file -")
+            f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
+            " --title KO-131: add a thing --body-file -")
         body = self.pr_body.read_text()
         self.assertIn("The thing, added.", body)
         self.assertIn("— KO-131", body)  # the FINDINGS entry heading
@@ -1690,6 +1701,44 @@ class MergeModeTests(LoopFixture):
         (_, comment) = provider.comments[-1]
         self.assertIn("PR OPEN", comment)
         self.assertIn(self.URL, comment)
+
+    def test_a_slow_push_keeps_the_run_heartbeating(self):
+        """The push and the create block for as long as the remote takes,
+        outside any agent turn or verify: a push longer than the stale
+        budget was a `stale_heartbeat` trip for the supervisor, which could
+        fail the run before its URL was recorded. The fake push here samples
+        the run's `lastHeartbeat` from the store while it takes longer than
+        the whole stale budget; the beat must move under it."""
+        self.configure('[merge]\nmode = "pr"\n'
+                       "[supervisor]\nheartbeat_stale_min = 0.01\n")
+        knobs = holophyte.config.sweep_config(self.tgt)
+        budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
+        samples = self.db.parent / "heartbeats.log"
+        sampler = (
+            "import sqlite3, sys, time\n"
+            f"deadline = time.monotonic() + {budget_s * 5 / 3}\n"
+            f"conn = sqlite3.connect({str(self.db)!r})\n"
+            "while time.monotonic() < deadline:\n"
+            "    time.sleep(0.2)\n"
+            "    row = conn.execute('SELECT phase, lastHeartbeat FROM runs')"
+            ".fetchone()\n"
+            f"    open({str(samples)!r}, 'a').write('%s %s\\n' % row)\n")
+        self.fake_route(push_sh=f"  {sys.executable} -c {shlex.quote(sampler)}")
+        provider = StubProvider(dict(a_task(), body=self.BODY))
+
+        self.loop(Commit("the scripted work"), APPROVE, provider=provider)
+
+        seen = [line.split() for line in samples.read_text().splitlines()]
+        self.assertGreaterEqual(len(seen), 4, seen)
+        self.assertEqual({phase for phase, _ in seen}, {"merge_gate"})
+        beats = [int(beat) for _, beat in seen]
+        self.assertGreater(beats[-1], beats[0])
+        # No gap between beats reached the stale threshold.
+        self.assertLess(max(b - a for a, b in zip(beats, beats[1:])),
+                        knobs.heartbeat_stale_ms)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl FROM runs"),
+            [("awaiting_merge_approval", None, self.URL)])
 
     def test_an_approval_of_an_open_pull_request_does_not_merge_locally(self):
         """Review round: `--approve KO-n` on a run parked with a PR open used

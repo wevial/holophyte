@@ -406,7 +406,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # -- whatever `approve` says, since the PR is what the answer is about.
     if merge.mode == "pr":
         _open_pr_and_park(target, conn, run_id, provider, task_id, task,
-                          branch, sha, body)
+                          branch, sha, body, beat_s)
     # The human half of the gate, when the target asks for one: the
     # candidate is approved and verified, and a person says "merge".
     if merge.approve == "human":
@@ -497,7 +497,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                      wt, beat_s, sha, verify_cmd, contracts)
     if merge.mode == "pr":
         _open_pr_and_park(target, conn, run_id, provider, task_id, task,
-                          branch, sha, body)
+                          branch, sha, body, beat_s)
     return _land(target, conn, run_id, provider, task_id, task, branch, wt,
                  sha, ok, started, budget_min, 0)
 
@@ -964,7 +964,7 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
 
 
 def _open_pr_and_park(target, conn, run_id, provider, task_id, task, branch,
-                      sha, body):
+                      sha, body, beat_s):
     """`[merge] mode = "pr"`: push the approved candidate, open its pull
     request, and park the run for the answer.
 
@@ -979,6 +979,11 @@ def _open_pr_and_park(target, conn, run_id, provider, task_id, task, branch,
     the transaction that moves the run to `awaiting_merge_approval`, and the
     ledger carries the URL. Nothing touches main, and nothing here merges
     the PR: that is the mode's second half.
+
+    Both calls leave the machine and block for as long as the remote takes,
+    so they run under `heartbeat_while()` like every other wait: a slow push
+    is not a dead loop for the supervisor to sweep before the URL is on the
+    run (review round 1).
     """
     # Still the `merge_gate` phase: the push and the create are the mode's
     # way out of the gate, named on the stream rather than as a phase move.
@@ -986,11 +991,13 @@ def _open_pr_and_park(target, conn, run_id, provider, task_id, task, branch,
         store.record_event(conn, run_id, "pull_request",
                            f"pushing {branch} to {pr.REMOTE} and opening its"
                            " pull request")
-    pr.push_branch(target, branch)
-    print(f"[holo2] pushed {branch} to {pr.REMOTE}")
-    now = int(time() * 1000)
-    url = pr.create_pull_request(target, branch, pr.pr_title(task_id, task),
-                                 pr.pr_body(conn, run_id, body, now))
+    with heartbeat_while(conn, run_id, beat_s):
+        pr.push_branch(target, branch)
+        print(f"[holo2] pushed {branch} to {pr.REMOTE}")
+        now = int(time() * 1000)
+        url = pr.create_pull_request(target, branch,
+                                     pr.pr_title(task_id, task),
+                                     pr.pr_body(conn, run_id, body, now))
     print(f"[holo2] pull request open: {url}")
     _park_open_pr(conn, run_id, provider, task_id, branch, sha, url)
 

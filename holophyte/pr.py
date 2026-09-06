@@ -178,10 +178,24 @@ def create_pull_request(target, branch, title, body):
 
 
 def _create_with_gh(target, branch, title, body):
-    """`gh pr create`, the body on stdin so no length or quoting limit bites;
-    the URL is what `gh` prints on success."""
-    argv = [GH, "pr", "create", "--base", BASE, "--head", branch,
-            "--title", title, "--body-file", "-"]
+    """`gh pr create`, pinned with `--repo` to the repository `origin` names,
+    the body on stdin so no length or quoting limit bites; the URL is what
+    `gh` prints on success.
+
+    Without `--repo`, `gh` opens the PR in its own default repository
+    (`gh repo set-default`), which need not be the one the branch was just
+    pushed to -- a PR against the wrong repository, or a create refused
+    after a successful push (review round 1). The `origin` URL is what `gh`
+    is given, verbatim: `gh` reads OWNER/REPO and the host off an https or
+    ssh URL itself, so a GitHub Enterprise `origin` pins as well as a
+    github.com one.
+    """
+    repo = origin_url(target)
+    if repo is None:
+        raise InfraFailure(f"no `{REMOTE}` remote to open the pull request"
+                           f" in; branch {branch} preserved")
+    argv = [GH, "pr", "create", "--repo", repo, "--base", BASE,
+            "--head", branch, "--title", title, "--body-file", "-"]
     try:
         r = subprocess.run(argv, cwd=target.path, input=body,
                            capture_output=True, text=True, timeout=PR_TIMEOUT)
