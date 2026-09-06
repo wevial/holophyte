@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[236 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T01:28:52Z — KO-284
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- (unparsed):e384ef44aa30 [p2] CRITERION 1: met — `tests/test_review_runner.py::ReviewerImageTests::test_dockerfile_installs_pinned_checksummed_bun_on_path` passed. CRITERION 2: met — `tests/…
-- criteria:3 [p2] CRITERION 3: unwitnessed — Full suite ran 739 tests with 25 failures and 19 errors, including unavailable `claude`/`docker` and executable permission failures;…
-
-## 2026-09-06T01:33:09Z — KO-284
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+[238 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T01:33:10Z — KO-284
 FAILED: terminal adjudication: FAIL; branch task/ko-284-the-reviewer-image-carries-bun preserved at 967cb2389738
@@ -759,3 +750,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T02:54:05Z — KO-272
 MERGED to main as e8ec3c7.
 actual: 17.7 min · estimate: 30 min · rounds: 2
+
+## 2026-09-06T02:59:58Z — KO-285
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T03:00:53Z — KO-285
+MERGED to main as 541c368.
+actual: 6.8 min · estimate: 25 min · rounds: 1
