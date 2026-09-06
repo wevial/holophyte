@@ -7,8 +7,10 @@ while the loop waits on an agent, `record_round()` turns a review or
 adjudication reply into a `reviewRounds` row, and `warn_on_run()` lands a
 best-effort failure in the run's event stream -- so a later wiring ticket
 extends this seam instead of threading SQL through `run_task()`.
-`MAX_ROUNDS`, the review-round ceiling the loop iterates to and the
-adjudication round is numbered past, lives beside them. Beyond the standard
+`MAX_ROUNDS`, the default review-round base the loop iterates to and the
+adjudication round is numbered past, lives beside them, with
+`review_round_cap()`, the per-run ceiling computed from the candidate's size
+and the `[loop]` review keys. Beyond the standard
 library it imports `store` for the writes,
 `review_runner` for the verdict vocabularies, `agent_route` from
 `holophyte.agents` for the route a round is stamped with, and the findings
@@ -33,6 +35,24 @@ from holophyte.review import (
 )
 
 MAX_ROUNDS = 2
+
+
+def review_round_cap(changed_lines, cfg):
+    """The number of review rounds a candidate of `changed_lines` earns.
+
+    `cfg` is a `LoopConfig`: `review_rounds` is the base every run gets,
+    `review_rounds_per_lines` buys one more round per that many changed
+    lines (insertions plus deletions against the merge base; `0` turns the
+    scaling off) and `review_rounds_max` is the ceiling. Two rounds fit the
+    twenty-five-minute tickets that fill the queue; a two-thousand-line one
+    (KO-262) found a real blocker in every round and ran out of rounds with
+    its last fix unreviewed, so a big change earns its rounds and a small
+    one keeps paying the base. Pure, so the formula is witnessed on its own
+    and the loop only has to measure the diff.
+    """
+    extra = (changed_lines // cfg.review_rounds_per_lines
+             if cfg.review_rounds_per_lines else 0)
+    return min(cfg.review_rounds_max, cfg.review_rounds + extra)
 
 # --- store seam --------------------------------------------------------------
 # Every store call the loop makes goes through one of the helpers below, so a

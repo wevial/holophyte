@@ -190,9 +190,15 @@ stop_on_failure = true   # false: record the failure and claim the next ticket
 # Whether the loop starts a detached --supervise for the target at startup
 # when no live supervisor holds its lock. Optional; the default is true.
 spawn_supervisor = true  # false: a service manager runs the supervisor
+# The review-round cap, computed per run from the candidate's diff. Optional;
+# the values shown are the defaults.
+review_rounds = 2            # the base every run gets
+review_rounds_per_lines = 800  # one extra round per this many changed lines; 0 never scales
+review_rounds_max = 4        # the ceiling
 ```
 
-Accepted keys: `stop_on_failure`, `order`, `spawn_supervisor`.
+Accepted keys: `stop_on_failure`, `order`, `spawn_supervisor`,
+`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`.
 
 By default one failed run ends the process after its close-out, with a nonzero
 exit, and an operator relaunches the loop — the right call while the loop is
@@ -215,6 +221,25 @@ carries on. `spawn_supervisor = false` skips the check and the spawn, for an
 operator whose service manager runs the supervisor as a unit of its own; the
 explicit `--supervise` command is unchanged either way. A boolean, checked
 like `stop_on_failure`.
+
+The three `review_rounds*` keys set how many review rounds a run may take
+before its terminal adjudication. Before the first review the loop measures
+the candidate against its merge base with main (`git diff --numstat`,
+insertions plus deletions, so a preserved branch that already merged main is
+not charged for main's own lines) and computes
+
+```
+cap = min(review_rounds_max, review_rounds + changed_lines // review_rounds_per_lines)
+```
+
+It prints `[holo2] review cap N for M changed lines`, records the same line
+as a note in the run's ledger, and runs up to `N` rounds; the adjudication
+after the last round is unchanged. Under the defaults a 300-line candidate
+gets two rounds, a 1,700-line one four, and a 9,000-line one four. With
+`review_rounds_per_lines = 0` every run gets exactly `review_rounds`. Each key
+must be an integer: `review_rounds` and `review_rounds_max` at least `1`,
+`review_rounds_per_lines` at least `0`, and `review_rounds_max` no less than
+`review_rounds`; anything else is a startup error naming the key.
 
 ```toml
 [board]

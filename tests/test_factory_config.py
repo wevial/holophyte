@@ -365,6 +365,47 @@ class LoopConfigTests(ConfigTestCase):
                 report.assert_not_called()
 
 
+    def test_review_round_keys_default_to_the_two_round_cap(self):
+        """No table: the base is two rounds, one more per 800 changed
+        lines, four at most."""
+        self.locate()
+
+        cfg = holophyte.config.loop_config(self.tgt)
+        self.assertEqual((cfg.review_rounds, cfg.review_rounds_per_lines,
+                          cfg.review_rounds_max), (2, 800, 4))
+
+    def test_review_round_keys_are_validated(self):
+        """`review_rounds = 0` is a run with no review; a ceiling under the
+        base is a cap the formula could never reach; a boolean or a string
+        is not a count. Each is a startup error naming the table and the
+        key, before anything is claimed (KO-299)."""
+        cases = [("review_rounds = 0", "review_rounds"),
+                 ("review_rounds = 3\nreview_rounds_max = 2",
+                  "review_rounds_max"),
+                 ("review_rounds_max = 0", "review_rounds_max"),
+                 ("review_rounds_per_lines = -1", "review_rounds_per_lines"),
+                 ("review_rounds = true", "review_rounds"),
+                 ('review_rounds = "2"', "review_rounds")]
+        for lines, key in cases:
+            with self.subTest(lines=lines):
+                target = self.locate(f"[loop]\n{lines}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[loop]", message)
+                self.assertIn(key, message)
+                report.assert_not_called()
+
+        # `0` is the documented switch for "never scale", not an error.
+        self.locate("[loop]\nreview_rounds_per_lines = 0\n")
+        self.assertEqual(
+            holophyte.config.loop_config(self.tgt).review_rounds_per_lines, 0)
+
+
 class StateDirectoryTests(ConfigTestCase):
     """Every per-target artifact lives under one `HOLOPHYTE_HOME/SLUG/`.
 

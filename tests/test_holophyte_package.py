@@ -129,6 +129,7 @@ DEFINED = {
         "heartbeat_while",
         "open_store",
         "record_round",
+        "review_round_cap",
         "set_phase",
         "warn_on_run",
     ],
