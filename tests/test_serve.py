@@ -330,11 +330,15 @@ class AttentionTests(ServeTestCase):
 
     HOUR = 60 * MIN
 
-    def seed_attention(self, failed_ago=2 * HOUR, stale=True):
-        """KO-8 parked with a question; KO-9 failed `failed_ago` ago and
+    def seed_attention(self, failed_ago=2 * HOUR, stale=True, redirect=True,
+                       attempts=1):
+        """KO-8 parked with a question, its run parked `blocked_on_operator`
+        3 h ago with a `redirect` intervention asking it 3 h ago when
+        `redirect`; KO-9 failed `failed_ago` ago as attempt `attempts` and
         still `in_flight`; KO-7 live, beating 20 min ago when `stale`, else
         30 s ago; a supervisor beating 20 min ago when `stale`, else 5 s."""
         self.now = int(time() * 1000)
+        self.asked = self.now - 3 * self.HOUR
         conn = store.open(str(self.db))
         try:
             store.init(conn)
@@ -349,13 +353,34 @@ class AttentionTests(ServeTestCase):
 
             blocked = ticket("KO-8")
             store.transition(conn, blocked, "in_flight")
+            self.blocked_run = store.claim(conn, project, blocked,
+                                           now=self.asked - 10 * MIN)
+            store.set_phase(conn, self.blocked_run, "working",
+                            now=self.asked - 10 * MIN)
+            # The heartbeat is `asked_ms`'s fallback: a minute before the
+            # redirect so the two are told apart.
+            store.heartbeat(conn, self.blocked_run, now=self.asked - MIN)
             store.transition(conn, blocked, "blocked_on_operator")
             conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                          ("Which branch is canonical?", blocked))
             conn.commit()
+            store.park(conn, self.blocked_run, "blocked_on_operator",
+                       "asked the operator", now=self.asked - MIN)
+            if redirect:
+                store.record_intervention(
+                    conn, self.blocked_run, "redirect", "asked the operator",
+                    source="supervisor", trigger="off_criteria",
+                    question="Which branch is canonical?", now=self.asked)
 
             self.failed_ticket = ticket("KO-9")
             store.transition(conn, self.failed_ticket, "in_flight")
+            self.earlier_failed = []
+            for n in range(attempts - 1, 0, -1):
+                earlier = store.claim(conn, project, self.failed_ticket,
+                                      now=self.now - failed_ago - n * self.HOUR)
+                store.release(conn, earlier, "failed", reason="verify red",
+                              now=self.now - failed_ago - n * self.HOUR + MIN)
+                self.earlier_failed.append(earlier)
             self.failed = store.claim(conn, project, self.failed_ticket,
                                       now=self.now - failed_ago - 10 * MIN)
             store.release(conn, self.failed, "failed", reason="verify red",
@@ -389,6 +414,8 @@ class AttentionTests(ServeTestCase):
         blocked, stale_run, failed, supervisor = body["items"]
         self.assertEqual(blocked, {"kind": "blocked", "ticket": "KO-8",
                                    "question": "Which branch is canonical?",
+                                   "run": self.blocked_run,
+                                   "asked_ms": self.asked,
                                    "level": "attention"})
         self.assertEqual(stale_run["run"], self.run)
         self.assertEqual(stale_run["ticket"], "KO-7")
@@ -400,12 +427,46 @@ class AttentionTests(ServeTestCase):
         self.assertEqual(failed["ticket"], "KO-9")
         self.assertEqual(failed["reason"], "verify red")
         self.assertEqual(failed["ended_ms"], self.now - 2 * self.HOUR)
+        self.assertEqual(failed["attempt"], 1)
         self.assertEqual(supervisor["state"], "stale")
         self.assertTrue(
             20 * MIN <= supervisor["heartbeat_age_ms"] < 20 * MIN + SLACK,
             supervisor)
         for item in body["items"]:
             self.assertEqual(item["level"], "attention", item)
+
+    def test_the_body_names_the_target_as_status_does(self):
+        self.seed_attention()
+        self.start()
+
+        _, _, body = self.request("GET", "/attention")
+
+        self.assertEqual(body["target"], str(self.target))
+        self.assertEqual(body["project"], str(self.target))
+
+    def test_asked_ms_falls_back_to_the_heartbeat_without_a_redirect(self):
+        self.seed_attention(redirect=False)
+        self.start()
+
+        _, _, body = self.request("GET", "/attention")
+
+        blocked = body["items"][0]
+        self.assertEqual(blocked["kind"], "blocked")
+        self.assertEqual(blocked["run"], self.blocked_run)
+        self.assertEqual(blocked["asked_ms"], self.asked - MIN)
+
+    def test_a_failed_item_carries_the_attempt_it_was(self):
+        self.seed_attention(attempts=2)
+        self.start()
+
+        _, _, body = self.request("GET", "/attention")
+
+        # Both attempts ended inside the window, so both are items; each
+        # says which attempt it was, not how many the client has seen.
+        failed = [(item["run"], item["attempt"])
+                  for item in body["items"] if item["kind"] == "failed"]
+        self.assertEqual(failed, [(self.earlier_failed[0], 1),
+                                  (self.failed, 2)])
 
     def test_a_requeued_failure_drops_out(self):
         self.seed_attention()
@@ -437,7 +498,9 @@ class AttentionTests(ServeTestCase):
         _, _, body = self.request("GET", "/attention")
 
         self.assertEqual(body, {"level": "working", "items": [],
-                                "now": body["now"]})
+                                "now": body["now"],
+                                "target": str(self.target),
+                                "project": str(self.target)})
 
         conn = store.open(str(self.db))
         try:

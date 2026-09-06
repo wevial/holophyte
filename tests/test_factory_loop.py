@@ -1277,9 +1277,12 @@ class MergeApprovalTests(LoopFixture):
         code, body = holophyte.serve.attention(self.tgt)
         self.assertEqual(code, 200)
         blocked = [item for item in body["items"] if item["kind"] == "blocked"]
+        # The item names the parked run; this path records no `redirect`
+        # intervention, so `asked_ms` is the run's last heartbeat.
+        (beat,), = self.read("SELECT lastHeartbeat FROM runs WHERE id = 1")
         self.assertEqual(blocked, [{"kind": "blocked", "ticket": "KO-131",
-                                    "question": "merge?",
-                                    "level": "attention"}])
+                                    "question": "merge?", "run": 1,
+                                    "asked_ms": beat, "level": "attention"}])
 
     def test_a_park_is_not_a_failure_the_loop_stops_on_or_counts(self):
         """The loop moves on to the next ready ticket without spending the

@@ -78,11 +78,21 @@ def ticket_by_id(conn, ticket_id):
 
 @dataclass(frozen=True)
 class BlockedTicket:
-    """One ticket parked `blocked_on_operator`, with the question it asks."""
+    """One ticket parked `blocked_on_operator`, with the question it asks.
+
+    `runId` is the run parked for it (`tickets.lastRunId`: `park()` and
+    `release()` both move the pointer there) and `askedMs` when the question
+    was asked: the newest `redirect` intervention on that run, else the
+    run's `lastHeartbeat` for a ticket parked by a module that recorded no
+    redirect. Both are None only for a ticket that was parked with no run
+    behind it at all.
+    """
 
     id: int
     linearIdentifier: str
     blockedQuestion: str | None
+    runId: int | None = None
+    askedMs: int | None = None
 
 
 def blocked_tickets(conn):
@@ -90,13 +100,20 @@ def blocked_tickets(conn):
 
     The `serve` daemon's `/attention` read: a parked ticket is the one thing
     the operator must answer, and `blockedQuestion` is what it asks. None
-    when the ticket was parked without one.
+    when the ticket was parked without one. The parked run and the moment
+    of asking ride along so the band can age the question and name the run
+    without deriving either from the poll time.
     """
     rows = conn.execute(
-        "SELECT id, linearIdentifier, blockedQuestion FROM tickets"
-        " WHERE status = 'blocked_on_operator' ORDER BY id").fetchall()
+        "SELECT t.id, t.linearIdentifier, t.blockedQuestion, r.id,"
+        " (SELECT MAX(i.at) FROM interventions i"
+        "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
+        " r.lastHeartbeat"
+        " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.status = 'blocked_on_operator' ORDER BY t.id").fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
-                          blockedQuestion=row[2])
+                          blockedQuestion=row[2], runId=row[3],
+                          askedMs=row[4] if row[4] is not None else row[5])
             for row in rows]
 
 
@@ -284,6 +301,8 @@ class RecentFailedRun:
     lists failures the operator has not dealt with keeps the `in_flight`
     ones (a failed run leaves its ticket there with no active run) and
     drops one whose ticket has since been requeued (`ready`) or merged.
+    `attempt` is `runs.attempt`, 1-based, so a client can say "strike 2 of
+    3" without counting failures it has not seen.
     """
 
     id: int
@@ -291,6 +310,7 @@ class RecentFailedRun:
     outcomeReason: str | None
     endedAt: int
     ticketStatus: str
+    attempt: int = 0
 
 
 def recent_failed_runs(conn, since_ms):
@@ -301,13 +321,13 @@ def recent_failed_runs(conn, since_ms):
     """
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status"
+        " t.status, r.attempt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.outcome = 'failed' AND r.endedAt > ?"
         " ORDER BY r.endedAt, r.id", (since_ms,)).fetchall()
     return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
                             outcomeReason=row[2], endedAt=row[3],
-                            ticketStatus=row[4])
+                            ticketStatus=row[4], attempt=row[5])
             for row in rows]
 
 

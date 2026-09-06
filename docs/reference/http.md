@@ -59,13 +59,21 @@ non-positive or non-integer limit is 400.
 What needs the operator, computed where the store is:
 
 ```json
-{"level": "attention", "now": 1788450534491, "items": [
-  {"kind": "blocked", "ticket": "KO-n", "question": "…", "level": "attention"},
+{"level": "attention", "now": 1788450534491,
+ "target": "/path/to/repo", "project": "/path/to/repo", "items": [
+  {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000, "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000, "level": "attention"},
-  {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "level": "attention"},
+  {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2, "level": "attention"},
   {"kind": "supervisor", "state": "stale", "heartbeat_age_ms": 1200000, "level": "attention"}
 ]}
 ```
+
+A `blocked` item's `run` is the run parked for the ticket and `asked_ms`
+when the question was asked: the newest `redirect` intervention on that
+run, else the run's last heartbeat (both null only for a ticket parked
+with no run behind it). A `failed` item's `attempt` is the run's 1-based
+attempt number. `target` and `project` are the target path, as on
+`/status`.
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it
 is `working` if any run is live. Items come in this order: `blocked`
