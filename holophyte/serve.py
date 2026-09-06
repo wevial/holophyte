@@ -1,5 +1,6 @@
 """`--serve PORT|HOST:PORT`: a read-only HTTP daemon answering `/status`,
-`/runs`, `/runs/N` and `/attention` as JSON and serving the console at `/`.
+`/runs`, `/runs/N`, `/runs/N/files` and `/attention` as JSON and serving the
+console at `/`.
 
 One `ThreadingHTTPServer` per target, bound to the one address the command
 line names -- loopback when it names only a port -- so a drawer on this
@@ -16,7 +17,11 @@ never disagree about the history. `/runs/N` is one run in full: its row
 joined to its ticket, its review rounds with their findings as objects,
 and the narrative half of its event stream, so the console's run detail
 reads the rounds from the store and never reconstructs them from the
-ledger prose. `/attention` is "what needs the
+ledger prose. `/runs/N/files` is the paths a run touched with their line
+counts, read from git in the target's checkout by `holophyte.files` -- the
+one route that asks anything but the store, since git is the truth about
+what a branch changed and the daemon is the one process that knows both
+the run and the repository. `/attention` is "what needs the
 operator": one ordered list of items with a level, computed here where the
 store is, so the drawer, a native app and a phone client all show the same
 answer and the rule lives in one place rather than in each client.
@@ -40,6 +45,7 @@ import os
 import re
 import signal
 import socket
+import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -48,6 +54,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import store.read
 from holophyte.config import sweep_config
+from holophyte.files import GIT_TIMEOUT, RangeError, touched_files
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.supervisor import SWEEPABLE_PHASES
@@ -70,10 +77,11 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
                  ".json": "application/json",
                  ".map": "application/json"}
 OCTET_STREAM = "application/octet-stream"
-# `/runs/N`: one run by id. The id is captured as typed so a non-integer is
-# 400 rather than the static-file 404, and the shape is general enough for
-# a sibling `/runs/N/ledger` to share.
+# `/runs/N` and `/runs/N/files`: one run by id. The id is captured as typed
+# so a non-integer is 400 rather than the static-file 404; both routes parse
+# it through `parse_run_id()`.
 RUN_PATH = re.compile(r"^/runs/([^/]+)$")
+RUN_FILES_PATH = re.compile(r"^/runs/([^/]+)/files$")
 # The captured id is an integer when it is an optionally signed run of
 # digits; anything else is 400. Integers no run can have (negative, or past
 # SQLite's INTEGER range) are 404 like any other absent id.
@@ -318,6 +326,35 @@ def runs(target, query=""):
     }
 
 
+def locate_run(target, text):
+    """The run `/runs/N`-style path segment `text` names, for the routes
+    under it: `(None, RunDetail)` when there is one, else `(status, body)`
+    -- the 400, 503 and 404 the routes share, so each states them once.
+
+    `text` that is not an integer is 400. An integer no run can have
+    (negative, or past SQLite's 64-bit INTEGER) is 404 without asking the
+    store, which would raise OverflowError binding it; `run` then echoes
+    the path as typed, since the id may be too long to be a JSON number.
+    An integer with no run is 404 carrying `run` as a number.
+    """
+    try:
+        run_id = parse_run_id(text)
+    except ValueError as error:
+        return (400, {"error": str(error)}), None
+    if not target.store_path.exists():
+        return (503, no_store(target)), None
+    if run_id is None:
+        return (404, {"error": "no such run", "run": text}), None
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        run = store.read.run_detail(conn, run_id)
+    finally:
+        conn.close()
+    if run is None:
+        return (404, {"error": "no such run", "run": run_id}), None
+    return None, run
+
+
 def run_detail(target, run_id, now=None):
     """The `/runs/N` answer: `(http status, JSON-able body)`.
 
@@ -329,29 +366,16 @@ def run_detail(target, run_id, now=None):
     its findings decoded once here into objects; `events` is the narrative
     level of the stream, oldest first, without the detail rows. `run_id`
     that is not an integer is 400; an integer with no run is 404 carrying
-    `run`.
+    `run` (`locate_run()`).
     """
-    text = run_id
-    try:
-        run_id = parse_run_id(text)
-    except ValueError as error:
-        return 400, {"error": str(error)}
     now = int(time() * 1000) if now is None else now
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    if run_id is None:
-        # A negative id or one past SQLite's 64-bit INTEGER can name no
-        # run, so it is 404 without asking the store (which would raise
-        # OverflowError binding an out-of-range integer). `run` echoes the
-        # path as typed: the id may be too long to be a JSON number.
-        return 404, {"error": "no such run", "run": text}
+    failed, run = locate_run(target, run_id)
+    if failed is not None:
+        return failed
     conn = store.read.open_readonly(target.store_path)
     try:
-        run = store.read.run_detail(conn, run_id)
-        if run is None:
-            return 404, {"error": "no such run", "run": run_id}
-        rounds = store.read.rounds_of(conn, run_id)
-        events = store.read.narrative_events(conn, run_id)
+        rounds = store.read.rounds_of(conn, run.id)
+        events = store.read.narrative_events(conn, run.id)
     finally:
         conn.close()
     live = run.endedAt is None
@@ -371,6 +395,39 @@ def run_detail(target, run_id, now=None):
                    for r in rounds],
         "events": [{"at": e.at, "kind": e.kind, "summary": e.summary}
                    for e in events],
+    }
+
+
+def run_files(target, run_id):
+    """The `/runs/N/files` answer: `(http status, JSON-able body)`.
+
+    The paths the run touched with a status letter and line counts, from
+    `holophyte.files.touched_files()` over the target's checkout: a merged
+    run's merge commit against its first parent, a live run's branch against
+    its merge base with main. `files` is sorted by path and capped at
+    `files.MAX_FILES` with `truncated` set past that; the totals are over the
+    whole diff. 400, 404 and 503 as `/runs/N`; 409 carrying `error` when the
+    run has no range to diff (no branch and no merge sha, or a ref deleted
+    by hand); 504 when git outlives its cap.
+    """
+    failed, run = locate_run(target, run_id)
+    if failed is not None:
+        return failed
+    try:
+        touched = touched_files(target.path, run.branch, run.mergeSha)
+    except RangeError as error:
+        return 409, {"error": str(error), "run": run.id}
+    except subprocess.TimeoutExpired:
+        return 504, {"error": f"git did not answer within {GIT_TIMEOUT}s",
+                     "run": run.id}
+    return 200, {
+        "run": run.id, "base": touched.base, "head": touched.head,
+        "files": [{"path": f.path, "status": f.status,
+                   "added": f.added, "deleted": f.deleted}
+                  for f in touched.files],
+        "total_added": touched.total_added,
+        "total_deleted": touched.total_deleted,
+        "truncated": touched.truncated,
     }
 
 
@@ -402,9 +459,9 @@ def static_file(console_dir, path):
 
 
 class StatusHandler(BaseHTTPRequestHandler):
-    """`GET /status`, `GET /runs`, `GET /runs/N` and `GET /attention` as
-    JSON; any other GET is a console file under the server's `console_dir` or 404 JSON;
-    405 otherwise.
+    """`GET /status`, `GET /runs`, `GET /runs/N`, `GET /runs/N/files` and
+    `GET /attention` as JSON; any other GET is a console file under the
+    server's `console_dir` or 404 JSON; 405 otherwise.
 
     "Otherwise" is every other method, HEAD and OPTIONS included: a client
     that speaks anything but GET gets a JSON refusal it can parse, never
@@ -428,6 +485,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             code, body = attention(self.server.target)
         elif (run := RUN_PATH.match(path)) is not None:
             code, body = run_detail(self.server.target, run.group(1))
+        elif (run := RUN_FILES_PATH.match(path)) is not None:
+            code, body = run_files(self.server.target, run.group(1))
         else:
             found = static_file(self.server.console_dir, path)
             if isinstance(found[0], bytes):

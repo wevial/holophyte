@@ -1,6 +1,6 @@
 # HTTP endpoints
 
-`--serve PORT|HOST:PORT` answers four paths as JSON and serves the
+`--serve PORT|HOST:PORT` answers five paths as JSON and serves the
 console's built files at `/`. Every response carries
 `Cache-Control: no-store`; the JSON ones `Content-Type: application/json`;
 every request opens the store read-only and closes it. Unknown paths are
@@ -94,6 +94,47 @@ run can have (negative, or wider than SQLite's 64-bit INTEGER, however
 long) is 404 with `run` echoing the path segment as typed. `host` passes
 through `[report] host_label`.
 
+## `GET /runs/N/files`
+
+```json
+{"run": 52,
+ "base": "038e4e513e5a4e8367b69a36d73ecc8fd0e12366",
+ "head": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+ "files": [
+  {"path": "docs/reference/http.md", "status": "M", "added": 31, "deleted": 2},
+  {"path": "holophyte/files.py", "status": "A", "added": 168, "deleted": 0},
+  {"path": "holophyte/serve.py", "status": "M", "added": 62, "deleted": 14}
+ ],
+ "total_added": 261, "total_deleted": 16, "truncated": false}
+```
+
+The files a run touched, read from git in the target's checkout: what
+the console's "files touched" panel shows under a run. The store holds
+only the run's branch and, once it landed, its merge commit; the daemon
+resolves those to a commit range and runs `git diff --numstat` and
+`git diff --name-status` over it, each under a timeout, so the answer is
+what git says today, not a snapshot. For a merged run (a recorded
+`merge_sha`) the range is the merge commit's first parent to the merge
+commit: exactly what the `--no-ff` landing added to main, whether or not
+the branch still exists. For any other run it is the merge base of
+`main` and the run's branch to the branch head: what the branch has that
+main does not, unaffected by what main gained since. `base` and `head`
+are the full shas the range resolved to.
+
+`files` is sorted by path. `status` is `A` (added), `M` (modified), `D`
+(deleted) or `R` (renamed, listed under the new path); a binary file
+counts as 0 added and 0 deleted. At most 200 files are listed;
+`truncated` is true when the diff named more, and `total_added` and
+`total_deleted` still sum the whole diff, so a truncated list still says
+how big the run was.
+
+`N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
+is 404 carrying `run`. 409 with an `error` when no range can be found:
+the run recorded neither a branch nor a merge sha, or the ref it recorded
+is gone (a preserved branch deleted by hand; the error names the branch).
+504 when git does not answer within its cap. The endpoint serves no file
+contents or diff hunks and writes nothing to the repository.
+
 ## `GET /attention`
 
 What needs the operator, computed where the store is:
@@ -155,7 +196,9 @@ on a host without the renderer's toolchain still serves its JSON.
 
 | Status | When |
 | --- | --- |
-| 400 | `/runs` with a bad `limit`; `/runs/N` with a non-integer `N` |
-| 404 | `/runs/N` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
+| 400 | `/runs` with a bad `limit`; `/runs/N` or `/runs/N/files` with a non-integer `N` |
+| 404 | `/runs/N` or `/runs/N/files` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET; `Allow: GET` |
+| 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | the target has no store yet |
+| 504 | `/runs/N/files` when git does not answer within its cap |
