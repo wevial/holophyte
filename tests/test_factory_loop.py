@@ -2221,6 +2221,72 @@ class MergeModeTests(LoopFixture):
                                    " WHERE id = 2"),
                          [("merged", self.MERGE_SHA)])
 
+    def test_shepherd_re_entry_runs_the_merge_gate_before_the_api_merge(self):
+        """Regression: a resumed, approved PR reached the merge API with
+        no verify at all -- the park's verify was a process old, and
+        `--approve` or `--shepherd` vouches for a judgement, not for the
+        tree. The ticket's verify command here passes on the first run
+        and is made to fail before the resume: the resumed run stops at
+        the merge gate, nothing is merged, and the branch stands."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.NIT]), self.pr_state()])
+        marker = self.worktrees.parent / "verify-must-fail"
+        task = dict(a_task(), body=self.BODY, verify=f"test ! -e {marker}")
+        self.loop(Commit("the scripted work"), APPROVE,
+                  Reply("THREAD 1: DECLINE -- a naming preference"),
+                  provider=StubProvider(task))
+        approved = self.git("rev-parse", BRANCH).strip()
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "nit closed",
+                                       out=io.StringIO())
+        marker.write_text("")
+
+        fake, _ = self.loop(provider=StubProvider(task))
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"
+                      " WHERE id = 2"),
+            [("failed", "failed", None)])
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), approved)
+        (_, comment) = self.last_provider.comments[-1]
+        self.assertIn("FAILED verify before merge", comment)
+
+    def test_the_review_of_a_fix_is_held_to_the_criteria(self):
+        """Regression: the review of the shepherd's fix commit read only
+        its verdict line, so an approval that left a criterion
+        unwitnessed merged the fix under `approve = "auto"`. It is now
+        the gate a review round is: the criterion's finding turns the
+        approval into a `REQUEST_CHANGES`, nothing is merged, and the run
+        parks with the unwitnessed criterion in the ticket's question."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state()])
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("fix: default load()"),
+                            Reply("CRITERION 1: unwitnessed \u2014 no test"
+                                  " covers the fix\nVERDICT: APPROVE"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+                                      "implement", "review"])
+        self.assertIn("Acceptance criteria, numbered:", fake.turns[4].goal)
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "resolve", "state"])
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(
+            self.read("SELECT phase, outcome, candidateSha, approvedSha,"
+                      " mergeSha FROM runs"),
+            [("awaiting_merge_approval", None, fixed, None, None)])
+        self.assertEqual(
+            self.read("SELECT verdict FROM reviewRounds WHERE round = 4"),
+            [("changes_requested",)])
+        self.assertIn("CRITERION 1: unwitnessed", self.question())
+
     def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
         """Acceptance: two unresolved threads, a clear defect and a style
         nit, and green checks. One pass: the adjudicator addresses the one

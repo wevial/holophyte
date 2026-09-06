@@ -117,8 +117,13 @@ One pass:
    candidate, the reviewer route reviews it at its fixed sha -- verify
    first, the same read-only brief and frozen `refs/review/*` pair as a
    review round, one more `reviewRounds` row -- and only an `APPROVE`
-   merges; `REQUEST_CHANGES` parks the run with the findings in the
-   ticket's question, with no further fix round. The operator's
+   that accounts for every acceptance criterion merges; `REQUEST_CHANGES`,
+   or an approval that leaves a criterion not met or unwitnessed, parks
+   the run with the findings in the ticket's question, with no further
+   fix round. The merge API is never called on a sha this process has not
+   verified: a resumed run's candidate goes through the merge gate (the
+   ticket's verify commands, then the drift check) first, and a failure
+   stops the run there as under `mode = "local"`. The operator's
    `--approve` was of the sha it released: a candidate moved since parks
    for the human again under `approve = "human"`. The sha the last
    approval covered survives the park as `runs.approvedSha`, so a

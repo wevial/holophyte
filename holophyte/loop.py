@@ -351,7 +351,8 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     if carried is not None and wt.exists():
         return _resume_at_merge_gate(
             target, conn, run_id, provider, task_id, issue_id, task, branch,
-            wt, carried, started, verify_cmd, contracts, budget_min, body)
+            wt, carried, started, verify_cmd, contracts, budget_min, body,
+            criteria)
     fresh = _cut_worktree(target, conn, run_id, provider, task_id, task,
                           branch, wt)
 
@@ -412,9 +413,10 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     if merge.mode == "pr":
         url = _open_pr(target, conn, run_id, task_id, task, branch, body,
                        beat_s)
-        merge_sha = _shepherd(target, conn, run_id, provider, task_id, task,
-                              branch, wt, sha, beat_s, url, ticket,
-                              verify_cmd, contracts, budget_min, reviewed=sha)
+        merge_sha = _shepherd(target, conn, run_id, provider, task_id,
+                              issue_id, task, branch, wt, sha, beat_s, url,
+                              ticket, verify_cmd, contracts, budget_min,
+                              criteria, reviewed=sha, verified=sha)
         return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                           merge_sha, started, budget_min, rnd)
     # The human half of the gate, when the target asks for one: the
@@ -436,7 +438,7 @@ def _approved_candidate(conn, run_id):
 
 def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                           task, branch, wt, carried, started, verify_cmd,
-                          contracts, budget_min, body):
+                          contracts, budget_min, body, criteria=()):
     """The approved candidate's run: the preserved worktree, the pre-merge
     verify against the main of today, the merge. No implementer, no reviewer.
 
@@ -477,9 +479,10 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     """
     merge = merge_config(target)
     if merge.mode == "pr" and carried.pr_url is not None:
-        return _resume_on_pr(target, conn, run_id, provider, task_id, task,
-                             branch, wt, carried, started, verify_cmd,
-                             contracts, budget_min, body)
+        return _resume_on_pr(target, conn, run_id, provider, task_id,
+                             issue_id, task, branch, wt, carried, started,
+                             verify_cmd, contracts, budget_min, body,
+                             criteria)
     if not carried.approved:
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to merge the candidate for: {task}\nrun"
@@ -529,18 +532,20 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     if merge.mode == "pr":
         url = _open_pr(target, conn, run_id, task_id, task, branch, body,
                        beat_s)
-        merge_sha = _shepherd(target, conn, run_id, provider, task_id, task,
-                              branch, wt, sha, beat_s, url,
+        merge_sha = _shepherd(target, conn, run_id, provider, task_id,
+                              issue_id, task, branch, wt, sha, beat_s, url,
                               f"{task}\n\n{body}" if body else task,
-                              verify_cmd, contracts, budget_min, reviewed=sha)
+                              verify_cmd, contracts, budget_min, criteria,
+                              reviewed=sha, verified=sha)
         return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                           merge_sha, started, budget_min, 0)
     return _land(target, conn, run_id, provider, task_id, task, branch, wt,
                  sha, ok, started, budget_min, 0)
 
 
-def _resume_on_pr(target, conn, run_id, provider, task_id, task, branch, wt,
-                  carried, started, verify_cmd, contracts, budget_min, body):
+def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
+                  branch, wt, carried, started, verify_cmd, contracts,
+                  budget_min, body, criteria=()):
     """The resumed run of a candidate open as a pull request: the shepherd
     again, from the branch as it stands, with the release's answer
     (`carried.approved`) deciding what a green, quiet PR does.
@@ -552,7 +557,14 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, task, branch, wt,
     `approvedSha` -- the reviewer's approval, or None when the park had
     none to record (a fix the reviewer rejected, a store older than the
     column). A branch at any other sha is reviewed again before the merge
-    API is called; that is `_shepherd()`'s `reviewed`."""
+    API is called; that is `_shepherd()`'s `reviewed`.
+
+    Nothing here has verified the branch either: the park's verify was a
+    process ago, against the main of that day, and `--shepherd` or
+    `--approve` vouches for a judgement, not for the tree. So the
+    shepherd is told no sha is verified (`verified=None`) and runs the
+    merge gate -- the ticket's verify commands, then the drift check --
+    on the candidate before the merge API is called."""
     url = carried.pr_url
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     reviewed = carried.sha if carried.approved else carried.approved_sha
@@ -573,11 +585,12 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, task, branch, wt,
           " shepherding it")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
     set_phase(conn, run_id, "merge_gate", f"shepherding {url}")
-    merge_sha = _shepherd(target, conn, run_id, provider, task_id, task,
-                          branch, wt, sha, beat_s, url,
+    merge_sha = _shepherd(target, conn, run_id, provider, task_id, issue_id,
+                          task, branch, wt, sha, beat_s, url,
                           f"{task}\n\n{body}" if body else task, verify_cmd,
-                          contracts, budget_min, approved=carried.approved,
-                          reviewed=reviewed)
+                          contracts, budget_min, criteria,
+                          approved=carried.approved, reviewed=reviewed,
+                          verified=None)
     return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                       merge_sha, started, budget_min, 0)
 
@@ -1107,9 +1120,9 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s):
     return url
 
 
-def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
-              beat_s, url, ticket, verify_cmd, contracts, budget_min,
-              approved=False, reviewed=None):
+def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
+              wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
+              criteria=(), approved=False, reviewed=None, verified=None):
     """Shepherd the pull request `url` until it merges or the run parks;
     return the merge commit's sha.
 
@@ -1134,8 +1147,17 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
     candidate just approved and verified on a fresh run, the park's
     `approvedSha` on a `--shepherd` resume, None when nothing on record
     covers the branch -- which reads as "moved" and gets the review. Every
-    park records it, so the next resume starts from the same fact. Past
-    `pr_rounds` passes the run parks naming the cap. A PR someone merged
+    park records it, so the next resume starts from the same fact.
+    `verified` is the sha the merge gate's verify covered in this process
+    -- the candidate a fresh run took through `_merge_gate()` before the
+    PR opened, None on a resume, where the park's verify is a process
+    old -- and the merge API is never called on any other sha: a
+    candidate not verified here goes through `_merge_gate()` first, the
+    ticket's verify commands and the drift check both, and a failure
+    stops the run at the gate as it does under `mode = "local"`.
+    `criteria` are the ticket's acceptance criteria, which the review of
+    a fix is held to as a review round is. Past `pr_rounds` passes the
+    run parks naming the cap. A PR someone merged
     by hand lands the run as merged with that sha; one closed unmerged
     fails it.
 
@@ -1201,9 +1223,13 @@ def _shepherd(target, conn, run_id, provider, task_id, task, branch, wt, sha,
                             reviewed=reviewed)
             _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                         sha, reviewed, beat_s, pull, ticket, verify_cmd,
-                        contracts)
-            reviewed = sha
+                        contracts, criteria)
+            reviewed = verified = sha
         if merge.approve == "auto" or approved:
+            if sha != verified:
+                _merge_gate(target, conn, run_id, provider, task_id, issue_id,
+                            branch, wt, beat_s, sha, verify_cmd, contracts)
+                verified = sha
             return _merge_pr(target, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, reviewed=reviewed)
         _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
@@ -1227,7 +1253,8 @@ def _moved(sha, reviewed):
 
 
 def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
-                reviewed, beat_s, pull, ticket, verify_cmd, contracts):
+                reviewed, beat_s, pull, ticket, verify_cmd, contracts,
+                criteria=()):
     """The independent review of a candidate the shepherd's fix rounds
     moved from `reviewed` to `sha` (None: nothing on record covers it),
     before the merge API is called.
@@ -1237,10 +1264,14 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     them, so nothing independent has judged the candidate as it stands.
     The same reviewer route and brief as a review round: verify first,
     then a read-only review of the candidate at `sha` over the frozen
-    `refs/review/*` pair, recorded as a `reviewRounds` row. Anything but
-    an approval parks the run on the PR with the findings in the ticket's
-    question -- there is no further fix round here; the operator reads
-    the findings and answers with `--shepherd` or by hand."""
+    `refs/review/*` pair, recorded as a `reviewRounds` row, and held to
+    the ticket's `criteria` as a review round is: an approval that leaves
+    a criterion not met, unwitnessed, or witnessed by a test the worktree
+    does not hold is a `REQUEST_CHANGES` whatever its verdict line says.
+    Anything but an approval parks the run on the PR with the findings in
+    the ticket's question -- there is no further fix round here; the
+    operator reads the findings and answers with `--shepherd` or by
+    hand."""
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
     with heartbeat_while(conn, run_id, beat_s):
@@ -1273,14 +1304,24 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
             f"{ticket}\n\n"
             + _verify_brief(verify_cmd, ok, out)
+            + criteria_brief(criteria)
             + "Do not modify anything. End your reply with exactly one "
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
             base_sha=base_sha, candidate_sha=sha)
     record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
-                 ok, out, started_at=round_started, root=wt)
-    if review_runner.terminal_verdict(verdict) == "APPROVE":
+                 ok, out, started_at=round_started, criteria=criteria,
+                 root=wt)
+    # The same gate as a review round's: a criterion left not met or
+    # unwitnessed is a blocker whatever the verdict line says.
+    unwitnessed = criteria_findings(verdict, criteria, wt)
+    if unwitnessed:
+        print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
+              "witnessed by the review of the fix; treating as "
+              "REQUEST_CHANGES")
+        verdict += "\n\n" + "\n".join(f["message"] for f in unwitnessed)
+    if not unwitnessed and review_runner.terminal_verdict(verdict) == "APPROVE":
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"
                f"Reviewer verdict:\n{verdict}", provider)
