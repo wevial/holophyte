@@ -653,27 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[290 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T05:22:58Z — KO-276
-MERGED to main as 5e516fd.
-actual: 9.2 min · estimate: 25 min · rounds: 1
-
-## 2026-09-06T05:34:06Z — KO-277
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/console/src/App.tsx:63 [p2] [App.tsx:63](/home/reviewer/candidate/console/src/App.tsx:63): Now requires a successful status before rendering. Reproduced with both daemons unreachable on…
-- /home/reviewer/candidate/console/src/hooks/usePeers.ts:77 [p2] [usePeers.ts:77](/home/reviewer/candidate/console/src/hooks/usePeers.ts:77): The next poll starts ten seconds after completion. An eight-second timeout theref…
-- criteria:2 [p2] CRITERION 2: not met — reproduced first-poll failures suppress the entire Now needs-you section when no daemon has answered. Given one daemon times out or answe…
-- criteria:5 [p2] CRITERION 5: unwitnessed — independently reran verification in a temporary candidate copy: install eventually passed and all 77 tests passed, but build exited 1…
-
-## 2026-09-06T05:37:09Z — KO-277
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/console/src/hooks/usePeers.ts:41 [p1] **[P1] Origin timeout falsely marks healthy peers unreachable.** [usePeers.ts:41–48](/home/reviewer/candidate/console/src/hooks/usePeers.ts:41) shares one tim…
-- /home/reviewer/candidate/console/src/components/Now.tsx:27 [p2] **[P2] Run selection lacks daemon identity.** [Now.tsx:27](/home/reviewer/candidate/console/src/components/Now.tsx:27) tracks only the numeric run ID. Two dae…
-- criteria:2 [p2] CRITERION 2: not met — origin discovery timeout also marks healthy known peers unreachable; reproduced with an abort-aware fetch. Given one daemon times out or…
-- criteria:5 [p2] CRITERION 5: unwitnessed — temporary candidate snapshot passed all 79 tests, but frozen install failed finding `@oven/bun-linux-x64`; build failed in `bun-plugi…
+[293 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T05:41:14Z — KO-277
 Round 3: pass · reviewer codex-astra-medium · verify passed
@@ -767,3 +747,16 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T07:58:32Z — KO-297
 FAILED: terminal adjudication: FAIL; branch task/ko-297-repoint-ko-n-sha-moves-a-park preserved at 6acbfc6fbaec
 actual: 23.6 min · estimate: 25 min · rounds: 3
+
+## 2026-09-06T08:05:10Z — KO-297
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/store/__init__.py:1683 [p2] [P2] Enforce the approval precondition in [store/__init__.py:1683](/home/reviewer/candidate/store/__init__.py:1683). `repoint()` never reads `resumePhase`. A…
+- criteria:2 [p2] CRITERION 2: not met — parked runs with non-null resumePhase are accepted; approved-run refusals omit required requeue guidance. Given a ticket whose newest run…
+
+## 2026-09-06T08:11:48Z — KO-297
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T08:12:55Z — KO-297
+MERGED to main as 35981f4.
+actual: 13.7 min · estimate: 25 min · rounds: 2
