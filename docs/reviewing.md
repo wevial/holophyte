@@ -22,13 +22,27 @@ are mounted; the copy and all reviewer state are removed afterward. Outbound
 network remains enabled because Codex uses remote inference, but no GitHub,
 SSH, Linear, Docker, or unrelated host credentials are exposed.
 
-The first review builds `holophyte-reviewer:ubuntu24.04-v3` automatically from
+Two directories matter inside the container. `/workspace` is the read-only
+staged checkout: the identity check, the write probe and the `PREFLIGHT_OK`
+line all run there, and nothing ever writes to it. Once preflight passes the
+script copies the whole tree (including `.git`, so `refs/review/base` and
+`refs/review/candidate` resolve) to `/home/reviewer/candidate` and runs Codex
+from that writable copy, so a package install or a `go build` beside the
+sources can succeed and the ticket's criteria can actually be witnessed. The
+copy is discarded with the reviewer home at the end of the round; the merge
+takes the host worktree's SHA, never the container's files.
+
+The first review builds `holophyte-reviewer:ubuntu24.04-v4` automatically from
 the digest-pinned Ubuntu image; it carries git, python3, ripgrep, a pinned
 Bun (checksum-verified, on `PATH` under `/opt/bun/bin`) so console `bun`
 criteria can be witnessed inside the container, and a pinned Go 1.26.6
 (checksum-verified, under `/usr/local/go`, `GOTOOLCHAIN=local` so no other
 toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
-Go target's `go test` criteria can be witnessed too. A run fails closed if
+Go target's `go test` criteria can be witnessed too. `/tmp` is a `noexec`
+tmpfs so the reviewer cannot run what a candidate drops there; because `go
+test` executes its test binaries from the temp directory, the image sets
+`TMPDIR` and `GOTMPDIR` to `/home/reviewer/tmp`, which the container script
+creates on the writable reviewer home before preflight. A run fails closed if
 preflight identity or write rejection fails, the Codex tool host cannot
 execute a local command, the container times out, or the staged repository
 fingerprint changes.

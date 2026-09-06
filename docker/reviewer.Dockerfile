@@ -44,7 +44,9 @@ ENV PATH=/usr/local/go/bin:$PATH \
     GOTOOLCHAIN=local \
     GOPATH=/home/reviewer/go \
     GOMODCACHE=/home/reviewer/go/pkg/mod \
-    GOCACHE=/home/reviewer/.cache/go-build
+    GOCACHE=/home/reviewer/.cache/go-build \
+    TMPDIR=/home/reviewer/tmp \
+    GOTMPDIR=/home/reviewer/tmp
 
 RUN mkdir -p /home/reviewer /workspace \
     && chmod 0755 /home/reviewer /workspace

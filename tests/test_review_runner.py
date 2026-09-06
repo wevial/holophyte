@@ -347,15 +347,79 @@ class ContainerLifetimeTests(unittest.TestCase):
                 review_runner.stray_containers()
 
 
+class ContainerCommandTests(unittest.TestCase):
+    def test_script_creates_the_temp_directory_and_keeps_tmp_noexec(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("candidate", "home", "toolchain"):
+                (root / name).mkdir()
+            command = review_runner.container_command(
+                image="holophyte-reviewer:test",
+                workspace=root / "candidate",
+                reviewer_home=root / "home",
+                toolchain=root / "toolchain",
+                name="holophyte-review-test",
+                prompt="review",
+                uid=1000,
+                gid=1000,
+            )
+
+        script = command[command.index("-c") + 1]
+        lines = script.splitlines()
+        # The directory exists before any preflight probe runs.
+        self.assertRegex(lines[0], r'^mkdir -p( -m 0?700)? "\$TMPDIR"$')
+        self.assertTrue(any("rev-parse" in line for line in lines[1:]))
+        tmpfs = command[command.index("--tmpfs") + 1]
+        self.assertTrue(tmpfs.startswith("/tmp:"))
+        self.assertIn("noexec", tmpfs.split(":", 1)[1].split(","))
+
+    @staticmethod
+    def _rendered(root):
+        for name in ("candidate", "home", "toolchain"):
+            (root / name).mkdir()
+        return review_runner.container_command(
+            image="holophyte-reviewer:test",
+            workspace=root / "candidate",
+            reviewer_home=root / "home",
+            toolchain=root / "toolchain",
+            name="holophyte-review-test",
+            prompt="review",
+            uid=1000,
+            gid=1000,
+        )
+
+    def test_codex_runs_in_a_writable_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command = self._rendered(Path(tmp))
+        lines = command[command.index("-c") + 1].splitlines()
+        preflight_ok = next(i for i, line in enumerate(lines) if "PREFLIGHT_OK" in line)
+        copy = next(i for i, line in enumerate(lines) if line.startswith("cp -a "))
+        run = next(i for i, line in enumerate(lines) if line.startswith("exec "))
+        self.assertLess(preflight_ok, copy)
+        self.assertLess(copy, run)
+        self.assertEqual(lines[copy], "cp -a /workspace /home/reviewer/candidate")
+        self.assertIn(" -C /home/reviewer/candidate", lines[run])
+        self.assertNotIn("-C /workspace", lines[run])
+
+    def test_workspace_stays_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command = self._rendered(Path(tmp))
+        script = command[command.index("-c") + 1]
+        self.assertIn("touch /workspace/.holophyte-write-probe", script)
+        mounts = [command[i + 1] for i, a in enumerate(command) if a == "--volume"]
+        self.assertTrue(any(m.endswith(":/workspace:ro") for m in mounts), mounts)
+        self.assertFalse(any(":/workspace:rw" in m for m in mounts), mounts)
+
+
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v3_and_nothing_still_names_v1_or_v2(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v3")
+    def test_image_tag_is_v4_and_nothing_still_names_an_older_tag(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v4")
         stale = [
             path
             for path in [*ROOT.glob("*.py"), *(ROOT / "docs").glob("*.md")]
-            if re.search(r"ubuntu24\.04-v[12]\b", path.read_text())
+            if re.search(r"ubuntu24\.04-v[123]\b", path.read_text())
         ]
         self.assertEqual(stale, [])
 
@@ -391,3 +455,15 @@ class ReviewerImageTests(unittest.TestCase):
         self.assertRegex(text, r"(?m)^\s*GOPATH=/home/reviewer/go\b")
         self.assertRegex(text, r"(?m)^\s*GOMODCACHE=/home/reviewer/go/pkg/mod\b")
         self.assertRegex(text, r"(?m)^\s*GOCACHE=/home/reviewer/\.cache/go-build\b")
+
+    def test_go_temp_directory_is_under_the_home(self):
+        # `/tmp` is a noexec tmpfs; `go test` executes its test binaries from
+        # GOTMPDIR and `t.TempDir()` follows TMPDIR, so both must name the same
+        # executable directory on the writable reviewer home.
+        text = self.DOCKERFILE.read_text()
+        tmpdir = re.search(r"(?m)^\s*TMPDIR=(\S+?)\s*\\?$", text)
+        gotmpdir = re.search(r"(?m)^\s*GOTMPDIR=(\S+?)\s*\\?$", text)
+        self.assertIsNotNone(tmpdir, "Dockerfile sets no TMPDIR")
+        self.assertIsNotNone(gotmpdir, "Dockerfile sets no GOTMPDIR")
+        self.assertEqual(tmpdir.group(1), gotmpdir.group(1))
+        self.assertTrue(tmpdir.group(1).startswith("/home/reviewer/"))
