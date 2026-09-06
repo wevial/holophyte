@@ -84,5 +84,31 @@ export interface RunDetailBody {
     max_rounds?: number;
   };
   rounds: Round[];
-  events: { at: number; kind: string; summary: string }[];
+  events: RunEvent[];
+}
+
+/** One narrative run event of `/runs/N` (`runEvents` with `level = narrative`). */
+export interface RunEvent {
+  at: number;
+  kind: string;
+  summary: string;
+}
+
+/** One file of `/runs/N/files`: git's status letter and its line counts. */
+export interface TouchedFile {
+  path: string;
+  status: string;
+  added: number;
+  deleted: number;
+}
+
+/** The daemon's `/runs/N/files` body (holophyte/serve.py `run_files()`). */
+export interface RunFilesBody {
+  run?: number;
+  base?: string;
+  head?: string;
+  files: TouchedFile[];
+  total_added: number;
+  total_deleted: number;
+  truncated?: boolean;
 }
