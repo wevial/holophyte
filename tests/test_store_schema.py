@@ -57,6 +57,9 @@ DOCUMENTED_COLUMNS = {
         # another machine can say where each live run is executing.
         "host",
     },
+    "ledger": {
+        "id", "runId", "ticketId", "at", "kind", "text", "source",
+    },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",
         "findingsFingerprint", "reviewerModel", "startedAt", "endedAt",
@@ -514,11 +517,13 @@ class StoreSchemaVersionTests(unittest.TestCase):
             conn.execute("SELECT id, outcome, mergeSha FROM runs").fetchall(),
             [(run_id, "merged", None)])
 
-    def test_a_version_4_store_gains_approve_and_still_reports(self):
+    def test_a_version_4_store_migrates_in_place_and_still_reports(self):
         """A store stamped 4 has an `interventions` action CHECK without
-        'approve'; opening it with this build rebuilds the table in place,
-        keeps the rows it held, stamps version 5, accepts an 'approve' row,
-        and `--report` renders the runs it held."""
+        'approve' and no `ledger` table; opening it with this build rebuilds
+        the one and creates the other in place, keeps the rows it held,
+        stamps the current version, accepts an 'approve' row -- and the
+        ledger entry that row now carries -- and `--report` renders the runs
+        it held."""
         conn = store.open(self.path)
         store.init(conn)
         project = store.ensure_project(conn, "team-1", "/repos/holophyte")
@@ -533,6 +538,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
             'INSERT INTO interventions (runId, source, "trigger", "action", at)'
             " VALUES (?, 'human', 'manual', 'requeue', ?)",
             (run_id, 1_700_000_120_000))
+        conn.execute("DROP TABLE ledger")
         conn.execute("PRAGMA user_version = 4")
         conn.commit()
         conn.close()
@@ -543,21 +549,28 @@ class StoreSchemaVersionTests(unittest.TestCase):
                 'INSERT INTO interventions (runId, source, "trigger",'
                 ' "action", at) VALUES (?, \'human\', \'manual\','
                 ' \'approve\', 1)', (run_id,))
+        with self.assertRaises(sqlite3.OperationalError):
+            raw.execute("SELECT 1 FROM ledger")
         raw.close()
 
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertEqual(store.SCHEMA_VERSION, 5)
-        self.assertEqual(self.user_version(), 5)
+        self.assertGreaterEqual(store.SCHEMA_VERSION, 6)
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
         self.assertEqual(
             conn.execute('SELECT runId, "action" FROM interventions'
                          " ORDER BY id").fetchall(),
             [(run_id, "requeue")])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM ledger")
+                         .fetchone(), (0,))
         store.record_intervention(conn, run_id, "approve", "ok")
         self.assertEqual(
             conn.execute('SELECT "action" FROM interventions ORDER BY id')
             .fetchall(), [("requeue",), ("approve",)])
+        self.assertEqual(
+            conn.execute("SELECT runId, ticketId, kind, source FROM ledger")
+            .fetchall(), [(run_id, ticket, "intervention", "operator")])
         import holophyte.report
         table = "\n".join(holophyte.report.report_lines(conn))
         self.assertIn("KO-1", table)

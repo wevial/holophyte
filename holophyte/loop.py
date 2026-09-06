@@ -439,25 +439,28 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     """
     why = _candidate_drift(wt, branch, carried.sha)
     if why is not None:
-        ledger(provider, task_id, f"FAILED to merge the approved candidate"
-                                  f" for: {task}\n{why}\nNothing was"
-                                  " committed or deleted; a human reconciles"
-                                  " the worktree before this ticket is run"
-                                  " again.")
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED to merge the approved candidate"
+               f" for: {task}\n{why}\nNothing was"
+               " committed or deleted; a human reconciles"
+               " the worktree before this ticket is run"
+               " again.", provider)
         raise RunFailure(f"approved candidate on {branch} is not what was"
                          f" approved: {why}")
     ok, why = reuse_leftover(target, wt, branch)
     if not ok:
-        ledger(provider, task_id, f"FAILED to reuse the approved candidate's"
-                                  f" worktree for: {task}\n{why}\nNothing"
-                                  " was deleted.")
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED to reuse the approved candidate's"
+               f" worktree for: {task}\n{why}\nNothing"
+               " was deleted.", provider)
         raise RunFailure(f"cannot reuse the approved candidate's worktree:"
                          f" {why}")
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if sha == sh(["git", "rev-parse", "main"], target.path):
-        ledger(provider, task_id, f"FAILED to merge the approved candidate"
-                                  f" for: {task}\n{branch} holds nothing"
-                                  " beyond main; nothing to merge.")
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED to merge the approved candidate"
+               f" for: {task}\n{branch} holds nothing"
+               " beyond main; nothing to merge.", provider)
         raise RunFailure(f"approved candidate on {branch} holds nothing"
                          " beyond main; nothing to merge")
     # Only reached with a store: a direct call carries no candidate.
@@ -515,10 +518,11 @@ def _land(target, conn, run_id, provider, task_id, task, branch, wt, sha, ok,
     # One greppable line of timing data per merged ticket: the estimate stays
     # write-only otherwise, and a future burndown script reads this format.
     actual_min = (monotonic() - started) / 60
-    ledger(provider, task_id, f"MERGED to main (branch {branch} deleted). "
-                 f"Verify: {'passed' if ok else 'n/a'}.\n"
-                 f"actual: {actual_min:.1f} min · estimate: {budget_min} min · "
-                 f"rounds: {rnd}")
+    ledger(conn, run_id, task_id, "merge",
+           f"MERGED to main (branch {branch} deleted). "
+           f"Verify: {'passed' if ok else 'n/a'}.\n"
+           f"actual: {actual_min:.1f} min · estimate: {budget_min} min · "
+           f"rounds: {rnd}", provider)
     # The task's own commit of FINDINGS.md is `main()`'s, not this frame's:
     # the run's close-out entry exists only once the run has been released,
     # which happens after this returns.
@@ -545,8 +549,9 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
         # survives; the branch check below still gates on commits.
         ok, why = reuse_leftover(target, wt, branch)
         if not ok:
-            ledger(provider, task_id, f"FAILED to reuse leftover worktree for: {task}\n"
-                                      f"{why}\nNothing was deleted.")
+            ledger(conn, run_id, task_id, "failure",
+                   f"FAILED to reuse leftover worktree for: {task}\n"
+                   f"{why}\nNothing was deleted.", provider)
             raise RunFailure(f"cannot reuse leftover worktree: {why}")
         # Whether the leftover actually holds anything, decided from content
         # rather than from which arm ran: an empty reuse was reset to main by
@@ -565,8 +570,9 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
         why = (f"branch {branch} already exists with no worktree; a"
                " human moves it aside or deletes it before this ticket"
                " is run again")
-        ledger(provider, task_id, f"FAILED to cut a fresh worktree for: {task}\n"
-                                  f"{why}\nNothing was deleted.")
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED to cut a fresh worktree for: {task}\n"
+               f"{why}\nNothing was deleted.", provider)
         raise RunFailure(f"cannot cut a fresh worktree: {why}")
     sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
     sh(["git", "checkout", "-b", branch], cwd=wt)
@@ -597,17 +603,18 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
     # Ledger first: a deletion that itself fails must not also cost the
     # durable record of why the run stopped.
     if fresh:
-        ledger(provider, task_id,
+        ledger(conn, run_id, task_id, "failure",
                f"FAILED worktree setup for: {task}\nNo agent ran;"
                f" branch {branch} holds nothing and is"
-               f" discarded.\n\n{out}")
+               f" discarded.\n\n{out}", provider)
         sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
         sh(["git", "branch", "-D", branch], target.path)
         raise InfraFailure("worktree setup failed; no agent ran and the"
                            " empty branch was discarded")
-    ledger(provider, task_id, f"FAILED worktree setup for: {task}\nNo agent ran; "
-                              f"reused worktree {wt} left in place with its "
-                              f"work.\n\n{out}")
+    ledger(conn, run_id, task_id, "failure",
+           f"FAILED worktree setup for: {task}\nNo agent ran; "
+           f"reused worktree {wt} left in place with its "
+           f"work.\n\n{out}", provider)
     raise InfraFailure(f"worktree setup failed; no agent ran; reused"
                        f" worktree and branch {branch} left in place with"
                        " their work")
@@ -750,6 +757,11 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                   "witnessed; treating as REQUEST_CHANGES")
         if (ok and not unwitnessed
                 and review_runner.terminal_verdict(verdict) == "APPROVE"):
+            # The approving round is a round like any other: the narrative
+            # of a clean merge is a `round` entry and then a `merge` one.
+            ledger(conn, run_id, task_id, "round",
+                   f"Round {rnd}: APPROVE\nReviewer verdict:\n{verdict}",
+                   provider)
             return sha, rnd, True
 
         # 3. implementer addresses findings (same branch, new commit)
@@ -763,9 +775,10 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                        "it in the commit message), or DECLINE (invalid/out-of-scope — "
                        "state the rationale in the commit message). Then fix only the "
                        "ADDRESS items and commit.")
-        ledger(provider, task_id, f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
-                     f"Reviewer findings:\n{verdict}\n\n"
-                     f"Implementer response:\n{fixes}")
+        ledger(conn, run_id, task_id, "round",
+               f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
+               f"Reviewer findings:\n{verdict}\n\n"
+               f"Implementer response:\n{fixes}", provider)
         if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
@@ -789,10 +802,10 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
     if not ok:
         print(f"[holo2] verify FAILED before adjudication; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
-        ledger(provider, task_id,
+        ledger(conn, run_id, task_id, "failure",
                f"FAILED verify before terminal adjudication after "
                f"{MAX_ROUNDS} review rounds; branch {branch} preserved "
-               f"at {sha}\n\n{out}")
+               f"at {sha}\n\n{out}", provider)
         raise RunFailure(f"verify failed before terminal adjudication;"
                          f" branch {branch} preserved at {sha[:12]}")
     print("[holo2] verify ok before adjudication")
@@ -833,15 +846,16 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
     if decision != "PASS":
         print(f"[holo2] terminal adjudication: {decision}; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
-        ledger(provider, task_id,
+        ledger(conn, run_id, task_id, "adjudication",
                f"Terminal adjudication after {MAX_ROUNDS} review "
                f"rounds: {decision}; branch {branch} preserved at "
-               f"{sha}\n\nAdjudicator reply:\n{reply}")
+               f"{sha}\n\nAdjudicator reply:\n{reply}", provider)
         raise RunFailure(f"terminal adjudication: {decision};"
                          f" branch {branch} preserved at {sha[:12]}")
     print("[holo2] terminal adjudication: PASS")
-    ledger(provider, task_id, f"Terminal adjudication after {MAX_ROUNDS} review "
-                 f"rounds: PASS\n\nAdjudicator reply:\n{reply}")
+    ledger(conn, run_id, task_id, "adjudication",
+           f"Terminal adjudication after {MAX_ROUNDS} review "
+           f"rounds: PASS\n\nAdjudicator reply:\n{reply}", provider)
 
 
 def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
@@ -854,8 +868,9 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
-        ledger(provider, task_id, f"FAILED verify before merge; branch {branch} "
-                                  f"preserved at {sha}\n\n{out}")
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED verify before merge; branch {branch} "
+               f"preserved at {sha}\n\n{out}", provider)
         raise RunFailure(f"verify failed before merge; branch {branch}"
                          f" preserved at {sha[:12]}")
     print("[holo2] verify ok before merge")
@@ -874,11 +889,12 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
                     f"({', '.join(drift)}); not merging {branch} at {sha} — "
                     "the candidate answers the ticket as it was claimed, not "
                     "as it now reads")
-        ledger(provider, task_id, "MERGE REFUSED: the ticket drifted from the contract "
-                                  f"this run was claimed under ({', '.join(drift)}). "
-                                  f"Branch {branch} preserved at {sha}. Work it again "
-                                  "against the body as it now reads, or restore the "
-                                  "body the run was claimed under.")
+        ledger(conn, run_id, task_id, "failure",
+               "MERGE REFUSED: the ticket drifted from the contract "
+               f"this run was claimed under ({', '.join(drift)}). "
+               f"Branch {branch} preserved at {sha}. Work it again "
+               "against the body as it now reads, or restore the "
+               "body the run was claimed under.", provider)
         raise RunFailure(f"ticket drifted from the claimed contract"
                          f" ({', '.join(drift)}); branch {branch} preserved"
                          f" at {sha[:12]}")
@@ -913,10 +929,11 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
                candidate_sha=sha)
     print(f"[holo2] approved and verified; parked {branch} at {sha[:12]}"
           " awaiting merge approval")
-    ledger(provider, task_id, "AWAITING MERGE APPROVAL: review approved and "
-                              f"verify passed; branch {branch} preserved at "
-                              f"{sha} and not merged ([merge] approve = "
-                              "\"human\"). Answer merge? to release it.")
+    ledger(conn, run_id, task_id, "note",
+           "AWAITING MERGE APPROVAL: review approved and "
+           f"verify passed; branch {branch} preserved at "
+           f"{sha} and not merged ([merge] approve = "
+           "\"human\"). Answer merge? to release it.", provider)
     raise MergeParked(f"awaiting merge approval; branch {branch} preserved"
                       f" at {sha[:12]}")
 
@@ -939,7 +956,8 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
                          f"Merge {branch}: {task}"], cwd=target.path,
                         capture_output=True, text=True)
     if mr.returncode != 0:
-        _resolve_merge_conflict(target, provider, task_id, branch, sha)
+        _resolve_merge_conflict(target, conn, run_id, provider, task_id,
+                                branch, sha)
     # The merge has landed: main's HEAD is the merge commit, read now before
     # the cleanup below and before anything else moves main. The branch
     # holds nothing main does not, so the worktree's stray untracked files
@@ -954,7 +972,8 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     return merge_sha
 
 
-def _resolve_merge_conflict(target, provider, task_id, branch, sha):
+def _resolve_merge_conflict(target, conn, run_id, provider, task_id, branch,
+                            sha):
     """A failed `--no-ff` merge: resolve it if FINDINGS.md alone conflicted,
     otherwise abort it and fail the run with main restored."""
     # What conflicted is the index's answer, not the merge output's: a
@@ -992,9 +1011,10 @@ def _resolve_merge_conflict(target, provider, task_id, branch, sha):
         why += (" — main is NOT clean after the abort: "
                 + " ".join(dirty.split()))
     print(f"[holo2] {why}")
-    ledger(provider, task_id, f"MERGE ABORTED: conflict on {paths}. Branch "
-                              f"{branch} preserved at {sha}. Rebase it on main "
-                              "and re-run, or merge it by hand.")
+    ledger(conn, run_id, task_id, "failure",
+           f"MERGE ABORTED: conflict on {paths}. Branch "
+           f"{branch} preserved at {sha}. Rebase it on main "
+           "and re-run, or merge it by hand.", provider)
     raise RunFailure(why)
 
 

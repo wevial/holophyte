@@ -535,6 +535,34 @@ def narrative_events(conn, run_id):
             for row in rows]
 
 
+# --- ledger ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LedgerEntry:
+    """One entry of a run's narrative, as `store.record_ledger()` wrote it."""
+
+    id: int
+    runId: int
+    ticketId: int
+    at: int
+    kind: str
+    text: str
+    source: str
+
+
+def ledger(conn, run_id):
+    """Every ledger entry of `run_id`, oldest first; `[]` for a run with none
+    or no such run. Two entries written in the same millisecond keep the
+    order they were written in."""
+    rows = conn.execute(
+        "SELECT id, runId, ticketId, at, kind, text, source FROM ledger"
+        " WHERE runId = ? ORDER BY at, id", (run_id,)).fetchall()
+    return [LedgerEntry(id=row[0], runId=row[1], ticketId=row[2], at=row[3],
+                        kind=row[4], text=row[5], source=row[6])
+            for row in rows]
+
+
 # --- sweepStrikes ------------------------------------------------------------
 
 

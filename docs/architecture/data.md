@@ -4,7 +4,7 @@ The store is the source of truth. Linear, `FINDINGS.md`, the daemon's JSON
 and the drawer are views of it; the loop and the supervisor are its only
 writers. It is one SQLite file per target in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 3) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 6) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 
 ## Tables
@@ -21,6 +21,7 @@ that opens a store stamped newer than it understands refuses and exits.
 | `loopRestarts` | self-merge re-exec | loop | sha; the supervisor checks the loop came back |
 | `linearDeliveries` | push to Linear | loop | what was projected, when |
 | `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue`; the record-before-acting rule lives here |
+| `ledger` | entry in a run's narrative | loop, operator commands | `kind` ∈ `merge, failure, round, adjudication, intervention, note`, `source` ∈ `loop, operator`; written before the Linear comment that projects it |
 
 ## The two state machines
 
@@ -75,6 +76,22 @@ operator commands (`--requeue`) write it; the REPL rung of the escalation
 ladder calls `store.record_intervention()` directly. Backdating or
 mislabelling a row is worse than no row; the [runbook](../operating/runbook.md)
 says why.
+
+## Ledger
+
+The narrative of a run -- each review round's verdict and the implementer's
+answer, the terminal adjudication, the merge line, a failure's why, a note
+such as a run parked for merge approval, and every intervention -- is a row
+in `ledger` ([design note 9](../design/0009-ledger.md)). `board.ledger()`
+writes the row on the run's own connection and only then posts the Linear
+comment, so the comment is a projection of the row the way a ticket's
+Linear state is a projection of `tickets.status`: a board that is down or
+absent loses its copy and nothing else. `record_intervention()` writes the
+`intervention` entry in the same transaction as the `interventions` row, so
+`--requeue` and `--approve` land in the narrative beside the loop's own
+entries. `store.read.ledger(conn, run_id)` returns a run's entries oldest
+first. `FINDINGS.md` is rendered from `runs` and `reviewRounds` as before;
+the ledger is not yet served over HTTP.
 
 ## FINDINGS
 

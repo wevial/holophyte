@@ -271,6 +271,25 @@ CREATE TABLE IF NOT EXISTS linearDeliveries (
     deliveryId  TEXT    PRIMARY KEY,
     processedAt INTEGER NOT NULL
 );
+
+-- ledger: the narrative of a run, one row per entry (design note 9). What
+-- the loop used to say only as a board comment -- a round's verdict and the
+-- implementer's answer, the merge line, a failure's why, an operator's
+-- intervention -- lands here first, and the board comment is its projection.
+-- Distinct from runEvents, which is the phase machine's own stream: a ledger
+-- row is prose written for a reader, an event is a state change. `kind`
+-- says which shape of prose; `source` says who wrote it.
+CREATE TABLE IF NOT EXISTS ledger (
+    id       INTEGER PRIMARY KEY,
+    runId    INTEGER NOT NULL REFERENCES runs (id),
+    ticketId INTEGER NOT NULL REFERENCES tickets (id),
+    at       INTEGER NOT NULL,
+    kind     TEXT    NOT NULL
+        CHECK (kind IN ('merge', 'failure', 'round', 'adjudication',
+                        'intervention', 'note')),
+    text     TEXT    NOT NULL,
+    source   TEXT    NOT NULL CHECK (source IN ('loop', 'operator'))
+);
 """
 
 # interventions: supervisor/human actions on a run (state-model §2). Kept out
@@ -306,17 +325,20 @@ CREATE TABLE IF NOT EXISTS interventions (
 # `interventions` action CHECK admitting 'requeue' (KO-223); version 4 is
 # `runs.mergeSha`, the merge commit a merged run landed as (KO-246); version
 # 5 is the action CHECK admitting 'approve', the operator's answer to a run
-# parked for merge approval (KO-258).
-SCHEMA_VERSION = 5
+# parked for merge approval (KO-258); version 6 is the `ledger` table, the
+# run's narrative kept in the store ahead of its board comment (KO-250).
+SCHEMA_VERSION = 6
 
 # Every join the loop, the sweep and the FINDINGS renderer perform goes
-# through one of these three foreign keys; without an index each is a full
-# scan of the child table. Idempotent DDL, run on every open() after the
+# through one of these foreign keys; without an index each is a full
+# scan of the child table. `ledger_runId` is for the read view, which is
+# always per run. Idempotent DDL, run on every open() after the
 # tables exist.
 INDEXES = """
 CREATE INDEX IF NOT EXISTS runs_ticketId ON runs (ticketId);
 CREATE INDEX IF NOT EXISTS reviewRounds_runId ON reviewRounds (runId);
 CREATE INDEX IF NOT EXISTS runEvents_runId ON runEvents (runId);
+CREATE INDEX IF NOT EXISTS ledger_runId ON ledger (runId);
 """
 
 
@@ -1985,6 +2007,53 @@ def record_intervention(conn, run_id, action, note, source="human",
             (run_id, source, trigger, action, question, guidance, now))
         _append_event(conn, run_id, "narrative", "intervention",
                       f"{source} {action}: {note}", now)
+        # The narrative's copy, in the same transaction: an operator's step
+        # is a ledger entry like a round or a merge, so a reader of the
+        # run's story sees it where it happened. A human is the operator;
+        # the supervisor is the loop's own machinery.
+        record_ledger(conn, run_id, "intervention",
+                      f"{source} {action}: {note}",
+                      source="operator" if source == "human" else "loop",
+                      now=now)
+    return cursor.lastrowid
+
+
+# The `ledger` table's two enums, transcribed from its CHECKs so a typo is a
+# ValueError naming it here rather than an IntegrityError from SQLite.
+LEDGER_KINDS = ("merge", "failure", "round", "adjudication", "intervention",
+                "note")
+LEDGER_SOURCES = ("loop", "operator")
+
+
+def record_ledger(conn, run_id, kind, text, source="loop", now=None):
+    """Append one entry of `kind` to run `run_id`'s ledger; return its id.
+
+    The store's half of `board.ledger()`: the row lands here first, and the
+    board comment the loop then posts is a projection of it, so the run's
+    narrative survives a board that is down, cancelled or third-party. The
+    ticket is the run's own (`runs.ticketId`), read here rather than passed,
+    so a row can never name a ticket other than the one its run was claimed
+    for. Joins a caller's `transaction()` when one is open -- an
+    intervention's row and its ledger entry land together -- and otherwise
+    is one of its own.
+    """
+    if kind not in LEDGER_KINDS:
+        raise ValueError(f"unknown ledger kind {kind!r}")
+    if source not in LEDGER_SOURCES:
+        raise ValueError(f"unknown ledger source {source!r}")
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError(f"text must be non-empty, got {text!r}")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                           (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        cursor = conn.execute(
+            "INSERT INTO ledger (runId, ticketId, at, kind, text, source)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (run_id, row[0], now, kind, text, source))
     return cursor.lastrowid
 
 

@@ -23,6 +23,7 @@ from unittest.mock import patch
 import holophyte.cli
 import holophyte.target
 import store
+import store.read
 from holophyte.runs import open_store
 
 MINUTE = 60 * 1000
@@ -92,6 +93,17 @@ class RequeueCliTests(unittest.TestCase):
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
             " 'intervention'", (self.run,)).fetchone()
         self.assertIn("contract fixed", summary)
+        # The narrative's copy, beside the interventions row: the note is the
+        # ledger entry's text and the row names the same run.
+        entries = store.read.ledger(self.conn, self.run)
+        self.assertEqual([(e.kind, e.source) for e in entries],
+                         [("intervention", "operator")])
+        self.assertIn("contract fixed", entries[0].text)
+        self.assertIn("requeue", entries[0].text)
+        (intervention_at,) = self.conn.execute(
+            "SELECT at FROM interventions WHERE runId = ?",
+            (self.run,)).fetchone()
+        self.assertEqual(entries[0].at, intervention_at)
 
     def test_a_target_with_no_board_exits_naming_the_key_and_writes_nothing(self):
         self.fail_the_run()
