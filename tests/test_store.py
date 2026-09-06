@@ -124,6 +124,17 @@ class RepointTests(unittest.TestCase):
         store.park(self.conn, self.run, "awaiting_merge_approval",
                    candidate_sha=OLD_SHA, now=T0 + 2 * MINUTE)
 
+    def reopen_at_merge_gate(self):
+        # Rewind an ended run to live at the gate so it can be parked again.
+        self.conn.execute(
+            "UPDATE runs SET endedAt = NULL, outcome = NULL,"
+            " resumePhase = NULL, candidateSha = NULL, phase = 'merge_gate'"
+            " WHERE id = ?", (self.run,))
+        self.conn.execute(
+            "UPDATE tickets SET activeRunId = ?, lastRunId = NULL,"
+            " status = 'in_flight' WHERE id = ?", (self.run, self.ticket))
+        self.conn.commit()
+
     def candidate_sha(self):
         return self.conn.execute(
             "SELECT candidateSha FROM runs WHERE id = ?",
@@ -181,16 +192,23 @@ class RepointTests(unittest.TestCase):
         self.assertIn(str(self.ticket + 1), str(unknown.exception))
         self.assertEqual(self.candidate_sha(), None)
 
+        # Already approved: the one run that carries `resumePhase =
+        # merge_gate` is an ended one waiting for its claim, and its sha is
+        # what that claim will hold the branch to.
+        self.reopen_at_merge_gate()
+        self.park()
+        store.approve(self.conn, self.ticket, "approved", now=T0 + 3 * MINUTE)
+        self.assertEqual(
+            self.conn.execute("SELECT resumePhase FROM runs WHERE id = ?",
+                              (self.run,)).fetchone(), ("merge_gate",))
+        with self.assertRaises(store.RepointRefused) as approved:
+            store.repoint(self.conn, self.ticket, NEW_SHA, "rebuilt")
+        self.assertIn("not awaiting_merge_approval", str(approved.exception))
+        self.assertEqual(self.candidate_sha(), OLD_SHA)
+
         # Parked, but the sha is not a full commit id: abbreviated, a
         # branch name, too long, not text.
-        self.conn.execute("UPDATE runs SET endedAt = NULL, outcome = NULL"
-                          " WHERE id = ?", (self.run,))
-        self.conn.execute("UPDATE runs SET phase = 'merge_gate' WHERE id = ?",
-                          (self.run,))
-        self.conn.execute(
-            "UPDATE tickets SET activeRunId = ?, lastRunId = NULL"
-            " WHERE id = ?", (self.run, self.ticket))
-        self.conn.commit()
+        self.reopen_at_merge_gate()
         self.park()
         for bad in (NEW_SHA[:7], "main", NEW_SHA + "0", None):
             with self.subTest(sha=bad):
@@ -202,8 +220,9 @@ class RepointTests(unittest.TestCase):
             store.repoint(self.conn, self.ticket, NEW_SHA, "   ")
 
         self.assertEqual(self.candidate_sha(), OLD_SHA)
-        self.assertEqual(self.rows("SELECT 1 FROM interventions"
-                                   " WHERE runId = ?"), [])
+        # The approve above wrote its own row; no refusal wrote a repoint.
+        self.assertEqual(self.rows('SELECT "action" FROM interventions'
+                                   " WHERE runId = ?"), [("approve",)])
         self.assertEqual(self.rows("SELECT 1 FROM runEvents WHERE runId = ?"
                                    " AND kind = 'repoint'"), [])
 

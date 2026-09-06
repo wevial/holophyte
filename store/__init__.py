@@ -1652,6 +1652,13 @@ def repoint(conn, ticket_id, sha, note, now=None):
     it is stored lowercased, the form git prints). The refusal names the
     ticket and the reason. Touches no branch: rebasing
     the branch itself is the operator's git work, before this call.
+
+    The parked phase, not `resumePhase`, is the hold. `park()` leaves
+    `resumePhase` NULL; `approve()` is what writes `merge_gate` there, and
+    it does so as it ends the run, so the only row carrying that resume
+    point is one already past the point of re-pointing -- refused here by
+    its phase. A check on `resumePhase = 'merge_gate'` would refuse every
+    parked run and admit none.
     """
     if not isinstance(sha, str) or not FULL_SHA.match(sha):
         raise RepointRefused(
