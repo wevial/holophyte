@@ -25,6 +25,7 @@ Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 from __future__ import annotations
 
 import json
+import os
 import signal
 import socket
 import sys
@@ -66,7 +67,7 @@ def parse_address(text):
     return host, int(port)
 
 
-def status(target, now=None):
+def status(target, now=None, started_ms=None):
     """The `/status` answer for `target`: `(http status, JSON-able body)`.
 
     A target with no store answers 503 rather than creating one -- a
@@ -74,30 +75,49 @@ def status(target, now=None):
     adoption `open_store()` performs on first need. Ages are computed here
     against `now` (epoch milliseconds, the clock by default) so the client
     compares one number to `thresholds.heartbeat_stale_ms` and never has to
-    agree with the writer host about the time.
+    agree with the writer host about the time. `started_ms` is when the
+    serving daemon started, which `StatusServer` reads once at bind and
+    passes on every request; it defaults to `now` so a caller with no
+    daemon (the tests, a REPL) gets the same shape.
+
+    Each run carries what the console's floor row draws: the ticket's
+    `title`, `started_ms` (the run's `startedAt`, so a client need not
+    guess it from `elapsed_ms`), `round` (the review rounds recorded so
+    far) and `strikes` (the sweep's tally, 0 when the run is not under
+    suspicion). `project` is the same string as `target`: the console's
+    word for it; the wire carries both for one release.
     """
     now = int(time() * 1000) if now is None else now
+    started_ms = now if started_ms is None else started_ms
     if not target.store_path.exists():
         return 503, no_store(target)
     conn = store.read.open_readonly(target.store_path)
     try:
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
+        strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
         beat = store.read.supervisor_beat(conn)
     finally:
         conn.close()
     knobs = sweep_config(target)
     return 200, {
         "target": str(target.path),
+        "project": str(target.path),
         "host": host_label(target, socket.gethostname()),
         "now": now,
+        "daemon": {"started_ms": started_ms, "pid": os.getpid()},
         "supervisor": supervisor_view(target, beat, now, knobs),
         "thresholds": {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                        "strikes": knobs.stale_strikes},
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,
+                  "title": run.title,
                   "phase": run.phase,
+                  "started_ms": run.startedAt,
                   "heartbeat_age_ms": now - run.lastHeartbeat,
                   "elapsed_ms": now - run.startedAt,
                   "time_box_ms": run.timeBoxMs,
+                  "round": run.reviewRoundCount,
+                  "strikes": (strikes[run.id].strikes
+                              if strikes[run.id] is not None else 0),
                   "host": json_host(target, run.host)}
                  for run in runs],
     }
@@ -255,7 +275,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         parts = urlsplit(self.path)
         path = parts.path
         if path == "/status":
-            code, body = status(self.server.target)
+            code, body = status(self.server.target,
+                                started_ms=self.server.started_ms)
         elif path == "/runs":
             code, body = runs(self.server.target, parts.query)
         elif path == "/attention":
@@ -294,12 +315,15 @@ class StatusHandler(BaseHTTPRequestHandler):
 
 
 class StatusServer(ThreadingHTTPServer):
-    """The bound server, carrying the one target its handler answers for."""
+    """The bound server, carrying the one target its handler answers for
+    and the moment it was bound, which `/status` reports as the daemon's
+    `started_ms`."""
 
     daemon_threads = True
 
     def __init__(self, target, address):
         self.target = target
+        self.started_ms = int(time() * 1000)
         super().__init__(address, StatusHandler)
 
 

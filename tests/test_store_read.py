@@ -165,16 +165,18 @@ class OracleTests(PopulatedStore):
     def test_live_runs_agree_with_the_sweep_select(self):
         rows = read.live_runs(self.conn, SWEEPABLE)
         oracle = self.conn.execute(
-            "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
-            " r.startedAt, r.timeBoxMs, r.host"
+            "SELECT r.id, t.linearIdentifier, t.title, r.phase,"
+            " r.lastHeartbeat, r.startedAt, r.timeBoxMs, r.host,"
+            " (SELECT COUNT(*) FROM reviewRounds WHERE runId = r.id)"
             " FROM runs r JOIN tickets t ON t.id = r.ticketId"
             " WHERE r.endedAt IS NULL"
             f"   AND r.phase IN ({', '.join('?' * len(SWEEPABLE))})"
             " ORDER BY r.id", SWEEPABLE).fetchall()
         self.assertEqual([r.id for r in rows], [self.live, self.live2])
         self.assertEqual(
-            [(r.id, r.linearIdentifier, r.phase, r.lastHeartbeat, r.startedAt,
-              r.timeBoxMs, r.host) for r in rows],
+            [(r.id, r.linearIdentifier, r.title, r.phase, r.lastHeartbeat,
+              r.startedAt, r.timeBoxMs, r.host, r.reviewRoundCount)
+             for r in rows],
             oracle)
         # The phase filter is the caller's: a run in a phase not asked for
         # is not live to that caller.

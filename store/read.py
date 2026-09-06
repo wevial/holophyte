@@ -132,15 +132,21 @@ def run_snapshot(conn, run_id):
 
 @dataclass(frozen=True)
 class LiveRun:
-    """One unended run in a sweepable phase, with its ticket's label."""
+    """One unended run in a sweepable phase, with its ticket's label and
+    title and the review rounds it has recorded so far."""
 
     id: int
     linearIdentifier: str
+    title: str
     phase: str
     lastHeartbeat: int
     startedAt: int
     timeBoxMs: int | None
     host: str | None
+    # Counted off the run's own `reviewRounds` rows, as `store.release()`
+    # stamps `runs.reviewRoundCount` at close-out: on a live run the column
+    # is still 0, and the rows are the count it will be stamped with.
+    reviewRoundCount: int
 
 
 @dataclass(frozen=True)
@@ -180,15 +186,16 @@ def live_runs(conn, phases):
     """
     phases = tuple(phases)
     rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, r.phase, r.lastHeartbeat,"
-        " r.startedAt, r.timeBoxMs, r.host"
+        "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
+        " r.startedAt, r.timeBoxMs, r.host,"
+        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id)"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
         f"   AND r.phase IN ({', '.join('?' * len(phases))})"
         " ORDER BY r.id", phases).fetchall()
-    return [LiveRun(id=row[0], linearIdentifier=row[1], phase=row[2],
-                    lastHeartbeat=row[3], startedAt=row[4], timeBoxMs=row[5],
-                    host=row[6])
+    return [LiveRun(id=row[0], linearIdentifier=row[1], title=row[2],
+                    phase=row[3], lastHeartbeat=row[4], startedAt=row[5],
+                    timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8])
             for row in rows]
 
 

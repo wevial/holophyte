@@ -11,13 +11,16 @@ store answers 503.
 ```json
 {
   "target": "/path/to/repo",
+  "project": "/path/to/repo",
   "host": "writer-1",
   "now": 1788450534491,
+  "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2},
   "runs": [
-    {"id": 52, "ticket": "KO-219", "phase": "working",
-     "heartbeat_age_ms": 71989, "elapsed_ms": 72816, "time_box_ms": 1500000, "host": "writer-1"}
+    {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease", "phase": "working",
+     "started_ms": 1788450461675, "heartbeat_age_ms": 71989, "elapsed_ms": 72816,
+     "time_box_ms": 1500000, "round": 0, "strikes": 0, "host": "writer-1"}
   ]
 }
 ```
@@ -25,8 +28,13 @@ store answers 503.
 `runs` lists every live run in a sweepable phase. Ages are computed by the
 daemon against its own `now`, so a client compares one number to
 `thresholds.heartbeat_stale_ms` and never has to agree with the writer
-host about the time. `supervisor.state` is `live`, `stale` or `none`.
-Every `host` passes through `[report] host_label`.
+host about the time. `started_ms` is the run's start as epoch
+milliseconds; `round` is the review rounds recorded so far; `strikes` is
+the sweep's tally for the run, 0 when it is not under suspicion.
+`supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
+serving process: its pid and when it started. `project` is the same
+string as `target`, the console's word for it; both are carried for one
+release. Every `host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`
 

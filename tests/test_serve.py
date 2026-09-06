@@ -179,6 +179,56 @@ class StatusTests(ServeTestCase):
                          {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                           "strikes": knobs.stale_strikes})
 
+    def test_a_run_carries_title_start_round_and_strikes(self):
+        # KO-263: what the console's floor row draws. A run in `reviewing`
+        # with two ended rounds and one strike on file.
+        self.seed()
+        conn = store.open(str(self.db))
+        try:
+            store.set_phase(conn, self.run, "reviewing", now=self.now - MIN)
+            for number in (1, 2):
+                store.record_review_round(
+                    conn, self.run, number, "changes_requested", "reviewer",
+                    started_at=self.now - MIN + number,
+                    ended_at=self.now - MIN + number + 1)
+            store.record_strike(conn, self.run, stale=True,
+                                heartbeat=self.now - 30 * SEC, now=self.now)
+        finally:
+            conn.close()
+        self.start()
+
+        _code, _headers, body = self.request("GET", "/status")
+
+        (run,) = body["runs"]
+        self.assertEqual(run["title"], "ticket 7")
+        self.assertEqual(run["started_ms"], self.now - 2 * MIN)
+        self.assertEqual(run["round"], 2)
+        self.assertEqual(run["strikes"], 1)
+
+    def test_a_run_not_under_suspicion_has_zero_strikes(self):
+        self.seed()
+        self.start()
+
+        _code, _headers, body = self.request("GET", "/status")
+
+        (run,) = body["runs"]
+        self.assertEqual(run["strikes"], 0)
+        self.assertEqual(run["round"], 0)
+        self.assertIn('"strikes": 0', self.raw_body)
+
+    def test_the_body_carries_the_daemon_and_project(self):
+        before = int(time() * 1000)
+        self.seed()
+        self.start()
+
+        _code, _headers, body = self.request("GET", "/status")
+
+        self.assertEqual(body["daemon"]["pid"], os.getpid())
+        self.assertTrue(
+            before <= body["daemon"]["started_ms"] <= body["now"], body)
+        self.assertEqual(body["project"], body["target"])
+        self.assertEqual(body["project"], str(self.target))
+
     def test_the_stale_threshold_is_a_json_integer(self):
         self.seed()
         self.start()
