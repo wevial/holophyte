@@ -44,6 +44,8 @@ export interface PollState {
   lastOkAt: number | null;
   /** Milliseconds since the last success, null before the first. */
   polledAgo: number | null;
+  /** Round trips completed, good or bad; a dependent fetch keys off it. */
+  polls: number;
 }
 
 async function fetchJson<T>(fetchImpl: Fetch, url: string): Promise<T> {
@@ -67,6 +69,7 @@ interface Inner {
   error: string | null;
   lastOkAt: number | null;
   now: number;
+  polls: number;
 }
 
 /** Poll the daemon at `base` every `POLL_INTERVAL_MS`, keeping the last good
@@ -80,6 +83,7 @@ export function usePoll(base: string, deps: PollDeps = defaultPollDeps): PollSta
     error: null,
     lastOkAt: null,
     now: deps.now(),
+    polls: 0,
   }));
 
   useEffect(() => {
@@ -91,11 +95,11 @@ export function usePoll(base: string, deps: PollDeps = defaultPollDeps): PollSta
         const answer = await pollOnce(base, fetchImpl);
         if (!alive) return;
         const at = now();
-        setState({ ...answer, error: null, lastOkAt: at, now: at });
+        setState((previous) => ({ ...answer, error: null, lastOkAt: at, now: at, polls: previous.polls + 1 }));
       } catch (failure) {
         if (!alive) return;
         const message = failure instanceof Error ? failure.message : String(failure);
-        setState((previous) => ({ ...previous, error: message, now: now() }));
+        setState((previous) => ({ ...previous, error: message, now: now(), polls: previous.polls + 1 }));
       }
       if (alive) cancel = timer(run, POLL_INTERVAL_MS);
     };

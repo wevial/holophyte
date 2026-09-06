@@ -1,23 +1,26 @@
+import type { ReactNode } from "react";
 import type { ProjectChoice } from "../lib/attention";
 import { groupByProject } from "../lib/runs";
-import type { Status } from "../lib/types";
+import type { Run, Status } from "../lib/types";
 import { ProjectBlock } from "./ProjectBlock";
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** What is running, under the needs-you band: one block per project in
- *  view with a row per live run. `expandedRun` is the Now view's so the
- *  detail ticket can render into the open slot. */
+ *  view with a row per live run. `expandedRun` is the Now view's, and
+ *  `renderDetail` fills the open row's slot. */
 export function Floor({
   statuses,
   project,
   expandedRun,
   onToggleRun,
+  renderDetail,
 }: {
   statuses: Status[];
   project: ProjectChoice;
   expandedRun: number | null;
   onToggleRun: (id: number) => void;
+  renderDetail?: (run: Run) => ReactNode;
 }) {
   const groups = groupByProject(statuses).filter((group) => project === "all" || group.path === project);
   const runs = groups.reduce((total, group) => total + group.runs.length, 0);
@@ -36,7 +39,13 @@ export function Floor({
           {groups
             .filter((group) => group.runs.length > 0)
             .map((group) => (
-              <ProjectBlock key={group.path} group={group} expandedRun={expandedRun} onToggleRun={onToggleRun} />
+              <ProjectBlock
+                key={group.path}
+                group={group}
+                expandedRun={expandedRun}
+                onToggleRun={onToggleRun}
+                renderDetail={renderDetail}
+              />
             ))}
         </div>
       )}
