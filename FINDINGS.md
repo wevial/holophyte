@@ -653,26 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[218 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-05T01:04:19Z — KO-258
-Round 1: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- store/__init__.py:1495 [p2] [store/__init__.py](/workspace/store/__init__.py:1495): `approve()` validates `activeRunId` and the prior run phase, but never requires the ticket status to b…
-- criteria:3 [p2] CRITERION 3: not met — approval checks the run phase but not the ticket status, so other-state tickets can be approved and written Given a ticket that is not pa…
-
-## 2026-09-05T01:11:47Z — KO-258
-Round 2: changes_requested · reviewer codex-sol-medium · verify passed
-Findings (2):
-- (unparsed):de6769145ccd [p2] CRITERION 1: met — tests/test_cli_approve.py::ApproveCliTests::test_approve_releases_the_parked_run_and_readies_the_ticket CRITERION 2: not met — holophyte/loop…
-- criteria:2 [p2] CRITERION 2: not met — holophyte/loop.py:432 calls `reuse_leftover()` without validating the parked candidate SHA; it can commit dirty changes or accept later c…
-
-## 2026-09-05T01:20:01Z — KO-258
-Round 3: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-05T01:20:52Z — KO-258
-MERGED to main as 6628590.
-actual: 33.0 min · estimate: 30 min · rounds: 3
+[222 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T00:13:33Z — KO-263
 Round 1: pass · reviewer codex-sol-medium · verify passed
@@ -763,3 +744,24 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T01:47:24Z — KO-266
 MERGED to main as 8719a64.
 actual: 7.8 min · estimate: 30 min · rounds: 1
+
+## 2026-09-06T01:53:57Z — KO-267
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (5):
+- console/src/components/ViewButton.tsx:21 [p2] [ViewButton.tsx:21](/workspace/console/src/components/ViewButton.tsx:21): Selected labels use `text-paper`, which becomes `#141210` in dark mode, making them…
+- console/tests/App.test.tsx:75 [p2] [App.test.tsx:75](/workspace/console/tests/App.test.tsx:75): The theme test neither establishes a dark system preference nor loads/checks CSS. It witnesses at…
+- console/tests/theme.test.ts:8 [p2] [theme.test.ts:8](/workspace/console/tests/theme.test.ts:8): The dark selector search matches the introductory comment, then reads bare `:root`. Reproduced: b…
+- criteria:4 [p2] CRITERION 4: unwitnessed — No test establishes dark system preference and verifies that dark tokens apply. Given no stored theme and a dark `prefers-color-schem…
+- criteria:5 [p2] CRITERION 5: unwitnessed — The token parser reads the paper block for both selectors, so the required parity test is ineffective. Given every colour token, when…
+
+## 2026-09-06T01:56:50Z — KO-267
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- console/src/App.tsx:25 [p2] **[P2] Constrain the shell to the viewport** — [console/src/App.tsx:25](/workspace/console/src/App.tsx:25). `min-h-screen` allows the shell to grow with its c…
+
+## 2026-09-06T01:58:25Z — KO-267
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T01:58:26Z — KO-267
+MERGED to main as 34c78cd.
+actual: 11.0 min · estimate: 30 min · rounds: 3
