@@ -14,6 +14,7 @@ Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 from __future__ import annotations
 
 import io
+import json
 import os
 import shlex
 import shutil
@@ -1232,6 +1233,68 @@ class CrashContainmentTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.leases(), [(None, None)])
+
+
+class CrashReasonTests(LoopFixture):
+    """A crashed run's reason names the frame it escaped from, and its
+    traceback is an event: run 103 (KO-273) crashed `database is locked`
+    with nothing to say which write raised it."""
+
+    LOCKED = sqlite3.OperationalError("database is locked")
+
+    def crash_in_record_round(self):
+        """A run whose review round's store write raises the way a locked
+        store does, from inside `holophyte/runs.py`: the innermost frame in
+        the factory's own code is `record_round`, the write's caller."""
+        with patch.object(store, "record_review_round",
+                          side_effect=self.LOCKED):
+            return self.main_output(Commit("the scripted work"), APPROVE)
+
+    def test_reason_names_the_factory_frame(self):
+        out = self.crash_in_record_round()
+
+        self.assertEqual(self.rc, 1)
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertRegex(reason, r"^OperationalError: database is locked"
+                                 r" \(at holophyte/runs\.py:record_round:\d+\)$")
+        self.assertIn(f"[holo2] run crashed: {reason}", out)
+
+    def test_traceback_is_an_event(self):
+        self.crash_in_record_round()
+
+        rows = self.read("SELECT seq, level, kind, summary, payload"
+                         " FROM runEvents ORDER BY seq")
+        crashes = [row for row in rows if row[2] == "crash"]
+        self.assertEqual(len(crashes), 1)
+        seq, level, _, summary, payload = crashes[0]
+        self.assertEqual(level, "detail")
+        self.assertEqual(
+            summary, self.read("SELECT outcomeReason FROM runs")[0][0])
+        self.assertIn("Traceback (most recent call last)", payload)
+        self.assertIn("OperationalError: database is locked", payload)
+        self.assertIn("record_round", payload)
+        (failed_seq,) = [row[0] for row in rows
+                         if row[2] == "phase_change" and "-> failed" in row[3]]
+        self.assertLess(seq, failed_seq)
+
+    def test_no_factory_frame_keeps_the_plain_reason(self):
+        """The close-out's reason for a traceback with no frame under the
+        repository is the one-line form as before. Through `crash_reason()`
+        directly: an exception the loop catches has always passed through the
+        loop's own frame, so a traceback with none is one the loop cannot
+        produce for itself."""
+        try:
+            json.loads("{")
+        except ValueError as err:
+            # Drop this test's own frame; what is left is the standard
+            # library's `json` package and nothing else.
+            e = err.with_traceback(err.__traceback__.tb_next)
+
+        reason = holophyte.loop.crash_reason(e)
+
+        self.assertTrue(reason.startswith("JSONDecodeError: Expecting"), reason)
+        self.assertNotIn("(at ", reason)
+        self.assertNotIn("\n", reason)
 
 
 class StopOnFailureTests(LoopFixture):
