@@ -298,6 +298,42 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.assertEqual(self.git("log", "-1", "--format=%s", "main").strip(),
                          "Complete task KO-131: add a thing")
 
+    def test_findings_off_merges_without_writing_or_committing_the_file(self):
+        """`[report] findings = "off"`: the run merges as before, the store
+        has its rows, and FINDINGS.md is neither written nor committed --
+        a file already there is left exactly as it was."""
+        self.tgt.config_path.write_text('[report]\nfindings = "off"\n')
+        stale = "# Findings\n\nhand-written, not the loop's\n"
+        (self.target / "FINDINGS.md").write_text(stale)
+        self.git("add", "FINDINGS.md")
+        self.git("commit", "-q", "-m", "a hand-written findings file")
+
+        self.loop("CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+                  "VERDICT: APPROVE")
+
+        # The merge happened: the run is merged in the store and main has
+        # the `--no-ff` merge commit on top of the base.
+        conn = store.open(str(self.tgt.store_path))
+        try:
+            self.assertEqual(
+                conn.execute("SELECT outcome FROM runs").fetchall(),
+                [("merged",)])
+            # The ledger is in the store regardless of the file.
+            self.assertGreater(
+                conn.execute("SELECT COUNT(*) FROM ledger").fetchone()[0], 0)
+        finally:
+            conn.close()
+        self.assertEqual(self.git("log", "-1", "--format=%s", "main").strip(),
+                         "Merge task/ko-131-add-a-thing: add a thing")
+        # The file is byte-for-byte what was committed by hand, clean in
+        # the index, and no commit on main touched it after the merge.
+        self.assertEqual((self.target / "FINDINGS.md").read_text(), stale)
+        self.assertEqual(
+            self.git("status", "--porcelain", "FINDINGS.md").strip(), "")
+        self.assertEqual(
+            self.git("log", "--format=%s", "--", "FINDINGS.md").strip(),
+            "a hand-written findings file")
+
 
 if __name__ == "__main__":
     unittest.main()

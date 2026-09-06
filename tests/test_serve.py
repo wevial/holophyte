@@ -1084,6 +1084,73 @@ class RunDetailTests(ServeTestCase):
         self.assertFalse(self.db.exists())
 
 
+class RunLedgerTests(ServeTestCase):
+    """`/runs/N/ledger`: the run's narrative as the store holds it, oldest
+    first, with its kinds; 404 for a run the store has not seen."""
+
+    def seed_ledger(self):
+        """One merged run with three ledger entries, written newest-kind
+        last but with the middle one stamped oldest, so the order the
+        daemon answers is the store's `at` order and not insertion order."""
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+            ticket = store.mirror_ticket(
+                conn, project, linear_issue_id="issue-11",
+                linear_identifier="KO-11", title="ticket 11",
+                acceptance_criteria=["Given ticket 11, then it is worked"],
+                verification_commands=["echo ok"], time_box_ms=25 * MIN)
+            store.transition(conn, ticket, "in_flight")
+            started = self.now - 30 * MIN
+            self.run = store.claim(conn, project, ticket, now=started)
+            self.seeded = [
+                ("round", "Round 1: changes_requested", "loop",
+                 started + 5 * MIN),
+                ("note", "operator looked in", "operator", started + 2 * MIN),
+                ("merge", "MERGED to main", "loop", started + 20 * MIN),
+            ]
+            for kind, text, source, at in self.seeded:
+                store.record_ledger(conn, self.run, kind, text, source=source,
+                                    now=at)
+            store.release(conn, self.run, "merged", now=started + 20 * MIN,
+                          merge_sha=MERGE_SHA)
+        finally:
+            conn.close()
+
+    def test_entries_come_back_oldest_first_with_their_kinds(self):
+        self.seed_ledger()
+        self.start()
+
+        code, headers, body = self.request("GET", f"/runs/{self.run}/ledger")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body["run_id"], self.run)
+        self.assertEqual(body["ticket"], "KO-11")
+        self.assertEqual(
+            body["entries"],
+            [{"at": at, "kind": kind, "text": text, "source": source}
+             for kind, text, source, at in sorted(self.seeded,
+                                                  key=lambda e: e[3])])
+        self.assertEqual([e["kind"] for e in body["entries"]],
+                         ["note", "round", "merge"])
+
+    def test_no_such_run_is_404_and_a_non_integer_is_400(self):
+        self.seed_ledger()
+        self.start()
+
+        code, _, body = self.request("GET", f"/runs/{self.run + 1}/ledger")
+        self.assertEqual(code, 404)
+        self.assertEqual(body["run"], self.run + 1)
+        self.assertIn("error", body)
+
+        code, _, body = self.request("GET", "/runs/eleven/ledger")
+        self.assertEqual(code, 400)
+        self.assertIn("error", body)
+
+
 class RunFilesTests(ServeTestCase):
     """`/runs/N/files`: the paths a run touched, from git in the target's
     checkout, for a live branch and for a landed merge."""

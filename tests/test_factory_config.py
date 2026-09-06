@@ -1656,6 +1656,31 @@ class ReportConfigTests(ConfigTestCase):
                 self.assertIn(key, message)
                 report.assert_not_called()
 
+    def test_findings_is_window_by_default_and_off_when_switched(self):
+        """`[report] findings`: `window` renders the file as always, `off`
+        switches it off; absent is `window`."""
+        self.locate()
+        self.assertEqual(holophyte.config.report_config(self.tgt).findings,
+                         "window")
+
+        self.locate('[report]\nfindings = "off"\n')
+        self.assertEqual(holophyte.config.report_config(self.tgt).findings,
+                         "off")
+
+    def test_a_findings_mode_nobody_defined_is_a_startup_error_naming_it(self):
+        for line in ('findings = "sometimes"', "findings = false"):
+            with self.subTest(line=line):
+                target = self.locate(f"[report]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn("[report]", message)
+                self.assertIn("findings", message)
+                report.assert_not_called()
+
 
 class MergeConfigTests(ConfigTestCase):
     """`[merge] approve`: `"auto"` (the default) or `"human"`, nothing else."""

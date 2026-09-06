@@ -239,9 +239,19 @@ table.
 # What the factory prints where it would print the machine's hostname.
 # Optional; absent, the hostname is printed as recorded.
 host_label = "writer-1"
+# Whether the loop keeps FINDINGS.md: `window` renders and commits the
+# bounded window at every close-out, `off` neither writes nor commits the
+# file. Optional; the default is `window`.
+findings = "window"
 ```
 
-Accepted keys: `host_label`.
+Accepted keys: `host_label`, `findings`.
+
+`findings = "off"` is for a target that does not want the rendered file:
+the run's ledger lives in the store either way and the daemon serves it
+from `/runs/N/ledger`, so nothing is lost but the projection. A
+`FINDINGS.md` already in the repository is left exactly as it is, not
+deleted. `--report` prints the mode in effect below the table.
 
 The `host` column of `--report` and `--sweep` and the supervisor's startup
 and refusal lines show the label in place of the hostname when it is set.

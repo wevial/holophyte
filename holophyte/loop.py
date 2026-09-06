@@ -43,6 +43,7 @@ from holophyte.config import (
     branch_prefix,
     loop_config,
     merge_config,
+    report_config,
     setup_commands,
     setup_timeout,
     sweep_config,
@@ -1377,9 +1378,12 @@ def report(target, conn=None, out=None, now=None):
     rather than reported as zero. A target with no store at all is not created
     for the sake of an empty table; it is reported.
 
-    Below the table, one line on the target's supervisor -- see
-    `supervisor_liveness_line()`. `now` is the clock the heartbeat's age is
-    taken against, injectable so a test can place a beat in time.
+    Below the table, one line naming the `[report] findings` mode, so an
+    operator can see whether this target still renders FINDINGS.md at
+    close-out or has switched the file off, then one on the target's
+    supervisor -- see `supervisor_liveness_line()`, always last. `now` is
+    the clock the heartbeat's age is taken against, injectable so a test
+    can place a beat in time.
     """
     out = out or sys.stdout
     if conn is None and not target.store_path.exists():
@@ -1389,6 +1393,7 @@ def report(target, conn=None, out=None, now=None):
     conn = conn if conn is not None else open_store(target)
     try:
         print("\n".join(report_lines(conn, target)), file=out)
+        print(f"findings: {report_config(target).findings}", file=out)
         print(supervisor_liveness_line(target, conn, now), file=out)
     finally:
         if owned:

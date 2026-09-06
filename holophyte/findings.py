@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 
 import store.read
+from holophyte.config import report_config
 from holophyte.gates import sh
 from holophyte.review import BLOCK_BREAK_RE
 
@@ -288,13 +289,23 @@ def write_findings(target, conn, path=None):
     return path
 
 
+def findings_off(target):
+    """Whether `[report] findings = "off"` has switched the file off for
+    `target`: the loop then neither writes nor commits FINDINGS.md."""
+    return report_config(target).findings == "off"
+
+
 def commit_findings(target, message):
     """Commit FINDINGS.md in the target checkout, if the render changed it.
 
     Returns whether it committed. The guard is not an optimization: a
     regeneration that produced the same bytes has nothing to record, and
-    `git commit` on an unchanged tree fails.
+    `git commit` on an unchanged tree fails. Under `[report] findings =
+    "off"` nothing is committed either: the file is not the loop's to
+    touch, whatever state a hand edit left it in.
     """
+    if findings_off(target):
+        return False
     r = subprocess.run(["git", "status", "--porcelain", "FINDINGS.md"],
                        cwd=target.path, capture_output=True, text=True)
     if not r.stdout.strip():
@@ -309,8 +320,11 @@ def refresh_findings(target, conn):
 
     A `conn` of None makes this a no-op, like `set_phase()` and
     `record_round()`: a storeless `run_task()` has no rows to render, and the
-    file it would otherwise overwrite with an empty window is left alone.
+    file it would otherwise overwrite with an empty window is left alone. So
+    does `[report] findings = "off"`: the ledger is in the store and served
+    from `/runs/N/ledger`, and a target that has switched the file off keeps
+    whatever FINDINGS.md it has, or none.
     """
-    if conn is None:
+    if conn is None or findings_off(target):
         return
     write_findings(target, conn)
