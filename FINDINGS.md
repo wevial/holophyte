@@ -653,21 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[224 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T00:23:02Z — KO-264
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-06T00:23:53Z — KO-264
-MERGED to main as bebf562.
-actual: 9.5 min · estimate: 25 min · rounds: 1
-
-## 2026-09-06T00:34:20Z — KO-283
-Round 1: pass · reviewer codex-sol-medium · verify passed
-
-## 2026-09-06T00:35:11Z — KO-283
-MERGED to main as 9838868.
-actual: 11.3 min · estimate: 25 min · rounds: 1
+[228 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T00:43:07Z — KO-265
 Round 1: changes_requested · reviewer codex-sol-medium · verify passed
@@ -765,3 +751,20 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T02:03:47Z — KO-268
 MERGED to main as 124241f.
 actual: 5.3 min · estimate: 30 min · rounds: 1
+
+## 2026-09-06T02:10:27Z — KO-269
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- holophyte/serve.py:306 [p2] [P2] Fix integer ID handling in [holophyte/serve.py](/workspace/holophyte/serve.py:306). Reproduced: `-1` returns 400, while `9223372036854775808` raises an u…
+
+## 2026-09-06T02:15:56Z — KO-269
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- holophyte/serve.py:313 [p2] **P2 — Handle long integer IDs before conversion** ([holophyte/serve.py:313](/workspace/holophyte/serve.py:313)). `int(run_id)` raises `ValueError` above Pyth…
+
+## 2026-09-06T02:22:14Z — KO-269
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-06T02:23:07Z — KO-269
+MERGED to main as eaccb8c.
+actual: 19.3 min · estimate: 30 min · rounds: 3
