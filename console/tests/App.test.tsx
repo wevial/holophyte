@@ -219,3 +219,21 @@ test("selecting a project in the rail narrows the Floor and the Hosts view to it
   fireEvent.click(screen.getByRole("button", { name: /^Now/ }));
   expect(floorBlocks()).toEqual(["writer", "writer-2"]);
 });
+
+test("both daemons failing on the first poll: Now still opens with one critical unreachable row per daemon", async () => {
+  const fetchImpl = peersFetch(ORIGIN, {
+    [ORIGIN]: { down: new DOMException("The operation timed out", "TimeoutError") },
+    [PEER]: { down: new TypeError("Failed to fetch") },
+  });
+  const { deps } = fakeDeps(fetchImpl);
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  expect(hostCards().map((card) => card.heartbeat)).toEqual(["unreachable", "unreachable"]);
+  expect(screen.queryByText("Nothing to show here yet.")).toBeNull();
+  const band = screen.getByRole("region", { name: "Needs you" });
+  expect(within(band).getByText("2").hasAttribute("data-count")).toBe(true);
+  const rows = within(band).getAllByRole("listitem");
+  expect(rows.map((row) => row.getAttribute("data-kind"))).toEqual(["unreachable", "unreachable"]);
+  expect(within(rows[0]!).getByText("writer:7710 · never answered · http://writer:7710/status timed out")).toBeTruthy();
+  expect(within(rows[1]!).getByText("writer-2:7710 · never answered · Failed to fetch")).toBeTruthy();
+});

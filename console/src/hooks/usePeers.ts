@@ -67,14 +67,17 @@ export function usePeers(origin: string, deps: PollDeps = defaultPollDeps, timeo
   useEffect(() => {
     let alive = true;
     let cancel: (() => void) | undefined;
+    // The next tick is booked when this one starts, so the cadence is the
+    // interval itself and a slow daemon (bounded by `timeoutMs`, below the
+    // interval) cannot stretch it to interval + timeout.
     const run = async () => {
       const { now, timer } = depsRef.current;
+      cancel = timer(run, POLL_INTERVAL_MS);
       const results = await pollPeers(origin, hostsRef.current, depsRef.current, timeoutMs);
       if (!alive) return;
       const at = now();
       hostsRef.current = mergeHosts(hostsRef.current, results, at);
       setState((previous) => ({ hosts: hostsRef.current, polls: previous.polls + 1, now: at }));
-      cancel = timer(run, POLL_INTERVAL_MS);
     };
     void run();
     return () => {

@@ -35,7 +35,9 @@ export function App({
     applyTheme(next);
   };
 
-  const answered = hosts.some((host) => host.status != null);
+  /** Now opens as soon as any host record exists: a daemon that never
+   *  answered is itself the page's most urgent row. */
+  const polled = hosts.length > 0;
   const shownBases = visibleHosts(hosts, project)
     .filter((host) => host.status != null)
     .map((host) => host.base);
@@ -60,7 +62,7 @@ export function App({
           <Shipped bases={shownBases} now={daemonNow} polls={polls} deps={pollDeps} />
         ) : view === "hosts" ? (
           <Hosts hosts={hosts} project={project} now={now} />
-        ) : view === "now" && answered ? (
+        ) : view === "now" && polled ? (
           <Now hosts={hosts} project={project} now={now} polls={polls} deps={pollDeps} />
         ) : (
           <p className="px-6 text-[13px] text-muted">Nothing to show here yet.</p>
