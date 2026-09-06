@@ -72,6 +72,29 @@ writes nothing then.
 To decline instead, leave the ticket parked or close the run out by hand
 through the store API.
 
+### A parked candidate's branch was rebuilt on a rewritten `main`
+
+```
+# in the preserved worktree, after main was rewritten (a filtered history, say)
+git rebase --onto main OLD_BASE KO-n-branch          # the same commits, new tips
+python3 factory.py TARGET --repoint KO-n $(git rev-parse HEAD) --note "rebased onto the filtered main; same commits"
+python3 factory.py TARGET --approve KO-n --note "looked at the diff; merge"
+```
+
+The approval holds the branch to the sha the park recorded, so a branch
+rebuilt as the same commits on a rewritten `main` (2026-09-05: three
+parked candidates after `FINDINGS.md` was filtered out of the unpushed
+history) would fail its gate as drift. `--repoint` is the one legitimate
+move of that sha: it writes an `interventions` row with action `repoint`
+carrying the note, a `runEvents` row naming the old and new shas, then
+sets `runs.candidateSha`, in one transaction, and prints both shas. The
+run stays parked and the branch is not touched -- the rebase is your git
+work, before the call. The sha must be the full 40-hex commit id; either case is accepted and it is stored lowercased.
+Refuses a ticket whose newest run is not parked awaiting merge approval,
+one already approved (its release is in flight; `--requeue` it instead),
+or a malformed sha, naming it, and writes nothing then. Never re-point
+with raw SQL on `runs.candidateSha` now that this verb exists.
+
 ### The supervisor ended a run that was fine
 
 Read the round findings (`FINDINGS.md`, or the store) and the sweep reason

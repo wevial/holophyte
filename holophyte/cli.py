@@ -1,6 +1,7 @@
 """The command line: `cli()` parses the arguments and runs the mode they name.
 
 `--report`, `--requeue KO-n --note TEXT`, `--approve KO-n [--note TEXT]`,
+`--repoint KO-n SHA --note TEXT`,
 `--file-ticket PATH [--state] [--priority]`,
 `--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT` and the loop itself
 dispatch from here to `holophyte.loop`, `holophyte.board`,
@@ -31,7 +32,14 @@ from holophyte.config import (
     report_config,
     sweep_config,
 )
-from holophyte.loop import approve, check_worktree_setup, main, report, requeue
+from holophyte.loop import (
+    approve,
+    check_worktree_setup,
+    main,
+    repoint,
+    report,
+    requeue,
+)
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.supervisor import (
     SupervisorHeld,
@@ -93,16 +101,21 @@ def _file_ticket_only(parser, args):
 
 
 def _note_checks(parser, args):
-    """`--note` belongs to `--requeue`, which requires it, and `--approve`,
-    which takes it: refuse a requeue without one, a note without either
-    mode, and a blank note on an approval -- the default is what an
-    approval with nothing to add says, and a blank row would say nothing."""
+    """`--note` belongs to `--requeue` and `--repoint`, which require it,
+    and `--approve`, which takes it: refuse a requeue or re-point without
+    one, a note without any of the three, and a blank note on an approval
+    -- the default is what an approval with nothing to add says, and a
+    blank row would say nothing."""
     if args.requeue is not None and not (args.note or "").strip():
         parser.error("--requeue records why the ticket goes back in the "
                      "queue; say so with --note TEXT")
-    if args.note is not None and args.requeue is None and args.approve is None:
-        parser.error("--note is what --requeue and --approve record; it has "
-                     "nothing to annotate by itself")
+    if args.repoint is not None and not (args.note or "").strip():
+        parser.error("--repoint records why the candidate moved to a new "
+                     "sha; say so with --note TEXT")
+    if args.note is not None and args.requeue is None \
+            and args.approve is None and args.repoint is None:
+        parser.error("--note is what --requeue, --approve and --repoint "
+                     "record; it has nothing to annotate by itself")
     if args.approve is not None and args.note is not None \
             and not args.note.strip():
         parser.error("--note with --approve is the approval's own words; "
@@ -159,6 +172,21 @@ def cli(argv=None):
              "worktree and branch, re-runs the pre-merge verify and merges "
              "without an implementer or a reviewer; refuses a ticket in any "
              "other state naming it, and writes nothing then")
+    # The one legitimate reason a parked candidate's sha changes: the
+    # operator rebuilt the branch as the same commits on a rewritten main.
+    # Before this the only way was raw SQL on `runs.candidateSha`; this is
+    # that write as a recorded intervention, so the gate `--approve` resumes
+    # into accepts the rebuilt tip and the ledger says why.
+    modes.add_argument(
+        "--repoint", nargs=2, metavar=("KO-n", "SHA"),
+        help="move the ticket's parked candidate to SHA, a full 40-hex "
+             "commit id, after the branch was rebuilt by hand (rebased onto "
+             "a rewritten main, say): records a 'repoint' intervention on "
+             "the parked run carrying --note and an event naming the old "
+             "and new shas, then sets the run's candidateSha, in one "
+             "transaction; the branch itself is not touched; refuses a "
+             "ticket not parked awaiting merge approval or a malformed "
+             "sha, naming it, and writes nothing then")
     # The other writing mode, and it writes to the board, not the store:
     # a ticket file validated against the target becomes a Linear issue,
     # and the body Linear stored is validated again so the transfer is a
@@ -200,13 +228,15 @@ def cli(argv=None):
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "
              "leaving its branch and worktree for a human")
-    # Required with `--requeue`, optional with `--approve` and meaningless
-    # without either: the intervention row is the point of both modes, and a
-    # requeue row with no reason is the unrecorded action the row exists to
-    # replace, while an approval says "merge" by itself.
+    # Required with `--requeue` and `--repoint`, optional with `--approve`
+    # and meaningless without one of them: the intervention row is the point
+    # of all three modes, and a requeue or re-point row with no reason is
+    # the unrecorded action the row exists to replace, while an approval
+    # says "merge" by itself.
     parser.add_argument(
         "--note", metavar="TEXT",
         help="with --requeue: why the ticket goes back in the queue; with "
+             "--repoint: why the candidate moved to the new sha; with "
              "--approve: anything the approval should say beyond "
              f"{APPROVE_DEFAULT_NOTE!r}; recorded on the intervention row's "
              "event")
@@ -287,6 +317,12 @@ def cli(argv=None):
         return approve(target, args.approve,
                        args.note if args.note is not None
                        else APPROVE_DEFAULT_NOTE)
+    # Writes only to the store and calls nobody, and unlike the two above
+    # hands nothing to a loop: the ticket stays parked, so no board has to
+    # be there to mirror it.
+    if args.repoint is not None:
+        identifier, sha = args.repoint
+        return repoint(target, identifier, sha, args.note)
     # Posts to the board, so a target without one exits here naming the key
     # -- before the file is read, so the error is about the target, not the
     # file. The board is the `[board]` pair itself, not the loop's provider:
