@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[333 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T16:03:17Z — KO-302
-MERGED to main as 64cc982.
-actual: 2.9 min · estimate: 15 min · rounds: 1
-
-## 2026-09-06T16:06:08Z — KO-303
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[335 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T16:06:09Z — KO-303
 MERGED to main as 1c05b8a.
@@ -758,3 +751,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T00:53:27Z — KO-306
 MERGED to main as 2c0150d (branch task/ko-306-the-console-declares-opaque-ic deleted).
 actual: 7.1 min · estimate: 25 min · rounds: 1
+
+## 2026-09-07T00:57:57Z — KO-307
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T00:58:32Z — KO-307
+MERGED to main as 35a4efd (branch task/ko-307-the-daemon-serves-a-web-manife deleted).
+actual: 3.6 min · estimate: 10 min · rounds: 1
