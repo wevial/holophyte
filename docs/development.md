@@ -177,13 +177,17 @@ Only `http` and `https` are accepted. The commands, run from the repo root:
 ```
 ELECTRON_SKIP_BINARY_DOWNLOAD=1 bun --cwd=console/electron install --frozen-lockfile
 bun --cwd=console/electron test
+node console/electron/node_modules/electron/install.js
 bun --cwd=console/electron run start
 ```
 
 `test` exercises the pure URL resolver in `console/electron/config.ts` and
 needs no Electron binary, which is why the verify install skips the
-download. `start` needs the binary: run the install once without the
-variable, then `run start` builds `main.ts` to `console/electron/dist/`
+download. `start` needs the binary, and a second `install` after the
+skipped one reports no changes and leaves it absent, so fetch it by running
+Electron's own postinstall script directly (the `node …/install.js` line
+above; it is a no-op once the binary is present). Then `run start` builds
+`main.ts` to `console/electron/dist/`
 (`main.cjs`, CommonJS with `electron` left external, since the package is
 `"type": "module"`) and launches it through the top-level `main.cjs`.
 `console/electron/dist/` and `console/electron/node_modules/` are
