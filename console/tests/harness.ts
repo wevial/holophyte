@@ -61,6 +61,7 @@ export function hostOf(status: Status, attention: Attention, base = "http://writ
     polled_ms: polledMs,
     seen_ms: polledMs,
     error: null,
+    needs_token: false,
   };
 }
 

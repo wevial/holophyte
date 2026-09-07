@@ -1,3 +1,5 @@
+import { addressOf } from "./hosts";
+import { withToken } from "./token";
 import type { Attention, Status } from "./types";
 
 /** The handoff's cadence: one `/status` + `/attention` round trip every 10 s. */
@@ -21,8 +23,15 @@ export interface PollDeps {
   timer: Timer;
 }
 
+/** `inner` with the stored bearer token for each request's address added
+ *  through `withToken`, so every JSON request of the page carries the
+ *  token the daemon at that address was given. */
+export function tokenedFetch(inner: Fetch): Fetch {
+  return (url, init) => inner(url, withToken(addressOf(url), init));
+}
+
 export const defaultPollDeps: PollDeps = {
-  fetch: (url, init) => globalThis.fetch(url, init),
+  fetch: tokenedFetch((url, init) => globalThis.fetch(url, init)),
   now: () => Date.now(),
   timer: (fn, ms) => {
     const id = setTimeout(fn, ms);
@@ -35,8 +44,21 @@ export interface PollAnswer {
   attention: Attention;
 }
 
-/** One JSON GET; a non-2xx answer throws naming the url and status, and an
- *  aborted one throws "timed out" naming the url. `signal` bounds the wait. */
+/** A non-2xx answer, carrying its status so a 401 can be told apart from
+ *  a daemon that is down. */
+export class AnswerError extends Error {
+  constructor(
+    url: string,
+    readonly status: number,
+  ) {
+    super(`${url} answered ${status}`);
+    this.name = "AnswerError";
+  }
+}
+
+/** One JSON GET; a non-2xx answer throws an `AnswerError` naming the url
+ *  and status, and an aborted one throws "timed out" naming the url.
+ *  `signal` bounds the wait. */
 export async function fetchJson<T>(fetchImpl: Fetch, url: string, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
@@ -47,7 +69,7 @@ export async function fetchJson<T>(fetchImpl: Fetch, url: string, signal?: Abort
     }
     throw failure;
   }
-  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+  if (!response.ok) throw new AnswerError(url, response.status);
   return (await response.json()) as T;
 }
 
