@@ -4,8 +4,8 @@
   "type": "module",
   "main": "main.cjs",
   "scripts": {
-    "build": "bun build --target=node --format=cjs --external electron --outdir dist main.ts",
-    "start": "bun build --target=node --format=cjs --external electron --outdir dist main.ts && electron .",
+    "build": "bun build --target=node --format=cjs --external electron --outfile dist/main.cjs main.ts",
+    "start": "bun build --target=node --format=cjs --external electron --outfile dist/main.cjs main.ts && electron .",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

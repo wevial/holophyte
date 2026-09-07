@@ -184,6 +184,7 @@ bun --cwd=console/electron run start
 needs no Electron binary, which is why the verify install skips the
 download. `start` needs the binary: run the install once without the
 variable, then `run start` builds `main.ts` to `console/electron/dist/`
-(CommonJS, `electron` left external) and launches it through `main.cjs`.
+(`main.cjs`, CommonJS with `electron` left external, since the package is
+`"type": "module"`) and launches it through the top-level `main.cjs`.
 `console/electron/dist/` and `console/electron/node_modules/` are
 git-ignored. Packaging a distributable is out of scope here.

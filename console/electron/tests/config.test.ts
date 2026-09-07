@@ -19,12 +19,13 @@ describe("resolveConsoleUrl precedence", () => {
     expect(result).toEqual({ url: "http://10.0.0.2:7710/", source: "console.json" });
   });
 
-  test("an empty variable does not shadow the config file", () => {
+  test("a set but empty variable is an error from the environment, not a fall-through", () => {
     const result = resolveConsoleUrl(
       { HOLOPHYTE_CONSOLE_URL: "" },
       JSON.stringify({ url: "http://10.0.0.2:7710/" }),
     );
-    expect(result).toEqual({ url: "http://10.0.0.2:7710/", source: "console.json" });
+    expect(result).not.toHaveProperty("url");
+    expect(result).toMatchObject({ source: "HOLOPHYTE_CONSOLE_URL" });
   });
 
   test("with neither source the default is the first target's port", () => {

@@ -61,7 +61,7 @@ export function resolveConsoleUrl(
   fileText: string | null,
 ): ResolvedUrl {
   const fromEnv = env[ENV_VAR];
-  if (fromEnv !== undefined && fromEnv !== "") {
+  if (fromEnv !== undefined) {
     return checkScheme(fromEnv, ENV_VAR);
   }
   if (fileText !== null) {
