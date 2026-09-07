@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[319 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T14:49:05Z — KO-299
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T14:50:13Z — KO-299
-MERGED to main as aae62f3.
-actual: 11.7 min · estimate: 30 min · rounds: 1
+[321 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T14:56:49Z — KO-262
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -758,3 +751,10 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-06T16:45:24Z — KO-305
 MERGED to main as 2a3fc80 (branch task/ko-305-the-expanded-run-reads-like-th deleted).
 actual: 10.0 min · estimate: 25 min · rounds: 3
+
+## 2026-09-07T00:14:06Z — KO-280
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T00:15:22Z — KO-280
+MERGED to main as 43a475b (branch task/ko-280-get-board-answers-the-open-ti deleted).
+actual: 11.6 min · estimate: 25 min · rounds: 1
