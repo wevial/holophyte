@@ -653,26 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[352 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T00:41:04Z — KO-282
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/console/electron/package.json:4 [p2] **P1 — Startup fails at the module boundary.** [package.json:4](/home/reviewer/candidate/console/electron/package.json:4) declares `"type": "module"`, but the…
-- /home/reviewer/candidate/console/electron/config.ts:64 [p2] **P2 — An explicitly set empty environment value silently falls through.** [config.ts:64](/home/reviewer/candidate/console/electron/config.ts:64) treats `HOLO…
-- criteria:1 [p2] CRITERION 1: not met — An explicitly set empty `HOLOPHYTE_CONSOLE_URL` loses precedence and silently falls through. Given `HOLOPHYTE_CONSOLE_URL` is set, when t…
-
-## 2026-09-07T00:43:41Z — KO-282
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/docs/development.md:178 [p2] [P2] Fix the documented development startup sequence in [docs/development.md:178](/home/reviewer/candidate/docs/development.md:178). After installing with `EL…
-
-## 2026-09-07T00:46:18Z — KO-282
-Round 3: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-07T00:46:20Z — KO-282
-MERGED to main as 76a7764 (branch task/ko-282-an-electron-wrapper-opens-the deleted).
-actual: 9.9 min · estimate: 25 min · rounds: 3
+[356 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T00:53:25Z — KO-306
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -761,3 +742,23 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T22:29:24Z — KO-310
 MERGED to main as 779ed62 (branch task/ko-310-the-ticket-template-carries-th deleted).
 actual: 2.0 min · estimate: 20 min · rounds: 1
+
+## 2026-09-07T22:35:52Z — KO-312
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/tests/token.test.ts:24 [p2] [console/tests/token.test.ts:24](/home/reviewer/candidate/console/tests/token.test.ts:24): Criterion 1 requires testing `defaultPollDeps.fetch`, but the test…
+- criteria:1 [p2] CRITERION 1: unwitnessed — no test invokes defaultPollDeps.fetch through a fake globalThis.fetch. Given a stored token for address A and none for B, when the de…
+
+## 2026-09-07T22:37:56Z — KO-312
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- /home/reviewer/candidate/console/src/components/HostPanel.tsx:48 [p1] **[P1] Token storage and fetch use different address keys.** [HostPanel.tsx:48](/home/reviewer/candidate/console/src/components/HostPanel.tsx:48) stores under…
+- criteria:3 [p2] CRITERION 3: not met — When the origin differs from `/peers.self`, submission stores under the wrong key and the next request carries no token. Given the field,…
+- criteria:4 [p2] CRITERION 4: not met — When the origin differs from `/peers.self`, 401 clears the wrong key and subsequent requests retain the rejected token. Given a stored to…
+
+## 2026-09-07T22:40:41Z — KO-312
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T22:40:43Z — KO-312
+MERGED to main as 3f4e2cd (branch task/ko-312-the-console-asks-each-daemon-f deleted).
+actual: 10.9 min · estimate: 30 min · rounds: 3
