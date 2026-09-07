@@ -559,14 +559,18 @@ def blocking(problems):
 
 
 USAGE = "usage: python3 ticket_template.py [--repo PATH] TICKET.md [...]"
+HELP = "help"
 
 
 def _parse_args(argv):
-    """`(repo, paths)` from the command line, or None for a usage error."""
+    """`(repo, paths)` from the command line, HELP for `-h`/`--help`, or
+    None for a usage error."""
     repo, paths = None, []
     args = list(argv)
     while args:
         arg = args.pop(0)
+        if arg in ("-h", "--help"):
+            return HELP
         if arg == "--repo":
             if not args:
                 return None
@@ -582,6 +586,9 @@ def _parse_args(argv):
 
 def main(argv):
     parsed = _parse_args(argv)
+    if parsed == HELP:
+        print(USAGE)
+        return 0
     if parsed is None:
         print(USAGE, file=sys.stderr)
         return 2

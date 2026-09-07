@@ -59,7 +59,9 @@ A named test that does not exist in the tree is unwitnessed. Any criterion
 not met or unwitnessed makes the round `changes_requested` whatever the
 verdict line says. So:
 
-- Write criteria as "a test witnesses this", and mean it.
+- Write criteria as "a test witnesses this", and mean it. The full list of
+  rules the reviewer enforces sits in the comment above the acceptance
+  criteria in `ticketTemplate.md`, where the author reads it before drafting.
 - Keep visual passes, re-renders of gitignored output, and "on the writer
   host" checks out of the criteria; they are operator steps, recorded in
   the ledger after the merge.
