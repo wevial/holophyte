@@ -646,9 +646,11 @@ def file_ticket(target, path, state, board, out=None, priority=None,
         print(f"[holo2] {path}: {problems[0]}", file=out)
         return 1
     if update is not None:
-        held = linear_provider.blockers_of(update)
         issue_id = linear_provider.update_issue(update, ticket.title, text,
                                                 ticket.estimate_min)
+        # Read after the body is stored: a refused update adds nothing, and
+        # the difference is taken against the board as it stands then.
+        held = linear_provider.blockers_of(update)
         identifier = update
         named = ticket.depends_on or []
         added = [b for b in named if b not in held]

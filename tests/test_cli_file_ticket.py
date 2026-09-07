@@ -343,6 +343,12 @@ class FileTicketCliTests(unittest.TestCase):
             "KO-1, KO-2", blockers=["KO-1"])
 
         self.assertEqual(status, 0)
+        kinds = [("update" if "issueUpdate" in q else
+                  "read" if "inverseRelations" in q else
+                  "relate" if "issueRelationCreate" in q else None)
+                 for q, _ in linear.calls]
+        self.assertEqual([k for k in kinds if k],
+                         ["update", "read", "relate"])
         self.assertEqual(linear.relations(), [{
             "issueId": "uuid-KO-2", "relatedIssueId": "uuid-KO-7000",
             "type": "blocks"}])
@@ -395,6 +401,7 @@ class FileTicketCliTests(unittest.TestCase):
 
         self.assertIn("KO-7000", str(raised.exception))
         self.assertEqual(linear.relations(), [])
+        self.assertEqual(linear.relation_reads(), [])
         self.assertEqual(len(linear.mutations()), 1)
 
     def test_update_without_file_ticket_and_update_with_priority_are_refused(self):
