@@ -613,14 +613,22 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     once as written and once as Linear gives it back, and only the second
     pass says the transfer was clean.
 
-    `update` is an identifier (`KO-n`) or None. Given, no issue is created
-    and no relation recorded: that issue's title, description and estimate
-    are replaced from the file (state, priority and relations stay as they
-    are), and the same read-back validates what Linear stored, with the
-    same exits. Every contract revision on 2026-09-03 was a hand patch
-    through a client that rewrote the body, and two of them left a ticket
-    the loop skipped as `needs_spec`; this is the file going to the board
-    checked in both directions, as filing is.
+    `update` is an identifier (`KO-n`) or None. Given, no issue is created:
+    that issue's title, description and estimate are replaced from the file
+    (state and priority stay as they are), and the same read-back validates
+    what Linear stored, with the same exits. Every contract revision on
+    2026-09-03 was a hand patch through a client that rewrote the body, and
+    two of them left a ticket the loop skipped as `needs_spec`; this is the
+    file going to the board checked in both directions, as filing is.
+
+    A dependency is part of the contract, so once the body is stored the
+    blockers the file names and the board does not yet hold are recorded,
+    the way filing records them, and named on the printed line with a `+`.
+    A blocker the board holds and the file no longer names is left in place
+    and named too: the gate follows the file upward, and a narrowed contract
+    is the operator's deliberate removal, never a side effect. KO-279 gained
+    a `Depends on:` by update on 2026-09-07 and was claimed before that
+    blocker had run, because the update changed the text and not the gate.
 
     `board` is the target's `[board]` pair (`project_id`, `team`), resolved
     by `cli()` before the file is read: a target with no board exits there,
@@ -638,10 +646,26 @@ def file_ticket(target, path, state, board, out=None, priority=None,
         print(f"[holo2] {path}: {problems[0]}", file=out)
         return 1
     if update is not None:
-        linear_provider.update_issue(update, ticket.title, text,
-                                     ticket.estimate_min)
+        issue_id = linear_provider.update_issue(update, ticket.title, text,
+                                                ticket.estimate_min)
+        # Read after the body is stored: a refused update adds nothing, and
+        # the difference is taken against the board as it stands then.
+        held = linear_provider.blockers_of(update)
         identifier = update
-        print(f"[holo2] updated {identifier}: {ticket.title}", file=out)
+        named = ticket.depends_on or []
+        added = [b for b in named if b not in held]
+        for blocker in added:
+            linear_provider.add_blocker(issue_id, blocker)
+        parts = []
+        if added:
+            parts.append("blocked by " + ", ".join(f"+{b}" for b in added))
+        extra = [b for b in held if b not in named]
+        if extra:
+            parts.append("board also holds " + ", ".join(extra))
+        line = f"[holo2] updated {identifier}: {ticket.title}"
+        if parts:
+            line += f" ({'; '.join(parts)})"
+        print(line, file=out)
     else:
         issue = linear_provider.create_issue(
             board.project_id, board.team, ticket.title, text,

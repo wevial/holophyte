@@ -377,24 +377,49 @@ def add_blocker(issue_id, blocker_identifier):
             f"issue {issue_id}")
 
 
+def blockers_of(identifier):
+    """The identifiers of the issues blocking `identifier`, in Linear's order.
+
+    Read through the issue's own `inverseRelations` -- the edges whose
+    related issue is this one -- so a `blocks` edge, whose source is the
+    blocking issue (see `list_ready_issues()`), shows up here without the
+    project sweep that function does. One issue query; the other edge types
+    are dropped.
+    """
+    data = _gql(
+        'query($id: String!) { issue(id: $id) { inverseRelations { nodes '
+        '{ type issue { identifier } } } } }',
+        {"id": identifier})
+    if not data.get("issue"):
+        raise RuntimeError(f"Linear has no issue {identifier!r}")
+    return [rel["issue"]["identifier"]
+            for rel in data["issue"]["inverseRelations"]["nodes"]
+            if rel["type"] == "blocks"]
+
+
 def update_issue(identifier, title, body, estimate):
-    """Replace the title, description and estimate of the issue `identifier`.
+    """Replace the title, description and estimate of the issue `identifier`
+    and return its UUID.
 
     Everything else about the issue -- state, priority, relations -- is left
     as it is: the input names only the three fields a ticket file is the
     source of truth for. The identifier is resolved the way `add_blocker()`
     resolves its blocker, so an issue that does not exist raises before any
     mutation is sent, and a `success: false` is raised like `set_state()`'s:
-    a body that was not stored must not print as one that was.
+    a body that was not stored must not print as one that was. The UUID
+    comes back so the caller can relate the issue without resolving it
+    twice.
     """
+    issue_id = _issue_id(identifier)
     data = _gql(
         'mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate('
         'id: $id, input: $input) { success } }',
-        {"id": _issue_id(identifier),
+        {"id": issue_id,
          "input": {"title": title, "description": body,
                    "estimate": estimate}})
     if not data["issueUpdate"]["success"]:
         raise RuntimeError(f"Linear refused to update issue {identifier}")
+    return issue_id
 
 
 def fetch_description(identifier):

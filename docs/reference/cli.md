@@ -17,7 +17,7 @@ always the repository path.
 | `--shepherd KO-n [--note TEXT] TARGET` | sends a ticket parked on its pull request (`[merge] mode = "pr"`) back to the shepherd: an `interventions` row with action `shepherd`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim resumes the candidate on the PR and reads its threads and checks again, parking again under `approve = "human"` rather than merging; refuses any other state, naming it | store |
 | `--repoint KO-n SHA --note TEXT TARGET` | moves a parked candidate to a rebuilt branch tip: an `interventions` row with action `repoint` carrying the note, a `runEvents` row naming the old and new shas, then `runs.candidateSha` set to `SHA` (a full 40-hex commit id); the run stays parked and the branch is not touched; the merge gate `--approve` resumes into holds the branch to the new sha; refuses a ticket not parked awaiting merge approval, one already approved (its release is in flight: requeue instead) or a malformed sha, naming it | store |
 | `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] TARGET` | validates, creates the issue in the target's `[board]` project, reads it back, validates again | Linear |
-| `--file-ticket TICKET.md --update KO-n TARGET` | same, replacing an existing issue's title, body and estimate | Linear |
+| `--file-ticket TICKET.md --update KO-n TARGET` | same, replacing an existing issue's title, body and estimate; a blocker the file's `Depends on:` names and the board lacks is recorded and printed as `+KO-a`, one the board holds and the file no longer names is printed as `board also holds KO-c` -- relations are added, never removed | Linear |
 
 ## Startup checks
 
