@@ -30,6 +30,7 @@ from holophyte.config import (
     loop_config,
     merge_config,
     report_config,
+    serve_config,
     sweep_config,
 )
 from holophyte.loop import (
@@ -239,7 +240,8 @@ def cli(argv=None):
         "--serve", metavar=ADDRESS_SHAPE, type=serve_address,
         help="answer GET /status and GET /runs as JSON on %s, read-only, "
              "until SIGINT/SIGTERM; a read-only connection per request, "
-             "no authentication, and writes nothing" % ADDRESS_SHAPE)
+             "a bearer token from [serve] token_file beyond loopback, and "
+             "writes nothing" % ADDRESS_SHAPE)
     # Not a mode of its own: it says what `--sweep` does with what it finds,
     # so it is refused rather than ignored anywhere else. Silently doing
     # nothing would be the worse answer for the operator who typed
@@ -303,6 +305,7 @@ def cli(argv=None):
     report_config(target)
     merge_config(target)
     console_config(target)
+    serve_config(target)
     if args.report:
         return report(target)
     # Same window as `--report`: a read-only daemon calls nobody, so no board

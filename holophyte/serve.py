@@ -36,15 +36,26 @@ answered from it, so opening the daemon's address in a browser is the
 console with no second process. Without a built console, `/` is a 404
 naming that, and the JSON routes answer as before.
 
+Beyond loopback the bind address stops being a boundary, so `serve()`
+resolves a bearer token there: `[serve] token_file` names a file, read
+once at startup and held to an owner-only mode, whose contents every JSON
+route but `/peers` demands as `Authorization: Bearer ...`, checked in
+constant time before any store is opened; a non-loopback bind without the
+key is a startup error naming it. `/`, the console's files and `/peers`
+stay open so the page can load and learn where its peers are. A loopback
+bind ignores the key. The token is never printed or logged.
+
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
 import signal
 import socket
+import stat
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -53,7 +64,7 @@ from time import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import store.read
-from holophyte.config import console_config, split_address, sweep_config
+from holophyte.config import console_config, serve_config, split_address, sweep_config
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
@@ -62,6 +73,17 @@ from holophyte.target import worktree_path
 
 ADDRESS_SHAPE = "PORT|HOST:PORT"
 LOOPBACK = "127.0.0.1"
+# The hosts a bind stays open on, as typed: the loopback names and
+# addresses (`is_loopback()` adds the rest of 127/8). Anything else, a
+# tailnet address or the wildcard included, needs `[serve] token_file`.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "127.1"})
+TOKEN_KEY = "[serve] token_file"
+# Bits the token file must not carry: anyone but its owner reading it.
+TOKEN_FORBIDDEN_MODE = stat.S_IRWXG | stat.S_IRWXO
+# The paths the token does not guard: the console page and what it needs
+# to load and to learn where the token goes. `/peers` and the static files
+# carry no store data.
+OPEN_PATHS = frozenset({"/peers"})
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 # How long a failed run stays on `/attention`: a failure the operator has
 # not requeued or merged past in a day is one they have not looked at.
@@ -98,6 +120,10 @@ REMOTE_SHAPES = (
 RUN_PATH = re.compile(r"^/runs/([^/]+)$")
 RUN_FILES_PATH = re.compile(r"^/runs/([^/]+)/files$")
 RUN_LEDGER_PATH = re.compile(r"^/runs/([^/]+)/ledger$")
+RUN_SHAPES = (RUN_PATH, RUN_FILES_PATH, RUN_LEDGER_PATH)
+# The fixed JSON paths that read the store; every one is behind the token.
+JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger",
+                        "/attention", "/board"})
 # The captured id is an integer when it is an optionally signed run of
 # digits; anything else is 400. Integers no run can have (negative, or past
 # SQLite's INTEGER range) are 404 like any other absent id.
@@ -131,9 +157,9 @@ def parse_run_id(text):
 def parse_address(text):
     """`PORT` or `HOST:PORT` as a `(host, port)` pair; ValueError naming both.
 
-    A bare port binds loopback: the daemon has no authentication and the
-    bind address is its only boundary, so the short form is the safe one
-    and reaching another machine takes typing a host. The port is a
+    A bare port binds loopback: there the bind address is the daemon's
+    only boundary, so the short form is the safe one, and reaching another
+    machine takes typing a host -- and, then, `[serve] token_file`. The port is a
     non-negative integer -- 0 asks the kernel for an ephemeral one, which
     is how the tests bind. With a host, it is whatever precedes the last
     colon, so nothing here decides what a valid hostname is: the bind does.
@@ -729,6 +755,83 @@ def run_files(target, run_id):
     }
 
 
+def is_loopback(host):
+    """Whether a bind `host` reaches this machine only.
+
+    A name is judged as typed, not resolved: `localhost` is loopback and a
+    hostname that happens to resolve there is not, since what the operator
+    wrote is what the daemon can be sure of. `127.0.0.0/8` as a whole is
+    loopback too.
+    """
+    if host in LOOPBACK_HOSTS:
+        return True
+    try:
+        packed = socket.inet_pton(socket.AF_INET, host)
+    except OSError:
+        return False
+    return packed[0] == 127
+
+
+def load_token(path):
+    """The token file's contents, whitespace-stripped; SystemExit otherwise.
+
+    The file must exist, be a regular file, carry something, and be
+    readable by its owner alone: a group- or world-readable token is one
+    the daemon refuses to serve behind, and the refusal names the mode so
+    the operator can see the bit to drop. The token itself is never
+    printed.
+    """
+    path = Path(path)
+    try:
+        info = path.stat()
+    except OSError as error:
+        raise SystemExit(f"[holo2] {TOKEN_KEY}: {path}: {error.strerror}")
+    if not stat.S_ISREG(info.st_mode):
+        raise SystemExit(f"[holo2] {TOKEN_KEY}: {path} is not a regular file")
+    if info.st_mode & TOKEN_FORBIDDEN_MODE:
+        raise SystemExit(
+            f"[holo2] {TOKEN_KEY}: {path} is mode {stat.S_IMODE(info.st_mode):04o};"
+            " it must not be group- or world-readable (chmod 600)")
+    token = path.read_text().strip()
+    if not token:
+        raise SystemExit(f"[holo2] {TOKEN_KEY}: {path} is empty")
+    return token
+
+
+def resolve_token(target, host):
+    """The token `--serve` on `host` needs, or None when the bind is loopback.
+
+    A non-loopback bind with no `[serve] token_file` configured exits
+    naming the key: the bind address stops being the boundary the moment
+    it is not loopback, and a daemon that answered anyway would be open to
+    the whole network by default. A loopback bind ignores the key even
+    when it is set.
+    """
+    if is_loopback(host):
+        return None
+    token_file = serve_config(target).token_file
+    if token_file is None:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: --serve {host} binds beyond"
+            f" loopback, which needs {TOKEN_KEY} = \"PATH\" naming a"
+            " file whose contents every request presents as"
+            " `Authorization: Bearer ...`")
+    return load_token(token_file)
+
+
+def authorized(header, token):
+    """Whether `header` is exactly `Bearer TOKEN`, compared in constant time.
+
+    Any other scheme, a missing header, a wrong or a truncated value are
+    all one answer, so the check leaks nothing about how close the guess
+    came.
+    """
+    scheme, _, value = (header or "").partition(" ")
+    if scheme != "Bearer":
+        return False
+    return hmac.compare_digest(value.strip().encode(), token.encode())
+
+
 def static_file(console_dir, path):
     """The console file for request `path`: `(bytes, content type)`, or
     `(404 status, JSON body)` when there is none to serve.
@@ -770,9 +873,11 @@ class StatusHandler(BaseHTTPRequestHandler):
     included, so a client can parse whatever comes back, and carries
     `Access-Control-Allow-Origin: *`: the console page is served by one
     daemon and fetches the others from the browser, which refuses a
-    cross-origin answer without the header. The daemon is read-only and
-    bound to loopback or a private-network host, so the open origin gives
-    away nothing the bind address does not. The default access
+    cross-origin answer without the header. The daemon is read-only and,
+    beyond loopback, behind the bearer token `serve()` resolved from
+    `[serve] token_file`: with one set, every JSON route but `/peers` is
+    401 without it, checked before any store is opened; `/` and the
+    console's files stay open so the page can load. The default access
     log to stderr is silenced: the daemon shares a terminal with the loop,
     and a line per poll would bury the lines that matter.
     """
@@ -780,15 +885,26 @@ class StatusHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parts = urlsplit(self.path)
         path = parts.path
+        # The token check comes before any route reads the store, and after
+        # the question of which routes are open: a 401 touches nothing.
+        if self.server.token is not None and not self.open_route(path) \
+                and not authorized(self.headers.get("Authorization"),
+                                   self.server.token):
+            return self.answer(401, {})
+        self.dispatch(path, parts.query)
+
+    def dispatch(self, path, query):
+        """Answer `path` from its route: the JSON ones by name, `/peers`
+        from config, anything else as a console file."""
         if path == "/status":
             code, body = status(self.server.target,
                                 started_ms=self.server.started_ms)
         elif path == "/runs":
-            code, body = runs(self.server.target, parts.query)
+            code, body = runs(self.server.target, query)
         elif path == "/shipped":
-            code, body = shipped(self.server.target, parts.query)
+            code, body = shipped(self.server.target, query)
         elif path == "/ledger":
-            code, body = ledger(self.server.target, parts.query)
+            code, body = ledger(self.server.target, query)
         elif path == "/attention":
             code, body = attention(self.server.target)
         elif path == "/board":
@@ -808,6 +924,17 @@ class StatusHandler(BaseHTTPRequestHandler):
                 return self.answer_bytes(*found)
             code, body = found
         self.answer(code, body)
+
+    def open_route(self, path):
+        """Whether `path` is served without the token: `/peers` and the
+        console's files -- `/`, and any path no JSON route claims. The
+        JSON routes are named before the static branch in `do_GET`, so a
+        file that shadows one is not an opening."""
+        if path in OPEN_PATHS:
+            return True
+        if path in JSON_PATHS:
+            return False
+        return not any(shape.match(path) for shape in RUN_SHAPES)
 
     def refuse(self):
         self.answer(405, {"error": "method not allowed",
@@ -853,9 +980,10 @@ class StatusServer(ThreadingHTTPServer):
 
     daemon_threads = True
 
-    def __init__(self, target, address, console_dir=CONSOLE_DIR):
+    def __init__(self, target, address, console_dir=CONSOLE_DIR, token=None):
         self.target = target
         self.console_dir = Path(console_dir)
+        self.token = token
         self.peers = console_config(target).daemons
         self.started_ms = int(time() * 1000)
         super().__init__(address, StatusHandler)
@@ -863,15 +991,17 @@ class StatusServer(ThreadingHTTPServer):
         self.self_address = f"{host}:{port}"
 
 
-def make_server(target, host, port, console_dir=CONSOLE_DIR):
+def make_server(target, host, port, console_dir=CONSOLE_DIR, token=None):
     """Bind a `StatusServer` for `target` at `host:port` and return it.
 
     Port 0 binds an ephemeral port; the address actually bound is
     `server.server_address`. The caller runs `serve_forever()` and closes it.
     `console_dir` is where `/` is served from -- the repository's own
-    `console/dist/` unless a test points it elsewhere.
+    `console/dist/` unless a test points it elsewhere. `token`, when given,
+    is the bearer value every JSON route demands; `serve()` resolves it
+    from the bind address and the config through `resolve_token()`.
     """
-    return StatusServer(target, (host, port), console_dir)
+    return StatusServer(target, (host, port), console_dir, token)
 
 
 class _Stopped(Exception):
@@ -887,7 +1017,8 @@ def serve(target, address, out=None):
     """
     out = out or sys.stdout
     host, port = parse_address(address)
-    server = make_server(target, host, port)
+    token = resolve_token(target, host)
+    server = make_server(target, host, port, token=token)
 
     def on_signal(signum, _frame):
         raise _Stopped(signum)
@@ -896,8 +1027,9 @@ def serve(target, address, out=None):
                 for signum in STOP_SIGNALS}
     try:
         bound_host, bound_port = server.server_address[:2]
+        guard = "open" if token is None else "behind a bearer token"
         print(f"[holo2] serving {bound_host}:{bound_port} read-only for"
-              f" {target.path}", file=out)
+              f" {target.path}, {guard}", file=out)
         try:
             server.serve_forever()
         except _Stopped:

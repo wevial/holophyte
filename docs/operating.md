@@ -88,16 +88,18 @@ any method but GET is 405, both as JSON.
 Every `host` passes through `[report] host_label`, so a configured label is
 what the network sees rather than the machine name.
 
-The boundary is the bind address and nothing else. The daemon has
-**no authentication**: it binds to the one address the command line names
-(loopback when it names only a port) and anyone who can reach that port can
-read run and ticket identifiers, phases, heartbeat ages and the
-estimate-vs-actual history. Keep the bare port unless another machine must
-reach it, and then name one private-network address. Binding to the
-wildcard address (all interfaces) publishes that history to every network
-the host is on, and there is no flag, token or allow-list in the factory
-that would narrow it back; whoever can reach the address is the whole
-access control, by design.
+On loopback the boundary is the bind address and nothing else: the
+daemon binds the one address the command line names (loopback when it names
+only a port) and anyone who can reach that port can read run and ticket
+identifiers, phases, heartbeat ages and the estimate-vs-actual history. Keep
+the bare port unless another machine must reach it, and then name one
+private-network address and a `[serve] token_file`: beyond loopback the
+daemon refuses to start without one and answers 401 to every JSON request
+but `/peers` that does not present the file's contents as a bearer token
+([Across machines](operating/hosts.md), [config](config.md)). The token is a
+second boundary, not a substitute for the first: binding the wildcard
+address (all interfaces) still offers the port to every network the host is
+on.
 
 
 ## Serving standing

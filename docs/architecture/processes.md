@@ -59,8 +59,9 @@ One per target, as a systemd user unit (`holophyte-serve@SLUG`). A
 a port is; every request opens
 the store read-only, answers, closes. It imports `store.read` and nothing
 from `store`, so it cannot write. Endpoints in the
-[HTTP reference](../reference/http.md). It has no authentication; the bind
-address is the boundary. Stateless, so a code change is picked up by
+[HTTP reference](../reference/http.md). On loopback the bind address is
+the boundary; beyond it a bearer token from `[serve] token_file` guards
+every JSON route but `/peers`. Stateless, so a code change is picked up by
 restarting the unit.
 
 ## The implementer
