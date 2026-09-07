@@ -1289,6 +1289,104 @@ class RunLedgerTests(ServeTestCase):
         self.assertIn("error", body)
 
 
+class LedgerWindowTests(ServeTestCase):
+    """`/ledger?since=MS`: the ledger across runs newest first, narrowed by
+    `kind` or `ticket`; 400 naming a bad parameter."""
+
+    def seed_ledger(self):
+        """Two merged runs on two tickets with one entry each of `merge`,
+        `intervention` and `round` at T1 < T2 < T3, the newest written
+        first so the answer's order is the store's `at` order."""
+        self.now = int(time() * 1000)
+        started = self.now - 60 * MIN
+        self.t1, self.t2, self.t3 = (started + 5 * MIN, started + 10 * MIN,
+                                     started + 20 * MIN)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+            self.runs = {}
+            self.seeded = []
+            # One lease per project: each run is claimed, written and
+            # released before the next; the entries themselves are stamped
+            # newest first within a run, so the answer's order is `at`.
+            for n, entries in ((12, [(self.t3, "round", "Round 1: pass",
+                                      "loop")]),
+                               (11, [(self.t2, "intervention",
+                                      "answered: ship it", "operator"),
+                                     (self.t1, "merge", "MERGED to main",
+                                      "loop")])):
+                ticket = store.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{n}",
+                    linear_identifier=f"KO-{n}", title=f"ticket {n}",
+                    acceptance_criteria=[f"Given ticket {n}, then worked"],
+                    verification_commands=["echo ok"], time_box_ms=25 * MIN)
+                store.transition(conn, ticket, "in_flight")
+                run = store.claim(conn, project, ticket, now=started)
+                for at, kind, text, source in entries:
+                    store.record_ledger(conn, run, kind, text, source=source,
+                                        now=at)
+                    self.seeded.append((at, run, f"KO-{n}", kind, text,
+                                        source))
+                store.release(conn, run, "merged", now=started + 30 * MIN,
+                              merge_sha=MERGE_SHA)
+        finally:
+            conn.close()
+
+    @staticmethod
+    def entry(at, run, ticket, kind, text, source):
+        return {"at": at, "run": run, "ticket": ticket, "kind": kind,
+                "source": source, "text": text}
+
+    def test_window_is_newest_first_and_leaves_out_older_rows(self):
+        self.seed_ledger()
+        self.start()
+
+        code, headers, body = self.request("GET", f"/ledger?since={self.t2}")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body["since"], self.t2)
+        self.assertEqual(body["limit"], 200)
+        self.assertEqual(body["entries"],
+                         [self.entry(*self.seeded[0]),
+                          self.entry(*self.seeded[1])])
+        self.assertNotIn(self.t1, [e["at"] for e in body["entries"]])
+
+    def test_kind_and_ticket_narrow_the_window(self):
+        self.seed_ledger()
+        self.start()
+
+        code, _, body = self.request(
+            "GET", f"/ledger?since={self.t1}&kind=intervention")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["entries"], [self.entry(*self.seeded[1])])
+
+        code, _, body = self.request(
+            "GET", f"/ledger?since={self.t1}&ticket=KO-11")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["entries"], [self.entry(*self.seeded[1]),
+                                           self.entry(*self.seeded[2])])
+
+        code, _, body = self.request(
+            "GET", f"/ledger?since={self.t1}&limit=1")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["limit"], 1)
+        self.assertEqual(body["entries"], [self.entry(*self.seeded[0])])
+
+    def test_bad_parameters_are_400_naming_them(self):
+        self.seed_ledger()
+        self.start()
+
+        for query, name in (("", "since"), ("since=x", "since"),
+                            (f"since={self.t1}&limit=0", "limit"),
+                            (f"since={self.t1}&kind=nope", "kind")):
+            with self.subTest(query=query):
+                code, _, body = self.request("GET", f"/ledger?{query}")
+                self.assertEqual(code, 400)
+                self.assertIn(name, body["error"])
+
+
 class RunFilesTests(ServeTestCase):
     """`/runs/N/files`: the paths a run touched, from git in the target's
     checkout, for a live branch and for a landed merge."""

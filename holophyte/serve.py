@@ -349,6 +349,36 @@ def parse_limit(query, default=None, cap=None):
     return limit if cap is None else min(limit, cap)
 
 
+def parse_since(query):
+    """`?since=MS` as an int; ValueError when absent or not an integer.
+
+    `since` is required: a window over the whole ledger with no start is
+    the whole table, which is not a page. Any integer parses; a `since`
+    in the future is an empty window, not a 400.
+    """
+    values = parse_qs(query, keep_blank_values=True).get("since")
+    if values is None:
+        raise ValueError("since is required (epoch milliseconds)")
+    text = values[-1]
+    if not INTEGER.fullmatch(text):
+        raise ValueError(f"since must be an integer of epoch milliseconds,"
+                         f" got {text!r}")
+    return int(text)
+
+
+def parse_filter(query, name, allowed=None):
+    """`?name=VALUE` as its text, None when absent; ValueError when
+    `allowed` is given and the value is not one of them."""
+    values = parse_qs(query, keep_blank_values=True).get(name)
+    if values is None:
+        return None
+    text = values[-1]
+    if allowed is not None and text not in allowed:
+        raise ValueError(f"{name} must be one of {', '.join(allowed)},"
+                         f" got {text!r}")
+    return text
+
+
 def parse_before(query):
     """`?before=ID` as an int, None when absent; ValueError otherwise.
 
@@ -601,6 +631,47 @@ def run_ledger(target, run_id):
     }
 
 
+LEDGER_LIMIT = 200
+LEDGER_CAP = 1000
+
+
+def ledger(target, query):
+    """The `/ledger` answer: `(http status, JSON-able body)`.
+
+    The ledger across runs, newest first, from `since` (epoch
+    milliseconds, required) on: the console's "resolved today" fold is one
+    window over the store's ledger table, and a blocked ticket's thread is
+    the same window narrowed with `ticket=KO-n` to the entries since the
+    question was asked -- the `intervention` rows carry the operator's
+    answer. `kind` narrows to one of `store.LEDGER_KINDS`. `limit` defaults
+    to `LEDGER_LIMIT` and is capped at `LEDGER_CAP`. Each entry is its
+    `at`, `run`, `ticket`, `kind`, `source` and `text`, as `/runs/N/ledger`
+    spells them. A missing or non-integer `since`, a bad `limit` or an
+    unknown `kind` is 400 naming the parameter.
+    """
+    try:
+        since = parse_since(query)
+        kind = parse_filter(query, "kind", allowed=store.LEDGER_KINDS)
+        ticket = parse_filter(query, "ticket")
+        limit = parse_limit(query, default=LEDGER_LIMIT, cap=LEDGER_CAP)
+    except ValueError as bad:
+        return 400, {"error": str(bad)}
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        entries = store.read.ledger_since(conn, since, kind=kind,
+                                          ticket=ticket, limit=limit)
+    finally:
+        conn.close()
+    return 200, {
+        "entries": [{"at": e.at, "run": e.runId, "ticket": e.ticket,
+                     "kind": e.kind, "source": e.source, "text": e.text}
+                    for e in entries],
+        "since": since, "limit": limit,
+    }
+
+
 def run_files(target, run_id):
     """The `/runs/N/files` answer: `(http status, JSON-able body)`.
 
@@ -698,6 +769,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             code, body = runs(self.server.target, parts.query)
         elif path == "/shipped":
             code, body = shipped(self.server.target, parts.query)
+        elif path == "/ledger":
+            code, body = ledger(self.server.target, parts.query)
         elif path == "/attention":
             code, body = attention(self.server.target)
         elif path == "/board":

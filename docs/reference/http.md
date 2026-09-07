@@ -214,6 +214,35 @@ band). A run with no entries answers an empty list. `N` parses as on
 `/runs/N`: a non-integer is 400, an integer with no run is 404 carrying
 `run`. Nothing here is rendered; the endpoint serves the rows.
 
+## `GET /ledger?since=MS`
+
+```json
+{"since": 1788450000000, "limit": 200,
+ "entries": [
+  {"at": 1788451661675, "run": 52, "ticket": "KO-219", "kind": "merge",
+   "source": "loop", "text": "MERGED to main as 5acc138."},
+  {"at": 1788451181675, "run": 50, "ticket": "KO-217", "kind": "intervention",
+   "source": "operator", "text": "answered: keep the flag name"},
+  {"at": 1788450941675, "run": 52, "ticket": "KO-219", "kind": "round",
+   "source": "loop", "text": "Round 1: changes_requested · reviewer reviewer-model · verify passed"}
+ ]}
+```
+
+The ledger across runs, newest first, from `since` on: the console's
+"resolved today" fold is one window over the store's ledger table, and the
+thread under a blocked ticket's question is the same window narrowed to
+that ticket. `since` is required and is epoch milliseconds; entries at or
+after it come back, ordered by `at` then id, newest first. `kind` narrows
+to one of the kinds `/runs/N/ledger` names; `ticket` narrows to one
+identifier (`KO-n`). `limit` defaults to 200 and is capped at 1000; there
+is no paging past it, a day of ledger fits in one page. Each entry is its
+`at`, `run`, `ticket`, `kind`, `source` and `text`, as `/runs/N/ledger`
+spells them. For a thread, `/attention`'s blocked item is the question
+and `/ledger?ticket=KO-n&since=ASKED` is the rest: the `intervention`
+rows carry the operator's answer text. A missing or non-integer `since`,
+a bad `limit` or an unknown `kind` is 400 with an `error` naming the
+parameter.
+
 ## `GET /attention`
 
 What needs the operator, computed where the store is:
@@ -324,7 +353,7 @@ on a host without the renderer's toolchain still serves its JSON.
 
 | Status | When |
 | --- | --- |
-| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
+| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
