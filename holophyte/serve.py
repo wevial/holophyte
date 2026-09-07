@@ -613,9 +613,11 @@ def run_ledger(target, run_id):
     The run's narrative as the store holds it (design note 9): `entries`
     oldest first, each its `at` in epoch milliseconds, `kind` (one of
     `store.LEDGER_KINDS`), `text` and `source` (`loop` or `operator`), with
-    `run_id` and the run's `ticket`. A merged run with no rows answers an
-    empty list. `run_id` parses as on `/runs/N` (`locate_run()`): a
-    non-integer is 400, an integer with no run is 404 carrying `run`.
+    `run_id` and the run's `ticket`. An `intervention` entry also carries
+    `cleared` and `waited_ms` (`ledger_entry()`). A merged run with no rows
+    answers an empty list. `run_id` parses as on `/runs/N`
+    (`locate_run()`): a non-integer is 400, an integer with no run is 404
+    carrying `run`.
     """
     failed, run = locate_run(target, run_id)
     if failed is not None:
@@ -627,9 +629,24 @@ def run_ledger(target, run_id):
         conn.close()
     return 200, {
         "run_id": run.id, "ticket": run.linearIdentifier,
-        "entries": [{"at": e.at, "kind": e.kind, "text": e.text,
-                     "source": e.source} for e in entries],
+        "entries": [ledger_entry(e, {}) for e in entries],
     }
+
+
+def ledger_entry(entry, head):
+    """One ledger entry as both ledger endpoints spell it: `head`'s
+    fields first, then `at`, `kind`, `source` and `text`, and on an
+    `intervention` entry `cleared` and `waited_ms` (KO-308) -- what the
+    operator's step cleared (`question` or `failed`) and how long that had
+    waited, both null when nothing was waiting. The store's rule
+    (`store.read._cleared_by()`) decides; the wire only names the fields.
+    """
+    body = {**head, "at": entry.at, "kind": entry.kind,
+            "source": entry.source, "text": entry.text}
+    if entry.kind == "intervention":
+        body["cleared"] = entry.cleared
+        body["waited_ms"] = entry.waitedMs
+    return body
 
 
 LEDGER_LIMIT = 200
@@ -647,7 +664,8 @@ def ledger(target, query):
     answer. `kind` narrows to one of `store.LEDGER_KINDS`. `limit` defaults
     to `LEDGER_LIMIT` and is capped at `LEDGER_CAP`. Each entry is its
     `at`, `run`, `ticket`, `kind`, `source` and `text`, as `/runs/N/ledger`
-    spells them. A missing or non-integer `since`, a bad `limit` or an
+    spells them, an `intervention` entry with `cleared` and `waited_ms`
+    too (`ledger_entry()`). A missing or non-integer `since`, a bad `limit` or an
     unknown `kind` is 400 naming the parameter.
     """
     try:
@@ -666,8 +684,7 @@ def ledger(target, query):
     finally:
         conn.close()
     return 200, {
-        "entries": [{"at": e.at, "run": e.runId, "ticket": e.ticket,
-                     "kind": e.kind, "source": e.source, "text": e.text}
+        "entries": [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
                     for e in entries],
         "since": since, "limit": limit,
     }

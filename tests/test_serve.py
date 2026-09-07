@@ -1344,8 +1344,13 @@ class LedgerWindowTests(ServeTestCase):
 
     @staticmethod
     def entry(at, run, ticket, kind, text, source):
-        return {"at": at, "run": run, "ticket": ticket, "kind": kind,
+        body = {"at": at, "run": run, "ticket": ticket, "kind": kind,
                 "source": source, "text": text}
+        if kind == "intervention":
+            # KO-308: nothing waited before this seeded step, so the two
+            # fields ride along as null.
+            body.update(cleared=None, waited_ms=None)
+        return body
 
     def test_window_is_newest_first_and_leaves_out_older_rows(self):
         self.seed_ledger()
@@ -1394,6 +1399,124 @@ class LedgerWindowTests(ServeTestCase):
                 code, _, body = self.request("GET", f"/ledger?{query}")
                 self.assertEqual(code, 400)
                 self.assertIn(name, body["error"])
+
+
+class LedgerWaitTests(ServeTestCase):
+    """KO-308: an `intervention` entry of either ledger read says what the
+    operator's step cleared and how long that waited, from the entry's own
+    run: the newest `redirect` strictly before it or the run's `endedAt`,
+    whichever is newer; other kinds carry neither field."""
+
+    def open_store(self):
+        conn = store.open(str(self.db))
+        store.init(conn)
+        self.project = store.ensure_project(conn, "team-1", self.target)
+        return conn
+
+    def claim(self, conn, n, now):
+        ticket = store.mirror_ticket(
+            conn, self.project, linear_issue_id=f"issue-{n}",
+            linear_identifier=f"KO-{n}", title=f"ticket {n}",
+            acceptance_criteria=[f"Given ticket {n}, then worked"],
+            verification_commands=["echo ok"], time_box_ms=25 * MIN)
+        store.transition(conn, ticket, "in_flight")
+        return ticket, store.claim(conn, self.project, ticket, now=now)
+
+    @staticmethod
+    def ask(conn, run, now):
+        store.record_intervention(
+            conn, run, "redirect", "asked the operator", source="supervisor",
+            trigger="off_criteria", question="Which flag name?", now=now)
+
+    @staticmethod
+    def interventions(entries):
+        return [e for e in entries if e["kind"] == "intervention"]
+
+    def test_a_resume_clears_the_question_and_the_redirect_pairs_with_nothing(self):
+        now = int(time() * 1000)
+        started = now - 60 * MIN
+        t1, t2 = started + 5 * MIN, started + 18 * MIN
+        conn = self.open_store()
+        try:
+            _, run = self.claim(conn, 21, started)
+            self.ask(conn, run, t1)
+            store.record_intervention(conn, run, "resume", "answered: keep it",
+                                      now=t2)
+        finally:
+            conn.close()
+        self.start()
+
+        code, _, body = self.request("GET", "/ledger?since=0")
+
+        self.assertEqual(code, 200)
+        resume, redirect = self.interventions(body["entries"])
+        self.assertEqual(resume["at"], t2)
+        self.assertEqual(resume["cleared"], "question")
+        self.assertEqual(resume["waited_ms"], t2 - t1)
+        self.assertEqual(redirect["at"], t1)
+        self.assertIsNone(redirect["cleared"])
+        self.assertIsNone(redirect["waited_ms"])
+
+    def test_a_requeue_after_a_failure_clears_the_failure(self):
+        now = int(time() * 1000)
+        started = now - 60 * MIN
+        t1, t2 = started + 9 * MIN, started + 40 * MIN
+        conn = self.open_store()
+        try:
+            ticket, run = self.claim(conn, 22, started)
+            store.release(conn, run, "failed", reason="verify red", now=t1)
+            store.requeue(conn, ticket, "operator requeued", now=t2)
+        finally:
+            conn.close()
+        self.start()
+
+        code, _, body = self.request("GET", f"/runs/{run}/ledger")
+
+        self.assertEqual(code, 200)
+        (requeue,) = self.interventions(body["entries"])
+        self.assertEqual(requeue["at"], t2)
+        self.assertEqual(requeue["cleared"], "failed")
+        self.assertEqual(requeue["waited_ms"], t2 - t1)
+
+    def test_the_newer_mark_wins_and_other_kinds_carry_neither_field(self):
+        now = int(time() * 1000)
+        started = now - 60 * MIN
+        t1, t2, t3 = started + 5 * MIN, started + 12 * MIN, started + 30 * MIN
+        conn = self.open_store()
+        try:
+            # KO-23 asked at T1, failed at T2: the failure is the newer mark.
+            ticket_a, run_a = self.claim(conn, 23, started)
+            store.record_ledger(conn, run_a, "round", "Round 1: pass",
+                                now=started + MIN)
+            self.ask(conn, run_a, t1)
+            store.release(conn, run_a, "failed", reason="verify red", now=t2)
+            store.requeue(conn, ticket_a, "operator requeued", now=t3)
+            # KO-24 failed at T1, asked at T2: the question is the newer mark.
+            ticket_b, run_b = self.claim(conn, 24, started + MIN)
+            store.release(conn, run_b, "failed", reason="verify red", now=t1)
+            self.ask(conn, run_b, t2)
+            store.requeue(conn, ticket_b, "operator requeued", now=t3)
+        finally:
+            conn.close()
+        self.start()
+
+        for run, cleared, mark in ((run_a, "failed", t2),
+                                   (run_b, "question", t2)):
+            with self.subTest(run=run, cleared=cleared):
+                code, _, body = self.request("GET", f"/runs/{run}/ledger")
+                self.assertEqual(code, 200)
+                requeue = [e for e in self.interventions(body["entries"])
+                           if e["at"] == t3]
+                self.assertEqual(len(requeue), 1)
+                self.assertEqual(requeue[0]["cleared"], cleared)
+                self.assertEqual(requeue[0]["waited_ms"], t3 - mark)
+
+        code, _, body = self.request("GET", f"/runs/{run_a}/ledger")
+        others = [e for e in body["entries"] if e["kind"] != "intervention"]
+        self.assertIn("round", [e["kind"] for e in others])
+        for entry in others:
+            self.assertNotIn("cleared", entry)
+            self.assertNotIn("waited_ms", entry)
 
 
 class RunFilesTests(ServeTestCase):

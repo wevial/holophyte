@@ -620,7 +620,14 @@ def narrative_events(conn, run_id):
 
 @dataclass(frozen=True)
 class LedgerEntry:
-    """One entry of a run's narrative, as `store.record_ledger()` wrote it."""
+    """One entry of a run's narrative, as `store.record_ledger()` wrote it.
+
+    An `intervention` entry also says what the operator's step cleared and
+    how long that had waited (KO-308): `cleared` is `"question"` or
+    `"failed"` and `waitedMs` the wait in milliseconds, both None when
+    nothing was waiting -- `_cleared_by()` is the rule. Other kinds carry
+    None for both.
+    """
 
     id: int
     runId: int
@@ -629,6 +636,51 @@ class LedgerEntry:
     kind: str
     text: str
     source: str
+    cleared: str | None = None
+    waitedMs: int | None = None
+
+
+# The two marks a ledger entry's own run offers for what an operator's step
+# cleared: the ask (its newest `redirect` intervention strictly before the
+# entry) and the failure (its `endedAt`, when set and strictly before the
+# entry). Selected alongside the entry so the rule is one function over two
+# values rather than a second read per row.
+_LEDGER_MARKS = (
+    " (SELECT MAX(i.at) FROM interventions i"
+    "  WHERE i.runId = ledger.runId AND i.\"action\" = 'redirect'"
+    "  AND i.at < ledger.at),"
+    " (SELECT r.endedAt FROM runs r"
+    "  WHERE r.id = ledger.runId AND r.endedAt < ledger.at)")
+
+
+def _cleared_by(kind, at, asked, ended):
+    """What an `intervention` entry at `at` cleared and how long it waited.
+
+    The rule KO-308 fixes, in words `docs/reference/http.md` repeats: of
+    the run's newest `redirect` strictly before the entry (`asked`) and its
+    `endedAt` when strictly before the entry (`ended`), the newer mark wins
+    -- `("question", at - asked)` or `("failed", at - ended)`; with neither
+    mark, `(None, None)`. A `redirect` entry never pairs with itself, since
+    its own row is not strictly before it. Entries of other kinds answer
+    `(None, None)` too: only an operator's step clears anything.
+    """
+    if kind != "intervention":
+        return None, None
+    marks = [(mark, name) for mark, name in ((asked, "question"),
+                                             (ended, "failed"))
+             if mark is not None]
+    if not marks:
+        return None, None
+    mark, name = max(marks)
+    return name, at - mark
+
+
+def _ledger_entry(cls, row, **owner):
+    """Build a ledger entry of `cls` from a row selected with `_LEDGER_MARKS`
+    appended; `owner` is the third column under the name `cls` gives it."""
+    cleared, waited = _cleared_by(row[4], row[3], row[7], row[8])
+    return cls(id=row[0], runId=row[1], at=row[3], kind=row[4], text=row[5],
+               source=row[6], cleared=cleared, waitedMs=waited, **owner)
 
 
 def ledger(conn, run_id):
@@ -636,11 +688,11 @@ def ledger(conn, run_id):
     or no such run. Two entries written in the same millisecond keep the
     order they were written in."""
     rows = conn.execute(
-        "SELECT id, runId, ticketId, at, kind, text, source FROM ledger"
-        " WHERE runId = ? ORDER BY at, id", (run_id,)).fetchall()
-    return [LedgerEntry(id=row[0], runId=row[1], ticketId=row[2], at=row[3],
-                        kind=row[4], text=row[5], source=row[6])
-            for row in rows]
+        "SELECT ledger.id, ledger.runId, ledger.ticketId, ledger.at,"
+        " ledger.kind, ledger.text, ledger.source," + _LEDGER_MARKS +
+        " FROM ledger WHERE ledger.runId = ? ORDER BY ledger.at, ledger.id",
+        (run_id,)).fetchall()
+    return [_ledger_entry(LedgerEntry, row, ticketId=row[2]) for row in rows]
 
 
 @dataclass(frozen=True)
@@ -655,6 +707,8 @@ class LedgerWindowEntry:
     kind: str
     text: str
     source: str
+    cleared: str | None = None
+    waitedMs: int | None = None
 
 
 def ledger_since(conn, since, kind=None, ticket=None, limit=200):
@@ -674,13 +728,11 @@ def ledger_since(conn, since, kind=None, ticket=None, limit=200):
     args.append(limit)
     rows = conn.execute(
         "SELECT ledger.id, ledger.runId, tickets.linearIdentifier, ledger.at,"
-        " ledger.kind, ledger.text, ledger.source FROM ledger"
-        " JOIN tickets ON tickets.id = ledger.ticketId"
+        " ledger.kind, ledger.text, ledger.source," + _LEDGER_MARKS +
+        " FROM ledger JOIN tickets ON tickets.id = ledger.ticketId"
         f" WHERE {' AND '.join(where)} ORDER BY ledger.at DESC, ledger.id DESC"
         " LIMIT ?", args).fetchall()
-    return [LedgerWindowEntry(id=row[0], runId=row[1], ticket=row[2],
-                              at=row[3], kind=row[4], text=row[5],
-                              source=row[6])
+    return [_ledger_entry(LedgerWindowEntry, row, ticket=row[2])
             for row in rows]
 
 
