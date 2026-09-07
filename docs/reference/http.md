@@ -217,7 +217,8 @@ lost the item cannot (design note 13's "how long it waited and who
 cleared it"). One closed rule, against the entry's own run: two marks are
 read, the `at` of the run's newest `redirect` intervention strictly
 before the entry (the ask) and the run's `endedAt` when set and strictly
-before the entry (the failure); the newer mark wins, so `cleared` is
+before the entry (the failure); the newer mark wins, and a redirect in
+the same millisecond as the failure is not newer, so `cleared` is
 `"question"` or `"failed"` and `waited_ms` is the entry's `at` minus that
 mark. A mark after the entry never counts, and a `redirect` entry never
 pairs with itself since its own row is not strictly before it. With no

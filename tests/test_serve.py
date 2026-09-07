@@ -1496,12 +1496,19 @@ class LedgerWaitTests(ServeTestCase):
             store.release(conn, run_b, "failed", reason="verify red", now=t1)
             self.ask(conn, run_b, t2)
             store.requeue(conn, ticket_b, "operator requeued", now=t3)
+            # KO-25 asked and failed in the same millisecond T2: the
+            # redirect is not strictly newer, so the failure wins.
+            ticket_c, run_c = self.claim(conn, 25, started + 2 * MIN)
+            self.ask(conn, run_c, t2)
+            store.release(conn, run_c, "failed", reason="verify red", now=t2)
+            store.requeue(conn, ticket_c, "operator requeued", now=t3)
         finally:
             conn.close()
         self.start()
 
         for run, cleared, mark in ((run_a, "failed", t2),
-                                   (run_b, "question", t2)):
+                                   (run_b, "question", t2),
+                                   (run_c, "failed", t2)):
             with self.subTest(run=run, cleared=cleared):
                 code, _, body = self.request("GET", f"/runs/{run}/ledger")
                 self.assertEqual(code, 200)

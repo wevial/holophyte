@@ -666,13 +666,13 @@ def _cleared_by(kind, at, asked, ended):
     """
     if kind != "intervention":
         return None, None
-    marks = [(mark, name) for mark, name in ((asked, "question"),
-                                             (ended, "failed"))
-             if mark is not None]
-    if not marks:
+    if asked is None and ended is None:
         return None, None
-    mark, name = max(marks)
-    return name, at - mark
+    # Compare the timestamps alone: a tuple `max` would break an equal-
+    # timestamp tie on the name, and "question" sorts above "failed".
+    if ended is None or (asked is not None and asked > ended):
+        return "question", at - asked
+    return "failed", at - ended
 
 
 def _ledger_entry(cls, row, **owner):
