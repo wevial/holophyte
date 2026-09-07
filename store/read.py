@@ -23,6 +23,7 @@ Run the tests: python3 -m unittest discover -s tests -p 'test_store_read*' -v
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -120,6 +121,59 @@ def blocked_tickets(conn):
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
                           blockedQuestion=row[2], runId=row[3],
                           askedMs=row[4] if row[4] is not None else row[5])
+            for row in rows]
+
+
+@dataclass(frozen=True)
+class OpenTicket:
+    """One ticket in an open (non-terminal) status, with what it waits on.
+
+    `waitsOn` is the ticket's `dependsOn` list resolved to identifiers
+    through the same table, holding only the dependencies still open; a
+    Linear issue id the store has never mirrored is kept as-is, since the
+    store cannot name what it has not seen. `activeRunId` is the live run's
+    id, None when the ticket is not being worked.
+    """
+
+    id: int
+    linearIdentifier: str
+    title: str
+    status: str
+    timeBoxMs: int | None
+    activeRunId: int | None
+    blockedQuestion: str | None
+    waitsOn: tuple[str, ...]
+    mirroredAt: int
+
+
+def open_tickets(conn):
+    """Every ticket whose status is not `merged` or `abandoned`, ordered
+    by identifier.
+
+    The `serve` daemon's `/board` read: the store's mirror of Linear's
+    columns, grouped by the caller. `dependsOn` names Linear issue ids;
+    each is resolved to an identifier through the open rows, dropped when
+    it names a closed ticket (a merged dependency is no longer a wait),
+    and kept as-is when the store has never mirrored it.
+    """
+    rows = conn.execute(
+        "SELECT id, linearIssueId, linearIdentifier, title, status,"
+        " timeBoxMs, activeRunId, blockedQuestion, dependsOn, mirroredAt"
+        " FROM tickets WHERE status NOT IN ('merged', 'abandoned')"
+        " ORDER BY linearIdentifier").fetchall()
+    # The closed ids are read too, so a dependency on a merged ticket is
+    # told apart from one the store has never seen.
+    mirrored = {row[1]: row[2] for row in rows}
+    closed = {row[0] for row in conn.execute(
+        "SELECT linearIssueId FROM tickets"
+        " WHERE status IN ('merged', 'abandoned')")}
+    return [OpenTicket(id=row[0], linearIdentifier=row[2], title=row[3],
+                       status=row[4], timeBoxMs=row[5], activeRunId=row[6],
+                       blockedQuestion=row[7],
+                       waitsOn=tuple(mirrored.get(dep, dep)
+                                     for dep in json.loads(row[8])
+                                     if dep not in closed),
+                       mirroredAt=row[9])
             for row in rows]
 
 
