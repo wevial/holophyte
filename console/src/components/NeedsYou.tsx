@@ -12,6 +12,8 @@ import {
 import { projectName } from "../lib/derive";
 import { formatAge } from "../lib/format";
 import { UNREACHABLE, hostItems, type HostRecord } from "../lib/hosts";
+import type { Ledgers } from "../hooks/useLedger";
+import { threadFor } from "../lib/threads";
 import type { AttentionItem } from "../lib/types";
 import { AttentionRow } from "./AttentionRow";
 import { Chip } from "./Chip";
@@ -29,12 +31,31 @@ function bandLevel(hosts: HostRecord[]): string {
   }, "none");
 }
 
+/** The key one question row toggles its thread by. */
+function rowKey(item: AttentionItem, index: number): string {
+  return `${String(item.daemon ?? "")}-${item.kind}-${String(item.run ?? item.ticket ?? index)}`;
+}
+
 /** The band that opens the Now view: what needs a human across every host
  *  in view, each item stamped with its daemon's project, plus one critical
- *  row per daemon that stopped answering. `now` is the console's clock. */
-export function NeedsYou({ hosts, project, now }: { hosts: HostRecord[]; project: ProjectChoice; now: number }) {
+ *  row per daemon that stopped answering. `now` is the console's clock.
+ *  `ledgers` is each daemon's `/ledger` answer by address, its threads
+ *  keyed by ticket; a question row whose daemon has one opens its thread,
+ *  one thread at a time, and a band without any renders as before. */
+export function NeedsYou({
+  hosts,
+  project,
+  now,
+  ledgers = {},
+}: {
+  hosts: HostRecord[];
+  project: ProjectChoice;
+  now: number;
+  ledgers?: Ledgers;
+}) {
   const [kind, setKind] = useState<KindFilter>("all");
   const [expanded, setExpanded] = useState(false);
+  const [openQuestion, setOpenQuestion] = useState<string | null>(null);
 
   const stamped: AttentionItem[] = hosts.flatMap((host) => hostItems(host, now));
   const mine = filterItems(stamped, "all", project);
@@ -56,6 +77,19 @@ export function NeedsYou({ hosts, project, now }: { hosts: HostRecord[]; project
     return describe(item, status.thresholds, { now: status.now, runs: status.runs });
   };
   const eldest = oldest(mine, describeRow);
+
+  /** A question row's thread from its daemon's ledger; undefined for any
+   *  other kind or a daemon without `/ledger`. */
+  const threadOf = (item: AttentionItem, key: string) => {
+    if (item.kind !== "blocked") return undefined;
+    const ledger = ledgers[String(item.daemon ?? "")];
+    if (!ledger || ledger.absent) return undefined;
+    return {
+      rows: threadFor(ledger.threads[String(item.ticket ?? "")] ?? [], item),
+      open: openQuestion === key,
+      onToggle: () => setOpenQuestion((previous) => (previous === key ? null : key)),
+    };
+  };
 
   return (
     <section
@@ -97,14 +131,18 @@ export function NeedsYou({ hosts, project, now }: { hosts: HostRecord[]; project
               ))}
           </div>
           <ul className="mt-3">
-            {rows.map((item, index) => (
-              <AttentionRow
-                key={`${String(item.daemon ?? "")}-${item.kind}-${String(item.run ?? item.ticket ?? index)}`}
-                kind={item.kind}
-                project={projectName(String(item.project))}
-                description={describeRow(item)}
-              />
-            ))}
+            {rows.map((item, index) => {
+              const key = rowKey(item, index);
+              return (
+                <AttentionRow
+                  key={key}
+                  kind={item.kind}
+                  project={projectName(String(item.project))}
+                  description={describeRow(item)}
+                  thread={threadOf(item, key)}
+                />
+              );
+            })}
           </ul>
           {shown.length > ROW_CAP && (
             <button

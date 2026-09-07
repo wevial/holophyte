@@ -131,6 +131,7 @@ test("run #52 on two daemons of one project is two rows; expanding one leaves th
   fireEvent.click(within(rows()[1]!).getByRole("button"));
   await settle();
   expect(toggles()).toEqual(["false", "true"]);
-  expect(asked.every((url) => url.startsWith(`${SECOND}/runs/52`))).toBe(true);
-  expect(asked.length).toBeGreaterThan(0);
+  const detail = asked.filter((url) => url.includes("/runs/"));
+  expect(detail.every((url) => url.startsWith(`${SECOND}/runs/52`))).toBe(true);
+  expect(detail.length).toBeGreaterThan(0);
 });
