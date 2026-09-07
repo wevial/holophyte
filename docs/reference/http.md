@@ -210,7 +210,27 @@ which is what a frontend reads and what the Linear comments and the
 its `at` in epoch milliseconds, its `kind` (`round`, `merge`, `failure`,
 `adjudication`, `intervention` or `note`), its `text` and its `source`
 (`loop` for an entry the factory wrote, `operator` for one recorded out of
-band). A run with no entries answers an empty list. `N` parses as on
+band). An `intervention` entry carries two more fields, `cleared` and
+`waited_ms`: what the operator's step cleared and how long that had
+waited, computed here because the store knows both and a page that has
+lost the item cannot (design note 13's "how long it waited and who
+cleared it"). One closed rule, against the entry's own run: two marks are
+read, the `at` of the run's newest `redirect` intervention strictly
+before the entry (the ask) and the run's `endedAt` when set and strictly
+before the entry (the failure); the newer mark wins, and a redirect in
+the same millisecond as the failure is not newer, so `cleared` is
+`"question"` or `"failed"` and `waited_ms` is the entry's `at` minus that
+mark. A mark after the entry never counts, and a `redirect` entry never
+pairs with itself since its own row is not strictly before it. With no
+mark both are `null`. Entries of other kinds do not carry the fields.
+
+```json
+{"at": 1788452000000, "kind": "intervention",
+ "text": "human resume: answered: keep the flag name", "source": "operator",
+ "cleared": "question", "waited_ms": 818325}
+```
+
+A run with no entries answers an empty list. `N` parses as on
 `/runs/N`: a non-integer is 400, an integer with no run is 404 carrying
 `run`. Nothing here is rendered; the endpoint serves the rows.
 
@@ -222,7 +242,8 @@ band). A run with no entries answers an empty list. `N` parses as on
   {"at": 1788451661675, "run": 52, "ticket": "KO-219", "kind": "merge",
    "source": "loop", "text": "MERGED to main as 5acc138."},
   {"at": 1788451181675, "run": 50, "ticket": "KO-217", "kind": "intervention",
-   "source": "operator", "text": "answered: keep the flag name"},
+   "source": "operator", "text": "answered: keep the flag name",
+   "cleared": "question", "waited_ms": 818325},
   {"at": 1788450941675, "run": 52, "ticket": "KO-219", "kind": "round",
    "source": "loop", "text": "Round 1: changes_requested · reviewer reviewer-model · verify passed"}
  ]}
@@ -237,7 +258,9 @@ to one of the kinds `/runs/N/ledger` names; `ticket` narrows to one
 identifier (`KO-n`). `limit` defaults to 200 and is capped at 1000; there
 is no paging past it, a day of ledger fits in one page. Each entry is its
 `at`, `run`, `ticket`, `kind`, `source` and `text`, as `/runs/N/ledger`
-spells them. For a thread, `/attention`'s blocked item is the question
+spells them; an `intervention` entry carries `cleared` and `waited_ms`
+too, by the rule `/runs/N/ledger` states, so the fold reads each
+resolution's wait off the wire. For a thread, `/attention`'s blocked item is the question
 and `/ledger?ticket=KO-n&since=ASKED` is the rest: the `intervention`
 rows carry the operator's answer text. A missing or non-integer `since`,
 a bad `limit` or an unknown `kind` is 400 with an `error` naming the
