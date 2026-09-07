@@ -1,0 +1,17 @@
+{
+  "name": "holophyte-console-electron",
+  "private": true,
+  "type": "module",
+  "main": "main.cjs",
+  "scripts": {
+    "build": "bun build --target=node --format=cjs --external electron --outdir dist main.ts",
+    "start": "bun build --target=node --format=cjs --external electron --outdir dist main.ts && electron .",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "electron": "^38.0.0",
+    "typescript": "^5.8.0"
+  }
+}
