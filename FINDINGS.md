@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[350 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T00:36:24Z — KO-281
-Round 3: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-07T00:36:26Z — KO-281
-MERGED to main as cc5e225 (branch task/ko-281-the-console-s-board-view-shows deleted).
-actual: 11.4 min · estimate: 30 min · rounds: 3
+[352 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T00:41:04Z — KO-282
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -761,3 +754,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T22:27:21Z — KO-261
 MERGED to main as 95b17d7 (branch task/ko-261-a-non-loopback-serve-bind-requ deleted).
 actual: 11.4 min · estimate: 30 min · rounds: 1
+
+## 2026-09-07T22:29:23Z — KO-310
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T22:29:24Z — KO-310
+MERGED to main as 779ed62 (branch task/ko-310-the-ticket-template-carries-th deleted).
+actual: 2.0 min · estimate: 20 min · rounds: 1
