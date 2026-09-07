@@ -28,9 +28,21 @@
 - [ ] <Only meaningful success, failure, empty, or permission outcomes.>
 - [ ] <Existing behavior that must remain unchanged, when relevant.>
 
-> Every behavioral claim needs a mechanical witness: a "default X" / "sorted
-> by Y" criterion must be pinned by a test or check that asserts the observable
-> order/behavior — presence alone lets the claim silently regress (KO-138).
+> Rules the reviewer enforces (each learned from a failed run):
+> 1. Every behavioral claim needs a mechanical witness: a "default X" / "sorted
+>    by Y" criterion must be pinned by a test or check that asserts the
+>    observable order/behavior, written "(a test in FILE witnesses X)" —
+>    presence alone lets the claim silently regress (KO-138).
+> 2. A criterion is a closed list of named cases, never "every" or "any" over
+>    an unstated set — the reviewer cannot witness an open set (run 138).
+> 3. "The suite and ruff pass" is never a criterion: the verify block already
+>    enforces it and the reviewer cannot reproduce it in the container
+>    (runs 92 and 93).
+> 4. A grep pattern in the verify block never starts with a slash; write `[/]`
+>    for a literal one (`grep -q 'GET [/]peers'`) — the validator reads a
+>    quoted pattern beginning with a slash as an absolute path and refuses it.
+> 5. After filing, the body changes only through `--file-ticket --update`, so
+>    the stored contract and the validated file never drift apart.
 
 ## Verify command(s)
 

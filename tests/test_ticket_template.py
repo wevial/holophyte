@@ -346,6 +346,11 @@ class TemplateFileTests(unittest.TestCase):
         self.assertTrue(problems)
         self.assertTrue(any("placeholder" in p for p in problems), problems)
 
+    def test_criteria_comment_names_the_five_reviewer_rules(self):
+        for phrase in ("witnesses", "closed list", "never a criterion",
+                       "[/]", "--update"):
+            self.assertIn(phrase, self.text)
+
 
 class CliTests(unittest.TestCase):
     def run_cli(self, *paths):
@@ -386,7 +391,18 @@ class CliTests(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
 
     def test_no_args_usage_exit_two(self):
-        self.assertEqual(self.run_cli().returncode, 2)
+        r = self.run_cli()
+        self.assertEqual(r.returncode, 2)
+        self.assertIn(tt.USAGE, r.stderr)
+        self.assertEqual(r.stdout, "")
+
+    def test_help_flags_print_usage_on_stdout_and_exit_zero(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                r = self.run_cli(flag)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn(tt.USAGE, r.stdout)
+                self.assertEqual(r.stderr, "")
 
 
 GITIGNORED_CRITERION = FILLED.replace(
