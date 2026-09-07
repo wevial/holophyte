@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[348 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T00:31:33Z — KO-281
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/src/components/Board.tsx:35 [p2] [Board.tsx:35](/home/reviewer/candidate/console/src/components/Board.tsx:35): Board creates a separate `useShipped` state instead of receiving the rows alread…
-
-## 2026-09-07T00:34:59Z — KO-281
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/src/components/TicketCard.tsx:19 [p2] [TicketCard.tsx:19](/home/reviewer/candidate/console/src/components/TicketCard.tsx:19): The required disabled “Edit ticket” and “Mark needs_spec” buttons are…
+[350 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T00:36:24Z — KO-281
 Round 3: pass · reviewer codex-astra-medium · verify passed
@@ -764,3 +754,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T21:51:54Z — KO-309
 MERGED to main as bacbbde (branch task/ko-309-file-ticket-update-records-th deleted).
 actual: 6.8 min · estimate: 20 min · rounds: 2
+
+## 2026-09-07T22:26:34Z — KO-261
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T22:27:21Z — KO-261
+MERGED to main as 95b17d7 (branch task/ko-261-a-non-loopback-serve-bind-requ deleted).
+actual: 11.4 min · estimate: 30 min · rounds: 1
