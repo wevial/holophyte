@@ -15,7 +15,7 @@ export interface HostLedger {
 export type Ledgers = Record<string, HostLedger>;
 
 /**
- * Each host's `/ledger` window from local midnight (or the oldest open
+ * Each host's `/ledger` window from a day before local midnight (or the oldest open
  * question, when asked earlier), fetched on mount and again each time
  * `polls` advances. A 404 marks the host `absent` and stays so until a
  * later poll answers; any other failure keeps the last good rows.

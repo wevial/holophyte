@@ -44,3 +44,16 @@ test("an item never seen live falls back to the ledger's first row for the run; 
   expect(median([])).toBeNull();
   expect(longest([])).toBeNull();
 });
+
+test("a failure cleared before the console loaded waits from its failure row, not the run's first row", () => {
+  // Run 88 reviewed at minute 10, failed at 60 and was requeued at 75: the wait is 15m, not 65m.
+  const ledger: LedgerRow[] = [
+    { at: MIDNIGHT + min(75), run: 88, ticket: "KO-229", kind: "intervention", source: "operator", text: "human requeue: fixed the fixture" },
+    { at: MIDNIGHT + min(60), run: 88, ticket: "KO-229", kind: "failure", source: "loop", text: "verify failed" },
+    { at: MIDNIGHT + min(10), run: 88, ticket: "KO-229", kind: "round", source: "loop", text: "Round 1: changes_requested" },
+  ];
+  const rows = resolvedSince(ledger, [], MIDNIGHT);
+  expect(rows.map((row) => [row.kind, row.waited_ms])).toEqual([["failed", min(15)]]);
+  expect(median(rows)).toBe(min(15));
+  expect(longest(rows)).toBe(min(15));
+});

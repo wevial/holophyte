@@ -25,13 +25,22 @@ function actionOf(text: string): string | null {
   return match ? match[1]! : null;
 }
 
-/** When the cleared item's wait began: its `asked_ms` (a question) or
- *  `ended_ms` (a failed run) from the attention item seen for the run,
- *  else the ledger's first row for the run before the resolving one (the
- *  supervisor's strike row for a stale run). */
-function waitStart(row: LedgerRow, item: AttentionItem | undefined, rows: LedgerRow[]): number | null {
-  const fromItem = item == null ? null : (num(item.asked_ms) ?? num(item.ended_ms));
-  if (fromItem != null) return fromItem;
+/** The run's latest `failure` row before the resolving one: a failed
+ *  run's failure, a stale run's strike. Null when the window has none. */
+function lastFailure(row: LedgerRow, rows: LedgerRow[]): number | null {
+  let last: number | null = null;
+  for (const earlier of rows) {
+    if (earlier === row || earlier.kind !== "failure" || earlier.at > row.at) continue;
+    if (earlier.run == null || earlier.run !== row.run) continue;
+    if (last == null || earlier.at > last) last = earlier.at;
+  }
+  return last;
+}
+
+/** The run's earliest row before the resolving one: for a question never
+ *  seen live, the loop's parking note is the closest the ledger comes to
+ *  when it was asked. */
+function firstRow(row: LedgerRow, rows: LedgerRow[]): number | null {
   let first: number | null = null;
   for (const earlier of rows) {
     if (earlier === row || earlier.at >= row.at) continue;
@@ -39,6 +48,17 @@ function waitStart(row: LedgerRow, item: AttentionItem | undefined, rows: Ledger
     if (first == null || earlier.at < first) first = earlier.at;
   }
   return first;
+}
+
+/** When the cleared item's wait began, by what it was: a question from
+ *  its `asked_ms` (else the run's first ledger row); a failed run from
+ *  its `ended_ms` (else the run's latest failure row, never an earlier
+ *  round of the same run); a stale run or the supervisor from the strike
+ *  row. */
+function waitStart(row: LedgerRow, kind: Kind, item: AttentionItem | undefined, rows: LedgerRow[]): number | null {
+  if (kind === "blocked") return num(item?.asked_ms) ?? firstRow(row, rows);
+  if (kind === "failed") return num(item?.ended_ms) ?? lastFailure(row, rows);
+  return lastFailure(row, rows);
 }
 
 /** What an intervention cleared: the item seen for its run, else what the
@@ -57,9 +77,11 @@ function kindOf(row: LedgerRow, item: AttentionItem | undefined, rows: LedgerRow
   return "blocked";
 }
 
-/** The fold's rows: every `intervention` in the ledger at or after
+/** One daemon's fold rows: every `intervention` in its ledger at or after
  *  `midnight`, newest first, each paired with the attention item it
- *  cleared (matched on run, else ticket) for its `waited_ms`. */
+ *  cleared (matched on run, else ticket) for its `waited_ms`. Rows and
+ *  history must come from the same daemon: run ids are per store, so run
+ *  #N on two daemons is two runs. */
 export function resolvedSince(rows: LedgerRow[], history: AttentionItem[], midnight: number): ResolvedRow[] {
   return rows
     .filter((row) => row.kind === "intervention" && row.at >= midnight)
@@ -68,9 +90,10 @@ export function resolvedSince(rows: LedgerRow[], history: AttentionItem[], midni
       const item =
         history.find((candidate) => row.run != null && num(candidate.run) === row.run) ??
         history.find((candidate) => row.ticket != null && candidate.ticket === row.ticket);
-      const start = waitStart(row, item, rows);
+      const kind = kindOf(row, item, rows);
+      const start = waitStart(row, kind, item, rows);
       return {
-        kind: kindOf(row, item, rows),
+        kind,
         ticket: row.ticket,
         run: row.run,
         text: row.text,

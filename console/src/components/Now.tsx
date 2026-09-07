@@ -49,8 +49,16 @@ export function Now({
   for (const host of shown) for (const item of hostItems(host, now)) history.current.set(itemKey(item), item);
   const ledgers = useLedger(shown, now, polls, deps);
   const served = shown.filter((host) => ledgers[host.address] && !ledgers[host.address]!.absent);
-  const ledgerRows = served.flatMap((host) => ledgers[host.address]!.rows);
-  const resolved = resolvedSince(ledgerRows, [...history.current.values()], localMidnight(now));
+  // Pair each daemon's ledger with that daemon's items before combining:
+  // run #N on two daemons is two runs, so a cross-daemon pairing would
+  // borrow another store's question time.
+  const seen = [...history.current.values()];
+  const midnight = localMidnight(now);
+  const resolved = served
+    .flatMap((host) =>
+      resolvedSince(ledgers[host.address]!.rows, seen.filter((item) => item.daemon === host.address), midnight),
+    )
+    .sort((a, b) => b.at - a.at);
   return (
     <>
       <NeedsYou hosts={shown} project={project} now={now} ledgers={ledgers} />

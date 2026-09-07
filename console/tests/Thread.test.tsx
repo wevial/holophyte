@@ -5,7 +5,7 @@ import { NeedsYou } from "../src/components/NeedsYou";
 import { Now } from "../src/components/Now";
 import { ANSWER_PLACEHOLDER } from "../src/components/QuestionThread";
 import type { Ledgers } from "../src/hooks/useLedger";
-import { localMidnight, type LedgerRow } from "../src/lib/ledger";
+import { EVIDENCE_MS, localMidnight, type LedgerRow } from "../src/lib/ledger";
 import type { Fetch } from "../src/lib/poll";
 import type { Attention, AttentionItem, Status } from "../src/lib/types";
 import { fixture, hostOf, settle } from "./harness";
@@ -16,6 +16,8 @@ const NOW = allKinds.status.now;
 const MIDNIGHT = localMidnight(NOW);
 const min = (n: number) => n * 60_000;
 const ASKED = NOW - min(30);
+/** Where the console's ledger window starts with no question older than it. */
+const WINDOW = MIDNIGHT - EVIDENCE_MS;
 
 afterEach(cleanup);
 
@@ -71,7 +73,8 @@ test("activating a question row opens its thread oldest-first with the disabled 
   expect(within(first).getByText("thread ▾")).toBeTruthy();
 });
 
-/** A daemon serving `/status`, `/attention` and a `/ledger` window. */
+/** A daemon serving `/status`, `/attention` and a `/ledger` window: like
+ *  the daemon, it answers only the entries at or after `since`. */
 function ledgerFetch(attention: Attention, entries: LedgerRow[] | 404, asked: string[] = []): Fetch {
   return async (url) => {
     asked.push(url);
@@ -79,7 +82,8 @@ function ledgerFetch(attention: Attention, entries: LedgerRow[] | 404, asked: st
     if (url.endsWith("/attention")) return Response.json(attention);
     if (url.includes("/ledger?")) {
       if (entries === 404) return new Response("not found", { status: 404 });
-      return Response.json({ entries, since: 0, limit: 1000 });
+      const since = Number(new URL(url).searchParams.get("since"));
+      return Response.json({ entries: entries.filter((row) => row.at >= since), since, limit: 1000 });
     }
     return new Response("not found", { status: 404 });
   };
@@ -93,7 +97,7 @@ const RESOLVED: LedgerRow[] = [
   { at: MIDNIGHT + min(60), run: 95, ticket: "KO-240", kind: "note", source: "loop", text: "Parked." },
 ];
 
-test("the resolved fold counts today's interventions, opens to their rows with waits, and asks /ledger from midnight or the oldest question", async () => {
+test("the resolved fold counts today's interventions, opens to their rows with waits, and asks /ledger from a day before midnight", async () => {
   const asked: string[] = [];
   // KO-229 failed 41 minutes before its requeue; the fixture's item carries that `ended_ms`.
   const failedAt = MIDNIGHT + min(100);
@@ -103,7 +107,7 @@ test("the resolved fold counts today's interventions, opens to their rows with w
   };
   render(<Now hosts={[hostOf(allKinds.status, attention, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(attention, RESOLVED, asked) }} />);
   await act(settle);
-  expect(asked.filter((url) => url.includes("/ledger?"))).toEqual([`${BASE}/ledger?since=${MIDNIGHT}&limit=1000`]);
+  expect(asked.filter((url) => url.includes("/ledger?"))).toEqual([`${BASE}/ledger?since=${WINDOW}&limit=1000`]);
   const fold = screen.getByRole("region", { name: "Resolved today" });
   const strip = within(fold).getByRole("button", { expanded: false });
   expect(strip.textContent).toContain("Resolved today · 3");
@@ -123,9 +127,9 @@ test("the resolved fold counts today's interventions, opens to their rows with w
   expect(fold.querySelectorAll("[data-resolved-row] [data-kind]").length).toBe(3);
 });
 
-test("with nothing resolved today the strip says 0 and opens to say so; a question asked yesterday widens the window", async () => {
+test("with nothing resolved today the strip says 0 and opens to say so; a question older than the window widens it", async () => {
   const asked: string[] = [];
-  const yesterday = MIDNIGHT - min(90);
+  const yesterday = WINDOW - min(90);
   const attention: Attention = {
     level: "attention",
     now: NOW,
@@ -139,6 +143,61 @@ test("with nothing resolved today the strip says 0 and opens to say so; a questi
   expect(strip.textContent).toBe("▸Resolved today · 0");
   fireEvent.click(strip);
   expect(within(fold).getByText("Nothing resolved yet today")).toBeTruthy();
+});
+
+test("a question parked last night and answered before the console loaded still shows its wait", async () => {
+  // Parked at 23:30, answered at 00:10, console loaded later: only the ledger holds the wait's start.
+  const overnight: LedgerRow[] = [
+    { at: MIDNIGHT + min(10), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: go" },
+    { at: MIDNIGHT - min(30), run: 95, ticket: "KO-240", kind: "note", source: "loop", text: "Parked." },
+  ];
+  const quiet: Attention = { level: "none", now: NOW, items: [] };
+  render(<Now hosts={[hostOf(allKinds.status, quiet, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(quiet, overnight) }} />);
+  await act(settle);
+  const fold = screen.getByRole("region", { name: "Resolved today" });
+  const strip = within(fold).getByRole("button");
+  expect(strip.textContent).toContain("Resolved today · 1");
+  expect(strip.textContent).toContain("median wait 40m · longest 40m");
+  fireEvent.click(strip);
+  expect(within(fold).getByText("waited 40m")).toBeTruthy();
+});
+
+test("two daemons sharing a run id pair each resolution with their own question", async () => {
+  // Both daemons parked run 95; A asked 55 minutes before its answer, B 15 minutes before its own.
+  const other = "http://reader:7710";
+  const asks = (askedAt: number, ticket: string): Attention => ({
+    level: "attention",
+    now: NOW,
+    items: [{ kind: "blocked", level: "attention", ticket, run: 95, question: "Which?", asked_ms: askedAt }],
+  });
+  const a = asks(MIDNIGHT + min(5), "KO-240");
+  const b = asks(MIDNIGHT + min(45), "KO-300");
+  const ledgerA: LedgerRow[] = [
+    { at: MIDNIGHT + min(60), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: a" },
+  ];
+  const ledgerB: LedgerRow[] = [
+    { at: MIDNIGHT + min(60), run: 95, ticket: "KO-300", kind: "intervention", source: "operator", text: "human resume: b" },
+  ];
+  const fetchA = ledgerFetch(a, ledgerA);
+  const fetchB = ledgerFetch(b, ledgerB);
+  const fetch: Fetch = (url, init) => (url.startsWith(other) ? fetchB(url, init) : fetchA(url, init));
+  render(
+    <Now hosts={[hostOf(allKinds.status, a, BASE), hostOf(allKinds.status, b, other)]} project="all" now={NOW} deps={{ fetch }} />,
+  );
+  await act(settle);
+  const fold = screen.getByRole("region", { name: "Resolved today" });
+  const strip = within(fold).getByRole("button");
+  expect(strip.textContent).toContain("Resolved today · 2");
+  expect(strip.textContent).toContain("median wait 35m · longest 55m");
+  fireEvent.click(strip);
+  const waits = Array.from(fold.querySelectorAll("[data-resolved-row]")).map((row) => [
+    within(row as HTMLElement).getByText(/KO-/).textContent,
+    within(row as HTMLElement).getByText(/waited/).textContent,
+  ]);
+  expect(waits).toEqual([
+    ["KO-240", "waited 55m"],
+    ["KO-300", "waited 15m"],
+  ]);
 });
 
 test("a daemon without /ledger shows no thread hint and no fold, and the band renders as before", async () => {
