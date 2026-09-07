@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[345 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T00:15:22Z — KO-280
-MERGED to main as 43a475b (branch task/ko-280-get-board-answers-the-open-ti deleted).
-actual: 11.6 min · estimate: 25 min · rounds: 1
-
-## 2026-09-07T00:23:43Z — KO-278
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-07T00:25:01Z — KO-278
-MERGED to main as 47e8a09 (branch task/ko-278-get-ledger-since-ms-answers-t deleted).
-actual: 9.6 min · estimate: 25 min · rounds: 1
+[348 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T00:31:33Z — KO-281
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -763,3 +752,15 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T21:45:01Z — KO-308
 MERGED to main as de14ec1 (branch task/ko-308-a-ledger-intervention-entry-sa deleted).
 actual: 13.4 min · estimate: 20 min · rounds: 2
+
+## 2026-09-07T21:50:35Z — KO-309
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/board.py:649 [p2] [holophyte/board.py:649](/home/reviewer/candidate/holophyte/board.py:649): `blockers_of()` runs before `update_issue()`, contrary to the contract’s required p…
+
+## 2026-09-07T21:51:53Z — KO-309
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T21:51:54Z — KO-309
+MERGED to main as bacbbde (branch task/ko-309-file-ticket-update-records-th deleted).
+actual: 6.8 min · estimate: 20 min · rounds: 2
