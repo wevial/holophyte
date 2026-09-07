@@ -77,19 +77,36 @@ function kindOf(row: LedgerRow, item: AttentionItem | undefined, rows: LedgerRow
   return "blocked";
 }
 
+/** When an attention item began waiting, as the item says it: a
+ *  question's `asked_ms`, a failed run's `ended_ms`; null otherwise. */
+const itemStart = (item: AttentionItem): number | null => num(item.asked_ms) ?? num(item.ended_ms);
+
+/** The attention item an intervention cleared. A row that names its run
+ *  pairs only with that run's item: the ticket may have a newer run on
+ *  the band, and its question is not what this row answered. A row with
+ *  no run falls back to the ticket, and then only to an item that was
+ *  already waiting when the row was written. */
+function clearedItem(row: LedgerRow, history: AttentionItem[]): AttentionItem | undefined {
+  if (row.run != null) return history.find((candidate) => num(candidate.run) === row.run);
+  if (row.ticket == null) return undefined;
+  return history.find((candidate) => {
+    if (candidate.ticket !== row.ticket) return false;
+    const start = itemStart(candidate);
+    return start == null || start <= row.at;
+  });
+}
+
 /** One daemon's fold rows: every `intervention` in its ledger at or after
  *  `midnight`, newest first, each paired with the attention item it
- *  cleared (matched on run, else ticket) for its `waited_ms`. Rows and
- *  history must come from the same daemon: run ids are per store, so run
- *  #N on two daemons is two runs. */
+ *  cleared (see `clearedItem`) for its `waited_ms`. Rows and history must
+ *  come from the same daemon: run ids are per store, so run #N on two
+ *  daemons is two runs. */
 export function resolvedSince(rows: LedgerRow[], history: AttentionItem[], midnight: number): ResolvedRow[] {
   return rows
     .filter((row) => row.kind === "intervention" && row.at >= midnight)
     .sort((a, b) => b.at - a.at)
     .map((row) => {
-      const item =
-        history.find((candidate) => row.run != null && num(candidate.run) === row.run) ??
-        history.find((candidate) => row.ticket != null && candidate.ticket === row.ticket);
+      const item = clearedItem(row, history);
       const kind = kindOf(row, item, rows);
       const start = waitStart(row, kind, item, rows);
       return {

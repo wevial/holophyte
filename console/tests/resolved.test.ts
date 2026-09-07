@@ -57,3 +57,21 @@ test("a failure cleared before the console loaded waits from its failure row, no
   expect(median(rows)).toBe(min(15));
   expect(longest(rows)).toBe(min(15));
 });
+
+test("a run's resolution pairs with that run's item, never with the ticket's newer question", () => {
+  // Run 88 failed at minute 10 and was requeued at 60 while run 95, the ticket's retry, sits blocked
+  // on the band: the fold owes the requeue "failed · waited 50m", not the open question's zero.
+  const ledger: LedgerRow[] = [
+    { at: MIDNIGHT + min(60), run: 88, ticket: "KO-229", kind: "intervention", source: "operator", text: "human requeue: fixed" },
+    { at: MIDNIGHT + min(10), run: 88, ticket: "KO-229", kind: "failure", source: "loop", text: "verify failed" },
+  ];
+  const history: AttentionItem[] = [
+    { kind: "blocked", level: "attention", ticket: "KO-229", run: 95, question: "Retry how?", asked_ms: MIDNIGHT + min(70) },
+  ];
+  const rows = resolvedSince(ledger, history, MIDNIGHT);
+  expect(rows.map((row) => [row.kind, row.run, row.waited_ms])).toEqual([["failed", 88, min(50)]]);
+  // A row with no run may fall back to the ticket, but only to an item already waiting when it was written.
+  const unrun: LedgerRow[] = [{ ...ledger[0]!, run: null, text: "human resume: answered" }];
+  expect(resolvedSince(unrun, history, MIDNIGHT)[0]!.kind).toBe("blocked");
+  expect(resolvedSince(unrun, history, MIDNIGHT)[0]!.waited_ms).toBeNull();
+});
