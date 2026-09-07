@@ -1,6 +1,6 @@
 """`--serve PORT|HOST:PORT`: a read-only HTTP daemon answering `/status`,
-`/runs`, `/runs/N`, `/runs/N/files` and `/attention` as JSON and serving the
-console at `/`.
+`/runs`, `/runs/N`, `/runs/N/files`, `/attention` and `/board` as JSON and
+serving the console at `/`.
 
 One `ThreadingHTTPServer` per target, bound to the one address the command
 line names -- loopback when it names only a port -- so a drawer on this
@@ -275,6 +275,46 @@ def attention(target, now=None):
         level = "working" if runs else "none"
     return 200, {"level": level, "items": items, "now": now,
                  "target": str(target.path), "project": str(target.path)}
+
+
+# The path to merge, left to right: the columns `/board` answers, in order,
+# every one present even when empty. The two terminal statuses are absent.
+BOARD_STATES = ("needs_spec", "blocked_on_deps", "ready",
+                "blocked_on_operator", "in_flight")
+
+
+def board(target, now=None):
+    """The `/board` answer: `(http status, JSON-able body)`.
+
+    `columns` is one entry per open state in `BOARD_STATES` order, each
+    carrying the tickets the store mirrors in that state, ordered by
+    identifier: the ticket's `title`, `time_box_ms`, `run` (the active
+    run's id, null when none), `question` (the blocked question, null when
+    none), `waits_on` (the identifiers of the open tickets its `dependsOn`
+    names, empty when none) and `mirrored_ms`. `merged` and `abandoned`
+    tickets are absent. The store's mirror is the whole answer: a ticket
+    the loop never claimed is not on this board, and nothing here calls
+    the provider.
+    """
+    now = int(time() * 1000) if now is None else now
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        tickets = store.read.open_tickets(conn)
+    finally:
+        conn.close()
+    columns = {state: [] for state in BOARD_STATES}
+    for ticket in tickets:
+        columns[ticket.status].append({
+            "ticket": ticket.linearIdentifier, "title": ticket.title,
+            "time_box_ms": ticket.timeBoxMs, "run": ticket.activeRunId,
+            "question": ticket.blockedQuestion,
+            "waits_on": list(ticket.waitsOn),
+            "mirrored_ms": ticket.mirroredAt})
+    return 200, {"columns": [{"state": state, "tickets": columns[state]}
+                             for state in BOARD_STATES],
+                 "now": now}
 
 
 def no_store(target):
@@ -629,8 +669,9 @@ def static_file(console_dir, path):
 
 class StatusHandler(BaseHTTPRequestHandler):
     """`GET /status`, `GET /runs`, `GET /runs/N`, `GET /runs/N/files`,
-    `GET /attention` and `GET /peers` as JSON; any other GET is a console
-    file under the server's `console_dir` or 404 JSON; 405 otherwise.
+    `GET /attention`, `GET /board` and `GET /peers` as JSON; any other GET
+    is a console file under the server's `console_dir` or 404 JSON; 405
+    otherwise.
 
     "Otherwise" is every other method, HEAD and OPTIONS included: a client
     that speaks anything but GET gets a JSON refusal it can parse, never
@@ -659,6 +700,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             code, body = shipped(self.server.target, parts.query)
         elif path == "/attention":
             code, body = attention(self.server.target)
+        elif path == "/board":
+            code, body = board(self.server.target)
         elif path == "/peers":
             code, body = 200, {"self": self.server.self_address,
                                "peers": list(self.server.peers)}

@@ -650,6 +650,104 @@ class AttentionTests(ServeTestCase):
         self.assertFalse(self.db.exists())
 
 
+class BoardTests(ServeTestCase):
+    """`/board`: the five columns in path order, what each ticket waits on."""
+
+    def seed_board(self):
+        """One ticket per open state plus a merged one: KO-1 needs a spec,
+        KO-2 is ready, KO-3 is blocked on KO-2 and on an issue the store
+        never mirrored, KO-4 is parked with a question, KO-5 is in flight
+        under a live run, KO-6 merged (KO-3 also names it, so a dependency
+        on a merged ticket is no wait)."""
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+
+            def ticket(n, specced=True, depends_on=None):
+                return store.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{n}",
+                    linear_identifier=f"KO-{n}", title=f"ticket {n}",
+                    acceptance_criteria=[f"Given KO-{n}, then it is worked"]
+                    if specced else [],
+                    verification_commands=["echo ok"] if specced else [],
+                    time_box_ms=25 * MIN, depends_on=depends_on,
+                    now=self.now - 5 * MIN)
+
+            ticket(1, specced=False)
+            ticket(2)
+            blocked_on_deps = ticket(
+                3, depends_on=["issue-2", "issue-6", "issue-never-seen"])
+            store.transition(conn, blocked_on_deps, "blocked_on_deps")
+            parked = ticket(4)
+            store.transition(conn, parked, "in_flight")
+            store.transition(conn, parked, "blocked_on_operator")
+            conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                         ("Which branch is canonical?", parked))
+            conn.commit()
+            merged = ticket(6)
+            store.transition(conn, merged, "in_flight")
+            run = store.claim(conn, project, merged, now=self.now - 20 * MIN)
+            store.release(conn, run, "merged", now=self.now - 10 * MIN,
+                          merge_sha=MERGE_SHA)
+            store.transition(conn, merged, "merged")
+            live = ticket(5)
+            store.transition(conn, live, "in_flight")
+            self.run = store.claim(conn, project, live, now=self.now - 2 * MIN)
+            store.set_phase(conn, self.run, "working", now=self.now - 2 * MIN)
+        finally:
+            conn.close()
+
+    def test_five_columns_in_path_order_and_the_merged_ticket_absent(self):
+        self.seed_board()
+        self.start()
+
+        code, headers, body = self.request("GET", "/board")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual([column["state"] for column in body["columns"]],
+                         ["needs_spec", "blocked_on_deps", "ready",
+                          "blocked_on_operator", "in_flight"])
+        self.assertEqual(
+            [[ticket["ticket"] for ticket in column["tickets"]]
+             for column in body["columns"]],
+            [["KO-1"], ["KO-3"], ["KO-2"], ["KO-4"], ["KO-5"]])
+        self.assertNotIn("KO-6", self.raw_body)
+        self.assertAlmostEqual(body["now"], self.now, delta=SLACK)
+
+    def test_a_ticket_carries_its_run_question_and_what_it_waits_on(self):
+        self.seed_board()
+        self.start()
+
+        _, _, body = self.request("GET", "/board")
+
+        by_state = {column["state"]: column["tickets"]
+                    for column in body["columns"]}
+        self.assertEqual(by_state["blocked_on_deps"], [
+            {"ticket": "KO-3", "title": "ticket 3", "time_box_ms": 25 * MIN,
+             "run": None, "question": None,
+             "waits_on": ["KO-2", "issue-never-seen"],
+             "mirrored_ms": self.now - 5 * MIN}])
+        self.assertEqual(by_state["in_flight"], [
+            {"ticket": "KO-5", "title": "ticket 5", "time_box_ms": 25 * MIN,
+             "run": self.run, "question": None, "waits_on": [],
+             "mirrored_ms": self.now - 5 * MIN}])
+        self.assertEqual(by_state["blocked_on_operator"][0]["question"],
+                         "Which branch is canonical?")
+        self.assertIsNone(by_state["needs_spec"][0]["run"])
+
+    def test_a_target_with_no_store_answers_503(self):
+        self.start()
+
+        code, _, body = self.request("GET", "/board")
+
+        self.assertEqual(code, 503)
+        self.assertEqual(body["error"], "no store")
+        self.assertFalse(self.db.exists())
+
+
 class RunsTests(ServeTestCase):
 
     def expected_rows(self):

@@ -243,6 +243,39 @@ when not live. A daemon older than this endpoint answers 404, and the
 drawer then computes the stale-run and supervisor rows itself from
 `/status`; any other failure of `/attention` is shown, never hidden.
 
+## `GET /board`
+
+The open tickets by state, as the store mirrors them: the console's Board
+view, Linear's columns without a call to Linear.
+
+```json
+{"now": 1788450534491, "columns": [
+  {"state": "needs_spec", "tickets": []},
+  {"state": "blocked_on_deps", "tickets": [
+    {"ticket": "KO-n", "title": "…", "time_box_ms": 1500000, "run": null,
+     "question": null, "waits_on": ["KO-m"], "mirrored_ms": 1788449000000}]},
+  {"state": "ready", "tickets": []},
+  {"state": "blocked_on_operator", "tickets": []},
+  {"state": "in_flight", "tickets": [
+    {"ticket": "KO-m", "title": "…", "time_box_ms": 1500000, "run": 52,
+     "question": null, "waits_on": [], "mirrored_ms": 1788449000000}]}
+]}
+```
+
+`columns` is one entry per open state in the path-to-merge order
+`needs_spec`, `blocked_on_deps`, `ready`, `blocked_on_operator`,
+`in_flight`, every column present even when empty; `merged` and
+`abandoned` tickets are absent. Tickets within a column are ordered by
+identifier. `run` is the ticket's active run, null when none is working
+it; `question` is what a `blocked_on_operator` ticket asks, null
+otherwise; `waits_on` is the identifiers of the open tickets its Linear
+dependencies name, empty when none (a dependency the store has never
+mirrored is shown by its Linear issue id, since the store cannot name
+what it has not seen); `mirrored_ms` is when the store last mirrored the
+ticket. The board is the store's mirror and nothing more: a ticket the
+loop has never claimed is not on it, and the endpoint never calls the
+provider.
+
 ## `GET /peers`
 
 Where the other daemons are, so the page can fan out from whichever
