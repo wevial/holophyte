@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[342 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T16:45:23Z — KO-305
-Round 3: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T16:45:24Z — KO-305
-MERGED to main as 2a3fc80 (branch task/ko-305-the-expanded-run-reads-like-th deleted).
-actual: 10.0 min · estimate: 25 min · rounds: 3
-
-## 2026-09-07T00:14:06Z — KO-280
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[345 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T00:15:22Z — KO-280
 MERGED to main as 43a475b (branch task/ko-280-get-board-answers-the-open-ti deleted).
@@ -760,3 +750,16 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T21:31:35Z — KO-279
 MERGED to main as fee9f28 (branch task/ko-279-a-blocked-row-opens-its-questi deleted).
 actual: 7.2 min · estimate: 30 min · rounds: 2
+
+## 2026-09-07T21:41:02Z — KO-308
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/store/read.py:674 [p2] [store/read.py:674](/home/reviewer/candidate/store/read.py:674): `max(marks)` breaks timestamp ties lexicographically, choosing `"question"` over `"failed"`.…
+- criteria:3 [p2] CRITERION 3: not met — Equal timestamps incorrectly select question; the existing newer-mark test omits this boundary. Given a run with a redirect at T1, a fail…
+
+## 2026-09-07T21:44:20Z — KO-308
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T21:45:01Z — KO-308
+MERGED to main as de14ec1 (branch task/ko-308-a-ledger-intervention-entry-sa deleted).
+actual: 13.4 min · estimate: 20 min · rounds: 2
