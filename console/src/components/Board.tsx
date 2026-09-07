@@ -3,7 +3,7 @@ import type { HostRecord } from "../lib/hosts";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { groupByDay, medianRounds, withinDays } from "../lib/shipped";
 import { useBoard } from "../hooks/useBoard";
-import { SHIPPED_PAGE, useShipped } from "../hooks/useShipped";
+import type { ShippedState } from "../hooks/useShipped";
 import { BoardColumn } from "./BoardColumn";
 import { ShippedTable } from "./ShippedTable";
 
@@ -12,27 +12,26 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 /**
  * The Board view: every host's `/board` as five columns, left to right
  * the path to merge, each card joined with the host's live run or open
- * question; beneath them today's merges from the same `/shipped` ledger
- * the Shipped view holds. `now` is the clock naming today; `tz` pins the
- * zone for tests.
+ * question; beneath them today's merges from `shipped`, the `/shipped`
+ * ledger the shell holds for the Shipped view and this table alike. `now`
+ * is the clock naming today; `tz` pins the zone for tests.
  */
 export function Board({
   hosts,
+  shipped,
   now,
   polls = 0,
   deps = defaultPollDeps,
   tz,
-  limit = SHIPPED_PAGE,
 }: {
   hosts: HostRecord[];
+  shipped: ShippedState;
   now: number;
   polls?: number;
   deps?: { fetch: Fetch };
   tz?: string;
-  limit?: number;
 }) {
   const board = useBoard(hosts, polls, deps);
-  const shipped = useShipped(hosts, polls, deps, limit);
   const grouped = columns(board.cards);
   const today = withinDays(groupByDay(shipped.rows, now, tz), 1);
   const todayRows = today.flatMap((group) => group.rows);

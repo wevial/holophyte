@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { Shipped } from "../src/components/Shipped";
+import { ShippedWithLedger as Shipped } from "./ledger";
 import { ShippedTable } from "../src/components/ShippedTable";
 import { formatClock } from "../src/lib/format";
 import type { Fetch } from "../src/lib/poll";

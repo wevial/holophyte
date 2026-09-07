@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { App } from "../src/App";
-import { Board } from "../src/components/Board";
+import { BoardWithLedger as Board } from "./ledger";
 import { cardLine, cardsOf, columns } from "../src/lib/board";
 import type { Fetch } from "../src/lib/poll";
 import type { Attention, BoardBody, ShippedBody, Status } from "../src/lib/types";
@@ -192,4 +192,24 @@ test("clicking Board in the rail opens the view, polling /board from the daemon"
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Board");
   expect(asked).toContain(`${BASE}/board`);
   expect(document.querySelectorAll("[data-column]").length).toBe(5);
+});
+
+test("the ledger lives above the view switch: today's rows loaded on Shipped stay under the Board when /shipped later fails", async () => {
+  let shippedDown = false;
+  const { deps } = fakeDeps(async (url, init) => {
+    if (shippedDown && url.includes("/shipped")) return new Response("gone", { status: 503 });
+    return daemonFetch(url, init);
+  });
+  render(<App base={BASE} pollDeps={deps} />);
+  await act(settle);
+  fireEvent.click(screen.getByRole("button", { name: "Shipped" }));
+  await act(settle);
+  expect(document.querySelectorAll("[data-row]").length).toBe(threeDays.shipped.rows.length);
+
+  shippedDown = true;
+  fireEvent.click(screen.getByRole("button", { name: "Board" }));
+  await act(settle);
+  const shipped = screen.getByRole("region", { name: "Shipped today" });
+  expect(shipped.querySelectorAll("[data-row]").length).toBe(3);
+  expect(screen.queryByText("Nothing merged today")).toBeNull();
 });

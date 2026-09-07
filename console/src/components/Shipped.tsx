@@ -1,7 +1,5 @@
-import { defaultPollDeps, type Fetch } from "../lib/poll";
-import type { HostRecord } from "../lib/hosts";
 import { groupByDay, medianRounds } from "../lib/shipped";
-import { SHIPPED_PAGE, useShipped } from "../hooks/useShipped";
+import type { ShippedState } from "../hooks/useShipped";
 import { ShippedTable } from "./ShippedTable";
 
 export { SHIPPED_PAGE, concatLedgers, shippedUrl } from "../hooks/useShipped";
@@ -9,28 +7,14 @@ export { SHIPPED_PAGE, concatLedgers, shippedUrl } from "../hooks/useShipped";
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /**
- * The Shipped view: the merge ledger from each daemon's `/shipped`
- * (`useShipped`), concatenated and re-sorted newest first under a
- * sub-header per day; "Load older" fetches, for every daemon with more,
- * the page before the oldest id it has shown. `now` is the clock naming
- * "Today"; `tz` pins the zone for tests.
+ * The Shipped view: the merge ledger the shell holds (`useShipped`, one
+ * ledger shared with the Board's Shipped-today table), every daemon's
+ * rows newest first under a sub-header per day; "Load older" fetches, for
+ * every daemon with more, the page before the oldest id it has shown.
+ * `now` is the clock naming "Today"; `tz` pins the zone for tests.
  */
-export function Shipped({
-  hosts,
-  now,
-  polls = 0,
-  deps = defaultPollDeps,
-  tz,
-  limit = SHIPPED_PAGE,
-}: {
-  hosts: Pick<HostRecord, "base" | "project">[];
-  now: number;
-  polls?: number;
-  deps?: { fetch: Fetch };
-  tz?: string;
-  limit?: number;
-}) {
-  const { rows, more, errors, loading, paging, loadOlder } = useShipped(hosts, polls, deps, limit);
+export function Shipped({ shipped, now, tz }: { shipped: ShippedState; now: number; tz?: string }) {
+  const { rows, more, errors, loading, paging, loadOlder } = shipped;
   const days = groupByDay(rows, now, tz).length;
   const median = medianRounds(rows);
   const subtitle =
