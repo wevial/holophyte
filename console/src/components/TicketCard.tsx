@@ -1,4 +1,5 @@
 import { cardLine, type BoardCard } from "../lib/board";
+import { ActionButton } from "./ActionButton";
 import { KindPill } from "./KindPill";
 import { PhasePill } from "./PhasePill";
 import { StrikePill } from "./StrikePill";
@@ -7,7 +8,8 @@ import { BoxBar } from "./TimeBoxBar";
 /** One open ticket on the Board: ticket, its pills, the project at the
  *  right; the title; for an in-progress card the 5px time-box bar; then
  *  the state's sub-line (`cardLine`). The phase pill, strike pill and
- *  bar are the Floor's. */
+ *  bar are the Floor's. The two actions render disabled, tooltip
+ *  `WRITES_LATER`, until the write ticket lands. */
 export function TicketCard({ card }: { card: BoardCard }) {
   const line = cardLine(card);
   const { run } = card;
@@ -31,6 +33,10 @@ export function TicketCard({ card }: { card: BoardCard }) {
           {line}
         </p>
       )}
+      <div data-actions className="flex gap-2">
+        <ActionButton>Edit ticket</ActionButton>
+        <ActionButton>Mark needs_spec</ActionButton>
+      </div>
     </article>
   );
 }

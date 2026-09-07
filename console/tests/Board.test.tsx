@@ -167,6 +167,21 @@ test("a blocked_on_deps card says what it waits on; a blocked card wears the que
   expect(card("KO-242").querySelector("[role='progressbar']")).toBeNull();
 });
 
+test("every card carries Edit ticket and Mark needs_spec, disabled, with the writes-later tooltip", async () => {
+  render(<Board hosts={[host]} now={now} deps={{ fetch: daemonFetch }} tz="UTC" />);
+  await act(settle);
+  const cards = Array.from(document.querySelectorAll("[data-ticket]"));
+  expect(cards.length).toBe(8);
+  for (const card of cards) {
+    const buttons = Array.from(card.querySelectorAll("button"));
+    expect(buttons.map((b) => b.textContent)).toEqual(["Edit ticket", "Mark needs_spec"]);
+    for (const button of buttons) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(button.getAttribute("title")).toBe("Writes arrive later behind a token");
+    }
+  }
+});
+
 test("Shipped today shows only today's rows of a three-day ledger, under its count and median", async () => {
   render(<Board hosts={[host]} now={now} deps={{ fetch: daemonFetch }} tz="UTC" />);
   await act(settle);
