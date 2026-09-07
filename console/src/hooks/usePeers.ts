@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { mergeHosts, oldestPoll, peerAddresses, type HostRecord, type PeersBody, type PollResult } from "../lib/hosts";
+import { addressOf, mergeHosts, oldestPoll, peerAddresses, type HostRecord, type PeersBody, type PollResult } from "../lib/hosts";
+import { forgetToken } from "../lib/token";
 import {
+  AnswerError,
   POLL_INTERVAL_MS,
   REQUEST_TIMEOUT_MS,
   TICK_MS,
@@ -49,7 +51,10 @@ export async function pollPeers(
     if (!pending) {
       pending = pollOnce(base, deps.fetch, signal).then(
         (answer) => ({ address, base, ok: true, ...answer }),
-        (failure: unknown) => ({ address, base, ok: false, error: message(failure) }),
+        (failure: unknown) =>
+          failure instanceof AnswerError
+            ? { address, base, ok: false, error: message(failure), status: failure.status }
+            : { address, base, ok: false, error: message(failure) },
       );
       inFlight.set(address, pending);
     }
@@ -86,6 +91,10 @@ export function usePeers(origin: string, deps: PollDeps = defaultPollDeps, timeo
       cancel = timer(run, POLL_INTERVAL_MS);
       const results = await pollPeers(origin, hostsRef.current, depsRef.current, timeoutMs);
       if (!alive) return;
+      // A 401 after a stored token means the token is wrong: forget it,
+      // once per tick, so the Hosts card asks again rather than the next
+      // tick retrying the same value.
+      for (const result of results) if (!result.ok && result.status === 401) forgetToken(addressOf(result.base));
       const at = now();
       hostsRef.current = mergeHosts(hostsRef.current, results, at);
       setState((previous) => ({ hosts: hostsRef.current, polls: previous.polls + 1, now: at }));

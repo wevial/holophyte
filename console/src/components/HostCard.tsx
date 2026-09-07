@@ -1,10 +1,15 @@
 import { age } from "../lib/format";
 import { hostName, hostTone, type HostRecord } from "../lib/hosts";
 
+/** The glyph the rail shows for a daemon waiting on its serve token. */
+export const KEY_GLYPH = "\u26bf";
+
 /** One daemon's card in the rail footer. A stale supervisor pulses the
  *  red dot; an unreachable daemon shows a static one and "unreachable"
- *  where the heartbeat was, with the last good answer's age beneath.
- *  `now` is the console's clock, for "last seen". */
+ *  where the heartbeat was, with the last good answer's age beneath; a
+ *  daemon that answered 401 shows the key glyph there instead, and its
+ *  Hosts card asks for the token. `now` is the console's clock, for
+ *  "last seen". */
 export function HostCard({ host, now }: { host: HostRecord; now: number }) {
   const { status } = host;
   const unreachable = host.error != null;
@@ -23,6 +28,7 @@ export function HostCard({ host, now }: { host: HostRecord; now: number }) {
       data-host={host.address}
       data-stale={stale || undefined}
       data-unreachable={unreachable || undefined}
+      data-needs-token={host.needs_token || undefined}
       className={`rounded-card bg-rail-card p-2.5 ${bad ? "border border-bad/50" : ""}`}
     >
       <div className="flex items-center gap-2">
@@ -34,7 +40,15 @@ export function HostCard({ host, now }: { host: HostRecord; now: number }) {
         />
         <span className="truncate text-[13px] font-semibold text-rail-text">{hostName(host)}</span>
         <span data-heartbeat className={`ml-auto font-mono text-[11px] ${bad ? "text-rail-bad-text" : "text-rail-sub"}`}>
-          {unreachable ? "unreachable" : `${port} · ${heartbeat}`}
+          {unreachable ? (
+            "unreachable"
+          ) : host.needs_token ? (
+            <span role="img" aria-label="needs token" title="needs token">
+              {KEY_GLYPH}
+            </span>
+          ) : (
+            `${port} · ${heartbeat}`
+          )}
         </span>
       </div>
       <div className="mt-1 font-mono text-[10px] text-rail-faint">

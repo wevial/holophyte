@@ -22,8 +22,12 @@ export interface HostRecord {
   polled_ms: number;
   /** Clock reading of the last good answer, null before the first. */
   seen_ms: number | null;
-  /** The last poll's failure or timeout, null after a good answer. */
+  /** The last poll's failure or timeout, null after a good answer or
+   *  when the daemon asked for a token instead. */
   error: string | null;
+  /** The last poll answered 401: the daemon is up but wants its serve
+   *  token, which the Hosts card asks for. Never set beside `error`. */
+  needs_token: boolean;
 }
 
 /** What `/peers` answers: the daemon's own address and the configured
@@ -67,7 +71,7 @@ export function baseOf(address: string): string {
 /** One poll's answer for one address. */
 export type PollResult =
   | { address: string; base: string; ok: true; status: Status; attention: Attention }
-  | { address: string; base: string; ok: false; error: string };
+  | { address: string; base: string; ok: false; error: string; status?: number };
 
 /** The project a host serves, from its last good `/status`. */
 export function hostProject(status: Status | null): string | null {
@@ -78,7 +82,8 @@ export function hostProject(status: Status | null): string | null {
  *  failed result keeps the previous record's last good `/status` and
  *  `/attention` beside the new error, so the rail can say "unreachable ·
  *  last seen 40s ago"; an address seen for the first time that fails is a
- *  record with no answer yet. */
+ *  record with no answer yet. A 401 is not a failure to reach the daemon:
+ *  the record is marked `needs_token` with no error. */
 export function mergeHosts(previous: HostRecord[], results: PollResult[], now: number): HostRecord[] {
   const byAddress = new Map(previous.map((host) => [host.address, host]));
   return results.map((result) => {
@@ -94,8 +99,10 @@ export function mergeHosts(previous: HostRecord[], results: PollResult[], now: n
         polled_ms: now,
         seen_ms: now,
         error: null,
+        needs_token: false,
       };
     }
+    const needsToken = result.status === 401;
     return {
       address: result.address,
       base: result.base,
@@ -105,7 +112,8 @@ export function mergeHosts(previous: HostRecord[], results: PollResult[], now: n
       attention: before?.attention ?? null,
       polled_ms: now,
       seen_ms: before?.seen_ms ?? null,
-      error: result.error,
+      error: needsToken ? null : result.error,
+      needs_token: needsToken,
     };
   });
 }
@@ -124,11 +132,13 @@ export function hostName(host: HostRecord): string {
 }
 
 /** A host's dot and border: bad when unreachable or its supervisor is
- *  stale, ok when the supervisor is live, faint otherwise. */
+ *  stale, ok when the supervisor is live, faint otherwise, including
+ *  while the daemon waits for its token. */
 export type HostTone = "ok" | "bad" | "faint";
 
 export function hostTone(host: HostRecord): HostTone {
   if (host.error != null) return "bad";
+  if (host.needs_token) return "faint";
   if (!host.status) return "faint";
   if (isSupervisorStale(host.status.supervisor, host.status.thresholds.heartbeat_stale_ms)) return "bad";
   return host.status.supervisor.state === "live" ? "ok" : "faint";
