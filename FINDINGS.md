@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[321 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T14:56:49Z — KO-262
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:1140 [p1] [P1] Preserve review rejection across shepherd re-entry — [holophyte/loop.py:1140](/home/reviewer/candidate/holophyte/loop.py:1140). `_resume_on_pr()` passes…
-
-## 2026-09-06T15:09:10Z — KO-262
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/loop.py:1463 [p1] **[P1] Restore pre-merge verification on PR re-entry** — [holophyte/loop.py:1463](/home/reviewer/candidate/holophyte/loop.py:1463). A resumed, approved PR rea…
-- /home/reviewer/candidate/holophyte/loop.py:1281 [p1] **[P1] Enforce acceptance criteria in fix reviews** — [holophyte/loop.py:1281](/home/reviewer/candidate/holophyte/loop.py:1281). `_review_fix()` omits the cri…
+[323 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T15:18:05Z — KO-262
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
@@ -758,3 +747,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T00:15:22Z — KO-280
 MERGED to main as 43a475b (branch task/ko-280-get-board-answers-the-open-ti deleted).
 actual: 11.6 min · estimate: 25 min · rounds: 1
+
+## 2026-09-07T00:23:43Z — KO-278
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T00:25:01Z — KO-278
+MERGED to main as 47e8a09 (branch task/ko-278-get-ledger-since-ms-answers-t deleted).
+actual: 9.6 min · estimate: 25 min · rounds: 1
