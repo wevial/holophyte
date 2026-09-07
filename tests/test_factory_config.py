@@ -278,6 +278,7 @@ class KnownKeyTests(ConfigTestCase):
                        '[loop]\nstop_on_failures = false\n',
                        '[report]\nhots_label = "x"\n',
                        '[console]\nother = 1\n',
+                       '[serve]\ntoken = "x"\n',
                        '[board]\nprojet_id = "x"\n'):
             with self.subTest(config=config):
                 self.locate(config)

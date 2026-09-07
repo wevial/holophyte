@@ -907,3 +907,47 @@ def console_config(target):
                 f"is listed twice")
         seen.add(entry)
     return ConsoleConfig(daemons=tuple(daemons))
+
+
+# The daemon's bearer token. `--serve`'s bind address is its only boundary,
+# and once the bind is anything but loopback that is not enough: `[serve]
+# token_file` names a file whose contents every JSON request must present
+# as `Authorization: Bearer ...`. A non-loopback bind without it is a
+# startup error; a loopback bind ignores it. The file, not the token, lives
+# in config, so the config can be committed to a host's notes and the
+# token cannot. `holophyte.serve` reads the file and holds it to a private
+# mode.
+SERVE_KEYS = {
+    "token_file": None,
+}
+KNOWN_KEYS["serve"] = frozenset(SERVE_KEYS)
+ServeConfig = collections.namedtuple("ServeConfig", ("token_file",))
+
+
+def serve_config(target):
+    """The target's `[serve]` knobs over the defaults.
+
+    An absent table (or key) is no token file; a present `token_file` must
+    be a non-empty string, the path as written -- `~` is expanded, a
+    relative path is taken against the config's directory, so the file
+    sits beside the config it is named in. Whether the daemon needs it at
+    all is `holophyte.serve`'s to decide from the bind address; this only
+    holds the value to its shape. Keys this version does not know are
+    refused by `check_config_keys()`.
+    """
+    table = target.config().get("serve", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [serve] must be a table, got "
+            f"{type(table).__name__}")
+    token_file = table.get("token_file", SERVE_KEYS["token_file"])
+    if token_file is None:
+        return ServeConfig(token_file=None)
+    if not isinstance(token_file, str) or not token_file.strip():
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [serve] token_file must be a "
+            f"non-empty path, got {token_file!r}")
+    path = Path(token_file).expanduser()
+    if not path.is_absolute():
+        path = Path(target.config_path).parent / path
+    return ServeConfig(token_file=path)

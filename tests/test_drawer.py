@@ -479,6 +479,37 @@ class LiveTests(unittest.TestCase):
         # The status block itself is unaffected: `/status` did answer.
         self.assertIn("sick · writer", out.getvalue())
 
+    def test_a_daemon_with_a_token_file_is_polled_with_the_bearer_header(self):
+        Handler.body = json.dumps(fixture("working")).encode()
+        seen = []
+        original = Handler.do_GET
+
+        def do_GET(handler):
+            seen.append((handler.path, handler.headers.get("Authorization")))
+            original(handler)
+
+        Handler.do_GET = do_GET
+        self.addCleanup(setattr, Handler, "do_GET", original)
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        with tempfile.TemporaryDirectory() as home:
+            (Path(home) / "writer.token").write_text("tok-en\n")
+            cfg = Path(home) / "drawer.toml"
+            cfg.write_text(
+                f'[[daemon]]\nname = "guarded"\nurl = "http://127.0.0.1:'
+                f'{server.server_port}"\ntoken_file = "writer.token"\n'
+                f'[[daemon]]\nname = "open"\nurl = "http://127.0.0.1:'
+                f'{server.server_port}"\n')
+            with redirect_stdout(io.StringIO()):
+                drawer.main(["--config", str(cfg)])
+        by_header = {}
+        for path, header in seen:
+            by_header.setdefault(header, []).append(path)
+        self.assertEqual(set(by_header), {"Bearer tok-en", None})
+        self.assertIn("/status", by_header["Bearer tok-en"])
+        self.assertIn("/attention", by_header["Bearer tok-en"])
+
     def test_fetch_marks_a_closed_port_unreachable(self):
         got = drawer.fetch(f"http://127.0.0.1:{closed_loopback_port()}")
         self.assertTrue(got["unreachable"])

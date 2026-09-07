@@ -41,16 +41,24 @@ flowchart LR
 
 | Surface | Bound to | Reachable by | Authentication |
 | --- | --- | --- | --- |
-| serve daemons | the host's private-network address, one port per target from 7710 | every member of that network | none; membership is the boundary |
+| serve daemons | the host's private-network address, one port per target from 7710 | every member of that network | a bearer token per target (`[serve] token_file`); `/`, its files and `/peers` open |
 | ssh | the host | the private network (and whatever else the host allows) | keys |
 | loop, supervisor, stores | local processes and files | the host only | filesystem |
 | Linear, Codex, origin | outbound only | n/a | API key, Codex login, deploy key |
 
-The daemon has no authentication on purpose. Bind it to the private
-network's address and never to the wildcard address (all interfaces);
-there is no flag that narrows an open bind back. On a personal network
-that is the whole access control, and it is documented so nobody adds a
-token in a hurry later.
+A daemon bound beyond loopback refuses to start without `[serve]
+token_file`, and once up answers 401 to every JSON request but `/peers`
+that does not carry the file's contents as `Authorization: Bearer`. Write
+one token per target on the writer host, owner-readable only:
+
+```sh
+umask 077 && head -c 32 /dev/urandom | base64 > ~/.holophyte/SLUG/serve.token
+```
+
+and name it in the target's config (`[serve] token_file = "PATH"`) before
+restarting the unit; a unit restarted without it fails to start by design.
+Still bind the private network's address rather than the wildcard: the
+token is the second boundary, not a reason to drop the first.
 
 ## Standing daemons
 
@@ -68,7 +76,10 @@ code. Details in [Serving standing](../operating.md#serving-standing).
 `contrib/swiftbar/holophyte.10s.py` runs under SwiftBar on the operator
 seat, a Mac. Its config, `~/.holophyte/drawer.toml`, names one daemon per
 target; `HOST` is the writer host's name or address on the private
-network:
+network, and `token_file` a copy of that target's token on this seat,
+read on each poll and sent as `Authorization: Bearer` (a relative path
+is taken against the config's directory; a daemon without one is polled
+bare, and answers 401 if it wanted one):
 
 ```toml
 linear = "https://linear.app/your-workspace/project/…"
@@ -76,10 +87,12 @@ linear = "https://linear.app/your-workspace/project/…"
 [[daemon]]
 name = "holophyte"
 url = "http://HOST:7710"
+token_file = "holophyte.token"
 
 [[daemon]]
 name = "lotuspod"
 url = "http://HOST:7711"
+token_file = "lotuspod.token"
 ```
 
 SwiftBar runs plugins with a bare `PATH`, so the plugin folder holds a
@@ -94,8 +107,8 @@ which.
 
 Federation is more nodes: install the factory on another machine of the
 private network, give each target there a `[board]` table and a serve unit
-on the next free port, and add a `[[daemon]]` block per target to the
-drawer's config. No hub, no relay, no shared store. Two hosts must never
+on the next free port with its own token file, and add a `[[daemon]]`
+block per target, token and all, to the drawer's config. No hub, no relay, no shared store. Two hosts must never
 write the same store; one target is served by exactly one host.
 
 ## Where a tailnet could carry more

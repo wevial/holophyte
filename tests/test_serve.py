@@ -113,34 +113,40 @@ class ServeTestCase(unittest.TestCase):
         finally:
             conn.close()
 
-    def start(self, config=None, console_dir=None):
-        """Bind the daemon for the target on a loopback ephemeral port,
-        serving `/` from `console_dir` -- an absent directory under the
-        test root by default, never the repository's own build."""
+    def start(self, config=None, console_dir=None, host="127.0.0.1"):
+        """Bind the daemon for the target on an ephemeral port at `host`,
+        loopback by default, serving `/` from `console_dir` -- an absent
+        directory under the test root by default, never the repository's
+        own build. The token is what `serve()` would resolve for the bind:
+        none on loopback, the configured file's contents otherwise."""
         if config is not None:
             (self.db.parent / "config.toml").write_text(config)
         self.tgt = holophyte.target.Target.locate(self.target)
         console_dir = console_dir or self.root / "console" / "dist"
-        server = holophyte.serve.make_server(self.tgt, "127.0.0.1", 0,
-                                             console_dir=console_dir)
+        token = holophyte.serve.resolve_token(self.tgt, host)
+        server = holophyte.serve.make_server(self.tgt, host, 0,
+                                             console_dir=console_dir,
+                                             token=token)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(thread.join)
         self.addCleanup(server.shutdown)
         self.host, self.port = server.server_address[:2]
+        if self.host == "0.0.0.0":
+            self.host = "127.0.0.1"
 
-    def request(self, method, path):
+    def request(self, method, path, headers=None):
         """`(status, headers, decoded JSON body)` for one request."""
-        status, headers, raw = self.fetch(method, path)
+        status, headers, raw = self.fetch(method, path, headers)
         self.raw_body = raw.decode()
         return status, headers, json.loads(raw)
 
-    def fetch(self, method, path):
+    def fetch(self, method, path, headers=None):
         """`(status, headers, raw bytes)` for one request."""
         conn = http.client.HTTPConnection(self.host, self.port, timeout=10)
         try:
-            conn.request(method, path)
+            conn.request(method, path, headers=headers or {})
             response = conn.getresponse()
             raw = response.read()
         finally:
@@ -181,6 +187,123 @@ class PeersTests(ServeTestCase):
         self.assertEqual(code, 200)
         self.assertEqual(body["peers"], [])
         self.assertEqual(body["self"], f"{self.host}:{self.port}")
+
+
+class TokenTests(ServeTestCase):
+    """`[serve] token_file`: a non-loopback bind demands it, every JSON
+    route but `/peers` is 401 without the exact bearer value, the console
+    page and its files stay open, and a loopback bind ignores the key."""
+
+    TOKEN = "s3cret-token-value"
+    BEARER = {"Authorization": f"Bearer {TOKEN}"}
+
+    def token_file(self, mode=0o600, text=None):
+        path = self.root / "serve.token"
+        path.write_text(self.TOKEN + "\n" if text is None else text)
+        path.chmod(mode)
+        return path
+
+    def token_config(self, path):
+        return f'[serve]\ntoken_file = "{path}"\n'
+
+    def build(self):
+        dist = self.root / "console" / "dist"
+        dist.mkdir(parents=True)
+        (dist / "index.html").write_bytes(b"<!doctype html>")
+        (dist / "app.js").write_bytes(b"console.log(1)")
+        return dist
+
+    def test_a_non_loopback_bind_without_a_token_file_is_a_startup_error(self):
+        self.seed()
+        tgt = holophyte.target.Target.locate(self.target)
+        for address in ("0.0.0.0:0", "[::]:0", "10.0.0.1:0"):
+            with self.subTest(address=address), \
+                    self.assertRaises(SystemExit) as raised:
+                holophyte.serve.serve(tgt, address, out=io.StringIO())
+            self.assertIn("[serve] token_file", str(raised.exception))
+            self.assertNotEqual(raised.exception.code, 0)
+
+    def test_the_cli_refuses_the_bind_before_serving(self):
+        self.seed()
+        with contextlib.redirect_stdout(io.StringIO()), \
+                self.assertRaises(SystemExit) as raised:
+            holophyte.cli.cli([str(self.target), "--serve", "0.0.0.0:0"])
+        self.assertIn("[serve] token_file", str(raised.exception))
+
+    def test_status_is_401_without_the_token_and_200_with_it(self):
+        self.seed()
+        self.start(self.token_config(self.token_file()), host="0.0.0.0")
+        for headers in (None, {"Authorization": "Bearer wrong"},
+                        {"Authorization": f"Bearer {self.TOKEN}x"},
+                        {"Authorization": f"Basic {self.TOKEN}"}):
+            with self.subTest(headers=headers), \
+                    patch.object(store.read, "open_readonly") as opened:
+                code, response, body = self.request("GET", "/status", headers)
+                self.assertEqual(code, 401)
+                self.assertEqual(body, {})
+                self.assertEqual(response["Content-Type"], "application/json")
+                opened.assert_not_called()
+        code, _, body = self.request("GET", "/status", self.BEARER)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["target"], str(self.target))
+        # Every store-reading route is behind it, the run routes included.
+        for path in ("/runs", "/shipped", "/ledger?since=0", "/attention",
+                     "/board", f"/runs/{self.run}", f"/runs/{self.run}/files",
+                     f"/runs/{self.run}/ledger"):
+            with self.subTest(path=path):
+                code, _, _ = self.request("GET", path)
+                self.assertEqual(code, 401)
+
+    def test_the_page_its_files_and_peers_stay_open(self):
+        self.seed()
+        self.build()
+        config = (self.token_config(self.token_file())
+                  + '[console]\ndaemons = ["writer-2:7710"]\n')
+        self.start(config, host="0.0.0.0")
+        for path in ("/", "/app.js", "/peers"):
+            with self.subTest(path=path):
+                code, _, _ = self.fetch("GET", path)
+                self.assertEqual(code, 200)
+        # A file named after a JSON route does not open the route.
+        (self.root / "console" / "dist" / "status").write_text("x")
+        code, _, _ = self.fetch("GET", "/status")
+        self.assertEqual(code, 401)
+
+    def test_a_loopback_bind_ignores_the_key_and_answers_open(self):
+        self.seed()
+        for config in (None, self.token_config(self.token_file())):
+            with self.subTest(config=config):
+                self.start(config)
+                code, _, body = self.request("GET", "/status")
+                self.assertEqual(code, 200)
+                self.assertIn("runs", body)
+
+    def configured(self, path):
+        """The target with `[serve] token_file` pointing at `path`."""
+        (self.db.parent / "config.toml").write_text(self.token_config(path))
+        return holophyte.target.Target.locate(self.target)
+
+    def test_a_group_or_world_readable_token_file_is_refused(self):
+        self.seed()
+        for mode in (0o640, 0o604, 0o644):
+            path = self.token_file(mode)
+            tgt = self.configured(path)
+            with self.subTest(mode=oct(mode)), \
+                    self.assertRaises(SystemExit) as raised:
+                holophyte.serve.serve(tgt, "0.0.0.0:0", out=io.StringIO())
+            message = str(raised.exception)
+            self.assertIn(f"{mode:04o}", message)
+            self.assertIn(str(path), message)
+            self.assertNotIn(self.TOKEN, message)
+
+    def test_a_missing_or_empty_token_file_is_refused_naming_it(self):
+        self.seed()
+        for path in (self.root / "absent.token", self.token_file(text="  \n")):
+            tgt = self.configured(path)
+            with self.subTest(path=path.name), \
+                    self.assertRaises(SystemExit) as raised:
+                holophyte.serve.serve(tgt, "0.0.0.0:0", out=io.StringIO())
+            self.assertIn(str(path), str(raised.exception))
 
 
 class StatusTests(ServeTestCase):

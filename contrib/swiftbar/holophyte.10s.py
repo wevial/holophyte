@@ -53,24 +53,47 @@ def config_path():
 
 
 def load_config(path):
-    """`{"daemons": [{"name", "url"}, ...], "linear": URL}` from `drawer.toml`."""
+    """`{"daemons": [{"name", "url", "token"}, ...], "linear": URL}` from
+    `drawer.toml`.
+
+    A `[[daemon]]` may name a `token_file`: the file whose contents the
+    daemon's `[serve] token_file` holds, sent as `Authorization: Bearer`
+    on every request to that daemon. `~` and a path relative to the
+    config's directory both work; the token is read here, once per poll,
+    and never printed. A daemon without one is polled bare, as before.
+    """
     with open(path, "rb") as f:
         raw = tomllib.load(f)
-    daemons = [{"name": d["name"], "url": d["url"].rstrip("/")}
+    daemons = [{"name": d["name"], "url": d["url"].rstrip("/"),
+                "token": read_token(d.get("token_file"), Path(path).parent)}
                for d in raw.get("daemon", [])]
     return {"daemons": daemons, "linear": raw.get("linear", "https://linear.app")}
 
 
-def fetch(url, path="/status"):
+def read_token(token_file, base):
+    """The stripped contents of `token_file`, or None when there is none."""
+    if not token_file:
+        return None
+    file = Path(token_file).expanduser()
+    if not file.is_absolute():
+        file = base / file
+    return file.read_text().strip()
+
+
+def fetch(url, path="/status", token=None):
     """The parsed JSON of `url + path`, or `{"unreachable": True, "error": TEXT}`.
 
     A 503 (no store yet) is an answer, not an outage: its body comes back as
     is, and `render()` shows the daemon's own `error` text in the block. An
     error body is tagged with its code as `http_status`, so a caller can
-    tell a 404 (a daemon older than the path) from a 500.
+    tell a 404 (a daemon older than the path) from a 500 -- or a 401, a
+    daemon behind a token this config does not carry. `token` rides as
+    `Authorization: Bearer` when given.
     """
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    request = urllib.request.Request(url + path, headers=headers)
     try:
-        with urllib.request.urlopen(url + path, timeout=TIMEOUT_SEC) as r:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SEC) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         try:
@@ -409,12 +432,14 @@ def poll(daemon):
     """One daemon's entry: `/status` and `/attention`, then `/runs` only for
     an idle target. A daemon that did not answer `/status` is not asked
     again, so a dead host costs one timeout, not three."""
-    status = fetch(daemon["url"])
+    token = daemon.get("token")
+    status = fetch(daemon["url"], token=token)
     if status.get("unreachable"):
         att, runs = None, None
     else:
-        att = fetch(daemon["url"], "/attention")
-        runs = fetch(daemon["url"], "/runs") if status.get("runs") == [] else None
+        att = fetch(daemon["url"], "/attention", token=token)
+        runs = (fetch(daemon["url"], "/runs", token=token)
+                if status.get("runs") == [] else None)
     return {"name": daemon["name"], "url": daemon["url"], "status": status,
             "runs": runs, "attention": att}
 

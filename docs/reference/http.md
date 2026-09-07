@@ -7,8 +7,9 @@ ones `Content-Type: application/json`; every request opens the store
 read-only and closes it. The open origin is for the console page, which
 one daemon serves and which fetches the others from the browser: without
 the header the browser refuses a cross-origin answer. The daemon is
-read-only and bound to loopback or a private-network host, so the header
-gives away nothing the bind address does not. Unknown paths are
+read-only; on loopback the bind address is the whole boundary, and beyond
+it every JSON route but `/peers` is behind a bearer token
+([Authentication](#authentication)). Unknown paths are
 404 and any method but GET is 405, both with a JSON `error`. A target with
 no store answers 503.
 
@@ -373,10 +374,28 @@ When `console/dist/` does not exist, `/` is 404 JSON whose `detail` says
 the console is not built, and the JSON routes answer as before: a daemon
 on a host without the renderer's toolchain still serves its JSON.
 
+## Authentication
+
+A daemon bound to anything but loopback runs with `[serve] token_file`
+(see `docs/config.md`) and demands its contents on every JSON route:
+
+```
+Authorization: Bearer TOKEN
+```
+
+The value is compared whole, in constant time; a missing header, another
+scheme or any other value is 401 with the body `{}` and no store access,
+and nothing about the attempt is logged. `GET /`, the console's files
+under it and `GET /peers` are served without the header, so the page can
+load and learn where its peers are before it has a token to present. A
+daemon bound to loopback never asks: `--serve 7710` answers every route
+open, token file or not.
+
 ## Errors
 
 | Status | When |
 | --- | --- |
+| 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}` |
 | 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET; `Allow: GET` |

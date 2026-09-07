@@ -47,7 +47,7 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`), a key it does
+(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`), a key it does
 not read is
 a startup
 error naming the file, the table, the key and the keys the table accepts:
@@ -307,9 +307,35 @@ address the daemon itself bound as `self`. The entries are strings the page
 fetches from the browser; the daemon never connects to them. Each is checked
 at startup like `--serve`'s address -- a non-empty host, a decimal port -- and
 none may appear twice; a bad entry is a startup error naming `[console]
-daemons` and the entry, before anything is served. The daemon is reached
-without authentication, so a peer, like `--serve`'s bind, belongs on loopback
-or a private network.
+daemons` and the entry, before anything is served. A peer beyond loopback
+is behind its own `[serve] token_file`; the page presents the token the
+operator gives it.
+
+```toml
+[serve]
+# The file whose contents every JSON request to a non-loopback bind must
+# present as `Authorization: Bearer ...`. Required when `--serve` names a
+# host other than loopback; ignored when it binds loopback.
+token_file = "~/.holophyte/holophyte/serve.token"
+```
+
+Accepted keys: `token_file`.
+
+The daemon's bind address is its only boundary, and once the bind is
+anything but loopback that is not enough. With `--serve HOST:PORT` where
+`HOST` is not loopback (`127.0.0.1`, any `127.x` address, `localhost`, `::1`),
+the daemon reads `token_file` at startup and answers 401 with an empty JSON
+body, before touching the store, to every request that does not carry the
+file's exact contents as a bearer token; `/`, the console's built files and
+`/peers` stay open so the page can load and learn where its peers are. A
+non-loopback bind with no `token_file` is a startup error naming the key. The
+file must be a regular, non-empty file that is not group- or world-readable
+(`chmod 600`); anything else is a startup error naming the file and its
+mode. The token is the file's contents with surrounding whitespace stripped
+and is never printed or logged. `~` is expanded and a relative path is taken
+against the config's directory. A loopback bind ignores the key entirely:
+`--serve 7710` is as open as it always was. One token per target, no
+rotation: to change it, write the file and restart the unit.
 
 ```toml
 [merge]
