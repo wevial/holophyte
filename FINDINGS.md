@@ -653,23 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[339 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T16:35:25Z — KO-304
-MERGED to main as d2b09dc.
-actual: 29.2 min · estimate: 30 min · rounds: 3
-
-## 2026-09-06T16:39:52Z — KO-305
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/console/src/components/FilesTouched.tsx:33 [p2] [FilesTouched.tsx:33](/home/reviewer/candidate/console/src/components/FilesTouched.tsx:33) recognizes refusals by hardcoded message strings. `fetchRunFiles` d…
-- criteria:3 [p2] CRITERION 3: not met — Endpoint messages are replaced with hardcoded strings; the component test supplies those strings directly and misses the failure. Given `…
-
-## 2026-09-06T16:42:57Z — KO-305
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- (unparsed):adf0dc121a3d [p2] Criterion 2’s test never establishes a 40 px segment: it renders without a fixed-width container and asserts `calc(4% - 0.24px)`. Add a bounded-width fixture th…
-- criteria:2 [p2] CRITERION 2: unwitnessed — The component test checks text and classes but never establishes the required 40 px segment. Given a run whose first segment is 40 px…
+[342 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T16:45:23Z — KO-305
 Round 3: pass · reviewer codex-astra-medium · verify passed
@@ -763,3 +747,16 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T21:21:22Z — KO-279
 FAILED: terminal adjudication: FAIL; branch task/ko-279-a-blocked-row-opens-its-questi preserved at e502eaf9cf9a
 actual: 16.2 min · estimate: 30 min · rounds: 3
+
+## 2026-09-07T21:28:01Z — KO-279
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/src/hooks/useLedger.ts:39 [p2] [useLedger.ts:39](/home/reviewer/candidate/console/src/hooks/useLedger.ts:39) fetches one unfiltered, capped ledger window for both features. An older blocked…
+- criteria:1 [p2] CRITERION 1: not met — the capped shared fetch can omit the blocked run’s parking note and human reply, as reproduced above. Given a blocked item and ledger row…
+
+## 2026-09-07T21:31:34Z — KO-279
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T21:31:35Z — KO-279
+MERGED to main as fee9f28 (branch task/ko-279-a-blocked-row-opens-its-questi deleted).
+actual: 7.2 min · estimate: 30 min · rounds: 2
