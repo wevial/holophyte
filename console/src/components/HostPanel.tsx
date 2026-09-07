@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CHIP_LABELS, KINDS, countsByKind, type Kind } from "../lib/attention";
 import { isSupervisorStale, projectName } from "../lib/derive";
 import { age } from "../lib/format";
-import { hostName, hostTone, runCounts, type HostRecord } from "../lib/hosts";
+import { addressOf, hostName, hostTone, runCounts, type HostRecord } from "../lib/hosts";
 import { storeToken } from "../lib/token";
 import { ActionButton } from "./ActionButton";
 
@@ -45,7 +45,10 @@ function TokenField({ host }: { host: HostRecord }) {
       className="mt-4 flex items-end gap-2"
       onSubmit={(event) => {
         event.preventDefault();
-        storeToken(host.address, token);
+        // Keyed by the request address, the same key the fetch seam reads
+        // (`tokenedFetch`), which for the origin can differ from the
+        // address the daemon advertises as `/peers.self`.
+        storeToken(addressOf(host.base), token);
         setToken("");
         setSentAt(host.polled_ms);
       }}

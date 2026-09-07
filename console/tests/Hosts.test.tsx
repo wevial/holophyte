@@ -203,3 +203,61 @@ test("a token stored before the page loads rides the first poll, so the card nev
   expect(card.getAttribute("data-needs-token")).toBeNull();
   expect(within(card).queryByLabelText("Token")).toBeNull();
 });
+
+test("a token given to the origin is keyed by the address the page requests, not the one the daemon advertises as self", async () => {
+  // The page is opened at http://writer:7710; the daemon's /peers names
+  // itself by its tailnet address. Store, header and forget must all use
+  // the request address, or the header never appears after submission.
+  const ORIGIN = "http://writer:7710";
+  const SELF = "100.64.0.10:7710";
+  const TOKEN = "tailnet-serve-token";
+  let accepted = TOKEN;
+  const seen: { url: string; authorization: string | null }[] = [];
+  const daemon: Fetch = (url, init) => {
+    const authorization = new Headers(init?.headers).get("authorization");
+    seen.push({ url, authorization });
+    if (url.endsWith("/peers")) return Promise.resolve(Response.json({ self: SELF, peers: [] }));
+    if (authorization !== `Bearer ${accepted}`) return Promise.resolve(Response.json({}, { status: 401 }));
+    if (url.endsWith("/status")) return Promise.resolve(Response.json(working));
+    if (url.endsWith("/attention")) return Promise.resolve(Response.json(NO_ATTENTION));
+    return Promise.resolve(new Response("not found", { status: 404 }));
+  };
+  const { deps, firePoll } = fakeDeps(tokenedFetch(daemon));
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  fireEvent.click(screen.getByRole("button", { name: "Hosts" }));
+  const card = () => document.querySelector<HTMLElement>(`article[data-host="${SELF}"]`)!;
+  expect(card()).not.toBeNull();
+  expect(card().getAttribute("data-needs-token")).toBe("true");
+
+  fireEvent.change(within(card()).getByLabelText("Token"), { target: { value: TOKEN } });
+  fireEvent.submit(within(card()).getByLabelText("Token").closest("form")!);
+  expect(Object.keys(localStorage)).toEqual([`${TOKEN_KEY_PREFIX}writer:7710`]);
+
+  seen.length = 0;
+  await act(async () => {
+    firePoll();
+    await settle();
+  });
+  const json = seen.filter((request) => !request.url.endsWith("/peers"));
+  expect(json.map((request) => request.url)).toContain(`${ORIGIN}/status`);
+  expect(json.map((request) => request.url)).toContain(`${ORIGIN}/attention`);
+  expect(json.every((request) => request.authorization === `Bearer ${TOKEN}`)).toBe(true);
+  expect(card().getAttribute("data-needs-token")).toBeNull();
+
+  // A 401 forgets the key the fetch seam reads, so the next poll is bare.
+  accepted = "rotated";
+  await act(async () => {
+    firePoll();
+    await settle();
+  });
+  expect(localStorage.length).toBe(0);
+  expect(card().getAttribute("data-needs-token")).toBe("true");
+  seen.length = 0;
+  await act(async () => {
+    firePoll();
+    await settle();
+  });
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen.every((request) => request.authorization == null)).toBe(true);
+});
