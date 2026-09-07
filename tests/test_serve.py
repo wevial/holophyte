@@ -367,13 +367,18 @@ class ConsoleTests(ServeTestCase):
 
     INDEX = b"<!doctype html><title>holophyte</title>"
     APP = b"console.log('holophyte');\n"
+    MANIFEST = b'{"name": "holophyte", "display": "standalone"}\n'
+    BLOB = b"\x00\x01no extension the map knows\xff"
 
     def build(self):
-        """A `dist/` with an `index.html` and `app.js` under the test root."""
+        """A `dist/` with an `index.html`, `app.js`, `manifest.webmanifest`
+        and a file of unknown extension under the test root."""
         dist = self.root / "console" / "dist"
         dist.mkdir(parents=True)
         (dist / "index.html").write_bytes(self.INDEX)
         (dist / "app.js").write_bytes(self.APP)
+        (dist / "manifest.webmanifest").write_bytes(self.MANIFEST)
+        (dist / "blob.bin").write_bytes(self.BLOB)
         return dist
 
     def test_every_json_answer_allows_any_origin(self):
@@ -394,9 +399,13 @@ class ConsoleTests(ServeTestCase):
         self.seed()
         self.build()
         self.start()
-        for path, payload, mime in (("/", self.INDEX, "text/html"),
-                                    ("/index.html", self.INDEX, "text/html"),
-                                    ("/app.js", self.APP, "javascript")):
+        for path, payload, mime in (
+                ("/", self.INDEX, "text/html"),
+                ("/index.html", self.INDEX, "text/html"),
+                ("/app.js", self.APP, "javascript"),
+                ("/manifest.webmanifest", self.MANIFEST,
+                 "application/manifest+json"),
+                ("/blob.bin", self.BLOB, "application/octet-stream")):
             with self.subTest(path=path):
                 code, headers, raw = self.fetch("GET", path)
                 self.assertEqual(code, 200)

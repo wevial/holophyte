@@ -339,6 +339,7 @@ the same name. The content type follows the extension:
 | `.woff2` | `font/woff2` |
 | `.png` | `image/png` |
 | `.json`, `.map` | `application/json` |
+| `.webmanifest` | `application/manifest+json` |
 | anything else | `application/octet-stream` |
 
 Every file answer is `Cache-Control: no-store`; there is no compression,

@@ -76,6 +76,7 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
                  ".woff2": "font/woff2",
                  ".png": "image/png",
                  ".json": "application/json",
+                 ".webmanifest": "application/manifest+json",
                  ".map": "application/json"}
 OCTET_STREAM = "application/octet-stream"
 # The two `origin` shapes a merge commit can link into: `https://HOST/OWNER/
