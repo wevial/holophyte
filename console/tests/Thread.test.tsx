@@ -37,7 +37,7 @@ const THREAD: LedgerRow[] = [
 ];
 
 test("activating a question row opens its thread oldest-first with the disabled footer; a second question closes the first", () => {
-  const ledgers: Ledgers = { "writer:7710": { rows: THREAD, absent: false } };
+  const ledgers: Ledgers = { "writer:7710": { rows: [], threads: { "KO-240": THREAD }, absent: false } };
   render(<NeedsYou hosts={[hostOf(allKinds.status, blocked(), BASE)]} project="all" now={NOW} ledgers={ledgers} />);
   const first = question("KO-240");
   const toggle = within(first).getByRole("button", { expanded: false });
@@ -71,9 +71,9 @@ test("activating a question row opens its thread oldest-first with the disabled 
   expect(within(first).getByText("thread ▾")).toBeTruthy();
 });
 
-/** A daemon serving `/status`, `/attention` and a `/ledger` window: like
- *  the daemon, it answers only the entries at or after `since`, narrowed
- *  to one ticket when asked. */
+/** A daemon serving `/status`, `/attention` and `/ledger`: like the
+ *  daemon, it answers the entries at or after `since`, narrowed to one
+ *  `kind` or `ticket` when asked, newest first and cut at `limit`. */
 function ledgerFetch(attention: Attention, entries: LedgerRow[] | 404, asked: string[] = []): Fetch {
   return async (url) => {
     asked.push(url);
@@ -83,13 +83,22 @@ function ledgerFetch(attention: Attention, entries: LedgerRow[] | 404, asked: st
       if (entries === 404) return new Response("not found", { status: 404 });
       const params = new URL(url).searchParams;
       const since = Number(params.get("since"));
+      const kind = params.get("kind");
       const ticket = params.get("ticket");
-      const page = entries.filter((row) => row.at >= since && (ticket == null || row.ticket === ticket));
-      return Response.json({ entries: page, since, limit: 1000 });
+      const limit = Number(params.get("limit") ?? 200);
+      const page = entries
+        .filter((row) => row.at >= since && (kind == null || row.kind === kind) && (ticket == null || row.ticket === ticket))
+        .sort((a, b) => b.at - a.at)
+        .slice(0, limit);
+      return Response.json({ entries: page, since, limit });
     }
     return new Response("not found", { status: 404 });
   };
 }
+
+const ledgerAsks = (asked: string[]) => asked.filter((url) => url.includes("/ledger?"));
+const windowUrl = `${BASE}/ledger?since=${MIDNIGHT}&kind=intervention&limit=1000`;
+const threadUrl = (ticket: string, since: number) => `${BASE}/ledger?since=${since}&ticket=${ticket}&limit=1000`;
 
 /** Today's three interventions as KO-308's daemon serves them: what each
  *  cleared and how long that waited, one with neither. */
@@ -105,7 +114,7 @@ test("the resolved fold counts today's interventions, opens to their rows with e
   const asked: string[] = [];
   render(<Now hosts={[hostOf(allKinds.status, allKinds.attention, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(allKinds.attention, RESOLVED, asked) }} />);
   await act(settle);
-  expect(asked.filter((url) => url.includes("/ledger?"))).toEqual([`${BASE}/ledger?since=${MIDNIGHT}&limit=1000`]);
+  expect(ledgerAsks(asked)).toEqual([windowUrl, threadUrl("KO-240", MIDNIGHT)]);
   const fold = screen.getByRole("region", { name: "Resolved today" });
   const strip = within(fold).getByRole("button", { expanded: false });
   expect(strip.textContent).toContain("Resolved today · 3");
@@ -130,7 +139,7 @@ test("the resolved fold counts today's interventions, opens to their rows with e
   expect(shown.every((cells) => /^\d\d:\d\d$/.test(cells[6] ?? ""))).toBe(true);
 });
 
-test("with nothing resolved today the strip says 0 and opens to say so; a question older than midnight widens the window to it", async () => {
+test("with nothing resolved today the strip says 0 and opens to say so; a question older than midnight fetches its thread from when it was asked", async () => {
   const asked: string[] = [];
   const yesterday = MIDNIGHT - min(90);
   const attention: Attention = {
@@ -140,12 +149,39 @@ test("with nothing resolved today the strip says 0 and opens to say so; a questi
   };
   render(<Now hosts={[hostOf(allKinds.status, attention, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(attention, [], asked) }} />);
   await act(settle);
-  expect(asked.filter((url) => url.includes("/ledger?"))).toEqual([`${BASE}/ledger?since=${yesterday}&limit=1000`]);
+  expect(ledgerAsks(asked)).toEqual([windowUrl, threadUrl("KO-240", yesterday)]);
   const fold = screen.getByRole("region", { name: "Resolved today" });
   const strip = within(fold).getByRole("button");
   expect(strip.textContent).toBe("▸Resolved today · 0");
   fireEvent.click(strip);
   expect(within(fold).getByText("Nothing resolved yet today")).toBeTruthy();
+});
+
+test("a question's thread is whole when a full page of newer unrelated rows follows it", async () => {
+  const older = MIDNIGHT - min(90);
+  const attention: Attention = {
+    level: "attention",
+    now: NOW,
+    items: [{ kind: "blocked", level: "attention", ticket: "KO-240", run: 95, question: "Which path?", asked_ms: older }],
+  };
+  const thread: LedgerRow[] = [
+    { at: older + min(1), run: 95, ticket: "KO-240", kind: "note", source: "loop", text: "Parked blocked_on_operator." },
+    { at: older + min(12), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: the ticket body's" },
+  ];
+  const filler: LedgerRow[] = Array.from({ length: 1000 }, (_, i) => ({
+    at: MIDNIGHT + i * 1000,
+    run: 100 + (i % 7),
+    ticket: `KO-${300 + (i % 7)}`,
+    kind: "round",
+    source: "loop",
+    text: `Round ${i}`,
+  }));
+  render(<Now hosts={[hostOf(allKinds.status, attention, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(attention, [...thread, ...filler]) }} />);
+  await act(settle);
+  const first = question("KO-240");
+  fireEvent.click(within(first).getByRole("button", { expanded: false }));
+  const lines = Array.from(first.querySelectorAll("[data-thread-row]")).map((line) => line.children[1]!.textContent);
+  expect(lines).toEqual(["Which path?", "Parked blocked_on_operator.", "human resume: the ticket body's"]);
 });
 
 test("a daemon without /ledger shows no thread hint and no fold, and the band renders as before", async () => {

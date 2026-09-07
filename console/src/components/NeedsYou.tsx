@@ -39,9 +39,9 @@ function rowKey(item: AttentionItem, index: number): string {
 /** The band that opens the Now view: what needs a human across every host
  *  in view, each item stamped with its daemon's project, plus one critical
  *  row per daemon that stopped answering. `now` is the console's clock.
- *  `ledgers` is each daemon's `/ledger` window by address; a question row
- *  whose daemon has one opens its thread, one thread at a time, and a band
- *  without any renders as before. */
+ *  `ledgers` is each daemon's `/ledger` answer by address, its threads
+ *  keyed by ticket; a question row whose daemon has one opens its thread,
+ *  one thread at a time, and a band without any renders as before. */
 export function NeedsYou({
   hosts,
   project,
@@ -85,7 +85,7 @@ export function NeedsYou({
     const ledger = ledgers[String(item.daemon ?? "")];
     if (!ledger || ledger.absent) return undefined;
     return {
-      rows: threadFor(ledger.rows, item),
+      rows: threadFor(ledger.threads[String(item.ticket ?? "")] ?? [], item),
       open: openQuestion === key,
       onToggle: () => setOpenQuestion((previous) => (previous === key ? null : key)),
     };
