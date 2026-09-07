@@ -82,12 +82,19 @@ STATES = [{"id": "state-todo", "name": "Todo", "type": "unstarted"},
 
 class FakeLinear:
     """`_gql` with a board behind it: records every call, answers the lookups
-    `create_issue()`/`add_blocker()`/`fetch_description()` make, and hands
-    back `stored` as the created issue's description."""
+    `create_issue()`/`add_blocker()`/`fetch_description()`/`blockers_of()`
+    make, and hands back `stored` as the created issue's description.
 
-    def __init__(self, stored=TICKET):
+    `blockers` are the identifiers the board already holds as blocking the
+    issue, in the board's order, served through `inverseRelations` beside
+    one non-`blocks` edge so the filter is exercised; `refuse_update` makes
+    the body update answer `success: false`."""
+
+    def __init__(self, stored=TICKET, blockers=(), refuse_update=False):
         self.calls = []
         self.stored = stored
+        self.blockers = list(blockers)
+        self.refuse_update = refuse_update
 
     def __call__(self, query, variables=None):
         self.calls.append((query, variables))
@@ -103,7 +110,12 @@ class FakeLinear:
         if "issueRelationCreate" in query:
             return {"issueRelationCreate": {"success": True}}
         if "issueUpdate" in query:
-            return {"issueUpdate": {"success": True}}
+            return {"issueUpdate": {"success": not self.refuse_update}}
+        if "inverseRelations" in query:
+            nodes = [{"type": "blocks", "issue": {"identifier": b}}
+                     for b in self.blockers]
+            nodes.append({"type": "related", "issue": {"identifier": "KO-99"}})
+            return {"issue": {"inverseRelations": {"nodes": nodes}}}
         if "{ id }" in query:
             return {"issue": {"id": f"uuid-{variables['id']}"}}
         if "description" in query:
@@ -130,6 +142,9 @@ class FakeLinear:
     def updates(self):
         return [(v["id"], v["input"]) for q, v in self.mutations()
                 if "issueUpdate" in q]
+
+    def relation_reads(self):
+        return [q for q, _ in self.calls if "inverseRelations" in q]
 
 
 class FileTicketCliTests(unittest.TestCase):
@@ -270,7 +285,7 @@ class FileTicketCliTests(unittest.TestCase):
         revised = TICKET.replace("# Add export endpoint", "# T2").replace(
             "Estimate: 25 min", "Estimate: 20 min")
         self.ticket.write_text(revised)
-        linear = FakeLinear(stored=revised)
+        linear = FakeLinear(stored=revised, blockers=["KO-7000"])
 
         status, printed = self.cli("--update", "KO-7000", linear=linear)
 
@@ -299,7 +314,7 @@ class FileTicketCliTests(unittest.TestCase):
         rewritten = TICKET.replace(
             "- Endpoint lives beside the other order routes.",
             "- <Known constraints>")
-        linear = FakeLinear(stored=rewritten)
+        linear = FakeLinear(stored=rewritten, blockers=["KO-7000"])
 
         status, printed = self.cli("--update", "KO-7000", linear=linear)
 
@@ -310,6 +325,77 @@ class FileTicketCliTests(unittest.TestCase):
             ticket_template.validate(ticket_template.parse(rewritten)))[0]
         self.assertTrue(lines[1].startswith("[holo2] KO-7000: "), lines[1])
         self.assertIn(first, lines[1])
+
+    def update_naming(self, depends_on, **kw):
+        """`--update KO-7000` from the fixture with its `Depends on:` line
+        replaced by `depends_on`, against a board holding `kw['blockers']`;
+        the fake, the exit status and what was printed."""
+        self.with_board()
+        revised = TICKET.replace("Depends on: KO-7000",
+                                 f"Depends on: {depends_on}")
+        self.ticket.write_text(revised)
+        linear = FakeLinear(stored=revised, **kw)
+        status, printed = self.cli("--update", "KO-7000", linear=linear)
+        return linear, status, printed
+
+    def test_update_records_the_blockers_the_file_names_and_the_board_lacks(self):
+        linear, status, printed = self.update_naming(
+            "KO-1, KO-2", blockers=["KO-1"])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(linear.relations(), [{
+            "issueId": "uuid-KO-2", "relatedIssueId": "uuid-KO-7000",
+            "type": "blocks"}])
+        self.assertEqual(
+            printed.strip(),
+            "[holo2] updated KO-7000: Add export endpoint (blocked by +KO-2)")
+
+    def test_update_leaves_a_blocker_the_file_dropped_and_names_it(self):
+        linear, status, printed = self.update_naming(
+            "KO-1", blockers=["KO-1", "KO-3"])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(linear.relations(), [])
+        self.assertEqual(len(linear.mutations()), 1)
+        self.assertEqual(
+            printed.strip(),
+            "[holo2] updated KO-7000: Add export endpoint "
+            "(board also holds KO-3)")
+
+    def test_update_with_depends_on_none_only_reads_the_relations(self):
+        linear, status, printed = self.update_naming("none")
+
+        self.assertEqual(status, 0)
+        self.assertEqual(len(linear.relation_reads()), 1)
+        self.assertEqual(linear.relations(), [])
+        self.assertEqual(len(linear.mutations()), 1)
+        self.assertEqual(printed.strip(),
+                         "[holo2] updated KO-7000: Add export endpoint")
+
+    def test_update_adds_both_lists_to_the_line_in_file_then_board_order(self):
+        linear, status, printed = self.update_naming(
+            "KO-2, KO-1, KO-4", blockers=["KO-3", "KO-1"])
+
+        self.assertEqual(status, 0)
+        self.assertEqual([r["issueId"] for r in linear.relations()],
+                         ["uuid-KO-2", "uuid-KO-4"])
+        self.assertEqual(
+            printed.strip(),
+            "[holo2] updated KO-7000: Add export endpoint "
+            "(blocked by +KO-2, +KO-4; board also holds KO-3)")
+
+    def test_a_refused_update_adds_no_relation(self):
+        self.with_board()
+        revised = TICKET.replace("Depends on: KO-7000", "Depends on: KO-2")
+        self.ticket.write_text(revised)
+        linear = FakeLinear(stored=revised, refuse_update=True)
+
+        with self.assertRaises(RuntimeError) as raised:
+            self.cli("--update", "KO-7000", linear=linear)
+
+        self.assertIn("KO-7000", str(raised.exception))
+        self.assertEqual(linear.relations(), [])
+        self.assertEqual(len(linear.mutations()), 1)
 
     def test_update_without_file_ticket_and_update_with_priority_are_refused(self):
         err = io.StringIO()
