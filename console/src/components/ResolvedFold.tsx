@@ -1,6 +1,5 @@
-import { PILL_TEXT } from "../lib/attention";
 import { formatAge, formatClock } from "../lib/format";
-import { longest, median, type ResolvedRow } from "../lib/resolved";
+import { longest, median, pillText, type ResolvedRow } from "../lib/resolved";
 import { KindPill } from "./KindPill";
 
 /** The shift's receipt under the band: a strip counting what was cleared
@@ -41,12 +40,12 @@ export function ResolvedFold({ rows, open, onToggle }: { rows: ResolvedRow[]; op
                 className="grid grid-cols-[96px_84px_1fr_80px_60px_50px] items-start gap-[14px] border-t border-line-faint px-6 py-[9px]"
               >
                 <div>
-                  <KindPill kind={row.kind}>{PILL_TEXT[row.kind]}</KindPill>
+                  <KindPill kind={row.kind}>{pillText(row.kind)}</KindPill>
                 </div>
                 <span className="truncate font-mono text-[12px] font-semibold text-ink">{row.ticket ?? "—"}</span>
                 <span className="min-w-0 break-words text-[13px] text-body">{row.text}</span>
                 <span data-waited className="font-mono text-[11px] text-muted">
-                  {row.waited_ms == null ? "" : `waited ${formatAge(row.waited_ms)}`}
+                  waited {row.waited_ms == null ? "—" : formatAge(row.waited_ms)}
                 </span>
                 <span className="text-[12px] text-muted">{row.by}</span>
                 <span className="font-mono text-[11px] text-muted">{formatClock(row.at)}</span>

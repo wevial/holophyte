@@ -1,77 +1,36 @@
 import { expect, test } from "bun:test";
 import type { LedgerRow } from "../src/lib/ledger";
 import { longest, median, resolvedSince } from "../src/lib/resolved";
-import type { AttentionItem } from "../src/lib/types";
 
 const MIDNIGHT = 1_756_857_600_000;
 const min = (n: number) => n * 60_000;
 
-const HISTORY: AttentionItem[] = [
-  { kind: "blocked", level: "attention", ticket: "KO-240", run: 95, question: "Which path?", asked_ms: MIDNIGHT + min(60) },
-  { kind: "failed", level: "attention", ticket: "KO-229", run: 88, reason: "verify failed", ended_ms: MIDNIGHT + min(100) },
-];
-
+/** Today's three interventions as KO-308's daemon serves them, newest
+ *  first, with a `merge` row and one from before midnight mixed in. */
 const LEDGER: LedgerRow[] = [
-  { at: MIDNIGHT + min(141), run: 88, ticket: "KO-229", kind: "intervention", source: "operator", text: "human requeue: fixed the fixture" },
-  { at: MIDNIGHT + min(131), run: 91, ticket: "KO-232", kind: "intervention", source: "loop", text: "supervisor kill: no heartbeat" },
-  { at: MIDNIGHT + min(126), run: 91, ticket: "KO-232", kind: "failure", source: "loop", text: "Strike 1: stale" },
-  { at: MIDNIGHT + min(74), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: the ticket body's" },
-  { at: MIDNIGHT + min(61), run: 95, ticket: "KO-240", kind: "note", source: "loop", text: "Parked." },
-  { at: MIDNIGHT - min(30), run: 50, ticket: "KO-217", kind: "intervention", source: "operator", text: "human resume: yesterday" },
+  { at: MIDNIGHT + min(141), run: 88, ticket: "KO-229", kind: "intervention", source: "operator", text: "human requeue: fixed the fixture", cleared: "failed", waited_ms: 2_460_000 },
+  { at: MIDNIGHT + min(131), run: 91, ticket: "KO-232", kind: "intervention", source: "loop", text: "supervisor kill: no heartbeat", cleared: null, waited_ms: null },
+  { at: MIDNIGHT + min(126), run: 52, ticket: "KO-219", kind: "merge", source: "loop", text: "MERGED to main as 5acc138." },
+  { at: MIDNIGHT + min(74), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: the ticket body's", cleared: "question", waited_ms: 840_000 },
+  { at: MIDNIGHT - min(30), run: 50, ticket: "KO-217", kind: "intervention", source: "operator", text: "human resume: yesterday", cleared: "question", waited_ms: min(5) },
 ];
 
-test("each intervention since midnight is paired with what it cleared for its wait; median and longest follow", () => {
-  const rows = resolvedSince(LEDGER, HISTORY, MIDNIGHT);
-  expect(rows.map((row) => [row.kind, row.ticket, row.waited_ms, row.by])).toEqual([
-    ["failed", "KO-229", min(41), "operator"],
-    ["stale_run", "KO-232", min(5), "supervisor"],
-    ["blocked", "KO-240", min(14), "operator"],
+test("each intervention since midnight reads its kind and wait from its own entry; median and longest run over the non-null waits", () => {
+  const rows = resolvedSince(LEDGER, MIDNIGHT);
+  expect(rows.map((row) => [row.kind, row.ticket, row.waited_ms, row.by, row.text])).toEqual([
+    ["failed", "KO-229", 2_460_000, "operator", "human requeue: fixed the fixture"],
+    ["step", "KO-232", null, "supervisor", "supervisor kill: no heartbeat"],
+    ["blocked", "KO-240", 840_000, "operator", "human resume: the ticket body's"],
   ]);
-  expect(rows.map((row) => row.text)).toEqual([
-    "human requeue: fixed the fixture",
-    "supervisor kill: no heartbeat",
-    "human resume: the ticket body's",
-  ]);
-  expect(median(rows)).toBe(min(14));
-  expect(longest(rows)).toBe(min(41));
+  expect(median(rows)).toBe(1_650_000);
+  expect(longest(rows)).toBe(2_460_000);
 });
 
-test("an item never seen live falls back to the ledger's first row for the run; nothing since midnight is empty", () => {
-  const rows = resolvedSince(LEDGER, [], MIDNIGHT);
-  expect(rows.find((row) => row.ticket === "KO-240")?.waited_ms).toBe(min(13));
-  expect(rows.find((row) => row.ticket === "KO-229")?.waited_ms).toBeNull();
-  expect(resolvedSince(LEDGER, HISTORY, MIDNIGHT + min(200))).toEqual([]);
-  expect(median([])).toBeNull();
-  expect(longest([])).toBeNull();
-});
-
-test("a failure cleared before the console loaded waits from its failure row, not the run's first row", () => {
-  // Run 88 reviewed at minute 10, failed at 60 and was requeued at 75: the wait is 15m, not 65m.
-  const ledger: LedgerRow[] = [
-    { at: MIDNIGHT + min(75), run: 88, ticket: "KO-229", kind: "intervention", source: "operator", text: "human requeue: fixed the fixture" },
-    { at: MIDNIGHT + min(60), run: 88, ticket: "KO-229", kind: "failure", source: "loop", text: "verify failed" },
-    { at: MIDNIGHT + min(10), run: 88, ticket: "KO-229", kind: "round", source: "loop", text: "Round 1: changes_requested" },
-  ];
-  const rows = resolvedSince(ledger, [], MIDNIGHT);
-  expect(rows.map((row) => [row.kind, row.waited_ms])).toEqual([["failed", min(15)]]);
-  expect(median(rows)).toBe(min(15));
-  expect(longest(rows)).toBe(min(15));
-});
-
-test("a run's resolution pairs with that run's item, never with the ticket's newer question", () => {
-  // Run 88 failed at minute 10 and was requeued at 60 while run 95, the ticket's retry, sits blocked
-  // on the band: the fold owes the requeue "failed · waited 50m", not the open question's zero.
-  const ledger: LedgerRow[] = [
-    { at: MIDNIGHT + min(60), run: 88, ticket: "KO-229", kind: "intervention", source: "operator", text: "human requeue: fixed" },
-    { at: MIDNIGHT + min(10), run: 88, ticket: "KO-229", kind: "failure", source: "loop", text: "verify failed" },
-  ];
-  const history: AttentionItem[] = [
-    { kind: "blocked", level: "attention", ticket: "KO-229", run: 95, question: "Retry how?", asked_ms: MIDNIGHT + min(70) },
-  ];
-  const rows = resolvedSince(ledger, history, MIDNIGHT);
-  expect(rows.map((row) => [row.kind, row.run, row.waited_ms])).toEqual([["failed", 88, min(50)]]);
-  // A row with no run may fall back to the ticket, but only to an item already waiting when it was written.
-  const unrun: LedgerRow[] = [{ ...ledger[0]!, run: null, text: "human resume: answered" }];
-  expect(resolvedSince(unrun, history, MIDNIGHT)[0]!.kind).toBe("blocked");
-  expect(resolvedSince(unrun, history, MIDNIGHT)[0]!.waited_ms).toBeNull();
+test("a daemon serving entries without the fields yields steps that waited nothing measurable; nothing since midnight is empty", () => {
+  const bare: LedgerRow[] = LEDGER.map(({ cleared: _cleared, waited_ms: _waited, ...row }) => row);
+  const rows = resolvedSince(bare, MIDNIGHT);
+  expect(rows.map((row) => [row.kind, row.waited_ms])).toEqual([["step", null], ["step", null], ["step", null]]);
+  expect(median(rows)).toBeNull();
+  expect(longest(rows)).toBeNull();
+  expect(resolvedSince(LEDGER, MIDNIGHT + min(200))).toEqual([]);
 });

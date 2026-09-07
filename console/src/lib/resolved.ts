@@ -1,124 +1,53 @@
-import type { Kind } from "./attention";
+import { PILL_TEXT, type Kind } from "./attention";
 import type { LedgerRow } from "./ledger";
-import type { AttentionItem } from "./types";
+
+/** What a fold row's pill says: a band kind for a resolution the daemon
+ *  classified, `step` for one it did not (or could not, being older than
+ *  KO-308). */
+export type ResolvedKind = Kind | "step";
 
 /** One row of the resolved-today fold: the intervention that cleared an
- *  item, with what it cleared and how long that had waited. */
+ *  item, with what it cleared and how long that had waited, both as the
+ *  entry itself says (KO-308). */
 export interface ResolvedRow {
-  kind: Kind;
+  kind: ResolvedKind;
   ticket: string | null;
   run: number | null;
   text: string;
-  /** Null when neither the item nor the ledger says when the wait began. */
+  /** Null when the entry carries no `waited_ms`. */
   waited_ms: number | null;
   /** "operator" for a human, "supervisor" for the loop's own machinery. */
   by: string;
   at: number;
 }
 
+/** The entry's `cleared` as a pill kind; anything else is a neutral step. */
+const CLEARED_KIND: Record<string, ResolvedKind> = {
+  question: "blocked",
+  stale_run: "stale_run",
+  failed: "failed",
+  supervisor: "supervisor",
+};
+
 const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 
-/** The action an intervention's text opens with (`human resume: …`,
- *  `supervisor kill: …`), null when the text is not shaped that way. */
-function actionOf(text: string): string | null {
-  const match = /^(?:human|supervisor) ([a-z_]+):/.exec(text);
-  return match ? match[1]! : null;
-}
-
-/** The run's latest `failure` row before the resolving one: a failed
- *  run's failure, a stale run's strike. Null when the window has none. */
-function lastFailure(row: LedgerRow, rows: LedgerRow[]): number | null {
-  let last: number | null = null;
-  for (const earlier of rows) {
-    if (earlier === row || earlier.kind !== "failure" || earlier.at > row.at) continue;
-    if (earlier.run == null || earlier.run !== row.run) continue;
-    if (last == null || earlier.at > last) last = earlier.at;
-  }
-  return last;
-}
-
-/** The run's earliest row before the resolving one: for a question never
- *  seen live, the loop's parking note is the closest the ledger comes to
- *  when it was asked. */
-function firstRow(row: LedgerRow, rows: LedgerRow[]): number | null {
-  let first: number | null = null;
-  for (const earlier of rows) {
-    if (earlier === row || earlier.at >= row.at) continue;
-    if (row.run != null ? earlier.run !== row.run : earlier.ticket !== row.ticket) continue;
-    if (first == null || earlier.at < first) first = earlier.at;
-  }
-  return first;
-}
-
-/** When the cleared item's wait began, by what it was: a question from
- *  its `asked_ms` (else the run's first ledger row); a failed run from
- *  its `ended_ms` (else the run's latest failure row, never an earlier
- *  round of the same run); a stale run or the supervisor from the strike
- *  row. */
-function waitStart(row: LedgerRow, kind: Kind, item: AttentionItem | undefined, rows: LedgerRow[]): number | null {
-  if (kind === "blocked") return num(item?.asked_ms) ?? firstRow(row, rows);
-  if (kind === "failed") return num(item?.ended_ms) ?? lastFailure(row, rows);
-  return lastFailure(row, rows);
-}
-
-/** What an intervention cleared: the item seen for its run, else what the
- *  action says (a kill clears a stale run, a requeue after a failure row
- *  clears a failed run), else a question. */
-function kindOf(row: LedgerRow, item: AttentionItem | undefined, rows: LedgerRow[]): Kind {
-  if (item?.kind === "blocked" || item?.kind === "stale_run" || item?.kind === "failed" || item?.kind === "supervisor") {
-    return item.kind;
-  }
-  const action = actionOf(row.text);
-  if (action === "kill") return "stale_run";
-  const failed = rows.some(
-    (earlier) => earlier.kind === "failure" && earlier.at <= row.at && earlier.run != null && earlier.run === row.run,
-  );
-  if (failed && action !== "resume" && action !== "redirect" && action !== "approve") return "failed";
-  return "blocked";
-}
-
-/** When an attention item began waiting, as the item says it: a
- *  question's `asked_ms`, a failed run's `ended_ms`; null otherwise. */
-const itemStart = (item: AttentionItem): number | null => num(item.asked_ms) ?? num(item.ended_ms);
-
-/** The attention item an intervention cleared. A row that names its run
- *  pairs only with that run's item: the ticket may have a newer run on
- *  the band, and its question is not what this row answered. A row with
- *  no run falls back to the ticket, and then only to an item that was
- *  already waiting when the row was written. */
-function clearedItem(row: LedgerRow, history: AttentionItem[]): AttentionItem | undefined {
-  if (row.run != null) return history.find((candidate) => num(candidate.run) === row.run);
-  if (row.ticket == null) return undefined;
-  return history.find((candidate) => {
-    if (candidate.ticket !== row.ticket) return false;
-    const start = itemStart(candidate);
-    return start == null || start <= row.at;
-  });
-}
-
-/** One daemon's fold rows: every `intervention` in its ledger at or after
- *  `midnight`, newest first, each paired with the attention item it
- *  cleared (see `clearedItem`) for its `waited_ms`. Rows and history must
- *  come from the same daemon: run ids are per store, so run #N on two
- *  daemons is two runs. */
-export function resolvedSince(rows: LedgerRow[], history: AttentionItem[], midnight: number): ResolvedRow[] {
+/** The fold rows: every `intervention` in `rows` at or after `midnight`,
+ *  newest first, each with the wait and the kind its own entry carries.
+ *  Nothing is paired against the band or other runs: an entry without the
+ *  fields is a `step` that "waited —". */
+export function resolvedSince(rows: LedgerRow[], midnight: number): ResolvedRow[] {
   return rows
     .filter((row) => row.kind === "intervention" && row.at >= midnight)
     .sort((a, b) => b.at - a.at)
-    .map((row) => {
-      const item = clearedItem(row, history);
-      const kind = kindOf(row, item, rows);
-      const start = waitStart(row, kind, item, rows);
-      return {
-        kind,
-        ticket: row.ticket,
-        run: row.run,
-        text: row.text,
-        waited_ms: start == null ? null : Math.max(0, row.at - start),
-        by: row.source === "operator" ? "operator" : "supervisor",
-        at: row.at,
-      };
-    });
+    .map((row) => ({
+      kind: (row.cleared != null && CLEARED_KIND[row.cleared]) || "step",
+      ticket: row.ticket,
+      run: row.run,
+      text: row.text,
+      waited_ms: num(row.waited_ms),
+      by: row.source === "operator" ? "operator" : "supervisor",
+      at: row.at,
+    }));
 }
 
 const waits = (rows: ResolvedRow[]): number[] =>
@@ -136,4 +65,9 @@ export function median(rows: ResolvedRow[]): number | null {
 export function longest(rows: ResolvedRow[]): number | null {
   const all = waits(rows);
   return all.length === 0 ? null : Math.max(...all);
+}
+
+/** The pill's text for a fold row. */
+export function pillText(kind: ResolvedKind): string {
+  return kind === "step" ? "step" : PILL_TEXT[kind];
 }

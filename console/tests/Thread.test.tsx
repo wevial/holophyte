@@ -5,7 +5,7 @@ import { NeedsYou } from "../src/components/NeedsYou";
 import { Now } from "../src/components/Now";
 import { ANSWER_PLACEHOLDER } from "../src/components/QuestionThread";
 import type { Ledgers } from "../src/hooks/useLedger";
-import { EVIDENCE_MS, localMidnight, type LedgerRow } from "../src/lib/ledger";
+import { localMidnight, type LedgerRow } from "../src/lib/ledger";
 import type { Fetch } from "../src/lib/poll";
 import type { Attention, AttentionItem, Status } from "../src/lib/types";
 import { fixture, hostOf, settle } from "./harness";
@@ -16,8 +16,6 @@ const NOW = allKinds.status.now;
 const MIDNIGHT = localMidnight(NOW);
 const min = (n: number) => n * 60_000;
 const ASKED = NOW - min(30);
-/** Where the console's ledger window starts with no question older than it. */
-const WINDOW = MIDNIGHT - EVIDENCE_MS;
 
 afterEach(cleanup);
 
@@ -93,33 +91,25 @@ function ledgerFetch(attention: Attention, entries: LedgerRow[] | 404, asked: st
   };
 }
 
+/** Today's three interventions as KO-308's daemon serves them: what each
+ *  cleared and how long that waited, one with neither. */
 const RESOLVED: LedgerRow[] = [
-  { at: MIDNIGHT + min(141), run: 88, ticket: "KO-229", kind: "intervention", source: "operator", text: "human requeue: fixed the fixture" },
-  { at: MIDNIGHT + min(131), run: 91, ticket: "KO-232", kind: "intervention", source: "loop", text: "supervisor kill: no heartbeat" },
+  { at: MIDNIGHT + min(141), run: 88, ticket: "KO-229", kind: "intervention", source: "operator", text: "human requeue: fixed the fixture", cleared: "failed", waited_ms: 2_460_000 },
+  { at: MIDNIGHT + min(131), run: 91, ticket: "KO-232", kind: "intervention", source: "loop", text: "supervisor kill: no heartbeat", cleared: null, waited_ms: null },
   { at: MIDNIGHT + min(126), run: 91, ticket: "KO-232", kind: "failure", source: "loop", text: "Strike 1: stale" },
-  { at: MIDNIGHT + min(74), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: the ticket body's" },
+  { at: MIDNIGHT + min(74), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: the ticket body's", cleared: "question", waited_ms: 840_000 },
   { at: MIDNIGHT + min(60), run: 95, ticket: "KO-240", kind: "note", source: "loop", text: "Parked." },
 ];
 
-test("the resolved fold counts today's interventions, opens to their rows with waits, and asks /ledger from a day before midnight", async () => {
+test("the resolved fold counts today's interventions, opens to their rows with each entry's own wait, and asks /ledger from midnight", async () => {
   const asked: string[] = [];
-  // KO-229 failed 41 minutes before its requeue; the fixture's item carries that `ended_ms`.
-  const failedAt = MIDNIGHT + min(100);
-  const attention: Attention = {
-    ...allKinds.attention,
-    items: allKinds.attention.items.map((item) => (item.kind === "failed" ? { ...item, ended_ms: failedAt } : item)),
-  };
-  render(<Now hosts={[hostOf(allKinds.status, attention, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(attention, RESOLVED, asked) }} />);
+  render(<Now hosts={[hostOf(allKinds.status, allKinds.attention, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(allKinds.attention, RESOLVED, asked) }} />);
   await act(settle);
-  // KO-229's requeue is the only row for run 88 in the window, so its ticket is fetched whole for evidence.
-  expect(asked.filter((url) => url.includes("/ledger?"))).toEqual([
-    `${BASE}/ledger?since=${WINDOW}&limit=1000`,
-    `${BASE}/ledger?ticket=KO-229&since=0&limit=1000`,
-  ]);
+  expect(asked.filter((url) => url.includes("/ledger?"))).toEqual([`${BASE}/ledger?since=${MIDNIGHT}&limit=1000`]);
   const fold = screen.getByRole("region", { name: "Resolved today" });
   const strip = within(fold).getByRole("button", { expanded: false });
   expect(strip.textContent).toContain("Resolved today · 3");
-  expect(strip.textContent).toContain("median wait 14m · longest 41m");
+  expect(strip.textContent).toContain("median wait 27m · longest 41m");
   expect(fold.querySelectorAll("[data-resolved-row]").length).toBe(0);
 
   fireEvent.click(strip);
@@ -129,15 +119,20 @@ test("the resolved fold counts today's interventions, opens to their rows with w
   );
   expect(shown.map((cells) => cells.slice(1, 6))).toEqual([
     ["failed", "KO-229", "human requeue: fixed the fixture", "waited 41m", "operator"],
-    ["stale run", "KO-232", "supervisor kill: no heartbeat", "waited 5m", "supervisor"],
+    ["step", "KO-232", "supervisor kill: no heartbeat", "waited —", "supervisor"],
     ["question", "KO-240", "human resume: the ticket body's", "waited 14m", "operator"],
   ]);
-  expect(fold.querySelectorAll("[data-resolved-row] [data-kind]").length).toBe(3);
+  expect(Array.from(fold.querySelectorAll("[data-resolved-row] [data-kind]")).map((pill) => pill.getAttribute("data-kind"))).toEqual([
+    "failed",
+    "step",
+    "blocked",
+  ]);
+  expect(shown.every((cells) => /^\d\d:\d\d$/.test(cells[6] ?? ""))).toBe(true);
 });
 
-test("with nothing resolved today the strip says 0 and opens to say so; a question older than the window widens it", async () => {
+test("with nothing resolved today the strip says 0 and opens to say so; a question older than midnight widens the window to it", async () => {
   const asked: string[] = [];
-  const yesterday = WINDOW - min(90);
+  const yesterday = MIDNIGHT - min(90);
   const attention: Attention = {
     level: "attention",
     now: NOW,
@@ -151,87 +146,6 @@ test("with nothing resolved today the strip says 0 and opens to say so; a questi
   expect(strip.textContent).toBe("▸Resolved today · 0");
   fireEvent.click(strip);
   expect(within(fold).getByText("Nothing resolved yet today")).toBeTruthy();
-});
-
-test("a question parked last night and answered before the console loaded still shows its wait", async () => {
-  // Parked at 23:30, answered at 00:10, console loaded later: only the ledger holds the wait's start.
-  const overnight: LedgerRow[] = [
-    { at: MIDNIGHT + min(10), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: go" },
-    { at: MIDNIGHT - min(30), run: 95, ticket: "KO-240", kind: "note", source: "loop", text: "Parked." },
-  ];
-  const quiet: Attention = { level: "none", now: NOW, items: [] };
-  render(<Now hosts={[hostOf(allKinds.status, quiet, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(quiet, overnight) }} />);
-  await act(settle);
-  const fold = screen.getByRole("region", { name: "Resolved today" });
-  const strip = within(fold).getByRole("button");
-  expect(strip.textContent).toContain("Resolved today · 1");
-  expect(strip.textContent).toContain("median wait 40m · longest 40m");
-  fireEvent.click(strip);
-  expect(within(fold).getByText("waited 40m")).toBeTruthy();
-});
-
-test("a question asked two days ago and answered today before the console loaded still shows its wait", async () => {
-  // Parked two days ago, answered at 00:10 today: the parking note is older than the window, so the
-  // console follows up with the ticket's whole ledger and times the wait from it.
-  const parked = WINDOW - min(60);
-  const answered = MIDNIGHT + min(10);
-  const asked: string[] = [];
-  const old: LedgerRow[] = [
-    { at: answered, run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: go" },
-    { at: parked, run: 95, ticket: "KO-240", kind: "note", source: "loop", text: "Parked." },
-  ];
-  const quiet: Attention = { level: "none", now: NOW, items: [] };
-  render(<Now hosts={[hostOf(allKinds.status, quiet, BASE)]} project="all" now={NOW} deps={{ fetch: ledgerFetch(quiet, old, asked) }} />);
-  await act(settle);
-  expect(asked.filter((url) => url.includes("/ledger?"))).toEqual([
-    `${BASE}/ledger?since=${WINDOW}&limit=1000`,
-    `${BASE}/ledger?ticket=KO-240&since=0&limit=1000`,
-  ]);
-  const fold = screen.getByRole("region", { name: "Resolved today" });
-  const strip = within(fold).getByRole("button");
-  // 25h10m at a glance is a day.
-  expect(strip.textContent).toContain("Resolved today · 1");
-  expect(strip.textContent).toContain("median wait 1d · longest 1d");
-  fireEvent.click(strip);
-  expect(within(fold).getByText("waited 1d")).toBeTruthy();
-});
-
-test("two daemons sharing a run id pair each resolution with their own question", async () => {
-  // Both daemons parked run 95; A asked 55 minutes before its answer, B 15 minutes before its own.
-  const other = "http://reader:7710";
-  const asks = (askedAt: number, ticket: string): Attention => ({
-    level: "attention",
-    now: NOW,
-    items: [{ kind: "blocked", level: "attention", ticket, run: 95, question: "Which?", asked_ms: askedAt }],
-  });
-  const a = asks(MIDNIGHT + min(5), "KO-240");
-  const b = asks(MIDNIGHT + min(45), "KO-300");
-  const ledgerA: LedgerRow[] = [
-    { at: MIDNIGHT + min(60), run: 95, ticket: "KO-240", kind: "intervention", source: "operator", text: "human resume: a" },
-  ];
-  const ledgerB: LedgerRow[] = [
-    { at: MIDNIGHT + min(60), run: 95, ticket: "KO-300", kind: "intervention", source: "operator", text: "human resume: b" },
-  ];
-  const fetchA = ledgerFetch(a, ledgerA);
-  const fetchB = ledgerFetch(b, ledgerB);
-  const fetch: Fetch = (url, init) => (url.startsWith(other) ? fetchB(url, init) : fetchA(url, init));
-  render(
-    <Now hosts={[hostOf(allKinds.status, a, BASE), hostOf(allKinds.status, b, other)]} project="all" now={NOW} deps={{ fetch }} />,
-  );
-  await act(settle);
-  const fold = screen.getByRole("region", { name: "Resolved today" });
-  const strip = within(fold).getByRole("button");
-  expect(strip.textContent).toContain("Resolved today · 2");
-  expect(strip.textContent).toContain("median wait 35m · longest 55m");
-  fireEvent.click(strip);
-  const waits = Array.from(fold.querySelectorAll("[data-resolved-row]")).map((row) => [
-    within(row as HTMLElement).getByText(/KO-/).textContent,
-    within(row as HTMLElement).getByText(/waited/).textContent,
-  ]);
-  expect(waits).toEqual([
-    ["KO-240", "waited 55m"],
-    ["KO-300", "waited 15m"],
-  ]);
 });
 
 test("a daemon without /ledger shows no thread hint and no fold, and the band renders as before", async () => {

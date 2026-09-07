@@ -1,22 +1,15 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useLedger } from "../hooks/useLedger";
 import type { ProjectChoice } from "../lib/attention";
-import { hostItems, visibleHosts, type HostRecord } from "../lib/hosts";
+import { visibleHosts, type HostRecord } from "../lib/hosts";
 import { localMidnight } from "../lib/ledger";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { resolvedSince } from "../lib/resolved";
 import type { DaemonStatus } from "../lib/runs";
-import type { AttentionItem } from "../lib/types";
 import { Floor } from "./Floor";
 import { NeedsYou } from "./NeedsYou";
 import { ResolvedFold } from "./ResolvedFold";
 import { RunDetail } from "./RunDetail";
-
-/** The key an attention item is remembered by once seen, so a resolving
- *  ledger row can still find what it cleared after the item left the band. */
-function itemKey(item: AttentionItem): string {
-  return `${String(item.daemon ?? "")}:${item.kind}:${String(item.run ?? "")}:${String(item.ticket ?? "")}`;
-}
 
 /** The Now view: the needs-you band over the Floor, both narrowed to the
  *  hosts serving `project`. The one expanded run lives here, keyed by its
@@ -43,22 +36,10 @@ export function Now({
   const daemons: DaemonStatus[] = [];
   for (const host of shown) if (host.status) daemons.push({ base: host.base, status: host.status });
 
-  // Every attention item seen this session, so the fold can pair an
-  // intervention with the item it cleared once the band has dropped it.
-  const history = useRef(new Map<string, AttentionItem>());
-  for (const host of shown) for (const item of hostItems(host, now)) history.current.set(itemKey(item), item);
   const ledgers = useLedger(shown, now, polls, deps);
   const served = shown.filter((host) => ledgers[host.address] && !ledgers[host.address]!.absent);
-  // Pair each daemon's ledger with that daemon's items before combining:
-  // run #N on two daemons is two runs, so a cross-daemon pairing would
-  // borrow another store's question time.
-  const seen = [...history.current.values()];
   const midnight = localMidnight(now);
-  const resolved = served
-    .flatMap((host) =>
-      resolvedSince(ledgers[host.address]!.rows, seen.filter((item) => item.daemon === host.address), midnight),
-    )
-    .sort((a, b) => b.at - a.at);
+  const resolved = served.flatMap((host) => resolvedSince(ledgers[host.address]!.rows, midnight)).sort((a, b) => b.at - a.at);
   return (
     <>
       <NeedsYou hosts={shown} project={project} now={now} ledgers={ledgers} />
