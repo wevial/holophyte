@@ -653,24 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[335 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T16:06:09Z — KO-303
-MERGED to main as 1c05b8a.
-actual: 2.8 min · estimate: 25 min · rounds: 1
-
-## 2026-09-06T16:19:28Z — KO-304
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/files.py:157 [p2] [P2] [holophyte/files.py:157](/home/reviewer/candidate/holophyte/files.py:157): `read_bytes()` follows untracked symlinks. Reproduced a link reporting 3 added…
-
-## 2026-09-06T16:27:00Z — KO-304
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:668 [p2] [P2 — Record the branch on approved-candidate reuse](/home/reviewer/candidate/holophyte/loop.py:668). `set_branch()` runs only inside `_cut_worktree()`, which…
-
-## 2026-09-06T16:34:10Z — KO-304
-Round 3: pass · reviewer codex-astra-medium · verify passed
+[339 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T16:35:25Z — KO-304
 MERGED to main as d2b09dc.
@@ -758,3 +741,25 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T00:58:32Z — KO-307
 MERGED to main as 35a4efd (branch task/ko-307-the-daemon-serves-a-web-manife deleted).
 actual: 3.6 min · estimate: 10 min · rounds: 1
+
+## 2026-09-07T21:12:14Z — KO-279
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (4):
+- /home/reviewer/candidate/console/src/lib/resolved.ts:32 [p2] [resolved.ts:32](/home/reviewer/candidate/console/src/lib/resolved.ts:32): For failures resolved before page load, wait starts at the run’s earliest ledger ro…
+- /home/reviewer/candidate/console/src/lib/ledger.ts:37 [p2] [ledger.ts:37](/home/reviewer/candidate/console/src/lib/ledger.ts:37): Once an overnight question is cleared, fetching starts at midnight and excludes its wai…
+- /home/reviewer/candidate/console/src/components/Now.tsx:52 [p2] [Now.tsx:52](/home/reviewer/candidate/console/src/components/Now.tsx:52): Combining daemon ledgers before pairing loses host identity. Shared run IDs match an…
+- criteria:2 [p2] CRITERION 2: not met — reproduced incorrect or missing waits for historical resolutions and shared daemon run IDs; aggregate waits consequently disagree with th…
+
+## 2026-09-07T21:16:30Z — KO-279
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- /home/reviewer/candidate/console/src/lib/resolved.ts:90 [p2] [resolved.ts:90](/home/reviewer/candidate/console/src/lib/resolved.ts:90): Ticket fallback pairs resolutions with a different run’s attention item. Reproduced…
+- /home/reviewer/candidate/console/src/lib/ledger.ts:44 [p2] [ledger.ts:44](/home/reviewer/candidate/console/src/lib/ledger.ts:44): The fetch excludes wait evidence older than yesterday unless the question is still open…
+- criteria:2 [p2] CRITERION 2: not met — Reproduced incorrect cross-run pairing and missing waits for resolutions whose evidence predates the fetch window. Given ledger intervent…
+
+## 2026-09-07T21:21:22Z — KO-279
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T21:21:22Z — KO-279
+FAILED: terminal adjudication: FAIL; branch task/ko-279-a-blocked-row-opens-its-questi preserved at e502eaf9cf9a
+actual: 16.2 min · estimate: 30 min · rounds: 3
