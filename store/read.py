@@ -643,6 +643,47 @@ def ledger(conn, run_id):
             for row in rows]
 
 
+@dataclass(frozen=True)
+class LedgerWindowEntry:
+    """One ledger entry across runs, with its ticket's identifier for the
+    console: the `/ledger` window (design note 9) and a ticket's thread."""
+
+    id: int
+    runId: int
+    ticket: str
+    at: int
+    kind: str
+    text: str
+    source: str
+
+
+def ledger_since(conn, since, kind=None, ticket=None, limit=200):
+    """Ledger entries at or after `since` (epoch ms) across every run,
+    newest first, at most `limit`; narrowed to one `kind` or one ticket
+    identifier (`KO-n`) when given. Two entries in the same millisecond
+    come back in reverse write order, so the window is a stable page.
+    """
+    where = ["ledger.at >= ?"]
+    args = [since]
+    if kind is not None:
+        where.append("ledger.kind = ?")
+        args.append(kind)
+    if ticket is not None:
+        where.append("tickets.linearIdentifier = ?")
+        args.append(ticket)
+    args.append(limit)
+    rows = conn.execute(
+        "SELECT ledger.id, ledger.runId, tickets.linearIdentifier, ledger.at,"
+        " ledger.kind, ledger.text, ledger.source FROM ledger"
+        " JOIN tickets ON tickets.id = ledger.ticketId"
+        f" WHERE {' AND '.join(where)} ORDER BY ledger.at DESC, ledger.id DESC"
+        " LIMIT ?", args).fetchall()
+    return [LedgerWindowEntry(id=row[0], runId=row[1], ticket=row[2],
+                              at=row[3], kind=row[4], text=row[5],
+                              source=row[6])
+            for row in rows]
+
+
 # --- sweepStrikes ------------------------------------------------------------
 
 

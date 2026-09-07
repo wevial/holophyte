@@ -104,6 +104,8 @@ EXPECTED_READ = [
     "latest_human_intervention_at",
     # KO-250: a run's ledger entries, oldest first.
     "ledger",
+    # KO-278: the `serve` daemon's `/ledger` window across runs.
+    "ledger_since",
     "live_runs",
     # KO-274: the `serve` daemon's `/shipped` page of merged runs.
     "merged_runs",
