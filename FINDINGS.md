@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[331 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T16:00:20Z — KO-301
-MERGED to main as bd6a042.
-actual: 17.6 min · estimate: 25 min · rounds: 2
-
-## 2026-09-06T16:03:16Z — KO-302
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[333 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T16:03:17Z — KO-302
 MERGED to main as 64cc982.
@@ -758,3 +751,10 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T00:46:20Z — KO-282
 MERGED to main as 76a7764 (branch task/ko-282-an-electron-wrapper-opens-the deleted).
 actual: 9.9 min · estimate: 25 min · rounds: 3
+
+## 2026-09-07T00:53:25Z — KO-306
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T00:53:27Z — KO-306
+MERGED to main as 2c0150d (branch task/ko-306-the-console-declares-opaque-ic deleted).
+actual: 7.1 min · estimate: 25 min · rounds: 1
