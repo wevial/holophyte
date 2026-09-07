@@ -653,24 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[323 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T15:18:05Z — KO-262
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:1227 [p1] [P1] [holophyte/loop.py:1227](/home/reviewer/candidate/holophyte/loop.py:1227): `reviewed = verified = sha` bypasses `_merge_gate()` after a fix review. `_rev…
-
-## 2026-09-06T15:25:40Z — KO-262
-Round 4: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T15:26:51Z — KO-262
-MERGED to main as 689d460.
-actual: 36.6 min · estimate: 30 min · rounds: 4
-
-## 2026-09-06T15:41:04Z — KO-300
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- (unparsed):cd59a0c6eca4 [p2] Verification blocker: the exact commands did not all pass in a temporary candidate export. Installation failed because `@oven/bun-linux-x64` was missing; build…
+[327 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T15:42:37Z — KO-300
 Round 2: pass · reviewer codex-astra-medium · verify passed
@@ -754,3 +737,20 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T00:25:01Z — KO-278
 MERGED to main as 47e8a09 (branch task/ko-278-get-ledger-since-ms-answers-t deleted).
 actual: 9.6 min · estimate: 25 min · rounds: 1
+
+## 2026-09-07T00:31:33Z — KO-281
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/components/Board.tsx:35 [p2] [Board.tsx:35](/home/reviewer/candidate/console/src/components/Board.tsx:35): Board creates a separate `useShipped` state instead of receiving the rows alread…
+
+## 2026-09-07T00:34:59Z — KO-281
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/components/TicketCard.tsx:19 [p2] [TicketCard.tsx:19](/home/reviewer/candidate/console/src/components/TicketCard.tsx:19): The required disabled “Edit ticket” and “Mark needs_spec” buttons are…
+
+## 2026-09-07T00:36:24Z — KO-281
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T00:36:26Z — KO-281
+MERGED to main as cc5e225 (branch task/ko-281-the-console-s-board-view-shows deleted).
+actual: 11.4 min · estimate: 30 min · rounds: 3
