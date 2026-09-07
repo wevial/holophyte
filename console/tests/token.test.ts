@@ -1,29 +1,34 @@
-import { beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { addressOf } from "../src/lib/hosts";
-import { tokenedFetch, type Fetch } from "../src/lib/poll";
+import { defaultPollDeps } from "../src/lib/poll";
 import { TOKEN_KEY_PREFIX, forgetToken, storeToken, tokenFor, withToken } from "../src/lib/token";
 
 const A = "http://writer:7710";
 const B = "http://writer-2:7710";
 
-beforeEach(() => localStorage.clear());
+const realFetch = globalThis.fetch;
 
-/** A fetch that records each request's URL and headers. */
+beforeEach(() => localStorage.clear());
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+/** Replace the page's `globalThis.fetch` with one that records each
+ *  request's URL and headers, so the production seam is what is tested. */
 function recording() {
   const seen: { url: string; headers: Headers }[] = [];
-  const fetchImpl: Fetch = async (url, init) => {
-    seen.push({ url, headers: new Headers(init?.headers) });
+  globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    seen.push({ url: String(url), headers: new Headers(init?.headers) });
     return Response.json({});
-  };
-  return { seen, fetchImpl };
+  }) as typeof fetch;
+  return seen;
 }
 
-test("a stored token for A rides every request to A as a bearer header, and B's requests carry none", async () => {
+test("a stored token for A rides every request to A as a bearer header through the default fetch seam, and B's requests carry none", async () => {
   storeToken(addressOf(A), "s3cret");
-  const { seen, fetchImpl } = recording();
-  const fetchWithToken = tokenedFetch(fetchImpl);
-  await fetchWithToken(`${A}/status`, { headers: { accept: "application/json" } });
-  await fetchWithToken(`${B}/status`, { headers: { accept: "application/json" } });
+  const seen = recording();
+  await defaultPollDeps.fetch(`${A}/status`, { headers: { accept: "application/json" } });
+  await defaultPollDeps.fetch(`${B}/status`, { headers: { accept: "application/json" } });
   expect(seen.map(({ url, headers }) => [url, headers.get("authorization")])).toEqual([
     [`${A}/status`, "Bearer s3cret"],
     [`${B}/status`, null],
