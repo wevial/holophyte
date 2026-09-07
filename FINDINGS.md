@@ -653,22 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[327 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-06T15:42:37Z — KO-300
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-06T15:42:39Z — KO-300
-MERGED to main as 892c0af.
-actual: 5.4 min · estimate: 15 min · rounds: 2
-
-## 2026-09-06T15:52:05Z — KO-301
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/serve.py:84 [p2] [P2] [holophyte/serve.py:84](/home/reviewer/candidate/holophyte/serve.py:84): The remote regex accepts query strings and fragments. With `origin=https://githu…
-
-## 2026-09-06T15:59:06Z — KO-301
-Round 2: pass · reviewer codex-astra-medium · verify passed
+[331 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-06T16:00:20Z — KO-301
 MERGED to main as bd6a042.
@@ -754,3 +739,22 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T00:36:26Z — KO-281
 MERGED to main as cc5e225 (branch task/ko-281-the-console-s-board-view-shows deleted).
 actual: 11.4 min · estimate: 30 min · rounds: 3
+
+## 2026-09-07T00:41:04Z — KO-282
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- /home/reviewer/candidate/console/electron/package.json:4 [p2] **P1 — Startup fails at the module boundary.** [package.json:4](/home/reviewer/candidate/console/electron/package.json:4) declares `"type": "module"`, but the…
+- /home/reviewer/candidate/console/electron/config.ts:64 [p2] **P2 — An explicitly set empty environment value silently falls through.** [config.ts:64](/home/reviewer/candidate/console/electron/config.ts:64) treats `HOLO…
+- criteria:1 [p2] CRITERION 1: not met — An explicitly set empty `HOLOPHYTE_CONSOLE_URL` loses precedence and silently falls through. Given `HOLOPHYTE_CONSOLE_URL` is set, when t…
+
+## 2026-09-07T00:43:41Z — KO-282
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/docs/development.md:178 [p2] [P2] Fix the documented development startup sequence in [docs/development.md:178](/home/reviewer/candidate/docs/development.md:178). After installing with `EL…
+
+## 2026-09-07T00:46:18Z — KO-282
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-07T00:46:20Z — KO-282
+MERGED to main as 76a7764 (branch task/ko-282-an-electron-wrapper-opens-the deleted).
+actual: 9.9 min · estimate: 25 min · rounds: 3
