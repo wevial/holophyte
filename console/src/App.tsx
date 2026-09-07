@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { Board } from "./components/Board";
 import { Hosts } from "./components/Hosts";
 import { Now } from "./components/Now";
 import { Shipped } from "./components/Shipped";
 import { Rail, VIEWS, type ProjectChoice, type View } from "./components/Rail";
 import { usePeers } from "./hooks/usePeers";
+import { useShipped } from "./hooks/useShipped";
 import { visibleHosts } from "./lib/hosts";
 import { defaultPollDeps, REQUEST_TIMEOUT_MS, type PollDeps } from "./lib/poll";
 import { applyTheme, readTheme, writeTheme, type Theme } from "./lib/theme";
@@ -40,6 +42,10 @@ export function App({
   const polled = hosts.length > 0;
   const shownHosts = visibleHosts(hosts, project).filter((host) => host.status != null);
   const daemonNow = hosts.reduce((latest, host) => Math.max(latest, host.status?.now ?? 0), 0) || pollDeps.now();
+  // The merge ledger lives above the view switch: the Shipped view and the
+  // Board's Shipped-today table read the same rows, so switching views
+  // neither refetches nor forgets pages already loaded.
+  const shipped = useShipped(shownHosts, polls, pollDeps);
   const heading = VIEWS.find((candidate) => candidate.id === view)?.label ?? view;
   return (
     <div className="flex h-screen overflow-hidden bg-paper font-sans text-ink">
@@ -53,11 +59,13 @@ export function App({
         onTheme={chooseTheme}
       />
       <main className="min-w-0 flex-1 overflow-y-auto">
-        {view !== "shipped" && view !== "hosts" && (
+        {view !== "shipped" && view !== "hosts" && view !== "board" && (
           <h1 className="px-6 pt-6 pb-4 text-2xl font-semibold">{heading}</h1>
         )}
         {view === "shipped" ? (
-          <Shipped hosts={shownHosts} now={daemonNow} polls={polls} deps={pollDeps} />
+          <Shipped shipped={shipped} now={daemonNow} />
+        ) : view === "board" ? (
+          <Board hosts={shownHosts} shipped={shipped} now={daemonNow} polls={polls} deps={pollDeps} />
         ) : view === "hosts" ? (
           <Hosts hosts={hosts} project={project} now={now} />
         ) : view === "now" && polled ? (

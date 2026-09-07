@@ -151,3 +151,27 @@ export interface ShippedBody {
   before?: number | null;
   next_before?: number | null;
 }
+
+/** The open ticket states, in the order `/board` answers them: left to
+ *  right the path to merge (holophyte/serve.py `BOARD_STATES`). */
+export type BoardState = "needs_spec" | "blocked_on_deps" | "ready" | "blocked_on_operator" | "in_flight";
+
+/** One open ticket of `/board` (holophyte/serve.py `board()`): `run` is
+ *  the live run's id or null, `question` the blocked question or null,
+ *  `waits_on` the open tickets its dependencies name. */
+export interface BoardWireTicket {
+  ticket: string;
+  title: string | null;
+  time_box_ms: number | null;
+  run: number | null;
+  question: string | null;
+  waits_on: string[];
+  mirrored_ms: number | null;
+}
+
+/** The daemon's `/board` body: every column present, empty or not, in
+ *  path order. */
+export interface BoardBody {
+  columns: { state: BoardState; tickets: BoardWireTicket[] }[];
+  now: number;
+}
