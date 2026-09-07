@@ -136,7 +136,9 @@ package scripts and `run build` would print usage without building.
 `install` reads the committed `console/bun.lock` and refuses to drift from
 it; it never builds — there is no install lifecycle script, and
 `run build` is the one path to `console/dist/`. `test` runs `bun test` with
-`console/tests/setup.ts` preloaded (see `console/bunfig.toml`), which
+`console/tests/setup.ts` preloaded and discovery rooted at `console/tests/`
+(see `console/bunfig.toml`, so the nested electron package's tests stay its
+own), which
 registers `happy-dom` so component tests render with
 `@testing-library/react` and no browser; `console/src/lib/` tests stay free
 of the DOM. `build` runs `console/build.ts`, which hands `console/index.html`
@@ -150,3 +152,43 @@ writer host: install it with the upstream installer
 (`curl -fsSL https://bun.sh/install | bash`) as the factory's user, so the
 loop's login shell sees `bun` on PATH. The factory's verify step inherits
 that PATH, so nothing in the loop changes. The writer host runs Bun 1.4.2.
+
+### Desktop wrapper
+
+Some operators want the console in the dock with a menubar icon rather than
+in a browser tab. `console/electron/` is a thin Electron shell around the
+URL the daemon serves: one window (1280×860, never narrower than the 1100px
+the design assumes), a tray icon built from `assets/menubar-template@1x.png`
+and its `@2x` sibling with "Show console" and "Quit", and nothing of its
+own — no renderer code, no preload, no IPC, so the app and the browser tab
+never drift. On macOS closing the window leaves the tray in place and the
+dock or tray reopens it; elsewhere closing the window quits.
+
+The console URL comes from the first of three sources, and a bad value in
+that source is a dialog naming it, never a fall-through to the next:
+
+1. `HOLOPHYTE_CONSOLE_URL` in the environment.
+2. `console.json` in Electron's user-data directory, `{"url": "…"}`; the
+   operator's own URL lives there, never in the repo.
+3. The default `http://127.0.0.1:7710/`, the first target's port on a host.
+
+Only `http` and `https` are accepted. The commands, run from the repo root:
+
+```
+ELECTRON_SKIP_BINARY_DOWNLOAD=1 bun --cwd=console/electron install --frozen-lockfile
+bun --cwd=console/electron test
+node console/electron/node_modules/electron/install.js
+bun --cwd=console/electron run start
+```
+
+`test` exercises the pure URL resolver in `console/electron/config.ts` and
+needs no Electron binary, which is why the verify install skips the
+download. `start` needs the binary, and a second `install` after the
+skipped one reports no changes and leaves it absent, so fetch it by running
+Electron's own postinstall script directly (the `node …/install.js` line
+above; it is a no-op once the binary is present). Then `run start` builds
+`main.ts` to `console/electron/dist/`
+(`main.cjs`, CommonJS with `electron` left external, since the package is
+`"type": "module"`) and launches it through the top-level `main.cjs`.
+`console/electron/dist/` and `console/electron/node_modules/` are
+git-ignored. Packaging a distributable is out of scope here.
