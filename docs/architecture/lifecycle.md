@@ -17,7 +17,7 @@ sequenceDiagram
   participant Rev as reviewer (container)
   participant Sup as supervisor
   Op->>Lin: --file-ticket TICKET.md (validate, create, re-read, re-validate)
-  Fac->>Lin: claim_next(): first ready, unblocked, by priority
+  Fac->>Lin: claim_next(): first ready, unblocked, by identifier, or priority when configured
   Fac->>Store: mirror ticket (contract snapshot), claim run, lease project
   Fac->>WT: git worktree add, then [worktree] setup commands
   Fac->>Imp: claude -p with the whole ticket body, budget = estimate
@@ -32,14 +32,21 @@ sequenceDiagram
   Fac->>Store: reviewRounds row (verdict, findings, fingerprint)
   alt REQUEST_CHANGES with a fix round left
     Fac->>Imp: findings, one fix round
-  else two rounds spent
+  else the run's cap spent
     Fac->>Rev: terminal adjudication PASS/FAIL
   end
   Fac->>WT: verify gate again
   Fac->>Lin: re-read body, refuse on drift from the snapshot
-  Fac->>Store: release run as merged, walk the ticket to merged
-  Fac->>Fac: git merge --no-ff into main, regenerate FINDINGS.md
-  Fac->>Lin: state Done, ledger comment
+  alt approve = "auto", mode = "local"
+    Fac->>Fac: git merge --no-ff into main, regenerate FINDINGS.md
+    Fac->>Store: release run as merged, walk the ticket to merged
+    Fac->>Lin: state Done, ledger comment
+  else approve = "human"
+    Fac->>Store: park awaiting_merge_approval, release the lease
+    Fac->>Lin: ticket blocked_on_operator asking merge?
+  else mode = "pr"
+    Fac->>Fac: git push, open a pull request, shepherd it
+  end
   Fac->>Fac: self-merge? re-exec factory.py from the new HEAD
   Op->>Op: git push (the factory never pushes)
 ```
@@ -89,7 +96,7 @@ Trace: `runs.branch`, phase `working`.
 ### 3. Implementer
 
 `agents.agent()` runs the configured implementer command (`claude -p
---model fable --effort medium` by default) in its own process
+--model opus --effort high` by default) in its own process
 group with the whole ticket body as the prompt and a wall-clock budget from
 the estimate. `runs.heartbeat_while()` beats `runs.lastHeartbeat` on a
 daemon thread at half the supervisor's stale threshold for as long as the
@@ -129,13 +136,17 @@ fingerprint, and the verify result the reviewer saw.
 ### 6. Fix rounds and adjudication
 
 `REQUEST_CHANGES` sends the findings back to the implementer for one fix
-round, then a second review. After two rounds a terminal adjudicator
+round, then another review, for as many rounds as the run's cap allows.
+The cap is per run: `runs.review_round_cap()` gives every run `[loop]
+review_rounds` (2 by default), adds one round per `review_rounds_per_lines`
+changed lines (800; `0` turns the scaling off) and stops at
+`review_rounds_max` (4). Once the cap is spent a terminal adjudicator
 answers PASS or FAIL. Meanwhile the supervisor's `review_stuck` check
 compares the two rounds' finding sets; a Jaccard overlap at or above the
 threshold with the same complaints twice ends the run, because the review
 is circling rather than converging.
 
-Trace: rounds 1, 2 and the adjudication as `reviewRounds` rows; phases
+Trace: each round and the adjudication as `reviewRounds` rows; phases
 `reviewing`, `addressing`, `verifying`.
 
 ### 7. Merge gate
@@ -144,10 +155,18 @@ The verify command runs once more. `board.merge_drift()` re-reads the
 ticket from Linear and compares it with the snapshot from step 1; a body
 edited while the run worked refuses the merge and preserves the branch. A
 board that cannot be read is recorded as "no evidence" and the merge
-proceeds on the frozen contract. Then `git merge --no-ff` into `main`, the
+proceeds on the frozen contract. Then, under the defaults (`[merge]
+approve = "auto"`, `mode = "local"`), `git merge --no-ff` into `main`, the
 worktree and branch are removed, `store.release()` ends the run as
 `merged` and walks the ticket to `merged`, `findings.render()` rewrites the
 `FINDINGS.md` window, and the provider pushes Done and a ledger comment.
+Under `[merge] approve = "human"` the clean gate parks the run instead:
+phase `awaiting_merge_approval`, ticket `blocked_on_operator`, branch and
+worktree preserved, lease released, until `--approve KO-n` sends it back
+through this gate. Under `[merge] mode = "pr"` the clean gate pushes the
+branch and opens a pull request against `main`, which the loop shepherds
+for up to `pr_rounds` passes before merging it through the API or parking.
+Both paths are described in the [loop](../loop.md) page.
 
 Trace: `runs.outcome = merged`, `tickets.status = merged`, a merge commit
 whose message names the ticket, a fresh `FINDINGS.md`.
@@ -165,7 +184,7 @@ operator restarts its unit. The operator pushes `main` to origin by hand.
 | Failure | Who notices | What happens | Operator step |
 | --- | --- | --- | --- |
 | Budget blown, no commits | loop | run `failed`, branch discarded (nothing to keep) | none, or requeue after a contract fix |
-| Verify red before merge, two failed rounds, adjudication FAIL | loop | run `failed`, branch and worktree preserved | read the ledger; `--requeue KO-n --note …` after fixing the contract |
+| Verify red before merge, the cap's rounds failed, adjudication FAIL | loop | run `failed`, branch and worktree preserved | read the ledger; `--requeue KO-n --note …` after fixing the contract |
 | Heartbeat stale, time box blown, review stuck | supervisor | run swept `failed`, leases released, branch preserved; the loop stops itself on the ended run | `--requeue`, relaunch the loop |
 | Ticket body edited mid-run | merge gate | merge refused, branch preserved | restore the body or work it again |
 | Second failed run of the same ticket | claim path | ticket `blocked_on_operator` with a Linear comment listing both failures | a recorded intervention buys another attempt |
