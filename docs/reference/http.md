@@ -391,14 +391,25 @@ load and learn where its peers are before it has a token to present. A
 daemon bound to loopback never asks: `--serve 7710` answers every route
 open, token file or not.
 
+A page served by one daemon polls the others from the browser, and a
+cross-origin GET carrying `Authorization` is not a simple request: the
+browser first sends a CORS preflight, `OPTIONS` on the path with
+`Access-Control-Request-Headers: authorization`. Every daemon answers it
+on any path with 204, no body, `Access-Control-Allow-Origin: *`,
+`Access-Control-Allow-Methods: GET`, `Access-Control-Allow-Headers:
+authorization, accept` and `Access-Control-Max-Age: 600`, token or not:
+a preflight never carries credentials, so the answer discloses nothing
+and touches no store. Every other method but GET stays 405.
+
 ## Errors
 
 | Status | When |
 | --- | --- |
+| 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}` |
 | 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
-| 405 | any method but GET; `Allow: GET` |
+| 405 | any method but GET and OPTIONS; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | the target has no store yet |
 | 504 | `/runs/N/files` when git does not answer within its cap |

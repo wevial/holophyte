@@ -942,10 +942,21 @@ class StatusHandler(BaseHTTPRequestHandler):
                           "path": self.path.split("?")[0]},
                     allow="GET")
 
+    def do_OPTIONS(self):
+        # A CORS preflight: the browser asks, before a cross-origin GET
+        # carrying `Authorization`, whether it may send it. The answer is
+        # the same on every path, never carries credentials, discloses
+        # nothing and reads nothing, so it runs without the bearer check.
+        self.answer_bytes(b"", "application/json", code=204, extra=[
+            ("Access-Control-Allow-Methods", "GET"),
+            ("Access-Control-Allow-Headers", "authorization, accept"),
+            ("Access-Control-Max-Age", "600"),
+        ])
+
     def __getattr__(self, name):
         # `BaseHTTPRequestHandler` dispatches on `do_<METHOD>` and answers
         # 501 HTML when the attribute is missing; here every method but GET
-        # is the same 405 JSON, whether or not the RFC names it.
+        # and OPTIONS is the same 405 JSON, whether or not the RFC names it.
         if name.startswith("do_"):
             return self.refuse
         raise AttributeError(name)
@@ -954,7 +965,12 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.answer_bytes(json.dumps(body).encode(), "application/json",
                           code=code, allow=allow)
 
-    def answer_bytes(self, payload, content_type, code=200, allow=None):
+    def answer_bytes(self, payload, content_type, code=200, allow=None,
+                     extra=()):
+        """Send `payload` as `content_type` with the headers every answer
+        carries -- the open origin included, so a page served by one
+        daemon can read another's -- plus `Allow` when given and any
+        `(name, value)` pairs in `extra`."""
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
@@ -962,6 +978,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         if allow is not None:
             self.send_header("Allow", allow)
+        for name, value in extra:
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(payload)
 
