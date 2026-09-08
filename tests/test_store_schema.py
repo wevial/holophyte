@@ -38,6 +38,9 @@ DOCUMENTED_COLUMNS = {
         "mergeSha",
         "candidateSha",
         "approvedSha",
+        # Store-owned: the review-round cap the loop gave the run, so the
+        # console sizes the round timeline by it rather than a constant.
+        "reviewRoundCap",
         # Store-owned, not a documented field: §5 requires a resume to
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.
@@ -693,6 +696,53 @@ class Version6MigrationTests(unittest.TestCase):
         self.assertEqual(
             conn.execute('SELECT "action" FROM interventions ORDER BY id')
             .fetchall(), [("approve",), ("repoint",)])
+
+
+class Version9MigrationTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+
+    def user_version(self):
+        raw = sqlite3.connect(self.path)
+        try:
+            return raw.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            raw.close()
+
+    def test_a_version_9_store_gains_review_round_cap_and_advances_by_one(self):
+        """A store stamped 9 has no `runs.reviewRoundCap`; opening it with
+        this build adds the column, leaves the run it held with a null
+        there, stamps 10, and the cap then lands on a live run (KO-321)."""
+        conn = store.open(self.path)
+        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1")
+        run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        conn.execute("ALTER TABLE runs DROP COLUMN reviewRoundCap")
+        conn.execute("PRAGMA user_version = 9")
+        conn.commit()
+        conn.close()
+        raw = sqlite3.connect(self.path)
+        columns = {row[1] for row in raw.execute("PRAGMA table_info(runs)")}
+        raw.close()
+        self.assertNotIn("reviewRoundCap", columns)
+        self.assertEqual(self.user_version(), 9)
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertEqual(store.SCHEMA_VERSION, 10)
+        self.assertEqual(self.user_version(), 10)
+        self.assertEqual(
+            conn.execute("SELECT id, reviewRoundCap FROM runs").fetchall(),
+            [(run_id, None)])
+        store.set_review_round_cap(conn, run_id, 4)
+        self.assertEqual(
+            conn.execute("SELECT reviewRoundCap FROM runs").fetchall(),
+            [(4,)])
 
 
 if __name__ == "__main__":

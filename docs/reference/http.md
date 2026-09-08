@@ -128,8 +128,10 @@ One run in full, by id: what the console shows when a run is expanded.
 `run` is the row joined to its ticket. `ended_ms` is null while the run
 is live; `heartbeat_age_ms` is the daemon's `now` minus the run's last
 heartbeat while it is live and null once it has ended. `max_rounds` is
-the loop's review-round cap, so a client can say "round 2 of 3" without
-knowing the constant. `rounds` lists the run's review rounds oldest
+the review-round cap the loop gave this run (two rounds plus one per 800
+changed lines, at most four), so a client can say "round 2 of 3" without
+recomputing it; a run recorded before the store carried the cap answers
+the loop's base of 2. `rounds` lists the run's review rounds oldest
 first, each with its `findings` decoded into objects (`path`, `line`,
 `severity`, `criterion`, `message`) rather than the stored JSON string.
 `events` is the `narrative` level of the run's event stream, oldest

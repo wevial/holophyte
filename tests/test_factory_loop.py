@@ -335,9 +335,10 @@ class LoopTests(LoopFixture):
         the candidate's diff (KO-299). With one extra round per changed line
         and a ceiling of 3, a one-line candidate earns a third round, so a
         reviewer that requests changes twice and approves on round 3 merges
-        without an adjudicator; the run's narrative carries the cap it was
-        given. Under the default config the same script hits the cap after
-        round 2 and the third turn is the terminal adjudication, as today.
+        without an adjudicator; the run's row and its narrative carry the
+        cap it was given (KO-321). Under the default config the same script
+        hits the cap after round 2 and the third turn is the terminal
+        adjudication, as today.
         """
         self.configure("[loop]\nreview_rounds = 2\n"
                        "review_rounds_per_lines = 1\nreview_rounds_max = 3\n")
@@ -356,6 +357,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(
             self.read("SELECT text FROM ledger WHERE kind = 'note'"),
             [("Review cap 3 for 1 changed lines",)])
+        self.assertEqual(self.read("SELECT reviewRoundCap FROM runs"), [(3,)])
 
         # The same script under the default config: two rounds, then the
         # adjudicator's turn, which an APPROVE reply is no verdict for.
@@ -370,6 +372,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(
             self.read("SELECT text FROM ledger WHERE kind = 'note'"),
             [("Review cap 2 for 1 changed lines",)])
+        self.assertEqual(self.read("SELECT reviewRoundCap FROM runs"), [(2,)])
         self.assertIn("after 2 review rounds", self.read(
             "SELECT text FROM ledger WHERE kind = 'adjudication'")[0][0])
 

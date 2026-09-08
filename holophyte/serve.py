@@ -622,7 +622,9 @@ def run_detail(target, run_id, now=None):
                 "merge_sha": run.mergeSha,
                 "commit_url": commit_url(target, run.mergeSha,
                                          origin_web_url(target)),
-                "max_rounds": MAX_ROUNDS},
+                # The cap the loop gave this run; a run recorded before the
+                # store carried one answers the constant.
+                "max_rounds": run.reviewRoundCap or MAX_ROUNDS},
         "rounds": [{"round": r.round, "started_ms": r.startedAt,
                     "ended_ms": r.endedAt, "verdict": r.verdict,
                     "reviewer_model": r.reviewerModel,
