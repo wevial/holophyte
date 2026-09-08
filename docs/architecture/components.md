@@ -13,7 +13,7 @@ every file; this page lists what each seam promises.
 | **`Target`** | `holophyte/target.py` | Everything about where a target's state lives, as a value: repository path, state directory, store path, config path. No module-level globals name a target; a function that needs one takes it. Two targets can exist in one process, which is what the tests, the daemon and a future port need. |
 | **`Provider`** | `provider.py` | The board as a protocol: `claim_next`, `fetch_task`, `set_state`, `comment`, `team`. `LinearProvider` lazily imports the GraphQL module; `FileProvider` reads a directory of `<ID>.md` files for tests and offline runs. The loop never names Linear. |
 | **`store.read`** | `store/read.py` | Typed, read-only views; the only SQL outside `store/__init__.py`. Every consumer that renders state (report, sweep, findings, serve) goes through it. |
-| **`runs`** | `holophyte/runs.py` | The loop's store seam: `open_store`, `set_phase`, `heartbeat_while`, `record_round`, `warn_on_run`. Five helpers, so a wiring change extends one file instead of threading SQL through the loop. |
+| **`runs`** | `holophyte/runs.py` | The loop's store seam: `open_store`, `set_phase`, `heartbeat_while`, `record_round`, `warn_on_run`, `review_round_cap`. Six helpers, so a wiring change extends one file instead of threading SQL through the loop. |
 | **`gates`** | `holophyte/gates.py` | Worktree cutting and reuse, the verify gate, process-group reaping. Takes a target and a ticket, returns a red or green report. |
 | **`agents`** | `holophyte/agents.py` | `agent_route()` (which command, which model, from `[agents]`) and `agent()` (one turn of a role in a process group with a budget). The implementer and the reviewer are both routes; `review_runner` is the reviewer's transport. |
 | **`review`** | `holophyte/review.py` | Reviewer prose in, structured findings and a verdict out: the `CRITERION n:` checklist parser, the witness-test resolver, the finding key. |
@@ -37,6 +37,15 @@ flowchart TB
   loop --> board
   loop --> findings
   loop --> reexec
+  loop --> pr
+  loop --> shepherd
+  shepherd --> pr
+  pr --> findings
+  pr --> gates
+  pr --> read
+  files --> gates
+  serve --> files
+  config -.lazy.-> pr
   supervisor --> reexec
   supervisor --> report
   agents --> review_runner[review_runner]
@@ -61,8 +70,13 @@ flowchart TB
   everything[every module] --> target[Target]
 ```
 
-Arrows point at what a module imports. Three rules hold the graph in this
-shape: `serve` imports `store.read` and never `store` (it cannot write);
+Arrows point at what a module imports. The three modules the PR merge mode
+and the console brought: `pr.py` (the push, the pull request and its merge
+API; imports `store.read`, `findings` and `gates`), `shepherd.py` (the
+thread verdicts of a PR pass; imports `pr.py`) and `files.py` (touched-file
+counts read from git for the daemon; imports `gates`, and is imported by
+`serve`). `config` imports `pr.py` lazily, at the startup route check only.
+Three rules hold the graph in this shape: `serve` imports `store.read` and never `store` (it cannot write);
 `holophyte.config` never imports `factory` or the loop (no cycles); and
 nothing outside `store/` writes SQL.
 
@@ -76,9 +90,12 @@ the target, read at startup and refused if unknown:
 | `[agents]` | the implementer, reviewer and adjudicator commands |
 | `[worktree]` | setup commands run in each fresh worktree and their cap |
 | `[supervisor]` | stale threshold, strikes, time-box grace, review-overlap threshold, sweep interval, restart grace |
-| `[loop]` | stop on failure; claim order by identifier or priority |
+| `[loop]` | stop on failure; claim order by identifier or priority; `spawn_supervisor`; the review-round cap from `review_rounds`, `review_rounds_per_lines` and `review_rounds_max` |
 | `[board]` | the Linear project and team this target claims from |
 | `[report]` | the host label rendered instead of the machine name |
+| `[merge]` | `approve` (auto or human), `mode` (local or pr) and `pr_rounds`, the shepherd-pass cap |
+| `[console]` | `daemons`, the `HOST:PORT` peers the console page fans out to |
+| `[serve]` | `token_file`, the bearer token the daemon reads for a non-loopback bind |
 
 [Config](../config.md) has each with a commented example.
 

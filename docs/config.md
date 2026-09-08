@@ -187,6 +187,9 @@ supervisor does not pick up an edit.
 # What the claim loop does after a run it closed out as failed. Optional; the
 # value shown is the default.
 stop_on_failure = true   # false: record the failure and claim the next ticket
+# Which ready ticket the loop claims first. Optional; the default is the
+# lowest identifier.
+order = "identifier"     # "priority": most urgent Linear priority first
 # Whether the loop starts a detached --supervise for the target at startup
 # when no live supervisor holds its lock. Optional; the default is true.
 spawn_supervisor = true  # false: a service manager runs the supervisor
@@ -211,6 +214,15 @@ one failure stops the whole queue. The exit status is still nonzero once the
 queue is empty if any run failed. The value must be a boolean, `true` or
 `false`; a string such as `"yes"` is a startup error naming the key, like a
 `[supervisor]` threshold outside its constraint.
+
+`order` is which ready ticket the loop claims first. `"identifier"` (the
+default) is the loop as it has always been: lowest identifier first.
+`"priority"` claims the most urgent Linear priority first (1 before 2 before
+3 before 4, then unprioritised), identifier ascending within a priority --
+the policy for a queue with more than one author, where a P1 filed after ten
+P3s should not wait behind all of them. The file board has no priority and
+orders by identifier under either value. Anything but one of the two strings
+is a startup error naming the key.
 
 With `spawn_supervisor = true` (the default) the loop checks the target's
 `supervisor.lock` at startup, after the config and route checks and before
@@ -254,8 +266,8 @@ Accepted keys: `project_id`, `team`.
 The board is a per-target setting: two targets on one host driven from one
 process-wide variable would both claim from the same project, and the second
 would silently work the first's queue. Both values must be non-empty strings.
-`--report`, `--serve` and a read-only `--sweep` need no board and run without
-the table; the loop and `--supervise` exit at startup naming `[board]
+`--report`, `--serve`, `--repoint` and a read-only `--sweep` need no board and
+run without the table; the loop and `--supervise` exit at startup naming `[board]
 project_id` when it is absent. Nothing in the environment stands in for the
 table.
 
@@ -369,14 +381,6 @@ be `"auto"` or `"human"`; anything else is a startup error naming the key.
 
 With `mode = "local"` a clean merge gate lands the candidate on `main` with a
 `--no-ff` merge, as it always has. With `mode = "pr"` the loop pushes the task
-branch to `origin` instead and opens a pull request against `main` titled
-`KO-n: TITLE`, whose body is the ticket body followed by the run's FINDINGS
-entry, so the repository's own review bots and CI see the change before it
-lands (design note 7). The run then parks exactly as `approve = "human"` does
--- phase `awaiting_merge_approval`, ticket `blocked_on_operator`, branch and
-worktree preserved, lease released -- with the PR's URL recorded on the run
-(`runs.prUrl`), in the ticket's question (`PR open: URL`) and in the ledger
-comment. With `mode = "pr"` the loop pushes the task
 branch to `origin` instead and opens a pull request against `main` titled
 `KO-n: TITLE`, whose body is the ticket body followed by the run's FINDINGS
 entry, so the repository's own review bots and CI see the change before it
