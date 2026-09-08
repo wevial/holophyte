@@ -653,15 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[370 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T21:50:35Z — KO-309
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/board.py:649 [p2] [holophyte/board.py:649](/home/reviewer/candidate/holophyte/board.py:649): `blockers_of()` runs before `update_issue()`, contrary to the contract’s required p…
-
-## 2026-09-07T21:51:53Z — KO-309
-Round 2: pass · reviewer codex-astra-medium · verify passed
+[372 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T21:51:54Z — KO-309
 MERGED to main as bacbbde (branch task/ko-309-file-ticket-update-records-th deleted).
@@ -760,3 +752,10 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:20:23Z — KO-316
 FAILED: terminal adjudication: FAIL; branch task/ko-316-the-architecture-data-and-over preserved at 6dbec627a642
 actual: 5.1 min · estimate: 25 min · rounds: 3
+
+## 2026-09-08T19:22:51Z — KO-316
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:22:52Z — KO-316
+MERGED to main as 5e4fa15 (branch task/ko-316-the-architecture-data-and-over deleted).
+actual: 1.5 min · estimate: 25 min · rounds: 1
