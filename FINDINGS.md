@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[375 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T22:29:23Z — KO-310
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-07T22:29:24Z — KO-310
-MERGED to main as 779ed62 (branch task/ko-310-the-ticket-template-carries-th deleted).
-actual: 2.0 min · estimate: 20 min · rounds: 1
+[377 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T22:35:52Z — KO-312
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -760,3 +753,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:26:58Z — KO-317
 MERGED to main as 052e137 (branch task/ko-317-the-lifecycle-page-the-loop-pa deleted).
 actual: 4.1 min · estimate: 30 min · rounds: 2
+
+## 2026-09-08T19:29:06Z — KO-318
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:29:06Z — KO-318
+MERGED to main as 8e3ef03 (branch task/ko-318-the-config-page-and-the-compon deleted).
+actual: 2.1 min · estimate: 30 min · rounds: 1
