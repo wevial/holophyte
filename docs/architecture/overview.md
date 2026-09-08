@@ -61,9 +61,10 @@ restart.
 
 ### The store
 
-One SQLite file per target, WAL mode, ten tables: projects, tickets, runs,
-review rounds, run events, sweep strikes, supervisor heartbeats, loop
-restarts, Linear deliveries, interventions. Two state machines live in it
+One SQLite file per target, WAL mode, eleven tables: projects, tickets,
+runs, review rounds, run events, sweep strikes, supervisor heartbeats, loop
+restarts, Linear deliveries, ledger, interventions. Two state machines live
+in it
 as data (`TICKET_TRANSITIONS`, `RUN_PHASE_TRANSITIONS`) and every
 transition goes through one function that refuses edges not in the table.
 Typed read views in `store/read.py` are the only SQL the rest of the code
@@ -80,8 +81,10 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 - **The review container** sees a clean export of the candidate commit,
   read-only, with no credentials and no host home. It can witness only
   what is in that tree. See [Reviewing](../reviewing.md).
-- **The bind address** is the daemon's entire access control: it listens
-  on `127.0.0.1`, or on one private-network address, and nowhere else.
+- **The bind address and `[serve] token_file`** are the daemon's access
+  control: it listens on `127.0.0.1`, or on one private-network address,
+  and nowhere else; a non-loopback bind refuses to start without a token
+  file, and every JSON route but `/peers` then demands that bearer token.
 
 ### Projections
 
@@ -91,8 +94,9 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 - **`FINDINGS.md`** is the newest twenty-five entries below a marker,
   regenerated from `runs` and `reviewRounds` at every close-out. Nobody
   edits it.
-- **`/status`, `/runs`, `/attention`** are the store as JSON, one
-  read-only connection per request.
+- **The ten JSON routes** in [HTTP endpoints](../reference/http.md)
+  (`/status`, `/runs`, `/ledger`, `/attention` and the rest) are the store
+  as JSON, one read-only connection per request.
 - **The drawer** is those endpoints as a menu.
 
 ## What talks to what, and over which channel
