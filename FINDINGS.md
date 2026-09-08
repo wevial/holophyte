@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[356 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T00:53:25Z — KO-306
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-07T00:53:27Z — KO-306
-MERGED to main as 2c0150d (branch task/ko-306-the-console-declares-opaque-ic deleted).
-actual: 7.1 min · estimate: 25 min · rounds: 1
-
-## 2026-09-07T00:57:57Z — KO-307
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[359 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T00:58:32Z — KO-307
 MERGED to main as 35a4efd (branch task/ko-307-the-daemon-serves-a-web-manife deleted).
@@ -762,3 +752,18 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-07T22:40:43Z — KO-312
 MERGED to main as 3f4e2cd (branch task/ko-312-the-console-asks-each-daemon-f deleted).
 actual: 10.9 min · estimate: 30 min · rounds: 3
+
+## 2026-09-08T17:15:59Z — KO-313
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (4):
+- /home/reviewer/candidate/console/src/components/HostPanel.tsx:106 [p2] [HostPanel.tsx:106](/home/reviewer/candidate/console/src/components/HostPanel.tsx:106): `!needsToken` hides “Forget token” after submitting a valid token whil…
+- /home/reviewer/candidate/console/tests/token.test.ts:74 [p2] [token.test.ts:74](/home/reviewer/candidate/console/tests/token.test.ts:74): The required `"abc\u00a0123"` case is missing; the test substitutes an ordinary s…
+- criteria:1 [p2] CRITERION 1: unwitnessed — the frozen ticket’s non-breaking-space input is absent from console/tests/token.test.ts. Given the values " abc123 ", "abc 123", "⚿ab…
+- criteria:3 [p2] CRITERION 3: not met — a newly submitted stored token has no Forget token button while awaiting the next poll. Given a stored token for a host, when its card re…
+
+## 2026-09-08T17:19:12Z — KO-313
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T17:19:13Z — KO-313
+MERGED to main as 71b15eb (branch task/ko-313-a-bad-stored-token-never-takes deleted).
+actual: 8.4 min · estimate: 25 min · rounds: 2
