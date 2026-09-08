@@ -153,6 +153,25 @@ class ServeTestCase(unittest.TestCase):
             conn.close()
         return response.status, dict(response.getheaders()), raw
 
+    PREFLIGHT = {"Origin": "http://page.example:7710",
+                 "Access-Control-Request-Method": "GET",
+                 "Access-Control-Request-Headers": "authorization"}
+
+    def assert_preflight_answered(self, path):
+        """`OPTIONS path` is 204, empty, and grants the cross-origin GET
+        with its `Authorization` header, reading nothing from the store."""
+        with patch.object(store.read, "open_readonly") as opened:
+            code, headers, raw = self.fetch("OPTIONS", path, self.PREFLIGHT)
+        self.assertEqual(code, 204)
+        self.assertEqual(raw, b"")
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
+        self.assertEqual(headers["Access-Control-Allow-Methods"], "GET")
+        self.assertIn("authorization",
+                      headers["Access-Control-Allow-Headers"].lower())
+        self.assertEqual(headers["Access-Control-Max-Age"], "600")
+        self.assertNotIn("Allow", headers)
+        opened.assert_not_called()
+
     def null_host(self, run_id):
         """Age run `run_id` past the host column: a row with no recorded host."""
         conn = sqlite3.connect(str(self.db))
@@ -253,6 +272,17 @@ class TokenTests(ServeTestCase):
             with self.subTest(path=path):
                 code, _, _ = self.request("GET", path)
                 self.assertEqual(code, 401)
+
+    def test_a_preflight_without_the_bearer_is_204_not_401(self):
+        self.seed()
+        self.start(self.token_config(self.token_file()), host="0.0.0.0")
+
+        # The browser asks before the GET that carries the token; the answer
+        # needs none. And the 401 a bare GET earns stays readable cross-origin.
+        self.assert_preflight_answered("/status")
+        code, headers, _ = self.request("GET", "/status")
+        self.assertEqual(code, 401)
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
 
     def test_the_page_its_files_and_peers_stay_open(self):
         self.seed()
@@ -461,9 +491,10 @@ class StatusTests(ServeTestCase):
         self.assertIn("error", body)
         self.assertEqual(body["path"], "/nope")
 
-        # Every method but GET, the ones `http.server` would otherwise answer
-        # with its own 501 HTML page included (OPTIONS, TRACE, an unknown one).
-        for method in ("POST", "OPTIONS", "TRACE", "BREW"):
+        # Every method but GET and OPTIONS, the ones `http.server` would
+        # otherwise answer with its own 501 HTML page included (TRACE, an
+        # unknown one). OPTIONS is the CORS preflight, witnessed on its own.
+        for method in ("POST", "TRACE", "BREW"):
             with self.subTest(method=method):
                 code, headers, body = self.request(method, "/status")
                 self.assertEqual(code, 405)
@@ -483,6 +514,13 @@ class StatusTests(ServeTestCase):
         self.assertTrue(head.startswith(b"HTTP/1.0 405 "), head)
         self.assertIn(b"Content-Type: application/json", head)
         self.assertIn("error", json.loads(payload))
+
+
+    def test_a_preflight_on_a_loopback_daemon_is_204(self):
+        self.seed()
+        self.start()
+
+        self.assert_preflight_answered("/peers")
 
 
 class ConsoleTests(ServeTestCase):
