@@ -6,7 +6,7 @@ import { KEY_GLYPH } from "../src/components/HostCard";
 import { Hosts } from "../src/components/Hosts";
 import { Rail } from "../src/components/Rail";
 import { tokenedFetch, type Fetch } from "../src/lib/poll";
-import { TOKEN_KEY_PREFIX, storeToken } from "../src/lib/token";
+import { TOKEN_KEY_PREFIX, storeToken, tokenFor } from "../src/lib/token";
 import type { Status } from "../src/lib/types";
 import { NO_ATTENTION, fakeDeps, fixture, hostOf, peersFetch, settle } from "./harness";
 
@@ -260,4 +260,79 @@ test("a token given to the origin is keyed by the address the page requests, not
   });
   expect(seen.length).toBeGreaterThan(0);
   expect(seen.every((request) => request.authorization == null)).toBe(true);
+});
+
+test("a refused value shows its reason under the field and stores nothing; a trimmed one is stored", () => {
+  const asking = { ...hostOf(working, NO_ATTENTION, "http://writer:7710", 1_000), status: null, project: null, seen_ms: null, needs_token: true };
+  render(<Hosts hosts={[asking]} project="all" now={1_000} />);
+  const card = screen.getByRole("article", { name: "writer" });
+  const field = () => within(card).getByLabelText("Token") as HTMLInputElement;
+  fireEvent.change(field(), { target: { value: "\u26bfabc" } });
+  fireEvent.submit(field().closest("form")!);
+  expect(card.querySelector("[data-token-reason]")!.textContent).toBe("Token has a character the header cannot carry");
+  expect(localStorage.length).toBe(0);
+  expect(card.querySelector("[data-token-sent]")).toBeNull();
+  expect(document.body.textContent).not.toContain("\u26bfabc");
+
+  fireEvent.change(field(), { target: { value: "  abc123  " } });
+  fireEvent.submit(field().closest("form")!);
+  expect(card.querySelector("[data-token-reason]")).toBeNull();
+  expect(localStorage.getItem(`${TOKEN_KEY_PREFIX}writer:7710`)).toBe("abc123");
+  expect(card.querySelector("[data-token-sent]")).not.toBeNull();
+});
+
+test("a card with a stored token offers Forget token; pressing it removes the value and the next 401 brings the field back", async () => {
+  const ORIGIN = "http://writer:7710";
+  const daemon: Fetch = (url, init) => {
+    if (!url.endsWith("/peers") && new Headers(init?.headers).get("authorization") !== "Bearer kept") {
+      return Promise.resolve(Response.json({}, { status: 401 }));
+    }
+    return peersFetch(ORIGIN, { [ORIGIN]: { status: working, attention: NO_ATTENTION } })(url, init);
+  };
+  storeToken("writer:7710", "kept");
+  const { deps, firePoll } = fakeDeps(tokenedFetch(daemon));
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  fireEvent.click(screen.getByRole("button", { name: "Hosts" }));
+  const card = () => screen.getByRole("article", { name: "writer" });
+  expect(card().getAttribute("data-needs-token")).toBeNull();
+
+  fireEvent.click(within(card()).getByRole("button", { name: "Forget token" }));
+  expect(tokenFor("writer:7710")).toBeNull();
+  expect(localStorage.length).toBe(0);
+  expect(within(card()).queryByRole("button", { name: "Forget token" })).toBeNull();
+
+  await act(async () => {
+    firePoll();
+    await settle();
+  });
+  expect(card().getAttribute("data-needs-token")).toBe("true");
+  expect(within(card()).getByLabelText("Token")).toBeTruthy();
+  expect(within(card()).queryByRole("button", { name: "Forget token" })).toBeNull();
+});
+
+test("a stored token the header cannot carry degrades to needs token: every peer keeps the key glyph and the rail shows no poll failure", async () => {
+  const ORIGIN = "http://writer:7710";
+  const daemon: Fetch = (url, init) => {
+    // The browser's `Headers` refuses a value outside ISO-8859-1 before the
+    // request is sent; the test DOM's does not, so the fake stands in.
+    const authorization = new Headers(init?.headers).get("authorization");
+    if (authorization != null && /[^\u0000-\u00ff]/.test(authorization)) throw new TypeError("Failed to execute 'set' on 'Headers'");
+    if (url.endsWith("/peers")) return Promise.resolve(Response.json({ self: "writer:7710", peers: ["writer-2:7710"] }));
+    return Promise.resolve(Response.json({}, { status: 401 }));
+  };
+  localStorage.setItem(`${TOKEN_KEY_PREFIX}writer:7710`, "\u26bfabc");
+  const { deps } = fakeDeps(tokenedFetch(daemon));
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  const entries = Array.from(screen.getByRole("region", { name: "Hosts" }).querySelectorAll("[data-host]"));
+  expect(entries.map((entry) => entry.getAttribute("data-host"))).toEqual(["writer:7710", "writer-2:7710"]);
+  for (const entry of entries) {
+    expect(entry.getAttribute("data-needs-token")).toBe("true");
+    expect(entry.getAttribute("data-unreachable")).toBeNull();
+    expect(within(entry as HTMLElement).getByRole("img", { name: "needs token" }).textContent).toBe(KEY_GLYPH);
+  }
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(document.body.textContent).not.toContain("poll failed");
+  expect(localStorage.length).toBe(0);
 });
