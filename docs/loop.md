@@ -23,8 +23,11 @@ machines it walks. Back to the [README](index.md).
 5. Local reviewer agent (Codex / GPT-5.6 Sol at medium effort) reviews the
    diff against the task inside the hardened container boundary described in
    [Reviewing](reviewing.md);
-   findings go back to the implementer for one fix round. Max 2 review
-   rounds.
+   findings go back to the implementer for one fix round. The number of
+   rounds is capped per run at
+   `min(review_rounds_max, review_rounds + changed_lines // review_rounds_per_lines)`
+   from `[loop]` (see [Config](config.md)): 2 by default, one more per 800
+   changed lines, never above 4.
 6. Merge gate: the verify command passes again, and the ticket is re-read
    from Linear and held against the snapshot the claim froze (title,
    acceptance criteria, verify commands). A body edited while the run was
