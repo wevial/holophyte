@@ -8,7 +8,8 @@ timestamp, before the change; the operator commands write it for you.
 ## The escalation ladder
 
 1. **Relaunch or unblock through the factory's own paths.** Relaunch the
-   loop; `--requeue` a failed ticket; fix the ticket file and
+   loop; `--requeue` a failed ticket; `--approve` or `--shepherd` a parked
+   one; `--repoint` a rebuilt candidate; fix the ticket file and
    `--file-ticket --update`.
 2. **`--sweep`, then `--sweep --act`** once a trip is confirmed. A stuck or
    refused lease is a sweep question, never a SQL question.
@@ -71,6 +72,25 @@ in any other state -- ready, in flight, failed, merged -- naming it, and
 writes nothing then.
 To decline instead, leave the ticket parked or close the run out by hand
 through the store API.
+
+### A run is parked on its pull request and the PR has moved
+
+```
+python3 factory.py TARGET --shepherd KO-n --note "new review thread; look at the PR again"
+# then relaunch the loop
+```
+
+Under `[merge] mode = "pr"` a candidate that came up ready parks the same
+way, on its pull request, and `--approve` merges it as it stands.
+`--shepherd` sends it back for another round instead: it writes an
+`interventions` row with action `shepherd` (the note defaults to `sent
+back to the shepherd`), ends the parked run with its resume point at the
+merge gate and walks the ticket to `ready`; the loop's next claim resumes
+the candidate on its PR, verdicts and answers the new threads, waits on
+the checks, and a PR that comes up ready under `[merge] approve = "human"`
+parks again for your `--approve` rather than merging. The refusals are
+`--approve`'s: a ticket in any other state -- ready, in flight, failed,
+merged -- is named and nothing is written.
 
 ### A parked candidate's branch was rebuilt on a rewritten `main`
 
@@ -158,11 +178,14 @@ merge waits.
 ```
 python3 factory.py TARGET --report          # estimate vs actual per run, supervisor liveness
 python3 factory.py TARGET --sweep           # what would trip, without acting
-curl -s http://WRITER:7710/status | python3 -m json.tool
-curl -s http://WRITER:7710/runs?limit=5
+curl -s -H "Authorization: Bearer $(cat TOKEN_FILE)" http://WRITER:7710/status | python3 -m json.tool
+curl -s -H "Authorization: Bearer $(cat TOKEN_FILE)" http://WRITER:7710/runs?limit=5
 ```
 
-The drawer on the operator's Mac shows the same through the daemons; a
+`TOKEN_FILE` is your copy of that target's `[serve] token_file`; a daemon
+bound beyond loopback answers 401 to a bare request (see [Across
+machines](hosts.md#what-listens-where)). The drawer on the operator's Mac
+and the console in a browser show the same through the daemons; a
 coloured dot on the glyph means something in "needs you".
 
 ## Close the loop afterwards

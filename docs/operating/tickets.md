@@ -31,7 +31,7 @@ Advisories print and let it through.
 
 | Refusal | Why it exists |
 | --- | --- |
-| Unfilled placeholder: any `<…>` or `{{…}}` outside a markdown link | KO-165 was claimed with template placeholders in its title and criteria and merged anyway. HTML tags count; write "the `main` element", not `<main>`. |
+| Unfilled placeholder: any `<…>` or `{{…}}` outside a markdown link | KO-165 was claimed with template placeholders in its title and criteria and merged anyway. HTML tags count; write "the `main` element", not `<main>`. HTML comments in a draft's "Open questions" section are stripped before validation, so the template's guidance comment there is not a placeholder; a comment in any other section is refused like any other tag. |
 | More than three in-scope items, five criteria, or 30 minutes | KO-110 was a 180-minute blob. Small tickets converge; big ones burn rounds. |
 | A non-relative path in a verify command | KO-111 `cd`'d to an absolute path and verified the wrong tree. |
 | A path a criterion names that the target repository gitignores | KO-166 named a rendered file under a gitignored `artifacts/`; the reviewer's export cannot contain it and the implementer force-tracked it. |
@@ -81,7 +81,11 @@ Both validate the file against the target, act on Linear, read the stored
 body back and validate that again, so a transfer that rewrites bold or
 autolinks an example identifier is caught at filing time rather than at
 claim time. Exit 1 means nothing was changed; exit 2 means the issue exists
-but its stored body needs a fix. Todo and In Progress are claimable;
+but its stored body needs a fix. Filing adds a `blocks` relation per
+`Depends on` id; `--update` adds the blockers the file names that the
+board does not hold yet, removes none, and prints what the board still
+holds beyond the file (`board also holds KO-m`) for you to clear by hand.
+Todo and In Progress are claimable;
 Backlog and Done are not. `[loop] order = "priority"` makes an Urgent or
 High ticket run first.
 
