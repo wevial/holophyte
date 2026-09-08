@@ -37,18 +37,19 @@ sequenceDiagram
   end
   Fac->>WT: verify gate again
   Fac->>Lin: re-read body, refuse on drift from the snapshot
-  alt approve = "auto", mode = "local"
+  alt mode = "pr"
+    Fac->>Fac: git push the branch, open a pull request, shepherd it
+    Note over Fac: approve is read against the PR
+  else mode = "local", approve = "human"
+    Fac->>Store: park awaiting_merge_approval, release the lease
+    Fac->>Lin: ticket blocked_on_operator asking merge?
+  else mode = "local", approve = "auto"
     Fac->>Fac: git merge --no-ff into main, regenerate FINDINGS.md
     Fac->>Store: release run as merged, walk the ticket to merged
     Fac->>Lin: state Done, ledger comment
-  else approve = "human"
-    Fac->>Store: park awaiting_merge_approval, release the lease
-    Fac->>Lin: ticket blocked_on_operator asking merge?
-  else mode = "pr"
-    Fac->>Fac: git push, open a pull request, shepherd it
   end
   Fac->>Fac: self-merge? re-exec factory.py from the new HEAD
-  Op->>Op: git push (the factory never pushes)
+  Op->>Op: git push main (the factory never pushes main)
 ```
 
 ## Step by step
@@ -160,12 +161,13 @@ approve = "auto"`, `mode = "local"`), `git merge --no-ff` into `main`, the
 worktree and branch are removed, `store.release()` ends the run as
 `merged` and walks the ticket to `merged`, `findings.render()` rewrites the
 `FINDINGS.md` window, and the provider pushes Done and a ledger comment.
-Under `[merge] approve = "human"` the clean gate parks the run instead:
+Under `[merge] approve = "human"` in local mode the clean gate parks the run instead:
 phase `awaiting_merge_approval`, ticket `blocked_on_operator`, branch and
 worktree preserved, lease released, until `--approve KO-n` sends it back
 through this gate. Under `[merge] mode = "pr"` the clean gate pushes the
 branch and opens a pull request against `main`, which the loop shepherds
-for up to `pr_rounds` passes before merging it through the API or parking.
+for up to `pr_rounds` passes before merging it through the API or parking;
+PR mode is checked first, and `approve` is then read against the PR.
 Both paths are described in the [loop](../loop.md) page.
 
 Trace: `runs.outcome = merged`, `tickets.status = merged`, a merge commit
