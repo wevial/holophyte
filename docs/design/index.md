@@ -17,9 +17,9 @@ section and remain in force; new ones land here.
 | 4 | [The loop starts its own supervisor](0004-supervisor-spawn.md) | accepted |
 | 5 | [Frontend before the Rust port; v0 served by the daemon](0005-frontend-before-rust.md) | accepted |
 | 6 | [Docs on Cloudflare Workers](0006-docs-hosting.md) | accepted |
-| 7 | [Merge modes: local or PR, with a round cap](0007-merge-modes.md) | proposed |
-| 8 | [Human approval, manual checks, and a checker role](0008-approval-and-checks.md) | proposed |
-| 9 | [The ledger lives in the store](0009-ledger.md) | proposed |
+| 7 | [Merge modes: local or PR, with a round cap](0007-merge-modes.md) | accepted |
+| 8 | [Human approval, manual checks, and a checker role](0008-approval-and-checks.md) | accepted |
+| 9 | [The ledger lives in the store](0009-ledger.md) | accepted |
 | 10 | [Learning from recurring findings](0010-lessons.md) | proposed |
 | 11 | [Per-ticket leases and parallel loops](0011-parallel.md) | proposed |
 | 12 | [A second board behind the provider protocol](0012-second-board.md) | proposed |

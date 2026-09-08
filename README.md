@@ -11,8 +11,10 @@ pass. Stdlib Python and SQLite; no frameworks.
 
 Python 3.11+ and Git on the host, Docker for the reviewer container, and
 `LINEAR_API_KEY` in the environment or a `.env` beside `linear_provider.py`.
-`ruff` is the one developer tool (`pip install --user ruff`). Per-target
-settings go in `~/.holophyte/<slug>/config.toml`; see [Config](docs/config.md).
+`ruff` is the one developer tool (`pip install --user ruff`). Bun is needed
+only to build the console (`bun --cwd=console run build`); see
+[Development](docs/development.md). Per-target settings go in
+`~/.holophyte/<slug>/config.toml`; see [Config](docs/config.md).
 
 ## Usage
 
@@ -21,7 +23,7 @@ python3 factory.py /path/to/repo                  # run the loop
 python3 factory.py --report /path/to/repo         # estimate-vs-actual table
 python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails them
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
-python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback; HOST:PORT to bind elsewhere
+python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback, the console at /; HOST:PORT to bind elsewhere
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
 python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
 python3 factory.py --shepherd KO-n [--note TEXT] /path/to/repo # look at a parked run's pull request again
@@ -34,9 +36,11 @@ python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # repla
 reads the stored body back and validates that again, so a transfer that
 rewrites the body is caught. With `--update KO-n` it replaces that issue's
 title, description and estimate from the file instead of creating one, with
-the same validation on both sides; state, priority and relations are left as
-they are, so `--state` and `--priority` are refused beside it. It prints
-`[holo2] updated KO-n: TITLE`, or exits 1 with the problem and nothing
+the same validation on both sides. It adds the blockers the file names and
+the board does not yet hold, and leaves in place one the board holds and the
+file no longer names; state and priority stay as they are, so `--state` and
+`--priority` are refused beside it. It prints `[holo2] updated KO-n: TITLE`,
+naming any blocker it added with a `+`, or exits 1 with the problem and nothing
 changed when the file is invalid and 2 with the identifier and the problem
 when the stored body is.
 
