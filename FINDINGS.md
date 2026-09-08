@@ -653,24 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[366 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T21:31:35Z — KO-279
-MERGED to main as fee9f28 (branch task/ko-279-a-blocked-row-opens-its-questi deleted).
-actual: 7.2 min · estimate: 30 min · rounds: 2
-
-## 2026-09-07T21:41:02Z — KO-308
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/store/read.py:674 [p2] [store/read.py:674](/home/reviewer/candidate/store/read.py:674): `max(marks)` breaks timestamp ties lexicographically, choosing `"question"` over `"failed"`.…
-- criteria:3 [p2] CRITERION 3: not met — Equal timestamps incorrectly select question; the existing newer-mark test omits this boundary. Given a run with a redirect at T1, a fail…
-
-## 2026-09-07T21:44:20Z — KO-308
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-07T21:45:01Z — KO-308
-MERGED to main as de14ec1 (branch task/ko-308-a-ledger-intervention-entry-sa deleted).
-actual: 13.4 min · estimate: 20 min · rounds: 2
+[370 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T21:50:35Z — KO-309
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -758,3 +741,22 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:15:15Z — KO-315
 MERGED to main as 81ac9c7 (branch task/ko-315-the-operating-page-describes-t deleted).
 actual: 1.6 min · estimate: 20 min · rounds: 1
+
+## 2026-09-08T19:17:42Z — KO-316
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/docs/architecture/data.md:7 [p0] Blocker: [data.md:7](/home/reviewer/candidate/docs/architecture/data.md:7) states `user_version` is “currently 10,” while criterion 1 explicitly requires 9. Alt…
+- criteria:1 [p2] CRITERION 1: not met — schema version is stated as 10, not the required 9; the other required facts pass inspection. Given `data.md`, when read, then it says `u…
+
+## 2026-09-08T19:19:23Z — KO-316
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/docs/architecture/data.md:7 [p2] [data.md:7](/home/reviewer/candidate/docs/architecture/data.md:7) states `user_version` is “currently 10,” violating criterion 1’s explicit requirement for 9.…
+- criteria:1 [p2] CRITERION 1: not met — `user_version` says 10 instead of the required 9. Given `data.md`, when read, then it says `user_version` 9, lists `ledger` among the tab…
+
+## 2026-09-08T19:20:23Z — KO-316
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:20:23Z — KO-316
+FAILED: terminal adjudication: FAIL; branch task/ko-316-the-architecture-data-and-over preserved at 6dbec627a642
+actual: 5.1 min · estimate: 25 min · rounds: 3
