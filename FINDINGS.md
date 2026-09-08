@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[372 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T21:51:54Z — KO-309
-MERGED to main as bacbbde (branch task/ko-309-file-ticket-update-records-th deleted).
-actual: 6.8 min · estimate: 20 min · rounds: 2
-
-## 2026-09-07T22:26:34Z — KO-261
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-07T22:27:21Z — KO-261
-MERGED to main as 95b17d7 (branch task/ko-261-a-non-loopback-serve-bind-requ deleted).
-actual: 11.4 min · estimate: 30 min · rounds: 1
+[375 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T22:29:23Z — KO-310
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -759,3 +748,15 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:22:52Z — KO-316
 MERGED to main as 5e4fa15 (branch task/ko-316-the-architecture-data-and-over deleted).
 actual: 1.5 min · estimate: 25 min · rounds: 1
+
+## 2026-09-08T19:25:28Z — KO-317
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/docs/architecture/lifecycle.md:44 [p2] [lifecycle.md:44](/home/reviewer/candidate/docs/architecture/lifecycle.md:44): The diagram parks `approve = "human"` before considering PR mode. With both con…
+
+## 2026-09-08T19:26:57Z — KO-317
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:26:58Z — KO-317
+MERGED to main as 052e137 (branch task/ko-317-the-lifecycle-page-the-loop-pa deleted).
+actual: 4.1 min · estimate: 30 min · rounds: 2
