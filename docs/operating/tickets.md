@@ -31,7 +31,7 @@ Advisories print and let it through.
 
 | Refusal | Why it exists |
 | --- | --- |
-| Unfilled placeholder: any `<…>` or `{{…}}` outside a markdown link | KO-165 was claimed with template placeholders in its title and criteria and merged anyway. HTML tags count; write "the `main` element", not `<main>`. HTML comments in a draft are stripped before validation, so the template's guidance comments are not placeholders. |
+| Unfilled placeholder: any `<…>` or `{{…}}` outside a markdown link | KO-165 was claimed with template placeholders in its title and criteria and merged anyway. HTML tags count; write "the `main` element", not `<main>`. HTML comments in a draft's "Open questions" section are stripped before validation, so the template's guidance comment there is not a placeholder; a comment in any other section is refused like any other tag. |
 | More than three in-scope items, five criteria, or 30 minutes | KO-110 was a 180-minute blob. Small tickets converge; big ones burn rounds. |
 | A non-relative path in a verify command | KO-111 `cd`'d to an absolute path and verified the wrong tree. |
 | A path a criterion names that the target repository gitignores | KO-166 named a rendered file under a gitignored `artifacts/`; the reviewer's export cannot contain it and the implementer force-tracked it. |
