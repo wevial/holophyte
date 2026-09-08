@@ -4,7 +4,7 @@ The store is the source of truth. Linear, `FINDINGS.md`, the daemon's JSON
 and the drawer are views of it; the loop and the supervisor are its only
 writers. It is one SQLite file per target in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 6) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 10) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -23,8 +23,8 @@ the loop and its supervisor contend on one file without either dying.
 | `supervisorHeartbeats` | supervisor process | supervisor | pid, start, last beat, passes, host |
 | `loopRestarts` | self-merge re-exec | loop | sha; the supervisor checks the loop came back |
 | `linearDeliveries` | push to Linear | loop | what was projected, when |
-| `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue`; the record-before-acting rule lives here |
-| `ledger` | entry in a run's narrative | loop, operator commands | `kind` ∈ `merge, failure, round, adjudication, intervention, note`, `source` ∈ `loop, operator`; written before the Linear comment that projects it |
+| `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue, approve, repoint, shepherd` (a fixed set, currently 9 values); the record-before-acting rule lives here |
+| `ledger` | entry in a run's narrative | loop, operator commands | `kind` ∈ `merge, failure, round, adjudication, intervention, note`, `source` ∈ `loop, operator`; written before the Linear comment that projects it; served at `/ledger` and `/runs/N/ledger` |
 
 ## The two state machines
 
@@ -52,7 +52,10 @@ to the supervisor stops instead of advancing it.
 `store/read.py` holds the typed read views: one query, one frozen
 dataclass, no SQL anywhere else. `open_readonly()` opens the file with
 `mode=ro` so a reader can never take the write lock. `Ticket`,
-`RunSnapshot`, `LiveRun`, `EndedRun`, `ReviewRound`, `Strike`,
+`BlockedTicket`, `OpenTicket`, `RunSnapshot`, `LiveRun`,
+`ApprovedCandidate`, `EndedRun`, `MergedRun`, `FailedAttempt`,
+`RecentFailedRun`, `ReviewRound`, `EndedRound`, `RunDetail`, `RunRound`,
+`NarrativeEvent`, `LedgerEntry`, `LedgerWindowEntry`, `Strike`,
 `SupervisorBeat` and the functions that return them are pinned by an
 allow-list in `tests/test_store_surface.py`, so a new read is a deliberate
 addition. The serve daemon, `--report`, the sweep and the FINDINGS renderer
@@ -75,7 +78,8 @@ never disagree.
 
 Every out-of-band change to a run has a row here before the change, with an
 action from the fixed set and a narrative event carrying the note. The
-operator commands (`--requeue`) write it; the REPL rung of the escalation
+operator commands (`--requeue`, `--approve`, `--shepherd`, `--repoint`)
+write it; the REPL rung of the escalation
 ladder calls `store.record_intervention()` directly. Backdating or
 mislabelling a row is worse than no row; the [runbook](../operating/runbook.md)
 says why.
@@ -93,8 +97,10 @@ absent loses its copy and nothing else. `record_intervention()` writes the
 `intervention` entry in the same transaction as the `interventions` row, so
 `--requeue` and `--approve` land in the narrative beside the loop's own
 entries. `store.read.ledger(conn, run_id)` returns a run's entries oldest
-first. `FINDINGS.md` is rendered from `runs` and `reviewRounds` as before;
-the ledger is not yet served over HTTP.
+first and `store.read.ledger_since()` a window across runs, newest first.
+The daemon serves them as `/runs/N/ledger` and `/ledger?since=MS`
+([HTTP endpoints](../reference/http.md)). `FINDINGS.md` is rendered from
+`runs` and `reviewRounds` as before.
 
 ## FINDINGS
 
