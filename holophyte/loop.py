@@ -846,12 +846,16 @@ def _changed_lines(wt):
 def _review_cap(target, conn, run_id, provider, task_id, wt):
     """The review-round cap for this run, from the candidate's size and the
     target's `[loop]` review keys (`review_round_cap()`). Measured once,
-    before round 1, and written to the run's narrative so the store says how
-    many rounds the candidate was given and why.
+    before round 1, and written to the run's row and its narrative so the
+    store says how many rounds the candidate was given and why: `/runs/N`
+    serves the row's value as `max_rounds` (KO-321). A `run_task()` driven
+    with no store has no row to write.
     """
     lines = _changed_lines(wt)
     cap = review_round_cap(lines, loop_config(target))
     print(f"[holo2] review cap {cap} for {lines} changed lines")
+    if conn is not None and run_id is not None:
+        store.set_review_round_cap(conn, run_id, cap)
     ledger(conn, run_id, task_id, "note",
            f"Review cap {cap} for {lines} changed lines", provider)
     return cap

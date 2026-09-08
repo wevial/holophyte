@@ -1194,9 +1194,11 @@ class RunDetailTests(ServeTestCase):
          "criterion": None, "message": "no example"},
     ]
 
-    def seed_reviewed(self):
+    def seed_reviewed(self, cap=None):
         """One merged run: two ended rounds, `changes_requested` with two
-        findings then `pass`; three narrative events and one detail event."""
+        findings then `pass`; three narrative events and one detail event.
+        `cap` is the review-round cap the loop gave the run; None leaves the
+        row as a run recorded before the store carried one."""
         self.now = int(time() * 1000)
         conn = store.open(str(self.db))
         try:
@@ -1228,6 +1230,8 @@ class RunDetailTests(ServeTestCase):
             store.record_review_round(
                 conn, self.run, 2, "pass", "reviewer-b",
                 started_at=started + 10 * MIN, ended_at=started + 12 * MIN)
+            if cap is not None:
+                store.set_review_round_cap(conn, self.run, cap)
             store.release(conn, self.run, "merged", now=started + 20 * MIN,
                           merge_sha=MERGE_SHA)
         finally:
@@ -1303,9 +1307,24 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(run["merge_sha"], MERGE_SHA)
         self.assertEqual(run["started_ms"], self.now - 30 * MIN)
         self.assertEqual(run["ended_ms"], self.now - 10 * MIN)
+        # No cap stored: a run recorded before the store carried one
+        # answers the loop's constant.
         self.assertEqual(run["max_rounds"], holophyte.serve.MAX_ROUNDS)
         self.assertIsInstance(run["max_rounds"], int)
         self.assertIn("branch", run)
+
+    def test_max_rounds_is_the_cap_the_loop_gave_the_run(self):
+        """A run the loop gave four rounds answers `max_rounds` 4, not the
+        module constant, so the console's timeline is divided by the cap
+        this run had (KO-321)."""
+        self.seed_reviewed(cap=4)
+        self.start()
+
+        _code, _headers, body = self.request("GET", f"/runs/{self.run}")
+
+        self.assertEqual(body["run"]["max_rounds"], 4)
+        self.assertNotEqual(body["run"]["max_rounds"],
+                            holophyte.serve.MAX_ROUNDS)
 
     def test_a_live_run_has_a_heartbeat_age_and_an_ended_one_null(self):
         self.seed()  # KO-7, live in `working`, beating 30 s ago

@@ -190,6 +190,13 @@ CREATE TABLE IF NOT EXISTS runs (
     -- the merge API is called rather than merging on the branch's word.
     -- NULL on every run parked with no judgement to record.
     approvedSha       TEXT,
+    -- The review-round cap the loop gave this run: its `[loop]` review
+    -- keys applied to the candidate's size, measured once before round 1
+    -- (KO-299). Written by `set_review_round_cap()` where the loop computes
+    -- it and read by `/runs/N` as `max_rounds`, so the console sizes the
+    -- round timeline by the cap this run had rather than a constant
+    -- (KO-321). NULL on every run recorded before the column existed.
+    reviewRoundCap    INTEGER,
     UNIQUE (ticketId, attempt)
 );
 
@@ -345,8 +352,10 @@ CREATE TABLE IF NOT EXISTS interventions (
 # would otherwise never be rebuilt to admit the other's value. Version 9
 # is `runs.approvedSha`, the sha the last independent judgement covered,
 # so a shepherd resumed by `--shepherd` knows what still needs a review
-# (KO-262).
-SCHEMA_VERSION = 9
+# (KO-262). Version 10 is `runs.reviewRoundCap`, the review-round cap the
+# loop gave the run, so `/runs/N` serves the cap the run had rather than
+# the module constant (KO-321).
+SCHEMA_VERSION = 10
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -491,6 +500,11 @@ ADDED_COLUMNS = (
         "runs",
         "approvedSha",
         "approvedSha TEXT",
+    ),
+    (
+        "runs",
+        "reviewRoundCap",
+        "reviewRoundCap INTEGER",
     ),
 )
 
@@ -973,6 +987,29 @@ def set_branch(conn, run_id, branch):
             raise RunEnded(run_id, outcome, reason)
         conn.execute("UPDATE runs SET branch = ? WHERE id = ?",
                      (branch, run_id))
+
+
+def set_review_round_cap(conn, run_id, cap):
+    """Record `cap`, the review-round cap the loop gave the live run `run_id`.
+
+    Written where the loop computes the cap from the candidate's size and
+    the target's `[loop]` review keys, once, before round 1: `/runs/N`
+    answers it as `max_rounds`, and a console that sized the round timeline
+    by the module constant drew a fourth round past the end of a two-round
+    bar (KO-321). An ended run is refused with `RunEnded`, as `set_phase()`
+    refuses it: the cap of a finished run is history.
+    """
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
+            (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        ended_at, outcome, reason = row
+        if ended_at is not None:
+            raise RunEnded(run_id, outcome, reason)
+        conn.execute("UPDATE runs SET reviewRoundCap = ? WHERE id = ?",
+                     (cap, run_id))
 
 
 def heartbeat(conn, run_id, now=None):

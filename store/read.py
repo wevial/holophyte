@@ -552,6 +552,9 @@ class RunDetail:
     branch: str | None
     host: str | None
     mergeSha: str | None
+    # The review-round cap the loop gave the run; None on a run recorded
+    # before the column existed, which `/runs/N` answers with the constant.
+    reviewRoundCap: int | None
 
 
 def run_detail(conn, run_id):
@@ -559,7 +562,7 @@ def run_detail(conn, run_id):
     row = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.attempt,"
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
-        " r.branch, r.host, r.mergeSha"
+        " r.branch, r.host, r.mergeSha, r.reviewRoundCap"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.id = ?", (run_id,)).fetchone()
     if row is None:
@@ -568,7 +571,7 @@ def run_detail(conn, run_id):
                      phase=row[3], attempt=row[4], startedAt=row[5],
                      endedAt=row[6], lastHeartbeat=row[7], outcome=row[8],
                      timeBoxMs=row[9], branch=row[10], host=row[11],
-                     mergeSha=row[12])
+                     mergeSha=row[12], reviewRoundCap=row[13])
 
 
 @dataclass(frozen=True)
