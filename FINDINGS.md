@@ -653,26 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[359 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T00:58:32Z — KO-307
-MERGED to main as 35a4efd (branch task/ko-307-the-daemon-serves-a-web-manife deleted).
-actual: 3.6 min · estimate: 10 min · rounds: 1
-
-## 2026-09-07T21:12:14Z — KO-279
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/console/src/lib/resolved.ts:32 [p2] [resolved.ts:32](/home/reviewer/candidate/console/src/lib/resolved.ts:32): For failures resolved before page load, wait starts at the run’s earliest ledger ro…
-- /home/reviewer/candidate/console/src/lib/ledger.ts:37 [p2] [ledger.ts:37](/home/reviewer/candidate/console/src/lib/ledger.ts:37): Once an overnight question is cleared, fetching starts at midnight and excludes its wai…
-- /home/reviewer/candidate/console/src/components/Now.tsx:52 [p2] [Now.tsx:52](/home/reviewer/candidate/console/src/components/Now.tsx:52): Combining daemon ledgers before pairing loses host identity. Shared run IDs match an…
-- criteria:2 [p2] CRITERION 2: not met — reproduced incorrect or missing waits for historical resolutions and shared daemon run IDs; aggregate waits consequently disagree with th…
-
-## 2026-09-07T21:16:30Z — KO-279
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/console/src/lib/resolved.ts:90 [p2] [resolved.ts:90](/home/reviewer/candidate/console/src/lib/resolved.ts:90): Ticket fallback pairs resolutions with a different run’s attention item. Reproduced…
-- /home/reviewer/candidate/console/src/lib/ledger.ts:44 [p2] [ledger.ts:44](/home/reviewer/candidate/console/src/lib/ledger.ts:44): The fetch excludes wait evidence older than yesterday unless the question is still open…
-- criteria:2 [p2] CRITERION 2: not met — Reproduced incorrect cross-run pairing and missing waits for resolutions whose evidence predates the fetch window. Given ledger intervent…
+[362 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T21:21:22Z — KO-279
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
@@ -767,3 +748,15 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T17:19:13Z — KO-313
 MERGED to main as 71b15eb (branch task/ko-313-a-bad-stored-token-never-takes deleted).
 actual: 8.4 min · estimate: 25 min · rounds: 2
+
+## 2026-09-08T17:38:59Z — KO-314
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- (unparsed):4becff708fc0 [p2] Blocker: Required lint verification could not be reproduced: `ruff` is unavailable (`command not found`). All 83 tests and both grep checks passed. CRITERION 1:…
+
+## 2026-09-08T17:52:28Z — KO-314
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T17:53:07Z — KO-314
+MERGED to main as 62a5309 (branch task/ko-314-the-daemon-answers-a-cors-pref deleted).
+actual: 18.7 min · estimate: 20 min · rounds: 2
