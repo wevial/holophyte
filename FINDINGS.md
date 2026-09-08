@@ -653,23 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[377 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T22:35:52Z — KO-312
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/console/tests/token.test.ts:24 [p2] [console/tests/token.test.ts:24](/home/reviewer/candidate/console/tests/token.test.ts:24): Criterion 1 requires testing `defaultPollDeps.fetch`, but the test…
-- criteria:1 [p2] CRITERION 1: unwitnessed — no test invokes defaultPollDeps.fetch through a fake globalThis.fetch. Given a stored token for address A and none for B, when the de…
-
-## 2026-09-07T22:37:56Z — KO-312
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/console/src/components/HostPanel.tsx:48 [p1] **[P1] Token storage and fetch use different address keys.** [HostPanel.tsx:48](/home/reviewer/candidate/console/src/components/HostPanel.tsx:48) stores under…
-- criteria:3 [p2] CRITERION 3: not met — When the origin differs from `/peers.self`, submission stores under the wrong key and the next request carries no token. Given the field,…
-- criteria:4 [p2] CRITERION 4: not met — When the origin differs from `/peers.self`, 401 clears the wrong key and subsequent requests retain the rejected token. Given a stored to…
-
-## 2026-09-07T22:40:41Z — KO-312
-Round 3: pass · reviewer codex-astra-medium · verify passed
+[380 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T22:40:43Z — KO-312
 MERGED to main as 3f4e2cd (branch task/ko-312-the-console-asks-each-daemon-f deleted).
@@ -760,3 +744,15 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:29:06Z — KO-318
 MERGED to main as 8e3ef03 (branch task/ko-318-the-config-page-and-the-compon deleted).
 actual: 2.1 min · estimate: 30 min · rounds: 1
+
+## 2026-09-08T19:32:15Z — KO-319
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/docs/operating/tickets.md:34 [p2] [docs/operating/tickets.md:34](/home/reviewer/candidate/docs/operating/tickets.md:34) incorrectly says HTML comments are stripped before validation throughout…
+
+## 2026-09-08T19:33:32Z — KO-319
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:33:33Z — KO-319
+MERGED to main as 2ee152d (branch task/ko-319-the-runbook-hosts-tickets-and deleted).
+actual: 4.4 min · estimate: 30 min · rounds: 2
