@@ -28,8 +28,10 @@ function attentionSummary(host: HostRecord): string[] {
  *  carries the token; until it answers, the field is folded away and the
  *  card says so, and if that poll is 401 again the field is back with
  *  the token forgotten. A value the header could not carry is refused at
- *  the field, with the reason under it and nothing stored. */
-function TokenField({ host }: { host: HostRecord }) {
+ *  the field, with the reason under it and nothing stored. `onStored`
+ *  tells the card a value was kept, so its Forget button appears at
+ *  once rather than on the next poll. */
+function TokenField({ host, onStored }: { host: HostRecord; onStored: () => void }) {
   const [token, setToken] = useState("");
   const [reason, setReason] = useState<string | null>(null);
   const [sentAt, setSentAt] = useState<number | null>(null);
@@ -55,6 +57,7 @@ function TokenField({ host }: { host: HostRecord }) {
         if (refused != null) return;
         setToken("");
         setSentAt(host.polled_ms);
+        onStored();
       }}
     >
       <div className="flex flex-1 flex-col gap-1">
@@ -95,15 +98,20 @@ function TokenField({ host }: { host: HostRecord }) {
  *  `now` is the console's clock. */
 export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
   const { status } = host;
-  // Bumped when the card forgets its token, so the button leaves at once
-  // rather than on the next poll.
+  // Bumped when the field stores a token, so the Forget button appears
+  // at once rather than on the next poll.
   const [, rerender] = useState(0);
+  // Bumped when the card forgets its token: keys the field, so forgetting
+  // while the card waits on that poll brings the field straight back.
+  const [fieldKey, setFieldKey] = useState(0);
   const unreachable = host.error != null;
   const needsToken = host.needs_token;
   // The key the fetch seam reads (`tokenedFetch`), which for the origin
   // can differ from the address the daemon advertises as `/peers.self`.
   const tokenAddress = addressOf(host.base);
-  const hasToken = !needsToken && tokenFor(tokenAddress) != null;
+  // Whenever a value is stored, including one just submitted while the
+  // card still shows 401 from the poll before it.
+  const hasToken = tokenFor(tokenAddress) != null;
   const tone = hostTone(host);
   const dot = { ok: "bg-ok", bad: "bg-bad", faint: "bg-faint" }[tone];
   const stale = status ? isSupervisorStale(status.supervisor, status.thresholds.heartbeat_stale_ms) : false;
@@ -156,7 +164,7 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
             data-forget-token
             onClick={() => {
               forgetToken(tokenAddress);
-              rerender((count) => count + 1);
+              setFieldKey((key) => key + 1);
             }}
             className="ml-auto rounded-button border border-chip-border px-2 py-1 text-[12px] font-semibold text-ink"
           >
@@ -164,7 +172,7 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
           </button>
         )}
       </header>
-      {needsToken && <TokenField host={host} />}
+      {needsToken && <TokenField key={fieldKey} host={host} onStored={() => rerender((count) => count + 1)} />}
       {!unreachable && !needsToken && status && (
         <dl className="mt-4 grid grid-cols-3 gap-4">
           <div>

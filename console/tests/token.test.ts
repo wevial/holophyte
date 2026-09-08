@@ -65,14 +65,15 @@ test("the token lives under one storage key per address and nowhere else; forget
   expect(localStorage.length).toBe(0);
 });
 
-test("the field's check trims a value and refuses a space, a character outside printable ASCII, and one over 512 bytes, storing nothing", () => {
+test("the field's check trims a value and refuses a space, a non-breaking space, a character outside printable ASCII, and one over 512 bytes, storing nothing", () => {
   expect(checkToken("  abc123  ")).toBeNull();
   storeToken("writer:7710", "  abc123  ");
   expect(tokenFor("writer:7710")).toBe("abc123");
   localStorage.clear();
 
-  const refused = ["abc 123", "\u26bfabc", "x".repeat(600)];
+  const refused = ["abc 123", "abc\u00a0123", "\u26bfabc", "x".repeat(600)];
   expect(refused.map((value) => checkToken(value))).toEqual([
+    "Token has a character the header cannot carry",
     "Token has a character the header cannot carry",
     "Token has a character the header cannot carry",
     "Token is too long",

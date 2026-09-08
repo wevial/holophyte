@@ -279,6 +279,14 @@ test("a refused value shows its reason under the field and stores nothing; a tri
   expect(card.querySelector("[data-token-reason]")).toBeNull();
   expect(localStorage.getItem(`${TOKEN_KEY_PREFIX}writer:7710`)).toBe("abc123");
   expect(card.querySelector("[data-token-sent]")).not.toBeNull();
+
+  // The stored value can be forgotten while the card waits on the next
+  // poll, and forgetting it brings the field straight back.
+  fireEvent.click(within(card).getByRole("button", { name: "Forget token" }));
+  expect(localStorage.length).toBe(0);
+  expect(within(card).queryByRole("button", { name: "Forget token" })).toBeNull();
+  expect(card.querySelector("[data-token-sent]")).toBeNull();
+  expect(field()).toBeTruthy();
 });
 
 test("a card with a stored token offers Forget token; pressing it removes the value and the next 401 brings the field back", async () => {
