@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[380 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T22:40:43Z — KO-312
-MERGED to main as 3f4e2cd (branch task/ko-312-the-console-asks-each-daemon-f deleted).
-actual: 10.9 min · estimate: 30 min · rounds: 3
-
-## 2026-09-08T17:15:59Z — KO-313
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/console/src/components/HostPanel.tsx:106 [p2] [HostPanel.tsx:106](/home/reviewer/candidate/console/src/components/HostPanel.tsx:106): `!needsToken` hides “Forget token” after submitting a valid token whil…
-- /home/reviewer/candidate/console/tests/token.test.ts:74 [p2] [token.test.ts:74](/home/reviewer/candidate/console/tests/token.test.ts:74): The required `"abc\u00a0123"` case is missing; the test substitutes an ordinary s…
-- criteria:1 [p2] CRITERION 1: unwitnessed — the frozen ticket’s non-breaking-space input is absent from console/tests/token.test.ts. Given the values " abc123 ", "abc 123", "⚿ab…
-- criteria:3 [p2] CRITERION 3: not met — a newly submitted stored token has no Forget token button while awaiting the next poll. Given a stored token for a host, when its card re…
+[382 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T17:19:12Z — KO-313
 Round 2: pass · reviewer codex-astra-medium · verify passed
@@ -756,3 +744,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:33:33Z — KO-319
 MERGED to main as 2ee152d (branch task/ko-319-the-runbook-hosts-tickets-and deleted).
 actual: 4.4 min · estimate: 30 min · rounds: 2
+
+## 2026-09-08T19:36:33Z — KO-320
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:36:35Z — KO-320
+MERGED to main as 7ee0f5c (branch task/ko-320-the-readme-the-docs-index-the deleted).
+actual: 3.0 min · estimate: 30 min · rounds: 1
