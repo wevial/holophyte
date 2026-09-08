@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[364 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T21:28:01Z — KO-279
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/console/src/hooks/useLedger.ts:39 [p2] [useLedger.ts:39](/home/reviewer/candidate/console/src/hooks/useLedger.ts:39) fetches one unfiltered, capped ledger window for both features. An older blocked…
-- criteria:1 [p2] CRITERION 1: not met — the capped shared fetch can omit the blocked run’s parking note and human reply, as reproduced above. Given a blocked item and ledger row…
-
-## 2026-09-07T21:31:34Z — KO-279
-Round 2: pass · reviewer codex-astra-medium · verify passed
+[366 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T21:31:35Z — KO-279
 MERGED to main as fee9f28 (branch task/ko-279-a-blocked-row-opens-its-questi deleted).
@@ -760,3 +751,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:13:37Z — KO-321
 MERGED to main as 873d494 (branch task/ko-321-get-runs-n-answers-the-review deleted).
 actual: 8.5 min · estimate: 30 min · rounds: 1
+
+## 2026-09-08T19:15:14Z — KO-315
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:15:15Z — KO-315
+MERGED to main as 81ac9c7 (branch task/ko-315-the-operating-page-describes-t deleted).
+actual: 1.6 min · estimate: 20 min · rounds: 1
