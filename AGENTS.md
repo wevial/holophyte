@@ -64,10 +64,13 @@ worktree and merged only after mechanical verification and independent review.
 ## Operator protocol
 
 - **Escalation ladder, in order.** When the factory is stuck: (1)
-  relaunch/unblock through the factory's legal paths, including
-  `factory.py <repo> --requeue KO-n --note TEXT` for a ticket whose run
-  failed; (2) `factory.py <repo> --sweep`, then `--sweep --act` once a
-  trip is confirmed; (3) store *API* calls from a Python REPL (`release`,
+  relaunch/unblock through the factory's legal paths: `factory.py <repo>
+  --requeue KO-n --note TEXT` for a ticket whose run failed, `--approve
+  KO-n` to merge a parked candidate, `--shepherd KO-n` to send one parked
+  on its pull request back for another round, and `--repoint KO-n SHA
+  --note TEXT` for a parked candidate rebuilt on a rewritten `main`;
+  (2) `factory.py <repo> --sweep`, then `--sweep --act` once a trip is
+  confirmed; (3) store *API* calls from a Python REPL (`release`,
   `resume`, `transition`, `record_intervention`, `walk_ticket`,
   `requeue`); (4) raw SQL only
   where no API exists — and then only paired with a ticket for the
