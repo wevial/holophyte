@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[362 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-07T21:21:22Z — KO-279
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-07T21:21:22Z — KO-279
-FAILED: terminal adjudication: FAIL; branch task/ko-279-a-blocked-row-opens-its-questi preserved at e502eaf9cf9a
-actual: 16.2 min · estimate: 30 min · rounds: 3
+[364 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-07T21:28:01Z — KO-279
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -760,3 +753,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T17:53:07Z — KO-314
 MERGED to main as 62a5309 (branch task/ko-314-the-daemon-answers-a-cors-pref deleted).
 actual: 18.7 min · estimate: 20 min · rounds: 2
+
+## 2026-09-08T19:12:53Z — KO-321
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:13:37Z — KO-321
+MERGED to main as 873d494 (branch task/ko-321-get-runs-n-answers-the-review deleted).
+actual: 8.5 min · estimate: 30 min · rounds: 1
