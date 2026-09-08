@@ -1,6 +1,8 @@
 # The ledger lives in the store
 
-**Status:** proposed · 2026-09-04
+**Status:** accepted · 2026-09-08
+
+Accepted because review findings and their adjudications are recorded in the store and rendered from it.
 
 ## Context
 

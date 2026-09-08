@@ -1,6 +1,8 @@
 # Human approval, manual checks, and a checker role
 
-**Status:** proposed · 2026-09-04
+**Status:** accepted · 2026-09-08
+
+Accepted because `approve = "human"` and `--approve` are how the factory works today; the manual-checks section and the checker role are still to file.
 
 ## Context
 

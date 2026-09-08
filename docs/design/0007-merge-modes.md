@@ -1,6 +1,8 @@
 # Merge modes: local or PR, with a round cap
 
-**Status:** proposed · 2026-09-04
+**Status:** accepted · 2026-09-08
+
+Accepted because `[merge] mode = "pr"`, the round cap and `--shepherd` are how the factory works today.
 
 ## Context
 

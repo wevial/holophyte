@@ -1,6 +1,6 @@
 # Holophyte v2 — Roadmap and standing decisions
 
-Updated 2026-08-30. This is the durable record of phase sequencing and the
+Updated 2026-09-08. This is the durable record of phase sequencing and the
 design decisions behind it. The frozen store/state design lives in
 `docs/v2/state-model.md` (local-only, gitignored); this file is the part
 that belongs in the repo: what we decided, in what order, and why.
@@ -17,13 +17,13 @@ telemetry + `--report`), scope caps, ruff gate, FakeAgent test harness,
 failure-pattern escalation, claim-time ticket snapshot + merge-time drift
 check.
 
-### Phase 1.5 — Portable substrate (next)
+### Phase 1.5 — Portable substrate ✅ (shipped 2026-09-08)
 
 Give configurable behavior an address before building on top of it.
 
-- Per-target config file: `<repo>.holophyte/config.toml`, in the target's
-  state directory beside it (with `store.db` and `supervisor.lock`;
-  `<repo>.worktrees` stays a sibling of its own).
+- Per-target config file: `~/.holophyte/SLUG/config.toml`, in the target's
+  state directory (with `store.db` and `supervisor.lock`; the worktrees
+  directory stays a sibling of the repository).
   Parsed with stdlib `tomllib`. **Absent file = current behavior.**
 - `[agents]` table: implementer/reviewer/adjudicator commands become
   config. Long term no harness is hardcoded — claude/codex are defaults,
@@ -36,7 +36,7 @@ Give configurable behavior an address before building on top of it.
   main checkout's `.venv` — an editable-install dependency change would
   break confusingly. Worktree setup commands are the cure and the proof.
 
-### Phase 2 — Unattended operation
+### Phase 2 — Unattended operation ✅ (shipped 2026-09-08)
 
 - Supervisor loop: separate process reading `runs` + heartbeats; purely
   mechanical trip conditions first (time-box, stale heartbeat two-strike,
@@ -77,10 +77,9 @@ Give configurable behavior an address before building on top of it.
 - **External review ingestion.** Review bots (CodeRabbit, Greptile) and
   human PR comments become inputs to the loop: each comment gets
   evaluated and dispositioned (address fully / partially / reject, with
-  reasons) rather than ignored. Where this fits in the review loop is an
-  open design question — likely a post-merge or PR-stage lane, since
-  today's loop is pre-PR by design. Needs its own design pass before
-  ticketing.
+  reasons) rather than ignored. Shipped as `[merge] mode = "pr"`: the loop
+  pushes the task branch, opens a pull request and shepherds the review
+  comments through fix rounds ([design note 7](design/0007-merge-modes.md)).
 - **North star restated**: software factories are usually hard to adopt;
   Holophyte should be the one that mostly works out of the box — simple
   to use, configurable, easy to make your own.

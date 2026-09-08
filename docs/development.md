@@ -10,8 +10,8 @@ Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
-  `--requeue`, `--file-ticket`, `--sweep [--act]`, `--supervise`,
-  `--serve` and the loop itself.
+  `--requeue`, `--approve`, `--shepherd`, `--repoint`, `--file-ticket`,
+  `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
 - `holophyte/target.py` — where a target's state lives (`HOLOPHYTE_HOME`,
   the `<slug>` directory, legacy adoption) and the `Target` value.
 - `holophyte/config.py` — `config.toml` and every table it can set, checked

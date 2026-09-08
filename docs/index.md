@@ -57,7 +57,9 @@ hardened container, gives the implementer at most two fix rounds, asks a
 terminal adjudicator for a PASS or FAIL, and merges with `--no-ff`. A
 separate supervisor sweeps the store for runs that died and frees their
 leases. A read-only daemon serves the store's state as JSON, and a
-menu-bar drawer answers "what should I look at next?" from it. All of it
+menu-bar drawer answers "what should I look at next?" from it. The same
+daemon serves the console at `/`: a browser view of the floor, the ledger
+and each run's detail, built from `console/` with Bun. All of it
 runs on one machine; a second machine is optional. The factory dogfoods itself: it is the target most of its own
 tickets run against, and it re-executes itself after merging its own code.
 
