@@ -14,8 +14,8 @@ privilege escalation, bounded processes/memory/CPU, and no Docker socket or
 host home.
 
 Codex runs with `danger-full-access` **inside** this container because Ubuntu's
-AppArmor policy blocks its nested Bubblewrap sandbox in the Hermes service
-context. The outer container is the enforcement boundary: an actual write
+AppArmor policy blocks its nested Bubblewrap sandbox when the previous
+maintainer's agent runs it as a service. The outer container is the enforcement boundary: an actual write
 probe under `/workspace` must fail before the model is called. Only a
 disposable copy of `~/.codex/auth.json` and the installed Codex release binaries
 are mounted; the copy and all reviewer state are removed afterward. Outbound
