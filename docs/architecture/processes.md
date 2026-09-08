@@ -99,7 +99,7 @@ path.
 | --- | --- | --- |
 | loop | it merges a factory change (re-exec) | queue was empty and new tickets are filed; after a failed run |
 | supervisor | the factory checkout's HEAD moves; the store schema is newer | never, in normal operation |
-| serve daemon | `Restart=on-failure` in the unit | after a merge that touches `serve.py`, `report.py` or `store/read.py` |
+| serve daemon | `Restart=on-failure` in the unit | after a merge that touches `serve.py`, `report.py`, `holophyte/files.py` or `store/read.py`; after a renderer merge, once the console bundle is rebuilt, since the daemon serves it from `console/dist/` |
 | drawer | every 10 s by SwiftBar | after pulling a new script version (SwiftBar refresh) |
 
 The loop and supervisor both go through `holophyte/reexec.py`, which

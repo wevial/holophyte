@@ -34,7 +34,13 @@ Python 3.11+ and the standard library.
    [[daemon]]
    name = "lotuspod"
    url = "http://HOST:7711"
+   token_file = "tokens/lotuspod.token"
    ```
+
+   `token_file` is a copy of the file that daemon's `[serve] token_file`
+   names, made by the operator; the plugin sends its contents as a bearer
+   token on every request. `~` and a path relative to the config file both
+   work. A daemon on loopback needs none.
 
 4. Refresh SwiftBar. If the icon does not appear, SwiftBar's `PATH` may lack
    a `python3` of 3.11 or newer; put one first on the PATH SwiftBar sees.
@@ -111,9 +117,8 @@ An idle target's row names what it last shipped: `idle · last merge KO-n ·
 for an idle daemon. It reads the whole table and takes its newest `merged`
 row, deliberately not `?limit=1`: `/runs` lists oldest first and `?limit=N`
 keeps the first N, so `?limit=1` would name the first run ever, not the last
-merge. The daemon's rows do not carry an end time today, so a
-live row reads `idle · last merge KO-n` without the age until they do; when
-`/runs` does not answer, the row falls back to `idle · queue empty`. The
+merge. When `/runs` does not answer, the row falls back to `idle · queue
+empty`. The
 supervisor row is the state word alone when it is `live`; `stale · 7m` and
 `none` show the age and turn amber, since the age only says something when
 the state is wrong. These two rows print ages in whole units the way the
