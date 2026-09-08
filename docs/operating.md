@@ -2,9 +2,10 @@
 
 Supervising a target and serving its state read-only. The operator
 commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
-[--update KO-n]`) are
-described by `factory.py --help`, and the escalation ladder they sit on in
-the [runbook](operating/runbook.md). Back to the [README](index.md).
+[--update KO-n]`, `--approve KO-n`, `--shepherd KO-n` and
+`--repoint KO-n SHA`) are described by `factory.py --help`, and the
+escalation ladder they sit on in the [runbook](operating/runbook.md). Back
+to the [README](index.md).
 
 ## Supervising
 
@@ -74,16 +75,17 @@ When the drawer runs on another machine, give the host too:
 `--serve HOST:PORT` binds this host's address on the private network
 between them ([Across machines](operating/hosts.md)).
 
-It answers three paths as JSON, every response `Cache-Control: no-store`, and
-opens the store through a read-only connection per request; it never holds
-a connection between requests and never writes. Any other path is 404 and
-any method but GET is 405, both as JSON.
-
-| Path | Body |
-| --- | --- |
-| `GET /status` | `target`, `host`, `now`, `supervisor` (`state` live/stale/none, `pid`, `heartbeat_age_ms`, `host`), `thresholds` (`heartbeat_stale_ms`, `strikes`), and `runs`: one `{id, ticket, phase, heartbeat_age_ms, elapsed_ms, time_box_ms, host}` per live run. 503 when the target has no store yet. |
-| `GET /runs?limit=N` | The `--report` table: `rows` of `{ticket, actual_min, estimate_min, ratio, rounds, outcome, host, ended_ms}`, the same rows in the same order as `--report` prints, oldest first, each with `ended_ms` (the run's end as epoch milliseconds, which the table does not print; a drawer ages the last merge from it against `/status`'s `now`); `?limit=N` keeps the first N and echoes `limit` (null when absent). A `limit` that is not a positive integer is 400 with an `error`. |
-| `GET /attention` | What needs the operator: `level` (`none`, `working`, `attention`, `critical`), `items` in the order to read them, and `now`. Items, each carrying its own `level`: `{kind: "blocked", ticket, question}` for every ticket parked `blocked_on_operator`; `{kind: "stale_run", run, ticket, phase, heartbeat_age_ms}` for a live run whose heartbeat age exceeds `heartbeat_stale_ms`; `{kind: "failed", run, ticket, reason, ended_ms}` for a run that ended `failed` in the last 24 hours and whose ticket is still `in_flight` (a `--requeue` or a later merge drops it); `{kind: "supervisor", state: "stale"|"none", heartbeat_age_ms}` when the supervisor is not live. With items, `level` is `attention`; with none, `working` while a run is live, else `none`. `critical` is reserved for a client to rank a daemon it cannot reach; the daemon never answers it itself. No acknowledgement or dismiss state: the window is time-based only. 503 when the target has no store yet. |
+It serves the console page at `/` and the console's built files under
+it, and answers the JSON routes listed in [HTTP endpoints](reference/http.md);
+that page holds the bodies and status codes and is not repeated here.
+Every response is `Cache-Control: no-store` and
+`Access-Control-Allow-Origin: *`, and every request opens the store
+through a read-only connection and closes it; the daemon never holds a
+connection between requests and never writes. Any other path is 404 as
+JSON. The console page polls its peer daemons from the browser, so every
+daemon answers the browser's CORS preflight, `OPTIONS` on any path, with
+204 and no body, token or not; every other method but GET stays 405, as
+JSON.
 
 Every `host` passes through `[report] host_label`, so a configured label is
 what the network sees rather than the machine name.
@@ -95,7 +97,9 @@ identifiers, phases, heartbeat ages and the estimate-vs-actual history. Keep
 the bare port unless another machine must reach it, and then name one
 private-network address and a `[serve] token_file`: beyond loopback the
 daemon refuses to start without one and answers 401 to every JSON request
-but `/peers` that does not present the file's contents as a bearer token
+that does not present the file's contents as `Authorization: Bearer TOKEN`;
+only `/peers`, the console page and its files stay open, so the page can
+load and find its peers before it has a token to present
 ([Across machines](operating/hosts.md), [config](config.md)). The token is a
 second boundary, not a substitute for the first: binding the wildcard
 address (all interfaces) still offers the port to every network the host is
