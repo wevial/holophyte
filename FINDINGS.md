@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[382 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T17:19:12Z — KO-313
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-08T17:19:13Z — KO-313
-MERGED to main as 71b15eb (branch task/ko-313-a-bad-stored-token-never-takes deleted).
-actual: 8.4 min · estimate: 25 min · rounds: 2
-
-## 2026-09-08T17:38:59Z — KO-314
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- (unparsed):4becff708fc0 [p2] Blocker: Required lint verification could not be reproduced: `ruff` is unavailable (`command not found`). All 83 tests and both grep checks passed. CRITERION 1:…
+[385 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T17:52:28Z — KO-314
 Round 2: pass · reviewer codex-astra-medium · verify passed
@@ -751,3 +739,15 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:36:35Z — KO-320
 MERGED to main as 7ee0f5c (branch task/ko-320-the-readme-the-docs-index-the deleted).
 actual: 3.0 min · estimate: 30 min · rounds: 1
+
+## 2026-09-08T19:37:53Z — KO-322
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/docs/reference/cli.md:14 [p2] [docs/reference/cli.md:14](/home/reviewer/candidate/docs/reference/cli.md:14) misstates authentication requirements: explicit loopback binds such as `--serve…
+
+## 2026-09-08T19:38:55Z — KO-322
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-08T19:38:57Z — KO-322
+MERGED to main as 5a0ecb2 (branch task/ko-322-the-drawer-readme-the-reviewin deleted).
+actual: 2.3 min · estimate: 20 min · rounds: 2
