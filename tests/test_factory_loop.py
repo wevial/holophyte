@@ -127,6 +127,26 @@ def a_task(n=1):
             "criteria": ["Given the thing, when it runs, then it works"]}
 
 
+# A body `ticket_template.validate()` accepts, in the shape the Linear
+# provider hands over; the tests that route on the body use it.
+VALID_BODY = (
+    "# Add a thing\n\n## Summary\n\nThe thing, added.\n\n"
+    "## What / Why / How\n\n**What:** Add the thing.\n\n"
+    "**Why:** The thing is wanted.\n\n**How:** Write the thing.\n\n"
+    "## In scope\n\n* The thing.\n\n## Out of scope\n\n"
+    "* Everything else.\n\n## Acceptance criteria\n\n"
+    "- [ ] Given the thing, when it runs, then it works (a test witnesses"
+    " this)\n\n## Verify command(s)\n\n```\necho ok\n```\n\n"
+    "## Implementation notes\n\n* None.\n\n"
+    "## Estimate & dependencies\n\nEstimate: 5 min · Depends on: none\n\n"
+    "## Open questions\n\n* None\n")
+# The same body with the template's own Summary placeholder left in, as
+# KO-165 was claimed: criteria and a verify command present, so every
+# store-side gate says `ready`, and only the validator objects.
+INVALID_BODY = VALID_BODY.replace(
+    "The thing, added.", "<Describe the outcome in one or two sentences.>")
+
+
 class LoopFixture(unittest.TestCase):
     """The real repo, worktree directory and store every loop test runs on.
 
@@ -1324,17 +1344,23 @@ class QueueMirrorTests(LoopFixture):
         return dict(self.read("SELECT linearIdentifier, status FROM tickets"))
 
     def queue(self):
-        """KO-a with a valid body, KO-b with a body the template rejects,
-        KO-c valid; the stub offers KO-131 first, so that is the one claimed.
-        A task without a `body` key is not judged by the validator, as
-        `a_task()` builds them; an empty string is the emptiest invalid body."""
+        """KO-a with a template-valid body, KO-b with the body KO-165 was
+        claimed on (the template's Summary placeholder left in, so only the
+        validator objects), KO-c valid; the stub offers KO-131 first, so
+        that is the one claimed. Every body is a real string so each ticket
+        takes the validator's route and not the no-body bypass."""
         a, b, c = a_task(2), a_task(3), a_task(4)
-        b["body"] = ""
+        a["body"] = c["body"] = VALID_BODY
+        b["body"] = INVALID_BODY
         return a, b, c
+
+    def head(self):
+        """The ticket the claim picks, with a body the validator accepts."""
+        return dict(a_task(), body=VALID_BODY)
 
     def test_one_claim_pass_mirrors_the_whole_ready_listing(self):
         a, b, c = self.queue()
-        provider = StubProvider(a_task(), a, b, c)
+        provider = StubProvider(self.head(), a, b, c)
 
         self.loop(Boom(), provider=provider)
 
@@ -1355,38 +1381,50 @@ class QueueMirrorTests(LoopFixture):
         store.transition(conn, ticket, "blocked_on_deps")
         store.transition(conn, ticket, "blocked_on_operator")
         conn.close()
-        provider = StubProvider(a_task(), a, b, c)
+        provider = StubProvider(self.head(), a, b, c)
 
         self.loop(Boom(), provider=provider)
 
         self.assertEqual(self.statuses()["KO-134"], "blocked_on_operator")
         self.assertEqual(self.statuses()["KO-132"], "ready")
 
-    def test_a_listing_that_fails_skips_the_mirror_and_the_claim_proceeds(self):
-        class ListingFails(StubProvider):
-            """Unreachable at the first listing, the one before the claim
-            under test; the listing before the pass's closing claim answers."""
+    def test_a_listing_failing_after_a_claim_skips_the_mirror_only(self):
+        """The board answers the listing before KO-131's claim, KO-131 is
+        claimed and merged, and then the board is unreachable when the loop
+        comes back to list the queue: the mirror is skipped in one printed
+        line and KO-132 is claimed, worked and merged all the same."""
+        class ListingFailsAfterTheFirstClaim(StubProvider):
+            def __init__(self, *tasks):
+                super().__init__(*tasks)
+                self.listings = 0
 
             def ready_issues(self):
-                if not hasattr(self, "failed"):
-                    self.failed = True
+                """Answers before the first claim and at the closing pass;
+                unreachable exactly once, right after KO-131 merged."""
+                self.listings += 1
+                if self.listings == 2:
                     raise RuntimeError("board unreachable")
                 return super().ready_issues()
 
-        provider = ListingFails(a_task())
+        provider = ListingFailsAfterTheFirstClaim(a_task(1), a_task(2))
 
-        printed = self.main_output(Commit("the scripted work"), APPROVE,
+        printed = self.main_output(Commit("the first work"), APPROVE,
+                                   Commit("the second work"), APPROVE,
                                    provider=provider)
 
-        self.assertIn("the scripted work", self.subjects())
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        # Both claims proceeded: the one before the failure and the one after.
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("merged",), ("merged",)])
+        self.assertIn("the first work", self.subjects())
+        self.assertIn("the second work", self.subjects())
+        self.assertEqual(provider.queue, [])
+        # One failed listing, one skip line, and the claim never waited on it.
+        self.assertEqual(provider.listings, 3)
         skipped = [line for line in printed.splitlines()
                    if "queue mirror skipped" in line]
         self.assertEqual(len(skipped), 1, printed)
         self.assertIn("board unreachable", skipped[0])
-        # Only the claimed ticket was mirrored.
-        self.assertEqual(self.statuses(), {"KO-131": "merged"})
-
+        self.assertEqual(self.statuses(), {"KO-131": "merged", "KO-132": "merged"})
 
 class CommitThenTimeout(Commit):
     """An implementer turn that commits real work, then hits the budget.
@@ -2071,17 +2109,7 @@ class MergeModeTests(LoopFixture):
     MERGE_SHA = "9f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"
     # A body the claim-time template gate accepts, so the run reaches the
     # gate with a ticket body for the PR to carry.
-    BODY = (
-        "# Add a thing\n\n## Summary\n\nThe thing, added.\n\n"
-        "## What / Why / How\n\n**What:** Add the thing.\n\n"
-        "**Why:** The thing is wanted.\n\n**How:** Write the thing.\n\n"
-        "## In scope\n\n* The thing.\n\n## Out of scope\n\n"
-        "* Everything else.\n\n## Acceptance criteria\n\n"
-        "- [ ] Given the thing, when it runs, then it works (a test witnesses"
-        " this)\n\n## Verify command(s)\n\n```\necho ok\n```\n\n"
-        "## Implementation notes\n\n* None.\n\n"
-        "## Estimate & dependencies\n\nEstimate: 5 min · Depends on: none\n\n"
-        "## Open questions\n\n* None\n")
+    BODY = VALID_BODY
     # Two threads a review bot might leave: a clear defect and a style nit.
     DEFECT = ("src/app.py", 10, "review-bot",
               "`load()` returns None when the file is missing and the"
