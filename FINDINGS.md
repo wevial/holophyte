@@ -653,10 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[408 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T19:38:55Z — KO-322
-Round 2: pass · reviewer codex-astra-medium · verify passed
+[409 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T19:38:57Z — KO-322
 MERGED to main as 5a0ecb2 (branch task/ko-322-the-drawer-readme-the-reviewin deleted).
@@ -762,3 +759,7 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T23:16:54Z — KO-340
 MERGED to main as 1e289c2 (branch task/ko-340-the-supervisor-s-time-box-coun deleted).
 actual: 43.2 min · estimate: 30 min · rounds: 2
+
+## 2026-09-09T23:17:00Z — KO-329
+FAILED: cannot reuse leftover worktree: preserved commits on task/ko-329-at-startup-the-loop-walks-mirr conflict with a main that moved on; a human resolves the merge before this ticket is run again
+actual: 0.1 min · estimate: 30 min · rounds: 0
