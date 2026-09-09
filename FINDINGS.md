@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[389 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T19:15:14Z — KO-315
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-08T19:15:15Z — KO-315
-MERGED to main as 81ac9c7 (branch task/ko-315-the-operating-page-describes-t deleted).
-actual: 1.6 min · estimate: 20 min · rounds: 1
-
-## 2026-09-08T19:17:42Z — KO-316
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/docs/architecture/data.md:7 [p0] Blocker: [data.md:7](/home/reviewer/candidate/docs/architecture/data.md:7) states `user_version` is “currently 10,” while criterion 1 explicitly requires 9. Alt…
-- criteria:1 [p2] CRITERION 1: not met — schema version is stated as 10, not the required 9; the other required facts pass inspection. Given `data.md`, when read, then it says `u…
+[392 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T19:19:23Z — KO-316
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -756,3 +743,15 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T17:18:45Z — KO-323
 MERGED to main as d66dc2c (branch task/ko-323-the-electron-wrapper-packages deleted).
 actual: 8.0 min · estimate: 30 min · rounds: 3
+
+## 2026-09-09T17:25:48Z — KO-324
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/electron/main.ts:97 [p1] [P1] [main.ts:97](/home/reviewer/candidate/console/electron/main.ts:97) omits `runs: answer.runs` when calling `buildSummary`. Consequently, idle projects alw…
+
+## 2026-09-09T17:28:04Z — KO-324
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T17:28:06Z — KO-324
+MERGED to main as d9f337e (branch task/ko-324-the-electron-tray-menu-carries deleted).
+actual: 9.3 min · estimate: 30 min · rounds: 2
