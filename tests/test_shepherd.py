@@ -64,6 +64,16 @@ class FoldChecksTests(unittest.TestCase):
         # Red still wins: the rollup is the cheapest red signal.
         self.assertEqual(pr.fold_checks("FAILURE", None, None), "failure")
 
+    def test_check_data_the_shepherd_cannot_read_is_pending_never_green(self):
+        # Review finding: a `check_runs` that is not a list, or an entry
+        # that is not a run, was skipped and the rest read as green.
+        self.assertEqual(pr.fold_checks("SUCCESS", "unreadable", []),
+                         "pending")
+        self.assertEqual(pr.fold_checks("SUCCESS", [run("lint"), "garbage"],
+                                        []), "pending")
+        self.assertEqual(pr.fold_checks("SUCCESS", [run("lint"), None], []),
+                         "pending")
+
 
 class VerdictTests(unittest.TestCase):
     def test_a_thread_without_a_verdict_line_is_a_human_question(self):

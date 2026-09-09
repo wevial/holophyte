@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import shlex
 import shutil
 import sqlite3
@@ -2174,6 +2175,54 @@ class MergeModeTests(LoopFixture):
 
         self.assertEqual(state.checks, "pending")
         self.assertEqual(state.head_sha, self.HEAD)
+
+    def _state_with_rest(self, rest):
+        pull = holophyte.pr.parse_pr_url(self.URL)
+        with patch.object(holophyte.pr, "graphql",
+                          lambda *a, **k: self.pr_state(checks="SUCCESS")
+                          ["data"]), \
+                patch.object(holophyte.pr, "rest", rest):
+            return holophyte.pr.pr_state(self.tgt, pull)
+
+    def test_check_runs_are_read_to_the_last_page_before_green(self):
+        """Review finding: only the first page of check runs was read and
+        `total_count` ignored, so a head with more runs than one page
+        holds read as green whatever the runs past the page said. Now the
+        pages are walked; a page the shepherd asked for and did not get
+        leaves the read incomplete, which is pending."""
+        def success(name):
+            return {"name": name, "status": "completed",
+                    "conclusion": "success"}
+        pages = {}
+        calls = []
+        def paged_rest(target, pull, method, path, payload=None):
+            calls.append(path)
+            if "check-runs" not in path:
+                return []
+            page = int((re.search(r"[&?]page=(\d+)", path) or [0, 1])[1])
+            return {"total_count": 101, "check_runs": pages.get(page, [])}
+
+        pages[1] = [success(f"check-{n}") for n in range(100)]
+        pages[2] = [{"name": "vitest", "status": "in_progress",
+                     "conclusion": None}]
+        self.assertEqual(self._state_with_rest(paged_rest).checks, "pending")
+        self.assertEqual(
+            [c for c in calls if "check-runs" in c],
+            [f"repos/example/repo/commits/{self.HEAD}/check-runs?per_page=100",
+             f"repos/example/repo/commits/{self.HEAD}/check-runs?per_page=100"
+             "&page=2"])
+
+        pages[2] = [success("vitest")]
+        self.assertEqual(self._state_with_rest(paged_rest).checks, "success")
+
+        del pages[2]  # 101 promised, 100 delivered: incomplete, pending.
+        self.assertEqual(self._state_with_rest(paged_rest).checks, "pending")
+
+    def test_a_check_runs_answer_the_shepherd_cannot_read_is_pending(self):
+        """Review finding: `{"check_runs": "unreadable"}` read as green."""
+        def odd_rest(target, pull, method, path, payload=None):
+            return {"check_runs": "unreadable"} if "check-runs" in path else []
+        self.assertEqual(self._state_with_rest(odd_rest).checks, "pending")
 
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
         """Regression: the shepherd's fix commit is the implementer's work,

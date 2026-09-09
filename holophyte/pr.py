@@ -471,10 +471,7 @@ def _check_reads(target, pull, sha):
     runs = required = None
     if sha:
         try:
-            answer = rest(target, pull, "GET",
-                          f"repos/{pull.owner}/{pull.name}/commits/{sha}"
-                          f"/check-runs?per_page={CHECK_RUNS_PAGE}")
-            runs = answer.get("check_runs") if isinstance(answer, dict) else None
+            runs = _check_runs_of(target, pull, sha)
         except InfraFailure:
             runs = None
     try:
@@ -484,6 +481,36 @@ def _check_reads(target, pull, sha):
     except InfraFailure:
         required = None
     return runs, required
+
+
+def _check_runs_of(target, pull, sha):
+    """Every check run of commit `sha`, walked page by page (`CHECK_RUNS_PAGE`
+    a page) until the answer's `total_count` is in hand, or None when the
+    answer is not readable as check runs or a page the shepherd asked for
+    did not come back: a head with more runs than one page holds must not
+    be read as green on the page alone."""
+    base = (f"repos/{pull.owner}/{pull.name}/commits/{sha}"
+            f"/check-runs?per_page={CHECK_RUNS_PAGE}")
+    runs, page = [], 1
+    while True:
+        path = base if page == 1 else f"{base}&page={page}"
+        answer = rest(target, pull, "GET", path)
+        if not isinstance(answer, dict):
+            return None
+        batch, total = answer.get("check_runs"), answer.get("total_count")
+        if not isinstance(batch, list) or not all(isinstance(r, dict)
+                                                  for r in batch):
+            return None
+        if not isinstance(total, int) or isinstance(total, bool):
+            total = len(batch) if page == 1 else None
+        if total is None:
+            return None
+        runs.extend(batch)
+        if len(runs) >= total:
+            return runs
+        if not batch:
+            return None  # Promised more than it gave: incomplete.
+        page += 1
 
 
 def _required_contexts(rules):
@@ -510,8 +537,9 @@ def fold_checks(rollup, runs, required):
     contexts `main`'s rules require -- either None when the shepherd could
     not read it. Red first: a red rollup, or any completed run with a red
     conclusion. Then pending: a pending rollup, a run still queued or in
-    progress, a required context with no completed run, or a read that did
-    not come back. Green is what is left: every run completed without a
+    progress, a required context with no completed run, a read that did
+    not come back, or check data that is not readable as runs. Green is
+    what is left: every run completed without a
     red conclusion and every required context reported. No rules and no
     runs is green, as the rollup alone said.
     """
@@ -520,9 +548,12 @@ def fold_checks(rollup, runs, required):
         return state
     if runs is None or required is None:
         return "pending"
+    if not isinstance(runs, list):
+        return "pending"
     completed = set()
     for run in runs:
         if not isinstance(run, dict):
+            state = "pending"  # Not a run the shepherd can read: not green.
             continue
         if run.get("status") != "completed":
             state = "pending"
