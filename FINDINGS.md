@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[409 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T19:38:57Z — KO-322
-MERGED to main as 5a0ecb2 (branch task/ko-322-the-drawer-readme-the-reviewin deleted).
-actual: 2.3 min · estimate: 20 min · rounds: 2
-
-## 2026-09-09T17:13:53Z — KO-323
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/console/electron/package.json:10 [p1] **[P1] Packaging fails because `version` is missing.** [package.json](/home/reviewer/candidate/console/electron/package.json:10) adds the packaging command wi…
-- /home/reviewer/candidate/console/electron/electron-builder.yml:10 [p1] **[P1] The packaged app omits the existing tray images.** [electron-builder.yml](/home/reviewer/candidate/console/electron/electron-builder.yml:10) includes n…
+[411 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T17:16:04Z — KO-323
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -763,3 +753,10 @@ actual: 43.2 min · estimate: 30 min · rounds: 2
 ## 2026-09-09T23:17:00Z — KO-329
 FAILED: cannot reuse leftover worktree: preserved commits on task/ko-329-at-startup-the-loop-walks-mirr conflict with a main that moved on; a human resolves the merge before this ticket is run again
 actual: 0.1 min · estimate: 30 min · rounds: 0
+
+## 2026-09-09T23:26:03Z — KO-331
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T23:27:28Z — KO-331
+MERGED to main as b314bfb (branch task/ko-331-the-pull-request-merge-method deleted).
+actual: 10.4 min · estimate: 30 min · rounds: 1
