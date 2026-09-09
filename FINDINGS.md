@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[394 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T19:20:23Z — KO-316
-FAILED: terminal adjudication: FAIL; branch task/ko-316-the-architecture-data-and-over preserved at 6dbec627a642
-actual: 5.1 min · estimate: 25 min · rounds: 3
-
-## 2026-09-08T19:22:51Z — KO-316
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[396 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T19:22:52Z — KO-316
 MERGED to main as 5e4fa15 (branch task/ko-316-the-architecture-data-and-over deleted).
@@ -753,3 +746,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T18:53:31Z — KO-326
 MERGED to main as f1915bc (branch task/ko-326-the-electron-window-seeds-the deleted).
 actual: 2.3 min · estimate: 30 min · rounds: 1
+
+## 2026-09-09T19:32:40Z — KO-327
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T19:34:04Z — KO-327
+MERGED to main as c24fa10 (branch task/ko-327-a-review-thread-a-person-opene deleted).
+actual: 25.8 min · estimate: 30 min · rounds: 1
