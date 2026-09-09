@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[405 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T19:36:33Z — KO-320
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-08T19:36:35Z — KO-320
-MERGED to main as 7ee0f5c (branch task/ko-320-the-readme-the-docs-index-the deleted).
-actual: 3.0 min · estimate: 30 min · rounds: 1
-
-## 2026-09-08T19:37:53Z — KO-322
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/docs/reference/cli.md:14 [p2] [docs/reference/cli.md:14](/home/reviewer/candidate/docs/reference/cli.md:14) misstates authentication requirements: explicit loopback binds such as `--serve…
+[408 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T19:38:55Z — KO-322
 Round 2: pass · reviewer codex-astra-medium · verify passed
@@ -762,3 +750,15 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T22:33:44Z — KO-333
 MERGED to main as 1288cf7 (branch task/ko-333-the-shepherd-reads-a-pull-requ deleted).
 actual: 40.1 min · estimate: 30 min · rounds: 3
+
+## 2026-09-09T22:50:52Z — KO-340
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- (unparsed):ab3000869f7b [p2] Blocker: the exact unittest verification command exits 1. All 886 tests pass, but buffered output follows `OK`, so `tail -1 | grep -q '^OK'` fails. The required…
+
+## 2026-09-09T23:15:29Z — KO-340
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T23:16:54Z — KO-340
+MERGED to main as 1e289c2 (branch task/ko-340-the-supervisor-s-time-box-coun deleted).
+actual: 43.2 min · estimate: 30 min · rounds: 2
