@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[392 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T19:19:23Z — KO-316
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/docs/architecture/data.md:7 [p2] [data.md:7](/home/reviewer/candidate/docs/architecture/data.md:7) states `user_version` is “currently 10,” violating criterion 1’s explicit requirement for 9.…
-- criteria:1 [p2] CRITERION 1: not met — `user_version` says 10 instead of the required 9. Given `data.md`, when read, then it says `user_version` 9, lists `ledger` among the tab…
-
-## 2026-09-08T19:20:23Z — KO-316
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+[394 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T19:20:23Z — KO-316
 FAILED: terminal adjudication: FAIL; branch task/ko-316-the-architecture-data-and-over preserved at 6dbec627a642
@@ -755,3 +746,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T17:28:06Z — KO-324
 MERGED to main as d9f337e (branch task/ko-324-the-electron-tray-menu-carries deleted).
 actual: 9.3 min · estimate: 30 min · rounds: 2
+
+## 2026-09-09T18:53:30Z — KO-326
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T18:53:31Z — KO-326
+MERGED to main as f1915bc (branch task/ko-326-the-electron-window-seeds-the deleted).
+actual: 2.3 min · estimate: 30 min · rounds: 1
