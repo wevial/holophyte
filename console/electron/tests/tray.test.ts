@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { pollAll, readTokens } from "../poll.ts";
-import { type Attention, type FetchResult, type Status, buildSummary } from "../tray.ts";
+import { type Attention, type FetchResult, type Status, buildSummary, summarizeAnswer } from "../tray.ts";
 
 // The wire shapes from docs/reference/http.md.
 const NOW = 1788450534491;
@@ -99,6 +99,28 @@ describe("pollAll with tokens from console.json", () => {
     expect(seen["writer-2:7710/attention"]).toBe("Bearer s3cret");
     expect(seen["127.0.0.1:7710/status"]).toBeUndefined();
     expect(seen["writer-3:7710/status"]).toBeUndefined();
+  });
+
+  test("an idle daemon's /runs reaches the summary: the line names the last merge and its age", async () => {
+    const fakeFetch = async (url: string): Promise<Response> => {
+      const { pathname } = new URL(url);
+      if (pathname === "/peers") return Response.json({ self: "127.0.0.1:7710", peers: [] });
+      if (pathname === "/status") return Response.json({ ...STATUS, runs: [] });
+      if (pathname === "/runs") {
+        return Response.json({
+          rows: [
+            { ticket: "KO-122", outcome: "merged", ended_ms: NOW - 40 * 60_000 },
+            { ticket: "KO-123", outcome: "merged", ended_ms: NOW - 3 * 60_000 },
+          ],
+        });
+      }
+      return Response.json({ ...QUIET, level: "idle" });
+    };
+    const answer = await pollAll("http://127.0.0.1:7710/", {}, { fetch: fakeFetch });
+    const { items, level } = summarizeAnswer(answer, NOW);
+
+    expect(labels(items)).toContain("holophyte · idle · last merge KO-123 · 3m");
+    expect(level).toBe("idle");
   });
 
   test("token_files are read relative to the config directory and tokens win for the same address", () => {

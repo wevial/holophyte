@@ -11,7 +11,7 @@ import { BrowserWindow, Menu, Tray, app, dialog, nativeImage } from "electron";
 import { CONFIG_FILE, resolveConsoleUrl } from "./config.ts";
 import type { MenuActions } from "./menu.ts";
 import { POLL_INTERVAL_MS, pollAll, readTokens } from "./poll.ts";
-import { type Level, buildSummary } from "./tray.ts";
+import { type Level, buildSummary, summarizeAnswer } from "./tray.ts";
 
 // The SwiftBar drawer's template icon; nativeImage picks up the @2x sibling
 // by name. From the repository, app.getAppPath() is this package's directory
@@ -86,7 +86,8 @@ function trayActions(url: string): MenuActions {
 }
 
 // The tray carries the drawer's summary: every POLL_INTERVAL_MS, /peers on
-// the console URL, then /status and /attention on each daemon it names, with
+// the console URL, then /status and /attention (and /runs when idle) on each
+// daemon it names, with
 // the bearer console.json holds per address. A poll that throws (it should
 // not: every fetch failure is a result) leaves the last menu in place.
 async function refreshTray(url: string, configText: string | null): Promise<void> {
@@ -94,7 +95,7 @@ async function refreshTray(url: string, configText: string | null): Promise<void
   const tokens = readTokens(configText, app.getPath("userData"));
   const answer = await pollAll(url, tokens);
   if (tray === null) return;
-  const { items, level } = buildSummary(answer.peers, answer.statuses, answer.attentions, Date.now(), {
+  const { items, level } = summarizeAnswer(answer, Date.now(), {
     state: { openAtLogin: app.getLoginItemSettings().openAtLogin },
     actions: trayActions(url),
   });

@@ -313,3 +313,21 @@ export function buildSummary(
   items.push(...menuTemplate(options.state ?? { openAtLogin: false }, options.actions));
   return { items, level };
 }
+
+/** The poll's answer, as `pollAll` returns it, folded into the summary in
+ *  one step so the caller cannot forget a part of it (the idle line needs
+ *  `/runs`; `pollAll` only fetches it for idle daemons). */
+export type PollAnswerLike = {
+  peers: string[];
+  statuses: Record<string, FetchResult<Status>>;
+  attentions: Record<string, FetchResult<Attention>>;
+  runs: Record<string, FetchResult<Runs>>;
+};
+
+export function summarizeAnswer(
+  answer: PollAnswerLike,
+  now: number,
+  options: Omit<SummaryOptions, "runs"> = {},
+): Summary {
+  return buildSummary(answer.peers, answer.statuses, answer.attentions, now, { ...options, runs: answer.runs });
+}
