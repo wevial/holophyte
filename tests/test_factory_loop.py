@@ -106,6 +106,14 @@ class StubProvider:
     def comment(self, task_id, body):
         self.comments.append((task_id, body))
 
+    # What the board says it has closed, identifier -> state type, when the
+    # startup reconcile asks; empty means the mirror is current.
+    closed = {}
+
+    def closed_identifiers(self, identifiers):
+        self.asked = list(identifiers)
+        return {i: self.closed[i] for i in identifiers if i in self.closed}
+
 
 def a_task(n=1):
     """One ticket in the shape `linear_provider.parse_task()` returns."""
@@ -1126,6 +1134,176 @@ class SweepDiagnosticsTests(LoopFixture):
         self.assertNotIn("strike", printed)
         self.assertNotIn("the sweep above", printed)
         self.assertEqual(self.read("SELECT strikes FROM sweepStrikes"), [])
+
+
+class ReconcileTests(LoopFixture):
+    """At startup, right after the sweep, the loop walks the mirrored
+    tickets Linear has since closed elsewhere to their terminal status.
+
+    The daemon's board showed KO-217 `ready` and KO-137/KO-138 `needs_spec`
+    days after another target finished them: the mirror is written at the
+    claim and hears nothing when Linear closes the ticket elsewhere.
+    """
+
+    CRITERIA = ["Given a thing, when it runs, then it works"]
+
+    def seed(self):
+        """Three open mirrored tickets: KO-1 ready and KO-2 needs_spec, each
+        with a run behind it (failed, requeued; KO-2's body then lost its
+        criteria on a re-mirror), and KO-3 ready and never run."""
+        conn = store.open(str(self.db))
+        project = store.ensure_project(conn, StubProvider.TEAM, str(self.target))
+        runs = {}
+        for n in (1, 2):
+            ticket = store.mirror_ticket(
+                conn, project, linear_issue_id=f"iss-{n}",
+                linear_identifier=f"KO-{n}", title=f"ticket {n}",
+                acceptance_criteria=self.CRITERIA,
+                verification_commands=["echo ok"])
+            runs[f"KO-{n}"] = store.claim(conn, project, ticket)
+            store.transition(conn, ticket, "in_flight")
+            store.release(conn, runs[f"KO-{n}"], "failed", "crashed")
+            store.requeue(conn, ticket, "contract fixed")
+        store.mirror_ticket(conn, project, linear_issue_id="iss-2",
+                            linear_identifier="KO-2", title="ticket 2")
+        store.mirror_ticket(conn, project, linear_issue_id="iss-3",
+                            linear_identifier="KO-3", title="ticket 3",
+                            acceptance_criteria=self.CRITERIA,
+                            verification_commands=["echo ok"])
+        conn.close()
+        self.assertEqual(self.statuses(), {"KO-1": "ready", "KO-2": "needs_spec",
+                                           "KO-3": "ready"})
+        return runs
+
+    def statuses(self):
+        return dict(self.read("SELECT linearIdentifier, status FROM tickets"))
+
+    def reconcile_rows(self):
+        return self.read('SELECT runId, source, "trigger" FROM interventions'
+                         " WHERE \"action\" = 'reconcile' ORDER BY id")
+
+    def test_closed_tickets_are_walked_to_their_terminal_status(self):
+        runs = self.seed()
+        provider = StubProvider()
+        provider.closed = {"KO-1": "completed", "KO-2": "canceled"}
+
+        printed = self.main_output(provider=provider)
+
+        self.assertEqual(self.statuses(), {"KO-1": "merged", "KO-2": "abandoned",
+                                           "KO-3": "ready"})
+        self.assertEqual(self.reconcile_rows(),
+                         [(runs["KO-1"], "supervisor", "linear_completed"),
+                          (runs["KO-2"], "supervisor", "linear_cancelled")])
+        self.assertIn("[holo2] reconciled KO-1: ready -> merged"
+                      " (Linear completed)", printed)
+        self.assertIn("[holo2] reconciled KO-2: needs_spec -> abandoned"
+                      " (Linear canceled)", printed)
+        self.assertNotIn("KO-3", printed)
+        # One call for the whole open set, KO-3 included.
+        self.assertEqual(sorted(provider.asked), ["KO-1", "KO-2", "KO-3"])
+        self.assertEqual(provider.states, [])  # nothing is written to Linear
+
+    def test_a_ticket_with_an_active_run_is_left_to_that_run(self):
+        conn = store.open(str(self.db))
+        project = store.ensure_project(conn, StubProvider.TEAM, str(self.target))
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="iss-9", linear_identifier="KO-9",
+            title="being worked", acceptance_criteria=self.CRITERIA,
+            verification_commands=["echo ok"])
+        run_id = store.claim(conn, project, ticket)
+        store.transition(conn, ticket, "in_flight")
+        conn.close()
+        provider = StubProvider()
+        provider.closed = {"KO-9": "completed"}
+
+        printed = self.main_output(provider=provider)
+
+        self.assertNotIn("reconciled", printed)
+        self.assertEqual(self.statuses(), {"KO-9": "in_flight"})
+        self.assertEqual(self.read("SELECT id, phase, endedAt FROM runs"),
+                         [(run_id, "claimed", None)])
+        self.assertEqual(self.reconcile_rows(), [])
+        self.assertEqual(getattr(provider, "asked", []), [])
+
+    def test_a_ticket_claimed_while_the_board_is_asked_is_left_to_its_run(self):
+        """The active-run check before the provider call is a snapshot:
+        another process on the same store can claim the ticket while the
+        board is being asked, and the row is re-read under the write lock
+        before anything is recorded or walked."""
+        self.seed()
+        db, team, target = str(self.db), StubProvider.TEAM, str(self.target)
+
+        class ClaimsMeanwhile(StubProvider):
+            def closed_identifiers(self, identifiers):
+                other = store.open(db)
+                project = store.ensure_project(other, team, target)
+                (ticket_id,) = other.execute(
+                    "SELECT id FROM tickets WHERE linearIdentifier = 'KO-1'"
+                ).fetchone()
+                self.run_id = store.claim(other, project, ticket_id)
+                store.transition(other, ticket_id, "in_flight")
+                other.close()
+                return super().closed_identifiers(identifiers)
+
+        provider = ClaimsMeanwhile()
+        provider.closed = {"KO-1": "completed", "KO-2": "canceled"}
+
+        printed = self.main_output(provider=provider)
+
+        self.assertEqual(self.statuses(), {"KO-1": "in_flight", "KO-2": "abandoned",
+                                           "KO-3": "ready"})
+        self.assertEqual(
+            self.read("SELECT phase, endedAt FROM runs WHERE id = %d"
+                      % provider.run_id), [("claimed", None)])
+        self.assertEqual([row[2] for row in self.reconcile_rows()],
+                         ["linear_cancelled"])
+        self.assertNotIn("reconciled KO-1", printed)
+        self.assertIn("reconcile left KO-1 alone", printed)
+
+    def test_only_this_projects_tickets_are_reconciled(self):
+        """A store may hold more than one project; the provider knows one
+        team, and another project's open tickets are that project's loop
+        to reconcile."""
+        self.seed()
+        conn = store.open(str(self.db))
+        other = store.ensure_project(conn, "another-team", "/elsewhere")
+        store.mirror_ticket(conn, other, linear_issue_id="iss-x",
+                            linear_identifier="XX-1", title="theirs",
+                            acceptance_criteria=self.CRITERIA,
+                            verification_commands=["echo ok"])
+        conn.close()
+        provider = StubProvider()
+        provider.closed = {"XX-1": "completed"}
+
+        printed = self.main_output(provider=provider)
+
+        self.assertEqual(self.statuses()["XX-1"], "ready")
+        self.assertNotIn("XX-1", provider.asked)
+        self.assertNotIn("reconciled", printed)
+        self.assertEqual(self.reconcile_rows(), [])
+
+    def test_a_board_that_cannot_answer_skips_the_reconcile_in_one_line(self):
+        self.seed()
+
+        class Unreachable(StubProvider):
+            def closed_identifiers(self, identifiers):
+                raise OSError("network is unreachable")
+
+        printed = self.main_output(Commit("the scripted work"), APPROVE,
+                                   provider=Unreachable(a_task()))
+
+        skipped = [line for line in printed.splitlines()
+                   if "reconcile skipped" in line]
+        self.assertEqual(len(skipped), 1)
+        self.assertIn("network is unreachable", skipped[0])
+        self.assertNotIn("reconciled", printed)
+        self.assertEqual(self.reconcile_rows(), [])
+        # The seeded mirror is untouched and the loop went on to claim,
+        # implement and merge the queued ticket as before.
+        self.assertEqual(self.statuses(),
+                         {"KO-1": "ready", "KO-2": "needs_spec", "KO-3": "ready",
+                          "KO-131": "merged"})
+        self.assertIn("the scripted work", self.subjects())
 
 
 class CommitThenTimeout(Commit):

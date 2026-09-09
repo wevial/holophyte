@@ -1,9 +1,10 @@
 """The board seam: one protocol, two boards.
 
 `factory.py` never names a board. It is handed a `Provider` and drives it
-through five members -- `team`, `claim_next()`, `fetch_task()`, `set_state()`
-and `comment()` -- so which board a loop runs against is the caller's choice
-(`factory.cli()` builds a `LinearProvider`), not a module import. Two boards
+through six members -- `team`, `claim_next()`, `fetch_task()`, `set_state()`,
+`comment()` and `closed_identifiers()` -- so which board a loop runs against is
+the caller's choice (`factory.cli()` builds a `LinearProvider`), not a module
+import. Two boards
 ship here: `LinearProvider`, which wraps the functions `linear_provider.py`
 already has, and `FileProvider`, a directory of ticket files for tests and
 offline runs. The conformance suite in `tests/test_provider.py` holds both to
@@ -67,6 +68,10 @@ import ticket_template
 VERIFY_RE = re.compile(r"## Verify command\(s\)\s*```\n(.*?)```", re.S)
 DEFAULT_BUDGET_MIN = 20
 DEFAULT_STATE = "Todo"
+# The file board's closed state names and the Linear state *type* each one
+# is: `closed_identifiers()` answers in types on both boards.
+CLOSED_STATE_NAMES = {"Done": "completed", "Canceled": "canceled",
+                      "Cancelled": "canceled", "Duplicate": "canceled"}
 
 
 class Provider(Protocol):
@@ -95,6 +100,12 @@ class Provider(Protocol):
 
     def comment(self, task_id, body) -> None:
         """Record `body` as a comment on the ticket named by either id."""
+        ...
+
+    def closed_identifiers(self, identifiers) -> dict[str, str]:
+        """Which of `identifiers` the board holds closed, as identifier ->
+        `"completed"` or `"canceled"`; an open or unknown identifier is
+        absent. Raise when the board cannot be asked."""
         ...
 
 
@@ -139,6 +150,9 @@ class LinearProvider:
 
     def comment(self, task_id, body):
         self._linear().comment(task_id, body)
+
+    def closed_identifiers(self, identifiers):
+        return self._linear().closed_identifiers(identifiers)
 
 
 class FileProvider:
@@ -188,6 +202,14 @@ class FileProvider:
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         with self._path(task_id, ".comments.md").open("a") as f:
             f.write(f"## {ts}\n\n{body.rstrip()}\n\n")
+
+    def closed_identifiers(self, identifiers):
+        # The file board keeps state *names*; these are the closed ones, typed
+        # as Linear types its workflow states so both boards answer alike.
+        return {identifier: CLOSED_STATE_NAMES[self._state(identifier)]
+                for identifier in identifiers
+                if "." not in identifier and self._path(identifier).is_file()
+                and self._state(identifier) in CLOSED_STATE_NAMES}
 
 
 def _parse(identifier, text):

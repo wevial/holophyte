@@ -146,21 +146,26 @@ class OpenTicket:
     mirroredAt: int
 
 
-def open_tickets(conn):
+def open_tickets(conn, project_id=None):
     """Every ticket whose status is not `merged` or `abandoned`, ordered
-    by identifier.
+    by identifier; only `project_id`'s tickets when one is given.
 
-    The `serve` daemon's `/board` read: the store's mirror of Linear's
-    columns, grouped by the caller. `dependsOn` names Linear issue ids;
-    each is resolved to an identifier through the open rows, dropped when
-    it names a closed ticket (a merged dependency is no longer a wait),
-    and kept as-is when the store has never mirrored it.
+    The `serve` daemon's `/board` read across every project: the store's
+    mirror of Linear's columns, grouped by the caller. The loop's startup
+    reconcile (KO-329) reads it scoped to its own project, since the
+    provider it asks knows only that project's team. `dependsOn` names
+    Linear issue ids; each is resolved to an identifier through the open
+    rows, dropped when it names a closed ticket (a merged dependency is
+    no longer a wait), and kept as-is when the store has never mirrored
+    it.
     """
+    scope = "" if project_id is None else " AND projectId = ?"
+    params = () if project_id is None else (project_id,)
     rows = conn.execute(
         "SELECT id, linearIssueId, linearIdentifier, title, status,"
         " timeBoxMs, activeRunId, blockedQuestion, dependsOn, mirroredAt"
         " FROM tickets WHERE status NOT IN ('merged', 'abandoned')"
-        " ORDER BY linearIdentifier").fetchall()
+        + scope + " ORDER BY linearIdentifier", params).fetchall()
     # The closed ids are read too, so a dependency on a merged ticket is
     # told apart from one the store has never seen.
     mirrored = {row[1]: row[2] for row in rows}

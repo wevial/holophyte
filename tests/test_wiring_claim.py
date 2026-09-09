@@ -54,6 +54,9 @@ class StubProvider:
     def set_state(self, issue_id, state):
         self.states.append((issue_id, state))
 
+    def closed_identifiers(self, identifiers):
+        return {}  # the board holds none of the mirror's open tickets closed
+
 
 ISSUE_UUID = "9f1c2d34-5678-4abc-9def-0123456789ab"  # Linear's canonical id
 

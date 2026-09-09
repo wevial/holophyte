@@ -6,7 +6,13 @@ machines it walks. Back to the [README](index.md).
 ## The loop
 
 1. Claim the first ready ticket — non-terminal and unblocked (Linear
-   `blocks` relations are the only machine-checked dependencies).
+   `blocks` relations are the only machine-checked dependencies). Before the
+   first claim the loop runs one read-only sweep of the store and then
+   reconciles its mirror: every open mirrored ticket without an active run
+   that Linear now holds completed or canceled is walked to `merged` or
+   `abandoned`, with a `reconcile` intervention row on its most recent run
+   and one printed line naming the move; a board that cannot be asked skips
+   the reconcile in one line and the loop goes on.
 2. Cut a per-task branch in a sibling worktree (`<repo>.worktrees/`), so
    the main checkout stays untouched, and run the target's configured
    `[worktree] setup` commands there — a worktree that borrows the main

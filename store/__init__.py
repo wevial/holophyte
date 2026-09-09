@@ -321,11 +321,12 @@ CREATE TABLE IF NOT EXISTS interventions (
     source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human')),
     "trigger" TEXT    NOT NULL
         CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
-                             'review_stuck', 'linear_cancelled', 'manual')),
+                             'review_stuck', 'linear_cancelled',
+                             'linear_completed', 'manual')),
     "action"  TEXT    NOT NULL
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
                             'close_out', 'requeue', 'approve', 'repoint',
-                            'shepherd')),
+                            'shepherd', 'reconcile')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL
@@ -354,8 +355,10 @@ CREATE TABLE IF NOT EXISTS interventions (
 # so a shepherd resumed by `--shepherd` knows what still needs a review
 # (KO-262). Version 10 is `runs.reviewRoundCap`, the review-round cap the
 # loop gave the run, so `/runs/N` serves the cap the run had rather than
-# the module constant (KO-321).
-SCHEMA_VERSION = 10
+# the module constant (KO-321). Version 11 is the action CHECK admitting
+# 'reconcile' and the trigger CHECK 'linear_completed': the loop's startup
+# walk of a mirrored ticket Linear has closed elsewhere (KO-329).
+SCHEMA_VERSION = 11
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -586,19 +589,21 @@ def init(conn):
 
 
 def _widen_interventions_action(conn):
-    """Rebuild `interventions` when its action CHECK predates 'repoint' or
-    'shepherd'.
+    """Rebuild `interventions` when its action CHECK predates 'repoint',
+    'shepherd' or 'reconcile'.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
     cannot ALTER a CHECK, so a store initialized before a value shipped
     would refuse the row forever — which is how the KO-146 incident ended in
     raw SQL and four falsely-labeled 'resume' rows, the precedent that added
     'close_out' here. 'requeue' (schema version 3), 'approve' (schema
-    version 5), 'repoint' (schema version 7) and 'shepherd' (schema
-    version 8) ride the same rebuild: the two newest values are the ones
-    tested for, so a store from before either shipped -- or from a branch
-    that shipped one of them as its own version 7 -- is carried forward in
-    one pass. The stored DDL says which world this store is from; the
+    version 5), 'repoint' (schema version 7), 'shepherd' (schema version 8)
+    and 'reconcile' (schema version 11, which also widens the trigger CHECK
+    to 'linear_completed') ride the same rebuild: the three newest values
+    are the ones tested for, so a store from before any of them shipped --
+    or from a branch that shipped one of them as its own version 7 -- is
+    carried forward in one pass. The stored DDL says which world this store
+    is from; the
     rebuild is the standard rename-copy-drop from
     `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store and
     a second call both skip it. The column list is unchanged, so existing
@@ -616,7 +621,8 @@ def _widen_interventions_action(conn):
     # skip a rebuild that is still needed.
     (ddl,) = row
     admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
-    if "'repoint'" in admitted and "'shepherd'" in admitted:
+    if all(value in admitted
+           for value in ("'repoint'", "'shepherd'", "'reconcile'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -2233,10 +2239,11 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
 # the value that was wrong. The schema test holds these against the database.
 INTERVENTION_SOURCES = ("supervisor", "human")
 INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
-                         "review_stuck", "linear_cancelled", "manual")
+                         "review_stuck", "linear_cancelled", "linear_completed",
+                         "manual")
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
                         "close_out", "requeue", "approve", "repoint",
-                        "shepherd")
+                        "shepherd", "reconcile")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

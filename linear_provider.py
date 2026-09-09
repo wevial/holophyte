@@ -6,8 +6,8 @@ file) against the direct GraphQL API. The project and team are parameters of
 the calls that need them, never module state.
 
 Loop-facing API: claim_next() / fetch_task() / set_state() / comment() /
-list_ready_issues(). Operator API, for `--file-ticket`: create_issue() /
-add_blocker() / fetch_description().
+list_ready_issues() / closed_identifiers(). Operator API, for `--file-ticket`:
+create_issue() / add_blocker() / fetch_description().
 """
 import json
 import os
@@ -304,6 +304,62 @@ def comment(task_id, body):
     _gql('mutation($issue: String!, $body: String!) { commentCreate(input: '
          '{ issueId: $issue, body: $body }) { success } }',
          {"issue": task_id, "body": body})
+
+
+# Issues named by identifier that Linear holds closed. An identifier is the
+# team's key and the issue's number (`KO-217`), and those two are what the
+# filter takes: IssueFilter has no `identifier` field, so the pair is the
+# identifier spelled in the terms the API filters on. The state filter is
+# server-side, so only the closed ones come back and the answer for an open
+# project is one small page.
+CLOSED_QUERY = """
+query($key: String!, $numbers: [Float!]!, $after: String) {
+  issues(
+    first: 50
+    after: $after
+    filter: {
+      team: { key: { eq: $key } }
+      number: { in: $numbers }
+      state: { type: { in: ["completed", "canceled"] } }
+    }
+  ) {
+    pageInfo { hasNextPage endCursor }
+    nodes { identifier state { type } }
+  }
+}"""
+
+IDENTIFIER_RE = re.compile(r"\A([A-Za-z0-9]+)-(\d+)\Z")
+
+
+def closed_identifiers(identifiers):
+    """Which of `identifiers` Linear holds closed, as identifier -> state type.
+
+    One query per team key named in `identifiers` -- one, for a board whose
+    identifiers share a prefix -- rather than one per identifier: the loop
+    asks this of every open mirrored ticket at startup (`_reconcile_mirror`),
+    and a store can hold tens of them. The value is the state *type*, one of
+    `CLOSED_STATE_TYPES`, so the caller tells a finished ticket from a
+    cancelled one without learning the team's state names; an open identifier
+    or one Linear has no issue for is simply absent. A read, like
+    `fetch_task()`: nothing here moves a ticket. An identifier not of the
+    `KEY-n` shape is skipped rather than sent, since the filter could not
+    name it.
+    """
+    by_key = {}
+    for identifier in identifiers:
+        m = IDENTIFIER_RE.match(identifier)
+        if m:
+            by_key.setdefault(m.group(1), []).append(int(m.group(2)))
+    asked = set(identifiers)
+    closed = {}
+    for key, numbers in by_key.items():
+        nodes = _paginate(CLOSED_QUERY, {"key": key, "numbers": numbers},
+                          ("issues",))
+        for node in nodes:
+            state_type = (node.get("state") or {}).get("type")
+            if node["identifier"] in asked and state_type in CLOSED_STATE_TYPES:
+                closed[node["identifier"]] = state_type
+    return closed
 
 
 # --- Operator API: filing a ticket from a file ------------------------------
