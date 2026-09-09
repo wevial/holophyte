@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[413 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T17:18:45Z — KO-323
-MERGED to main as d66dc2c (branch task/ko-323-the-electron-wrapper-packages deleted).
-actual: 8.0 min · estimate: 30 min · rounds: 3
-
-## 2026-09-09T17:25:48Z — KO-324
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/electron/main.ts:97 [p1] [P1] [main.ts:97](/home/reviewer/candidate/console/electron/main.ts:97) omits `runs: answer.runs` when calling `buildSummary`. Consequently, idle projects alw…
-
-## 2026-09-09T17:28:04Z — KO-324
-Round 2: pass · reviewer codex-astra-medium · verify passed
+[416 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T17:28:06Z — KO-324
 MERGED to main as d9f337e (branch task/ko-324-the-electron-tray-menu-carries deleted).
@@ -758,3 +746,17 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T23:36:13Z — KO-329
 MERGED to main as 4dc2bb0 (branch task/ko-329-at-startup-the-loop-walks-mirr deleted).
 actual: 8.7 min · estimate: 30 min · rounds: 1
+
+## 2026-09-09T23:47:57Z — KO-334
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- (unparsed):94f18e9ccbb0 [p2] CRITERION 1: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_one_claim_pass_mirrors_the_whole_ready_listing` omits bodies for both “valid” tic…
+- criteria:1 [p2] CRITERION 1: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_one_claim_pass_mirrors_the_whole_ready_listing` omits bodies for both “valid” tic…
+- criteria:3 [p2] CRITERION 3: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_a_listing_that_fails_skips_the_mirror_and_the_claim_proceeds` raises before the c…
+
+## 2026-09-09T23:56:07Z — KO-334
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T23:57:32Z — KO-334
+MERGED to main as 15981f9 (branch task/ko-334-the-loop-mirrors-every-ready-i deleted).
+actual: 21.3 min · estimate: 30 min · rounds: 2
