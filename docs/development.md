@@ -159,7 +159,8 @@ Some operators want the console in the dock with a menubar icon rather than
 in a browser tab. `console/electron/` is a thin Electron shell around the
 URL the daemon serves: one window (1280×860, never narrower than the 1100px
 the design assumes), a tray icon built from `assets/menubar-template@1x.png`
-and its `@2x` sibling with "Show console", an "Open at login" checkbox that
+and its `@2x` sibling whose menu carries the SwiftBar drawer's summary,
+then "Show console", an "Open at login" checkbox that
 reads and sets the macOS login item, and "Quit", and nothing of its own — no renderer code, no preload, no IPC, so the app and the browser tab
 never drift. On macOS closing the window leaves the tray in place and the
 dock or tray reopens it; elsewhere closing the window quits.
@@ -172,7 +173,41 @@ that source is a dialog naming it, never a fall-through to the next:
    operator's own URL lives there, never in the repo.
 3. The default `http://127.0.0.1:7710/`, the first target's port on a host.
 
-Only `http` and `https` are accepted. The commands, run from the repo root:
+Only `http` and `https` are accepted.
+
+The tray menu is rebuilt every ten seconds from `/peers` on that URL and
+then `/status` and `/attention` on each daemon it names (and `/runs` on an
+idle one, for its last merge), with the drawer's wording: what needs you
+first ("Nothing needs you" when nothing does), one line per project
+(`holophyte · working KO-n · hb 12s`, or `idle · last merge KO-n · 3m`),
+a hosts line (`1 host · 3 daemons`), then the three fixed entries.
+Clicking an attention or project line shows the console. The tray glyph is
+the template when every daemon is idle and the drawer's `warn` or `bad`
+variant for the worst state shown (something needs you; a daemon is
+unreachable); `bun run icon` renders those variants from
+`assets/menubar-{warn,bad}.svg` into `console/electron/dist/`, and `start`
+and `package` run it first.
+
+A daemon beyond loopback wants its serve token (see
+`docs/reference/http.md`, Authentication); the tray never prompts for one.
+It reads them from `console.json`, per `HOST:PORT` address as `/peers`
+names it, either inline or as the path of the file the daemon's own
+`[serve] token_file` holds, the same file the drawer's `[[daemon]]
+token_file` points at:
+
+```json
+{
+  "url": "http://127.0.0.1:7710/",
+  "tokens": { "writer-2:7710": "…" },
+  "token_files": { "writer-3:7710": "~/.holophyte/writer-3.token" }
+}
+```
+
+A `token_files` path may start with `~` or be relative to the user-data
+directory; `tokens` wins over `token_files` for the same address. A daemon
+whose token is missing or wrong shows `needs token` on its line until the
+file is fixed; one that does not answer within two seconds shows
+`unreachable`. The commands, run from the repo root:
 
 ```
 ELECTRON_SKIP_BINARY_DOWNLOAD=1 bun --cwd=console/electron install --frozen-lockfile
@@ -181,8 +216,10 @@ node console/electron/node_modules/electron/install.js
 bun --cwd=console/electron run start
 ```
 
-`test` exercises the pure URL resolver in `console/electron/config.ts` and
-needs no Electron binary, which is why the verify install skips the
+`test` exercises the pure URL resolver in `console/electron/config.ts`, the
+summary builder in `console/electron/tray.ts` and the poll in
+`console/electron/poll.ts` (with a fake `fetch`), and needs no Electron
+binary, which is why the verify install skips the
 download. `start` needs the binary, and a second `install` after the
 skipped one reports no changes and leaves it absent, so fetch it by running
 Electron's own postinstall script directly (the `node …/install.js` line
