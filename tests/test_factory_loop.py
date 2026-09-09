@@ -2224,6 +2224,33 @@ class MergeModeTests(LoopFixture):
             return {"check_runs": "unreadable"} if "check-runs" in path else []
         self.assertEqual(self._state_with_rest(odd_rest).checks, "pending")
 
+    def test_a_rules_answer_the_shepherd_cannot_read_is_pending(self):
+        """Review finding: a `required_status_checks` rule whose checks were
+        not a list of contexts was silently dropped (green), and one whose
+        `parameters` was not an object raised out of `pr_state`. Rules
+        the shepherd cannot read are pending, like check runs it cannot
+        read."""
+        def runs_then(rules):
+            def odd_rest(target, pull, method, path, payload=None):
+                if "check-runs" in path:
+                    return {"total_count": 0, "check_runs": []}
+                return rules
+            return odd_rest
+        rule = {"type": "required_status_checks"}
+        for parameters in ("unreadable", None,
+                           {"required_status_checks": "unreadable"},
+                           {"required_status_checks": ["unreadable"]},
+                           {"required_status_checks": [{"context": 7}]}):
+            with self.subTest(parameters=parameters):
+                rest = runs_then([dict(rule, parameters=parameters)])
+                self.assertEqual(self._state_with_rest(rest).checks,
+                                 "pending")
+        # A rule of another type, and a rule with no contexts, are not
+        # pending: they require nothing.
+        rest = runs_then([{"type": "deletion"},
+                          dict(rule, parameters={"required_status_checks": []})])
+        self.assertEqual(self._state_with_rest(rest).checks, "success")
+
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
         """Regression: the shepherd's fix commit is the implementer's work,
         and the pass after it -- green, quiet -- merged it with no

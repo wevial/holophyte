@@ -515,17 +515,28 @@ def _check_runs_of(target, pull, sha):
 
 def _required_contexts(rules):
     """The contexts every `required_status_checks` rule names, or None for
-    an answer that is not the rules list."""
+    an answer that is not the rules list or a rule the shepherd cannot
+    read as one: a required check it cannot make out is not one that
+    reported, so None folds to pending, never green."""
     if not isinstance(rules, list):
         return None
     contexts = []
     for rule in rules:
-        if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+        if not isinstance(rule, dict):
+            return None
+        if rule.get("type") != "required_status_checks":
             continue
-        checks = (rule.get("parameters") or {}).get("required_status_checks") or ()
+        parameters = rule.get("parameters")
+        if not isinstance(parameters, dict):
+            return None
+        checks = parameters.get("required_status_checks")
+        if not isinstance(checks, list):
+            return None
         for check in checks:
-            if isinstance(check, dict) and check.get("context"):
-                contexts.append(check["context"])
+            context = check.get("context") if isinstance(check, dict) else None
+            if not isinstance(context, str) or not context:
+                return None
+            contexts.append(context)
     return contexts
 
 
