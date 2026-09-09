@@ -163,6 +163,20 @@ class ConformanceMixin:
         self.assertEqual(self.provider.fetch_task(task["issue_id"])["id"], "KO-1")
         self.assertEqual(self.claim()["id"], "KO-2")
 
+    def test_closed_identifiers_names_the_done_and_cancelled_ones_by_type(self):
+        """One ask over the open mirror's identifiers: a Done ticket answers
+        `completed`, a Canceled one `canceled`, and an open or unknown
+        identifier is absent rather than answered."""
+        self.seed("KO-1", state="Done")
+        self.seed("KO-2", state="Canceled")
+        self.seed("KO-3")
+        self.seed("KO-4", state="In Progress")
+
+        closed = self.provider.closed_identifiers(
+            ["KO-1", "KO-2", "KO-3", "KO-4", "KO-9"])
+
+        self.assertEqual(closed, {"KO-1": "completed", "KO-2": "canceled"})
+
     def test_a_comment_is_recorded_on_the_ticket_under_either_id(self):
         """`ledger()` comments by the human id and `escalate()` by the
         board's; both have to land on the same ticket, in order."""
@@ -295,6 +309,15 @@ class FakeLinear:
         if "issue(id:" in query:
             issue = self.find(variables["id"])
             return {"issue": dict(issue) if issue else None}
+        if "number: { in:" in query:  # CLOSED_QUERY: team key + numbers
+            nodes = [i for i in self.issues.values()
+                     if i["identifier"].split("-")[0] == variables["key"]
+                     and int(i["identifier"].split("-")[1]) in variables["numbers"]
+                     and i["state"]["type"] in ("completed", "canceled")]
+            return {"issues": {
+                "nodes": [{"identifier": i["identifier"], "state": i["state"]}
+                          for i in nodes],
+                "pageInfo": {"hasNextPage": False, "endCursor": None}}}
         nodes = list(self.issues.values())
         if "nin:" in query:  # READY_QUERY's state filter; RELATIONS_QUERY has none
             nodes = [i for i in nodes

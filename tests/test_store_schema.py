@@ -734,8 +734,8 @@ class Version9MigrationTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertEqual(store.SCHEMA_VERSION, 10)
-        self.assertEqual(self.user_version(), 10)
+        self.assertGreaterEqual(store.SCHEMA_VERSION, 10)
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
         self.assertEqual(
             conn.execute("SELECT id, reviewRoundCap FROM runs").fetchall(),
             [(run_id, None)])
@@ -743,6 +743,66 @@ class Version9MigrationTests(unittest.TestCase):
         self.assertEqual(
             conn.execute("SELECT reviewRoundCap FROM runs").fetchall(),
             [(4,)])
+
+
+# `interventions` exactly as schema version 10 shipped it: 'shepherd' in the
+# action CHECK, 'reconcile' not yet and no 'linear_completed' trigger.
+VERSION_10_INTERVENTIONS_TABLE = VERSION_6_INTERVENTIONS_TABLE.replace(
+    "'approve'))", "'approve', 'repoint',\n 'shepherd'))")
+
+
+class Version10MigrationTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+
+    def user_version(self):
+        raw = sqlite3.connect(self.path)
+        try:
+            return raw.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            raw.close()
+
+    def test_a_version_10_store_is_rebuilt_to_accept_reconcile(self):
+        """A store stamped 10 refuses a 'reconcile' row; opening it with this
+        build rebuilds the table in place, keeps the 'shepherd' row it held,
+        stamps the current version, and a reconcile row with the
+        'linear_completed' trigger then lands (KO-329)."""
+        conn = store.open(self.path)
+        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1")
+        run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        conn.execute("DROP TABLE interventions")
+        conn.executescript(VERSION_10_INTERVENTIONS_TABLE)
+        conn.execute(
+            'INSERT INTO interventions (runId, source, "trigger", "action", at)'
+            " VALUES (?, 'human', 'manual', 'shepherd', ?)",
+            (run_id, 1_700_000_120_000))
+        conn.execute("PRAGMA user_version = 10")
+        conn.commit()
+        conn.close()
+        raw = sqlite3.connect(self.path)
+        with self.assertRaises(sqlite3.IntegrityError):
+            raw.execute(
+                'INSERT INTO interventions (runId, source, "trigger",'
+                ' "action", at) VALUES (?, \'supervisor\', \'manual\','
+                ' \'reconcile\', 1)', (run_id,))
+        raw.close()
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertGreaterEqual(store.SCHEMA_VERSION, 11)
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        store.record_intervention(conn, run_id, "reconcile", "Linear completed",
+                                  source="supervisor", trigger="linear_completed")
+        self.assertEqual(
+            conn.execute('SELECT "action", "trigger" FROM interventions'
+                         " ORDER BY id").fetchall(),
+            [("shepherd", "manual"), ("reconcile", "linear_completed")])
 
 
 if __name__ == "__main__":
