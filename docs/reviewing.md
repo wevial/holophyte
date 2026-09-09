@@ -110,8 +110,13 @@ One pass:
    with the declined threads listed. Otherwise the next pass reads the PR
    again -- new threads, the checks the fix restarted. A pass with no
    thread waits for pending checks (`pr.CHECK_POLL_S` between reads, at
-   most `pr.CHECK_WAIT_S`); red checks park the run, green ones are "ready
-   to merge": the PR is merged through its merge API, pinned to the
+   most `pr.CHECK_WAIT_S`). The checks are read beside the rollup: the
+   head's check runs and the contexts `main`'s rules require. A check
+   still running, or a required check not yet reported, is pending even
+   when the rollup already says success -- seconds after a PR opens only
+   the instant checks have reported -- and so is a read of the runs or
+   the rules the shepherd could not make. Red checks park the run, green
+   ones are "ready to merge": the PR is merged through its merge API, pinned to the
    candidate's sha so a push that races the pass is refused rather than
    landed, under `[merge] approve = "auto"` or after the operator's
    `--approve`, and parks for the human under `approve = "human"`.

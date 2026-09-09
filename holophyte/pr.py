@@ -65,9 +65,19 @@ SLEEP = time.sleep
 PR_URL_RE = re.compile(r"^https://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)/?$")
 # What `statusCheckRollup.state` says, folded to the three answers the
 # shepherd acts on. A PR with no checks at all (`null`) has nothing to wait
-# for and reads as green.
+# for and reads as green -- as far as the rollup goes: `fold_checks()`
+# reads the head's check runs and the branch's required contexts beside
+# it, since seconds after a PR opens the rollup already says success while
+# only the instant checks have reported and the rest are still queued.
 CHECK_STATES = {None: "success", "SUCCESS": "success",
                 "PENDING": "pending", "EXPECTED": "pending"}
+# A check run's `conclusion` that is red; `neutral`, `skipped`, `success`
+# and the rest are not.
+RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
+                   "startup_failure"}
+# The check-runs read's page size: past this many runs on one commit the
+# shepherd reads the first page only.
+CHECK_RUNS_PAGE = 100
 # The reviewer the shepherd stamps a pass with when no thread named one: the
 # pass judged the checks alone.
 NO_AUTHOR = "ci"
@@ -449,7 +459,122 @@ def pr_state(target, pull):
         if not (info.get("hasNextPage") and info.get("endCursor")):
             break
         node = _pull_request_page(target, pull, info["endCursor"])
-    return _state_of(first_page, threads)
+    runs, required = _check_reads(target, pull, first_page.get("headRefOid"))
+    return _state_of(first_page, threads, runs, required)
+
+
+def _check_reads(target, pull, sha):
+    """The head's check runs and `main`'s required contexts, two REST reads;
+    either one the shepherd cannot make or cannot read is None, which
+    `fold_checks()` takes as pending: a check the shepherd cannot see is
+    never a check that passed."""
+    runs = required = None
+    if sha:
+        try:
+            runs = _check_runs_of(target, pull, sha)
+        except InfraFailure:
+            runs = None
+    try:
+        answer = rest(target, pull, "GET",
+                      f"repos/{pull.owner}/{pull.name}/rules/branches/main")
+        required = _required_contexts(answer)
+    except InfraFailure:
+        required = None
+    return runs, required
+
+
+def _check_runs_of(target, pull, sha):
+    """Every check run of commit `sha`, walked page by page (`CHECK_RUNS_PAGE`
+    a page) until the answer's `total_count` is in hand, or None when the
+    answer is not readable as check runs or a page the shepherd asked for
+    did not come back: a head with more runs than one page holds must not
+    be read as green on the page alone."""
+    base = (f"repos/{pull.owner}/{pull.name}/commits/{sha}"
+            f"/check-runs?per_page={CHECK_RUNS_PAGE}")
+    runs, page = [], 1
+    while True:
+        path = base if page == 1 else f"{base}&page={page}"
+        answer = rest(target, pull, "GET", path)
+        if not isinstance(answer, dict):
+            return None
+        batch, total = answer.get("check_runs"), answer.get("total_count")
+        if not isinstance(batch, list) or not all(isinstance(r, dict)
+                                                  for r in batch):
+            return None
+        if not isinstance(total, int) or isinstance(total, bool):
+            total = len(batch) if page == 1 else None
+        if total is None:
+            return None
+        runs.extend(batch)
+        if len(runs) >= total:
+            return runs
+        if not batch:
+            return None  # Promised more than it gave: incomplete.
+        page += 1
+
+
+def _required_contexts(rules):
+    """The contexts every `required_status_checks` rule names, or None for
+    an answer that is not the rules list or a rule the shepherd cannot
+    read as one: a required check it cannot make out is not one that
+    reported, so None folds to pending, never green."""
+    if not isinstance(rules, list):
+        return None
+    contexts = []
+    for rule in rules:
+        if not isinstance(rule, dict):
+            return None
+        if rule.get("type") != "required_status_checks":
+            continue
+        parameters = rule.get("parameters")
+        if not isinstance(parameters, dict):
+            return None
+        checks = parameters.get("required_status_checks")
+        if not isinstance(checks, list):
+            return None
+        for check in checks:
+            context = check.get("context") if isinstance(check, dict) else None
+            if not isinstance(context, str) or not context:
+                return None
+            contexts.append(context)
+    return contexts
+
+
+def fold_checks(rollup, runs, required):
+    """The head's checks as one of "success", "pending" or "failure".
+
+    `rollup` is `statusCheckRollup.state`; `runs` the head commit's check
+    runs (each with `name`, `status` and `conclusion`) and `required` the
+    contexts `main`'s rules require -- either None when the shepherd could
+    not read it. Red first: a red rollup, or any completed run with a red
+    conclusion. Then pending: a pending rollup, a run still queued or in
+    progress, a required context with no completed run, a read that did
+    not come back, or check data that is not readable as runs. Green is
+    what is left: every run completed without a
+    red conclusion and every required context reported. No rules and no
+    runs is green, as the rollup alone said.
+    """
+    state = CHECK_STATES.get(rollup, "failure")
+    if state == "failure":
+        return state
+    if runs is None or required is None:
+        return "pending"
+    if not isinstance(runs, list):
+        return "pending"
+    completed = set()
+    for run in runs:
+        if not isinstance(run, dict):
+            state = "pending"  # Not a run the shepherd can read: not green.
+            continue
+        if run.get("status") != "completed":
+            state = "pending"
+            continue
+        if run.get("conclusion") in RED_CONCLUSIONS:
+            return "failure"
+        completed.add(run.get("name"))
+    if any(context not in completed for context in required):
+        return "pending"
+    return state
 
 
 def _comments_of(target, pull, node):
@@ -508,14 +633,15 @@ def _pull_request_page(target, pull, after):
     return node
 
 
-def _state_of(node, threads):
-    """`PrState` from the first page's node and every page's threads."""
+def _state_of(node, threads, runs, required):
+    """`PrState` from the first page's node, every page's threads, and the
+    two check reads (`_check_reads()`) folded beside the rollup."""
     commits = ((node.get("commits") or {}).get("nodes") or ())
     rollup = None
     if commits and isinstance(commits[-1], dict):
         rollup = ((commits[-1].get("commit") or {})
                   .get("statusCheckRollup") or {}).get("state")
-    checks = CHECK_STATES.get(rollup, "failure")
+    checks = fold_checks(rollup, runs, required)
     merge = node.get("mergeCommit") or {}
     return PrState(threads=tuple(threads), checks=checks,
                    head_sha=node.get("headRefOid"),
@@ -603,7 +729,7 @@ def _call_with_gh(target, host, method, path, payload):
         argv += ["--input", "-"]
         body = json.dumps(payload)
     try:
-        r = subprocess.run(argv, cwd=target.path, input=body,
+        r = subprocess.run(argv, cwd=target.path, input=body or "",
                            capture_output=True, text=True, timeout=PR_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise InfraFailure(f"{GH} api {path} did not answer in"
