@@ -2064,6 +2064,24 @@ class MergeModeTests(LoopFixture):
                       " ORDER BY round")[-1],
             (2, "pass", "github:ci"))
 
+    def test_a_squash_only_repository_merges_with_its_configured_method(self):
+        """`[merge] pr_merge_method = "squash"`: the one `PUT
+        .../pulls/7/merge` carries `merge_method` `squash`, still pinned to
+        the approved candidate, and the run records the sha GitHub answered
+        -- for a squash, the new commit on `main`, not a merge commit."""
+        self.configure('[merge]\nmode = "pr"\npr_merge_method = "squash"\n')
+        self.fake_route()
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=self.provider())
+
+        self.assertEqual(self.api_calls()[-1],
+                         ("merge", {"merge_method": "squash",
+                                    "sha": fake.turns[1].candidate_sha}))
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+
     def test_a_slow_push_keeps_the_run_heartbeating(self):
         """The push and the create block for as long as the remote takes,
         outside any agent turn or verify: a push longer than the stale

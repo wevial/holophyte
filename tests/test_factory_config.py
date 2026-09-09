@@ -1833,13 +1833,22 @@ class ConsoleConfigTests(ConfigTestCase):
 class MergeConfigTests(ConfigTestCase):
     """`[merge] approve`: `"auto"` (the default) or `"human"`; `[merge] mode`:
     `"local"` (the default) or `"pr"`; `[merge] pr_rounds`: an integer of at
-    least 1 (default 5); nothing else."""
+    least 1 (default 5); `[merge] pr_merge_method`: `"merge"` (the default),
+    `"squash"` or `"rebase"`; nothing else."""
 
     def test_an_absent_table_is_auto_and_local(self):
         self.locate()
 
         self.assertEqual(holophyte.config.merge_config(self.tgt),
-                         ("auto", "local", 5))
+                         ("auto", "local", 5, "merge"))
+
+    def test_pr_merge_method_is_read(self):
+        """A squash-only repository names its method; absent, it is
+        `"merge"`, the merge commit the shepherd has always asked for."""
+        self.locate('[merge]\nmode = "pr"\npr_merge_method = "squash"\n')
+
+        self.assertEqual(
+            holophyte.config.merge_config(self.tgt).pr_merge_method, "squash")
 
     def test_pr_rounds_is_read(self):
         self.locate('[merge]\nmode = "pr"\npr_rounds = 2\n')
@@ -1866,6 +1875,8 @@ class MergeConfigTests(ConfigTestCase):
                           ("pr_rounds = 0", "pr_rounds"),
                           ("pr_rounds = true", "pr_rounds"),
                           ('pr_rounds = "5"', "pr_rounds"),
+                          ('pr_merge_method = "fast-forward"',
+                           "pr_merge_method"),
                           ('approve_by = "human"', "approve_by")):
             with self.subTest(line=line):
                 target = self.locate(f"[merge]\n{line}\n").path
