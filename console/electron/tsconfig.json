@@ -20,6 +20,8 @@
     "main.ts",
     "config.ts",
     "menu.ts",
+    "tray.ts",
+    "poll.ts",
     "icon.ts",
     "tests"
   ]

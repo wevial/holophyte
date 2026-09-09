@@ -17,6 +17,7 @@ export type TrayMenuItem = {
   label?: string;
   type?: "normal" | "separator" | "checkbox";
   checked?: boolean;
+  enabled?: boolean;
   click?: (item: { checked: boolean }) => void;
 };
 

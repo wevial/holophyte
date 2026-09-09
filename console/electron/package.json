@@ -6,7 +6,7 @@
   "main": "main.cjs",
   "scripts": {
     "build": "bun build --target=node --format=cjs --external electron --outfile dist/main.cjs main.ts",
-    "start": "bun build --target=node --format=cjs --external electron --outfile dist/main.cjs main.ts && electron .",
+    "start": "bun run icon && bun build --target=node --format=cjs --external electron --outfile dist/main.cjs main.ts && electron .",
     "icon": "bun run icon.ts",
     "package": "bun run build && bun run icon && electron-builder --mac --arm64 --config electron-builder.yml",
     "test": "bun test",
