@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[411 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T17:16:04Z — KO-323
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/console/electron/electron-builder.yml:22 [p2] [electron-builder.yml:22](/home/reviewer/candidate/console/electron/electron-builder.yml:22): Ad-hoc signing is not configured. In the locked builder version,…
-- /home/reviewer/candidate/console/electron/electron-builder.yml:8 [p2] [electron-builder.yml:8](/home/reviewer/candidate/console/electron/electron-builder.yml:8): The DMG lands in `dist/`, while the app lands in `dist/mac-arm64/`…
-
-## 2026-09-09T17:18:44Z — KO-323
-Round 3: pass · reviewer codex-astra-medium · verify passed
+[413 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T17:18:45Z — KO-323
 MERGED to main as d66dc2c (branch task/ko-323-the-electron-wrapper-packages deleted).
@@ -760,3 +751,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T23:27:28Z — KO-331
 MERGED to main as b314bfb (branch task/ko-331-the-pull-request-merge-method deleted).
 actual: 10.4 min · estimate: 30 min · rounds: 1
+
+## 2026-09-09T23:34:49Z — KO-329
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T23:36:13Z — KO-329
+MERGED to main as 4dc2bb0 (branch task/ko-329-at-startup-the-loop-walks-mirr deleted).
+actual: 8.7 min · estimate: 30 min · rounds: 1
