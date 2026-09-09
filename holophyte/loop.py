@@ -1402,11 +1402,20 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     threads = state.threads
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
-    with heartbeat_while(conn, run_id, beat_s):
-        reply = agent(target, "adjudicate",
-                      shepherd.adjudication_brief(pull, threads, ticket, sha),
-                      wt, base_sha=base_sha, candidate_sha=sha)
-    verdicts = shepherd.parse_verdicts(reply, len(threads))
+    # A thread a person opened is the operator's whatever it says: it is
+    # HUMAN before the adjudicator is asked, and the adjudicator sees the
+    # bots' threads alone, renumbered so its reply and `parse_verdicts()`
+    # agree. A deleted account reads as a person: silence is the safe side.
+    judged = tuple(t for t in threads if t.author_kind == "bot")
+    reply = "(no bot opened a thread; the adjudicator was not asked)"
+    if judged:
+        with heartbeat_while(conn, run_id, beat_s):
+            reply = agent(target, "adjudicate",
+                          shepherd.adjudication_brief(pull, judged, ticket,
+                                                      sha),
+                          wt, base_sha=base_sha, candidate_sha=sha)
+    verdicts = _verdicts_by_kind(
+        threads, shepherd.parse_verdicts(reply, len(judged)))
     record_round(target, conn, run_id, rnd, "review",
                  shepherd.round_reply(pull, pass_no, threads, verdicts,
                                       state.checks, sha),
@@ -1415,6 +1424,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     ledger(conn, run_id, task_id, "round",
            f"Shepherd pass {pass_no} over {pull.url}: {len(threads)}"
            f" unresolved thread(s), checks {state.checks}\n"
+           f"{len(threads) - len(judged)} opened by a person, HUMAN before"
+           f" the adjudicator was asked\n"
            f"Adjudicator verdicts:\n{reply}", provider)
     by_verdict = {v: [(n, t, verdicts[n][1]) for n, t in
                       enumerate(threads, 1) if verdicts[n][0] == v]
@@ -1438,6 +1449,18 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                     f"{len(open_threads)} thread(s) declined and left open"
                     " for their authors", open_threads, reviewed=reviewed)
     return sha
+
+
+def _verdicts_by_kind(threads, judged):
+    """`{number: (verdict, reason)}` over all of `threads`, numbered as the
+    round row lists them: a thread a person opened (or one whose opener is
+    unknown) is `HUMAN`, "opened by a person"; a bot's thread takes the
+    next verdict off `judged`, the adjudicator's verdicts over the bots'
+    threads in order."""
+    pending = iter(sorted(judged))
+    return {n: (judged[next(pending)] if t.author_kind == "bot"
+                else ("HUMAN", "opened by a person"))
+            for n, t in enumerate(threads, 1)}
 
 
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
