@@ -653,21 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[385 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T17:52:28Z — KO-314
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-08T17:53:07Z — KO-314
-MERGED to main as 62a5309 (branch task/ko-314-the-daemon-answers-a-cors-pref deleted).
-actual: 18.7 min · estimate: 20 min · rounds: 2
-
-## 2026-09-08T19:12:53Z — KO-321
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-08T19:13:37Z — KO-321
-MERGED to main as 873d494 (branch task/ko-321-get-runs-n-answers-the-review deleted).
-actual: 8.5 min · estimate: 30 min · rounds: 1
+[389 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T19:15:14Z — KO-315
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -751,3 +737,22 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-08T19:38:57Z — KO-322
 MERGED to main as 5a0ecb2 (branch task/ko-322-the-drawer-readme-the-reviewin deleted).
 actual: 2.3 min · estimate: 20 min · rounds: 2
+
+## 2026-09-09T17:13:53Z — KO-323
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/electron/package.json:10 [p1] **[P1] Packaging fails because `version` is missing.** [package.json](/home/reviewer/candidate/console/electron/package.json:10) adds the packaging command wi…
+- /home/reviewer/candidate/console/electron/electron-builder.yml:10 [p1] **[P1] The packaged app omits the existing tray images.** [electron-builder.yml](/home/reviewer/candidate/console/electron/electron-builder.yml:10) includes n…
+
+## 2026-09-09T17:16:04Z — KO-323
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/electron/electron-builder.yml:22 [p2] [electron-builder.yml:22](/home/reviewer/candidate/console/electron/electron-builder.yml:22): Ad-hoc signing is not configured. In the locked builder version,…
+- /home/reviewer/candidate/console/electron/electron-builder.yml:8 [p2] [electron-builder.yml:8](/home/reviewer/candidate/console/electron/electron-builder.yml:8): The DMG lands in `dist/`, while the app lands in `dist/mac-arm64/`…
+
+## 2026-09-09T17:18:44Z — KO-323
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T17:18:45Z — KO-323
+MERGED to main as d66dc2c (branch task/ko-323-the-electron-wrapper-packages deleted).
+actual: 8.0 min · estimate: 30 min · rounds: 3
