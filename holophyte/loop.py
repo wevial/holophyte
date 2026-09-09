@@ -1720,7 +1720,7 @@ def main(target, provider):
         # well until the provider resolves the id.
         project = store.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
-        _reconcile_mirror(conn, provider)
+        _reconcile_mirror(conn, project, provider)
         # The tickets this pass has refused to claim. A blocked ticket keeps
         # its place in the board's ready set — `blocked_on_operator` projects
         # to Todo, the column a human picks work out of — so it is offered
@@ -1812,7 +1812,7 @@ RECONCILE_TRIGGER = {"completed": "linear_completed",
                      "canceled": "linear_cancelled"}
 
 
-def _reconcile_mirror(conn, provider):
+def _reconcile_mirror(conn, project, provider):
     """Walk the mirrored tickets Linear has since closed to their terminal
     status, one printed line each; nothing is written to Linear.
 
@@ -1821,18 +1821,25 @@ def _reconcile_mirror(conn, provider):
     finished, or one the operator cancelled -- so it sat on the board as
     `ready` or `needs_spec` for good (KO-217, KO-137 and KO-138 on the
     daemon's board). Startup only, right after the read-only sweep: the
-    five open statuses are read through the store, a ticket with an active
-    run is left to that run, and the provider is asked about the rest in
-    one call. A closed one is walked along §3 edges (`walk_ticket`) with
-    a `reconcile` intervention row on its most recent run first, in the
-    same transaction -- record before acting. A ticket that never ran has
-    no run to carry the row (`interventions.runId` is NOT NULL), so its
-    printed line is its only record and says so. A provider that cannot
-    answer -- no network, no key -- skips the reconcile in one line and
-    the loop goes on as before: this is a repair of the mirror, not a
+    five open statuses are read through the store for this project only
+    (the provider knows one team, and another project's tickets are that
+    project's loop to reconcile), a ticket with an active run is left to
+    that run, and the provider is asked about the rest in one call. A
+    closed one is walked along §3 edges (`walk_ticket`) with a `reconcile`
+    intervention row on its most recent run first, in the same
+    transaction -- record before acting. The row is re-read under that
+    transaction's lock and must still be where the open read saw it, with
+    no run: another process on the same store can claim or move a ticket
+    while the provider is being asked, and a verdict on the stale read
+    would mark a ticket merged under a live run. A ticket that never ran
+    has no run to carry the row (`interventions.runId` is NOT NULL), so
+    its printed line is its only record and says so. A provider that
+    cannot answer -- no network, no key -- skips the reconcile in one line
+    and the loop goes on as before: this is a repair of the mirror, not a
     gate on the work.
     """
-    tickets = [t for t in store.read.open_tickets(conn) if t.activeRunId is None]
+    tickets = [t for t in store.read.open_tickets(conn, project)
+               if t.activeRunId is None]
     if not tickets:
         return
     try:
@@ -1846,13 +1853,20 @@ def _reconcile_mirror(conn, provider):
         if state not in RECONCILED_STATUS:
             continue
         to_status = RECONCILED_STATUS[state]
-        last_run = store.read.ticket_by_id(conn, ticket.id).lastRunId
         line = (f"[holo2] reconciled {ticket.linearIdentifier}:"
                 f" {ticket.status} -> {to_status} (Linear {state})")
         with store.transaction(conn):
-            if last_run is not None:
+            now = store.read.ticket_by_id(conn, ticket.id)
+            if now is None or now.status != ticket.status \
+                    or now.activeRunId is not None:
+                # Moved or claimed while the board was being asked: the
+                # verdict was formed on a row that no longer holds.
+                print(f"[holo2] reconcile left {ticket.linearIdentifier}"
+                      f" alone: it moved while the board was asked")
+                continue
+            if now.lastRunId is not None:
                 store.record_intervention(
-                    conn, last_run, "reconcile",
+                    conn, now.lastRunId, "reconcile",
                     f"Linear holds {ticket.linearIdentifier} {state};"
                     f" mirror walked {ticket.status} -> {to_status}",
                     source="supervisor", trigger=RECONCILE_TRIGGER[state])

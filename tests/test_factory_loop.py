@@ -1224,6 +1224,63 @@ class ReconcileTests(LoopFixture):
         self.assertEqual(self.reconcile_rows(), [])
         self.assertEqual(getattr(provider, "asked", []), [])
 
+    def test_a_ticket_claimed_while_the_board_is_asked_is_left_to_its_run(self):
+        """The active-run check before the provider call is a snapshot:
+        another process on the same store can claim the ticket while the
+        board is being asked, and the row is re-read under the write lock
+        before anything is recorded or walked."""
+        self.seed()
+        db, team, target = str(self.db), StubProvider.TEAM, str(self.target)
+
+        class ClaimsMeanwhile(StubProvider):
+            def closed_identifiers(self, identifiers):
+                other = store.open(db)
+                project = store.ensure_project(other, team, target)
+                (ticket_id,) = other.execute(
+                    "SELECT id FROM tickets WHERE linearIdentifier = 'KO-1'"
+                ).fetchone()
+                self.run_id = store.claim(other, project, ticket_id)
+                store.transition(other, ticket_id, "in_flight")
+                other.close()
+                return super().closed_identifiers(identifiers)
+
+        provider = ClaimsMeanwhile()
+        provider.closed = {"KO-1": "completed", "KO-2": "canceled"}
+
+        printed = self.main_output(provider=provider)
+
+        self.assertEqual(self.statuses(), {"KO-1": "in_flight", "KO-2": "abandoned",
+                                           "KO-3": "ready"})
+        self.assertEqual(
+            self.read("SELECT phase, endedAt FROM runs WHERE id = %d"
+                      % provider.run_id), [("claimed", None)])
+        self.assertEqual([row[2] for row in self.reconcile_rows()],
+                         ["linear_cancelled"])
+        self.assertNotIn("reconciled KO-1", printed)
+        self.assertIn("reconcile left KO-1 alone", printed)
+
+    def test_only_this_projects_tickets_are_reconciled(self):
+        """A store may hold more than one project; the provider knows one
+        team, and another project's open tickets are that project's loop
+        to reconcile."""
+        self.seed()
+        conn = store.open(str(self.db))
+        other = store.ensure_project(conn, "another-team", "/elsewhere")
+        store.mirror_ticket(conn, other, linear_issue_id="iss-x",
+                            linear_identifier="XX-1", title="theirs",
+                            acceptance_criteria=self.CRITERIA,
+                            verification_commands=["echo ok"])
+        conn.close()
+        provider = StubProvider()
+        provider.closed = {"XX-1": "completed"}
+
+        printed = self.main_output(provider=provider)
+
+        self.assertEqual(self.statuses()["XX-1"], "ready")
+        self.assertNotIn("XX-1", provider.asked)
+        self.assertNotIn("reconciled", printed)
+        self.assertEqual(self.reconcile_rows(), [])
+
     def test_a_board_that_cannot_answer_skips_the_reconcile_in_one_line(self):
         self.seed()
 
