@@ -1,0 +1,34 @@
+# Packaging for the desktop wrapper: `bun run package` (see package.json).
+# The .app lands in dist/mac-arm64/ and the .dmg one level up in dist/ (the
+# builder's layout: a target's artifact goes to the output directory, the
+# unpacked app to its per-arch subdirectory). The icon is rendered first by
+# `bun run icon` from assets/logo.svg. Ad-hoc signed: `identity: "-"` is the
+# only setting that makes the builder sign without a certificate (unset means
+# "search the keychain, else skip signing"), and the hardened runtime is off
+# because it would reject Electron's pre-signed frameworks under an ad-hoc
+# identity. Notarisation is out of scope.
+appId: sh.weevil.holophyte.console
+productName: Holophyte
+directories:
+  output: dist
+  buildResources: dist
+files:
+  - main.cjs
+  - dist/main.cjs
+  - dist/icon.png
+  - package.json
+# The tray's template icon pair lives in the repository's assets/ and is
+# copied next to the app bundle's resources so main.ts finds it packaged.
+extraResources:
+  - from: ../../assets/menubar-template@1x.png
+    to: assets/menubar-template@1x.png
+  - from: ../../assets/menubar-template@2x.png
+    to: assets/menubar-template@2x.png
+mac:
+  target:
+    - dmg
+    - dir
+  icon: dist/icon.png
+  identity: "-"
+  hardenedRuntime: false
+  category: public.app-category.developer-tools

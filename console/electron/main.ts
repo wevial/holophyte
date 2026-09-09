@@ -9,12 +9,18 @@ import path from "node:path";
 import { BrowserWindow, Menu, Tray, app, dialog, nativeImage } from "electron";
 
 import { CONFIG_FILE, resolveConsoleUrl } from "./config.ts";
+import { menuTemplate } from "./menu.ts";
 
-// The SwiftBar drawer's template icon, referenced in place from the repo's
-// assets/; nativeImage picks up the @2x sibling by name. app.getAppPath()
-// is this package's directory (the one holding package.json).
+// The SwiftBar drawer's template icon; nativeImage picks up the @2x sibling
+// by name. From the repository, app.getAppPath() is this package's directory
+// (the one holding package.json) and the icon sits in the repo's assets/.
+// Packaged, electron-builder copies both PNGs (extraResources in
+// electron-builder.yml) into Contents/Resources/assets/.
 function trayIconPath(): string {
-  return path.resolve(app.getAppPath(), "..", "..", "assets", "menubar-template@1x.png");
+  const assetsDir = app.isPackaged
+    ? path.join(process.resourcesPath, "assets")
+    : path.resolve(app.getAppPath(), "..", "..", "assets");
+  return path.join(assetsDir, "menubar-template@1x.png");
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -56,11 +62,17 @@ function addTray(url: string): void {
   tray = new Tray(icon);
   tray.setToolTip("Holophyte Console");
   tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "Show console", click: () => showConsole(url) },
-      { type: "separator" },
-      { label: "Quit", click: () => app.quit() },
-    ]),
+    Menu.buildFromTemplate(
+      menuTemplate(
+        { openAtLogin: app.getLoginItemSettings().openAtLogin },
+        {
+          showConsole: () => showConsole(url),
+          // macOS keeps the login item itself, so the state survives a restart.
+          setOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
+          quit: () => app.quit(),
+        },
+      ),
+    ),
   );
 }
 
