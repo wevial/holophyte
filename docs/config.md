@@ -172,6 +172,12 @@ restart_grace_sec        = 120  # how long a self-merge re-exec may take to come
 
 Accepted keys: the six above.
 
+The box is counted per turn: a run's allowance is the ticket's estimate once
+for its first implementer turn and once more for each review round it has
+recorded, up to the run's review cap, all under `budget_grace` -- the same
+budget the loop gives each turn, so a fix round after a review is not swept as
+overtime. A run with no review round yet is judged against the single box.
+
 Different targets want different patience — a Go build's worktree setup is
 slower than stdlib Python's — and these are the knobs `--sweep` and
 `--supervise` read. Each value is checked at startup, for every mode: the

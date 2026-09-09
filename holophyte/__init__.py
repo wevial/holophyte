@@ -12,3 +12,15 @@ phases and rounds), `board` (the Linear mirror and escalation),
 setup and reuse, `run_task`, `main`, `report`, the re-exec) and `cli` (the
 argument parser and mode dispatch).
 """
+
+import sys as _sys
+
+# Every line the factory says is a `[holo2]` progress print on stdout; the
+# verdicts a ticket's verify line greps for arrive on stderr. When stdout is
+# a pipe -- an operator's `tee`, a service journal, or a verify line's
+# `2>&1 | tail -1` -- Python block-buffers it, so progress lands late and the
+# suite's `OK` is followed by the flush. Line-buffer it so each line lands
+# when it is said, in order with stderr.
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(line_buffering=True)
+del _sys

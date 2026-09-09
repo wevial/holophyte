@@ -224,6 +224,10 @@ class LiveRun:
     # stamps `runs.reviewRoundCount` at close-out: on a live run the column
     # is still 0, and the rows are the count it will be stamped with.
     reviewRoundCount: int
+    # The review-round cap the loop gave the run (`set_review_round_cap()`);
+    # None until the loop measures the candidate, or on a row from before the
+    # column. The sweep bounds its per-turn time box with it (KO-340).
+    reviewRoundCap: int | None
 
 
 @dataclass(frozen=True)
@@ -285,14 +289,16 @@ def live_runs(conn, phases):
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
         " r.startedAt, r.timeBoxMs, r.host,"
-        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id)"
+        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id),"
+        " r.reviewRoundCap"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
         f"   AND r.phase IN ({', '.join('?' * len(phases))})"
         " ORDER BY r.id", phases).fetchall()
     return [LiveRun(id=row[0], linearIdentifier=row[1], title=row[2],
                     phase=row[3], lastHeartbeat=row[4], startedAt=row[5],
-                    timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8])
+                    timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8],
+                    reviewRoundCap=row[9])
             for row in rows]
 
 
