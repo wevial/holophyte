@@ -117,6 +117,23 @@ class ConformanceMixin:
         # KO-3 is Done: with the two Todo tickets refused there is nothing left.
         self.assertIsNone(self.claim(skip=("KO-1", "KO-2")))
 
+    def test_ready_issues_lists_every_task_claim_would_offer(self):
+        """The listing the claim chooses from, parsed: the Todo tickets and
+        not the closed one, each in the shape `claim_next()` hands out."""
+        self.seed("KO-2")
+        self.seed("KO-1")
+        self.seed("KO-3", state="Done")
+
+        ready = self.provider.ready_issues()
+
+        self.assertEqual(sorted(task["id"] for task in ready), ["KO-1", "KO-2"])
+        for task in ready:
+            self.assertTrue(task["issue_id"])
+            self.assertEqual(task["title"], TITLE)
+            self.assertEqual(task["criteria"], [CRITERION])
+            self.assertEqual(task["verify"], VERIFY)
+            self.assertIn("## Acceptance criteria", task["body"])
+
     def test_a_claimed_task_carries_the_parsed_contract(self):
         """The task dict is the shape `parse_task()` produces, with the
         values the seeded body says -- the two boards parse the same body to

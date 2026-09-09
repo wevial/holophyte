@@ -89,6 +89,12 @@ class Provider(Protocol):
         without priorities orders by identifier under either value."""
         ...
 
+    def ready_issues(self) -> list[dict]:
+        """Every task `claim_next()` would choose from, parsed, in no
+        promised order: what the loop could claim, so the store's mirror can
+        show the queue. Raise when the board cannot be asked."""
+        ...
+
     def fetch_task(self, issue_id) -> dict | None:
         """The ticket as the board holds it now; None when it has no such issue."""
         ...
@@ -142,6 +148,9 @@ class LinearProvider:
         return self._linear().claim_next(self.project_id, self._team,
                                          skip=skip, order=order)
 
+    def ready_issues(self):
+        return self._linear().ready_issues(self.project_id)
+
     def fetch_task(self, issue_id):
         return self._linear().fetch_task(issue_id)
 
@@ -185,6 +194,10 @@ class FileProvider:
                 continue
             return self.fetch_task(identifier)
         return None
+
+    def ready_issues(self):
+        return [self.fetch_task(identifier) for identifier in self._identifiers()
+                if self._state(identifier) == DEFAULT_STATE]
 
     def fetch_task(self, issue_id):
         if "." in issue_id or not self._path(issue_id).is_file():

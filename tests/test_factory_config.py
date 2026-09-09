@@ -1229,6 +1229,9 @@ class SupervisorSpawnTests(StartupCheckTests):
         def __init__(self, project_id, team):
             self.team = team
 
+        def ready_issues(self):
+            return []
+
         def claim_next(self, skip=(), order="identifier"):
             return None
 
