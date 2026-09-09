@@ -12,6 +12,13 @@ files:
   - dist/main.cjs
   - dist/icon.png
   - package.json
+# The tray's template icon pair lives in the repository's assets/ and is
+# copied next to the app bundle's resources so main.ts finds it packaged.
+extraResources:
+  - from: ../../assets/menubar-template@1x.png
+    to: assets/menubar-template@1x.png
+  - from: ../../assets/menubar-template@2x.png
+    to: assets/menubar-template@2x.png
 mac:
   target:
     - dmg
