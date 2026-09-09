@@ -207,7 +207,10 @@ A `token_files` path may start with `~` or be relative to the user-data
 directory; `tokens` wins over `token_files` for the same address. A daemon
 whose token is missing or wrong shows `needs token` on its line until the
 file is fixed; one that does not answer within two seconds shows
-`unreachable`. The commands, run from the repo root:
+`unreachable`. The window seeds the page's tokens from the same
+`console.json` entries once it has loaded, under the keys the Hosts card
+reads, and reloads once when that changed anything, so a host the tray can
+see needs nothing pasted. The commands, run from the repo root:
 
 ```
 ELECTRON_SKIP_BINARY_DOWNLOAD=1 bun --cwd=console/electron install --frozen-lockfile
