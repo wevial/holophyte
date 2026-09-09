@@ -653,23 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[401 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T19:29:06Z — KO-318
-MERGED to main as 8e3ef03 (branch task/ko-318-the-config-page-and-the-compon deleted).
-actual: 2.1 min · estimate: 30 min · rounds: 1
-
-## 2026-09-08T19:32:15Z — KO-319
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/docs/operating/tickets.md:34 [p2] [docs/operating/tickets.md:34](/home/reviewer/candidate/docs/operating/tickets.md:34) incorrectly says HTML comments are stripped before validation throughout…
-
-## 2026-09-08T19:33:32Z — KO-319
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-08T19:33:33Z — KO-319
-MERGED to main as 2ee152d (branch task/ko-319-the-runbook-hosts-tickets-and deleted).
-actual: 4.4 min · estimate: 30 min · rounds: 2
+[405 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T19:36:33Z — KO-320
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -759,3 +743,22 @@ Findings (2):
 ## 2026-09-09T21:24:06Z — KO-333
 FAILED: swept by the supervisor in phase addressing: time_box (45.5 min against a 30 min box (1.5x grace)); branch and worktree preserved for a human
 actual: 45.5 min · estimate: 30 min · rounds: 1
+
+## 2026-09-09T22:05:55Z — KO-333
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/pr.py:474 [p2] **P1 — Incomplete pages can become green** ([holophyte/pr.py:474](/home/reviewer/candidate/holophyte/pr.py:474)). Only the first 100 runs are read; `total_cou…
+- /home/reviewer/candidate/holophyte/pr.py:524 [p2] **P2 — Unreadable check data can become green** ([holophyte/pr.py:524](/home/reviewer/candidate/holophyte/pr.py:524)). Non-dictionary entries are silently ski…
+
+## 2026-09-09T22:19:23Z — KO-333
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/pr.py:525 [p2] **Blocker — unreadable rules can become green or crash.** In [holophyte/pr.py:525](/home/reviewer/candidate/holophyte/pr.py:525), `required_status_checks: ["u…
+- (unparsed):21f61b1894e5 [p2] **Verification gate incomplete.** All 881 tests pass, but the exact verification pipeline exits 1 because output follows `OK`. `ruff check .` cannot run becau…
+
+## 2026-09-09T22:32:19Z — KO-333
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-09T22:33:44Z — KO-333
+MERGED to main as 1288cf7 (branch task/ko-333-the-shepherd-reads-a-pull-requ deleted).
+actual: 40.1 min · estimate: 30 min · rounds: 3
