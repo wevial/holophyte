@@ -727,29 +727,40 @@ def board_config(target):
 # cap that keeps the loop from arguing with a review bot forever (design
 # note 7). An integer of at least 1; `pr_rounds = 1` is one pass and then
 # the park.
+#
+# `pr_merge_method` is the `merge_method` the shepherd sends GitHub's merge
+# API when it lands a green, quiet pull request under `mode = "pr"`:
+# `"merge"` (a merge commit, like the local `--no-ff` merge), `"squash"` or
+# `"rebase"`. A repository whose ruleset allows squash only, or requires
+# linear history, refuses a merge commit after every gate has passed; this
+# names the method it will take. Validated whatever the mode, like the rest.
 MERGE_KEYS = {
     "approve": "auto",
     "mode": "local",
     "pr_rounds": 5,
+    "pr_merge_method": "merge",
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
-MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES}
+MERGE_METHODS = ("merge", "squash", "rebase")
+MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
+                "pr_merge_method": MERGE_METHODS}
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
-MergeConfig = collections.namedtuple("MergeConfig",
-                                     ("approve", "mode", "pr_rounds"))
+MergeConfig = collections.namedtuple(
+    "MergeConfig", ("approve", "mode", "pr_rounds", "pr_merge_method"))
 
 
 def merge_config(target):
     """The target's `[merge]` knobs over the defaults.
 
     Checked at startup beside `loop_config()`, the same way: an absent table
-    (or key) is the defaults exactly -- `approve = "auto"`, `mode = "local"`
-    -- and a present key has to be one of its `MERGE_VALUES`, and only one
-    of those: `"later"` or `true` names no gate the loop has, `"github"`
-    names no merge path, and a value the factory quietly read as the default
-    would merge work the operator asked to sign off on, or land locally what
-    they asked to see as a pull request. `pr_rounds` is held to an integer
+    (or key) is the defaults exactly -- `approve = "auto"`, `mode = "local"`,
+    `pr_merge_method = "merge"` -- and a present key has to be one of its
+    `MERGE_VALUES`, and only one of those: `"later"` or `true` names no gate
+    the loop has, `"github"` names no merge path, `"fast-forward"` names no
+    method GitHub's merge API takes, and a value the factory quietly read as
+    the default would merge work the operator asked to sign off on, or land
+    locally what they asked to see as a pull request. `pr_rounds` is held to an integer
     of at least 1 -- a `true`, a `"5"` or a `0` names no number of passes
     a shepherd can make. The refusal names the table, the key and the
     constraint, like a bad `[loop]` value. Keys this version does not know
