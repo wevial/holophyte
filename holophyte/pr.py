@@ -92,7 +92,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
           id isResolved isOutdated path line
           comments(first: %d) {
             pageInfo { hasNextPage endCursor }
-            nodes { author { login } body url }
+            nodes { author { login __typename } body url }
           }
         }
       }
@@ -105,7 +105,7 @@ query($thread: ID!, $after: String) {
     ... on PullRequestReviewThread {
       comments(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
-        nodes { author { login } body url }
+        nodes { author { login __typename } body url }
       }
     }
   }
@@ -145,10 +145,14 @@ class PullRequest:
 
 @dataclass(frozen=True)
 class Comment:
-    """One comment in a thread: who wrote it and what it says."""
+    """One comment in a thread: who wrote it, what kind of account GitHub
+    says that is (`author_kind`: `"user"` for a person, `"bot"` for an
+    App, `"unknown"` for a deleted account or an answer without a type),
+    and what it says."""
 
     author: str
     body: str
+    author_kind: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -167,6 +171,10 @@ class Thread:
     url: str
     outdated: bool = False
     replies: tuple = ()  # `Comment`s after the opening one
+    # The opening comment's `Comment.author_kind`. The shepherd answers a
+    # bot's thread and leaves a person's to the operator; `"unknown"` --
+    # the default, and a deleted account -- is treated as a person's.
+    author_kind: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -435,7 +443,8 @@ def pr_state(target, pull):
                 id=t.get("id") or "", path=t.get("path") or "",
                 line=t.get("line"), author=first.author, body=first.body,
                 url=_comment_url(t) or pull.url,
-                outdated=bool(t.get("isOutdated")), replies=tuple(rest)))
+                outdated=bool(t.get("isOutdated")), replies=tuple(rest),
+                author_kind=first.author_kind))
         info = page.get("pageInfo") or {}
         if not (info.get("hasNextPage") and info.get("endCursor")):
             break
@@ -460,11 +469,22 @@ def _comments_of(target, pull, node):
     return comments
 
 
+AUTHOR_KINDS = {"User": "user", "Bot": "bot"}
+
+
 def _comment_nodes(page):
-    """The `Comment`s of one comments page, in the order GitHub gave."""
-    return [Comment(author=(c.get("author") or {}).get("login") or "unknown",
-                    body=c.get("body") or "")
-            for c in (page.get("nodes") or ()) if isinstance(c, dict)]
+    """The `Comment`s of one comments page, in the order GitHub gave. The
+    author's `__typename` is read as `"user"` or `"bot"`; any other type,
+    or no author (a deleted account), is `"unknown"`."""
+    comments = []
+    for c in (page.get("nodes") or ()):
+        if not isinstance(c, dict):
+            continue
+        author = c.get("author") or {}
+        comments.append(Comment(
+            author=author.get("login") or "unknown", body=c.get("body") or "",
+            author_kind=AUTHOR_KINDS.get(author.get("__typename"), "unknown")))
+    return comments
 
 
 def _comment_url(node):

@@ -11,7 +11,7 @@ Run: python3 -m unittest discover -s tests -p 'test_shepherd*' -v
 """
 import unittest
 
-from holophyte import shepherd
+from holophyte import pr, shepherd
 from holophyte.pr import PullRequest, Thread
 
 PULL = PullRequest(host="github.com", owner="o", name="r", number=3,
@@ -67,6 +67,23 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(shepherd.parse_summaries(
             "did things\nTHREAD 2: guarded the load\nTHREAD 1: renamed"),
             {2: "guarded the load", 1: "renamed"})
+
+
+class AuthorKindTests(unittest.TestCase):
+    def test_an_author_is_read_as_bot_user_or_unknown_by_github_type(self):
+        page = {"nodes": [
+            {"author": {"login": "devin-ai-integration", "__typename": "Bot"},
+             "body": "a finding"},
+            {"author": {"login": "wevial", "__typename": "User"},
+             "body": "a person's word"},
+            {"author": None, "body": "a deleted account's word"}]}
+
+        comments = pr._comment_nodes(page)
+
+        self.assertEqual([c.author_kind for c in comments],
+                         ["bot", "user", "unknown"])
+        self.assertEqual([c.author for c in comments],
+                         ["devin-ai-integration", "wevial", "unknown"])
 
 
 if __name__ == "__main__":

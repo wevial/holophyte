@@ -1830,8 +1830,13 @@ class MergeModeTests(LoopFixture):
 
     @staticmethod
     def comment(number, author, body):
-        """One comment as the GraphQL answer carries it."""
-        return {"author": {"login": author}, "body": body,
+        """One comment as the GraphQL answer carries it. `author` is a
+        login -- a review bot's, `__typename` `Bot`, the kind the shepherd
+        answers -- or a `(login, typename)` pair for a person (`User`)."""
+        login, kind = (author if isinstance(author, tuple)
+                       else (author, "Bot"))
+        return {"author": {"login": login, "__typename": kind},
+                "body": body,
                 "url": f"{MergeModeTests.URL}#discussion_r{number}"}
 
     @classmethod
@@ -2574,6 +2579,59 @@ class MergeModeTests(LoopFixture):
             self.read("SELECT verdict, reviewerModel FROM reviewRounds"
                       " WHERE round = 2"),
             [("changes_requested", "github:ko")])
+
+    def test_a_thread_a_person_opened_is_human_before_the_adjudicator(self):
+        """Acceptance: one thread a person (`User`) opened beside one a bot
+        opened, and an adjudicator that would ADDRESS anything it is shown.
+        The person's thread never reaches the adjudicator -- the brief
+        names the bot's thread alone -- and is recorded `HUMAN`, "opened by
+        a person"; nothing is posted on either; the run parks with the
+        person's thread quoted, as a `HUMAN` verdict parks it."""
+        self.configure('[merge]\nmode = "pr"\n')
+        person = ("src/app.py", 30, ("wevial", "User"),
+                  "I would rather this stayed as it was; leaving my reasons"
+                  " on the ticket.")
+        self.fake_route(states=[self.pr_state([person, self.DEFECT])])
+        verdicts = Reply("THREAD 1: ADDRESS -- a real crash\n"
+                         "THREAD 2: ADDRESS -- whatever it is, fix it")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+                            Commit("fix: never reached"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        goal = fake.turns[2].goal
+        self.assertIn(self.DEFECT[3], goal)
+        self.assertIn("THREAD 1 -- src/app.py:10 by @review-bot", goal)
+        self.assertNotIn(person[3], goal)
+        self.assertNotIn("wevial", goal)
+        self.assertNotIn("THREAD 2", goal)
+        # Nothing posted: no reply, no resolve, no fix pushed.
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [f"git push origin {BRANCH}"])
+        ((findings, route),) = self.read(
+            "SELECT findings, reviewerModel FROM reviewRounds"
+            " WHERE round = 2")
+        messages = [f["message"] for f in json.loads(findings)]
+        self.assertEqual(len(messages), 2, messages)
+        self.assertIn("src/app.py:30 @wevial", messages[0])
+        self.assertIn("-- HUMAN: opened by a person", messages[0])
+        self.assertIn("src/app.py:10 @review-bot", messages[1])
+        self.assertIn("-- ADDRESS: a real crash", messages[1])
+        self.assertEqual(route, "github:review-bot+wevial")
+        ((ledger,),) = self.read(
+            "SELECT text FROM ledger WHERE kind = 'round' AND text LIKE"
+            " 'Shepherd pass%'")
+        self.assertIn("1 opened by a person, HUMAN before the adjudicator",
+                      ledger)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl FROM runs"),
+            [("awaiting_merge_approval", None, self.URL)])
+        question = self.question()
+        self.assertIn("needs a human's answer", question)
+        self.assertIn(f"> {person[3]}", question)
+        self.assertIn("src/app.py:30 by @wevial", question)
 
     def test_pr_rounds_caps_the_passes_and_parks_naming_the_cap(self):
         """Acceptance: `pr_rounds = 2` and a thread that keeps reappearing:

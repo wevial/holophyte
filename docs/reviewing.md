@@ -76,10 +76,14 @@ One pass:
    A head that is not the candidate this run pushed -- someone else pushed
    to the branch -- parks the run naming both shas: the checks and threads
    are about their commit, and the shepherd judges and merges only its own.
-2. **Verdict.** The adjudicator route (`[agents] adjudicator`, or the
+2. **Verdict.** A thread a person opened -- its opening author is a
+   GitHub `User`, or an account GitHub no longer names -- is `HUMAN`,
+   "opened by a person", before the adjudicator is asked: bots get
+   replies, people do not, and no reviewer is named to tell them apart.
+   The adjudicator route (`[agents] adjudicator`, or the
    default container) is given the ticket, the candidate as the same frozen
    `refs/review/base` and `refs/review/candidate` pair a review round gets,
-   and the threads numbered with their whole conversation, and answers one
+   and the bots' threads numbered with their whole conversation, and answers one
    line per thread: `THREAD n:
    ADDRESS` (a concrete defect), `DECLINE` (a style preference, a
    duplicate, a request beyond the ticket) or `HUMAN` (a genuine question,
