@@ -204,8 +204,12 @@ bun --cwd=console/electron run package
 1024×1024 through `@resvg/resvg-js`, so no image tool has to exist on the
 machine. `package` runs `build` and `icon` itself, then `electron-builder`
 (configured in `console/electron/electron-builder.yml`) writes
-`console/electron/dist/mac-arm64/Holophyte.app` and a `.dmg` beside it,
-ad-hoc signed by the builder's default; notarisation, auto-update and other
+`console/electron/dist/mac-arm64/Holophyte.app` and, one level up,
+`console/electron/dist/Holophyte-<version>-arm64.dmg` (the builder puts a
+target's artifact in the output directory and the unpacked app in its
+per-arch subdirectory). The app is ad-hoc signed: the config sets
+`identity: "-"` explicitly, since the builder's default is to skip signing
+when no certificate is in the keychain; notarisation, auto-update and other
 platforms are not covered. The packaged app finds the console URL exactly as
 the repository run does: from `HOLOPHYTE_CONSOLE_URL` or `console.json`,
 never from anything baked into the bundle.
