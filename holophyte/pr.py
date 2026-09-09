@@ -36,6 +36,7 @@ import urllib.request
 from dataclasses import dataclass
 
 import store.read
+from holophyte import config
 from holophyte.findings import run_entry
 from holophyte.gates import InfraFailure
 
@@ -663,18 +664,23 @@ def resolve_thread(target, pull, thread_id):
 
 def merge_pull_request(target, pull, sha):
     """Merge the pull request through the merge API, pinned to head `sha`;
-    return the merge commit's sha. A merge commit, like the loop's
-    `--no-ff` merge, so the branch's history lands as it was reviewed.
-    `sha` is the candidate whose checks and threads the shepherd judged:
-    the API's `sha` field makes GitHub refuse (409) if the head has moved
-    since, so a push that raced the pass never lands on its verdict.
+    return the sha of the commit that landed on `main`. The method is the
+    target's `[merge] pr_merge_method`: `"merge"` by default -- a merge
+    commit, like the loop's `--no-ff` merge, so the branch's history lands
+    as it was reviewed -- or `"squash"` or `"rebase"` where the
+    repository's ruleset allows nothing else; for those the sha answered is
+    the new commit on `main`, not a merge commit. `sha` is the candidate
+    whose checks and threads the shepherd judged: the API's `sha` field
+    makes GitHub refuse (409) if the head has moved since, so a push that
+    raced the pass never lands on its verdict.
     GitHub declining -- a protection rule, a conflict, a check that turned
     red, the head moved -- is `MergeRefused` with its reason; the route not
     answering is `InfraFailure` as everywhere else."""
+    method = config.merge_config(target).pr_merge_method
     try:
         answer = rest(target, pull, "PUT",
                       f"repos/{pull.repo}/pulls/{pull.number}/merge",
-                      {"merge_method": "merge", "sha": sha})
+                      {"merge_method": method, "sha": sha})
     except InfraFailure as e:
         # A 405 (not mergeable) or 409 (head moved) is the PR refusing, not
         # the route; `_call` folds every non-2xx into the same exception,

@@ -366,9 +366,12 @@ mode = "local"     # "pr": push the branch to origin and open a pull request
 # How many shepherd passes over an open pull request before the run parks
 # for the operator. Optional; the value shown is the default.
 pr_rounds = 5
+# How the shepherd merges a green, quiet pull request: "merge", "squash" or
+# "rebase". Optional; the value shown is the default.
+pr_merge_method = "merge"
 ```
 
-Accepted keys: `approve`, `mode`, `pr_rounds`.
+Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`.
 
 With `approve = "auto"` a clean merge gate merges, as it always has. With
 `approve = "human"` the loop stops there instead: the run's phase becomes
@@ -427,3 +430,14 @@ the cap that keeps the loop from arguing with a review bot forever. Every
 pass is a `reviewRounds` row with route `github:LOGIN`, so the count is
 visible in FINDINGS. Anything that is not such an integer (`0`, `true`,
 `"5"`) is a startup error naming the key.
+
+`pr_merge_method` is the `merge_method` the shepherd sends GitHub's merge API
+when it lands a green, quiet pull request under `mode = "pr"`: `"merge"` (the
+default) asks for a merge commit, like the local `--no-ff` merge; `"squash"`
+and `"rebase"` are for a repository whose branch ruleset allows squash merges
+only or requires linear history, which refuses a merge commit after every
+gate has passed. The sha recorded on the run and in the ledger is the one
+GitHub answers, which for `"squash"` and `"rebase"` is the new commit on
+`main`. The key is validated whatever the mode; anything but the three
+strings is a startup error naming the key. The local mode's `--no-ff` merge
+is unaffected.
