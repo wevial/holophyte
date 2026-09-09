@@ -6,12 +6,16 @@
   "scripts": {
     "build": "bun build --target=node --format=cjs --external electron --outfile dist/main.cjs main.ts",
     "start": "bun build --target=node --format=cjs --external electron --outfile dist/main.cjs main.ts && electron .",
+    "icon": "bun run icon.ts",
+    "package": "bun run build && bun run icon && electron-builder --mac --arm64 --config electron-builder.yml",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/bun": "^1.4.0",
     "electron": "^38.0.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.8.0"
   }
 }

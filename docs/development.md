@@ -159,8 +159,8 @@ Some operators want the console in the dock with a menubar icon rather than
 in a browser tab. `console/electron/` is a thin Electron shell around the
 URL the daemon serves: one window (1280×860, never narrower than the 1100px
 the design assumes), a tray icon built from `assets/menubar-template@1x.png`
-and its `@2x` sibling with "Show console" and "Quit", and nothing of its
-own — no renderer code, no preload, no IPC, so the app and the browser tab
+and its `@2x` sibling with "Show console", an "Open at login" checkbox that
+reads and sets the macOS login item, and "Quit", and nothing of its own — no renderer code, no preload, no IPC, so the app and the browser tab
 never drift. On macOS closing the window leaves the tray in place and the
 dock or tray reopens it; elsewhere closing the window quits.
 
@@ -191,4 +191,21 @@ above; it is a no-op once the binary is present). Then `run start` builds
 (`main.cjs`, CommonJS with `electron` left external, since the package is
 `"type": "module"`) and launches it through the top-level `main.cjs`.
 `console/electron/dist/` and `console/electron/node_modules/` are
-git-ignored. Packaging a distributable is out of scope here.
+git-ignored.
+
+To put the console in the Dock like any app, package it:
+
+```
+bun --cwd=console/electron run icon
+bun --cwd=console/electron run package
+```
+
+`icon` renders `assets/logo.svg` to `console/electron/dist/icon.png` at
+1024×1024 through `@resvg/resvg-js`, so no image tool has to exist on the
+machine. `package` runs `build` and `icon` itself, then `electron-builder`
+(configured in `console/electron/electron-builder.yml`) writes
+`console/electron/dist/mac-arm64/Holophyte.app` and a `.dmg` beside it,
+ad-hoc signed by the builder's default; notarisation, auto-update and other
+platforms are not covered. The packaged app finds the console URL exactly as
+the repository run does: from `HOLOPHYTE_CONSOLE_URL` or `console.json`,
+never from anything baked into the bundle.

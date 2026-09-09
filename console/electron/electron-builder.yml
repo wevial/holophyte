@@ -1,0 +1,20 @@
+# Packaging for the desktop wrapper: `bun run package` (see package.json).
+# The .app and the .dmg land in dist/mac-arm64/; the icon is rendered first
+# by `bun run icon` from assets/logo.svg. Ad-hoc signed by the builder's
+# default; notarisation is out of scope.
+appId: sh.weevil.holophyte.console
+productName: Holophyte
+directories:
+  output: dist
+  buildResources: dist
+files:
+  - main.cjs
+  - dist/main.cjs
+  - dist/icon.png
+  - package.json
+mac:
+  target:
+    - dmg
+    - dir
+  icon: dist/icon.png
+  category: public.app-category.developer-tools
