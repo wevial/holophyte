@@ -167,7 +167,8 @@ class OracleTests(PopulatedStore):
         oracle = self.conn.execute(
             "SELECT r.id, t.linearIdentifier, t.title, r.phase,"
             " r.lastHeartbeat, r.startedAt, r.timeBoxMs, r.host,"
-            " (SELECT COUNT(*) FROM reviewRounds WHERE runId = r.id)"
+            " (SELECT COUNT(*) FROM reviewRounds WHERE runId = r.id),"
+            " r.reviewRoundCap"
             " FROM runs r JOIN tickets t ON t.id = r.ticketId"
             " WHERE r.endedAt IS NULL"
             f"   AND r.phase IN ({', '.join('?' * len(SWEEPABLE))})"
@@ -175,7 +176,8 @@ class OracleTests(PopulatedStore):
         self.assertEqual([r.id for r in rows], [self.live, self.live2])
         self.assertEqual(
             [(r.id, r.linearIdentifier, r.title, r.phase, r.lastHeartbeat,
-              r.startedAt, r.timeBoxMs, r.host, r.reviewRoundCount)
+              r.startedAt, r.timeBoxMs, r.host, r.reviewRoundCount,
+              r.reviewRoundCap)
              for r in rows],
             oracle)
         # The phase filter is the caller's: a run in a phase not asked for

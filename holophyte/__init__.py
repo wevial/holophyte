@@ -15,13 +15,12 @@ argument parser and mode dispatch).
 
 import sys as _sys
 
-# The factory reports through `print`: operator log lines on stdout, with the
-# supervisor already re-exec'd under `python3 -u` so a log file sees them as
-# they happen. Under any other pipe stdout is block-buffered and drains at
-# exit, *after* whatever stderr said last — which is also how the tickets'
-# frozen verify pipeline (`... 2>&1 | tail -1 | grep -q '^OK'`) came to read
-# a test's leaked line where it expected unittest's `OK`. Line-buffering keeps
-# the two streams in order wherever the package is imported; a TTY already is.
+# Every line the factory says is a `[holo2]` progress print on stdout; the
+# verdicts a ticket's verify line greps for arrive on stderr. When stdout is
+# a pipe -- an operator's `tee`, a service journal, or a verify line's
+# `2>&1 | tail -1` -- Python block-buffers it, so progress lands late and the
+# suite's `OK` is followed by the flush. Line-buffer it so each line lands
+# when it is said, in order with stderr.
 if hasattr(_sys.stdout, "reconfigure"):
     _sys.stdout.reconfigure(line_buffering=True)
 del _sys

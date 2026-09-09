@@ -46,7 +46,7 @@ from holophyte.board import close_out_failure
 from holophyte.config import sweep_config
 from holophyte.reexec import reexec_self
 from holophyte.report import REPORT_GAP, format_age, host_label
-from holophyte.runs import open_store
+from holophyte.runs import MAX_ROUNDS, open_store
 
 # How the supervisor restarts itself when the factory's code moves under it:
 # the process image is replaced, never a module reloaded. A seam so tests can
@@ -299,6 +299,23 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
     return Outcome(trip, acted, seen["phase"])
 
 
+def time_box_allowance(time_box, rounds, cap, grace):
+    """The elapsed time a run may reach before its box is blown, in the
+    box's unit.
+
+    `time_box × (1 + min(rounds, cap)) × grace`: the loop gives every
+    implementer turn -- the first, and the fix after each review round --
+    the ticket's whole budget as its own cap (`loop._timed`), so a run's
+    allowance is one box per turn it has actually had. `rounds` is the review
+    rounds recorded for the run so far and `cap` the run's review cap, which
+    bounds the turns a run can earn: a round past the cap is not a turn the
+    loop would give. A run with no round yet is judged exactly as before this
+    was counted (KO-340: runs 160 and 161 swept mid-fix at the single box).
+    Pure, so the arithmetic is witnessed without a store.
+    """
+    return time_box * (1 + min(rounds, cap)) * grace
+
+
 def sweep(target, conn, now, act=False, provider=None, knobs=None):
     """Check every live run for a tripped condition; return a `Sweep`.
 
@@ -390,16 +407,20 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
                 strikes = store.record_strike(
                     conn, run_id, stale, heartbeat, now)
             elapsed = now - started
+            rounds, cap = run.reviewRoundCount, run.reviewRoundCap or MAX_ROUNDS
+            turns = 1 + min(rounds, cap)
             if strikes >= strikes_needed:
                 trips.append(Trip(
                     run_id, ticket, phase, STALE_HEARTBEAT,
                     f"silent for {silent / 60000:.1f} min"
                     f" over {strikes} consecutive sweeps", heartbeat, host))
-            elif time_box and elapsed > time_box * grace:
+            elif time_box and elapsed > time_box_allowance(
+                    time_box, rounds, cap, grace):
                 trips.append(Trip(
                     run_id, ticket, phase, TIME_BOX,
                     f"{elapsed / 60000:.1f} min against a"
-                    f" {time_box / 60000:.0f} min box ({grace}x grace)",
+                    f" {time_box / 60000:.0f} min box × {turns}"
+                    f" {'turn' if turns == 1 else 'turns'} ({grace}x grace)",
                     heartbeat, host))
             elif (phase in REVIEW_PHASES
                     and (overlap := review_overlap(conn, run_id)) is not None
