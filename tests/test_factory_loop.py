@@ -1903,7 +1903,9 @@ class MergeModeTests(LoopFixture):
         query gets the first of `states` (each served once until the last,
         which is served forever), a mutation an empty success, the merge
         `MERGE_SHA`, a thread's further comments page the next of
-        `comments` (each a `comments_page()`). `push_exit` is what `git
+        `comments` (each a `comments_page()`); the check-runs and
+        branch-rules reads answer no runs and no rules, so the rollup
+        alone decides the checks. `push_exit` is what `git
         push` answers with --
         non-zero is a remote refusing -- and `push_sh` is shell the fake
         push runs first, for a push that takes its time.
@@ -1939,6 +1941,10 @@ class MergeModeTests(LoopFixture):
             "#!/bin/sh\n"
             f'printf "gh %s\\n" "$*" >> "{self.calls}"\n'
             'if [ "$1" = api ]; then\n'
+            '  case "$*" in\n'
+            '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
+            '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            '  esac\n'
             f'  n=$(ls "{self.api_dir}" | wc -l); n=$((n+1))\n'
             f'  body="{self.api_dir}/$n.json"; cat > "$body"\n'
             '  if grep -q resolveReviewThread "$body"; then\n'
@@ -2012,8 +2018,17 @@ class MergeModeTests(LoopFixture):
 
         self.assertEqual(fake.roles, ["implement", "review"])
         calls = self.recorded()
-        self.assertEqual(len(calls), 3, calls)
+        self.assertEqual(len(calls), 5, calls)
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        # Beside the state query: the head's check runs and main's rules,
+        # so a rollup that says success before the checks have reported is
+        # not read as green.
+        tip = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(calls[3:], [
+            "gh api --hostname github.com --method GET"
+            f" repos/example/repo/commits/{tip}/check-runs?per_page=100",
+            "gh api --hostname github.com --method GET"
+            " repos/example/repo/rules/branches/main"])
         # Pinned to the repository the push went to, not `gh`'s own default
         # repository (`gh repo set-default`), which can point elsewhere.
         self.assertEqual(
@@ -2143,6 +2158,22 @@ class MergeModeTests(LoopFixture):
                          ["state", "state", "merge"])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
+
+    def test_a_check_runs_read_the_shepherd_cannot_make_is_pending(self):
+        """`pr_state()` reads the head's check runs beside the rollup; a
+        read that raises leaves `checks` pending -- never green on a
+        rollup alone -- and the exception does not escape the read."""
+        def raising_rest(target, pull, method, path, payload=None):
+            raise holophyte.pr.InfraFailure(f"GitHub refused GET {path}")
+        pull = holophyte.pr.parse_pr_url(self.URL)
+        with patch.object(holophyte.pr, "graphql",
+                          lambda *a, **k: self.pr_state(checks="SUCCESS")
+                          ["data"]), \
+                patch.object(holophyte.pr, "rest", raising_rest):
+            state = holophyte.pr.pr_state(self.tgt, pull)
+
+        self.assertEqual(state.checks, "pending")
+        self.assertEqual(state.head_sha, self.HEAD)
 
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
         """Regression: the shepherd's fix commit is the implementer's work,

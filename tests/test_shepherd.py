@@ -24,6 +24,47 @@ def thread(n, body="a thread", author="bot", path="a.py"):
                   url=f"{PULL.url}#discussion_r{n}")
 
 
+def run(name, status="completed", conclusion="success"):
+    return {"name": name, "status": status, "conclusion": conclusion}
+
+
+class FoldChecksTests(unittest.TestCase):
+    """`pr.fold_checks()`: the rollup beside the head's check runs and the
+    branch's required contexts. Regression: REL-120 was parked "ready to
+    merge" 19 seconds after its PR opened, on a rollup that said success
+    while vitest, the build and three review bots were still queued."""
+
+    def test_a_run_still_in_progress_is_pending_whatever_the_rollup_says(self):
+        runs = [run("lint"), run("vitest", status="in_progress",
+                                 conclusion=None)]
+        self.assertEqual(pr.fold_checks("SUCCESS", runs, []), "pending")
+
+    def test_every_run_completed_without_failure_is_green(self):
+        runs = [run("lint"), run("vitest"), run("docs", conclusion="skipped")]
+        self.assertEqual(pr.fold_checks("SUCCESS", runs, []), "success")
+
+    def test_a_completed_run_that_failed_is_red(self):
+        runs = [run("lint"), run("vitest", conclusion="failure")]
+        self.assertEqual(pr.fold_checks("SUCCESS", runs, []), "failure")
+
+    def test_a_required_context_with_no_run_yet_is_pending(self):
+        runs = [run("lint")]
+        self.assertEqual(pr.fold_checks("SUCCESS", runs, ["vitest"]),
+                         "pending")
+        self.assertEqual(pr.fold_checks("SUCCESS", runs + [run("vitest")],
+                                        ["vitest"]), "success")
+
+    def test_no_rules_and_no_runs_is_green_as_the_rollup_alone_said(self):
+        self.assertEqual(pr.fold_checks(None, [], []), "success")
+
+    def test_a_read_that_did_not_come_back_is_pending_never_green(self):
+        self.assertEqual(pr.fold_checks("SUCCESS", None, []), "pending")
+        self.assertEqual(pr.fold_checks("SUCCESS", [run("lint")], None),
+                         "pending")
+        # Red still wins: the rollup is the cheapest red signal.
+        self.assertEqual(pr.fold_checks("FAILURE", None, None), "failure")
+
+
 class VerdictTests(unittest.TestCase):
     def test_a_thread_without_a_verdict_line_is_a_human_question(self):
         reply = ("Looked at both.\n"
