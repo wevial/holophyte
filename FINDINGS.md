@@ -653,26 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[396 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-08T19:22:52Z — KO-316
-MERGED to main as 5e4fa15 (branch task/ko-316-the-architecture-data-and-over deleted).
-actual: 1.5 min · estimate: 25 min · rounds: 1
-
-## 2026-09-08T19:25:28Z — KO-317
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/docs/architecture/lifecycle.md:44 [p2] [lifecycle.md:44](/home/reviewer/candidate/docs/architecture/lifecycle.md:44): The diagram parks `approve = "human"` before considering PR mode. With both con…
-
-## 2026-09-08T19:26:57Z — KO-317
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-08T19:26:58Z — KO-317
-MERGED to main as 052e137 (branch task/ko-317-the-lifecycle-page-the-loop-pa deleted).
-actual: 4.1 min · estimate: 30 min · rounds: 2
-
-## 2026-09-08T19:29:06Z — KO-318
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[401 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-08T19:29:06Z — KO-318
 MERGED to main as 8e3ef03 (branch task/ko-318-the-config-page-and-the-compon deleted).
@@ -753,3 +734,28 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T19:34:04Z — KO-327
 MERGED to main as c24fa10 (branch task/ko-327-a-review-thread-a-person-opene deleted).
 actual: 25.8 min · estimate: 30 min · rounds: 1
+
+## 2026-09-09T20:03:24Z — KO-329
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:1852 [p1] **[P1] Recheck active runs inside the transaction** — [holophyte/loop.py:1852](/home/reviewer/candidate/holophyte/loop.py:1852). The active-run check precedes…
+- /home/reviewer/candidate/holophyte/loop.py:1835 [p2] **[P2] Scope reconciliation to the current project** — [holophyte/loop.py:1835](/home/reviewer/candidate/holophyte/loop.py:1835). The existing `store.read.ope…
+
+## 2026-09-09T20:18:57Z — KO-329
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- (unparsed):238a4b875621 [p2] Verification blocker: the exact unittest pipeline exits 1. All 879 tests pass, but stdout appears after `OK`, so `tail -1 | grep -q '^OK'` rejects the final lin…
+
+## 2026-09-09T20:20:05Z — KO-329
+FAILED: swept by the supervisor in phase addressing: time_box (46.0 min against a 30 min box (1.5x grace)); branch and worktree preserved for a human
+actual: 46.0 min · estimate: 30 min · rounds: 2
+
+## 2026-09-09T21:08:47Z — KO-333
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/pr.py:474 [p2] [holophyte/pr.py:474](/home/reviewer/candidate/holophyte/pr.py:474): Only the first 100 runs are read; `total_count` is ignored. A response containing 100 suc…
+- /home/reviewer/candidate/holophyte/pr.py:477 [p2] [holophyte/pr.py:477](/home/reviewer/candidate/holophyte/pr.py:477): Unreadable responses can return green. Reproduced with `{"check_runs":"not a list"}` and…
+
+## 2026-09-09T21:24:06Z — KO-333
+FAILED: swept by the supervisor in phase addressing: time_box (45.5 min against a 30 min box (1.5x grace)); branch and worktree preserved for a human
+actual: 45.5 min · estimate: 30 min · rounds: 1
