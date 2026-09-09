@@ -1729,6 +1729,7 @@ def main(target, provider):
         # ticket forever.
         skip = set()
         while True:
+            _mirror_queue(target, conn, project, provider)
             task = provider.claim_next(skip=skip, order=order)
             if not task:
                 # The exit note, in the store before it is on the terminal:
@@ -1810,6 +1811,35 @@ def _startup_sweep(target, conn):
 RECONCILED_STATUS = {"completed": "merged", "canceled": "abandoned"}
 RECONCILE_TRIGGER = {"completed": "linear_completed",
                      "canceled": "linear_cancelled"}
+
+
+def _mirror_queue(target, conn, project, provider):
+    """Mirror every issue the board lists as ready, before the claim picks
+    one, so the Board shows the queue and not only the claimed ticket.
+
+    The Board reads the store's mirror and nothing more, and until now the
+    mirror held only what the loop had claimed: the operator filed four
+    tickets and saw none of them (KO-334). The listing is the one the claim
+    chooses from, so a ticket the loop would not claim -- Backlog, closed,
+    blocked in Linear -- is not shown either. Each candidate takes the same
+    body-driven route the claim takes in `_admit_ticket()`: a body the
+    template validator rejects is mirrored with `specced=False` and lands
+    in `needs_spec`, a valid one lands where its lists put it. Statuses
+    that are somebody's decision -- `in_flight`, `blocked_on_operator`,
+    `blocked_on_deps`, the terminal ones -- are left alone by
+    `store.mirror_ticket()` itself, and dependencies are left as the store
+    has them. A board that cannot be asked, or a listing the mirror
+    chokes on, skips the whole step in one printed line and the claim
+    proceeds: this fills the Board, it does not gate the work. Nothing is
+    written to Linear.
+    """
+    try:
+        for task in provider.ready_issues():
+            specced = body_problem(task, target.path) is None
+            mirror_task(conn, project, task, specced=specced)
+    except Exception as e:  # any transport or mirror failure: not a gate
+        print(f"[holo2] queue mirror skipped: the board's ready issues could"
+              f" not be mirrored ({e})")
 
 
 def _reconcile_mirror(conn, project, provider):

@@ -45,6 +45,10 @@ class StubProvider:
         self.states = []
         self.comments = []
 
+    def ready_issues(self):
+        """The queue as it stands: what `claim_next()` would offer."""
+        return [dict(task) for task in self.queue]
+
     def claim_next(self, skip=(), order="identifier"):
         self.claims += 1
         for i, task in enumerate(self.queue):

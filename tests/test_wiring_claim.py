@@ -39,6 +39,10 @@ class StubProvider:
         self.queue = list(tasks)
         self.states = []
 
+    def ready_issues(self):
+        """The queue as it stands: what `claim_next()` would offer."""
+        return [dict(task) for task in self.queue]
+
     def claim_next(self, skip=(), order="identifier"):
         """The first queued task the loop has not already refused.
 

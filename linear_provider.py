@@ -6,8 +6,8 @@ file) against the direct GraphQL API. The project and team are parameters of
 the calls that need them, never module state.
 
 Loop-facing API: claim_next() / fetch_task() / set_state() / comment() /
-list_ready_issues() / closed_identifiers(). Operator API, for `--file-ticket`:
-create_issue() / add_blocker() / fetch_description().
+list_ready_issues() / ready_issues() / closed_identifiers(). Operator API, for
+`--file-ticket`: create_issue() / add_blocker() / fetch_description().
 """
 import json
 import os
@@ -263,6 +263,17 @@ def _claim_key(order):
         return lambda i: (PRIORITY_RANK.get(i.get("priority"), UNPRIORITISED_RANK),
                           i["identifier"])
     return lambda i: i["identifier"]
+
+
+def ready_issues(project_id):
+    """Every issue `claim_next()` chooses from, parsed: the ready listing as
+    `list_ready_issues()` filters it -- Todo/started, open, unblocked -- in
+    the shape `parse_task()` gives a claimed task. The loop mirrors this
+    list at each claim so the Board shows the queue and not only the one
+    ticket picked from it (KO-334); Backlog is not in it because the loop
+    could not claim it. Reads only; nothing is written to Linear.
+    """
+    return [parse_task(issue) for issue in list_ready_issues(project_id)]
 
 
 def claim_next(project_id, team, skip=(), order="identifier"):

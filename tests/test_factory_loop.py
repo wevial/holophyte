@@ -95,6 +95,11 @@ class StubProvider:
                 return self.queue.pop(i)
         return None
 
+    def ready_issues(self):
+        """Every task the board would offer `claim_next()`: the queue as it
+        stands, so the loop's queue mirror sees what the claim sees."""
+        return [dict(task) for task in self.queue]
+
     def fetch_task(self, issue_id):
         """The ticket as the board holds it now; None when there is no such issue."""
         task = self.live.get(issue_id)
@@ -1304,6 +1309,83 @@ class ReconcileTests(LoopFixture):
                          {"KO-1": "ready", "KO-2": "needs_spec", "KO-3": "ready",
                           "KO-131": "merged"})
         self.assertIn("the scripted work", self.subjects())
+
+
+class QueueMirrorTests(LoopFixture):
+    """Each claim mirrors every ready issue the provider lists, so the Board
+    shows the queue and not only the ticket the loop picked.
+
+    The operator filed four tickets and saw none of them on the Board: the
+    mirror was written at the claim alone, so a ticket in Todo was invisible
+    until its turn came.
+    """
+
+    def statuses(self):
+        return dict(self.read("SELECT linearIdentifier, status FROM tickets"))
+
+    def queue(self):
+        """KO-a with a valid body, KO-b with a body the template rejects,
+        KO-c valid; the stub offers KO-131 first, so that is the one claimed.
+        A task without a `body` key is not judged by the validator, as
+        `a_task()` builds them; an empty string is the emptiest invalid body."""
+        a, b, c = a_task(2), a_task(3), a_task(4)
+        b["body"] = ""
+        return a, b, c
+
+    def test_one_claim_pass_mirrors_the_whole_ready_listing(self):
+        a, b, c = self.queue()
+        provider = StubProvider(a_task(), a, b, c)
+
+        self.loop(Boom(), provider=provider)
+
+        # KO-131 ran (and stayed `in_flight` on its failure, as a failed run
+        # leaves its ticket); the other three were mirrored, never claimed.
+        self.assertEqual(self.statuses(), {"KO-131": "in_flight", "KO-132": "ready",
+                                           "KO-133": "needs_spec", "KO-134": "ready"})
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(1,)])
+        # The mirror writes nothing to Linear: the only state posted is the
+        # claimed ticket's own In Progress.
+        self.assertEqual({issue for issue, _ in provider.states}, {"iss-131"})
+
+    def test_a_ticket_parked_on_the_operator_is_not_moved_by_the_mirror(self):
+        a, b, c = self.queue()
+        conn = store.open(str(self.db))
+        project = store.ensure_project(conn, StubProvider.TEAM, str(self.target))
+        ticket = holophyte.board.mirror_task(conn, project, c)
+        store.transition(conn, ticket, "blocked_on_deps")
+        store.transition(conn, ticket, "blocked_on_operator")
+        conn.close()
+        provider = StubProvider(a_task(), a, b, c)
+
+        self.loop(Boom(), provider=provider)
+
+        self.assertEqual(self.statuses()["KO-134"], "blocked_on_operator")
+        self.assertEqual(self.statuses()["KO-132"], "ready")
+
+    def test_a_listing_that_fails_skips_the_mirror_and_the_claim_proceeds(self):
+        class ListingFails(StubProvider):
+            """Unreachable at the first listing, the one before the claim
+            under test; the listing before the pass's closing claim answers."""
+
+            def ready_issues(self):
+                if not hasattr(self, "failed"):
+                    self.failed = True
+                    raise RuntimeError("board unreachable")
+                return super().ready_issues()
+
+        provider = ListingFails(a_task())
+
+        printed = self.main_output(Commit("the scripted work"), APPROVE,
+                                   provider=provider)
+
+        self.assertIn("the scripted work", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        skipped = [line for line in printed.splitlines()
+                   if "queue mirror skipped" in line]
+        self.assertEqual(len(skipped), 1, printed)
+        self.assertIn("board unreachable", skipped[0])
+        # Only the claimed ticket was mirrored.
+        self.assertEqual(self.statuses(), {"KO-131": "merged"})
 
 
 class CommitThenTimeout(Commit):

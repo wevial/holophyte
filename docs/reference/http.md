@@ -327,9 +327,12 @@ otherwise; `waits_on` is the identifiers of the open tickets its Linear
 dependencies name, empty when none (a dependency the store has never
 mirrored is shown by its Linear issue id, since the store cannot name
 what it has not seen); `mirrored_ms` is when the store last mirrored the
-ticket. The board is the store's mirror and nothing more: a ticket the
-loop has never claimed is not on it, and the endpoint never calls the
-provider.
+ticket. The board is the store's mirror and nothing more, and the endpoint
+never calls the provider. The loop mirrors every ready issue the provider
+lists at each claim, a valid body to `ready` and one failing the template
+to `needs_spec`, so the queue is on the board before the loop starts on
+it; a ticket the loop could not claim (Backlog, closed, blocked in Linear)
+is not.
 
 ## `GET /peers`
 
