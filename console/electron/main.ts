@@ -11,6 +11,7 @@ import { BrowserWindow, Menu, Tray, app, dialog, nativeImage } from "electron";
 import { CONFIG_FILE, resolveConsoleUrl } from "./config.ts";
 import type { MenuActions } from "./menu.ts";
 import { POLL_INTERVAL_MS, pollAll, readTokens } from "./poll.ts";
+import { seedScript } from "./seed.ts";
 import { type Level, buildSummary, summarizeAnswer } from "./tray.ts";
 
 // The SwiftBar drawer's template icon; nativeImage picks up the @2x sibling
@@ -55,7 +56,7 @@ function readConfigFile(): string | null {
   }
 }
 
-function showConsole(url: string): void {
+function showConsole(url: string, configText: string | null): void {
   if (mainWindow !== null) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
@@ -73,12 +74,26 @@ function showConsole(url: string): void {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  // Seed the page's storage with the bearers console.json holds, under the
+  // keys console/src/lib/token.ts reads, so a host the tray can see needs
+  // no pasting. When the script changed a key the window reloads once so
+  // the first poll carries it; the load after that changes nothing.
+  const contents = mainWindow.webContents;
+  contents.on("did-finish-load", () => {
+    const tokens = readTokens(configText, app.getPath("userData"));
+    contents
+      .executeJavaScript(seedScript(tokens))
+      .then((changed: unknown) => {
+        if (changed === true) contents.reload();
+      })
+      .catch((err: unknown) => console.error("token seed failed:", err));
+  });
   void mainWindow.loadURL(url);
 }
 
-function trayActions(url: string): MenuActions {
+function trayActions(url: string, configText: string | null): MenuActions {
   return {
-    showConsole: () => showConsole(url),
+    showConsole: () => showConsole(url, configText),
     // macOS keeps the login item itself, so the state survives a restart.
     setOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     quit: () => app.quit(),
@@ -97,7 +112,7 @@ async function refreshTray(url: string, configText: string | null): Promise<void
   if (tray === null) return;
   const { items, level } = summarizeAnswer(answer, Date.now(), {
     state: { openAtLogin: app.getLoginItemSettings().openAtLogin },
-    actions: trayActions(url),
+    actions: trayActions(url, configText),
   });
   tray.setContextMenu(Menu.buildFromTemplate(items));
   tray.setImage(trayImage(level));
@@ -108,7 +123,7 @@ function addTray(url: string, configText: string | null): void {
   tray.setToolTip("Holophyte Console");
   const { items } = buildSummary([], {}, {}, Date.now(), {
     state: { openAtLogin: app.getLoginItemSettings().openAtLogin },
-    actions: trayActions(url),
+    actions: trayActions(url, configText),
   });
   tray.setContextMenu(Menu.buildFromTemplate(items));
   const tick = (): void => {
@@ -128,8 +143,8 @@ app.whenReady().then(() => {
   }
   const { url } = resolved;
   addTray(url, configText);
-  showConsole(url);
-  app.on("activate", () => showConsole(url));
+  showConsole(url, configText);
+  app.on("activate", () => showConsole(url, configText));
 });
 
 app.on("window-all-closed", () => {
