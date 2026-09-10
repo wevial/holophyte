@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[511 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T20:29:57Z — KO-351
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T20:29:58Z — KO-351
-FAILED: terminal adjudication: FAIL; branch task/ko-351-a-claim-leases-the-ticket-in-l preserved at e45052160ac7
-actual: 49.5 min · estimate: 30 min · rounds: 3
+[513 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T20:32:01Z — KO-351
 FAILED: cannot reuse leftover worktree: preserved commits on task/ko-351-a-claim-leases-the-ticket-in-l conflict with a main that moved on; a human resolves the merge before this ticket is run again
@@ -767,3 +760,10 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T21:41:29Z — KO-356
 FAILED: terminal adjudication: FAIL; branch task/ko-356-the-daemon-serves-its-target-s preserved at 0653b8f07d7f
 actual: 40.7 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T21:42:31Z — KO-359
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T21:44:10Z — KO-359
+MERGED to main as 468d1e8 (branch task/ko-359-a-pull-request-merged-on-githu deleted).
+actual: 39.3 min · estimate: 30 min · rounds: 3
