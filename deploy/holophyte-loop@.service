@@ -1,0 +1,23 @@
+[Unit]
+Description=Holophyte loop (one pass over the ready queue) for target %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# One pass: `systemctl --user start holophyte-loop@SLUG` runs what
+# `factory.py TARGET` runs by hand and the unit is inactive again once the
+# loop prints its idle line. The loop exits 0 on an empty queue and nonzero
+# on a failure; Restart=no keeps a failed pass visible as a failed unit
+# rather than looping. HOLOPHYTE_TARGET comes from the serve unit's
+# environment file. Not enabled: started by hand, one pass at a time.
+Type=exec
+EnvironmentFile=%h/.holophyte/%i/serve.env
+WorkingDirectory=%h/srv/dev/holophyte
+ExecStart=/usr/bin/python3 factory.py ${HOLOPHYTE_TARGET}
+Restart=no
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

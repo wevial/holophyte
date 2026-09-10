@@ -72,6 +72,15 @@ lingering once per host so the user manager starts at boot; then
 failure and is restarted by hand after a merge that touches the daemon's
 code. Details in [Serving standing](../operating.md#serving-standing).
 
+Each host runs three units per target, all from `deploy/` and all reading
+the same `~/.holophyte/SLUG/serve.env`: `holophyte-serve@SLUG` (the read
+daemon), `holophyte-supervise@SLUG` (the supervisor, `Restart=on-failure`,
+enabled with `systemctl --user enable --now holophyte-supervise@SLUG`) and
+`holophyte-loop@SLUG` (one pass of the loop, `Restart=no`, started with
+`systemctl --user start holophyte-loop@SLUG` and inactive again once the
+queue is empty). Units outlive the shell session that started them, so a
+dead tmux server no longer takes the supervisors down with it.
+
 ## The drawer
 
 `contrib/swiftbar/holophyte.10s.py` runs under SwiftBar on the operator
