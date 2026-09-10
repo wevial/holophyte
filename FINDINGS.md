@@ -653,112 +653,111 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[437 earlier entries in holophyte.db — query runs/reviewRounds]
+[463 earlier entries in holophyte.db — query runs/reviewRounds]
 
-## 2026-09-09T23:36:13Z — KO-329
-MERGED to main as 4dc2bb0 (branch task/ko-329-at-startup-the-loop-walks-mirr deleted).
-actual: 8.7 min · estimate: 30 min · rounds: 1
-
-## 2026-09-09T23:47:57Z — KO-334
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- (unparsed):94f18e9ccbb0 [p2] CRITERION 1: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_one_claim_pass_mirrors_the_whole_ready_listing` omits bodies for both “valid” tic…
-- criteria:1 [p2] CRITERION 1: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_one_claim_pass_mirrors_the_whole_ready_listing` omits bodies for both “valid” tic…
-- criteria:3 [p2] CRITERION 3: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_a_listing_that_fails_skips_the_mirror_and_the_claim_proceeds` raises before the c…
-
-## 2026-09-09T23:56:07Z — KO-334
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-09T23:57:32Z — KO-334
-MERGED to main as 15981f9 (branch task/ko-334-the-loop-mirrors-every-ready-i deleted).
-actual: 21.3 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T00:11:10Z — KO-336
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T00:12:35Z — KO-336
-MERGED to main as 88426a2 (branch task/ko-336-a-target-can-have-its-pull-req deleted).
-actual: 15.0 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T00:25:05Z — KO-337
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:1544 [p1] [P1] Preserve bot HUMAN handling in [holophyte/loop.py:1544](/home/reviewer/candidate/holophyte/loop.py:1544). The `and not act` condition disables the early pa…
-
-## 2026-09-10T00:32:04Z — KO-337
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T00:33:29Z — KO-337
-MERGED to main as 172e362 (branch task/ko-337-a-target-can-let-the-shepherd deleted).
-actual: 20.8 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T00:49:45Z — KO-341
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T00:51:10Z — KO-341
-MERGED to main as 329975f (branch task/ko-341-the-claim-leases-the-ticket-no deleted).
-actual: 17.6 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T01:08:59Z — KO-342
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/holophyte/supervisor.py:480 [p1] [P1] [supervisor.py:480](/home/reviewer/candidate/holophyte/supervisor.py:480): Sweep unlinks the lock without ensuring it still belongs to the stale holder.…
-- /home/reviewer/candidate/holophyte/loop.py:1093 [p1] [P1] [loop.py:1093](/home/reviewer/candidate/holophyte/loop.py:1093): A conflict confined to `FINDINGS.md` is automatically resolved and committed. Reproduced…
-- criteria:3 [p2] CRITERION 3: not met — FINDINGS.md conflicts advance the branch without parking or preserving its pre-gate SHA. Given a `main` commit that conflicts with the br…
-
-## 2026-09-10T01:20:54Z — KO-342
+## 2026-09-10T03:20:32Z — KO-343
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/gates.py:586 [p1] [P1] [holophyte/gates.py:586](/home/reviewer/candidate/holophyte/gates.py:586): Stale-lock cleanup can break mutual exclusion. A sweep can open the stale inod…
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:2380 [p2] [P2] [holophyte/loop.py:2380](/home/reviewer/candidate/holophyte/loop.py:2380): Claimable counting violates the required one store read per tick. Five ready t…
+- /home/reviewer/candidate/holophyte/loop.py:2161 [p2] [P2] [holophyte/loop.py:2161](/home/reviewer/candidate/holophyte/loop.py:2161): Only stdout receives worker prefixes. Reproducing an exception from `open_stor…
 
-## 2026-09-10T01:28:46Z — KO-342
-Round 3: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T01:30:13Z — KO-342
-MERGED to main as d9936d4 (branch task/ko-342-merges-into-main-serialise-und deleted).
-actual: 39.0 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T01:52:37Z — KO-343
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/holophyte/loop.py:2290 [p1] **[P1] Preserve child handles and exit statuses** — [holophyte/loop.py:2290](/home/reviewer/candidate/holophyte/loop.py:2290). `_spawn_worker()` discards the…
-- /home/reviewer/candidate/holophyte/loop.py:2208 [p1] **[P1] Preserve stop-on-failure across self-merge** — [holophyte/loop.py:2208](/home/reviewer/candidate/holophyte/loop.py:2208). When one worker fails and ano…
-- criteria:3 [p2] CRITERION 3: not met — a self-merge by the remaining worker causes re-exec instead of the required nonzero exit and loses the spawning prohibition Given `worker…
-
-## 2026-09-10T02:01:53Z — KO-343
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/holophyte/loop.py:2153 [p2] **P1 — Serialize worker close-out with merges.** [holophyte/loop.py:2153](/home/reviewer/candidate/holophyte/loop.py:2153) commits `FINDINGS.md` after `_dispa…
-- /home/reviewer/candidate/holophyte/loop.py:2301 [p2] **P2 — Count only dependency-unblocked tickets.** [holophyte/loop.py:2301](/home/reviewer/candidate/holophyte/loop.py:2301) checks status and lease but ignore…
-- /home/reviewer/candidate/holophyte/loop.py:2215 [p2] **P2 — Distinguish listing failure from an empty queue.** [holophyte/loop.py:2215](/home/reviewer/candidate/holophyte/loop.py:2215) uses `_mirror_queue()`’s e…
-
-## 2026-09-10T02:13:38Z — KO-343
+## 2026-09-10T03:29:41Z — KO-343
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:2236 [p2] [holophyte/loop.py:2236](/home/reviewer/candidate/holophyte/loop.py:2236): `_PrefixedOut.write()` loses the worker prefix when indentation arrives separately:…
 
-## 2026-09-10T02:13:40Z — KO-343
-FAILED: terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 046d7d70f5e1
-actual: 43.4 min · estimate: 30 min · rounds: 3
+## 2026-09-10T03:36:28Z — KO-343
+Round 4: changes_requested · reviewer codex-astra-medium · verify passed
 
-## 2026-09-10T02:36:04Z — KO-339
+## 2026-09-10T03:36:29Z — KO-343
+FAILED: terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 476ac0cd9d61
+actual: 33.9 min · estimate: 30 min · rounds: 4
+
+## 2026-09-10T03:55:05Z — KO-328
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T03:56:33Z — KO-328
+MERGED to main as a9cb4f6 (branch task/ko-328-the-store-mirrors-a-ticket-s-b deleted).
+actual: 20.0 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T04:02:52Z — KO-330
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (4):
+- /home/reviewer/candidate/console/src/components/Board.tsx:52 [p2] [Board.tsx:52](/home/reviewer/candidate/console/src/components/Board.tsx:52): Focus restoration targets a stale DOM element after polling moves the ticket bet…
+- /home/reviewer/candidate/console/tests/lib/markdown.test.ts:16 [p2] [markdown.test.ts:16](/home/reviewer/candidate/console/tests/lib/markdown.test.ts:16): The test substitutes triple backticks for criterion 3’s single-backtick…
+- criteria:2 [p2] CRITERION 2: not met — Reproduced loss of identifier focus on dismissal after a poll moves the ticket between columns. Given the sheet open, when Escape is pres…
+- criteria:3 [p2] CRITERION 3: not met — The specified single-backtick input produces no pre; the existing test uses different delimiters. Given the body "## In scope\n- [ ] one\…
+
+## 2026-09-10T04:05:41Z — KO-330
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T04:05:45Z — KO-330
+MERGED to main as d7b7d6d (branch task/ko-330-a-ticket-opens-as-a-sheet-over deleted).
+actual: 9.1 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T04:10:32Z — KO-332
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/components/ShippedTable.tsx:101 [p2] [P2] [ShippedTable.tsx:101](/home/reviewer/candidate/console/src/components/ShippedTable.tsx:101): Pressing Enter on a focused SHA link bubbles into the row’s…
+
+## 2026-09-10T04:12:14Z — KO-332
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T04:12:17Z — KO-332
+MERGED to main as c723994 (branch task/ko-332-a-shipped-row-expands-to-the-s deleted).
+actual: 6.4 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T04:31:44Z — KO-335
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/components/AttentionRow.tsx:66 [p2] [P2] [AttentionRow.tsx:66](/home/reviewer/candidate/console/src/components/AttentionRow.tsx:66): When a question has a thread, pressing Enter on its PR link b…
+
+## 2026-09-10T04:39:20Z — KO-335
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T04:40:52Z — KO-335
+MERGED to main as 04e61a2 (branch task/ko-335-a-run-with-a-pull-request-carr deleted).
+actual: 28.5 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T04:44:10Z — KO-338
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
 Findings (2):
-- /home/reviewer/candidate/holophyte/runs.py:188 [p1] [P1] [holophyte/runs.py:188](/home/reviewer/candidate/holophyte/runs.py:188): Exiting the block stops the heartbeat thread without checking whether the run en…
-- criteria:2 [p2] CRITERION 2: not met — a second connection ending the run immediately before block completion produces neither the callback nor RunSwept. Given `heartbeat_while…
+- /home/reviewer/candidate/console/electron/log.ts:36 [p2] [console/electron/log.ts:36](/home/reviewer/candidate/console/electron/log.ts:36): `consoleLine` copies the message verbatim, allowing query tokens into the l…
+- criteria:3 [p2] CRITERION 3: not met — query strings survive when the console message itself contains the source URL; the existing test covers only the separate source argument…
 
-## 2026-09-10T02:47:18Z — KO-339
+## 2026-09-10T04:46:00Z — KO-338
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/electron/log.ts:38 [p1] [P1] [log.ts:38](/home/reviewer/candidate/console/electron/log.ts:38): URL redaction stops at `)`, allowing query tokens into the log. Reproduced with message…
+
+## 2026-09-10T04:47:29Z — KO-338
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T04:47:29Z — KO-338
+FAILED: terminal adjudication: FAIL; branch task/ko-338-the-electron-app-opens-the-win preserved at 8326a60d6133
+actual: 6.5 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T04:59:03Z — KO-345
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:2207 [p2] [P2] [holophyte/loop.py:2207](/home/reviewer/candidate/holophyte/loop.py:2207): Strike count overrides an actual parked question. Reproduced one failed attempt…
+- criteria:1 [p2] CRITERION 1: not met — A question with two counted failures prints the strike form and omits the question. Given `skip_line` for a ticket with two strikes and n…
+
+## 2026-09-10T05:07:57Z — KO-345
 Round 2: pass · reviewer codex-astra-medium · verify passed
 
-## 2026-09-10T02:48:45Z — KO-339
-MERGED to main as f6732ce (branch task/ko-339-a-loop-whose-run-the-superviso deleted).
-actual: 35.0 min · estimate: 30 min · rounds: 2
+## 2026-09-10T05:09:27Z — KO-345
+MERGED to main as a0179f0 (branch task/ko-345-the-loop-s-skip-line-for-a-par deleted).
+actual: 21.9 min · estimate: 30 min · rounds: 2
 
-## 2026-09-10T02:48:49Z — KO-343
-FAILED: cannot reuse leftover worktree: preserved commits on task/ko-343-the-loop-runs-a-pool-of-worker conflict with a main that moved on; a human resolves the merge before this ticket is run again
-actual: 0.0 min · estimate: 30 min · rounds: 0
+## 2026-09-10T05:11:22Z — KO-338
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/electron/log.ts:43 [p1] [P1] [console/electron/log.ts:43](/home/reviewer/candidate/console/electron/log.ts:43): URL redaction leaks query tokens when the path contains parentheses. R…
 
-## 2026-09-10T03:01:02Z — KO-344
-Round 1: pass · reviewer codex-astra-medium · verify passed
+## 2026-09-10T05:13:01Z — KO-338
+Round 2: pass · reviewer codex-astra-medium · verify passed
 
-## 2026-09-10T03:02:30Z — KO-344
-MERGED to main as 0c1d8b0 (branch task/ko-344-the-reconcile-sees-archived-li deleted).
-actual: 13.6 min · estimate: 30 min · rounds: 1
+## 2026-09-10T05:13:03Z — KO-338
+MERGED to main as 48e6197 (branch task/ko-338-the-electron-app-opens-the-win deleted).
+actual: 3.5 min · estimate: 30 min · rounds: 2

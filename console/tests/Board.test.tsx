@@ -173,7 +173,7 @@ test("every card carries Edit ticket and Mark needs_spec, disabled, with the wri
   const cards = Array.from(document.querySelectorAll("[data-ticket]"));
   expect(cards.length).toBe(8);
   for (const card of cards) {
-    const buttons = Array.from(card.querySelectorAll("button"));
+    const buttons = Array.from(card.querySelectorAll("[data-actions] button"));
     expect(buttons.map((b) => b.textContent)).toEqual(["Edit ticket", "Mark needs_spec"]);
     for (const button of buttons) {
       expect((button as HTMLButtonElement).disabled).toBe(true);
@@ -192,6 +192,18 @@ test("Shipped today shows only today's rows of a three-day ledger, under its cou
   expect(shipped.querySelectorAll("[data-row]").length).toBe(3);
   expect(threeDays.shipped.rows.length).toBeGreaterThan(3);
   expect(shipped.querySelector("[data-shipped-subtitle]")!.textContent).toBe("3 merges · median 2 rounds");
+});
+
+test("a Shipped today row expands to its run detail the way a Now row does", async () => {
+  render(<Board hosts={[host]} now={now} deps={{ fetch: daemonFetch }} tz="UTC" />);
+  await act(settle);
+  const shipped = screen.getByRole("region", { name: "Shipped today" });
+  const rows = Array.from(shipped.querySelectorAll<HTMLElement>("[data-row]"));
+  expect(rows.map((row) => row.getAttribute("aria-expanded"))).toEqual(["false", "false", "false"]);
+  fireEvent.click(rows[0]!);
+  await act(settle);
+  expect(rows.map((row) => row.getAttribute("aria-expanded"))).toEqual(["true", "false", "false"]);
+  expect(shipped.querySelectorAll("[data-detail]").length).toBe(1);
 });
 
 test("clicking Board in the rail opens the view, polling /board from the daemon", async () => {

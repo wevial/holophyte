@@ -622,6 +622,75 @@ class ConsoleTests(ServeTestCase):
                 self.assertNotIn("a file named", self.raw_body)
 
 
+class TicketTests(ServeTestCase):
+    """`/tickets/KO-n`: one mirrored ticket with its body; 404 for one the
+    store never mirrored; behind the token like `/board`."""
+
+    BODY = "# A ticket\n\n## Summary\n\nThe body the loop read at claim.\n"
+
+    def seed_ticket(self):
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+            ticket = store.mirror_ticket(
+                conn, project, linear_issue_id="issue-7",
+                linear_identifier="KO-7", title="ticket 7",
+                acceptance_criteria=["Given KO-7, then it is worked"],
+                verification_commands=["echo ok"], time_box_ms=25 * MIN,
+                body=self.BODY, now=self.now - 5 * MIN)
+            store.transition(conn, ticket, "in_flight")
+            self.run = store.claim(conn, project, ticket, now=self.now - 2 * MIN)
+        finally:
+            conn.close()
+
+    def test_a_mirrored_ticket_answers_its_nine_fields_and_body(self):
+        self.seed_ticket()
+        self.start()
+
+        code, headers, body = self.request("GET", "/tickets/KO-7")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body, {
+            "ticket": "KO-7", "title": "ticket 7", "status": "in_flight",
+            "body": self.BODY,
+            "acceptance_criteria": ["Given KO-7, then it is worked"],
+            "verification_commands": ["echo ok"],
+            "time_box_ms": 25 * MIN, "run": self.run,
+            "mirrored_ms": self.now - 5 * MIN})
+
+    def test_an_identifier_never_mirrored_is_404_with_an_empty_object(self):
+        self.seed_ticket()
+        self.start()
+
+        code, headers, body = self.request("GET", "/tickets/KO-9999")
+
+        self.assertEqual(code, 404)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body, {})
+
+    def test_the_route_is_behind_the_token_like_the_board(self):
+        self.seed_ticket()
+        token = self.root / "serve.token"
+        token.write_text(TokenTests.TOKEN + "\n")
+        token.chmod(0o600)
+        self.start(f'[serve]\ntoken_file = "{token}"\n', host="0.0.0.0")
+
+        with patch.object(store.read, "open_readonly") as opened:
+            code, _, body = self.request("GET", "/tickets/KO-7")
+        self.assertEqual(code, 401)
+        self.assertEqual(body, {})
+        opened.assert_not_called()
+        code, _, _ = self.request("GET", "/board")
+        self.assertEqual(code, 401)
+
+        code, _, body = self.request("GET", "/tickets/KO-7", TokenTests.BEARER)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["body"], self.BODY)
+
+
 class AttentionTests(ServeTestCase):
     """`/attention`: the four item kinds, their order, the window, the level."""
 
@@ -712,7 +781,7 @@ class AttentionTests(ServeTestCase):
         self.assertEqual(blocked, {"kind": "blocked", "ticket": "KO-8",
                                    "question": "Which branch is canonical?",
                                    "run": self.blocked_run,
-                                   "asked_ms": self.asked,
+                                   "asked_ms": self.asked, "pr_url": None,
                                    "level": "attention"})
         self.assertEqual(stale_run["run"], self.run)
         self.assertEqual(stale_run["ticket"], "KO-7")
@@ -1409,6 +1478,84 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(code, 503)
         self.assertIn("error", body)
         self.assertFalse(self.db.exists())
+
+
+class PrUrlTests(ServeTestCase):
+    """`pr_url` on `/runs/N`, `/attention` and `/shipped`: the pull request
+    the run parked on (`runs.prUrl`), null for a run that opened none."""
+
+    PR_URL = "https://github.com/o/r/pull/2170"
+
+    def seed_pr(self):
+        """KO-8 parked `blocked_on_operator` on the pull request; KO-9 parked
+        the same way with none. Both parked runs are `lastRunId`."""
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+            self.runs = {}
+            for ident, url in (("KO-8", self.PR_URL), ("KO-9", None)):
+                ticket = store.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{ident}",
+                    linear_identifier=ident, title=f"ticket {ident}",
+                    acceptance_criteria=[f"Given {ident}, then it is worked"],
+                    verification_commands=["echo ok"], time_box_ms=25 * MIN)
+                store.transition(conn, ticket, "in_flight")
+                run = store.claim(conn, project, ticket, now=self.now - 20 * MIN)
+                store.set_phase(conn, run, "working", now=self.now - 20 * MIN)
+                store.transition(conn, ticket, "blocked_on_operator")
+                store.park(conn, run, "blocked_on_operator", "parked on the PR",
+                           candidate_sha=MERGE_SHA, pr_url=url,
+                           now=self.now - 10 * MIN)
+                self.runs[ident] = run
+            store.record_supervisor_heartbeat(
+                conn, 4242, self.now - MIN, now=self.now - 5 * SEC)
+        finally:
+            conn.close()
+
+    def merge_parked(self):
+        """Both parked runs end `merged`, as the shepherd ends one whose PR
+        landed."""
+        conn = store.open(str(self.db))
+        try:
+            for run in self.runs.values():
+                store.release(conn, run, "merged", now=self.now - MIN,
+                              merge_sha=MERGE_SHA)
+        finally:
+            conn.close()
+
+    def test_run_detail_and_attention_carry_the_parked_runs_pr_url(self):
+        self.seed_pr()
+        self.start()
+
+        code, _, with_pr = self.request("GET", f"/runs/{self.runs['KO-8']}")
+        self.assertEqual(code, 200)
+        self.assertEqual(with_pr["run"]["pr_url"], self.PR_URL)
+        code, _, without = self.request("GET", f"/runs/{self.runs['KO-9']}")
+        self.assertEqual(code, 200)
+        self.assertIsNone(without["run"]["pr_url"])
+
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        by_ticket = {item["ticket"]: item for item in body["items"]
+                     if item["kind"] == "blocked"}
+        self.assertEqual(by_ticket["KO-8"]["run"], self.runs["KO-8"])
+        self.assertEqual(by_ticket["KO-8"]["pr_url"], self.PR_URL)
+        self.assertIsNone(by_ticket["KO-9"]["pr_url"])
+
+    def test_shipped_carries_the_pr_url_once_the_run_merges(self):
+        self.seed_pr()
+        self.merge_parked()
+        self.start()
+
+        code, _, body = self.request("GET", "/shipped")
+
+        self.assertEqual(code, 200)
+        by_ticket = {row["ticket"]: row for row in body["rows"]}
+        self.assertEqual(set(by_ticket), {"KO-8", "KO-9"})
+        self.assertEqual(by_ticket["KO-8"]["pr_url"], self.PR_URL)
+        self.assertIsNone(by_ticket["KO-9"]["pr_url"])
 
 
 class RunLedgerTests(ServeTestCase):

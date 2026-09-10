@@ -161,9 +161,15 @@ URL the daemon serves: one window (1280×860, never narrower than the 1100px
 the design assumes), a tray icon built from `assets/menubar-template@1x.png`
 and its `@2x` sibling whose menu carries the SwiftBar drawer's summary,
 then "Show console", an "Open at login" checkbox that
-reads and sets the macOS login item, and "Quit", and nothing of its own — no renderer code, no preload, no IPC, so the app and the browser tab
-never drift. On macOS closing the window leaves the tray in place and the
-dock or tray reopens it; elsewhere closing the window quits.
+reads and sets the macOS login item, "Developer tools", which opens the
+window's DevTools (the platform shortcut works too), and "Quit", and nothing
+of its own — no renderer code, no preload, no IPC, so the app and the browser
+tab never drift. The window's console errors and failed loads are appended,
+one timestamped line each, to `console.log` in Electron's user-data
+directory (beside `console.json`; source paths only, never query strings),
+truncated once it passes 1 MB, so a blank view can be diagnosed afterwards.
+On macOS closing the window leaves the tray in place and the dock or tray
+reopens it; elsewhere closing the window quits.
 
 The console URL comes from the first of three sources, and a bad value in
 that source is a dialog naming it, never a fall-through to the next:

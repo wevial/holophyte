@@ -31,10 +31,13 @@ import store.read
 from holophyte import pr, shepherd
 from holophyte.agents import agent, agent_route
 from holophyte.board import (
+    MAX_FAILED_RUNS,
     block_ticket,
     body_problem,
     close_out_failure,
     escalate,
+    failure_history,
+    is_strike_question,
     ledger,
     merge_drift,
     mirror_key,
@@ -2543,6 +2546,34 @@ def _reconcile_mirror(conn, project, provider):
         print(line)
 
 
+def skip_line(identifier, strikes, pr_url, question):
+    """The admit step's one line for a ticket the store holds parked.
+
+    Pure, so the wording is tested without a store. A pull request wins:
+    the run behind it is parked alive, so its URL and the `--approve` that
+    merges it are the whole story whatever failed before it. Then the
+    question a module parked the ticket on -- a merge conflict, `merge?` --
+    first line only, and *before* the strike count: the run that parked it
+    may also have been the failure that reached `MAX_FAILED_RUNS`, and the
+    conflict is what the operator has to resolve, not the count. The
+    strike form is for the escalation's own park, whose question
+    `is_strike_question()` recognises, or for a park with no question at
+    all once the count has tripped; a park with neither is still a
+    human's, and says so.
+    """
+    if pr_url:
+        return (f"{identifier} is parked on PR {pr_url} awaiting"
+                f" --approve {identifier}; skipping it")
+    if question and question.strip() and not is_strike_question(question):
+        first = question.strip().splitlines()[0]
+        return (f"{identifier} is parked on a question: {first};"
+                " skipping it")
+    if strikes >= MAX_FAILED_RUNS:
+        return (f"{identifier} struck out after {strikes} failures;"
+                " a human owns it now")
+    return f"{identifier} is parked for a human; skipping it"
+
+
 def _admit_ticket(target, conn, project, provider, task, seen):
     """The questions asked of a ticket before the lease and before any run
     row exists. Returns the mirrored ticket id, or None for a ticket this
@@ -2597,8 +2628,19 @@ def _admit_ticket(target, conn, project, provider, task, seen):
                    seen)
         return None
     if escalate(conn, ticket_id, provider):
-        print(f"[holo2] {task['id']} is blocked by repeated failures;"
-              " skipping it. a human owns it now")
+        # The skip is the same whatever parked the ticket; the line says
+        # which (KO-345): a strike-out, a pull request awaiting `--approve`,
+        # or a question -- so a ticket parked for the operator's merge is
+        # not reported as a failure that never happened.
+        ticket = store.read.ticket_by_id(conn, ticket_id)
+        pr_url = None
+        if ticket.lastRunId is not None:
+            row = conn.execute("SELECT prUrl FROM runs WHERE id = ?",
+                               (ticket.lastRunId,)).fetchone()
+            pr_url = row[0] if row else None
+        print("[holo2] " + skip_line(task["id"],
+                                     len(failure_history(conn, ticket_id)),
+                                     pr_url, ticket.blockedQuestion))
         return None
     # Same place, the store's own question: §2's `pickable()`. The
     # board and the store can disagree about whether a ticket is

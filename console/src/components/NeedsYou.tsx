@@ -140,6 +140,7 @@ export function NeedsYou({
                   project={projectName(String(item.project))}
                   description={describeRow(item)}
                   thread={threadOf(item, key)}
+                  prUrl={item.pr_url}
                 />
               );
             })}

@@ -130,6 +130,9 @@ EXPECTED_READ = [
     # `store` itself.
     "supervisor_beat",
     "ticket_by_id",
+    # KO-328: the `serve` daemon's `/tickets/KO-n` read of one mirrored
+    # ticket, body included.
+    "ticket_by_identifier",
 ]
 
 AGENTS_MD = Path(__file__).resolve().parent.parent / "AGENTS.md"

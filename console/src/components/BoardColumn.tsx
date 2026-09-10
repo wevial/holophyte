@@ -1,4 +1,4 @@
-import type { Column } from "../lib/board";
+import type { BoardCard, Column } from "../lib/board";
 import type { BoardState } from "../lib/types";
 import { TicketCard } from "./TicketCard";
 
@@ -12,7 +12,16 @@ const DOTS: Record<BoardState, string> = {
 };
 
 /** One column of the Board: dot, label and count over the well of cards. */
-export function BoardColumn({ column }: { column: Column }) {
+export function BoardColumn({
+  column,
+  openKey = null,
+  onOpen,
+}: {
+  column: Column;
+  /** The `key` of the card whose sheet is open, if it is in this column. */
+  openKey?: string | null;
+  onOpen?: (card: BoardCard) => void;
+}) {
   return (
     <section aria-label={column.label} data-column={column.state} className="flex min-w-0 flex-col gap-2">
       <header className="flex items-center gap-2 px-1">
@@ -24,7 +33,7 @@ export function BoardColumn({ column }: { column: Column }) {
       </header>
       <div className="flex min-h-[120px] flex-col gap-2 rounded-[10px] bg-well p-2">
         {column.cards.map((card) => (
-          <TicketCard key={card.key} card={card} />
+          <TicketCard key={card.key} card={card} open={card.key === openKey} onOpen={onOpen} />
         ))}
       </div>
     </section>

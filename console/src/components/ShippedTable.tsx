@@ -1,4 +1,6 @@
+import { useState, type KeyboardEvent } from "react";
 import { formatClock } from "../lib/format";
+import type { Fetch } from "../lib/poll";
 import {
   boxFill,
   boxRatio,
@@ -7,15 +9,21 @@ import {
   deltaTone,
   groupByDay,
   minutesLabel,
+  prLabel,
   shortSha,
   withinDays,
   type DayGroup,
 } from "../lib/shipped";
 import type { ShippedRow } from "../lib/types";
+import { RunDetail } from "./RunDetail";
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-const GRID = "grid grid-cols-[56px_90px_1fr_70px_60px_70px_200px_80px] items-center gap-3 px-4";
+/** Nine columns: the chevron, then the eight the headers name. */
+const GRID = "grid grid-cols-[20px_56px_90px_1fr_70px_60px_70px_200px_80px] items-center gap-3 px-4";
+/** The chevron is the row's `::before` so the eight cells stay its only
+ *  children: "▸" shut, "▾" while `aria-expanded`. */
+const CHEVRON = "before:text-[12px] before:text-faint before:content-['▸'] aria-expanded:before:content-['▾']";
 const COLUMNS = ["Merged", "Ticket", "Title", "Project", "Rounds", "Findings", "Actual vs time box", "SHA"];
 const FILLS = { ok: "bg-ok", warn: "bg-warn", over: "bg-bad" };
 const DELTA = { ok: "text-ok-text", over: "text-bad-text", muted: "text-muted" };
@@ -72,17 +80,68 @@ export function Sha({ row }: { row: { merge_sha: string | null; commit_url?: str
   );
 }
 
-function Row({ row }: { row: ShippedRow }) {
+/** The run's pull request as "PR #N" in the sha's link style, opening in
+ *  a new tab; nothing at all when the run opened none. */
+export function PrLink({ url }: { url: string | null | undefined }) {
+  if (!url) return null;
   return (
-    <div data-row={row.id} className={`${GRID} border-t border-line-faint py-[11px] hover:bg-hover`}>
-      <span className="font-mono text-[12px] text-muted">{formatClock(row.ended_ms)}</span>
-      <span className="truncate font-mono text-[13px] font-semibold text-ink">{row.ticket}</span>
-      <span className="truncate text-[13px] text-body">{row.title ?? ""}</span>
-      <span className="truncate text-[13px] text-muted">{row.project}</span>
-      <span className="font-mono text-[13px] text-body">{row.rounds}</span>
-      <span className="font-mono text-[13px] text-body">{row.findings}</span>
-      <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} />
-      <Sha row={row} />
+    <a data-pr href={url} target="_blank" rel="noopener noreferrer" className={`${SHA_CLASS} hover:underline`}>
+      {prLabel(url)}
+    </a>
+  );
+}
+
+/** One merge, a toggle like a Now row: clicking expands the run's detail
+ *  card beneath, read from the daemon that merged it. The row is a
+ *  `role="button"` div, not a button, because the sha cell is an anchor;
+ *  a click or Enter on the sha follows the link without toggling the row. */
+function Row({
+  row,
+  expanded,
+  onToggle,
+  now,
+  polls,
+  deps,
+}: {
+  row: ShippedRow;
+  expanded: boolean;
+  onToggle: () => void;
+  now: number;
+  polls: number;
+  deps?: { fetch: Fetch };
+}) {
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Only keys aimed at the row itself toggle it: Enter on the focused sha
+    // anchor must follow the link, not bubble up and be swallowed here.
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onToggle();
+  };
+  return (
+    <div className="border-t border-line-faint">
+      <div
+        role="button"
+        tabIndex={0}
+        data-row={row.id}
+        aria-expanded={expanded}
+        onClick={onToggle}
+        onKeyDown={onKeyDown}
+        className={`${GRID} ${CHEVRON} cursor-pointer py-[11px] hover:bg-hover`}
+      >
+        <span className="font-mono text-[12px] text-muted">{formatClock(row.ended_ms)}</span>
+        <span className="truncate font-mono text-[13px] font-semibold text-ink">{row.ticket}</span>
+        <span className="truncate text-[13px] text-body">{row.title ?? ""}</span>
+        <span className="truncate text-[13px] text-muted">{row.project}</span>
+        <span className="font-mono text-[13px] text-body">{row.rounds}</span>
+        <span className="font-mono text-[13px] text-body">{row.findings}</span>
+        <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} />
+        <span onClick={(event) => event.stopPropagation()} className="flex items-baseline gap-2">
+          <Sha row={row} />
+          <PrLink url={row.pr_url} />
+        </span>
+      </div>
+      {expanded && <RunDetail base={row.daemon ?? ""} id={row.id} now={now} polls={polls} deps={deps} />}
     </div>
   );
 }
@@ -101,23 +160,31 @@ function DayHeader({ group }: { group: DayGroup }) {
  * newest first, eight columns each. `now` is the daemon's clock and names
  * "Today"; `days` keeps only the last so many calendar days (1 is today
  * alone) so the Board can mount today's group; `tz` pins the zone for tests.
+ * One row at a time expands to its `RunDetail`, keyed by daemon and id so
+ * a poll that replaces `rows` leaves it open; `polls` re-reads the detail.
  */
 export function ShippedTable({
   rows,
   now,
+  polls = 0,
+  deps,
   days,
   tz,
 }: {
   rows: ShippedRow[];
   now: number;
+  polls?: number;
+  deps?: { fetch: Fetch };
   days?: number;
   tz?: string;
 }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
   const grouped = groupByDay(rows, now, tz);
   const groups = days == null ? grouped : withinDays(grouped, days);
   return (
     <div className="overflow-hidden rounded-[10px] border border-line bg-card shadow-card">
       <div className={`${GRID} py-2 text-[11px] font-semibold uppercase tracking-[.08em] text-faint`}>
+        <span aria-hidden="true" />
         {COLUMNS.map((column) => (
           <span key={column}>{column}</span>
         ))}
@@ -125,9 +192,20 @@ export function ShippedTable({
       {groups.map((group) => (
         <div key={group.key} data-day={group.key}>
           <DayHeader group={group} />
-          {group.rows.map((row) => (
-            <Row key={`${row.daemon ?? ""}#${row.id}`} row={row} />
-          ))}
+          {group.rows.map((row) => {
+            const key = `${row.daemon ?? ""}#${row.id}`;
+            return (
+              <Row
+                key={key}
+                row={row}
+                expanded={expanded === key}
+                onToggle={() => setExpanded((current) => (current === key ? null : key))}
+                now={now}
+                polls={polls}
+                deps={deps}
+              />
+            );
+          })}
         </div>
       ))}
     </div>

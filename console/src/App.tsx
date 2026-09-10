@@ -63,7 +63,7 @@ export function App({
           <h1 className="px-6 pt-6 pb-4 text-2xl font-semibold">{heading}</h1>
         )}
         {view === "shipped" ? (
-          <Shipped shipped={shipped} now={daemonNow} />
+          <Shipped shipped={shipped} now={daemonNow} polls={polls} deps={pollDeps} />
         ) : view === "board" ? (
           <Board hosts={shownHosts} shipped={shipped} now={daemonNow} polls={polls} deps={pollDeps} />
         ) : view === "hosts" ? (

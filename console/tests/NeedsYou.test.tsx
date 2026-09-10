@@ -60,6 +60,27 @@ test("six questions cap at four with Show all 6, expand, and a chip choice caps 
   expect(screen.getByRole("button", { name: "Show all 6" })).toBeTruthy();
 });
 
+test("a question row with pr_url shows a PR #N anchor on its line; the fixture's rows without one show none", () => {
+  const url = "https://github.com/o/r/pull/2170";
+  const items: AttentionItem[] = [
+    { kind: "blocked", level: "attention", ticket: "KO-335", run: 50, question: "Merge the PR?", pr_url: url },
+    { kind: "blocked", level: "attention", ticket: "KO-336", run: 51, question: "Which branch?", pr_url: null },
+  ];
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { level: "attention", now: allKinds.status.now, items })]} project="all" now={allKinds.status.now} />);
+  const [withPr, without] = rows();
+  const pr = within(withPr!).getByText("PR #2170") as HTMLAnchorElement;
+  expect(pr.tagName).toBe("A");
+  expect(pr.getAttribute("href")).toBe(url);
+  expect(pr.getAttribute("target")).toBe("_blank");
+  expect(pr.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(within(withPr!).getByText(/Merge the PR\?/)).toBeTruthy();
+  expect(without!.querySelector("[data-pr]")).toBeNull();
+  cleanup();
+
+  render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
+  expect(document.querySelector("[data-pr]")).toBeNull();
+});
+
 test("every action button is disabled and says writes come later", () => {
   render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
   const actions = rows().flatMap((row) => within(row).getAllByRole("button"));

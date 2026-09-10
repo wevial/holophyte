@@ -82,6 +82,26 @@ test("a row with commit_url null renders the plain short sha with no anchor", ()
   expect(document.querySelector("[data-row='236'] a")).toBeNull();
 });
 
+test("a row with pr_url renders a PR #N new-tab anchor beside the sha; a row with null has none", () => {
+  const url = "https://github.com/o/r/pull/2170";
+  const linked: ShippedRow = { ...ROWS[0]!, pr_url: url };
+  render(<ShippedTable rows={[linked]} now={now} tz="UTC" />);
+  const pr = document.querySelector("[data-row='236'] [data-pr]") as HTMLAnchorElement;
+  expect(pr.tagName).toBe("A");
+  expect(pr.textContent).toBe("PR #2170");
+  expect(pr.getAttribute("href")).toBe(url);
+  expect(pr.getAttribute("target")).toBe("_blank");
+  expect(pr.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(pr.className).toContain("text-link");
+  expect(pr.parentElement).toBe(document.querySelector("[data-row='236'] [data-sha]")!.parentElement);
+  cleanup();
+
+  const plain: ShippedRow = { ...ROWS[0]!, pr_url: null };
+  render(<ShippedTable rows={[plain]} now={now} tz="UTC" />);
+  expect(document.querySelector("[data-row='236'] [data-sha]")).not.toBeNull();
+  expect(document.querySelector("[data-row='236'] [data-pr]")).toBeNull();
+});
+
 test("days=1 keeps only today's group", () => {
   render(<ShippedTable rows={ROWS} now={now} tz="UTC" days={1} />);
   expect(dayHeaders().map((group) => group.label)).toEqual(["Today · Sat Sep 5"]);
@@ -171,4 +191,73 @@ test("an empty page reads Nothing merged yet with no Load older", async () => {
   expect(screen.getByText("Nothing merged yet")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Load older" })).toBeNull();
   expect(document.querySelector("[data-subtitle]")).toBeNull();
+});
+
+/** A daemon that records every url asked and has no run detail to give. */
+function recordingFetch() {
+  const asked: string[] = [];
+  const fetchImpl: Fetch = async (url) => {
+    asked.push(url);
+    return new Response("not found", { status: 404 });
+  };
+  return { fetchImpl, asked };
+}
+
+const rowToggle = (id: number) => document.querySelector(`[data-row='${id}']`) as HTMLElement;
+const detailBeneath = (id: number) => rowToggle(id).parentElement!.querySelector("[data-detail]");
+
+test("clicking a Shipped row expands it to the run detail read from its daemon; clicking another swaps the open row", async () => {
+  const { fetchImpl, asked } = recordingFetch();
+  render(<ShippedTable rows={ROWS.slice(0, 2)} now={now} tz="UTC" deps={{ fetch: fetchImpl }} />);
+  const toggles = () => [236, 235].map((id) => rowToggle(id).getAttribute("aria-expanded"));
+  expect(toggles()).toEqual(["false", "false"]);
+  expect(document.querySelector("[data-detail]")).toBeNull();
+
+  fireEvent.click(rowToggle(236));
+  await act(settle);
+  expect(toggles()).toEqual(["true", "false"]);
+  expect(detailBeneath(236)).not.toBeNull();
+  expect(asked).toContain(`${BASE}/runs/236`);
+  expect(asked.every((url) => url.startsWith(`${BASE}/runs/236`))).toBe(true);
+
+  fireEvent.click(rowToggle(235));
+  await act(settle);
+  expect(toggles()).toEqual(["false", "true"]);
+  expect(detailBeneath(236)).toBeNull();
+  expect(detailBeneath(235)).not.toBeNull();
+  expect(asked).toContain(`${BASE}/runs/235`);
+  expect(document.querySelectorAll("[data-detail]").length).toBe(1);
+});
+
+test("an expanded Shipped row stays expanded when polls advances and the table re-renders with the same rows", async () => {
+  const { fetchImpl } = recordingFetch();
+  const rows = ROWS.slice(0, 2);
+  const view = render(<ShippedTable rows={rows} now={now} tz="UTC" polls={0} deps={{ fetch: fetchImpl }} />);
+  fireEvent.click(rowToggle(235));
+  await act(settle);
+  expect(rowToggle(235).getAttribute("aria-expanded")).toBe("true");
+
+  view.rerender(<ShippedTable rows={rows.map((row) => ({ ...row }))} now={now + 5_000} tz="UTC" polls={1} deps={{ fetch: fetchImpl }} />);
+  await act(settle);
+  expect(rowToggle(235).getAttribute("aria-expanded")).toBe("true");
+  expect(detailBeneath(235)).not.toBeNull();
+  expect(rowToggle(236).getAttribute("aria-expanded")).toBe("false");
+});
+
+test("Enter on a focused sha link follows the link and leaves the row collapsed", async () => {
+  const { fetchImpl } = recordingFetch();
+  const row: ShippedRow = { ...ROWS[0]!, commit_url: "https://github.com/example/writer/commit/3f9c2ab0c1d2e3f4" };
+  render(<ShippedTable rows={[row]} now={now} tz="UTC" deps={{ fetch: fetchImpl }} />);
+  const sha = rowToggle(row.id).querySelector("a[data-sha]") as HTMLAnchorElement;
+  sha.focus();
+
+  const followed = fireEvent.keyDown(sha, { key: "Enter" });
+  await act(settle);
+  expect(followed).toBe(true);
+  expect(rowToggle(row.id).getAttribute("aria-expanded")).toBe("false");
+  expect(detailBeneath(row.id)).toBeNull();
+
+  fireEvent.keyDown(rowToggle(row.id), { key: "Enter" });
+  await act(settle);
+  expect(rowToggle(row.id).getAttribute("aria-expanded")).toBe("true");
 });

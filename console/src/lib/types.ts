@@ -42,6 +42,8 @@ export interface Attention {
 export interface AttentionItem {
   kind: string;
   level: string;
+  /** On an item that names a run: the pull request it opened, else null. */
+  pr_url?: string | null;
   [key: string]: unknown;
 }
 
@@ -82,6 +84,8 @@ export interface RunDetailBody {
     merge_sha?: string | null;
     /** The merge commit's page on origin when the sha has reached it, else null. */
     commit_url?: string | null;
+    /** The pull request the run opened under PR mode (`runs.prUrl`), else null. */
+    pr_url?: string | null;
     /** The loop's review-round cap; a body without it falls back to the rounds seen. */
     max_rounds?: number;
   };
@@ -131,6 +135,9 @@ export interface ShippedRow {
   /** The merge commit's page on the repository's origin when the sha has
    *  reached `origin/main`, else null (holophyte/serve.py `commit_url()`). */
   commit_url: string | null;
+  /** The pull request the run merged through under PR mode (`runs.prUrl`),
+   *  else null; a daemon older than the field sends none. */
+  pr_url?: string | null;
   host: string | null;
   /** The console's stamp: the base of the daemon the row came from. */
   daemon?: string;
