@@ -99,6 +99,7 @@ from time import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import store.read
+from holophyte.agents import probe_implementer
 from holophyte.config import (
     check_document,
     console_config,
@@ -1086,24 +1087,61 @@ def write_config(target, body, now=None):
     old file or the new one and never a torn one. One `PUT` at a time
     holds `CONFIG_LOCK` from the read to the rename. The reply names the
     backup.
+
+    A write that changes `[agents] implementer` is followed by the probe
+    the loop runs at startup (KO-357): `probe_implementer()` on the
+    document as written, outside the lock, its result under `probe` in
+    the reply -- `null` when the key did not change or now names no route.
+    The probe reports; it does not gate: the file is already replaced and
+    backed up when it runs, so a route that does not answer is a `200`
+    whose `probe.ok` is false, the same text the next loop start refuses
+    with, and the operator fixes the key or restores the backup.
     """
     text = body.get("text")
     if not isinstance(text, str):
         return 400, {"ok": False, "error": "text must be the file's new"
                                             " contents as a string"}
     with CONFIG_LOCK:
-        return _write_config(target, text, now)
+        current = config_text(target)
+        code, reply, written = _write_config(target, text, now, current)
+    if written is not None:
+        reply["probe"] = probe_changed_implementer(target, current, written)
+    return code, reply
 
 
-def _write_config(target, text, now):
-    current = config_text(target)
+def implementer_of(text):
+    """`[agents] implementer` in `text`, None when unset or when the text
+    does not parse: a file the loop would refuse names no route."""
+    try:
+        document = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return None
+    agents = document.get("agents")
+    return agents.get("implementer") if isinstance(agents, dict) else None
+
+
+def probe_changed_implementer(target, before, after):
+    """`probe_implementer().to_json()` for the `after` document when its
+    `[agents] implementer` differs from `before`'s; None otherwise. The
+    probed target carries `after` parsed, not the file: the `Target`
+    the server was bound with read its config once, at bind."""
+    if implementer_of(after) == implementer_of(before):
+        return None
+    candidate = dataclasses.replace(target, _config=tomllib.loads(after))
+    result = probe_implementer(candidate)
+    return None if result is None else result.to_json()
+
+
+def _write_config(target, text, now, current):
+    """`(status, reply, written)` under the lock: `written` is the text
+    on disk after a `200`, None when nothing was."""
     try:
         text = restore(text, current)
     except ValueError as bad:
-        return 400, {"ok": False, "error": str(bad)}
+        return 400, {"ok": False, "error": str(bad)}, None
     refused = validate_config(target, text)
     if refused is not None:
-        return 400, {"ok": False, "error": refused}
+        return 400, {"ok": False, "error": refused}, None
     path = target.config_path
     path.parent.mkdir(parents=True, exist_ok=True)
     backup = None
@@ -1117,7 +1155,7 @@ def _write_config(target, text, now):
     if recorded is None:
         return 503, {"ok": False, "error": "the store holds no run to record"
                                             " the intervention against;"
-                                            " nothing written"}
+                                            " nothing written"}, None
     if backup is not None:
         # The backup holds the same secrets as the file: it is born with
         # the file's mode, never the umask's default for a new file.
@@ -1135,7 +1173,7 @@ def _write_config(target, text, now):
     os.replace(staging, path)
     return 200, {"ok": True, "path": str(path),
                  "backup": None if backup is None else str(backup),
-                 "applies": CONFIG_APPLIES, "recorded": recorded}
+                 "applies": CONFIG_APPLIES, "recorded": recorded}, text
 
 
 def next_backup(path, stamp):

@@ -29,7 +29,7 @@ import review_runner
 import store
 import store.read
 from holophyte import pr, shepherd
-from holophyte.agents import agent, agent_route
+from holophyte.agents import agent, agent_route, probe_implementer
 from holophyte.board import (
     MAX_FAILED_RUNS,
     block_ticket,
@@ -1364,11 +1364,8 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
     if style:
         parts.append(f"Style instructions from the target's configuration:"
                      f"\n{style}")
-    for name in ("AGENTS.md", "CLAUDE.md"):
-        guide = wt / name
-        if guide.is_file():
-            parts.append(f"The repository's {name}:\n\n"
-                         + guide.read_text(errors="replace").strip())
+    for name, text in shepherd.conventions(wt):
+        parts.append(f"The repository's {name}:\n\n{text}")
     parts.append(f"The ticket:\n\n{body or task}")
     parts.append(f"The diff against main (`git diff main...HEAD`):\n\n"
                  f"```diff\n{diff}\n```")
@@ -1736,8 +1733,9 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     if judged:
         with heartbeat_while(conn, run_id, beat_s):
             reply = agent(target, "adjudicate",
-                          shepherd.adjudication_brief(pull, judged, ticket,
-                                                      sha),
+                          shepherd.adjudication_brief(
+                              pull, judged, ticket, sha,
+                              shepherd.conventions(wt)),
                           wt, base_sha=base_sha, candidate_sha=sha)
     verdicts = _verdicts_by_kind(
         threads, judged, shepherd.parse_verdicts(reply, len(judged)))
@@ -2073,7 +2071,22 @@ def self_hosted(target):
 def main(target, provider):
     """The loop: one process working the queue a ticket at a time under
     `[loop] workers = 1`, the default; a scheduler over a pool of
-    `--worker` children above it (KO-343). Returns the exit status."""
+    `--worker` children above it (KO-343). Returns the exit status.
+
+    The first thing the pass does is prove a configured `[agents]
+    implementer` answers (KO-357): `check_agent_commands()` settled that the
+    program resolves, and this settles that it runs and replies, by asking it
+    for one word under a short cap. A route that does not answer ends the
+    pass here, nonzero, with the command and what it said on the terminal --
+    before a ticket is claimed, where being wrong costs a message rather
+    than a lease held through a failed implement turn. The default route is
+    not probed, and a `--worker` child does not repeat this: it enters
+    through `worker()`, not here."""
+    probe = probe_implementer(target)
+    if probe is not None:
+        print(probe.describe())
+        if not probe.ok:
+            return 1
     knobs = loop_config(target)
     if knobs.workers == 1:
         return _serial(target, provider, knobs)

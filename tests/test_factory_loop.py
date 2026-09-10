@@ -5284,5 +5284,65 @@ class SweptTurnTests(LoopFixture):
         self.assertIsNone(self.rc)
 
 
+class ImplementerProbeTests(LoopFixture):
+    """A configured `[agents] implementer` is asked for one word before the
+    pass claims anything (KO-357). The route under test is a real script the
+    loop really runs -- the fake answers turns, not the probe -- so a pass or
+    a refusal here is the process boundary's word, not the patch's."""
+
+    def script(self, body):
+        path = self.db.parent / "implementer.sh"
+        path.write_text("#!/bin/sh\n" + body)
+        path.chmod(0o755)
+        self.configure(f'[agents]\nimplementer = "{path}"\n')
+        return path
+
+    def test_a_route_that_answers_ready_lets_the_pass_proceed(self):
+        path = self.script('echo "ready"\n')
+        out = self.main_output(Commit("work"), APPROVE)
+        self.assertIn("implementer probe passed", out)
+        self.assertIn(str(path), out)
+        self.assertTrue(any(subject.startswith("Merge task/")
+                            for subject in self.subjects()), self.subjects())
+        self.assertIsNone(self.rc)
+
+    def test_a_route_that_exits_nonzero_ends_the_pass_before_any_claim(self):
+        path = self.script("echo broken harness >&2\nexit 1\n")
+        out = self.main_output(Commit("work"), APPROVE)
+        self.assertEqual(self.rc, 1)
+        self.assertIn("implementer probe failed (exit 1)", out)
+        self.assertIn(str(path), out)
+        self.assertIn("broken harness", out)
+        # Nothing was claimed: the store was never opened, so no run row
+        # exists; the board saw no transition; the scripted implementer was
+        # never asked for a turn.
+        self.assertFalse(self.db.exists())
+        self.assertEqual(self.last_provider.states, [])
+        self.assertEqual(len(self.last_provider.queue), 1)
+        self.assertEqual(self.last_fake.turns, [])
+
+    def test_a_route_that_cannot_start_ends_the_pass_naming_the_reason(self):
+        """An absolute path that does not exist passes the config check and
+        fails only at launch; that is a failed probe naming the OS's reason,
+        not a traceback, and nothing is claimed."""
+        missing = self.db.parent / "no-such-harness"
+        self.configure(f'[agents]\nimplementer = "{missing}"\n')
+        out = self.main_output(Commit("work"), APPROVE)
+        self.assertEqual(self.rc, 1)
+        self.assertIn("implementer probe failed (could not start:", out)
+        self.assertIn("No such file", out)
+        self.assertIn(str(missing), out)
+        self.assertFalse(self.db.exists())
+
+    def test_a_route_that_hangs_past_the_cap_ends_the_pass_naming_it(self):
+        path = self.script("sleep 30\n")
+        with patch.object(holophyte.agents, "PROBE_TIMEOUT", 1):
+            out = self.main_output(Commit("work"), APPROVE)
+        self.assertEqual(self.rc, 1)
+        self.assertIn("implementer probe failed (no answer within 1s)", out)
+        self.assertIn(str(path), out)
+        self.assertFalse(self.db.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

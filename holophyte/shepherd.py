@@ -12,8 +12,12 @@ Three verdicts, one per thread, from the adjudicator role:
 
 * `ADDRESS` -- a concrete defect; the fix round takes it, the reply names
   the sha, the thread is resolved.
-* `DECLINE` -- not a defect, or out of the ticket's scope; the reply says
-  why and the thread is left open for the reviewer to close.
+* `DECLINE` -- asks for nothing specific, or for what the ticket puts out
+  of scope; the reply says why and the thread is left open for the
+  reviewer to close. A thread naming an existing function, helper or
+  constant the diff re-implements is a concrete change request, not a
+  preference: the fix is reuse, and the repository's `AGENTS.md` or
+  `CLAUDE.md` conventions are the reviewer's standard.
 * `HUMAN` -- a genuine question, a reject, or anything the adjudicator will
   not answer for the operator: no reply is posted, the run parks and the
   ticket's question quotes the thread. A thread the reply gives no verdict
@@ -32,6 +36,13 @@ factory's comments from a person's at a glance.
 import re
 
 from holophyte.pr import NO_AUTHOR
+
+# The repository's conventions files, in the order the brief quotes them,
+# and the most of each the brief carries: the rule they back is one
+# sentence, the excerpt is there so "the repository asks for DRY" is read
+# from the file, not guessed.
+CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
+CONVENTIONS_CAP = 4000
 
 VERDICTS = ("ADDRESS", "DECLINE", "HUMAN")
 # `THREAD 2: ADDRESS -- the null check is missing`, one per thread; the
@@ -79,9 +90,37 @@ def thread_line(number, thread):
     return f"{number}. {where(thread)} (@{thread.author}): {gist(thread.body)}"
 
 
-def adjudication_brief(pull, threads, ticket, sha):
-    """The adjudicator's goal: the threads, numbered, and the three verdicts
-    to give each one."""
+def conventions(wt):
+    """The repository's conventions files at the worktree root, `(name,
+    text)` per file present, in `CONVENTIONS_FILES` order; empty when the
+    repository has none. The same lookup feeds the written pull request
+    text and the adjudication brief."""
+    found = []
+    for name in CONVENTIONS_FILES:
+        guide = wt / name
+        if guide.is_file():
+            found.append((name, guide.read_text(errors="replace").strip()))
+    return tuple(found)
+
+
+def conventions_paragraph(files):
+    """The brief's excerpt of the repository's conventions, capped per file
+    with a note when cut; empty when the repository has none."""
+    if not files:
+        return ""
+    parts = []
+    for name, text in files:
+        if len(text) > CONVENTIONS_CAP:
+            text = (text[:CONVENTIONS_CAP]
+                    + f"\n\n[{name} truncated here]")
+        parts.append(f"The repository's {name}:\n\n{text}")
+    return "\n\n".join(parts) + "\n\n"
+
+
+def adjudication_brief(pull, threads, ticket, sha, conventions=()):
+    """The adjudicator's goal: the threads, numbered, the three verdicts
+    to give each one, and the repository's conventions (`conventions()`)
+    when it has any, since they are the reviewer's standard."""
     listing = "\n\n".join(
         f"THREAD {n} -- {where(t)} by @{t.author}"
         + (" (outdated: the lines it was left on have changed)"
@@ -97,6 +136,7 @@ def adjudication_brief(pull, threads, ticket, sha):
         "thread asking for work outside it is out of scope.\n\n"
         f"{ticket}\n\n"
         f"Unresolved review threads ({len(threads)}):\n\n{listing}\n\n"
+        + conventions_paragraph(conventions)
         + people_paragraph(threads)
         + "For EACH thread give exactly one verdict line, in this form and "
         "nothing else on the line:\n"
@@ -104,8 +144,14 @@ def adjudication_brief(pull, threads, ticket, sha):
         "THREAD n: DECLINE -- one sentence saying why it is not a defect or "
         "not in scope\n"
         "THREAD n: HUMAN -- one sentence saying why a person must answer\n"
-        "ADDRESS is for a concrete defect in the candidate. DECLINE is for a "
-        "style preference, a duplicate, or a request beyond the ticket. "
+        "ADDRESS is for a concrete defect in the candidate. A thread that "
+        "names an existing function, helper or constant already in the "
+        "repository which the diff duplicates is a concrete change request, "
+        "not a preference: ADDRESS, the fix being reuse. The repository's "
+        "own conventions (its AGENTS.md or CLAUDE.md, quoted above when it "
+        "has one) are the reviewer's standard: a thread asking for what "
+        "they ask for is concrete. DECLINE is for a thread that asks for "
+        "nothing specific, or asks for what the ticket puts out of scope. "
         "HUMAN is for a genuine question, a rejection of the approach, or "
         "anything you would not answer on the operator's behalf. Judge each "
         "thread by its whole conversation: a follow-up can withdraw, "

@@ -11,7 +11,10 @@ the loop, the store or the board: config and gates in, output text out.
 Third slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import shlex
 import subprocess
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import review_runner
@@ -27,6 +30,110 @@ from holophyte.config import (
     review_route,
 )
 from holophyte.gates import InfraFailure, run_capped, sh
+
+# The one-line prompt the implementer probe hands a configured route, and the
+# word its answer has to contain. Short enough that any harness answering at
+# all answers it inside `PROBE_TIMEOUT` seconds; the cap is generous next to a
+# healthy CLI's cold start and small next to the implement turn that would
+# otherwise be the first evidence of a route that does not answer.
+PROBE_GOAL = "Reply with the single word: ready"
+PROBE_WORD = "ready"
+PROBE_TIMEOUT = 90
+PROBE_TAIL_LINES = 5
+
+
+@dataclass(frozen=True)
+class ProbeResult:
+    """What one implementer probe found: the exact argv it ran, the exit
+    code (`None` when the cap ended it or it never started), the output it
+    read back, and -- when the command could not be launched at all -- the
+    OS's reason, so a missing or non-executable route is a failed probe
+    with a name rather than an exception."""
+
+    command: list
+    returncode: object
+    output: str
+    timeout: int
+    launch_error: str = None
+
+    @property
+    def timed_out(self):
+        return self.returncode is None and self.launch_error is None
+
+    @property
+    def ok(self):
+        return self.returncode == 0 and PROBE_WORD in self.output.lower()
+
+    def describe(self):
+        """The line(s) the loop prints: the command as a shell would take it,
+        then the verdict -- passed, the exit code, or the timeout -- and the
+        last lines of what the route said, so a failure is actionable from
+        the terminal without re-running it by hand."""
+        shown = " ".join(shlex.quote(part) for part in self.command)
+        if self.ok:
+            return f"[holo2] implementer probe passed: {shown}"
+        if self.launch_error:
+            why = f"could not start: {self.launch_error}"
+        elif self.timed_out:
+            why = f"no answer within {self.timeout}s"
+        elif self.returncode:
+            why = f"exit {self.returncode}"
+        else:
+            why = f"exit 0 but no {PROBE_WORD!r} in the output"
+        tail = self.tail()
+        lines = [f"[holo2] implementer probe failed ({why}): {shown}"]
+        lines += [f"[holo2]   | {line}" for line in tail] or [
+            "[holo2]   | (no output)"]
+        return "\n".join(lines)
+
+    def tail(self):
+        """The last `PROBE_TAIL_LINES` lines the route printed."""
+        return self.output.strip().splitlines()[-PROBE_TAIL_LINES:]
+
+    def to_json(self):
+        """The result as the daemon's `PUT /config` reply carries it: the
+        verdict, the exact argv, the exit code (`null` on the timeout or a
+        launch failure, with `timed_out` and `launch_error` saying which),
+        the cap and the output's last lines."""
+        return {"ok": self.ok, "command": list(self.command),
+                "returncode": self.returncode, "timed_out": self.timed_out,
+                "launch_error": self.launch_error,
+                "timeout": self.timeout, "output": self.tail()}
+
+
+def probe_implementer(target, timeout=None):
+    """Run the configured `[agents] implementer` once, with `PROBE_GOAL` as
+    the goal, and say whether it answered. `None` when the table names no
+    implementer: the default route is not probed here.
+
+    Routing is explicit policy, so the exact command a turn would run is the
+    one probed: the argv comes from `agent_command()`, the same builder the
+    turn uses, with the goal in the same last position. It runs in an empty
+    temporary directory -- a harness that reads its cwd finds nothing to act
+    on -- under `run_capped`'s process-group cap, so a route that hangs is
+    ended with everything it started rather than left behind the loop. A pass
+    is exit 0 with `PROBE_WORD` somewhere in the output; anything else, the
+    timeout included, is a failure carrying what the route printed. A command
+    the OS cannot launch -- an absolute path that does not exist, a file
+    without the execute bit -- passes the config check and fails only here,
+    so that too is a failed result naming the reason, not an exception: the
+    daemon's config write has already landed by the time it probes.
+    """
+    cmd = agent_command(target, "implement", PROBE_GOAL)
+    if cmd is None:
+        return None
+    cap = PROBE_TIMEOUT if timeout is None else timeout
+    with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
+        try:
+            code, out = run_capped(cmd, scratch, cap)
+        except subprocess.TimeoutExpired as expired:
+            partial = expired.output or ""
+            if isinstance(partial, bytes):
+                partial = partial.decode(errors="replace")
+            return ProbeResult(cmd, None, partial, cap)
+        except OSError as failed:
+            return ProbeResult(cmd, None, "", cap, launch_error=str(failed))
+    return ProbeResult(cmd, code, out or "", cap)
 
 
 def agent_route(target, role):
