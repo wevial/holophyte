@@ -156,6 +156,25 @@ machines it walks. Back to the [README](index.md).
    mirror reconcile leaves a ticket parked on a pull request alone even
    when the board already says Done, since only GitHub's answer closes the
    run out with its merge commit.
+   The same per-tick read also carries the pull request's `updatedAt`,
+   its review-thread count and the token's remaining GraphQL budget
+   (KO-362). Every park records what the pull request looked like *after*
+   the pass's own pushes and replies (`runs.prSeenAt`,
+   `runs.prSeenThreads`), and an open pull request whose `updatedAt` has
+   moved past that mark, or whose thread count has grown, is a reviewer's
+   comment nobody has answered: the tick sends the run back to the
+   shepherd exactly as `--shepherd KO-n` does -- a `shepherd` intervention
+   with source `supervisor`, the run ended with its resume point at the
+   merge gate, the ticket `ready` -- and the next claim (the same pass, in
+   the serial loop) resumes the candidate on its pull request for another
+   round of passes. At most one such round per `[merge] pr_poll_sec`
+   (default 180 seconds) per pull request, measured from the park:
+   activity inside the interval is named in one line and waits for the
+   next tick. A run with no mark (parked by an older build, or after a
+   read that failed) has the mark recorded on the first tick and is not
+   sent back for it. When the read reports fewer than 500 GraphQL points
+   remaining, the tick reads no further pull request and prints one line
+   naming the reset time; reads resume once it has passed.
    The factory still never pushes `main`, and never moves the local one
    under this mode: the merge is GitHub's.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
