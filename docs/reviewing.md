@@ -32,13 +32,24 @@ sources can succeed and the ticket's criteria can actually be witnessed. The
 copy is discarded with the reviewer home at the end of the round; the merge
 takes the host worktree's SHA, never the container's files.
 
+What the reviewer can run is what that copy holds. The container has no
+network route to a package registry, so `[worktree] setup` is not re-run
+inside it; instead the stage carries read-only copies of the ignored install
+directories the task worktree already holds, those the target lists in
+`[worktree] carry` (see [config.md](config.md)), at the same paths. With
+`console/node_modules` carried, a console ticket's `bun --cwd=console test`
+runs in the container against the packages the candidate was verified with.
+A verify command that needs an install the worktree does not hold, or a
+directory the target does not list, cannot be run there and the reviewer
+should say so rather than report the gate unverified.
+
 How many review rounds a run gets is decided per run, before its first
 review, from the size of the candidate's diff and the `[loop]` review keys
 (`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`; see
 [config.md](config.md)). The cap is printed and recorded in the run's ledger,
 and the terminal adjudication follows the last round it allows.
 
-The first review builds `holophyte-reviewer:ubuntu24.04-v4` automatically from
+The first review builds `holophyte-reviewer:ubuntu24.04-v5` automatically from
 the digest-pinned Ubuntu image; it carries git, python3, ripgrep, a pinned
 Bun (checksum-verified, on `PATH` under `/opt/bun/bin`) so console `bun`
 criteria can be witnessed inside the container, and a pinned Go 1.26.6

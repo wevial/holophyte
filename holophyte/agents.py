@@ -25,6 +25,7 @@ from holophyte.config import (
     IMPL_MODEL,
     IMPL_TIMEOUT,
     agent_command,
+    carry_directories,
     review_profile,
     review_route,
 )
@@ -212,6 +213,7 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                     timeout=1800,
                     verdicts=(review_runner.REVIEW_VERDICTS
                               if role == "review" else None),
+                    carry=carry_directories(target),
                 )
             except review_runner.ReviewBoundaryError as e:
                 # The runner could not stage, start or read the reviewer —

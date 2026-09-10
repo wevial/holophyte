@@ -135,9 +135,13 @@ setup_timeout_sec = 300
 # The segment ahead of the slash in a task branch name. Optional; `task` when
 # absent, so branches are `task/ko-7000-the-title-slug`.
 branch_prefix = "task"
+# Ignored install directories the review stage copies from the task worktree,
+# read-only, so the reviewer can run the ticket's verify commands. Optional;
+# empty when absent.
+carry = ["console/node_modules"]
 ```
 
-Accepted keys: `setup`, `setup_timeout_sec`, `branch_prefix`.
+Accepted keys: `setup`, `setup_timeout_sec`, `branch_prefix`, `carry`.
 
 They run in the worktree, right after its branch is cut and before the first
 agent turn — the moment that decides what the implementer and the verify gate
@@ -161,6 +165,19 @@ run there, since the worktree they are written against does not exist yet.
 What setup writes into the worktree is untracked, and the implementer is asked
 to commit its work: keep build artifacts (`.venv/`, caches) in the target's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
+
+`carry` lists the repository-relative directories, among what setup wrote and
+git ignores, that the review stage receives a copy of: the reviewer judges a
+fresh checkout of the candidate commit, which holds none of them, and a
+console ticket's `bun --cwd=console test` reports zero tests in a stage with no
+`console/node_modules`. Each listed directory is copied into the stage at the
+same path with its write bits cleared, after the checkout and before the
+reviewer starts; the stage's identity check runs before and after the copy
+with `--ignored=no`, so a carried directory neither dirties the stage nor
+counts in its fingerprint. A listed path that is tracked in git, absent from
+the worktree, or escapes the repository (`..`) fails the stage naming the path
+rather than skipping it. Startup checks the list is a list of relative paths;
+nothing is carried that the worktree does not already hold.
 
 `branch_prefix` names the segment before the slash in every branch the loop
 cuts, so a repository with its own convention (`factory/`, `ko/`, `bot/`) keeps
@@ -340,6 +357,13 @@ from `/runs/N/ledger`, so nothing is lost but the projection. A
 `FINDINGS.md` already in the repository is left exactly as it is, not
 deleted. `--report` prints the mode in effect below the table.
 
+`host_label` also names this writer's board lease: the claim labels the
+Linear issue `holo:` plus the label (`holo:writer-1` above) for as long as
+the run holds the ticket, and another writer skips a ready issue carrying a
+`holo:` label that is not its own ([the loop](loop.md), step 1). Two writer
+hosts sharing one board therefore need two distinct labels; a host with no
+`host_label` leases under its hostname.
+
 The `host` column of `--report` and `--sweep` and the supervisor's startup
 and refusal lines show the label in place of the hostname when it is set.
 The `FINDINGS.md` window the loop commits renders no host: its run and round
@@ -383,12 +407,18 @@ token_file = "~/.holophyte/holophyte/serve.token"
 # `/actions/requeue` behind the token, on every bind (so `token_file` is
 # required with this on). Off, every `/actions/` path is 404.
 actions = false
+# Answer `GET /config` (this file, token and key values redacted) and
+# `PUT /config` (a replacement, validated as startup validates, written
+# beside a `config.toml.bak-STAMP`) behind the token, on every bind. Off
+# by default: whoever can write this file writes `[worktree] setup` and
+# `[agents]`, which the next loop start runs as commands on this host.
+config_edit = false
 # The systemd instance those actions address: `holophyte-supervise@NAME`,
 # `holophyte-loop@NAME`. The target directory's name when absent.
 name = "holophyte"
 ```
 
-Accepted keys: `token_file`, `actions`, `name`.
+Accepted keys: `token_file`, `actions`, `config_edit`, `name`.
 
 The daemon's bind address is its only boundary, and once the bind is
 anything but loopback that is not enough. With `--serve HOST:PORT` where
@@ -418,8 +448,21 @@ whatever the bind, and a bind without it is a startup error naming the
 key. `name` is the
 instance name the unit actions append -- the slug the deploy templates were
 enabled under -- a non-empty string with no `/`, the target directory's
-name when absent. Both are read once at bind. The routes, their bodies and
-replies are in [The daemon's actions](reference/daemon.md).
+name when absent. `config_edit` opens this file itself to the console:
+`GET /config` is its text with the value of every key named `...token` or
+`...key` replaced by `[redacted]`, wherever and however the key is written
+(`token_file`, a path, stays; every value under a table so named is
+replaced too), and `PUT
+/config` is a replacement the daemon holds to the same checks startup
+runs -- a refused document is 400 naming the key and nothing is written --
+then writes beside a timestamped backup and records as a `config_edit`
+intervention; a `[redacted]` sent back is the current value, so a round
+trip never blanks a secret. The change applies at the next loop start, not
+to a running loop. It needs `token_file` on every bind as `actions` does,
+and is off by default because the file is command execution on the writer
+host (`[worktree] setup`, `[agents]`). All three are read once at bind. The
+routes, their bodies and replies are in [The daemon's
+actions](reference/daemon.md).
 
 ```toml
 [merge]

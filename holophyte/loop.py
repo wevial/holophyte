@@ -8,7 +8,7 @@ itself (`self_hosted()`). Under `[loop] workers > 1` `main()` is instead
 queue, each one `worker()`: the same phases once, for one ticket (KO-343).
 `run_task()` is the loop body: the worktree (`reuse_leftover()` for a leftover,
 `run_worktree_setup()` for the `[worktree] setup` table, checked at startup by
-`check_worktree_setup()`), the implement/review/adjudicate turns, the verify
+`config.check_worktree_setup()`), the implement/review/adjudicate turns, the verify
 gate, the `--no-ff` merge. `report()` is `--report`'s whole body. Imports the
 package modules, `store`, `store.read`, `review_runner`, `provider` and the
 standard library; nothing from `factory`.
@@ -35,15 +35,22 @@ from holophyte.board import (
     block_ticket,
     body_problem,
     close_out_failure,
+    drop_lease_label,
     escalate,
     failure_history,
+    foreign_lease_holders,
     is_strike_question,
+    lease_holders,
+    lease_host,
+    lease_label,
+    lease_turn,
     ledger,
     merge_drift,
     mirror_key,
     mirror_push,
     mirror_status,
     mirror_task,
+    release_lease_label,
     release_run,
     store_status,
 )
@@ -100,27 +107,6 @@ from holophyte.target import worktree_path
 # process image is replaced, never a module reloaded. A seam so tests can
 # see the decision without exec-ing the test runner.
 EXEC = os.execv
-
-
-def check_worktree_setup(target):
-    """Parse the `[worktree] setup` table before the loop claims work.
-
-    `check_agent_commands()`'s sibling, here for the same reason: a table read
-    for the first time inside a run would abandon a claimed ticket, a cut
-    branch and a held ticket lease over something startup could have said in
-    one sentence. It parses through `setup_commands()`, so a table this
-    accepts is exactly a table a run would accept.
-
-    What it deliberately does not settle is the commands themselves. They are
-    shell, not argv -- `run_verify()` runs them the way it runs a ticket's
-    verify command -- and they are written against a worktree that does not
-    exist yet, so there is nothing here to resolve them against. Startup
-    settles the shape of the table; the worktree settles the rest. The cap
-    the commands run under is checked here too, for the same reason.
-    """
-    setup_commands(target)
-    setup_timeout(target)
-    branch_prefix(target)
 
 
 def timeout_report(cmd, expired):
@@ -2130,7 +2116,7 @@ def _serial(target, provider, knobs):
         # well until the provider resolves the id.
         project = store.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
-        _reconcile_mirror(conn, project, provider)
+        _reconcile_at_startup(target, conn, project, provider)
         # The tickets this pass has refused to claim. A blocked ticket keeps
         # its place in the board's ready set — `blocked_on_operator` projects
         # to Todo, the column a human picks work out of — so it is offered
@@ -2138,7 +2124,14 @@ def _serial(target, provider, knobs):
         # turns "not this one" into "the one after it" instead of the same
         # ticket forever.
         skip = set()
+        first_pass = True
         while True:
+            # Before the claim: a pull request a person merged since the
+            # last pass ships its parked run here (KO-359). The first pass
+            # asked at startup, before the mirror was repaired.
+            if not first_pass:
+                _reconcile_pull_requests(target, conn, project, provider)
+            first_pass = False
             _mirror_queue(target, conn, project, provider)
             task, ticket_id, run_id = _claim_next(target, conn, project,
                                                   provider, order, skip, seen)
@@ -2218,7 +2211,8 @@ def _claim_next(target, conn, project, provider, order, skip, seen):
         if ticket_id is None:
             skip.add(task["id"])
             continue
-        run_id = _claim_run(conn, project, provider, ticket_id, seen)
+        run_id = _claim_run(target, conn, project, provider, task, ticket_id,
+                            seen)
         if run_id is HELD:
             # Another loop on this target took the ticket between the
             # admission read and the claim: its work, not this loop's
@@ -2433,8 +2427,15 @@ def scheduler(target, provider, knobs):
     try:
         project = store.ensure_project(conn, provider.team, target.path)
         _startup_sweep(target, conn)
-        _reconcile_mirror(conn, project, provider)
+        _reconcile_at_startup(target, conn, project, provider)
+        first_tick = True
         while True:
+            # Every tick, timer or exit: a pull request merged on GitHub
+            # since the last one ships its parked run (KO-359). The first
+            # tick asked at startup, before the mirror was repaired.
+            if not first_tick:
+                _reconcile_pull_requests(target, conn, project, provider)
+            first_tick = False
             listing = None
             if state.spawning:
                 listing = _mirror_queue(target, conn, project, provider)
@@ -2634,6 +2635,28 @@ def _mirror_queue(target, conn, project, provider):
     return mirrored
 
 
+def _reconcile_at_startup(target, conn, project, provider):
+    """The two startup reconciles, GitHub before the board (KO-359 review).
+
+    A person who merged a parked pull request on GitHub may have moved its
+    ticket to Done on Linear as well. Asked first, the mirror reconcile
+    would see Done, walk the ticket `merged` itself and take it out of the
+    pull request reconcile's `blocked_on_operator` read: the run stayed
+    parked with no outcome and no `mergeSha`, and Shipped never showed it.
+    So the parked pull requests are read first and a merged one ships its
+    run; the mirror repair then finds that ticket already `merged` and
+    walks only the rest. Order alone is not enough: had GitHub failed on
+    that first read, the mirror repair would still have seen Done and
+    walked the ticket `merged` around its parked run, which no later pass
+    could reach -- the pull request reconcile reads `blocked_on_operator`
+    tickets only. So the mirror repair also leaves every ticket whose
+    newest run is parked on a pull request to this reconcile, whatever
+    the board says, and the next pass asks GitHub again.
+    """
+    _reconcile_pull_requests(target, conn, project, provider)
+    _reconcile_mirror(conn, project, provider)
+
+
 def _reconcile_mirror(conn, project, provider):
     """Walk the mirrored tickets Linear has since closed to their terminal
     status, one printed line each; nothing is written to Linear.
@@ -2642,10 +2665,11 @@ def _reconcile_mirror(conn, project, provider):
     when Linear later closes it elsewhere -- a ticket another target
     finished, or one the operator cancelled -- so it sat on the board as
     `ready` or `needs_spec` for good (KO-217, KO-137 and KO-138 on the
-    daemon's board). Startup only, right after the read-only sweep: the
-    five open statuses are read through the store for this project only
-    (the provider knows one team, and another project's tickets are that
-    project's loop to reconcile), a ticket with an active run is left to
+    daemon's board). Startup only, after the read-only sweep and the pull
+    request reconcile (`_reconcile_at_startup()`): the five open statuses
+    are read through the store for this project only (the provider knows
+    one team, and another project's tickets are that project's loop to
+    reconcile), a ticket with an active run is left to
     that run, and the provider is asked about the rest in one call. A
     closed one is walked along §3 edges (`walk_ticket`) with a `reconcile`
     intervention row on its most recent run first, in the same
@@ -2655,13 +2679,32 @@ def _reconcile_mirror(conn, project, provider):
     while the provider is being asked, and a verdict on the stale read
     would mark a ticket merged under a live run. A ticket that never ran
     has no run to carry the row (`interventions.runId` is NOT NULL), so
-    its printed line is its only record and says so. A provider that
+    its printed line is its only record and says so. A ticket parked on a
+    pull request is left to the pull request reconcile whatever the board
+    says (KO-359 review): a Done there means a person merged the pull
+    request, and only GitHub's answer closes the parked run out with its
+    merge commit's sha -- so it stays `blocked_on_operator` until GitHub
+    can be asked, rather than walked `merged` around a run no later pass
+    would reach. A provider that
     cannot answer -- no network, no key -- skips the reconcile in one line
     and the loop goes on as before: this is a repair of the mirror, not a
     gate on the work.
     """
-    tickets = [t for t in store.read.open_tickets(conn, project)
-               if t.activeRunId is None]
+    tickets = []
+    for ticket in store.read.open_tickets(conn, project):
+        if ticket.activeRunId is not None:
+            continue
+        if ticket.status == "blocked_on_operator" \
+                and _parked_pull_request(conn, ticket.id) is not None:
+            # GitHub's verdict, not the board's: a Done here is a person
+            # who merged the pull request, and `_reconcile_pull_requests()`
+            # closes the run out with the merge commit's sha when GitHub
+            # can be asked. Walking the ticket `merged` around a parked run
+            # would strand that run (KO-359 review).
+            print(f"[holo2] reconcile left {ticket.linearIdentifier} to its"
+                  " pull request: the run parked on it is GitHub's to close")
+            continue
+        tickets.append(ticket)
     if not tickets:
         return
     try:
@@ -2698,12 +2741,158 @@ def _reconcile_mirror(conn, project, provider):
         print(line)
 
 
+# How the ticket's question begins once its pull request was closed on
+# GitHub without merging: the run stays parked, and the skip line reads
+# this rather than the `--approve` that would merge nothing.
+PR_CLOSED_QUESTION = "PR closed without merge: "
+
+
+def _reconcile_pull_requests(target, conn, project, provider):
+    """Ask GitHub about every pull request this project's parked runs wait
+    on, and land the ones a person merged there (KO-359).
+
+    A run parked on its pull request waits for `--approve`; the operator
+    merges the pull request by hand after a coworker's review instead, and
+    the run sat parked, the ticket In Progress, Shipped without it. This
+    runs at loop startup, before the mirror reconcile so a ticket the
+    merger also moved to Done still ships its run, and at the top of every
+    later pass -- each serial claim, each scheduler tick -- over the
+    project's `blocked_on_operator` tickets whose newest run holds a
+    `prUrl` and is still parked in
+    `awaiting_merge_approval`. One `pr.pull_status()` read per ticket. A
+    merged pull request is that approval: `_land_github_merge()` ends the
+    run merged with the merge commit's sha and walks the ticket to
+    `merged`, Done on the board. One closed without merging leaves the run
+    parked and makes the question `PR closed without merge: URL`
+    (`_note_closed_pr()`); an open one changes nothing. A GitHub error is
+    one printed line for that ticket and the pass goes on to the next, as
+    the mirror reconcile skips a board that cannot be asked: this lands
+    work already landed, it does not gate the work in the queue.
+    """
+    for ticket in store.read.blocked_tickets(conn, project):
+        if not ticket.prUrl or ticket.runId is None:
+            continue
+        pull = pr.parse_pr_url(ticket.prUrl)
+        if pull is None or _parked_phase(conn, ticket.runId) is None:
+            continue
+        try:
+            status = pr.pull_status(target, pull)
+        except Exception as e:  # noqa: BLE001 - any transport failure
+            print(f"[holo2] {ticket.linearIdentifier}: {pull.url} could not"
+                  f" be read ({e}); the run stays parked")
+            continue
+        if status.merged:
+            _land_github_merge(target, conn, provider, ticket, pull, status)
+        elif status.closed:
+            _note_closed_pr(conn, ticket, pull)
+
+
+def _parked_phase(conn, run_id):
+    """The run's `(branch, phase)` if it is parked awaiting merge approval,
+    None otherwise: the reconcile acts on that run alone."""
+    row = conn.execute("SELECT branch, phase FROM runs WHERE id = ?",
+                       (run_id,)).fetchone()
+    if row is None or row[1] != "awaiting_merge_approval":
+        return None
+    return row
+
+
+def _parked_pull_request(conn, ticket_id):
+    """The `prUrl` of the ticket's newest run when that run is parked
+    awaiting merge approval on a pull request, None otherwise: the ticket
+    the pull request reconcile owns and the mirror reconcile leaves."""
+    row = conn.execute(
+        "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.id = ? AND r.phase = 'awaiting_merge_approval'"
+        " AND r.prUrl IS NOT NULL", (ticket_id,)).fetchone()
+    return None if row is None else row[0]
+
+
+def _land_github_merge(target, conn, provider, ticket, pull, status):
+    """Close out the run parked on `pull` as merged: a person merged it on
+    GitHub, and that is the `--approve` the park was waiting for.
+
+    One transaction, record before acting: the ticket and the run are
+    re-read under the write lock and must still be where the open read saw
+    them -- parked, no live run, the same newest run -- or another process
+    moved them while GitHub was being asked and nothing is written. Then
+    an `approve` intervention naming who merged it, the run released
+    `merged` with the pull request's merge commit as `mergeSha`
+    (`awaiting_merge_approval -> done`), the question cleared and the
+    ticket walked to `merged`. Outside the lock: the board's Done, the
+    merged ledger line with the merger's login, the local worktree and
+    branch removed as `_merge_pr()` removes them after an API merge (a
+    refusal is debris, not a failure), and the findings window rendered so
+    the run appears in Shipped.
+    """
+    identifier, run_id = ticket.linearIdentifier, ticket.runId
+    who = status.merged_by or "someone"
+    sha = status.merge_sha
+    short = sha[:12] if sha else "an unrecorded sha"
+    with store.transaction(conn):
+        now = store.read.ticket_by_id(conn, ticket.id)
+        parked = _parked_phase(conn, run_id)
+        if now is None or now.status != "blocked_on_operator" \
+                or now.activeRunId is not None or now.lastRunId != run_id \
+                or parked is None:
+            print(f"[holo2] {identifier}: {pull.url} is merged on GitHub but"
+                  " the ticket moved while it was asked; left alone")
+            return
+        branch = parked[0]
+        store.record_intervention(
+            conn, run_id, "approve",
+            f"{pull.url} merged on GitHub by {who} as {short}; the run is"
+            " closed out as merged", source="human", trigger="manual")
+        store.release(conn, run_id, "merged", merge_sha=sha)
+        conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
+                     (ticket.id,))
+        store.walk_ticket(conn, ticket.id, "merged")
+    mirror_push(conn, ticket.id, provider)
+    ledger(conn, run_id, identifier, "merge",
+           f"MERGED through {pull.url} as {sha} by {who} on GitHub (branch"
+           f" {branch} deleted locally; local main not moved).", provider)
+    if branch:
+        try:
+            sh(["git", "worktree", "remove", "--force",
+                str(worktree_path(target, branch))], target.path)
+            sh(["git", "branch", "-D", branch], target.path)
+        except RuntimeError as e:
+            print(f"[holo2] post-merge cleanup left debris: {e}")
+    refresh_findings(target, conn)
+    print(f"[holo2] {identifier}: {pull.url} was merged on GitHub by {who}"
+          f" as {short}; run {run_id} closed out as merged")
+
+
+def _note_closed_pr(conn, ticket, pull):
+    """The pull request was closed on GitHub without merging: the run stays
+    parked -- the branch and its candidate are still a person's to decide
+    on -- and the ticket's question becomes `PR closed without merge: URL`,
+    which the skip line then reads. Idempotent: a question already saying
+    so is left as it is, so the pass after this one writes and prints
+    nothing. The run's event stream carries the change first."""
+    question = f"{PR_CLOSED_QUESTION}{pull.url}"
+    if (ticket.blockedQuestion or "").startswith(question):
+        return
+    with store.transaction(conn):
+        store.record_event(conn, ticket.runId, "pull_request",
+                           f"{pull.url} was closed on GitHub without"
+                           " merging; the run stays parked for a person")
+        conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?"
+                     " AND status = 'blocked_on_operator'",
+                     (question, ticket.id))
+    print(f"[holo2] {ticket.linearIdentifier}: {pull.url} was closed on"
+          " GitHub without merging; the run stays parked")
+
+
 def skip_line(identifier, strikes, pr_url, question):
     """The admit step's one line for a ticket the store holds parked.
 
     Pure, so the wording is tested without a store. A pull request wins:
     the run behind it is parked alive, so its URL and the `--approve` that
-    merges it are the whole story whatever failed before it. Then the
+    merges it are the whole story whatever failed before it -- unless the
+    question says the pull request was closed without merging
+    (`PR_CLOSED_QUESTION`), when there is nothing an `--approve` would
+    merge and the question is the line. Then the
     question a module parked the ticket on -- a merge conflict, `merge?` --
     first line only, and *before* the strike count: the run that parked it
     may also have been the failure that reached `MAX_FAILED_RUNS`, and the
@@ -2713,7 +2902,8 @@ def skip_line(identifier, strikes, pr_url, question):
     all once the count has tripped; a park with neither is still a
     human's, and says so.
     """
-    if pr_url:
+    closed = (question or "").strip().startswith(PR_CLOSED_QUESTION)
+    if pr_url and not closed:
         return (f"{identifier} is parked on PR {pr_url} awaiting"
                 f" --approve {identifier}; skipping it")
     if question and question.strip() and not is_strike_question(question):
@@ -2779,6 +2969,18 @@ def _admit_ticket(target, conn, project, provider, task, seen):
         _skip_held(f"ticket {task['id']}: lease already held by run {held}",
                    seen)
         return None
+    # The board's lease (KO-351): another writer's store is not readable
+    # from here, but its `holo:HOST` label is, and a ticket carrying one
+    # is that writer's for as long as the label stays. Asked after the
+    # store's own lease so a ticket this store holds reads as the store
+    # lease it is. This writer's own label is not asked about here: the
+    # store just said no live run holds the ticket, so one is stale, and
+    # `_lease_on_board()` takes it off once the store lease is held.
+    others = foreign_lease_holders(task.get("labels"), lease_host(target))
+    if others:
+        print(f"[holo2] {task['id']} is leased by {others[0]} on the board;"
+              " skipping it")
+        return None
     if escalate(conn, ticket_id, provider):
         # The skip is the same whatever parked the ticket; the line says
         # which (KO-345): a strike-out, a pull request awaiting `--approve`,
@@ -2842,19 +3044,101 @@ def _skip_held(refusal, seen):
               " last signs of life")
 
 
-def _claim_run(conn, project, provider, ticket_id, seen):
-    """The lease and the `ready -> in_flight` move. Returns the claimed run
-    id, `HELD` when another run took the ticket first, or None when the
-    loop must stop rather than start a run."""
+def _refuse_claim(conn, task, run_id, reason):
+    """Give the store lease of a run the board would not lease back --
+    `infra`, no work started, no strike -- and say the loop stops."""
+    refused = InfraFailure(reason)
+    store.release(conn, run_id, "failed", str(refused),
+                  outcome_class=outcome_class_of(refused))
+    print(f"[holo2] {task['id']}: {refused}; stopping for a human")
+    return None
+
+
+def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
+    """The board half of the claim (KO-351), under the store lease run
+    `run_id` just took: take off a stale label of this writer's, add the
+    label, read the issue's labels back, decide. Returns True when the
+    claim stands, `HELD` when another writer holds the ticket, None when
+    the loop must stop.
+
+    The order is the whole design. The store lease is the atomic one, so
+    it goes first and nothing here touches the board without it. This
+    writer's own `holo:HOST` label already on the listing is stale -- the
+    store, asked at admission and again by the claim, has no live run
+    behind it: a run that ended with the board down -- and comes off now,
+    under the lease that proves no sibling loop on this store holds the
+    ticket, before the fresh one is written; a board that will not release
+    it leaves a `warning` row, and the add below re-asserts the same name.
+    Then the add and the read-back, four ways:
+
+    - The add raises: a raise is not proof that nothing landed -- Linear
+      can apply the mutation and then time out on the response -- so this
+      writer's label is taken off best-effort, once, and then the store
+      lease goes back and the loop stops for a human. A label left
+      behind by a refused claim would otherwise be a lease every other
+      writer honours until a human notices it.
+    - The read-back raises: the add may have landed, so the same
+      best-effort removal, once, and then the same release and stop.
+    - The read-back shows another writer's `holo:` label, taken between
+      the listing and this write: that writer holds the ticket, whichever
+      add landed first. This writer's own label comes off -- only that one
+      -- the store lease goes back without a strike, the skip line names
+      the holder, and the loop takes the next ticket. (Two writers reading
+      each other back both yield; the ticket is free again and the next
+      pass takes it.)
+    - The read-back shows no other writer: the claim stands.
+    """
+    issue_id, label = task["issue_id"], lease_label(target)
+    if lease_host(target) in lease_holders(task.get("labels")):
+        print(f"[holo2] {task['id']} carries this writer's lease label {label}"
+              " with no live run; removing the stale label and claiming")
+        drop_lease_label(conn, ticket_id, provider, issue_id, label)
     try:
-        run_id = store.claim(conn, project, ticket_id)
-    except store.ClaimConflict as e:
-        # Before any branch or worktree exists: another loop on this
-        # target won the race for this ticket, so this one moves on to
-        # the next. The lease is the ticket's, so working beside the
-        # holder on a different ticket is the design, not a conflict.
-        _skip_held(str(e), seen)
+        provider.label_issue(issue_id, label)
+        have = provider.issue_labels(issue_id)
+    except Exception as e:  # noqa: BLE001 - the add may have landed either way
+        drop_lease_label(conn, ticket_id, provider, issue_id, label)
+        return _refuse_claim(conn, task, run_id, "the board did not take the"
+                             f" lease label {label} ({e}); no work started")
+    others = foreign_lease_holders(have, lease_host(target))
+    if others:
+        drop_lease_label(conn, ticket_id, provider, issue_id, label)
+        store.release(conn, run_id, "failed",
+                      f"the board showed {others[0]}'s lease label at claim;"
+                      " no work started", outcome_class="infra")
+        print(f"[holo2] {task['id']} is leased by {others[0]} on the board;"
+              " skipping it")
         return HELD
+    return True
+
+
+def _claim_run(target, conn, project, provider, task, ticket_id, seen):
+    """The lease, the board's lease label and the `ready -> in_flight`
+    move. Returns the claimed run id, `HELD` when another run or another
+    writer took the ticket first, or None when the loop must stop rather
+    than start a run."""
+    # The store half and the board half of the lease under one turn
+    # (`lease_turn()`): a close-out of this store looks at the store and
+    # then takes its label off the board under the same turn, so no claim
+    # can land -- lease taken, label written -- between that look and
+    # that removal and have its fresh label stripped.
+    with lease_turn(target):
+        try:
+            run_id = store.claim(conn, project, ticket_id)
+        except store.ClaimConflict as e:
+            # Before any branch or worktree exists: another loop on this
+            # target won the race for this ticket, so this one moves on
+            # to the next. The lease is the ticket's, so working beside
+            # the holder on a different ticket is the design, not a
+            # conflict.
+            _skip_held(str(e), seen)
+            return HELD
+        # The board half of the lease, right after the store half and
+        # before the run is anything another writer could collide with.
+        leased = _lease_on_board(target, conn, provider, task, ticket_id,
+                                 run_id)
+    if leased is not True:
+        return leased
     # §3's `ready -> in_flight`, and the first thing the board is told
     # about this run: the claim is the moment the ticket starts being
     # worked, and the projection replaces the state call the provider
@@ -2881,6 +3165,7 @@ def _claim_run(conn, project, provider, ticket_id, seen):
                                " was claimed; no work started")
         store.release(conn, run_id, "failed", str(refused),
                       outcome_class=outcome_class_of(refused))
+        release_lease_label(target, conn, ticket_id, provider, run_id)
         # This refusal is a failed run, but an `infra` one: no work
         # started, so it says nothing about the ticket and does not
         # count towards parking it. The threshold is still checked
@@ -3022,11 +3307,16 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         print(f"[holo2] run crashed: {reason}")
         _record_crash(conn, run_id, e, reason)
     finally:
-        if merged is PARKED or merged is SWEPT:
+        if merged is PARKED:
             # Parked, alive, lease released: the run's own outcome is still
             # open, so there is no entry to render and no failure to count.
-            # Swept: ended, released and rendered by the sweep itself, and
-            # the swept run is over -- nothing more is written to it.
+            # The board lease goes with the store lease `store.park()` gave
+            # back: a parked ticket is a human's, not this writer's.
+            release_lease_label(target, conn, ticket_id, provider, run_id)
+        elif merged is SWEPT:
+            # Swept: ended, released, unlabelled and rendered by the sweep
+            # itself, and the swept run is over -- nothing more is written
+            # to it.
             pass
         elif merged:
             release_run(conn, run_id, True,
@@ -3036,6 +3326,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
             # branch is preserved for a human and the board should go
             # on saying the work is open, so there is nothing to push.
             mirror_status(conn, ticket_id, "merged", provider)
+            release_lease_label(target, conn, ticket_id, provider, run_id)
             # Close-out, and the first moment the run's own outcome is
             # a row: the window is regenerated here rather than inside
             # `run_task()` so the entry that ends the run is in it.
@@ -3110,7 +3401,7 @@ def report(target, conn=None, out=None, now=None):
             conn.close()
 
 
-def requeue(target, identifier, note, out=None):
+def requeue(target, identifier, note, out=None, provider=None):
     """Put the failed ticket `identifier` back in the queue. Returns nothing.
 
     `--requeue`'s whole body, and off every other mode's write path: it opens
@@ -3120,11 +3411,23 @@ def requeue(target, identifier, note, out=None):
     holds more than once, is a `SystemExit` naming it, as is every refusal
     `store.requeue()` makes -- and in all of those nothing is written. A
     target with no store has nothing to requeue and says so the same way.
+
+    With a `provider`, the board lease label comes off too (KO-351): this
+    writer's `holo:HOST`, taken off before the store's transaction makes
+    the ticket claimable, and only while the store names no other live run
+    on the ticket, so a claim that follows finds its own label untouched
+    whatever the order of the two. Best-effort: the
+    failed run's close-out should already have removed it, and a board that
+    was down then gets one more chance here; one still down leaves a label
+    this writer's next claim treats as stale.
     """
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
+        failed_run = _requeue_candidate(conn, ticket_id)
+        if failed_run is not None:
+            release_lease_label(target, conn, ticket_id, provider, failed_run)
         try:
             run_id = store.requeue(conn, ticket_id, note)
         except (store.RequeueRefused, ValueError) as refused:
@@ -3133,6 +3436,19 @@ def requeue(target, identifier, note, out=None):
     finally:
         conn.close()
 
+
+def _requeue_candidate(conn, ticket_id):
+    """The failed run `store.requeue()` would requeue `ticket_id` after, or
+    None when it would refuse: a read of the same rows, made first so the
+    run's lease label can come off while the ticket is still `in_flight`.
+    `store.requeue()` re-reaches the verdict inside its own transaction."""
+    ticket = store.read.ticket_by_id(conn, ticket_id)
+    if ticket is None or ticket.activeRunId is not None \
+            or ticket.status != "in_flight" or ticket.lastRunId is None:
+        return None
+    row = conn.execute("SELECT outcome FROM runs WHERE id = ?",
+                       (ticket.lastRunId,)).fetchone()
+    return ticket.lastRunId if row and row[0] == "failed" else None
 
 def approve(target, identifier, note, out=None):
     """Release the ticket `identifier` parked for merge approval. Returns

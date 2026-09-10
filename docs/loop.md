@@ -11,7 +11,40 @@ machines it walks. Back to the [README](index.md).
    active run and points its `activeRunId` at the new one, so two loops on
    one target each work a ticket of their own, and a ticket another live
    run holds is skipped in one line (`ticket KO-n: lease already held by
-   run N`) for the next candidate rather than stopping the loop. Before the
+   run N`) for the next candidate rather than stopping the loop. The store
+   lease is one writer's: a second writer host has a store of its own and
+   cannot see it, so the claim leases the ticket on the board too. Once the
+   store lease is taken the issue gets the label `holo:HOST`, where `HOST`
+   is this writer's `[report] host_label` (its hostname without one) --
+   `holo:writer-1` -- and the team label is created on first use. The
+   order is fixed: the store lease first, since it is the atomic one; then
+   the label; then the issue's labels read back, because Linear has no
+   compare-and-swap and the write is additive (`addedLabelIds`, never the
+   whole label list). A ready issue carrying another writer's `holo:`
+   label is skipped at admission in one line (`KO-n is leased by HOST on
+   the board; skipping it`) and nothing is leased in the store; another
+   writer's label the read-back shows instead, taken between the listing
+   and the write, backs the claim off the same way: this writer's own
+   label comes off, the store lease goes back as an `infra` failure, no
+   strike, and the loop takes the next ticket with the same skip line. A
+   ready issue carrying this writer's own label with no live run under it
+   in this store (a run that ended with the board down) is a stale lease a
+   close-out never took off: the claim goes ahead, the stale label is
+   removed and the fresh one written, both only once this loop's store
+   lease is held, so two loops admitting the same stale label cannot strip
+   the one the faster of them has just written. Each close-out -- a merge,
+   a failure, a park for a human, a sweep -- and `--requeue` take the
+   label off, and only while the store names no other live run on the
+   ticket, so a close-out that runs late cannot strip the label a fresh
+   claim has since re-asserted. That look and the removal, like the
+   claim's lease and label write, run under one per-store turn (a flock
+   beside the store), so a claim of this store cannot land between them
+   and have its fresh label stripped. A label the board will not take, or
+   a read-back it will not answer, takes the label off once, best-effort
+   -- a refusal is not proof the write did not land -- fails the claim as
+   an `infra` failure and gives the store lease straight back, so a run
+   never starts unlabelled. `--requeue` takes the label off
+   before the ticket is claimable again. Before the
    first claim the loop runs one read-only sweep of the store. The sweep's
    contract runs the other way too: a run the supervisor's sweep ends while
    the loop is inside a turn is over, and the heartbeat that keeps the run
@@ -19,8 +52,12 @@ machines it walks. Back to the [README](index.md).
    turn returns -- it kills the turn's process group, the loop prints
    `run N was ended by the supervisor (REASON); stopping this turn`, writes
    nothing more to that run, leaves the worktree and branch as the sweep
-   preserved them, and goes on to its next claim. Then the loop
-   reconciles its mirror: every open mirrored ticket without an active run
+   preserved them, and goes on to its next claim. Then the loop asks
+   GitHub about each pull request a parked run waits on (below, under
+   pull request mode) -- before the mirror, so a ticket the merger also
+   moved to Done ships its run rather than being walked `merged` with the
+   run left parked -- and then reconciles its mirror: every open mirrored
+   ticket without an active run
    that Linear now holds completed or canceled (archived issues included;
    an archived issue still in an open state counts as canceled) is walked
    to `merged` or `abandoned`, with a `reconcile` intervention row on its
@@ -98,8 +135,24 @@ machines it walks. Back to the [README](index.md).
    (`runs.prUrl`), in the ticket's question (`PR open: URL`, the open
    threads listed) and in the ledger. `--approve KO-n` resumes the run on
    the PR and merges it when green and quiet; `--shepherd KO-n` resumes it
-   for another round of passes. The factory still never pushes `main`, and
-   never moves the local one under this mode: the merge is GitHub's.
+   for another round of passes. A pull request merged on GitHub by a person
+   while the run waits is that approval: at startup and at the top of every
+   pass -- each serial claim, each scheduler tick, the timer's included --
+   the loop reads each parked pull request's state once, and one merged on
+   GitHub closes its run out as merged with the merge commit's sha
+   (`awaiting_merge_approval --> done` below), records who merged it in the
+   ledger, walks the ticket to `merged` (Done on the board), removes the
+   local worktree and branch, and renders the findings window so the run
+   appears in Shipped. One closed on GitHub without merging leaves the run
+   parked and makes the ticket's question `PR closed without merge: URL`,
+   which the skip line then reads; an open one changes nothing, and a
+   GitHub error is one printed line for that ticket and the pass goes on,
+   with the run still parked for the next pass to ask again. The startup
+   mirror reconcile leaves a ticket parked on a pull request alone even
+   when the board already says Done, since only GitHub's answer closes the
+   run out with its merge commit.
+   The factory still never pushes `main`, and never moves the local one
+   under this mode: the merge is GitHub's.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —
@@ -214,6 +267,7 @@ stateDiagram-v2
     addressing --> failed
     addressing --> killed
     addressing --> verifying
+    awaiting_merge_approval --> done
     awaiting_merge_approval --> failed
     awaiting_merge_approval --> killed
     blocked_on_operator --> working

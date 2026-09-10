@@ -83,6 +83,78 @@ class ReviewerBoundaryTests(unittest.TestCase):
                 "",
             )
 
+    def _worktree_with_ignored_install(self, root):
+        """A committed repository whose worktree holds an ignored directory.
+
+        Returns (source, base, candidate). `console/node_modules` stands in
+        for what `[worktree] setup` installs: present on disk, ignored by
+        git, absent from every commit.
+        """
+        source = root / "source"
+        source.mkdir()
+        git = lambda *a: subprocess.run(["git", *a], cwd=source, check=True)  # noqa: E731
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "Test")
+        git("config", "user.email", "test@example.invalid")
+        (source / ".gitignore").write_text("node_modules/\n")
+        (source / "console").mkdir()
+        (source / "console" / "package.json").write_text("{}\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        base = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+        (source / "console" / "package.json").write_text('{"name": "c"}\n')
+        git("commit", "-qam", "candidate")
+        candidate = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+        installed = source / "console" / "node_modules" / "dep"
+        installed.mkdir(parents=True)
+        (installed / "index.js").write_text("module.exports = 1;\n")
+        return source, base, candidate
+
+    def test_carried_directories_are_copied_read_only_outside_the_fingerprint(
+            self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, base, candidate = self._worktree_with_ignored_install(root)
+
+            bare = review_runner.stage_candidate(
+                source, root / "bare", base, candidate)
+            staged = review_runner.stage_candidate(
+                source, root / "stage", base, candidate,
+                carry=["console/node_modules"])
+
+            copied = staged.path / "console" / "node_modules" / "dep" / "index.js"
+            self.assertEqual(copied.read_text(), "module.exports = 1;\n")
+            for path in (copied, copied.parent, copied.parent.parent):
+                self.assertFalse(path.stat().st_mode & 0o222, path)
+            # The copy is a copy: the worktree's install is left alone.
+            self.assertTrue(os.access(
+                source / "console" / "node_modules" / "dep" / "index.js", os.W_OK))
+            # Ignored in the stage too, so the clean check and the identity
+            # the round is held to see the same tree with or without it.
+            self.assertEqual(staged.fingerprint, bare.fingerprint)
+            self.assertEqual(review_runner._fingerprint(staged.path),
+                             staged.fingerprint)
+            self.assertEqual(subprocess.check_output(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                cwd=staged.path, text=True), "")
+
+    def test_a_tracked_absent_or_escaping_carry_path_is_refused_by_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, base, candidate = self._worktree_with_ignored_install(root)
+            (root / "outside").mkdir()
+
+            for path in ("console", "console/.cache", "../outside"):
+                with self.subTest(path=path):
+                    stage = root / f"stage-{abs(hash(path))}"
+                    with self.assertRaises(review_runner.ReviewBoundaryError) as e:
+                        review_runner.stage_candidate(
+                            source, stage, base, candidate, carry=[path])
+                    self.assertIn(path, str(e.exception))
+                    self.assertIn("carry", str(e.exception))
+
     def test_container_is_hardened_and_mounts_only_allowlisted_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -414,12 +486,12 @@ class ContainerCommandTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v4_and_nothing_still_names_an_older_tag(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v4")
+    def test_image_tag_is_v5_and_nothing_still_names_an_older_tag(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v5")
         stale = [
             path
             for path in [*ROOT.glob("*.py"), *(ROOT / "docs").glob("*.md")]
-            if re.search(r"ubuntu24\.04-v[123]\b", path.read_text())
+            if re.search(r"ubuntu24\.04-v[1234]\b", path.read_text())
         ]
         self.assertEqual(stale, [])
 
@@ -455,6 +527,20 @@ class ReviewerImageTests(unittest.TestCase):
         self.assertRegex(text, r"(?m)^\s*GOPATH=/home/reviewer/go\b")
         self.assertRegex(text, r"(?m)^\s*GOMODCACHE=/home/reviewer/go/pkg/mod\b")
         self.assertRegex(text, r"(?m)^\s*GOCACHE=/home/reviewer/\.cache/go-build\b")
+
+    def test_dockerfile_installs_pinned_checksummed_ruff_on_path(self):
+        text = self.DOCKERFILE.read_text()
+        version = re.search(r"^ARG RUFF_VERSION=(\d+\.\d+\.\d+)$", text, re.M)
+        checksum = re.search(r"^ARG RUFF_SHA256=([0-9a-f]{64})$", text, re.M)
+        self.assertIsNotNone(version, "Dockerfile pins no Ruff version")
+        self.assertIsNotNone(checksum, "Dockerfile pins no Ruff SHA-256")
+        self.assertIn(
+            "download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz", text
+        )
+        self.assertRegex(
+            text, r"(?m)^\s*&& echo \"\$\{RUFF_SHA256\}  .*\| sha256sum -c -"
+        )
+        self.assertRegex(text, r"(?m)^ENV PATH=/opt/ruff/bin:\$PATH$")
 
     def test_go_temp_directory_is_under_the_home(self):
         # `/tmp` is a noexec tmpfs; `go test` executes its test binaries from
