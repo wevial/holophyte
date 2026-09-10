@@ -56,7 +56,7 @@ EXEC = os.execv
 # --- the supervisor's stale-run sweep -----------------------------------------
 # The loop watches itself only while it is alive. A run whose process crashed,
 # hung, or was killed leaves a row in a work phase, a heartbeat that stopped
-# and a project lease nobody will ever give back -- and nothing noticed.
+# and a ticket lease nobody will ever give back -- and nothing noticed.
 #
 # The sweep is the noticing: it reads runs, counts strikes and reports what
 # tripped. `--sweep` on its own stops there, which is what makes it safe to

@@ -96,11 +96,8 @@ class SweepTestCase(unittest.TestCase):
         self.ticket_of = {}
 
     def another_project(self):
-        """A second project, for the tests that need two runs live at once.
-
-        v0 single-threads a project, so `a_run()` twice over one of them is a
-        `ClaimConflict` rather than the pair of live runs the test wanted.
-        """
+        """A second project, for the tests that want two runs live on two
+        targets rather than two tickets of one."""
         self.projects += 1
         repo = self.root / f"repo-{self.projects}"
         repo.mkdir()
@@ -703,7 +700,8 @@ class ActingSweepTests(SweepTestCase):
             " WHERE id = ?", (run_id,)).fetchone()
 
     def leases(self, run_id):
-        """Both `activeRunId` columns, and where the ticket's pointer went."""
+        """The project column (never written now), the ticket's lease, and
+        where the ticket's pointer went."""
         (project,) = self.conn.execute(
             "SELECT activeRunId FROM projects WHERE id = ?",
             (self.project,)).fetchone()
@@ -719,7 +717,7 @@ class ActingSweepTests(SweepTestCase):
 
     def test_a_tripped_run_is_failed_and_both_leases_released(self):
         """The whole point: the queue is unblocked without a human. The run
-        ends as a failure naming what tripped it, the project stops holding a
+        ends as a failure naming what tripped it, the ticket stops holding a
         lease for a process that is gone, and the ticket keeps a pointer to
         the run that failed on it."""
         run_id = self.a_run()
@@ -770,7 +768,7 @@ class ActingSweepTests(SweepTestCase):
 
         self.assertEqual(result.trips, [])
         self.assertEqual(self.run_row(run_id), before)
-        self.assertEqual(self.leases(run_id), (run_id, run_id, None))
+        self.assertEqual(self.leases(run_id), (None, run_id, None))
         self.assertEqual(self.status(run_id), "in_flight")
         # No writes beyond the strike bookkeeping: no event, and no rendered
         # window, which the close-out would have written into the target.
@@ -931,7 +929,7 @@ class SweepModeTests(SweepTestCase):
                 (run_id,)).fetchone(), ("working", None, None))
         self.assertEqual(
             self.conn.execute(
-                "SELECT activeRunId FROM projects").fetchone()[0], run_id)
+                "SELECT activeRunId FROM tickets").fetchone()[0], run_id)
 
     def a_worktree(self, branch="task/ko-1"):
         """A real branch and worktree, as a run in flight leaves behind.

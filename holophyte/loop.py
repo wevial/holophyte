@@ -96,7 +96,7 @@ def check_worktree_setup(target):
 
     `check_agent_commands()`'s sibling, here for the same reason: a table read
     for the first time inside a run would abandon a claimed ticket, a cut
-    branch and a held project lease over something startup could have said in
+    branch and a held ticket lease over something startup could have said in
     one sentence. It parses through `setup_commands()`, so a table this
     accepts is exactly a table a run would accept.
 
@@ -1887,11 +1887,18 @@ def main(target, provider):
                 store.record_loop_return(conn, project)
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if failed else None
-            ticket_id = _admit_ticket(target, conn, project, provider, task)
+            ticket_id = _admit_ticket(target, conn, project, provider, task,
+                                      seen)
             if ticket_id is None:
                 skip.add(task["id"])
                 continue
             run_id = _claim_run(conn, project, provider, ticket_id, seen)
+            if run_id is HELD:
+                # Another loop on this target took the ticket between the
+                # admission read and the claim: its work, not this loop's
+                # problem. Skipped like a held ticket found at admission.
+                skip.add(task["id"])
+                continue
             if run_id is None:
                 return
             merged = _dispatch(target, conn, run_id, provider, task, ticket_id)
@@ -2054,7 +2061,7 @@ def _reconcile_mirror(conn, project, provider):
         print(line)
 
 
-def _admit_ticket(target, conn, project, provider, task):
+def _admit_ticket(target, conn, project, provider, task, seen):
     """The questions asked of a ticket before the lease and before any run
     row exists. Returns the mirrored ticket id, or None for a ticket this
     pass refuses -- `main()` skips it and takes the next one.
@@ -2096,6 +2103,17 @@ def _admit_ticket(target, conn, project, provider, task):
         print(f"[holo2] {task['id']} skipped: {problem}")
         return None
     ticket_id = mirror_task(conn, project, task)
+    # The lease is per ticket (KO-341): a ticket another live run holds
+    # is that run's, and the answer is the next candidate, not a stop.
+    # Asked here, before `pickable()`, so the refusal reads as the lease
+    # it is -- the same sentence `store.claim()` uses when the race is
+    # lost a moment later -- and points at the startup sweep, which is
+    # where the holder's last signs of life are.
+    held = store.read.ticket_by_id(conn, ticket_id).activeRunId
+    if held is not None:
+        _skip_held(f"ticket {task['id']}: lease already held by run {held}",
+                   seen)
+        return None
     if escalate(conn, ticket_id, provider):
         print(f"[holo2] {task['id']} is blocked by repeated failures;"
               " skipping it. a human owns it now")
@@ -2130,21 +2148,37 @@ def _admit_ticket(target, conn, project, provider, task):
     return ticket_id
 
 
+class _Held:
+    """`_claim_run()`'s answer for a ticket another live run holds: its
+    own object, because the loop skips to the next candidate rather than
+    stopping as it does for None."""
+
+
+HELD = _Held()
+
+
+def _skip_held(refusal, seen):
+    """One line for a ticket another run holds, and a pointer at the
+    startup sweep when it had anything to say about the holder."""
+    print(f"[holo2] {refusal}; skipping it")
+    if seen.trips or seen.watched:
+        print("[holo2] the sweep above shows the lease holder's"
+              " last signs of life")
+
+
 def _claim_run(conn, project, provider, ticket_id, seen):
     """The lease and the `ready -> in_flight` move. Returns the claimed run
-    id, or None when the loop must stop rather than start a run."""
+    id, `HELD` when another run took the ticket first, or None when the
+    loop must stop rather than start a run."""
     try:
         run_id = store.claim(conn, project, ticket_id)
     except store.ClaimConflict as e:
-        # Before any branch or worktree exists: another loop holds the
-        # project, so this one stops rather than working beside it.
-        # The startup sweep's sighting turns the dead end into an
-        # instruction: is the holder alive, and what to type if not.
-        print(f"[holo2] claim refused, not starting a run: {e}")
-        if seen.trips or seen.watched:
-            print("[holo2] the sweep above shows the lease holder's"
-                  " last signs of life")
-        return None
+        # Before any branch or worktree exists: another loop on this
+        # target won the race for this ticket, so this one moves on to
+        # the next. The lease is the ticket's, so working beside the
+        # holder on a different ticket is the design, not a conflict.
+        _skip_held(str(e), seen)
+        return HELD
     # §3's `ready -> in_flight`, and the first thing the board is told
     # about this run: the claim is the moment the ticket starts being
     # worked, and the projection replaces the state call the provider

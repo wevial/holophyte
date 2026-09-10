@@ -494,9 +494,10 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
 
     Three writes in a fixed order, and the order is the point. The failure
     record goes first, inside `release()`'s transaction, which stamps the
-    outcome and only then clears both leases: a crash between them leaves a
-    failed-looking run still holding a lease, which a human or a later release
-    can free, rather than a free lease under a run that still looks alive —
+    outcome and only then clears the ticket's lease: a crash between them
+    leaves a failed-looking run still holding a lease, which a human or a
+    later release can free, rather than a free lease under a run that still
+    looks alive —
     the double-claim hazard, and the one asymmetry worth ordering for. Then
     the escalation, which is a count over the row just written, so a failure
     is escalated on the pass that recorded it. Then the window, regenerated

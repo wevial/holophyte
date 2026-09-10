@@ -212,9 +212,9 @@ class MirrorPushTests(unittest.TestCase):
     def test_the_run_of_a_refused_claim_does_not_keep_the_lease(self):
         """The second line of defense, for a ticket that stops being pickable
         between the pre-claim check and the claim: the refusal happens after
-        the claim, so it owes the project its lease back like any other
-        failure path — a stale ticket must not brick the queue for the
-        tickets behind it. The race is staged by answering the pre-claim
+        the claim, so it owes the ticket its lease back like any other
+        failure path — a stale ticket must not stay leased to a run that
+        never started. The race is staged by answering the pre-claim
         question with a yes the store would not give."""
         self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
 
@@ -223,7 +223,7 @@ class MirrorPushTests(unittest.TestCase):
                              return_value=store.Pickability(True, None)):
             holophyte.loop.main(self.tgt, StubProvider(a_task()))
 
-        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"),
                          [(None,)])
         outcomes = self.read("SELECT outcome, outcomeReason FROM runs"
                              " ORDER BY id")

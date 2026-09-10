@@ -161,7 +161,7 @@ class WiringClaimTests(unittest.TestCase):
         return conn.execute(sql).fetchall()
 
     def hold_the_lease(self):
-        """Leave the project with an active run, as a second loop would find it."""
+        """Leave HOL-0 with an active run, as a second loop would find it."""
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
         project = store.ensure_project(conn, StubProvider.TEAM, self.target)
@@ -244,7 +244,8 @@ class WiringClaimTests(unittest.TestCase):
         self.assertEqual((run_ticket, run_project, attempt, phase),
                          (ticket_id, project_id, 1, "claimed"))
         self.assertEqual(ticket_project, project_id)
-        self.assertEqual((project_lease, ticket_lease), (run_id, run_id))
+        # The lease is the ticket's (KO-341); the project column stays null.
+        self.assertEqual((project_lease, ticket_lease), (None, run_id))
 
     def test_a_re_claimed_ticket_reuses_its_mirror_rather_than_adding_one(self):
         """The UUID is the mirror's key, so the same issue mirrors once.
@@ -271,15 +272,37 @@ class WiringClaimTests(unittest.TestCase):
             self.read("SELECT linearIssueId, linearIdentifier FROM tickets"),
             [("HOL-1", "HOL-1")])
 
-    def test_a_second_claim_is_refused_before_any_branch_is_cut(self):
+    def test_a_ticket_another_run_holds_is_skipped_before_any_branch_is_cut(self):
+        """The lease is per ticket: the board offering a ticket a live run
+        already holds costs no run row and no worktree, and the loop goes
+        on to the next candidate instead of stopping."""
         held = self.hold_the_lease()
 
         with patch.object(holophyte.loop, "run_task") as run_task:
-            holophyte.loop.main(self.tgt, StubProvider(a_task()))
+            holophyte.loop.main(
+                self.tgt, StubProvider(a_task(identifier="HOL-0", issue_id="HOL-0")))
 
         run_task.assert_not_called()
         self.assertFalse(self.worktrees.exists())
         self.assertEqual(self.read("SELECT id FROM runs"), [(held,)])
+
+    def test_a_second_loop_works_the_next_ticket_beside_a_held_one(self):
+        """Two loops on one target: the other loop's held ticket does not
+        stop this one, which claims a ticket of its own."""
+        held = self.hold_the_lease()
+
+        with patch.object(holophyte.loop, "run_task", return_value=True):
+            holophyte.loop.main(self.tgt, StubProvider(a_task()))
+
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier, r.id, r.outcome FROM runs r"
+                      " JOIN tickets t ON t.id = r.ticketId ORDER BY r.id"),
+            [("HOL-0", held, None), ("HOL-1", held + 1, "merged")])
+        # The holder still holds its ticket; only this loop's run ended.
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, activeRunId FROM tickets"
+                      " ORDER BY linearIdentifier"),
+            [("HOL-0", held), ("HOL-1", None)])
 
     def test_a_ticket_the_store_says_is_in_flight_is_skipped_for_the_next(self):
         """The store, not the board, decides what is claimable.
@@ -484,7 +507,6 @@ class WiringClaimTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task", return_value=True):
             holophyte.loop.main(self.tgt, StubProvider(a_task()))
 
-        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
         (run_id, phase, outcome, ended), = self.read(
             "SELECT id, phase, outcome, endedAt FROM runs")
         self.assertEqual((phase, outcome), ("done", "merged"))
@@ -496,7 +518,7 @@ class WiringClaimTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task", return_value=False):
             holophyte.loop.main(self.tgt, StubProvider(a_task()))
 
-        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("failed", "failed")])
 
@@ -508,7 +530,7 @@ class WiringClaimTests(unittest.TestCase):
 
         # Contained, not propagated: the crash is this run's failure, exit 1.
         self.assertEqual(rc, 1)
-        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("failed", "failed")])
 

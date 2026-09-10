@@ -1092,16 +1092,24 @@ class LeftoverWorktreeTests(LoopFixture):
 
 
 class SweepDiagnosticsTests(LoopFixture):
-    """A refused claim and the startup preamble surface the read-only sweep.
+    """A held ticket and the startup preamble surface the read-only sweep.
 
     The KO-146 incident's dead end: "lease already held by run 7" with
     nothing about whether run 7 was alive, and no strike recorded, so the
     relaunch reflex never accumulated evidence. One read-only sweep per
     invocation turns the relaunch into the evidence — the second launch can
-    act.
+    act. Since KO-341 the lease is the ticket's, so the held ticket is
+    skipped for the next candidate rather than stopping the loop; the line
+    still names the holder and points at the sweep.
     """
 
     MINUTE = 60 * 1000
+    HELD = "KO-9"
+
+    def held_task(self):
+        """The held ticket as the board would offer it."""
+        return dict(a_task(), id=self.HELD, issue_id="iss-stale",
+                    title="stalled elsewhere")
 
     def stale_holder(self, minutes_silent=6, strikes=0):
         """A run some other loop claimed and went silent on, lease held."""
@@ -1112,7 +1120,7 @@ class SweepDiagnosticsTests(LoopFixture):
                                        str(self.target))
         ticket = store.mirror_ticket(
             conn, project, linear_issue_id="iss-stale",
-            linear_identifier="KO-9", title="stalled elsewhere",
+            linear_identifier=self.HELD, title="stalled elsewhere",
             acceptance_criteria=["Given a run, then it heartbeats"],
             verification_commands=["echo ok"], time_box_ms=25 * self.MINUTE)
         store.transition(conn, ticket, "in_flight")
@@ -1123,42 +1131,72 @@ class SweepDiagnosticsTests(LoopFixture):
             store.record_strike(conn, run_id, True, then, now=then + 1)
         return run_id
 
-    def test_a_refused_claim_prints_the_silence_and_records_a_strike(self):
+    def test_a_held_ticket_prints_the_silence_and_records_a_strike(self):
         run_id = self.stale_holder()
 
-        printed = self.main_output()
+        printed = self.main_output(provider=StubProvider(self.held_task()))
 
-        self.assertIn("claim refused", printed)
-        self.assertIn(f"run {run_id}", printed)
-        # One sweep, printed once: the refusal points back at it rather than
+        held = f"ticket {self.HELD}: lease already held by run {run_id}"
+        self.assertIn(held, printed)
+        # One sweep, printed once: the skip points back at it rather than
         # re-sweeping (double-counting the silence) or reprinting.
         self.assertEqual(printed.count("strike 1 of 2"), 1)
-        self.assertLess(printed.index("strike 1 of 2"),
-                        printed.index("claim refused"))
+        self.assertLess(printed.index("strike 1 of 2"), printed.index(held))
         self.assertIn("the sweep above", printed)
         self.assertEqual(self.read("SELECT strikes FROM sweepStrikes"),
                          [(1,)])
+        # A skip, not a stop: the loop went on to find nothing else ready.
+        self.assertIn("no ready tickets", printed)
+        self.assertEqual(self.read("SELECT id FROM runs"), [(run_id,)])
 
     def test_a_startup_sighting_of_a_tripped_run_names_the_acting_sweep(self):
         self.stale_holder(minutes_silent=12, strikes=1)
 
-        printed = self.main_output()
+        printed = self.main_output(provider=StubProvider(self.held_task()))
 
         self.assertEqual(printed.count("--sweep --act"), 1)
         self.assertIn(str(self.target), printed)  # copy-pasteable hint
 
-    def test_a_healthy_holder_prints_a_refusal_and_no_sweep_lines(self):
+    def test_a_healthy_holder_prints_the_skip_and_no_sweep_lines(self):
         """A live run at a fresh heartbeat is swept and found healthy: the
-        refusal prints alone, with no strike recorded and no table."""
+        held line prints alone, with no strike recorded and no table."""
         self.stale_holder(minutes_silent=0)
 
-        printed = self.main_output()
+        printed = self.main_output(provider=StubProvider(self.held_task()))
 
-        self.assertIn("claim refused", printed)
+        self.assertIn("lease already held", printed)
         self.assertNotIn("swept", printed)
         self.assertNotIn("strike", printed)
         self.assertNotIn("the sweep above", printed)
         self.assertEqual(self.read("SELECT strikes FROM sweepStrikes"), [])
+
+    def test_the_loop_skips_the_held_ticket_and_claims_the_next(self):
+        """Two loops on one target (KO-341): with KO-9 held elsewhere and
+        KO-131 ready behind it, this loop takes KO-131, works it to a merge,
+        and says once that KO-9 is held. The holder's run is untouched."""
+        run_id = self.stale_holder(minutes_silent=0)
+        provider = StubProvider(self.held_task(), a_task())
+
+        out = io.StringIO()
+        with patch.object(sys, "stdout", out):
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                                provider=provider)
+        printed = out.getvalue()
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        held_lines = [line for line in printed.splitlines()
+                      if "lease already held" in line]
+        self.assertEqual(len(held_lines), 1, printed)
+        self.assertIn(f"ticket {self.HELD}: lease already held by run {run_id}",
+                      held_lines[0])
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier, r.id, r.outcome FROM runs r"
+                      " JOIN tickets t ON t.id = r.ticketId ORDER BY r.id"),
+            [(self.HELD, run_id, None), ("KO-131", run_id + 1, "merged")])
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, activeRunId FROM tickets"
+                      " ORDER BY linearIdentifier"),
+            [("KO-131", None), (self.HELD, run_id)])
 
 
 class ReconcileTests(LoopFixture):
