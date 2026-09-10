@@ -2229,12 +2229,22 @@ class _PrefixedOut:
         self.stream = stream
         self.prefix = prefix
         self.at_line_start = True
+        # Whitespace written at a line start with no newline yet, such
+        # as the indentation `traceback` writes before a source line: held
+        # until the line shows what it is, so the prefix lands before it.
+        self.held = ""
 
     def write(self, text):
         out = []
         for piece in text.splitlines(keepends=True):
-            if self.at_line_start and piece.strip():
-                if piece.startswith("[holo2]"):
+            if self.at_line_start:
+                piece = self.held + piece
+                self.held = ""
+                if not piece.strip():
+                    if not piece.endswith(("\n", "\r")):
+                        self.held = piece
+                        continue
+                elif piece.startswith("[holo2]"):
                     piece = self.prefix + piece[len("[holo2]"):]
                 else:
                     piece = f"{self.prefix} {piece}"

@@ -3984,6 +3984,19 @@ class WorkerTests(LoopFixture):
         self.assertTrue(all(line.startswith("[holo2 w2] ") for line in lines),
                         lines)
 
+    def test_the_prefix_survives_indentation_written_on_its_own(self):
+        """Some interpreters' `traceback` writes a source line's indentation
+        and the line as two writes; the prefix must still open the line, or
+        a traceback's source lines lose their slot in the shared log."""
+        out = io.StringIO()
+        prefixed = holophyte.loop._PrefixedOut(out, "[holo2 w2]")
+        prefixed.write("    ")
+        prefixed.write("raise RuntimeError\n")
+        prefixed.write("[holo2] run failed\n")
+        self.assertEqual(out.getvalue().splitlines(),
+                         ["[holo2 w2]     raise RuntimeError",
+                          "[holo2 w2] run failed"])
+
     def test_a_worker_commits_findings_under_the_merge_lock(self):
         """The FINDINGS.md regeneration and commit run while this worker
         holds the merge lock, so no sibling is merging in the checkout while
