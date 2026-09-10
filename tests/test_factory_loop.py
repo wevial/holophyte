@@ -3948,6 +3948,30 @@ class BoardLeaseLabelTests(LoopFixture):
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
         self.assertEqual(self.branches(), ["main"])
 
+    def test_a_label_that_landed_before_the_board_refused_comes_off_again(self):
+        """The provider's write is add-then-read-back, so the board can take
+        the label and then refuse the read. The store lease goes back as
+        before; the label goes with it, or every other writer refuses a
+        ticket nobody holds."""
+        class HalfTaken(StubProvider):
+            def label_issue(self, issue_id, name):
+                super().label_issue(issue_id, name)
+                raise RuntimeError("linear timed out on the read-back")
+
+        provider = HalfTaken(a_task())
+        out = self.main_output(Commit("never reached"), APPROVE,
+                               provider=provider)
+
+        self.assertIn("did not take the lease label holo:writer-1", out)
+        self.assertEqual(self.last_fake.turns, [])
+        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
+                         [("failed", "infra")])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
+        self.assertEqual(provider.labels["iss-131"], [])
+        self.assertEqual(provider.label_calls,
+                         [("label", "iss-131", self.LABEL),
+                          ("unlabel", "iss-131", self.LABEL)])
+
 
 # A scripted `WAIT` "exit" that is the timer tick instead: no child exited
 # before the deadline (KO-353).

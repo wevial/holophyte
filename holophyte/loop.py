@@ -2841,6 +2841,13 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
                                f" {label} ({e}); no work started")
         store.release(conn, run_id, "failed", str(refused),
                       outcome_class=outcome_class_of(refused))
+        # The write is add-then-read-back, so a refusal can arrive after
+        # the add landed: the label is on the board with no run behind it,
+        # and every other writer refuses the ticket on it. Take it off
+        # best-effort, as every other release of the store lease does; a
+        # board that is still down leaves the `warning` row and a stale
+        # label this writer's next claim pass treats as stale.
+        release_lease_label(target, conn, ticket_id, provider)
         print(f"[holo2] {task['id']}: {refused}; stopping for a human")
         return None
     # §3's `ready -> in_flight`, and the first thing the board is told
