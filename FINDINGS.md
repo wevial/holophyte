@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[513 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T20:32:01Z — KO-351
-FAILED: cannot reuse leftover worktree: preserved commits on task/ko-351-a-claim-leases-the-ticket-in-l conflict with a main that moved on; a human resolves the merge before this ticket is run again
-actual: 0.0 min · estimate: 30 min · rounds: 0
-
-## 2026-09-10T20:40:31Z — KO-354
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- (unparsed):9e45ba542ca8 [p2] Blocker: required `ruff check .` could not run: `ruff: command not found`; `python3 -m ruff` also reports no installed module. Provide Ruff in the review enviro…
+[515 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T20:42:36Z — KO-351
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -767,3 +758,10 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T21:44:10Z — KO-359
 MERGED to main as 468d1e8 (branch task/ko-359-a-pull-request-merged-on-githu deleted).
 actual: 39.3 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T21:48:02Z — KO-360
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T21:48:04Z — KO-360
+MERGED to main as 2d1f6f0 (branch task/ko-360-the-shipped-table-s-last-colum deleted).
+actual: 2.3 min · estimate: 30 min · rounds: 1
