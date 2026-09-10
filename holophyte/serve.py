@@ -60,10 +60,26 @@ carrying its stderr, never a 500, and an action that cannot be recorded
 does not run. Off, every `/actions/` path is 404 and this module still
 opens no write connection.
 
+`[serve] config_edit = true` (KO-356) opens the target's own `config.toml`
+the same way: `GET /config` is the file's text with the value of every key
+named `...token` or `...key` replaced by `[redacted]` (`token_file`, a
+path, stays), and `PUT /config` takes `{"text": ...}`, puts the current
+secret back under every `[redacted]` so a round trip through the page
+never blanks one, parses it and runs `config.check_document()` -- the
+checks startup runs -- over the parsed document; a refusal is 400 carrying
+the loader's own sentence and nothing is written. An accepted document is
+written beside a `config.toml.bak-STAMP` copy of the previous text, by
+rename, after its `config_edit` interventions row. The routes demand the
+token on every bind as the actions do, since a writable config is
+`[worktree] setup` and `[agents]` -- commands the next loop start runs --
+and the change applies at that start, not to a running loop. Off, both
+are 404.
+
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
 from __future__ import annotations
 
+import dataclasses
 import hmac
 import json
 import os
@@ -73,13 +89,21 @@ import socket
 import stat
 import subprocess
 import sys
+import tomllib
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import store.read
-from holophyte.config import console_config, serve_config, split_address, sweep_config
+from holophyte.config import (
+    check_document,
+    console_config,
+    serve_config,
+    split_address,
+    sweep_config,
+)
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
@@ -117,6 +141,21 @@ SYSTEMCTL_TIMEOUT = 20
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
 # How much JSON a `POST` body may carry; a ticket and a note are far under.
 MAX_BODY = 64 * 1024
+# `GET /config` and `PUT /config` (KO-356), behind `[serve] config_edit =
+# true` and the write token. `REDACTED` stands in for the value of any key
+# `SECRET_KEY` matches -- a bare key whose name ends in `token` or `key`,
+# so `token_file` (a path) is left alone -- one `key = value` line at a
+# time; `TABLE_LINE` tracks which table a line sits in so the value put
+# back on the way in is the one the same table held.
+CONFIG_PATH = "/config"
+CONFIG_ACTION = "config_edit"
+CONFIG_APPLIES = "next loop start"
+REDACTED = "[redacted]"
+SECRET_KEY = re.compile(
+    r"^(?P<lead>\s*)(?P<key>[A-Za-z0-9_.-]*(?:token|key))(?P<eq>\s*=\s*)"
+    r"(?P<value>.*?)\s*$")
+TABLE_LINE = re.compile(r"^\s*\[\s*(?P<table>[^\]]*?)\s*\]\s*(#.*)?$")
+BACKUP_STAMP = "%Y%m%dT%H%M%SZ"
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 # How long a failed run stays on `/attention`: a failure the operator has
 # not requeued or merged past in a day is one they have not looked at.
@@ -990,6 +1029,161 @@ def requeue_action(target, body):
                  "run": run_id}
 
 
+def secret_lines(text):
+    """`{(table, key): value text}` for every `key = value` line of the
+    TOML `text` whose key `SECRET_KEY` matches, keyed by the table the line
+    sits in (`""` at the top). The value is the rest of the line as
+    written, comment included, so putting it back reproduces the line."""
+    found = {}
+    table = ""
+    for line in text.splitlines():
+        heading = TABLE_LINE.match(line)
+        if heading is not None:
+            table = heading.group("table")
+            continue
+        match = SECRET_KEY.match(line)
+        if match is not None:
+            found[(table, match.group("key"))] = match.group("value")
+    return found
+
+
+def rewrite_secret_lines(text, replacement):
+    """`text` with every secret line's value replaced by what
+    `replacement(table, key, value)` returns for it; None keeps the line.
+    The line's indentation and `key =` spacing are preserved."""
+    out = []
+    table = ""
+    for line in text.splitlines(keepends=True):
+        heading = TABLE_LINE.match(line)
+        if heading is not None:
+            table = heading.group("table")
+        else:
+            match = SECRET_KEY.match(line)
+            if match is not None:
+                value = replacement(table, match.group("key"),
+                                    match.group("value"))
+                if value is not None:
+                    newline = line[len(line.rstrip("\r\n")):]
+                    line = (match.group("lead") + match.group("key")
+                            + match.group("eq") + value + newline)
+        out.append(line)
+    return "".join(out)
+
+
+def redact(text):
+    """`text` with every secret value replaced by a quoted `REDACTED`."""
+    return rewrite_secret_lines(text, lambda *_: json.dumps(REDACTED))
+
+
+def restore_secrets(text, current):
+    """`text` with every `REDACTED` value put back from `current`, the
+    file's present text: what a round trip through the console page sends
+    is the redacted text with edits, and a secret it never saw must come
+    back as it was, not as the placeholder. ValueError names a redacted
+    key the current file has no value for."""
+    held = secret_lines(current)
+    missing = []
+
+    def put_back(table, key, value):
+        if value.strip() != json.dumps(REDACTED):
+            return None
+        if (table, key) not in held:
+            missing.append(f"[{table}] {key}" if table else key)
+            return None
+        return held[(table, key)]
+
+    restored = rewrite_secret_lines(text, put_back)
+    if missing:
+        raise ValueError(
+            f"{', '.join(missing)}: {REDACTED} stands for a value the current"
+            " file does not hold; write the value")
+    return restored
+
+
+def config_text(target):
+    """The target's config file as written, `""` when there is none yet."""
+    try:
+        return target.config_path.read_text()
+    except FileNotFoundError:
+        return ""
+
+
+def read_config(target):
+    """`GET /config`: the file's text, secrets redacted, its path, and when
+    a change to it applies."""
+    return 200, {"text": redact(config_text(target)),
+                 "path": str(target.config_path), "applies": CONFIG_APPLIES}
+
+
+def validate_config(target, text):
+    """Hold `text` to what startup would accept for `target`: parsed as
+    TOML and run through `config.check_document()` on a copy of the target
+    carrying the parsed document instead of the file's. The refusal, when
+    there is one, is the loader's own sentence -- naming the file, the
+    table and the key -- or `tomllib`'s; None when the document passes."""
+    try:
+        document = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as bad:
+        return f"malformed TOML: {bad}"
+    candidate = dataclasses.replace(target, _config=document)
+    try:
+        check_document(candidate)
+    except SystemExit as refused:
+        return str(refused)
+    return None
+
+
+def write_config(target, body, now=None):
+    """`PUT /config`: replace the target's config with `body["text"]`
+    after validating it: `(http status, JSON-able body)`.
+
+    `text` must be a string, 400 otherwise. Every `[redacted]` value in it
+    is the current file's (`restore_secrets()`) before anything is judged,
+    so the text validated and written is the whole document. A document
+    `validate_config()` refuses is 400 with its sentence as `error`,
+    nothing written. The `config_edit` interventions row lands first, on
+    the store's newest run as the actions record theirs; a target with no
+    store or no run has nothing to record against and the file is left
+    alone, 503 saying so. Then the previous text is copied to
+    `config.toml.bak-STAMP` beside the file (none when there was no file)
+    and the new text lands by rename, so a reader sees the old file or
+    the new one and never a torn one. The reply names the backup.
+    """
+    text = body.get("text")
+    if not isinstance(text, str):
+        return 400, {"ok": False, "error": "text must be the file's new"
+                                            " contents as a string"}
+    current = config_text(target)
+    try:
+        text = restore_secrets(text, current)
+    except ValueError as bad:
+        return 400, {"ok": False, "error": str(bad)}
+    refused = validate_config(target, text)
+    if refused is not None:
+        return 400, {"ok": False, "error": refused}
+    path = target.config_path
+    stamp = (now or datetime.now(timezone.utc)).strftime(BACKUP_STAMP)
+    backup = (path.with_name(f"{path.name}.bak-{stamp}")
+              if path.exists() else None)
+    note = (f"operator replaced {path} from the console (PUT /config);"
+            f" applies at the {CONFIG_APPLIES}; previous text in "
+            + (str(backup) if backup else "no backup: there was no file"))
+    recorded = record_action_intervention(target, CONFIG_ACTION, note)
+    if recorded is None:
+        return 503, {"ok": False, "error": "the store holds no run to record"
+                                            " the intervention against;"
+                                            " nothing written"}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if backup is not None:
+        backup.write_text(current)
+    staging = path.with_name(f"{path.name}.new-{stamp}-{os.getpid()}")
+    staging.write_text(text)
+    os.replace(staging, path)
+    return 200, {"ok": True, "path": str(path),
+                 "backup": None if backup is None else str(backup),
+                 "applies": CONFIG_APPLIES, "recorded": recorded}
+
+
 def is_loopback(host):
     """Whether a bind `host` reaches this machine only.
 
@@ -1055,24 +1249,29 @@ def resolve_token(target, host):
 
 
 def resolve_action_token(target, knobs, token):
-    """The token `POST /actions/...` demands, or None when actions are off.
+    """The token `POST /actions/...` and the `/config` routes demand, or
+    None when neither `[serve] actions` nor `[serve] config_edit` is on.
 
     `token` is what `resolve_token()` gave the bind: on a non-loopback bind
-    it is already the file's contents and the actions share it. A loopback
-    bind has none, and the actions do not inherit its openness -- the bind
-    address guards reads, not a hand on the units -- so the file is read
-    for them alone, and `[serve] actions = true` without `[serve]
-    token_file` exits naming the key rather than binding open.
+    it is already the file's contents and the write routes share it. A
+    loopback bind has none, and the write routes do not inherit its
+    openness -- the bind address guards reads, not a hand on the units or
+    the config -- so the file is read for them alone, and either opt-in
+    without `[serve] token_file` exits naming the keys rather than binding
+    open.
     """
-    if not knobs.actions:
+    on = [key for key, flag in (("actions", knobs.actions),
+                                ("config_edit", knobs.config_edit)) if flag]
+    if not on:
         return None
     if token is not None:
         return token
     if knobs.token_file is None:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] actions = true needs"
-            f" {TOKEN_KEY} = \"PATH\" on every bind, loopback included:"
-            " the actions answer only to `Authorization: Bearer ...`")
+            f"[holo2] {target.config_path}: [serve] {' and '.join(on)} = true"
+            f" needs {TOKEN_KEY} = \"PATH\" on every bind, loopback"
+            " included: the routes it opens answer only to"
+            " `Authorization: Bearer ...`")
     return load_token(knobs.token_file)
 
 
@@ -1165,9 +1364,12 @@ class StatusHandler(BaseHTTPRequestHandler):
         path = parts.path
         # The token check comes before any route reads the store, and after
         # the question of which routes are open: a 401 touches nothing.
-        if self.server.token is not None and not self.open_route(path) \
-                and not authorized(self.headers.get("Authorization"),
-                                   self.server.token):
+        # `/config` demands the write token on every bind, as the actions
+        # do, when the opt-in is on; off, it is 404 behind the read token.
+        token = (self.server.action_token if path == CONFIG_PATH
+                 and self.server.config_edit else self.server.token)
+        if token is not None and not self.open_route(path) \
+                and not authorized(self.headers.get("Authorization"), token):
             return self.answer(401, {})
         self.dispatch(path, parts.query)
 
@@ -1190,6 +1392,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif path == "/peers":
             code, body = 200, {"self": self.server.self_address,
                                "peers": list(self.server.peers)}
+        elif path == CONFIG_PATH:
+            code, body = ((404, {"error": "not found", "path": path})
+                          if not self.server.config_edit
+                          else read_config(self.server.target))
         elif (shaped := shaped_route(path)) is not None:
             handler, segment = shaped
             code, body = handler(self.server.target, segment)
@@ -1226,10 +1432,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not self.server.actions or action not in ACTIONS:
             return self.answer(404, {"error": "not found", "path": path})
         try:
-            length = int(self.headers.get("Content-Length") or 0)
-            if not 0 <= length <= MAX_BODY:
-                raise ValueError(f"body must be under {MAX_BODY} bytes")
-            body = parse_action_body(self.rfile.read(length))
+            body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
         if action == REQUEUE_ACTION:
@@ -1239,6 +1442,36 @@ class StatusHandler(BaseHTTPRequestHandler):
                                      self.server.unit_name)
         self.answer(code, body)
 
+    def do_PUT(self):
+        """`PUT /config` when `[serve] config_edit = true`; 405 on any
+        other path. Token, then opt-in, then body, in the actions' order
+        and for their reasons: the write token on every bind, 404 without
+        the opt-in whatever the token, 400 for a body that is not a JSON
+        object; `write_config()` judges the text."""
+        path = urlsplit(self.path).path
+        if path != CONFIG_PATH:
+            return self.refuse()
+        token = (self.server.action_token if self.server.config_edit
+                 else self.server.token)
+        if token is not None and not authorized(
+                self.headers.get("Authorization"), token):
+            return self.answer(401, {})
+        if not self.server.config_edit:
+            return self.answer(404, {"error": "not found", "path": path})
+        try:
+            body = self.read_body()
+        except ValueError as bad:
+            return self.answer(400, {"ok": False, "error": str(bad)})
+        self.answer(*write_config(self.server.target, body))
+
+    def read_body(self):
+        """The request body as a JSON object (`parse_action_body()`);
+        ValueError past `MAX_BODY` or when it is not one."""
+        length = int(self.headers.get("Content-Length") or 0)
+        if not 0 <= length <= MAX_BODY:
+            raise ValueError(f"body must be under {MAX_BODY} bytes")
+        return parse_action_body(self.rfile.read(length))
+
     def open_route(self, path):
         """Whether `path` is served without the token: `/peers` and the
         console's files -- `/`, and any path no JSON route claims. The
@@ -1247,7 +1480,8 @@ class StatusHandler(BaseHTTPRequestHandler):
         never one either."""
         if path in OPEN_PATHS:
             return True
-        if path in JSON_PATHS or path.startswith(ACTIONS_PREFIX):
+        if path in JSON_PATHS or path == CONFIG_PATH \
+                or path.startswith(ACTIONS_PREFIX):
             return False
         return shaped_route(path) is None
 
@@ -1260,12 +1494,13 @@ class StatusHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         # A CORS preflight: the browser asks, before a cross-origin GET
         # carrying `Authorization` -- or the console's `POST /actions/...`
-        # carrying it and a JSON `Content-Type` -- whether it may send it.
+        # or `PUT /config` carrying it and a JSON `Content-Type` -- whether
+        # it may send it.
         # The answer is the same on every path, never carries credentials,
         # discloses nothing and reads nothing, so it runs without the
         # bearer check; the POST itself is still refused without one.
         self.answer_bytes(b"", "application/json", code=204, extra=[
-            ("Access-Control-Allow-Methods", "GET, POST"),
+            ("Access-Control-Allow-Methods", "GET, POST, PUT"),
             ("Access-Control-Allow-Headers",
              "authorization, accept, content-type"),
             ("Access-Control-Max-Age", "600"),
@@ -1315,7 +1550,8 @@ class StatusServer(ThreadingHTTPServer):
     page loaded from it can tell this daemon from the peers, not the
     machine's name. `actions` and `unit_name` are `[serve] actions` and
     `[serve] name`, read once at bind too: whether `POST /actions/...`
-    answers and which unit instance it addresses; `action_token` is the
+    answers and which unit instance it addresses; `config_edit` is `[serve]
+    config_edit`, whether the `/config` routes answer; `action_token` is the
     bearer value those routes demand on every bind, resolved at bind from
     `[serve] token_file` when the read `token` is None, so a loopback
     daemon with actions on exits at bind without the key rather than
@@ -1330,6 +1566,7 @@ class StatusServer(ThreadingHTTPServer):
         self.peers = console_config(target).daemons
         knobs = serve_config(target)
         self.actions = knobs.actions
+        self.config_edit = knobs.config_edit
         self.unit_name = knobs.name
         self.action_token = resolve_action_token(target, knobs, token)
         self.started_ms = int(time() * 1000)
@@ -1375,7 +1612,10 @@ def serve(target, address, out=None):
     try:
         bound_host, bound_port = server.server_address[:2]
         guard = "open" if token is None else "behind a bearer token"
-        mode = "with actions" if server.actions else "read-only"
+        opened = [name for name, on in (("actions", server.actions),
+                                        ("config edit", server.config_edit))
+                  if on]
+        mode = f"with {' and '.join(opened)}" if opened else "read-only"
         print(f"[holo2] serving {bound_host}:{bound_port} {mode} for"
               f" {target.path}, {guard}", file=out)
         try:

@@ -26,13 +26,8 @@ from holophyte.config import (
     SUPERVISE_INTERVAL_SEC,
     board_config,
     check_agent_commands,
-    check_config_keys,
-    console_config,
+    check_config,
     loop_config,
-    merge_config,
-    report_config,
-    serve_config,
-    sweep_config,
 )
 from holophyte.loop import (
     approve,
@@ -311,13 +306,7 @@ def cli(argv=None):
     # chose. Unknown keys in any table the factory reads are refused in the
     # same window: a typo the factory ignored would leave the operator
     # believing a knob is set that is not.
-    check_config_keys(target)
-    sweep_config(target)
-    loop_config(target)
-    report_config(target)
-    merge_config(target)
-    console_config(target)
-    serve_config(target)
+    check_config(target)
     if args.report:
         return report(target)
     # Same window as `--report`: a read-only daemon calls nobody, so no board

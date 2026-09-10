@@ -122,6 +122,41 @@ def check_config_keys(target):
                     f"[{table}] accepts: {', '.join(sorted(known))}")
 
 
+def check_config(target):
+    """The config checks every mode runs at startup, with the command line
+    parsed and nothing claimed: unknown keys and every table whose values
+    are held to a constraint without touching the host -- `[supervisor]`,
+    `[loop]`, `[report]`, `[merge]`, `[console]`, `[serve]`. `cli()` calls
+    this once it has a target; the daemon's `PUT /config` (KO-356) calls it
+    over a candidate document, so what the console can write is exactly
+    what startup would accept. Each check exits naming the file, the table
+    and the key, so a refusal is one sentence about the value to fix."""
+    check_config_keys(target)
+    sweep_config(target)
+    loop_config(target)
+    report_config(target)
+    merge_config(target)
+    console_config(target)
+    serve_config(target)
+
+
+def check_document(target):
+    """`check_config()` plus the shape of the tables the loop's startup
+    reads before it claims: `[agents]` through `agent_command()` and
+    `review_route()`, `[worktree]` through `setup_commands()`,
+    `setup_timeout()` and `branch_prefix()`. What it deliberately leaves
+    out is the host: whether a program is on PATH or Docker answers
+    (`check_agent_commands()`) is the loop's question at its next start,
+    not a property of the document."""
+    check_config(target)
+    review_route(target)
+    for role in AGENT_CONFIG_KEYS:
+        agent_command(target, role, "")
+    setup_commands(target)
+    setup_timeout(target)
+    branch_prefix(target)
+
+
 def agent_command(target, role, goal):
     """The configured argv for `role`, or None when the config names none.
 
@@ -1006,14 +1041,20 @@ def console_config(target):
 # `name` is the systemd instance those routes address --
 # `holophyte-supervise@NAME`, `holophyte-loop@NAME` -- the target slug the
 # deploy units are enabled under; the target directory's name by default.
+# `config_edit` (KO-356) opens `GET /config` and `PUT /config` behind the
+# token: the file's text, secrets redacted, and a validated replacement.
+# Off by default and separate from `actions`: a client holding the bearer
+# that can write the file can write `[worktree] setup` and `[agents]`,
+# which is command execution on the writer host at the next loop start.
 SERVE_KEYS = {
     "token_file": None,
     "actions": False,
+    "config_edit": False,
     "name": None,
 }
 KNOWN_KEYS["serve"] = frozenset(SERVE_KEYS)
-ServeConfig = collections.namedtuple("ServeConfig",
-                                     ("token_file", "actions", "name"))
+ServeConfig = collections.namedtuple(
+    "ServeConfig", ("token_file", "actions", "name", "config_edit"))
 
 
 def serve_config(target):
@@ -1025,7 +1066,8 @@ def serve_config(target):
     sits beside the config it is named in. Whether the daemon needs it at
     all is `holophyte.serve`'s to decide from the bind address; this only
     holds the value to its shape. `actions` is a boolean, false by
-    default; `name` is the systemd instance name the action routes
+    default, as is `config_edit`, which opens the `/config` routes (KO-356);
+    `name` is the systemd instance name the action routes
     address, the target directory's name when absent (KO-348). Keys this
     version does not know are refused by `check_config_keys()`.
     """
@@ -1034,11 +1076,14 @@ def serve_config(target):
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] must be a table, got "
             f"{type(table).__name__}")
-    actions = table.get("actions", SERVE_KEYS["actions"])
-    if not isinstance(actions, bool):
-        raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] actions must be true or "
-            f"false, got {actions!r}")
+    flags = {}
+    for key in ("actions", "config_edit"):
+        flags[key] = table.get(key, SERVE_KEYS[key])
+        if not isinstance(flags[key], bool):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [serve] {key} must be true or "
+                f"false, got {flags[key]!r}")
+    actions, config_edit = flags["actions"], flags["config_edit"]
     name = table.get("name", SERVE_KEYS["name"])
     if name is None:
         name = target.path.name
@@ -1048,7 +1093,8 @@ def serve_config(target):
             f"systemd instance name without '/', got {name!r}")
     token_file = table.get("token_file", SERVE_KEYS["token_file"])
     if token_file is None:
-        return ServeConfig(token_file=None, actions=actions, name=name)
+        return ServeConfig(token_file=None, actions=actions, name=name,
+                           config_edit=config_edit)
     if not isinstance(token_file, str) or not token_file.strip():
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] token_file must be a "
@@ -1056,4 +1102,5 @@ def serve_config(target):
     path = Path(token_file).expanduser()
     if not path.is_absolute():
         path = Path(target.config_path).parent / path
-    return ServeConfig(token_file=path, actions=actions, name=name)
+    return ServeConfig(token_file=path, actions=actions, name=name,
+                       config_edit=config_edit)

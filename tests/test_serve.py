@@ -167,7 +167,7 @@ class ServeTestCase(unittest.TestCase):
         self.assertEqual(code, 204)
         self.assertEqual(raw, b"")
         self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
-        self.assertEqual(headers["Access-Control-Allow-Methods"], "GET, POST")
+        self.assertEqual(headers["Access-Control-Allow-Methods"], "GET, POST, PUT")
         allowed = headers["Access-Control-Allow-Headers"].lower()
         self.assertIn("authorization", allowed)
         self.assertIn("content-type", allowed)
@@ -2310,6 +2310,128 @@ class ActionsTests(ServeTestCase):
         self.assertEqual(after, before)
         self.assertNotIn("ready", after[0])
         self.assertEqual(after[1], [])
+
+
+class ConfigEditTests(ServeTestCase):
+    """`GET /config` and `PUT /config` (KO-356): 404 without `[serve]
+    config_edit = true`; with it, behind the token on every bind, the file
+    redacted on the way out, the secret put back and the document held to
+    the loader on the way in, the previous text kept beside it. `[serve]`
+    accepts no secret value of its own, so the secret sits in a table the
+    loader leaves alone, as a later version's key would."""
+
+    TOKEN = TokenTests.TOKEN
+    BEARER = TokenTests.BEARER
+    SECRET = "lin_api_0123456789abcdef"
+
+    def config(self, extra="", loop="[loop]\nworkers = 2\n"):
+        path = self.root / "serve.token"
+        path.write_text(self.TOKEN + "\n")
+        path.chmod(0o600)
+        return (f'[serve]\ntoken_file = "{path}"\n{extra}'
+                f'\n{loop}\n[linear]\napi_key = "{self.SECRET}"  # board\n')
+
+    def on_disk(self):
+        return (self.db.parent / "config.toml").read_text()
+
+    def test_without_the_opt_in_both_routes_are_404_with_the_token(self):
+        self.seed()
+        before = self.config()
+        self.start(before, host="0.0.0.0")
+        code, _, body = self.request("GET", "/config", self.BEARER)
+        self.assertEqual((code, body["error"]), (404, "not found"))
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": "[loop]\nworkers = 3\n"})
+        self.assertEqual((code, body["error"]), (404, "not found"))
+        self.assertEqual(self.on_disk(), before)
+        self.assertEqual(list(self.db.parent.glob("config.toml.bak-*")), [])
+
+    def test_get_redacts_secret_values_and_keeps_the_token_file_path(self):
+        self.seed()
+        self.start(self.config("config_edit = true\n"))
+        code, _, body = self.request("GET", "/config")
+        self.assertEqual((code, body), (401, {}))
+        code, _, body = self.request("GET", "/config", self.BEARER)
+        self.assertEqual(code, 200)
+        self.assertNotIn(self.SECRET, self.raw_body)
+        self.assertNotIn(self.TOKEN, self.raw_body)
+        self.assertIn('api_key = "[redacted]"', body["text"])
+        self.assertIn(f'token_file = "{self.root / "serve.token"}"',
+                      body["text"])
+        self.assertEqual(body["path"], str(self.db.parent / "config.toml"))
+        self.assertEqual(body["applies"], "next loop start")
+
+    def test_a_document_the_loader_refuses_is_400_and_leaves_the_file(self):
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before, host="0.0.0.0")
+        code, _, body = self.request(
+            "PUT", "/config", self.BEARER,
+            body={"text": before.replace("workers = 2", "workers = 0")})
+        self.assertEqual(code, 400)
+        self.assertIs(body["ok"], False)
+        self.assertIn("[loop] workers", body["error"])
+        self.assertEqual(self.on_disk(), before)
+        self.assertEqual(list(self.db.parent.glob("config.toml.bak-*")), [])
+        conn = store.read.open_readonly(self.db)
+        try:
+            self.assertEqual(store.read.ledger(conn, self.run), [])
+        finally:
+            conn.close()
+
+    def test_a_valid_put_keeps_the_secret_backs_up_and_records(self):
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        _, _, shown = self.request("GET", "/config", self.BEARER)
+        edited = shown["text"].replace("workers = 2", "workers = 3")
+        self.assertIn("[redacted]", edited)
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": edited})
+        self.assertEqual(code, 200, body)
+        self.assertIs(body["ok"], True)
+        after = self.on_disk()
+        self.assertIn("workers = 3", after)
+        self.assertIn(f'api_key = "{self.SECRET}"  # board', after)
+        self.assertNotIn("[redacted]", after)
+        backup = Path(body["backup"])
+        self.assertEqual(backup.parent, self.db.parent)
+        self.assertTrue(backup.name.startswith("config.toml.bak-"))
+        self.assertEqual(backup.read_text(), before)
+        conn = store.read.open_readonly(self.db)
+        try:
+            rows = conn.execute(
+                'SELECT runId, source, "trigger", "action" FROM interventions'
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [(self.run, "human", "manual", "config_edit")])
+        self.assertEqual(body["recorded"], self.run)
+        # And the written file is what the loop will read at its next start.
+        tgt = holophyte.target.Target.locate(self.target)
+        self.assertEqual(holophyte.config.loop_config(tgt).workers, 3)
+
+    def test_a_redacted_value_the_file_never_held_is_400(self):
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        text = before + '\n[other]\ntoken = "[redacted]"\n'
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 400)
+        self.assertIn("[other] token", body["error"])
+        self.assertEqual(self.on_disk(), before)
+
+    def test_config_edit_without_a_token_file_is_a_startup_error(self):
+        self.seed()
+        (self.db.parent / "config.toml").write_text(
+            "[serve]\nconfig_edit = true\n")
+        tgt = holophyte.target.Target.locate(self.target)
+        with self.assertRaises(SystemExit) as raised:
+            holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())
+        message = str(raised.exception)
+        self.assertIn("[serve] token_file", message)
+        self.assertIn("config_edit", message)
 
 
 class ParseAddressTests(unittest.TestCase):
