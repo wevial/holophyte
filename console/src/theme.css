@@ -334,3 +334,14 @@ body {
   color: var(--link);
   text-decoration: underline;
 }
+
+/* Anything clickable shows the hand: Tailwind's preflight leaves buttons on
+   the default arrow, and the console draws its actions, view switches and
+   expandable rows as buttons or role="button" elements. A disabled control
+   keeps the arrow so the state reads without a hover. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
