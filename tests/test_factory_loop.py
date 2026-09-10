@@ -2167,6 +2167,57 @@ class MergeApprovalTests(LoopFixture):
                                  [("merged",)])
 
 
+class MergeAfterTests(LoopFixture):
+    """`[merge] after` (KO-347): the target's commands run in the checkout
+    once the merge has landed; a failing one parks the run with its output
+    and leaves the merge commit on main."""
+
+    def test_the_commands_run_in_the_checkout_and_the_run_merges(self):
+        self.configure('[merge]\nafter = ["sh -c \'touch after.ran\'"]\n')
+
+        out = self.main_output(Commit("the scripted work"), APPROVE)
+
+        self.assertTrue((self.target / "after.ran").exists())
+        self.assertIn("[holo2] after: sh -c 'touch after.ran' -> exit 0", out)
+        self.assertIn("the scripted work", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+
+    def test_a_failing_command_parks_the_run_and_keeps_the_merge(self):
+        """The merge stands -- main holds the work -- but the run is not
+        marked merged: it parks `blocked_on_operator`, alive and lease
+        released, with the command's output in the note and the ticket's
+        question; the second command never runs."""
+        self.configure('[merge]\nafter = ["sh -c \'echo boom >&2; exit 1\'",'
+                       ' "sh -c \'touch after.ran\'"]\n')
+        provider = StubProvider(a_task())
+
+        out = self.main_output(Commit("the scripted work"), APPROVE,
+                               provider=provider)
+
+        self.assertIn("the scripted work", self.subjects())
+        self.assertNotEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertFalse((self.target / "after.ran").exists())
+        self.assertIn("-> exit 1", out)
+        self.assertEqual(
+            self.read("SELECT phase, endedAt, outcome FROM runs"),
+            [("blocked_on_operator", None, None)])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
+                         [(None,)])
+        ((status, question),) = self.read(
+            "SELECT status, blockedQuestion FROM tickets")
+        self.assertEqual(status, "blocked_on_operator")
+        self.assertIn("boom", question)
+        ((note,),) = self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'phase_change'"
+            " ORDER BY id DESC LIMIT 1")
+        self.assertIn("boom", note)
+        (_, body) = provider.comments[-1]
+        self.assertIn("MERGED to main", body)
+        self.assertIn("boom", body)
+
+
 class SelfHostingTests(LoopFixture):
     """A loop working on the factory's own repository re-executes itself
     after a merge, so the merged code is what runs the next pass. Through
