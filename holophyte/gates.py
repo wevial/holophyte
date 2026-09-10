@@ -12,12 +12,13 @@ Second slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
 import contextlib
+import fcntl
 import os
 import re
 import signal
 import subprocess
 from pathlib import Path
-from time import monotonic, sleep, time
+from time import monotonic, monotonic_ns, sleep, time
 
 import ticket_template
 from holophyte.config import VERIFY_TIMEOUT
@@ -535,8 +536,12 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
                 on_wait()
             sleep(poll)
             continue
-        with os.fdopen(fd, "w") as f:
-            f.write(stamp)
+        # The flock rides on the open descriptor for the block: a sweep that
+        # finds it taken knows the holding process is alive whatever the
+        # store says of its run, and the kernel drops it with the process, so
+        # a holder that died cannot keep the lock "in use".
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.write(fd, stamp.encode())
         break
     try:
         yield path
@@ -546,3 +551,54 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
                 path.unlink()
         except FileNotFoundError:
             pass
+        os.close(fd)
+
+
+def remove_dead_merge_lock(path):
+    """Remove the merge lock at `path` if no live process holds it; say what
+    happened: `removed`, `in_use`, `gone`, or `restored`.
+
+    Removal is atomic with respect to `merge_lock()`'s acquisition, which is
+    an `O_EXCL` create at `path`. A plain unlink is not: two sweeps that read
+    the same stale lock would both unlink, the second of them deleting the
+    live lock a gate took after the first cleared the way. So: open the
+    file, take its flock without blocking -- a refusal means the process
+    that created it is still alive, and the lock is `in_use`, whatever the
+    store says of its run -- then move the file aside with an atomic rename
+    to a name only this call knows, and compare inodes. The same inode: the
+    file we judged is the file we hold, unlink it. A different one: a gate
+    acquired a fresh lock between our open and the rename, and it is put
+    back with a `link` (which cannot overwrite a lock a third gate has
+    since taken) -- `restored`. `gone` is a lock already cleared.
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except FileNotFoundError:
+        return "gone"
+    aside = path.with_name(f"{path.name}.sweep-{os.getpid()}-{monotonic_ns()}")
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return "in_use"
+        judged = os.fstat(fd).st_ino
+        try:
+            os.rename(path, aside)
+        except FileNotFoundError:
+            return "gone"
+        if os.stat(aside).st_ino == judged:
+            aside.unlink()
+            return "removed"
+        try:
+            os.link(aside, path)
+        except FileExistsError:
+            # A third gate took the free path in the instant between the
+            # rename and the link: the displaced lock's holder will find
+            # its release a no-op (the stamp is not at `path`), and the two
+            # gates overlap for this one merge. Named, not hidden.
+            aside.unlink()
+            return "displaced"
+        aside.unlink()
+        return "restored"
+    finally:
+        os.close(fd)

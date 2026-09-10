@@ -1073,10 +1073,13 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
     and merges the candidate as it will sit on today's `main`. Returns the
     branch's sha afterwards: unchanged when `main` is already an ancestor.
 
-    A conflict is a person's to resolve: the merge is aborted, the branch
-    left at `sha`, and the run parks with the conflicting paths in the
-    question -- except a conflict in FINDINGS.md alone, which takes the
-    branch side as the `--no-ff` merge always has (the fuller window wins).
+    A conflict is a person's to resolve, whatever the path: the merge is
+    aborted, the branch left at `sha`, and the run parks with the
+    conflicting paths in the question. (The `--no-ff` merge's own
+    FINDINGS.md self-resolution is not repeated here: the ticket's contract
+    is that a `main` that conflicts with the branch parks, and nothing on
+    the branch writes FINDINGS.md any more, so a conflict there is a real
+    one.)
     """
     if subprocess.run(["git", "merge-base", "--is-ancestor", "main", "HEAD"],
                       cwd=wt, capture_output=True).returncode == 0:
@@ -1090,25 +1093,19 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
             p for p in subprocess.run(
                 ["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt,
                 capture_output=True, text=True).stdout.splitlines() if p.strip())
-        if conflicted == ["FINDINGS.md"]:
-            subprocess.run(["git", "checkout", "--ours", "FINDINGS.md"],
-                           cwd=wt, capture_output=True, text=True)
-            sh(["git", "add", "FINDINGS.md"], wt)
-            sh(["git", "commit", "--no-edit"], wt)
-        else:
-            subprocess.run(["git", "merge", "--abort"], cwd=wt,
-                           capture_output=True, text=True)
-            paths = ", ".join(conflicted) or "(no unmerged paths reported)"
-            why = (f"merging main into {branch} conflicted on: {paths};"
-                   f" branch preserved at {sha[:12]}")
-            print(f"[holo2] {why}")
-            _park_at_gate(conn, run_id, provider, task_id, branch, sha,
-                          f"merge conflict with main on: {paths}; resolve it"
-                          f" on {branch} and --repoint, or merge by hand",
-                          f"MERGE GATE: main conflicts with {branch} on"
-                          f" {paths}; the merge of main into the branch was"
-                          " aborted.")
-            raise RunFailure(why)
+        subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                       capture_output=True, text=True)
+        paths = ", ".join(conflicted) or "(no unmerged paths reported)"
+        why = (f"merging main into {branch} conflicted on: {paths};"
+               f" branch preserved at {sha[:12]}")
+        print(f"[holo2] {why}")
+        _park_at_gate(conn, run_id, provider, task_id, branch, sha,
+                      f"merge conflict with main on: {paths}; resolve it"
+                      f" on {branch} and --repoint, or merge by hand",
+                      f"MERGE GATE: main conflicts with {branch} on"
+                      f" {paths}; the merge of main into the branch was"
+                      " aborted.")
+        raise RunFailure(why)
     merged = sh(["git", "rev-parse", "HEAD"], wt)
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "merge_gate",

@@ -1534,9 +1534,9 @@ class MainDiverges:
 
 
 class MergeConflictTests(LoopFixture):
-    """The merge gate meeting a conflict: only a conflict whose unmerged set
-    is exactly FINDINGS.md is resolved, and anything else aborts the merge,
-    leaves main clean and fails the run with the paths named."""
+    """The merge gate meeting a conflict: a `main` that conflicts with the
+    branch, on any path, aborts the merge of main into the branch, leaves
+    main clean and parks the run with the paths named."""
 
     def commit_on_main(self, path, body):
         """Land `body` at `path` on main — the divergence the merge meets."""
@@ -1647,21 +1647,35 @@ class MergeConflictTests(LoopFixture):
         self.assertEqual(outcome, "failed")
         self.assertIn(path, reason)
 
-    def test_a_conflict_only_in_findings_md_still_takes_the_branch_side(self):
-        """The kept resolution: main's FINDINGS.md window moves while the run
-        is under review and the branch wrote its own, so the merge really
-        conflicts there — and the branch's fuller window wins, merge lands."""
+    def test_a_conflict_only_in_findings_md_parks_like_any_other(self):
+        """KO-342: the `--no-ff` merge used to take the branch side of a
+        FINDINGS.md-only conflict, but the gate's merge of main into the
+        branch grants no such exception -- the contract is that a conflict
+        parks, with the path named, and moves nothing."""
+        seen = {}
+
+        def diverge():
+            self.commit_on_main("FINDINGS.md", "main window\n")
+            seen["main"] = self.git("rev-parse", "main").strip()
+            seen["branch"] = self.git("rev-parse", BRANCH).strip()
+
         self.loop(Commit("branch window", path="FINDINGS.md",
                          body="branch window\n"),
-                  MainDiverges(lambda: self.commit_on_main("FINDINGS.md",
-                                                           "main window\n")))
+                  MainDiverges(diverge))
 
-        self.assertEqual(self.main_status(), "")
+        ((status, question),) = self.read(
+            "SELECT status, blockedQuestion FROM tickets")
+        self.assertEqual(status, "blocked_on_operator")
+        self.assertIn("FINDINGS.md", question)
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), seen["branch"])
+        self.assertEqual(self.git("rev-parse", "main").strip(), seen["main"])
         self.assertFalse(self.mid_merge())
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-        self.assertIn("branch window", (self.target / "FINDINGS.md").read_text())
-        self.assertNotIn("main window", (self.target / "FINDINGS.md").read_text())
-        self.assertNotIn(BRANCH, self.branches())  # merged, so cleaned up
+        # The only dirt on main is the close-out's regenerated FINDINGS.md
+        # window, which every failed run leaves for a human -- here over a
+        # tracked file, so it shows as modified rather than untracked.
+        self.assertEqual(self.main_status(), "M FINDINGS.md")
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.git("show", "main:FINDINGS.md"), "main window\n")
 
 
 class CrashContainmentTests(LoopFixture):

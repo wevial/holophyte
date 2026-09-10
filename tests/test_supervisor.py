@@ -9,9 +9,11 @@ sweep read the box once for the whole run.
 
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -118,6 +120,53 @@ class MergeLockSweepTests(SweepTestCase):
         self.assertTrue(any(line.startswith(
             f"merge lock held by run {run_id} (merge_gate)") for line in lines),
             lines)
+
+    def test_a_lock_a_live_process_holds_survives_the_sweep_of_its_ended_run(self):
+        """The store says the run ended, but the process that took the lock
+        is still inside the gate (the flock rides on its open descriptor):
+        the sweep leaves the lock and says why, rather than deleting a lock
+        somebody is inside of."""
+        run_id = self.a_run(phase="merge_gate")
+        store.release(self.conn, run_id, "failed", "judged dead early",
+                      now=T0 + MINUTE)
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        with holophyte.gates.merge_lock(self.tgt, run_id):
+            stamp = path.read_text()
+            acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
+            self.assertEqual(path.read_text(), stamp)
+        self.assertTrue(any("process is alive and holds it; left alone" in line
+                            and f"run {run_id}" in line for line in acted), acted)
+        self.assertFalse(path.exists())  # the holder's release, not the sweep's
+
+    def test_a_lock_a_gate_took_after_the_stale_one_was_judged_is_kept(self):
+        """The interleaving a plain unlink got wrong: between this sweep
+        reading the stale lock and removing it, another sweep clears it and
+        a live gate takes a fresh one at the same path. The removal must
+        notice it no longer holds the file it judged, and the fresh lock must
+        still be there afterwards, intact."""
+        ended = self.a_run(phase="merge_gate")
+        store.release(self.conn, ended, "failed", "died at the gate",
+                      now=T0 + MINUTE)
+        path = self.lock_for(ended)
+        real_rename = os.rename
+        fresh = f"{ended + 40} {T0 / 1000 + 90:.3f}\n"
+
+        def rename_after_another_gate_got_in(src, dst):
+            # The other sweep's unlink and the live gate's O_EXCL create
+            # land in the window before our rename.
+            os.unlink(src)
+            fd = os.open(src, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            os.write(fd, fresh.encode())
+            os.close(fd)
+            real_rename(src, dst)
+
+        with patch("holophyte.gates.os.rename", rename_after_another_gate_got_in):
+            acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
+
+        self.assertEqual(path.read_text(), fresh)
+        self.assertTrue(any("a gate took a fresh lock meanwhile, which was kept"
+                            in line for line in acted), acted)
+        self.assertEqual(list(path.parent.glob("merge.lock*")), [path])
 
 
 if __name__ == "__main__":

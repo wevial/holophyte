@@ -43,7 +43,9 @@ machines it walks. Back to the [README](index.md).
    target's state directory naming the run and when it took it), so two runs
    reaching it together take turns and merges into `main` serialise; a gate
    that waits out the bound parks the ticket naming the holder, and
-   `--sweep --act` removes a lock whose run has ended. Under the lock, `main`
+   `--sweep --act` removes a lock whose run has ended (atomically with a
+   gate's taking of it: a lock a live process still holds, or one a gate
+   took fresh meanwhile, is left in place and said so). Under the lock, `main`
    is merged into the branch when it has moved past it -- a conflict aborts
    that merge, leaves the branch at its sha and parks the ticket
    `blocked_on_operator` with the conflicting paths in the question -- then
