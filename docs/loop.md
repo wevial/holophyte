@@ -21,10 +21,11 @@ machines it walks. Back to the [README](index.md).
    nothing more to that run, leaves the worktree and branch as the sweep
    preserved them, and goes on to its next claim. Then the loop
    reconciles its mirror: every open mirrored ticket without an active run
-   that Linear now holds completed or canceled is walked to `merged` or
-   `abandoned`, with a `reconcile` intervention row on its most recent run
-   and one printed line naming the move; a board that cannot be asked skips
-   the reconcile in one line and the loop goes on.
+   that Linear now holds completed or canceled (archived issues included;
+   an archived issue still in an open state counts as canceled) is walked
+   to `merged` or `abandoned`, with a `reconcile` intervention row on its
+   most recent run and one printed line naming the move; a board that
+   cannot be asked skips the reconcile in one line and the loop goes on.
 2. Cut a per-task branch in a sibling worktree (`<repo>.worktrees/`), so
    the main checkout stays untouched, and run the target's configured
    `[worktree] setup` commands there — a worktree that borrows the main
