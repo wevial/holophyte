@@ -1843,7 +1843,7 @@ class MergeConfigTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(holophyte.config.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", "ticket", ""))
+                         ("auto", "local", 5, "merge", "ticket", "", "park"))
 
     def test_pr_text_and_pr_style_are_read(self):
         """`pr_text = "written"` with the target's own instructions; absent,
@@ -1854,6 +1854,14 @@ class MergeConfigTests(ConfigTestCase):
         merge = holophyte.config.merge_config(self.tgt)
         self.assertEqual(merge.pr_text, "written")
         self.assertEqual(merge.pr_style, "Title starts with [Feature Name].")
+
+    def test_human_threads_is_read(self):
+        """`human_threads = "act"` lets the shepherd act on a person's
+        thread; absent, it is `"park"`, KO-327's rule."""
+        self.locate('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
+
+        self.assertEqual(
+            holophyte.config.merge_config(self.tgt).human_threads, "act")
 
     def test_pr_merge_method_is_read(self):
         """A squash-only repository names its method; absent, it is
@@ -1892,6 +1900,7 @@ class MergeConfigTests(ConfigTestCase):
                            "pr_merge_method"),
                           ('pr_text = "agent"', "pr_text"),
                           ("pr_style = true", "pr_style"),
+                          ('human_threads = "reply"', "human_threads"),
                           ('approve_by = "human"', "approve_by")):
             with self.subTest(line=line):
                 target = self.locate(f"[merge]\n{line}\n").path
