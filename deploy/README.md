@@ -13,5 +13,19 @@ on a writer host, to copy under `~/.config/systemd/user/` and enable by hand.
   (`holophyte-serve@holophyte`); the target path, bind address and port come
   from `~/.holophyte/SLUG/serve.env`. Setup, the port convention and the
   environment file's keys are in `docs/operating.md` under "Serving standing".
+- `deploy/holophyte-supervise@.service` — the supervisor, `factory.py TARGET
+  --supervise`, with `Restart=on-failure`; the instance name and environment
+  file are the serve unit's, and only `HOLOPHYTE_TARGET` is read from it.
+  Enable with `systemctl --user enable --now holophyte-supervise@NAME`.
+- `deploy/holophyte-loop@.service` — one pass of the loop, `factory.py
+  TARGET`, `Type=exec` with `Restart=no`. Start it by hand with
+  `systemctl --user start holophyte-loop@NAME`: it runs the queue down and
+  the unit is inactive again once the loop prints its idle line; a failed
+  pass stays visible as a failed unit rather than restarting. Not meant to
+  be enabled.
+
+All three log to the journal under their unit name
+(`journalctl --user -u holophyte-supervise@NAME`), and none depends on a
+shell session: a dead tmux server takes down nothing that runs here.
 
 macOS writers have no systemd; a launchd equivalent is not shipped.

@@ -1,0 +1,24 @@
+[Unit]
+Description=Holophyte supervisor (--supervise) for target %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# One instance per target: `holophyte-supervise@SLUG` reads the same
+# ~/.holophyte/SLUG/serve.env the serve unit reads, and needs only
+# HOLOPHYTE_TARGET from it. The command run is what
+# `factory.py TARGET --supervise` runs by hand; as a unit it outlives the
+# shell session that would otherwise have held it in tmux.
+# WorkingDirectory is the factory checkout; adjust it to your layout.
+EnvironmentFile=%h/.holophyte/%i/serve.env
+WorkingDirectory=%h/srv/dev/holophyte
+ExecStart=/usr/bin/python3 factory.py ${HOLOPHYTE_TARGET} --supervise
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
