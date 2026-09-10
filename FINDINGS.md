@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[467 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T03:55:05Z — KO-328
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T03:56:33Z — KO-328
-MERGED to main as a9cb4f6 (branch task/ko-328-the-store-mirrors-a-ticket-s-b deleted).
-actual: 20.0 min · estimate: 30 min · rounds: 1
+[469 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T04:02:52Z — KO-330
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -757,3 +750,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T18:20:19Z — KO-346
 MERGED to main as f773612 (branch task/ko-346-the-supervisor-and-the-loop-ru deleted).
 actual: 13.2 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T18:31:55Z — KO-347
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T18:33:26Z — KO-347
+MERGED to main as fa7c689 (branch task/ko-347-a-target-runs-its-merge-after deleted).
+actual: 13.1 min · estimate: 30 min · rounds: 1
