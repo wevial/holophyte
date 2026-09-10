@@ -62,6 +62,7 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
+import provider as provider_seam  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
@@ -124,6 +125,9 @@ class StubProvider:
     def label_issue(self, issue_id, name):
         self.label_calls.append(("label", issue_id, name))
         have = self.labels.setdefault(issue_id, [])
+        holder = provider_seam.competing_lease(have, name)
+        if holder is not None:
+            raise provider_seam.LeaseHeld(issue_id, name, holder)
         if name not in have:
             have.append(name)
 
@@ -3895,6 +3899,38 @@ class BoardLeaseLabelTests(LoopFixture):
                          ("unlabel", "iss-131", self.LABEL))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual(self.last_fake.roles, ["implement", "review"])
+
+    def test_a_lease_another_writer_took_after_the_listing_is_refused(self):
+        """The admission check reads the listing; the label write reads the
+        issue as it is. A `holo:writer-2` that landed in between is
+        writer-2's lease: this writer's label is not written, the store
+        lease goes back without a strike, no run starts, and the loop
+        moves on to the next ticket."""
+        class Raced(StubProvider):
+            def label_issue(self, issue_id, name):
+                # writer-2 labels KO-131 after this writer's listing and
+                # before its write; the board the write reads has it.
+                if issue_id == "iss-131":
+                    self.labels[issue_id].append("holo:writer-2")
+                super().label_issue(issue_id, name)
+
+        provider = Raced(a_task(), a_task(2))
+        out = self.main_output(Commit("the scripted work"), APPROVE,
+                               provider=provider)
+
+        self.assertIn("[holo2] KO-131 is leased by writer-2 on the board;"
+                      " skipping it", out)
+        self.assertEqual(provider.labels["iss-131"], ["holo:writer-2"])
+        self.assertEqual(
+            self.read("SELECT t.linearIdentifier, r.outcome, r.outcomeClass"
+                      " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+                      " ORDER BY r.id"),
+            [("KO-131", "failed", "infra"), ("KO-132", "merged", "work")])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"),
+                         [(None,), (None,)])
+        # Only KO-132 was worked: one implement and one review turn.
+        self.assertEqual(self.last_fake.roles, ["implement", "review"])
+        self.assertEqual(provider.labels["iss-132"], [])
 
     def test_a_label_the_board_refuses_releases_the_lease_and_starts_no_run(self):
         class Refusing(StubProvider):

@@ -92,6 +92,7 @@ from holophyte.supervisor import (
     sweep_lines,
 )
 from holophyte.target import worktree_path
+from provider import LeaseHeld
 
 # The paths a run works against, plus the config they carry, are a `Target`
 # (below): built once by `cli()` from the command line and passed to every
@@ -2796,6 +2797,19 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
     label = lease_label(target)
     try:
         provider.label_issue(task["issue_id"], label)
+    except LeaseHeld as e:
+        # The admission read was a listing; the write reads the issue as it
+        # is now, and another writer's label taken in between is that
+        # writer's lease. The same answer as a store lease lost in the
+        # race above: give the run back -- `infra`, the factory racing
+        # itself, not a strike against the ticket -- and take the next
+        # ticket, with the same line admission prints for a lease it saw.
+        store.release(conn, run_id, "failed",
+                      f"the board showed {e.holder}'s lease label at claim;"
+                      " no work started", outcome_class="infra")
+        print(f"[holo2] {task['id']} is leased by {e.holder} on the board;"
+              " skipping it")
+        return HELD
     except Exception as e:  # noqa: BLE001 - any board refusal fails the claim
         refused = InfraFailure(f"the board did not take the lease label"
                                f" {label} ({e}); no work started")

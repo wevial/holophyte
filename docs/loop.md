@@ -21,9 +21,13 @@ machines it walks. Back to the [README](index.md).
    the board; skipping it`) and nothing is leased in the store; one carrying
    this writer's own label with no live run under it in the store is a stale
    lease a close-out never took off, so the label is removed and the claim
-   goes ahead. A label the board will not take fails the claim as an `infra`
-   failure and gives the store lease straight back, so a run never starts
-   unlabelled. The label comes off in the same close-out that moves the
+   goes ahead. The label write reads the issue as the board holds it then,
+   not as the listing had it, so another writer's `holo:` label taken
+   between the two refuses the write: the store lease goes back as an
+   `infra` failure, no strike, and the loop takes the next ticket with the
+   same skip line. A label the board will not take fails the claim as an
+   `infra` failure and gives the store lease straight back, so a run never
+   starts unlabelled. The label comes off in the same close-out that moves the
    store -- a merge, a failure, a park for a human, a sweep -- and
    `--requeue` removes it too. Before the
    first claim the loop runs one read-only sweep of the store. The sweep's

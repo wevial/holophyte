@@ -231,6 +231,23 @@ class ConformanceMixin:
 
         self.assertEqual(self.claim()["labels"], ["other"])
 
+    def test_a_lease_label_another_holder_carries_refuses_the_write(self):
+        """A `prefix:` label is a lease, exclusive per prefix (KO-351):
+        `label_issue()` reads the ticket at the write, and one already
+        carrying `holo:writer-2` refuses `holo:writer-1` with `LeaseHeld`
+        naming writer-2, writing nothing. An ordinary label is not a lease
+        and lands beside it; the holder's own label is idempotent."""
+        self.seed("KO-1")
+        self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-2")
+
+        with self.assertRaises(board_seam.LeaseHeld) as held:
+            self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-1")
+        self.assertEqual(held.exception.holder, "writer-2")
+
+        self.provider.label_issue(self.issue_id("KO-1"), "other")
+        self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-2")
+        self.assertEqual(self.claim()["labels"], ["holo:writer-2", "other"])
+
 
 class FileProviderTests(ConformanceMixin, unittest.TestCase):
     """`FileProvider` over a temporary directory, in the documented format."""

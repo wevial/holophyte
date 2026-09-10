@@ -261,6 +261,41 @@ def set_state(issue_id, state_name, team):
             f"Linear refused to move issue {issue_id} to {state_name!r}")
 
 
+class LeaseHeld(RuntimeError):
+    """`label_issue()`'s refusal when the ticket already carries another
+    holder's label under the same `prefix:` (KO-351): the board showed the
+    lease being taken *after* the caller's listing, so the caller's own
+    label was not written. `holder` is the other label's suffix -- the
+    writer's host label -- for the caller's skip line."""
+
+    def __init__(self, issue_id, name, holder):
+        super().__init__(f"issue {issue_id} already carries the lease label"
+                         f" {lease_prefix(name)}{holder}, not {name}")
+        self.holder = holder
+
+
+def lease_prefix(name):
+    """The `prefix:` of a lease label, `holo:` for `holo:writer-1`; None for
+    a label without a colon, which is an ordinary label and excludes
+    nothing."""
+    head, colon, _ = str(name).partition(":")
+    return head + colon if colon else None
+
+
+def competing_lease(have, name):
+    """The holder named by a label in `have` that shares `name`'s `prefix:`
+    but not its suffix, or None. Read against the ticket's labels *as the
+    board holds them at the write*, not the listing: the lease another
+    writer took between the two is exactly what this catches."""
+    prefix = lease_prefix(name)
+    if prefix is None:
+        return None
+    for label in have:
+        if label != name and str(label).startswith(prefix):
+            return label[len(prefix):]
+    return None
+
+
 def label_names(issue):
     """The names of `issue`'s labels as the ready query lists them; [] when
     the query did not ask for them."""
@@ -321,8 +356,16 @@ def label_issue(issue_id, name, team):
     carrying the label is left as it is -- and it raises when Linear
     refuses, so the caller can give the store lease back rather than start
     a run no other writer can see.
+
+    The read just before the write is also the second lease check: a label
+    under the same `prefix:` naming another holder -- another writer's
+    `holo:` lease, taken after the caller's listing -- raises `LeaseHeld`
+    and writes nothing, so two writers never both hold the ticket labelled.
     """
     have = _label_ids_of(issue_id)
+    holder = competing_lease(have, name)
+    if holder is not None:
+        raise LeaseHeld(issue_id, name, holder)
     if name in have:
         return
     _write_labels(issue_id, [*have.values(), _label_id(name, team)],

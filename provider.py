@@ -68,6 +68,11 @@ from typing import Protocol
 
 import ticket_template
 
+# The lease refusal both boards raise from `label_issue()` (KO-351), owned
+# by the Linear module so it imports standalone; re-exported here as the
+# seam's name for it.
+from linear_provider import LeaseHeld, competing_lease
+
 # The same fence `linear_provider.parse_task()` reads, so a body parsed by
 # either board yields the same `verify`.
 VERIFY_RE = re.compile(r"## Verify command\(s\)\s*```\n(.*?)```", re.S)
@@ -122,7 +127,10 @@ class Provider(Protocol):
     def label_issue(self, issue_id, name) -> None:
         """Add the label `name` to the ticket, creating the label on first
         use; a ticket already carrying it is left as it is. Raise when the
-        board did not take it: the loop gives the store lease back then."""
+        board did not take it: the loop gives the store lease back then.
+        A `prefix:` label is a lease, exclusive per prefix: when the ticket
+        already carries another holder's label under `name`'s prefix, raise
+        `LeaseHeld` naming that holder and write nothing."""
         ...
 
     def unlabel_issue(self, issue_id, name) -> None:
@@ -237,6 +245,9 @@ class FileProvider:
         if not str(name).strip():
             raise RuntimeError(f"refused to label {issue_id} with an empty name")
         have = self._labels(issue_id)
+        holder = competing_lease(have, name)
+        if holder is not None:
+            raise LeaseHeld(issue_id, name, holder)
         if name not in have:
             self._path(issue_id, ".labels").write_text(
                 "".join(f"{label}\n" for label in [*have, name]))
