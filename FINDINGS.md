@@ -653,28 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[437 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T23:36:13Z — KO-329
-MERGED to main as 4dc2bb0 (branch task/ko-329-at-startup-the-loop-walks-mirr deleted).
-actual: 8.7 min · estimate: 30 min · rounds: 1
-
-## 2026-09-09T23:47:57Z — KO-334
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- (unparsed):94f18e9ccbb0 [p2] CRITERION 1: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_one_claim_pass_mirrors_the_whole_ready_listing` omits bodies for both “valid” tic…
-- criteria:1 [p2] CRITERION 1: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_one_claim_pass_mirrors_the_whole_ready_listing` omits bodies for both “valid” tic…
-- criteria:3 [p2] CRITERION 3: unwitnessed — `tests/test_factory_loop.py::QueueMirrorTests::test_a_listing_that_fails_skips_the_mirror_and_the_claim_proceeds` raises before the c…
-
-## 2026-09-09T23:56:07Z — KO-334
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-09T23:57:32Z — KO-334
-MERGED to main as 15981f9 (branch task/ko-334-the-loop-mirrors-every-ready-i deleted).
-actual: 21.3 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T00:11:10Z — KO-336
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[442 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T00:12:35Z — KO-336
 MERGED to main as 88426a2 (branch task/ko-336-a-target-can-have-its-pull-req deleted).
@@ -762,3 +741,27 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T03:02:30Z — KO-344
 MERGED to main as 0c1d8b0 (branch task/ko-344-the-reconcile-sees-archived-li deleted).
 actual: 13.6 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T03:12:07Z — KO-343
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:2833 [p1] **[P1] Failed workers bypass the merge lock.** At [holophyte/loop.py:2833](/home/reviewer/candidate/holophyte/loop.py:2833), `close_out_failure()` still regen…
+- (unparsed):eea9dd8dd9ac [p2] Lint verification remains incomplete: `ruff check .` could not run because Ruff is unavailable. The suite rerun passed all 946 tests.
+
+## 2026-09-10T03:20:32Z — KO-343
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:2380 [p2] [P2] [holophyte/loop.py:2380](/home/reviewer/candidate/holophyte/loop.py:2380): Claimable counting violates the required one store read per tick. Five ready t…
+- /home/reviewer/candidate/holophyte/loop.py:2161 [p2] [P2] [holophyte/loop.py:2161](/home/reviewer/candidate/holophyte/loop.py:2161): Only stdout receives worker prefixes. Reproducing an exception from `open_stor…
+
+## 2026-09-10T03:29:41Z — KO-343
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:2236 [p2] [holophyte/loop.py:2236](/home/reviewer/candidate/holophyte/loop.py:2236): `_PrefixedOut.write()` loses the worker prefix when indentation arrives separately:…
+
+## 2026-09-10T03:36:28Z — KO-343
+Round 4: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T03:36:29Z — KO-343
+FAILED: terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 476ac0cd9d61
+actual: 33.9 min · estimate: 30 min · rounds: 4
