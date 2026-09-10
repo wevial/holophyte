@@ -50,6 +50,18 @@ describe("consoleLine", () => {
     expect(line).not.toContain("?");
   });
 
+  test("a URL inside the message text loses its query string and fragment too", () => {
+    const line = consoleLine(
+      "Request failed: https://writer:7710/runs?token=SECRET#frag then http://writer:7710/api/x?t=SECRET2 done",
+      "http://writer:7710/console.js",
+      3,
+    );
+    expect(line).toContain("Request failed: https://writer:7710/runs then http://writer:7710/api/x done");
+    expect(line).not.toContain("SECRET");
+    expect(line).not.toContain("?");
+    expect(line).not.toContain("#");
+  });
+
   test("a source that is not a URL is kept as-is", () => {
     expect(consoleLine("boom", "", 0)).toContain("boom");
   });

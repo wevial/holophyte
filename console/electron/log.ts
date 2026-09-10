@@ -3,8 +3,9 @@
  * load the page reports, appended to `console.log` in the user data
  * directory and truncated once the file passes LOG_LIMIT_BYTES. Pure
  * `node:fs`, no Electron import, so the rule is testable under `bun test`.
- * A line carries a source URL's path only — never its query string, where
- * a bearer token could travel.
+ * A line carries URL paths only — the source URL's and any URL quoted in
+ * the message text — never a query string or fragment, where a bearer
+ * token could travel.
  */
 import { appendFileSync, statSync, truncateSync } from "node:fs";
 import path from "node:path";
@@ -32,8 +33,13 @@ export function sourcePath(source: string): string {
   }
 }
 
+/** Strips the query string and fragment from every URL quoted in free text. */
+export function redactUrls(text: string): string {
+  return text.replace(/\bhttps?:\/\/[^\s"'<>)\]]+/g, (url) => url.split(/[?#]/, 1)[0] ?? url);
+}
+
 export function consoleLine(message: string, source: string, lineNumber: number): string {
-  return `console.error ${message} (${sourcePath(source)}:${lineNumber})`;
+  return `console.error ${redactUrls(message)} (${sourcePath(source)}:${lineNumber})`;
 }
 
 export function failedLoadLine(errorCode: number, errorDescription: string, url: string): string {
