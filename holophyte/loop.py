@@ -43,6 +43,7 @@ from holophyte.board import (
     lease_holders,
     lease_host,
     lease_label,
+    lease_turn,
     ledger,
     merge_drift,
     mirror_key,
@@ -3124,18 +3125,26 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
     move. Returns the claimed run id, `HELD` when another run or another
     writer took the ticket first, or None when the loop must stop rather
     than start a run."""
-    try:
-        run_id = store.claim(conn, project, ticket_id)
-    except store.ClaimConflict as e:
-        # Before any branch or worktree exists: another loop on this
-        # target won the race for this ticket, so this one moves on to
-        # the next. The lease is the ticket's, so working beside the
-        # holder on a different ticket is the design, not a conflict.
-        _skip_held(str(e), seen)
-        return HELD
-    # The board half of the lease, right after the store half and before
-    # the run is anything another writer could collide with.
-    leased = _lease_on_board(target, conn, provider, task, ticket_id, run_id)
+    # The store half and the board half of the lease under one turn
+    # (`lease_turn()`): a close-out of this store looks at the store and
+    # then takes its label off the board under the same turn, so no claim
+    # can land -- lease taken, label written -- between that look and
+    # that removal and have its fresh label stripped.
+    with lease_turn(target):
+        try:
+            run_id = store.claim(conn, project, ticket_id)
+        except store.ClaimConflict as e:
+            # Before any branch or worktree exists: another loop on this
+            # target won the race for this ticket, so this one moves on
+            # to the next. The lease is the ticket's, so working beside
+            # the holder on a different ticket is the design, not a
+            # conflict.
+            _skip_held(str(e), seen)
+            return HELD
+        # The board half of the lease, right after the store half and
+        # before the run is anything another writer could collide with.
+        leased = _lease_on_board(target, conn, provider, task, ticket_id,
+                                 run_id)
     if leased is not True:
         return leased
     # §3's `ready -> in_flight`, and the first thing the board is told

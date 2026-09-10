@@ -4303,36 +4303,49 @@ class BoardLeaseLabelTests(LoopFixture):
         """Two loops on one store admit the same stale label. The one whose
         `store.claim()` lands takes the stale one off and writes its own;
         the other reaches its claim a moment later -- here, at the instant
-        the first is writing its label -- and is refused by the store
-        before it has touched the board. The loser's `_claim_run()` is the
-        real one: the witness is that the provider saw no call from it at
-        all."""
+        the first is writing its label -- waits its turn, and is refused
+        by the store before it has touched the board. The loser's
+        `_claim_run()` is the real one, on a thread of its own as a
+        sibling loop's would be: the witness is that the provider saw no
+        call from it at all."""
         self.seed_ended_run()
         db, target, tgt = self.db, self.target, self.tgt
         seen = type("Seen", (), {"trips": (), "watched": ()})()
         competitor = []
+        threads = []
+
+        def compete(provider, issue_id):
+            conn = store.open(str(db))
+            try:
+                project = store.ensure_project(conn, StubProvider.TEAM,
+                                               str(target))
+                (ticket_id,) = conn.execute(
+                    "SELECT id FROM tickets WHERE linearIssueId = ?",
+                    (issue_id,)).fetchone()
+                competitor.append(holophyte.loop._claim_run(
+                    tgt, conn, project, provider, a_task(), ticket_id, seen))
+            finally:
+                conn.close()
 
         class Contended(StubProvider):
             def label_issue(self, issue_id, name):
-                if not competitor:
-                    conn = store.open(str(db))
-                    try:
-                        project = store.ensure_project(conn, StubProvider.TEAM,
-                                                       str(target))
-                        (ticket_id,) = conn.execute(
-                            "SELECT id FROM tickets WHERE linearIssueId = ?",
-                            (issue_id,)).fetchone()
-                        competitor.append(holophyte.loop._claim_run(
-                            tgt, conn, project, self, a_task(), ticket_id,
-                            seen))
-                    finally:
-                        conn.close()
+                if not threads:
+                    thread = threading.Thread(target=compete,
+                                              args=(self, issue_id))
+                    threads.append(thread)
+                    thread.start()
+                    # The competitor is at its claim and stays there: the
+                    # turn is this claim's until its label is written.
+                    thread.join(0.5)
+                    self.assertion = (thread.is_alive(), list(competitor))
                 super().label_issue(issue_id, name)
 
         provider = self.labelled(Contended, [self.label()])
         out = self.main_output(Commit("the scripted work"), APPROVE,
                                provider=provider)
+        threads[0].join(10)
 
+        self.assertEqual(provider.assertion, (True, []))
         self.assertEqual(competitor, [holophyte.loop.HELD])
         self.assertIn("lease already held by run 2; skipping it", out)
         self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
@@ -4372,31 +4385,50 @@ class BoardLeaseLabelTests(LoopFixture):
         finally:
             conn.close()
 
-    def test_a_close_out_racing_a_fresh_claim_leaves_the_fresh_run_labelled(self):
-        """Run 1's close-out reads the store, finds no live run, and goes
-        to the board -- and in that gap run 2 claims the same ticket and
-        re-asserts the label. The removal that follows would take run 2's
-        lease off the board; the close-out must notice the fresh run and
-        leave the label standing (review finding P1 on KO-351)."""
+    def test_a_close_out_racing_a_fresh_claim_cannot_strip_the_fresh_label(self):
+        """Run 1's close-out looks at the store, finds no live run, and
+        goes to the board -- and at that instant a sibling loop on this
+        store reaches its claim of the same ticket. Were the claim to land
+        in the gap, the removal would take the fresh run's label off and
+        another writer could claim a ticket this store is working (review
+        finding P1 on KO-351). The claim waits the close-out's turn
+        instead: while the removal is in flight the store still names no
+        live run, and the fresh claim's label is written after the removal
+        and stays on the board."""
         ended = self.seed_ended_run()
-        db, target = self.db, self.target
-        raced = []
+        db, target, tgt = self.db, self.target, self.tgt
+        seen = type("Seen", (), {"trips": (), "watched": ()})()
+        claimed = []
+        threads = []
+        during = []
+
+        def claim(provider, issue_id):
+            conn = store.open(str(db))
+            try:
+                project = store.ensure_project(conn, StubProvider.TEAM,
+                                               str(target))
+                (ticket_id,) = conn.execute(
+                    "SELECT id FROM tickets WHERE linearIssueId = ?",
+                    (issue_id,)).fetchone()
+                claimed.append(holophyte.loop._claim_run(
+                    tgt, conn, project, provider, a_task(), ticket_id, seen))
+            finally:
+                conn.close()
 
         class Racing(StubProvider):
             def unlabel_issue(self, issue_id, name):
-                if not raced:
-                    conn = store.open(str(db))
+                if not threads:
+                    thread = threading.Thread(target=claim,
+                                              args=(self, issue_id))
+                    threads.append(thread)
+                    thread.start()
+                    thread.join(0.5)
+                    peek = sqlite3.connect(db)
                     try:
-                        project = store.ensure_project(conn, StubProvider.TEAM,
-                                                       str(target))
-                        (ticket_id,) = conn.execute(
-                            "SELECT id FROM tickets WHERE linearIssueId = ?",
-                            (issue_id,)).fetchone()
-                        raced.append(store.claim(conn, project, ticket_id))
-                        conn.commit()
+                        during.append(peek.execute(
+                            "SELECT activeRunId FROM tickets").fetchall())
                     finally:
-                        conn.close()
-                    super().label_issue(issue_id, name)
+                        peek.close()
                 super().unlabel_issue(issue_id, name)
 
         provider = Racing(a_task())
@@ -4408,9 +4440,16 @@ class BoardLeaseLabelTests(LoopFixture):
                                                 provider, ended)
         finally:
             conn.close()
+        threads[0].join(10)
 
-        self.assertEqual(raced, [2])
+        # No live run while the removal was in flight: the claim waited.
+        self.assertEqual(during, [[(None,)]])
+        self.assertEqual(claimed, [2])
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(2,)])
+        self.assertEqual(provider.label_calls,
+                         [("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1"),
+                          ("label", "iss-131", "holo:writer-1")])
         self.assertEqual(provider.labels["iss-131"], ["holo:writer-1"])
 
     def test_a_foreign_label_on_read_back_backs_off_removing_only_our_own_label(self):

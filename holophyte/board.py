@@ -19,6 +19,9 @@ claim-time body gate, `warn_on_run` from `holophyte.runs` and
 Fifth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import contextlib
+import fcntl
+import os
 import socket
 import sys
 from pathlib import Path
@@ -49,8 +52,50 @@ def lease_label(target):
     claims write and its close-outs, requeues and backed-off claims take
     off. One per writer, not per run: the store, which knows which of this
     writer's runs is live, is what keeps a late removal off a fresh claim's
-    label (`release_lease_label()`)."""
+    label (`release_lease_label()`), and `lease_turn()` is what keeps a
+    fresh claim out of the gap between that look and the removal."""
     return LEASE_LABEL_PREFIX + lease_host(target)
+
+
+def lease_turn_path(target):
+    """The lease turn for `target`, beside its store in the state directory
+    -- never in the repository, where a task's `git add -A` could commit it."""
+    return target.holo_dir / "lease.lock"
+
+
+@contextlib.contextmanager
+def lease_turn(target):
+    """Hold `target`'s turn at the board lease label for the block.
+
+    A blocking flock on a permanent file beside the store, created once and
+    never unlinked (unlinking a flock file is what lets two holders exist),
+    so every loop and every close-out on this store locks the same inode,
+    across threads as across processes. Two things take it: a claim, for
+    the span of `store.claim()` and the label write that follows, and a
+    close-out's `release_lease_label()`, for the span of its look at the
+    store and the removal. It exists because that look and that removal
+    are two operations with a network call between them, and a sibling
+    loop's claim landing in the gap -- lease taken, label written -- was
+    stripped off the board by the removal that followed, which left the
+    ticket free for another writer to claim while this store's fresh run
+    was live (the review of KO-351). Under the turn no claim of this store
+    can move between the look and the removal, so a live run the store
+    names is always seen before its label is touched.
+
+    Not the store's write lock, on purpose: that one is held for the
+    microseconds of a transaction and never across a network call
+    (`close_out_failure()`), and a loop working another ticket is not
+    stalled by this one at all -- only claims and lease releases queue
+    here, each for one round trip to the board.
+    """
+    path = lease_turn_path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # drops the flock
 
 
 def lease_holders(labels):
@@ -91,40 +136,26 @@ def release_lease_label(target, conn, ticket_id, provider, run_id):
     re-asserted the same label under a new live run, leaves it on, since
     the ticket's `activeRunId` names that other run.
 
-    That check and the removal are two operations, and a claim can land
-    between them: the store lease is given back before the board is
-    touched (see `close_out_failure()` for why the lock is not held across
-    a network call), so a sibling loop on this store can claim the ticket
-    and write the same label while this removal is in flight -- and the
-    removal then takes the fresh run's lease off the board. The store is
-    asked again *after* the removal, and a live run it now names that is
-    not this one gets the label put back. The re-add is additive and
-    idempotent on Linear's side, so it cannot collide with the claim's own
-    write, whichever lands first; a claim that leases after the second
-    read writes its label after this removal and is not affected. Best-
-    effort like `mirror_push()`; a storeless or boardless caller has
-    nothing to release.
+    That look and the removal run under `lease_turn()`, as the claim's
+    lease-and-label does: the store lease is given back before the board
+    is touched (see `close_out_failure()` for why the write lock is not
+    held across a network call), so without the turn a sibling loop on
+    this store could claim the ticket and write the same label between
+    the look and the removal, and the removal would take the fresh run's
+    lease off the board. Under the turn a claim either lands before the
+    look, which then sees its run and leaves the label alone, or waits
+    until the removal is done and writes its label after it. Best-effort
+    like `mirror_push()`; a storeless or boardless caller has nothing to
+    release.
     """
     if conn is None or provider is None:
         return
-    ticket = store.read.ticket_by_id(conn, ticket_id)
-    if ticket is None:
-        return
-    if ticket.activeRunId not in (None, run_id):
-        return
-    label = lease_label(target)
-    drop_lease_label(conn, ticket_id, provider, ticket.linearIssueId, label)
-    fresh = store.read.ticket_by_id(conn, ticket_id)
-    if fresh is None or fresh.activeRunId in (None, run_id):
-        return
-    try:
-        provider.label_issue(ticket.linearIssueId, label)
-    except Exception as e:  # noqa: BLE001 - best-effort board write
-        warn(conn, ticket_id, f"run {fresh.activeRunId} claimed {ticket_id}"
-                              f" while run {run_id}'s close-out was removing"
-                              f" the lease label {label}, and the board did"
-                              f" not take it back ({e}); another writer may"
-                              " claim the ticket until it is re-labelled")
+    with lease_turn(target):
+        ticket = store.read.ticket_by_id(conn, ticket_id)
+        if ticket is None or ticket.activeRunId not in (None, run_id):
+            return
+        drop_lease_label(conn, ticket_id, provider, ticket.linearIssueId,
+                         lease_label(target))
 
 
 def mirror_key(task):
