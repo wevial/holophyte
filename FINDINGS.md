@@ -653,23 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[447 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T00:51:10Z — KO-341
-MERGED to main as 329975f (branch task/ko-341-the-claim-leases-the-ticket-no deleted).
-actual: 17.6 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T01:08:59Z — KO-342
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/holophyte/supervisor.py:480 [p1] [P1] [supervisor.py:480](/home/reviewer/candidate/holophyte/supervisor.py:480): Sweep unlinks the lock without ensuring it still belongs to the stale holder.…
-- /home/reviewer/candidate/holophyte/loop.py:1093 [p1] [P1] [loop.py:1093](/home/reviewer/candidate/holophyte/loop.py:1093): A conflict confined to `FINDINGS.md` is automatically resolved and committed. Reproduced…
-- criteria:3 [p2] CRITERION 3: not met — FINDINGS.md conflicts advance the branch without parking or preserving its pre-gate SHA. Given a `main` commit that conflicts with the br…
-
-## 2026-09-10T01:20:54Z — KO-342
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/gates.py:586 [p1] [P1] [holophyte/gates.py:586](/home/reviewer/candidate/holophyte/gates.py:586): Stale-lock cleanup can break mutual exclusion. A sweep can open the stale inod…
+[450 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T01:28:46Z — KO-342
 Round 3: pass · reviewer codex-astra-medium · verify passed
@@ -768,3 +752,15 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T04:05:45Z — KO-330
 MERGED to main as d7b7d6d (branch task/ko-330-a-ticket-opens-as-a-sheet-over deleted).
 actual: 9.1 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T04:10:32Z — KO-332
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/components/ShippedTable.tsx:101 [p2] [P2] [ShippedTable.tsx:101](/home/reviewer/candidate/console/src/components/ShippedTable.tsx:101): Pressing Enter on a focused SHA link bubbles into the row’s…
+
+## 2026-09-10T04:12:14Z — KO-332
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T04:12:17Z — KO-332
+MERGED to main as c723994 (branch task/ko-332-a-shipped-row-expands-to-the-s deleted).
+actual: 6.4 min · estimate: 30 min · rounds: 2
