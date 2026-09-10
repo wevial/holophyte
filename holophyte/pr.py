@@ -135,16 +135,23 @@ mutation($thread: ID!) {
 
 
 # The one read the loop's pull-request reconcile makes of a parked PR: is it
-# still open, merged (as which commit, by whom) or closed unmerged. Nothing
-# about threads or checks -- those are the shepherd's, and a parked run is
-# not being shepherded.
+# still open, merged (as which commit, by whom) or closed unmerged, and --
+# KO-362 -- whether anything happened on it since the shepherd last looked:
+# `updatedAt` and the count of its review threads, which the reconcile
+# holds against what the last shepherd pass recorded (`runs.prSeenAt`,
+# `runs.prSeenThreads`). The thread bodies and the checks are still the
+# shepherd's own read. `rateLimit` rides along at no cost: the remaining
+# GraphQL budget on the token and when it resets, so the reconcile backs
+# off before the shepherd's reads run it dry.
 PULL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       state merged mergeCommit { oid } mergedBy { login }
+      updatedAt reviewThreads { totalCount }
     }
   }
+  rateLimit { remaining resetAt }
 }"""
 
 
@@ -469,19 +476,31 @@ def _url_in(text):
 @dataclass(frozen=True)
 class PullStatus:
     """A pull request as one `pull_status()` read saw it: open, merged as
-    `merge_sha` by `merged_by`, or closed without merging."""
+    `merge_sha` by `merged_by`, or closed without merging; when it last
+    changed (`updated_at`, GitHub's ISO 8601 timestamp) and how many
+    review threads it carries (`threads`), None for either when GitHub
+    did not say; and the token's remaining GraphQL budget with the time
+    it resets (`rate_remaining`, `rate_reset`), None when the answer
+    carried no `rateLimit`."""
 
     merged: bool
     closed: bool
     merge_sha: str | None = None
     merged_by: str | None = None
+    updated_at: str | None = None
+    threads: int | None = None
+    rate_remaining: int | None = None
+    rate_reset: str | None = None
 
 
 def pull_status(target, pull):
     """One GraphQL read of the pull request's `state`, `merged`,
-    `mergeCommit` and `mergedBy` (`PULL_QUERY`): the loop's reconcile of a
-    run parked on its PR asks this once per pass. GitHub answering without
-    the pull request is `InfraFailure`, as every read here is."""
+    `mergeCommit`, `mergedBy`, `updatedAt` and review-thread count, with
+    the token's `rateLimit` (`PULL_QUERY`): the loop's reconcile of a run
+    parked on its PR asks this once per pass. GitHub answering without
+    the pull request is `InfraFailure`, as every read here is; an answer
+    without the activity or budget fields is one without them (None),
+    not an error."""
     data = graphql(target, pull, PULL_QUERY,
                    {"owner": pull.owner, "name": pull.name,
                     "number": pull.number})
@@ -492,12 +511,32 @@ def pull_status(target, pull):
                            f" {pull.url}: {_short(data)}")
     merge = node.get("mergeCommit") or {}
     by = node.get("mergedBy") or {}
+    threads = node.get("reviewThreads") or {}
+    rate = data.get("rateLimit") or {}
+    updated = node.get("updatedAt")
     return PullStatus(merged=bool(node.get("merged")),
                       closed=node.get("state") == "CLOSED",
                       merge_sha=merge.get("oid") if isinstance(merge, dict)
                       else None,
                       merged_by=by.get("login") if isinstance(by, dict)
-                      else None)
+                      else None,
+                      updated_at=updated if isinstance(updated, str)
+                      else None,
+                      threads=_count(threads.get("totalCount")
+                                     if isinstance(threads, dict) else None),
+                      rate_remaining=_count(rate.get("remaining")
+                                            if isinstance(rate, dict)
+                                            else None),
+                      rate_reset=rate.get("resetAt")
+                      if isinstance(rate, dict)
+                      and isinstance(rate.get("resetAt"), str) else None)
+
+
+def _count(value):
+    """`value` as a non-negative int, or None for anything GitHub did not
+    answer as one."""
+    return value if isinstance(value, int) and not isinstance(value, bool) \
+        and value >= 0 else None
 
 
 def parse_pr_url(url):
