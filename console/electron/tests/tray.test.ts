@@ -34,6 +34,7 @@ describe("buildSummary", () => {
       "1 host · 1 daemon",
       "Show console",
       "Open at login",
+      "Developer tools",
       "Quit",
     ]);
     expect(level).toBe("working");

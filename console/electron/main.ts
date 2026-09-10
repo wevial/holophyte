@@ -9,6 +9,7 @@ import path from "node:path";
 import { BrowserWindow, Menu, Tray, app, dialog, nativeImage } from "electron";
 
 import { CONFIG_FILE, resolveConsoleUrl } from "./config.ts";
+import { appendLog, consoleLine, failedLoadLine } from "./log.ts";
 import type { MenuActions } from "./menu.ts";
 import { POLL_INTERVAL_MS, pollAll, readTokens } from "./poll.ts";
 import { seedScript } from "./seed.ts";
@@ -88,7 +89,29 @@ function showConsole(url: string, configText: string | null): void {
       })
       .catch((err: unknown) => console.error("token seed failed:", err));
   });
+  // What the page saw when a view went blank in the app but not in a
+  // browser: every console error and failed load, one line each, in
+  // console.log beside console.json (log.ts owns the truncation and keeps
+  // query strings — where a token could travel — out of the lines).
+  const log = (line: string): void => {
+    try {
+      appendLog(app.getPath("userData"), line);
+    } catch (err) {
+      console.error("console.log append failed:", err);
+    }
+  };
+  contents.on("console-message", (event) => {
+    if (event.level === "error") log(consoleLine(event.message, event.sourceId, event.lineNumber));
+  });
+  contents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    log(failedLoadLine(errorCode, errorDescription, validatedURL));
+  });
   void mainWindow.loadURL(url);
+}
+
+function toggleDevTools(url: string, configText: string | null): void {
+  showConsole(url, configText);
+  mainWindow?.webContents.toggleDevTools();
 }
 
 function trayActions(url: string, configText: string | null): MenuActions {
@@ -96,6 +119,7 @@ function trayActions(url: string, configText: string | null): MenuActions {
     showConsole: () => showConsole(url, configText),
     // macOS keeps the login item itself, so the state survives a restart.
     setOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
+    toggleDevTools: () => toggleDevTools(url, configText),
     quit: () => app.quit(),
   };
 }
