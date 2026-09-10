@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[545 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T22:02:45Z — KO-351
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/board.py:53 [p0] Blocker: [holophyte/board.py:53](/home/reviewer/candidate/holophyte/board.py:53) generates `holo:writer-1:<run_id>` instead of the required `holo:writer-1`. The…
-- criteria:1 [p2] CRITERION 1: not met — claim adds and merge removes `holo:writer-1:1`, not `holo:writer-1`. Given a ready issue and a fake provider, when the loop claims it, th…
-
-## 2026-09-10T22:05:22Z — KO-356
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/holophyte/serve.py:1121 [p1] **[P1] Backups expose protected secrets** — [serve.py:1121](/home/reviewer/candidate/holophyte/serve.py:1121): `open(backup, "x")` uses default permissions. R…
-- /home/reviewer/candidate/holophyte/redact.py:348 [p2] **[P2] Valid nested secrets break GET** — [redact.py:348](/home/reviewer/candidate/holophyte/redact.py:348): a loader-valid document containing `[extra]` and…
-- criteria:1 [p2] CRITERION 1: not met — authenticated GET returns 500 for the loader-valid nested-secret document above. Given `config_edit = true` and the target's real file, w…
+[547 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T22:12:42Z — KO-351
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -775,3 +762,10 @@ Round 4: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T23:16:24Z — KO-358
 FAILED: terminal adjudication: FAIL; branch task/ko-358-a-project-s-settings-open-as-a preserved at e770d8bbf0d5
 actual: 13.8 min · estimate: 30 min · rounds: 4
+
+## 2026-09-10T23:25:17Z — KO-362
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T23:27:08Z — KO-362
+MERGED to main as 53eae58 (branch task/ko-362-a-parked-pull-request-is-sheph deleted).
+actual: 26.5 min · estimate: 30 min · rounds: 1
