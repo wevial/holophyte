@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[418 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T18:53:31Z — KO-326
-MERGED to main as f1915bc (branch task/ko-326-the-electron-window-seeds-the deleted).
-actual: 2.3 min · estimate: 30 min · rounds: 1
-
-## 2026-09-09T19:32:40Z — KO-327
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-09T19:34:04Z — KO-327
-MERGED to main as c24fa10 (branch task/ko-327-a-review-thread-a-person-opene deleted).
-actual: 25.8 min · estimate: 30 min · rounds: 1
+[421 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T20:03:24Z — KO-329
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -760,3 +749,15 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T00:12:35Z — KO-336
 MERGED to main as 88426a2 (branch task/ko-336-a-target-can-have-its-pull-req deleted).
 actual: 15.0 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T00:25:05Z — KO-337
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:1544 [p1] [P1] Preserve bot HUMAN handling in [holophyte/loop.py:1544](/home/reviewer/candidate/holophyte/loop.py:1544). The `and not act` condition disables the early pa…
+
+## 2026-09-10T00:32:04Z — KO-337
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T00:33:29Z — KO-337
+MERGED to main as 172e362 (branch task/ko-337-a-target-can-let-the-shepherd deleted).
+actual: 20.8 min · estimate: 30 min · rounds: 2
