@@ -375,6 +375,7 @@ class StatusTests(ServeTestCase):
                          {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                           "strikes": knobs.stale_strikes})
         self.assertIs(body["actions"], False)
+        self.assertIs(body["config_edit"], False)
 
     def test_a_run_carries_title_start_round_and_strikes(self):
         # KO-263: what the console's floor row draws. A run in `reviewing`
@@ -2143,6 +2144,9 @@ class ActionsTests(ServeTestCase):
         code, _, body = self.request("GET", "/status")
         self.assertEqual(code, 200)
         self.assertIs(body["actions"], True)
+        # KO-358: the settings sheet reads `config_edit` the same way and
+        # draws itself read-only, naming the key, without it.
+        self.assertIs(body["config_edit"], False)
 
     def test_a_loopback_bind_demands_the_token_for_actions(self):
         """The bind address guards reads, not the units: on loopback `/status`
@@ -2371,6 +2375,15 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual((code, body["error"]), (404, "not found"))
         self.assertEqual(self.on_disk(), before)
         self.assertEqual(list(self.db.parent.glob("config.toml.bak-*")), [])
+
+    def test_status_advertises_config_edit(self):
+        # KO-358: the console's settings sheet reads `config_edit` from
+        # `/status` before it offers a Save.
+        self.seed()
+        self.start(self.config("config_edit = true\n"))
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertIs(body["config_edit"], True)
 
     def test_get_redacts_secret_values_and_keeps_the_token_file_path(self):
         """The route over a file startup accepts: the reply is the file

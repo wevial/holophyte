@@ -11,6 +11,9 @@ export interface Status {
   /** Whether `[serve] actions = true` opened the `POST /actions/...`
    *  routes; a daemon older than the field sends none, read as false. */
   actions?: boolean;
+  /** Whether `[serve] config_edit = true` opened `GET`/`PUT /config`;
+   *  absent on an older daemon, read as false. */
+  config_edit?: boolean;
   runs: Run[];
 }
 
