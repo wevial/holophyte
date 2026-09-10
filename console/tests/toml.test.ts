@@ -32,10 +32,9 @@ workers = 9
 token = "[redacted]"
 `;
 
-test("reading the bound keys: a string with its comment, an integer, a multi-line array; a missing key and a missing table are undefined", () => {
+test("reading the bound keys: a string with its comment, an integer, a boolean; a missing key and a missing table are undefined", () => {
   expect(readKey(TEXT, { table: "agents", key: "implementer" })).toBe("claude --model opus -p");
   expect(readKey(TEXT, { table: "loop", key: "workers" })).toBe(1);
-  expect(readKey(TEXT, { table: "worktree", key: "setup" })).toEqual(["make deps", "bun install"]);
   expect(readKey(TEXT, { table: "serve", key: "config_edit" })).toBe(true);
   expect(readKey(TEXT, { table: "loop", key: "review_rounds" })).toBeUndefined();
   expect(readKey(TEXT, { table: "merge", key: "mode" })).toBeUndefined();
@@ -69,31 +68,14 @@ test("a string value is written escaped and read back; an unreadable escape is u
   expect(readKey('[agents]\nimplementer = "\\U0001F600"\n', { table: "agents", key: "implementer" })).toBe("\u{1F600}");
 });
 
-test("adding a setup line edits the multi-line array in place: its inner and trailing comments stay, the new item lands before the bracket", () => {
-  const setup = writeKey(TEXT, { table: "worktree", key: "setup" }, ["make deps", "bun install", "go build ./..."]);
-  const before = TEXT.split("\n");
-  const after = setup.split("\n");
-  expect(after.length).toBe(before.length + 1);
-  expect(readKey(setup, { table: "worktree", key: "setup" })).toEqual(["make deps", "bun install", "go build ./..."]);
-  const bracket = before.indexOf("]");
-  expect(after.slice(0, bracket)).toEqual(before.slice(0, bracket));
-  expect(after[bracket]).toBe('  "go build ./...",');
-  expect(after.slice(bracket + 1)).toEqual(before.slice(bracket));
-  expect(setup).toContain('  "make deps",   # first\n');
-
-  // Dropping the first item takes its line and its comment with it; an
-  // item edited in place keeps its line's tail; the array's own comment
-  // lines survive either way.
-  const commented = TEXT.replace('setup = [\n', 'setup = [\n  # retain this explanation\n');
-  const dropped = writeKey(commented, { table: "worktree", key: "setup" }, ["bun install"]);
-  expect(dropped).toContain('setup = [\n  # retain this explanation\n  "bun install",\n]\n');
-  expect(dropped).not.toContain("make deps");
-  const replaced = writeKey(commented, { table: "worktree", key: "setup" }, ["make dep", "bun install"]);
-  expect(replaced).toContain('setup = [\n  # retain this explanation\n  "make dep",   # first\n  "bun install",\n]\n');
-
-  // A one-line array stays one line.
-  const oneLine = writeKey("[worktree]\nsetup = [\"a\"]  # x\n", { table: "worktree", key: "setup" }, ["a", "b"]);
-  expect(oneLine).toBe('[worktree]\nsetup = ["a", "b"] # x\n');
+test("adding a setup line rewrites a one-line array on its line, the trailing comment kept and no other byte touched", () => {
+  const text = `[worktree]\n# what each worktree runs first\nsetup = ["make deps"]  # keep short\n\n[merge]\nafter = []\n`;
+  const added = writeKey(text, { table: "worktree", key: "setup" }, ["make deps", "bun install"]);
+  expect(added).toBe(`[worktree]\n# what each worktree runs first\nsetup = ["make deps", "bun install"] # keep short\n\n[merge]\nafter = []\n`);
+  expect(readKey(added, { table: "worktree", key: "setup" })).toEqual(["make deps", "bun install"]);
+  const after = writeKey(text, { table: "merge", key: "after" }, ["git push"]);
+  expect(readKey(after, { table: "merge", key: "after" })).toEqual(["git push"]);
+  expect(after).toContain('after = ["git push"]\n');
 });
 
 test("a header or a key inside a multi-line string is neither: the real [loop] workers is read and edited, the implementer text untouched", () => {
@@ -140,37 +122,27 @@ test("the daemon's refusal names its key the loader's way; a sentence without on
   expect(namedKey("malformed TOML: Expected '=' after a key (at line 3, column 1)")).toBeNull();
 });
 
-test("a multi-line array line holding two commands: adding a third keeps both once, the shared comment stays; dropping the first splits the line and keeps the second", () => {
-  const text = `[worktree]\nsetup = [\n  "echo a", "echo b", # shared line\n]\n`;
-  const added = writeKey(text, { table: "worktree", key: "setup" }, ["echo a", "echo b", "echo c"]);
-  expect(readKey(added, { table: "worktree", key: "setup" })).toEqual(["echo a", "echo b", "echo c"]);
-  expect(added).toBe(`[worktree]\nsetup = [\n  "echo a", "echo b", # shared line\n  "echo c",\n]\n`);
-  const dropped = writeKey(text, { table: "worktree", key: "setup" }, ["echo b"]);
-  expect(readKey(dropped, { table: "worktree", key: "setup" })).toEqual(["echo b"]);
-  expect(dropped).toContain("# shared line");
-  const swapped = writeKey(text, { table: "merge", key: "after" }, ["x"]);
-  expect(readKey(swapped, { table: "merge", key: "after" })).toEqual(["x"]);
+test("a key in a multi-line array is found but unbound: its lines are its source, its value undefined, and the one-line keys around it still bind", () => {
+  // TEXT's `[worktree] setup` spans four lines with an inner comment.
+  const setup = findKey(TEXT, { table: "worktree", key: "setup" });
+  expect(setup).toMatchObject({ value: undefined, raw: '[\n  "make deps",   # first\n  "bun install",\n]' });
+  expect(setup!.end - setup!.start).toBe(4);
+  // Items sharing the bracket lines are still a multi-line array.
+  const shared = `[worktree]\nsetup = ["a", # keep this\n  "b"]\n`;
+  expect(readKey(shared, { table: "worktree", key: "setup" })).toBeUndefined();
+  expect(findKey(shared, { table: "worktree", key: "setup" })?.raw).toBe('["a", # keep this\n  "b"]');
+  // The multi-line value never hides the plain keys after it.
+  expect(readKey(TEXT, { table: "linear", key: "api_key" })).toBe("[redacted]");
 });
 
-test("review round 3: an array whose first item shares the `[` line and whose last shares the `]` line is edited line by line, its inner comment kept", () => {
-  const text = `[worktree]\nsetup = ["a", # keep this\n  "b"]\n`;
-  const added = writeKey(text, { table: "worktree", key: "setup" }, ["a", "b", "c"]);
-  expect(readKey(added, { table: "worktree", key: "setup" })).toEqual(["a", "b", "c"]);
-  expect(added).toContain("# keep this");
-  expect(added).toBe(`[worktree]\nsetup = ["a", # keep this\n  "b",\n  "c",\n]\n`);
-  // Unchanged bracket lines keep their bytes when the edit lands between them.
-  const inner = `[worktree]\nsetup = ["a", # keep this\n  "b", # and this\n  "c"]\n`;
-  const dropped = writeKey(inner, { table: "worktree", key: "setup" }, ["a", "c"]);
-  expect(readKey(dropped, { table: "worktree", key: "setup" })).toEqual(["a", "c"]);
-  expect(dropped).toBe(`[worktree]\nsetup = ["a", # keep this\n  "c"]\n`);
-});
-
-test("review round 3: a quoted table header names the same table as its bare form, so its key is read and edited in place rather than duplicated", () => {
-  const text = `["loop"]\nworkers = 1  # one\n`;
-  expect(readKey(text, { table: "loop", key: "workers" })).toBe(1);
-  expect(writeKey(text, { table: "loop", key: "workers" }, 3)).toBe(`["loop"]\nworkers = 3 # one\n`);
+test("a key under a quoted or dotted table header is found but unbound, so the sheet neither draws it empty nor appends a duplicate table", () => {
+  const quoted = `["loop"]\nworkers = 1  # one\n`;
+  expect(readKey(quoted, { table: "loop", key: "workers" })).toBeUndefined();
+  expect(findKey(quoted, { table: "loop", key: "workers" })).toMatchObject({ start: 1, end: 2, value: undefined });
   const dotted = `[ 'a' . "b" ]\nx = true\n`;
-  expect(readKey(dotted, { table: "a.b", key: "x" })).toBe(true);
+  expect(findKey(dotted, { table: "a.b", key: "x" })).toMatchObject({ raw: "true", value: undefined });
+  // The same line under the plain header binds.
+  expect(readKey(`[loop]\nworkers = 1  # one\n`, { table: "loop", key: "workers" })).toBe(1);
 });
 
 test("a key held in a shape the editor does not bind is found but unread: a triple-quoted string, an inline table and a float each keep their source and read as undefined", () => {

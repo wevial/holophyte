@@ -1,11 +1,14 @@
 /** A line-level TOML edit for the settings sheet (KO-358): read one
  *  `[table] key` out of the file's text and rewrite that key's line in
  *  place, comments, order and every other line untouched. It is not a
- *  TOML parser: only the shapes the sheet binds -- a string, an integer,
- *  a boolean, an array of strings -- are read as values, and anything
- *  else stays editable in the raw tab. The daemon validates the whole
- *  document on `PUT /config`, so a text this cannot read is not a
- *  failure here, only an unbound field. */
+ *  TOML parser: a key is bound only when it sits on one plain
+ *  `key = value` line -- a string, an integer, a boolean, a one-line
+ *  array of those -- directly under a plain `[section]` header. A key in
+ *  any other shape (a multi-line array, a quoted or dotted table name, a
+ *  triple-quoted string, an inline table) is found but unread, so the
+ *  sheet shows it read-only and it stays editable in the raw tab. The
+ *  daemon validates the whole document on `PUT /config`, so a text this
+ *  cannot read is not a failure here, only an unbound field. */
 
 export type TomlValue = string | number | boolean | TomlValue[];
 
@@ -32,13 +35,15 @@ const BARE_KEY = /^[A-Za-z0-9_-]+$/;
  *  array-of-tables header `[[name]]` is its own name with the brackets
  *  kept, so `[[hooks]]` never reads as `[hooks]`. Each dotted part is
  *  decoded, so `["loop"]` and `[ 'a' . "b" ]` name `loop` and `a.b`, the
- *  same tables their bare forms name; a part this cannot decode keeps
- *  its source, which matches nothing the sheet binds. */
-function headerOf(line: string): string | null {
+ *  same tables their bare forms name -- but only a plain `[bare]` header
+ *  is `plain`, and only its keys bind; a key under a quoted or dotted
+ *  header is found (so the sheet neither draws it empty nor duplicates
+ *  it) and left unread. */
+function headerOf(line: string): { name: string; plain: boolean } | null {
   const match = HEADER.exec(line);
   if (!match) return null;
   const name = tableName(match[2]!);
-  return match[1] === "[[" ? `[[${name}]]` : name;
+  return { name: match[1] === "[[" ? `[[${name}]]` : name, plain: match[1] === "[" && BARE_KEY.test(match[2]!) };
 }
 
 /** A header's inner text as the dotted name it denotes: the parts split
@@ -90,20 +95,25 @@ function layoutOf(text: string): Layout {
 }
 
 /** The line span `[start, end)` of `[table]`'s body: the lines after its
- *  header up to the next header or the end of the text; null when the
- *  text has no such header. A header-shaped line inside a multi-line
- *  value is not a header. */
-export function tableSpan(text: string, table: string): { start: number; end: number } | null {
+ *  header up to the next header or the end of the text, and whether the
+ *  header is a plain `[bare]` one; null when the text has no such
+ *  header. A header-shaped line inside a multi-line value is not a
+ *  header. */
+export function tableSpan(text: string, table: string): { start: number; end: number; plain: boolean } | null {
   const { lines, continued } = layoutOf(text);
   let start = -1;
+  let plain = false;
   for (let at = 0; at < lines.length; at += 1) {
     if (continued.has(at)) continue;
-    const name = headerOf(lines[at]!);
-    if (name == null) continue;
-    if (start >= 0) return { start, end: at };
-    if (name === table) start = at + 1;
+    const header = headerOf(lines[at]!);
+    if (header == null) continue;
+    if (start >= 0) return { start, end: at, plain };
+    if (header.name === table) {
+      start = at + 1;
+      plain = header.plain;
+    }
   }
-  return start >= 0 ? { start, end: lines.length } : null;
+  return start >= 0 ? { start, end: lines.length, plain } : null;
 }
 
 /** The key a line assigns, bare or quoted, and where its value starts;
@@ -237,7 +247,10 @@ export function formatValue(value: TomlValue): string {
 }
 
 /** Where `[table] key` is assigned in `text`, or null when the table or
- *  the key is absent. The first assignment in the table's body counts. */
+ *  the key is absent. The first assignment in the table's body counts.
+ *  The value is read only when the assignment is one line under a plain
+ *  header; a multi-line value or a quoted/dotted header leaves it
+ *  `undefined`, its source in `raw`. */
 export function findKey(text: string, ref: KeyRef): KeyHit | null {
   const { lines, continued } = layoutOf(text);
   const span = tableSpan(text, ref.table);
@@ -252,7 +265,8 @@ export function findKey(text: string, ref: KeyRef): KeyHit | null {
       const to = valueEnd(text, from);
       const raw = text.slice(from, to);
       const end = at + (raw.match(/\n/g)?.length ?? 0) + 1;
-      return { start: at, end, raw, value: readValue(raw) };
+      const bound = span.plain && end === at + 1;
+      return { start: at, end, raw, value: bound ? readValue(raw) : undefined };
     }
     offset += line.length + 1;
   }
@@ -275,148 +289,18 @@ function lastKeyLine(lines: string[], span: { start: number; end: number }): num
   return span.start - 1;
 }
 
-/** The items written on one line of a multi-line array, each with its
- *  source text, plus the indent before the first and the tail after the
- *  last (a comma, a comment). Null for a line whose items are not all
- *  readable scalars (a nested array, a comment-only line reads as no
- *  items). */
-function itemsOfLine(line: string): { head: string; items: { item: TomlValue; text: string }[]; tail: string } | null {
-  const head = /^\s*/.exec(line)![0];
-  const items: { item: TomlValue; text: string }[] = [];
-  let at = head.length;
-  let tailAt = at;
-  while (at < line.length) {
-    const char = line[at]!;
-    if (char === "#") break;
-    if (/[\s,]/.test(char)) {
-      at += 1;
-      continue;
-    }
-    const end = valueEnd(line, at);
-    if (end <= at) return null;
-    const item = readValue(line.slice(at, end));
-    if (item === undefined || Array.isArray(item)) return null;
-    items.push({ item, text: line.slice(at, end) });
-    at = tailAt = end;
-  }
-  return { head, items, tail: items.length === 0 ? "" : line.slice(tailAt) };
-}
-
-/** The lines of a multi-line array (`key = [` opening, `]` closing,
- *  each bracket line free to carry items of its own, which are edited as
- *  if on their own line and rejoined when they come through unchanged)
- *  rewritten to hold `items`, in order, with the comment
- *  lines between them and each kept item's trailing comment as they
- *  were: an item that stays keeps its line, an item edited in place
- *  keeps its line's tail, a dropped item's line goes, and new items are
- *  appended before the closing bracket. A line holding several items
- *  stays whole while its run survives in order, else it is split one
- *  item per line, the last keeping the line's tail. Null when the span
- *  is not that shape, so the caller collapses it instead. */
-function editArrayLines(lines: string[], hit: KeyHit, items: TomlValue[]): string[] | null {
-  const old = hit.value;
-  if (hit.end - hit.start < 2 || !Array.isArray(old)) return null;
-  // The bracket lines split at their brackets: `key = [` plus whatever
-  // follows, and whatever precedes `]` plus the bracket and its tail.
-  const first = lines[hit.start]!;
-  const bracketAt = keyOfLine(first)!.valueAt + (hit.raw.length - hit.raw.trimStart().length);
-  if (first[bracketAt] !== "[") return null;
-  const opening = first.slice(0, bracketAt + 1);
-  const afterOpen = first.slice(bracketAt + 1);
-  const lastLine = lines[hit.end - 1]!;
-  const closeAt = hit.raw.length - hit.raw.lastIndexOf("\n") - 2;
-  if (lastLine[closeAt] !== "]") return null;
-  const beforeClose = lastLine.slice(0, closeAt);
-  const closing = `${beforeClose.trim() === "" ? beforeClose : /^\s*/.exec(first)![0]}${lastLine.slice(closeAt)}`;
-  const inner = lines.slice(hit.start + 1, hit.end - 1);
-  let indent: string | null = inner.map((line) => itemsOfLine(line)).find((parts) => parts != null && parts.items.length > 0)?.head ?? null;
-  const virtualOpen = afterOpen.trim() === "" ? null : `${indent ?? "  "}${afterOpen.trimStart()}`;
-  const virtualClose = beforeClose.trim() === "" ? null : `${indent ?? "  "}${beforeClose.trimStart()}`;
-  if (virtualOpen != null) inner.unshift(virtualOpen);
-  if (virtualClose != null) inner.push(virtualClose);
-  type Row = { line: string; item?: TomlValue; head?: string; tail?: string };
-  const out: string[] = [];
-  let next = 0;
-  const runAt = (run: TomlValue[]) =>
-    items.findIndex((_, index) => index >= next && run.every((item, offset) => items[index + offset] === item));
-  const emit = (row: Row) => {
-    if (row.item === undefined) {
-      out.push(row.line);
-      return;
-    }
-    const keep = runAt([row.item]);
-    if (keep >= 0) {
-      for (let index = next; index < keep; index += 1) out.push(`${indent}${formatValue(items[index]!)},`);
-      out.push(row.line);
-      next = keep + 1;
-    } else if (next < items.length && !old.includes(items[next]!)) {
-      // An item edited in place: the new text takes over its line and tail.
-      out.push(`${row.head}${formatValue(items[next]!)}${row.tail}`);
-      next += 1;
-    }
-  };
-  for (const line of inner) {
-    const parts = itemsOfLine(line);
-    if (parts == null || parts.items.length === 0) {
-      out.push(line);
-      continue;
-    }
-    indent ??= parts.head;
-    const run = parts.items.map((part) => part.item);
-    const keep = run.length > 1 ? runAt(run) : -1;
-    if (keep >= 0) {
-      for (let index = next; index < keep; index += 1) out.push(`${indent}${formatValue(items[index]!)},`);
-      out.push(line);
-      next = keep + run.length;
-      continue;
-    }
-    parts.items.forEach((part, index) => {
-      const rowHead = index === 0 ? parts.head : indent!;
-      const rowTail = index === parts.items.length - 1 ? parts.tail : ",";
-      emit({ line: `${rowHead}${part.text}${rowTail}`, item: part.item, head: rowHead, tail: rowTail });
-    });
-  }
-  indent ??= "  ";
-  for (let index = next; index < items.length; index += 1) out.push(`${indent}${formatValue(items[index]!)},`);
-  // Every item line but the last must end its value with a comma; the
-  // last keeps whatever it had, TOML allowing a trailing one.
-  const withComma = (tail: string) => (tail.trimStart().startsWith(",") ? tail : `,${tail}`);
-  const itemEnd = (line: string) => {
-    const parts = itemsOfLine(line);
-    return parts != null && parts.items.length > 0 ? line.length - parts.tail.length : -1;
-  };
-  let last = -1;
-  out.forEach((line, index) => {
-    if (itemEnd(line) >= 0) last = index;
-  });
-  for (let index = 0; index < last; index += 1) {
-    const end = itemEnd(out[index]!);
-    if (end >= 0) out[index] = `${out[index]!.slice(0, end)}${withComma(out[index]!.slice(end))}`;
-  }
-  // A bracket line's own items that came through unchanged rejoin it,
-  // so the line keeps its bytes.
-  const openRow = virtualOpen != null && out[0] === virtualOpen ? [`${opening}${afterOpen}`, ...out.slice(1)] : [opening, ...out];
-  const closeRow = virtualClose != null && openRow[openRow.length - 1] === virtualClose ? [...openRow.slice(0, -1), `${beforeClose}${lastLine.slice(closeAt)}`] : [...openRow, closing];
-  return closeRow;
-}
-
 /** `text` with `[table] key` set to `value`: the key's line rewritten in
- *  place with its trailing comment kept, a multi-line array edited line
- *  by line with its inner comments kept (`editArrayLines`; any other
- *  multi-line value collapses to one line), appended to the table's keys
+ *  place with its trailing comment kept, appended to the table's keys
  *  when the table has no such key, or with the table appended when the
- *  text has no such table. Every other byte is as it was. */
+ *  text has no such table. Every other byte is as it was. The sheet only
+ *  calls this for a bound key; a caller writing over a multi-line value
+ *  gets it collapsed to the one line the sheet binds. */
 export function writeKey(text: string, ref: KeyRef, value: TomlValue): string {
   const lines = text.split("\n");
   const key = BARE_KEY.test(ref.key) ? ref.key : formatValue(ref.key);
   const assignment = `${key} = ${formatValue(value)}`;
   const hit = findKey(text, ref);
   if (hit != null) {
-    const edited = Array.isArray(value) ? editArrayLines(lines, hit, value) : null;
-    if (edited != null) {
-      lines.splice(hit.start, hit.end - hit.start, ...edited);
-      return lines.join("\n");
-    }
     const first = lines[hit.start]!;
     const indent = /^\s*/.exec(first)![0];
     const last = lines[hit.end - 1]!;
