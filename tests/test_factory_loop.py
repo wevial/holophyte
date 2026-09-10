@@ -3752,6 +3752,37 @@ class PoolTests(LoopFixture):
         # The exit note a re-exec'd scheduler leaves for the sweep.
         self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(0,)])
 
+    def test_the_pool_refills_while_live_workers_hold_their_leases(self):
+        """Five ready tickets, `workers = 3`, and workers that really hold
+        their tickets: after the first exit the two survivors each lease
+        one, two tickets stay free, and the scheduler must still spawn a
+        fourth -- the pool is the live workers plus the free tickets, not
+        the free tickets alone (a fake spawn that never leased hid this)."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 6)))
+        conn = holophyte.runs.open_store(self.tgt)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, provider.team, self.target)
+
+        def first_exit():
+            # Worker 1 merged ticket 1; workers 2 and 3 hold tickets 2 and 3.
+            provider.queue.pop(0)
+            for n in (2, 3):
+                store.claim(conn, project,
+                            holophyte.board.mirror_task(conn, project, a_task(n)))
+            conn.commit()
+
+        pool = self.run_scheduler(3, provider, [
+            (holophyte.loop.WORKER_MERGED, first_exit),
+            (holophyte.loop.WORKER_MERGED, provider.queue.clear),
+            (holophyte.loop.WORKER_MERGED, None),
+            (holophyte.loop.WORKER_MERGED, None),
+        ])
+
+        # Three at the first tick, a fourth at the second: two free tickets
+        # and two live workers make a pool of three, one short.
+        self.assertEqual(len(pool.spawned), 4)
+        self.assertIsNone(self.rc)
+
     def test_a_leased_ticket_is_not_counted_as_claimable(self):
         """Two ready tickets, one already held by a live run on this
         target: one worker, not two."""

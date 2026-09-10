@@ -2293,7 +2293,13 @@ def scheduler(target, provider, knobs):
                     # serial loop's claim ends it when the board is down.
                     state.unlisted()
                 else:
-                    want = min(_claimable(conn, project, listing),
+                    # The claimable count leaves out the tickets the live
+                    # workers hold -- a claim is a lease -- so the pool the
+                    # queue can fill is the workers running plus what is
+                    # still free to take, capped at the ceiling. Counting
+                    # only the free tickets against the live pool never
+                    # refilled a pool after its first exit.
+                    want = min(len(pool) + _claimable(conn, project, listing),
                                knobs.workers)
                     while len(pool) < want:
                         slot = next(slots)
