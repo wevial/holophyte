@@ -414,10 +414,16 @@ pr_text = "ticket"
 # Instructions the written turn is given, in the repository's own words.
 # Optional; default empty.
 pr_style = ""
+# Shell commands run in order in the main checkout once a local merge has
+# landed, before the run is marked merged: the console build, so the daemon
+# serves the bundle the merge changed. Optional; default empty. The first
+# failing command stops the list and parks the run for the operator with
+# its output; the merge stays. Not run under mode = "pr".
+after = ["bun --cwd=console run build"]
 ```
 
 Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`, `pr_text`,
-`pr_style`.
+`pr_style`, `after`.
 
 With `approve = "auto"` a clean merge gate merges, as it always has. With
 `approve = "human"` the loop stops there instead: the run's phase becomes

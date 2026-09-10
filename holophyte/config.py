@@ -760,6 +760,14 @@ def board_config(target):
 # bots' threads, fixes and answers an ADDRESS with the sha, and hands
 # anything else to the operator unanswered. The factory never declines a
 # person and never resolves their thread, whichever the setting.
+#
+# `after` is a list of shell strings, default empty, run in order in the main
+# checkout once a local merge has landed and before the run is marked merged
+# (KO-347): the build nobody remembers to run, `bun --cwd=console run build`,
+# so a merge that changes the console's source reaches the bundle the daemon
+# serves. The first nonzero exit stops the list and parks the run for the
+# operator with the command's output; it does not undo the merge. Not run
+# under `mode = "pr"`, where nothing lands in the checkout.
 MERGE_KEYS = {
     "approve": "auto",
     "mode": "local",
@@ -768,6 +776,7 @@ MERGE_KEYS = {
     "pr_text": "ticket",
     "pr_style": "",
     "human_threads": "park",
+    "after": (),
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
@@ -780,7 +789,7 @@ MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
 MergeConfig = collections.namedtuple(
     "MergeConfig", ("approve", "mode", "pr_rounds", "pr_merge_method",
-                    "pr_text", "pr_style", "human_threads"))
+                    "pr_text", "pr_style", "human_threads", "after"))
 
 
 def merge_config(target):
@@ -799,7 +808,9 @@ def merge_config(target):
     `pr_style` is a string (default empty): instructions, not a switch, so
     any text is taken and anything else is refused. `human_threads` is
     `"park"` or `"act"`: a `"reply"` names no rule for a person's thread
-    the shepherd has. The refusal names the
+    the shepherd has. `after` is a list of strings (default empty), each a
+    shell command; a bare string is refused rather than split, so a target
+    cannot pass one command where a list of them is read. The refusal names the
     table, the key and the constraint, like a bad `[loop]` value. Keys this
     version does not know are refused by `check_config_keys()`.
     """
@@ -825,6 +836,14 @@ def merge_config(target):
                     f"[holo2] {target.config_path}: [merge] {key} must be a"
                     f" string, got {value!r}")
             values[key] = value
+            continue
+        if key == "after":
+            if not isinstance(value, (list, tuple)) \
+                    or not all(isinstance(cmd, str) for cmd in value):
+                raise SystemExit(
+                    f"[holo2] {target.config_path}: [merge] {key} must be a"
+                    f" list of shell command strings, got {value!r}")
+            values[key] = tuple(value)
             continue
         if value not in MERGE_VALUES[key]:
             allowed = " or ".join(f'"{o}"' for o in MERGE_VALUES[key])
