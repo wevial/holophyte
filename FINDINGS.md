@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[444 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T00:32:04Z — KO-337
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T00:33:29Z — KO-337
-MERGED to main as 172e362 (branch task/ko-337-a-target-can-let-the-shepherd deleted).
-actual: 20.8 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T00:49:45Z — KO-341
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[447 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T00:51:10Z — KO-341
 MERGED to main as 329975f (branch task/ko-341-the-claim-leases-the-ticket-no deleted).
@@ -763,3 +753,18 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T03:56:33Z — KO-328
 MERGED to main as a9cb4f6 (branch task/ko-328-the-store-mirrors-a-ticket-s-b deleted).
 actual: 20.0 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T04:02:52Z — KO-330
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (4):
+- /home/reviewer/candidate/console/src/components/Board.tsx:52 [p2] [Board.tsx:52](/home/reviewer/candidate/console/src/components/Board.tsx:52): Focus restoration targets a stale DOM element after polling moves the ticket bet…
+- /home/reviewer/candidate/console/tests/lib/markdown.test.ts:16 [p2] [markdown.test.ts:16](/home/reviewer/candidate/console/tests/lib/markdown.test.ts:16): The test substitutes triple backticks for criterion 3’s single-backtick…
+- criteria:2 [p2] CRITERION 2: not met — Reproduced loss of identifier focus on dismissal after a poll moves the ticket between columns. Given the sheet open, when Escape is pres…
+- criteria:3 [p2] CRITERION 3: not met — The specified single-backtick input produces no pre; the existing test uses different delimiters. Given the body "## In scope\n- [ ] one\…
+
+## 2026-09-10T04:05:41Z — KO-330
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T04:05:45Z — KO-330
+MERGED to main as d7b7d6d (branch task/ko-330-a-ticket-opens-as-a-sheet-over deleted).
+actual: 9.1 min · estimate: 30 min · rounds: 2
