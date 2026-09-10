@@ -13,6 +13,7 @@ which imports back the names its remaining call sites use.
 import collections
 import math
 import os
+import pathlib
 import shlex
 import shutil
 import subprocess
@@ -93,7 +94,8 @@ DOCKER_PROBE_TIMEOUT = 5
 # knobs and their defaults are defined.
 KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS),
-    "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix"}),
+    "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
+                           "carry"}),
 }
 # `[loop]`'s and `[report]`'s entries are filled in beside `LOOP_KEYS` and
 # `REPORT_KEYS`, with `[supervisor]`'s.
@@ -448,6 +450,38 @@ def setup_timeout(target):
             f"finite positive number of seconds, got {value!r}")
     return value
 
+
+def carry_directories(target):
+    """The target's `[worktree] carry` list, or `[]` when it names none.
+
+    Each entry is a repository-relative directory `[worktree] setup` installs
+    and git ignores -- `console/node_modules`, `.venv` -- that the review
+    stage copies in read-only so the reviewer can run the ticket's verify
+    commands (`review_runner.stage_candidate()`). Startup settles the shape:
+    a list of non-empty relative paths with no `..` segment. Whether an
+    entry exists, is ignored and is untracked is the stage's question, asked
+    against the worktree the round is about, and answered there with a
+    boundary error naming the entry.
+    """
+    entries = (target.config().get("worktree") or {}).get("carry")
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [worktree] carry must be a list of "
+            f"repository-relative directories, got {type(entries).__name__}")
+    for entry in entries:
+        if not isinstance(entry, str):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [worktree] carry: every entry must "
+                f"be a repository-relative directory, got {type(entry).__name__}")
+        parts = pathlib.PurePosixPath(entry).parts
+        if (not entry.strip() or entry.startswith("/") or not parts
+                or ".." in parts):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [worktree] carry: entry {entry!r} "
+                "must be a relative path inside the repository")
+    return entries
 
 
 # Characters git refuses anywhere in a ref name (`git check-ref-format`),

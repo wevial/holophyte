@@ -49,6 +49,7 @@ DEFINED = {
         "ReportConfig",
         "SweepConfig",
         "agent_command",
+        "carry_directories",
         "check_agent_commands",
         "check_config_keys",
         "check_default_implementer",
