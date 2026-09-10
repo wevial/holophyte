@@ -186,6 +186,12 @@ class LoopFixture(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
+        # The GitHub budget the reconcile remembers is the process's; a
+        # test that ran it low must not back off the tests after it.
+        budget = patch.object(holophyte.loop, "GITHUB_BUDGET",
+                              holophyte.loop.GitHubBudget())
+        budget.start()
+        self.addCleanup(budget.stop)
         root = Path(tmp.name)
         self.target = root / "repo"
         self.worktrees = root / "repo.worktrees"
@@ -2720,11 +2726,13 @@ class MergeModeTests(LoopFixture):
 
         self.assertEqual(fake.roles, ["implement", "review"])
         calls = self.recorded()
-        # The sixth is the pass after the park asking GitHub whether the
+        # The sixth is the park reading the pull request once more, after
+        # the pass's own writes, for the activity mark it records (KO-362);
+        # the seventh is the pass after the park asking GitHub whether the
         # parked pull request has been merged (KO-359).
-        self.assertEqual(len(calls), 6, calls)
-        self.assertEqual(calls[5], "gh api --hostname github.com --method"
-                         " POST graphql --input -")
+        self.assertEqual(len(calls), 7, calls)
+        self.assertEqual(calls[5:], ["gh api --hostname github.com --method"
+                                     " POST graphql --input -"] * 2)
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
         # Beside the state query: the head's check runs and main's rules,
         # so a rollup that says success before the checks have reported is
@@ -3851,19 +3859,28 @@ class MergeModeTests(LoopFixture):
     OPEN_PULL = {"state": "OPEN", "merged": False, "mergeCommit": None,
                  "mergedBy": None}
 
-    def fake_client(self, *answers):
+    def fake_client(self, *answers, rate=None):
         """The reconcile's GitHub, faked: `holophyte.pr.graphql` answers
         each ask with the next of `answers` (the last one forever) and
         records the pull request and variables it was asked about. An
-        answer that is an exception is raised instead: GitHub down."""
+        answer that is an exception is raised instead: GitHub down.
+        `rate` is the `rateLimit` node every answer carries, when one
+        does. Only the pull-status read is faked here: the shepherd's own
+        reads and writes still go to the scripted `gh`."""
         asked = []
+        real = holophyte.pr.graphql
 
         def graphql(target, pull, query, variables):
+            if "mergedBy" not in query:
+                return real(target, pull, query, variables)
             asked.append((pull.url, query, variables))
             node = answers[min(len(asked), len(answers)) - 1]
             if isinstance(node, Exception):
                 raise node
-            return {"repository": {"pullRequest": node}}
+            data = {"repository": {"pullRequest": node}}
+            if rate is not None:
+                data["rateLimit"] = rate
+            return data
 
         patcher = patch.object(holophyte.pr, "graphql", graphql)
         patcher.start()
@@ -4016,6 +4033,144 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(self.read("SELECT * FROM runs"), runs)
         self.assertEqual(self.read("SELECT * FROM tickets"), tickets)
         self.assertEqual(provider.states, [])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+    # The open pull request as it reads with review activity on it (KO-362):
+    # `updatedAt` and the thread count are what the reconcile holds against
+    # the run's mark.
+    T1, T2, T3 = ("2026-09-10T10:00:00Z", "2026-09-10T11:00:00Z",
+                  "2026-09-10T11:00:30Z")
+
+    def open_pull(self, at, threads):
+        return dict(self.OPEN_PULL, updatedAt=at,
+                    reviewThreads={"totalCount": threads})
+
+    def parked_with_mark(self, at, threads):
+        """A run parked on its pull request whose park recorded `at` and
+        `threads` as what it saw, parked long enough ago for
+        `[merge] pr_poll_sec` to have passed."""
+        self.parked_on_pr()
+        self.assertEqual(self.read("SELECT prSeenAt, prSeenThreads FROM"
+                                   " runs"), [(None, None)])
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?,"
+                         " lastHeartbeat = lastHeartbeat - 200000",
+                         (at, threads))
+        conn.close()
+
+    def test_new_review_activity_sends_the_parked_run_to_the_shepherd(
+            self):
+        """KO-362: the pull request's `updatedAt` moved past what the last
+        pass recorded. The tick sends the run back to the shepherd as
+        `--shepherd` would -- a `shepherd` intervention, the run ended
+        with the ticket ready -- and the same pass claims it: the resumed
+        run shepherds the pull request and parks again, its park recording
+        what it saw *after* its own writes (the third answer), so the tick
+        after that, reading the same, sends nothing."""
+        self.parked_with_mark(self.T1, 0)
+        asked = self.fake_client(self.open_pull(self.T2, 1),
+                                 self.open_pull(self.T3, 1))
+
+        out = self.main_output(provider=self.provider())
+
+        self.assertIn(f"KO-131: {self.URL} has new review activity (updated"
+                      f" {self.T2}, 1 review threads); run 1 sent back to"
+                      " the shepherd", out)
+        self.assertEqual(
+            self.read("SELECT id, phase, outcome, prSeenAt, prSeenThreads"
+                      " FROM runs ORDER BY id"),
+            [(1, "failed", "abandoned", self.T2, 1),
+             (2, "awaiting_merge_approval", None, self.T3, 1)])
+        self.assertEqual(
+            self.read('SELECT "action", source FROM interventions'),
+            [("shepherd", "supervisor")])
+        self.assertEqual(
+            self.read("SELECT summary FROM runEvents"
+                      " WHERE kind = 'intervention'"),
+            [(f"supervisor shepherd: new review activity on {self.URL}:"
+              f" updated {self.T2} (last seen {self.T1}), 1 review threads"
+              " (last seen 0)",)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        # Three reads so far: the tick's, the park's after its writes,
+        # and the pass after the park's, which saw the same and sent
+        # nothing.
+        self.assertEqual(len(asked), 3)
+
+        again = self.main_output(provider=StubProvider())
+
+        self.assertEqual(len(asked), 4)
+        self.assertNotIn("new review activity", again)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(1,)])
+        self.assertEqual(self.read("SELECT phase, prSeenAt FROM runs"
+                                   " WHERE id = 2"),
+                         [("awaiting_merge_approval", self.T3)])
+
+    def test_an_unchanged_pull_request_is_not_shepherded_again(self):
+        """Two ticks over the same pull request: the first finds no mark
+        on the run (parked by a module older than the columns) and records
+        what it saw without shepherding; the second finds the same and
+        does nothing. No round, no intervention, the run still parked."""
+        self.parked_on_pr()
+        asked = self.fake_client(self.open_pull(self.T1, 0))
+
+        first = self.main_output(provider=StubProvider())
+        second = self.main_output(provider=StubProvider())
+
+        self.assertEqual(len(asked), 2)
+        self.assertNotIn("review activity", first + second)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prSeenAt, prSeenThreads"
+                      " FROM runs"),
+            [("awaiting_merge_approval", None, self.T1, 0)])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+    def test_activity_within_the_poll_interval_waits(self):
+        """The pull request moved, but the run parked seconds ago: the tick
+        names the activity and the wait rather than starting a round."""
+        self.parked_on_pr()
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = 0",
+                         (self.T1,))
+        conn.close()
+        self.fake_client(self.open_pull(self.T2, 1))
+
+        out = self.main_output(provider=StubProvider())
+
+        self.assertIn(f"KO-131: {self.URL} has new review activity; the next"
+                      " shepherd round waits", out)
+        self.assertIn("([merge] pr_poll_sec)", out)
+        self.assertEqual(self.read("SELECT phase, prSeenAt FROM runs"),
+                         [("awaiting_merge_approval", self.T1)])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+    def test_a_low_github_budget_stops_the_pull_request_reads(self):
+        """The read that finds `rateLimit.remaining` under the floor is the
+        last one until the reset it names: the activity it saw starts no
+        round, the tick prints one line naming `resetAt`, and the next tick
+        reads no pull request at all."""
+        self.parked_with_mark(self.T1, 0)
+        reset = "2999-01-01T00:00:00Z"
+        asked = self.fake_client(self.open_pull(self.T2, 1),
+                                 rate={"remaining": 200, "resetAt": reset})
+
+        first = self.main_output(provider=self.provider())
+        second = self.main_output(provider=self.provider())
+
+        self.assertEqual(len(asked), 1)
+        line = ("[holo2] GitHub's GraphQL budget is down to 200 points; no"
+                f" parked pull request is read until it resets at {reset}")
+        self.assertIn(line, first)
+        self.assertIn(line, second)
+        self.assertNotIn("sent back to the shepherd", first + second)
+        self.assertEqual(self.read("SELECT phase, prSeenAt FROM runs"),
+                         [("awaiting_merge_approval", self.T1)])
         self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
                          [(0,)])
 

@@ -487,6 +487,10 @@ pr_rounds = 5
 # How the shepherd merges a green, quiet pull request: "merge", "squash" or
 # "rebase". Optional; the value shown is the default.
 pr_merge_method = "merge"
+# The least seconds between two shepherd rounds the loop itself starts on
+# one parked pull request when it sees new review activity. Optional; the
+# value shown is the default.
+pr_poll_sec = 180
 # Where the pull request's title and body come from: "ticket" (the ticket
 # pasted, titled `KO-n: TITLE`) or "written" (one implementer turn writes
 # them from the diff). Optional; the value shown is the default.
@@ -502,8 +506,8 @@ pr_style = ""
 after = ["bun --cwd=console run build"]
 ```
 
-Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`, `pr_text`,
-`pr_style`, `after`.
+Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`,
+`pr_poll_sec`, `pr_text`, `pr_style`, `human_threads`, `after`.
 
 With `approve = "auto"` a clean merge gate merges, as it always has. With
 `approve = "human"` the loop stops there instead: the run's phase becomes
@@ -573,6 +577,18 @@ GitHub answers, which for `"squash"` and `"rebase"` is the new commit on
 `main`. The key is validated whatever the mode; anything but the three
 strings is a startup error naming the key. The local mode's `--no-ff` merge
 is unaffected.
+
+`pr_poll_sec` is the least time, in seconds, between two shepherd rounds the
+loop itself starts on one parked pull request (KO-362). Every tick already
+reads each parked pull request once to notice a merge; the same read carries
+GitHub's `updatedAt` and the review-thread count, and a pull request that
+has moved past what the last shepherd pass recorded on the run is sent back
+to the shepherd as `--shepherd KO-n` would send it (see [Loop](loop.md)) --
+no more often than this per pull request, measured from the park, so a
+reviewer typing three comments in a minute gets one round rather than
+three. The default is 180; an integer of at least 10, and anything else
+(`5`, `"180"`, `true`) is a startup error naming the key. The reads back off
+on their own when the token's GraphQL budget runs low, whatever the value.
 
 `pr_text` is where a pull request's title and body come from under `mode =
 "pr"`. `"ticket"` (the default) is the form above: the title `KO-n: TITLE`,

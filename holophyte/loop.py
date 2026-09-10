@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic, sleep, time
 
@@ -1510,7 +1511,7 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
             # else pushed to the branch. Its checks and threads are about
             # their commit, not the one verified and reviewed here, so
             # nothing is judged, fixed or merged on it -- the operator looks.
-            _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                         f"the pull request's head is {state.head_sha[:12]},"
                         f" not the candidate {sha[:12]} this run pushed;"
                         " someone else pushed to the branch, and the"
@@ -1531,14 +1532,14 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
                f"Shepherd pass {pass_no}: no unresolved threads, checks"
                f" {state.checks}", provider)
         if state.checks != "success":
-            _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                         f"checks {state.checks} on the head commit", (),
                         reviewed=reviewed)
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
         if sha != reviewed:
             if merge.approve != "auto":
-                _park_on_pr(conn, run_id, provider, task_id, branch, sha,
+                _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
                             pull, f"{_moved(sha, reviewed)}, and a human"
                             " says merge on the candidate as it stands"
                             " ([merge] approve = \"human\")", (),
@@ -1559,11 +1560,11 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
                 verified = sha
             return _merge_pr(target, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, reviewed=reviewed)
-        _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "ready to merge; waiting for a human to say merge"
                     " ([merge] approve = \"human\")", (), reviewed=reviewed)
     state = _settled_state(target, conn, run_id, beat_s, pull)
-    _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+    _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " shepherd stops here", state.threads, reviewed=reviewed)
 
@@ -1660,7 +1661,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
            provider)
     # No `reviewed`: the judgement on record is this rejection, so the
     # resume that follows reviews the candidate again before any merge.
-    _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+    _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 f"the review of the fix at {sha[:12]} asked for changes;"
                 f" not merged. Reviewer findings:\n{verdict}", ())
 
@@ -1765,7 +1766,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     # does not judge it again.
     if by_verdict["HUMAN"] and (not act or any(
             t.author_kind == "bot" for _, t, _ in by_verdict["HUMAN"])):
-        _park_human(conn, run_id, provider, task_id, branch, sha, pull,
+        _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
                     by_verdict["HUMAN"], threads, reviewed)
     if by_verdict["ADDRESS"]:
         sha = _fix_threads(target, conn, run_id, provider, task_id, branch,
@@ -1777,7 +1778,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     left_open = tuple(t for _, t, _ in by_verdict["DECLINE"]) + tuple(
         t for _, t, _ in by_verdict["ADDRESS"] if t.author_kind != "bot")
     if by_verdict["HUMAN"]:
-        _park_human(conn, run_id, provider, task_id, branch, sha, pull,
+        _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
                     by_verdict["HUMAN"],
                     tuple(t for _, t, _ in by_verdict["HUMAN"]) + left_open,
                     reviewed)
@@ -1788,17 +1789,17 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                " authors"] if declined else []
         why += [f"{answered} person's thread(s) addressed and left open for"
                 " them to close"] if answered else []
-        _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "; ".join(why), left_open, reviewed=reviewed)
     return sha
 
 
-def _park_human(conn, run_id, provider, task_id, branch, sha, pull, human,
-                listed, reviewed):
+def _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
+                human, listed, reviewed):
     """Park the run on the threads the pass found `HUMAN`, each quoted in
     the ticket's question, with `listed` as the open threads."""
     quoted = "\n\n".join(shepherd.quoted(t) for _, t, _ in human)
-    _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+    _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 "a thread needs a human's answer; nothing was posted on"
                 f" it:\n{quoted}", listed, reviewed=reviewed)
 
@@ -1910,7 +1911,7 @@ def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
         with heartbeat_while(conn, run_id, beat_s):
             merge_sha = pr.merge_pull_request(target, pull, sha)
     except pr.MergeRefused as refused:
-        _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     f"GitHub refused the merge: {refused}", (),
                     reviewed=reviewed)
     print(f"[holo2] merged {pull.url} as {merge_sha[:12]}")
@@ -1939,8 +1940,8 @@ def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
     return merge_sha
 
 
-def _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull, why,
-                threads, reviewed=None):
+def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+                why, threads, reviewed=None):
     """Park the run on its pull request: the ticket asks `PR open: URL`
     with `why` and the open `threads` listed, `store.park()` writes
     `runs.prUrl`, `runs.candidateSha` and -- `reviewed`, the sha the last
@@ -1948,7 +1949,14 @@ def _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull, why,
     with the phase move, the ledger carries the same, and `MergeParked`
     unwinds the run with branch and worktree left standing. The operator's
     ways on are `--approve KO-n` (merge it) and `--shepherd KO-n` (look
-    again, which merges at `reviewed` alone and reviews anything else)."""
+    again, which merges at `reviewed` alone and reviews anything else) --
+    and, since KO-362, the loop's own tick: the park reads the pull
+    request once more, *after* this pass's pushes and replies, and
+    records its `updatedAt` and thread count on the run
+    (`runs.prSeenAt`, `runs.prSeenThreads`), so the reconcile that sees
+    the pull request move past them is seeing a reviewer, not the
+    shepherd's own writes. A read that fails records nothing, and the
+    reconcile then records without shepherding."""
     short = sha[:12] if sha else "an unrecorded sha"
     question = shepherd.open_threads_question(pull, why, threads)
     if conn is not None and run_id is not None:
@@ -1959,7 +1967,8 @@ def _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull, why,
         store.park(conn, run_id, "awaiting_merge_approval",
                    f"{shepherd.gist(why)}; {branch} at {short} is open as"
                    f" {pull.url} ([merge] mode = \"pr\")",
-                   candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed)
+                   candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed,
+                   pr_seen=_pr_seen(target, pull))
     print(f"[holo2] parked on {pull.url}: {shepherd.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"
@@ -2128,7 +2137,11 @@ def _serial(target, provider, knobs):
             # last pass ships its parked run here (KO-359). The first pass
             # asked at startup, before the mirror was repaired.
             if not first_pass:
-                _reconcile_pull_requests(target, conn, project, provider)
+                # A ticket sent back to the shepherd for new review
+                # activity (KO-362) may be one this pass parked and put in
+                # `skip`; it is ready again, and this pass claims it.
+                skip -= _reconcile_pull_requests(target, conn, project,
+                                                 provider)
             first_pass = False
             _mirror_queue(target, conn, project, provider)
             task, ticket_id, run_id = _claim_next(target, conn, project,
@@ -2766,7 +2779,23 @@ def _reconcile_pull_requests(target, conn, project, provider):
     one printed line for that ticket and the pass goes on to the next, as
     the mirror reconcile skips a board that cannot be asked: this lands
     work already landed, it does not gate the work in the queue.
+
+    Since KO-362 the same read also carries the pull request's
+    `updatedAt` and review-thread count, held against what the last
+    shepherd pass recorded on the run (`runs.prSeenAt`,
+    `runs.prSeenThreads`): an open pull request that moved past them has
+    review activity nobody has answered, and `_reshepherd()` sends the
+    run back to the shepherd exactly as `--shepherd KO-n` does, at most
+    once per `[merge] pr_poll_sec` per pull request. The read's
+    `rateLimit` is remembered in `GITHUB_BUDGET`: under `RATE_FLOOR`
+    points, the tick reads no pull request at all and prints one line
+    naming the reset. Returns the Linear ids of the tickets sent back,
+    so the serial loop can claim them again this pass.
     """
+    sent = set()
+    if _budget_low():
+        return sent
+    poll_ms = merge_config(target).pr_poll_sec * 1000
     for ticket in store.read.blocked_tickets(conn, project):
         if not ticket.prUrl or ticket.runId is None:
             continue
@@ -2779,10 +2808,165 @@ def _reconcile_pull_requests(target, conn, project, provider):
             print(f"[holo2] {ticket.linearIdentifier}: {pull.url} could not"
                   f" be read ({e}); the run stays parked")
             continue
+        GITHUB_BUDGET.remember(status)
+        low = _budget_low()
         if status.merged:
             _land_github_merge(target, conn, provider, ticket, pull, status)
         elif status.closed:
             _note_closed_pr(conn, ticket, pull)
+        elif not low:
+            # A shepherd round is many reads and writes: not on a budget
+            # that is already low.
+            issue = _reshepherd(conn, ticket, pull, status, poll_ms)
+            if issue is not None:
+                sent.add(issue)
+        if low:
+            return sent
+    return sent
+
+
+# The GraphQL budget below which the tick stops reading parked pull requests
+# until the reset GitHub named (KO-362). The budget is 5000 points an hour
+# per token and each read here is one point; the shepherd's own rounds are
+# the spend worth protecting, so the floor is well above one tick's reads.
+RATE_FLOOR = 500
+
+
+class GitHubBudget:
+    """What the last parked pull request read said of the token's GraphQL
+    budget: `remaining` points and the `reset_at` GitHub named, or None
+    for either when nothing has been read yet or the answer carried no
+    `rateLimit`. One per process: the token is the process's."""
+
+    def __init__(self):
+        self.remaining = None
+        self.reset_at = None
+
+    def remember(self, status):
+        if status.rate_remaining is not None:
+            self.remaining = status.rate_remaining
+            self.reset_at = status.rate_reset
+
+    def low(self, now=None):
+        """Under `RATE_FLOOR` with the reset still ahead. A reset that has
+        passed, or one GitHub did not name, forgets the reading: the next
+        read learns the budget again."""
+        if self.remaining is None or self.remaining >= RATE_FLOOR:
+            return False
+        reset = _iso_epoch(self.reset_at)
+        if reset is None or (time() if now is None else now) >= reset:
+            self.remaining = self.reset_at = None
+            return False
+        return True
+
+
+GITHUB_BUDGET = GitHubBudget()
+
+
+def _iso_epoch(text):
+    """`text`, GitHub's ISO 8601 timestamp, as epoch seconds; None for
+    anything else."""
+    if not isinstance(text, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def _budget_low():
+    """Whether the tick's pull request reads stop here, with the one line
+    that says so when they do."""
+    if not GITHUB_BUDGET.low():
+        return False
+    print(f"[holo2] GitHub's GraphQL budget is down to"
+          f" {GITHUB_BUDGET.remaining} points; no parked pull request is read"
+          f" until it resets at {GITHUB_BUDGET.reset_at}")
+    return True
+
+
+def _pr_seen(target, pull):
+    """`(updatedAt, thread count)` as the pull request reads now, for the
+    park to record after the pass's own writes; None when GitHub could not
+    be asked, which the park records as nothing seen."""
+    try:
+        status = pr.pull_status(target, pull)
+    except Exception as e:  # noqa: BLE001 - any transport failure
+        print(f"[holo2] {pull.url} could not be read after the pass ({e});"
+              " the park records no activity mark")
+        return None
+    GITHUB_BUDGET.remember(status)
+    return (status.updated_at, status.threads)
+
+
+def _reshepherd(conn, ticket, pull, status, poll_ms):
+    """Send the run parked on `pull` back to the shepherd when the pull
+    request has review activity the last pass did not see; the ticket's
+    Linear id when it was sent, None otherwise (KO-362).
+
+    Activity is an `updatedAt` past the run's `prSeenAt` or a thread
+    count above its `prSeenThreads`. A run with no `prSeenAt` -- parked
+    by a module older than the column, or after a read that failed --
+    has nothing to compare against: what the read saw is recorded and
+    the tick moves on, so the next one can tell. The interval is per
+    pull request, measured from the park (`runs.lastHeartbeat`, the
+    park's stamp): activity within `poll_ms` of it is named and waits.
+    Otherwise `store.shepherd()`'s one transaction -- the `shepherd`
+    intervention row, source `supervisor` (the loop's own machinery, not
+    a person), naming what moved, the run ended with its resume
+    point at the merge gate, the ticket walked to `ready` -- with the
+    mark advanced in the same transaction, so the same activity is not
+    sent twice; the loop's next claim resumes the candidate on its pull
+    request and makes another round of passes, whose park records what
+    it saw after its own writes. A refusal is the ticket having moved
+    while GitHub was asked: one line, nothing written.
+    """
+    identifier, run_id = ticket.linearIdentifier, ticket.runId
+    row = conn.execute("SELECT prSeenAt, prSeenThreads, lastHeartbeat,"
+                       " (SELECT linearIssueId FROM tickets WHERE id = ?)"
+                       " FROM runs WHERE id = ?",
+                       (ticket.id, run_id)).fetchone()
+    if row is None or status.updated_at is None:
+        return None
+    seen_at, seen_threads, parked_ms, issue = row
+    mark = (status.updated_at, status.threads)
+    if seen_at is None:
+        with store.transaction(conn):
+            conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?"
+                         " WHERE id = ? AND phase = 'awaiting_merge_approval'",
+                         (*mark, run_id))
+        return None
+    grew = (status.threads is not None and seen_threads is not None
+            and status.threads > seen_threads)
+    if status.updated_at <= seen_at and not grew:
+        return None
+    waited_ms = int(time() * 1000) - (parked_ms or 0)
+    if waited_ms < poll_ms:
+        print(f"[holo2] {identifier}: {pull.url} has new review activity;"
+              f" the next shepherd round waits"
+              f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")
+        return None
+    threads = "?" if status.threads is None else status.threads
+    note = (f"new review activity on {pull.url}: updated"
+            f" {status.updated_at} (last seen {seen_at}), {threads} review"
+            f" threads (last seen {seen_threads})")
+    try:
+        with store.transaction(conn):
+            conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?"
+                         " WHERE id = ?", (*mark, run_id))
+            store.shepherd(conn, ticket.id, note, source="supervisor")
+    except store.ApproveRefused as refused:
+        print(f"[holo2] {identifier}: {pull.url} has new review activity but"
+              f" the ticket moved while GitHub was asked ({refused}); left"
+              " alone")
+        return None
+    print(f"[holo2] {identifier}: {pull.url} has new review activity"
+          f" (updated {status.updated_at}, {threads} review threads); run"
+          f" {run_id} sent back to the shepherd")
+    return issue
 
 
 def _parked_phase(conn, run_id):
