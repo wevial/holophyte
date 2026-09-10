@@ -3676,9 +3676,12 @@ class FakePool:
         self.alive.append(self.next_pid)
         return type("Child", (), {"pid": self.next_pid})()
 
-    def wait(self):
+    def wait(self, children):
         if not self.alive:
             raise AssertionError("the scheduler waited with no child alive")
+        if set(children) != set(self.alive):
+            raise AssertionError(f"the scheduler waited on {sorted(children)}"
+                                 f" with {self.alive} alive")
         code, before = self.exits.pop(0)
         if before is not None:
             before()
@@ -3809,6 +3812,52 @@ class PoolTests(LoopFixture):
         self.assertEqual(pool.alive, [])
         self.assertEqual(len(execs), 1)
         self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(1,)])
+
+    def test_a_failure_under_stop_on_failure_is_not_lost_to_a_self_merge(self):
+        """`workers = 2`, `stop_on_failure = true`, self-hosted: one worker
+        fails and the other merges a change to the factory itself. The stop
+        wins: no re-exec -- a restarted scheduler would spawn again and exit
+        clean -- and the exit is nonzero."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 5)))
+        execs = []
+        with patch.object(holophyte.loop, "EXEC",
+                          lambda *args: execs.append(args)), \
+                patch.object(holophyte.loop, "__file__",
+                             str(self.target / "holophyte" / "loop.py")):
+            pool = self.run_scheduler(2, provider, [
+                (holophyte.loop.WORKER_FAILED, None),
+                (holophyte.loop.WORKER_MERGED, None),
+            ])
+
+        self.assertEqual(len(pool.spawned), 2)
+        self.assertEqual(pool.alive, [])
+        self.assertEqual(execs, [])
+        self.assertEqual(self.rc, 1)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(0,)])
+
+    def test_every_spawned_worker_is_reported_by_wait(self):
+        """Real children through the real seams: a worker that exited before
+        the next spawn is still reported by `WAIT`, with its own exit code.
+        (The reviewer's reproduction: with only the pid kept, `Popen`'s
+        housekeeping reaped the first child and the second wait raised.)"""
+        children = {}  # pid -> Popen, as the scheduler hands them to WAIT
+        script = ("import os, sys;"
+                  f" sys.exit(int(os.environ['{holophyte.loop.WORKER_SLOT_ENV}']))")
+        with patch.object(sys, "orig_argv", [sys.executable, "-c", script]), \
+                patch.object(sys, "stdout", io.StringIO()):
+            first = holophyte.loop._spawn_worker(self.tgt, 1)
+            children[first.pid] = first
+            # Exited but unreaped when the second is spawned.
+            os.waitid(os.P_PID, first.pid, os.WEXITED | os.WNOWAIT)
+            second = holophyte.loop._spawn_worker(self.tgt, 2)
+            children[second.pid] = second
+            reaped = {}
+            for _ in range(2):
+                pid, code = holophyte.loop.WAIT(children)
+                reaped[children.pop(pid)] = code
+
+        self.assertEqual(reaped, {first: 1, second: 2})
+        self.assertEqual((first.returncode, second.returncode), (1, 2))
 
 
 class WorkerTests(LoopFixture):

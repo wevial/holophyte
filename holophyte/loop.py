@@ -2094,10 +2094,23 @@ WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 SPAWN = subprocess.Popen
 
 
-def _wait_any():
-    """Block until any child exits; return `(pid, exit_code)`."""
+def _wait_any(children):
+    """Block until any child exits; return `(pid, exit_code)`.
+
+    `children` is the pool's live `Popen` objects by pid. The scheduler
+    holds them for as long as the workers live -- a `Popen` dropped while
+    its child runs is put on the module's housekeeping list, and the next
+    `Popen()` reaps whatever on that list has exited, out from under this
+    `os.wait()`: the worker becomes a phantom the pool waits on forever and
+    its exit status is lost (the review of KO-343 reproduced it with two
+    real children). Held, they are reaped here alone, and the one reaped is
+    told its status so it is not put on that list when the pool drops it.
+    """
     pid, status = os.wait()
-    return pid, os.waitstatus_to_exitcode(status)
+    code = os.waitstatus_to_exitcode(status)
+    if pid in children:
+        children[pid].returncode = code
+    return pid, code
 
 
 WAIT = _wait_any
@@ -2190,7 +2203,7 @@ def scheduler(target, provider, knobs):
     drained, nonzero when any worker failed or stopped for a human.
     """
     conn = open_store(target)
-    pool = {}  # pid -> slot number, the live workers
+    pool = {}  # pid -> (slot number, Popen), the live workers
     slots = iter(range(1, sys.maxsize))
     state = _PoolState(self_hosted(target), knobs.stop_on_failure)
     try:
@@ -2203,17 +2216,22 @@ def scheduler(target, provider, knobs):
                 want = min(_claimable(conn, project, listing), knobs.workers)
                 while len(pool) < want:
                     slot = next(slots)
-                    pool[_spawn_worker(target, slot)] = slot
+                    child = _spawn_worker(target, slot)
+                    pool[child.pid] = (slot, child)
             if not pool:
-                if state.restart:
+                if state.restart and not state.stopped:
+                    # Not after a stop: a restarted scheduler would know
+                    # nothing of the failure, spawn again and exit clean
+                    # under `stop_on_failure = true`. The operator relaunches
+                    # on the merged code, as after a serial failure.
                     _reexec(target, conn, project)
                     return  # only a test's EXEC returns
                 store.record_loop_return(conn, project)
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if state.failed else None
-            pid, code = WAIT()
+            pid, code = WAIT({pid: child for pid, (_, child) in pool.items()})
             if pid in pool:  # else the supervisor, or another child not ours
-                state.exited(pool.pop(pid), code)
+                state.exited(pool.pop(pid)[0], code)
     finally:
         conn.close()
 
@@ -2224,15 +2242,21 @@ class _PoolState:
     restarts once the pool has drained. A drain is for good -- a failure
     under `stop_on_failure`, a stop for a human, a self-merge -- while an
     idle worker only holds the next tick's spawning, since the listing
-    can run ahead of a claim a sibling is about to make."""
+    can run ahead of a claim a sibling is about to make. The first two
+    are a `stopped` drain: the loop ends nonzero when the pool is in, and
+    a self-merge seen alongside does not restart it."""
 
     def __init__(self, restart_after_merge, stop_on_failure):
         self.restart_after_merge = restart_after_merge
         self.stop_on_failure = stop_on_failure
         self.failed = False
-        self.draining = False
+        self.stopped = False
         self.paused = False
         self.restart = False
+
+    @property
+    def draining(self):
+        return self.stopped or self.restart
 
     @property
     def spawning(self):
@@ -2247,7 +2271,7 @@ class _PoolState:
                 # Workers mid-run finish on the code they started with; none
                 # is started on it, and the scheduler restarts from the
                 # merged code once the last one is in.
-                self.restart = self.draining = True
+                self.restart = True
         elif code == WORKER_PARKED:
             print(f"[holo2] worker {slot} parked its ticket awaiting"
                   " merge approval")
@@ -2256,12 +2280,12 @@ class _PoolState:
             self.paused = True
         elif code == WORKER_STOP:
             print(f"[holo2] worker {slot} stopped for a human")
-            self.failed = self.draining = True
+            self.failed = self.stopped = True
         else:
             print(f"[holo2] worker {slot} failed (exit {code})")
             self.failed = True
             if self.stop_on_failure:
-                self.draining = True
+                self.stopped = True
 
 
 def _claimable(conn, project, listing):
@@ -2282,15 +2306,16 @@ def _claimable(conn, project, listing):
 def _spawn_worker(target, slot):
     """Start `factory.py TARGET --worker` as slot `slot`, sharing this
     process's stdout and stderr so one `tee` captures the whole pool;
-    return its pid. The command line is the scheduler's own, `--worker`
-    appended, so the interpreter flags the operator launched with (`-u`
-    above all) reach the child too."""
+    return the `Popen`, which the caller holds until `WAIT()` reports it
+    (see `_wait_any()`). The command line is the scheduler's own,
+    `--worker` appended, so the interpreter flags the operator launched
+    with (`-u` above all) reach the child too."""
     program, argv = reexec_command()
     env = dict(os.environ, **{WORKER_SLOT_ENV: str(slot)})
     child = SPAWN([program, *argv[1:], "--worker"], env=env,
                   stdin=subprocess.DEVNULL)
     print(f"[holo2] started worker {slot} as pid {child.pid}")
-    return child.pid
+    return child
 
 
 def _startup_sweep(target, conn):
