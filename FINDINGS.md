@@ -653,27 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[469 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T04:02:52Z — KO-330
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/console/src/components/Board.tsx:52 [p2] [Board.tsx:52](/home/reviewer/candidate/console/src/components/Board.tsx:52): Focus restoration targets a stale DOM element after polling moves the ticket bet…
-- /home/reviewer/candidate/console/tests/lib/markdown.test.ts:16 [p2] [markdown.test.ts:16](/home/reviewer/candidate/console/tests/lib/markdown.test.ts:16): The test substitutes triple backticks for criterion 3’s single-backtick…
-- criteria:2 [p2] CRITERION 2: not met — Reproduced loss of identifier focus on dismissal after a poll moves the ticket between columns. Given the sheet open, when Escape is pres…
-- criteria:3 [p2] CRITERION 3: not met — The specified single-backtick input produces no pre; the existing test uses different delimiters. Given the body "## In scope\n- [ ] one\…
-
-## 2026-09-10T04:05:41Z — KO-330
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T04:05:45Z — KO-330
-MERGED to main as d7b7d6d (branch task/ko-330-a-ticket-opens-as-a-sheet-over deleted).
-actual: 9.1 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T04:10:32Z — KO-332
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/src/components/ShippedTable.tsx:101 [p2] [P2] [ShippedTable.tsx:101](/home/reviewer/candidate/console/src/components/ShippedTable.tsx:101): Pressing Enter on a focused SHA link bubbles into the row’s…
+[473 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T04:12:14Z — KO-332
 Round 2: pass · reviewer codex-astra-medium · verify passed
@@ -757,3 +737,22 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T18:33:26Z — KO-347
 MERGED to main as fa7c689 (branch task/ko-347-a-target-runs-its-merge-after deleted).
 actual: 13.1 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T18:35:39Z — KO-348
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- /home/reviewer/candidate/holophyte/serve.py:1136 [p2] **Token bypass** — [serve.py:1136](/home/reviewer/candidate/holophyte/serve.py:1136): loopback binds set `token=None`, allowing actions without authentication…
+- /home/reviewer/candidate/holophyte/serve.py:877 [p2] **Missing intervention records** — [serve.py:877](/home/reviewer/candidate/holophyte/serve.py:877): unit actions call `record_ledger`, not the required `recor…
+- criteria:2 [p2] CRITERION 2: not met — unauthenticated loopback requests execute restart-supervisor instead of returning 401; the existing test covers only non-loopback. Given…
+
+## 2026-09-10T18:49:24Z — KO-348
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/serve.py:934 [p2] **[P2] Reject ambiguous ticket identifiers before requeueing** — [holophyte/serve.py:934](/home/reviewer/candidate/holophyte/serve.py:934) uses a lookup that…
+
+## 2026-09-10T18:57:59Z — KO-348
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T18:59:34Z — KO-348
+MERGED to main as 74f1c36 (branch task/ko-348-the-daemon-accepts-token-gated deleted).
+actual: 39.2 min · estimate: 30 min · rounds: 3
