@@ -223,3 +223,21 @@ test("an expanded Shipped row stays expanded when polls advances and the table r
   expect(detailBeneath(235)).not.toBeNull();
   expect(rowToggle(236).getAttribute("aria-expanded")).toBe("false");
 });
+
+test("Enter on a focused sha link follows the link and leaves the row collapsed", async () => {
+  const { fetchImpl } = recordingFetch();
+  const row: ShippedRow = { ...ROWS[0]!, commit_url: "https://github.com/example/writer/commit/3f9c2ab0c1d2e3f4" };
+  render(<ShippedTable rows={[row]} now={now} tz="UTC" deps={{ fetch: fetchImpl }} />);
+  const sha = rowToggle(row.id).querySelector("a[data-sha]") as HTMLAnchorElement;
+  sha.focus();
+
+  const followed = fireEvent.keyDown(sha, { key: "Enter" });
+  await act(settle);
+  expect(followed).toBe(true);
+  expect(rowToggle(row.id).getAttribute("aria-expanded")).toBe("false");
+  expect(detailBeneath(row.id)).toBeNull();
+
+  fireEvent.keyDown(rowToggle(row.id), { key: "Enter" });
+  await act(settle);
+  expect(rowToggle(row.id).getAttribute("aria-expanded")).toBe("true");
+});

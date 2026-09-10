@@ -82,7 +82,7 @@ export function Sha({ row }: { row: { merge_sha: string | null; commit_url?: str
 /** One merge, a toggle like a Now row: clicking expands the run's detail
  *  card beneath, read from the daemon that merged it. The row is a
  *  `role="button"` div, not a button, because the sha cell is an anchor;
- *  a click on the sha follows the link without toggling the row. */
+ *  a click or Enter on the sha follows the link without toggling the row. */
 function Row({
   row,
   expanded,
@@ -99,6 +99,9 @@ function Row({
   deps?: { fetch: Fetch };
 }) {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Only keys aimed at the row itself toggle it: Enter on the focused sha
+    // anchor must follow the link, not bubble up and be swallowed here.
+    if (event.target !== event.currentTarget) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     onToggle();
