@@ -3078,11 +3078,14 @@ def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
     it leaves a `warning` row, and the add below re-asserts the same name.
     Then the add and the read-back, four ways:
 
-    - The add raises: nothing landed and there is nothing to remove; the
-      store lease goes back and the loop stops for a human.
-    - The read-back raises: the add may have landed, so this writer's
-      label is taken off best-effort, once, and then the same release and
-      stop.
+    - The add raises: a raise is not proof that nothing landed -- Linear
+      can apply the mutation and then time out on the response -- so this
+      writer's label is taken off best-effort, once, and then the store
+      lease goes back and the loop stops for a human. A label left
+      behind by a refused claim would otherwise be a lease every other
+      writer honours until a human notices it.
+    - The read-back raises: the add may have landed, so the same
+      best-effort removal, once, and then the same release and stop.
     - The read-back shows another writer's `holo:` label, taken between
       the listing and this write: that writer holds the ticket, whichever
       add landed first. This writer's own label comes off -- only that one
@@ -3099,12 +3102,8 @@ def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
         drop_lease_label(conn, ticket_id, provider, issue_id, label)
     try:
         provider.label_issue(issue_id, label)
-    except Exception as e:  # noqa: BLE001 - any board refusal fails the claim
-        return _refuse_claim(conn, task, run_id, "the board did not take the"
-                             f" lease label {label} ({e}); no work started")
-    try:
         have = provider.issue_labels(issue_id)
-    except Exception as e:  # noqa: BLE001 - the add may have landed
+    except Exception as e:  # noqa: BLE001 - the add may have landed either way
         drop_lease_label(conn, ticket_id, provider, issue_id, label)
         return _refuse_claim(conn, task, run_id, "the board did not take the"
                              f" lease label {label} ({e}); no work started")

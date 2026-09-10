@@ -89,9 +89,21 @@ def release_lease_label(target, conn, ticket_id, provider, run_id):
     run, so the store decides whether it is still this run's to remove: a
     close-out that runs late, after a fresh claim of this store has
     re-asserted the same label under a new live run, leaves it on, since
-    the ticket's `activeRunId` names that other run. Best-effort like
-    `mirror_push()`; a storeless or boardless caller has nothing to
-    release.
+    the ticket's `activeRunId` names that other run.
+
+    That check and the removal are two operations, and a claim can land
+    between them: the store lease is given back before the board is
+    touched (see `close_out_failure()` for why the lock is not held across
+    a network call), so a sibling loop on this store can claim the ticket
+    and write the same label while this removal is in flight -- and the
+    removal then takes the fresh run's lease off the board. The store is
+    asked again *after* the removal, and a live run it now names that is
+    not this one gets the label put back. The re-add is additive and
+    idempotent on Linear's side, so it cannot collide with the claim's own
+    write, whichever lands first; a claim that leases after the second
+    read writes its label after this removal and is not affected. Best-
+    effort like `mirror_push()`; a storeless or boardless caller has
+    nothing to release.
     """
     if conn is None or provider is None:
         return
@@ -100,8 +112,19 @@ def release_lease_label(target, conn, ticket_id, provider, run_id):
         return
     if ticket.activeRunId not in (None, run_id):
         return
-    drop_lease_label(conn, ticket_id, provider, ticket.linearIssueId,
-                     lease_label(target))
+    label = lease_label(target)
+    drop_lease_label(conn, ticket_id, provider, ticket.linearIssueId, label)
+    fresh = store.read.ticket_by_id(conn, ticket_id)
+    if fresh is None or fresh.activeRunId in (None, run_id):
+        return
+    try:
+        provider.label_issue(ticket.linearIssueId, label)
+    except Exception as e:  # noqa: BLE001 - best-effort board write
+        warn(conn, ticket_id, f"run {fresh.activeRunId} claimed {ticket_id}"
+                              f" while run {run_id}'s close-out was removing"
+                              f" the lease label {label}, and the board did"
+                              f" not take it back ({e}); another writer may"
+                              " claim the ticket until it is re-labelled")
 
 
 def mirror_key(task):

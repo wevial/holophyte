@@ -36,11 +36,13 @@ machines it walks. Back to the [README](index.md).
    a failure, a park for a human, a sweep -- and `--requeue` take the
    label off, and only while the store names no other live run on the
    ticket, so a close-out that runs late cannot strip the label a fresh
-   claim has since re-asserted. A label the board will not take fails the
-   claim as an `infra` failure and gives the store lease straight back
-   with nothing to remove; a read-back the board will not answer takes
-   the label off once, best-effort, and fails the claim the same way --
-   so a run never starts unlabelled. `--requeue` takes the label off
+   claim has since re-asserted; a claim that lands while the removal is
+   in flight is caught by a second look at the store afterwards, which
+   puts the fresh run's label back. A label the board will not take, or
+   a read-back it will not answer, takes the label off once, best-effort
+   -- a refusal is not proof the write did not land -- fails the claim as
+   an `infra` failure and gives the store lease straight back, so a run
+   never starts unlabelled. `--requeue` takes the label off
    before the ticket is claimable again. Before the
    first claim the loop runs one read-only sweep of the store. The sweep's
    contract runs the other way too: a run the supervisor's sweep ends while

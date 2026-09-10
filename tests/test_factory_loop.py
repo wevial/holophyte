@@ -4372,6 +4372,47 @@ class BoardLeaseLabelTests(LoopFixture):
         finally:
             conn.close()
 
+    def test_a_close_out_racing_a_fresh_claim_leaves_the_fresh_run_labelled(self):
+        """Run 1's close-out reads the store, finds no live run, and goes
+        to the board -- and in that gap run 2 claims the same ticket and
+        re-asserts the label. The removal that follows would take run 2's
+        lease off the board; the close-out must notice the fresh run and
+        leave the label standing (review finding P1 on KO-351)."""
+        ended = self.seed_ended_run()
+        db, target = self.db, self.target
+        raced = []
+
+        class Racing(StubProvider):
+            def unlabel_issue(self, issue_id, name):
+                if not raced:
+                    conn = store.open(str(db))
+                    try:
+                        project = store.ensure_project(conn, StubProvider.TEAM,
+                                                       str(target))
+                        (ticket_id,) = conn.execute(
+                            "SELECT id FROM tickets WHERE linearIssueId = ?",
+                            (issue_id,)).fetchone()
+                        raced.append(store.claim(conn, project, ticket_id))
+                        conn.commit()
+                    finally:
+                        conn.close()
+                    super().label_issue(issue_id, name)
+                super().unlabel_issue(issue_id, name)
+
+        provider = Racing(a_task())
+        provider.label_issue("iss-131", "holo:writer-1")
+        conn = store.open(str(self.db))
+        try:
+            (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
+            holophyte.board.release_lease_label(self.tgt, conn, ticket_id,
+                                                provider, ended)
+        finally:
+            conn.close()
+
+        self.assertEqual(raced, [2])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(2,)])
+        self.assertEqual(provider.labels["iss-131"], ["holo:writer-1"])
+
     def test_a_foreign_label_on_read_back_backs_off_removing_only_our_own_label(self):
         """The admission check reads the listing; the read-back reads the
         issue as it is. A `holo:writer-2` that landed in between is
@@ -4410,7 +4451,9 @@ class BoardLeaseLabelTests(LoopFixture):
         self.assertEqual(provider.labels["iss-132"], [])
 
     def test_a_label_the_board_refuses_releases_the_lease_and_starts_no_run(self):
-        """The add itself raised: nothing landed, so nothing is removed."""
+        """The add itself raised. The store lease goes back and no run
+        starts; the removal that follows is best-effort, since a raise is
+        not proof that nothing landed (review finding P2 on KO-351)."""
         class Refusing(StubProvider):
             def label_issue(self, issue_id, name):
                 self.label_calls.append(("label", issue_id, name))
@@ -4426,9 +4469,34 @@ class BoardLeaseLabelTests(LoopFixture):
                          [("failed", "infra")])
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
         self.assertEqual(provider.label_calls,
-                         [("label", "iss-131", "holo:writer-1")])
+                         [("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1")])
         self.assertEqual(provider.read_calls, [])
         self.assertEqual(self.branches(), ["main"])
+
+    def test_an_add_that_landed_before_it_raised_is_taken_off_again(self):
+        """The mutation applied and the response failed -- a timeout after
+        the write. The claim is refused as before, and the label the board
+        does hold comes off, so a refused claim does not leave a lease
+        every other writer will honour forever."""
+        class Landed(StubProvider):
+            def label_issue(self, issue_id, name):
+                super().label_issue(issue_id, name)
+                raise RuntimeError("linear timed out after the write")
+
+        provider = self.labelled(Landed, ["other"])
+        out = self.main_output(Commit("never reached"), APPROVE,
+                               provider=provider)
+
+        self.assertIn("did not take the lease label holo:writer-1", out)
+        self.assertEqual(self.last_fake.turns, [])
+        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
+                         [("failed", "infra")])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
+        self.assertEqual(provider.labels["iss-131"], ["other"])
+        self.assertEqual(provider.label_calls,
+                         [("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1")])
 
     def test_a_read_back_the_board_refuses_ends_with_our_label_off_and_no_lease(self):
         """The add landed and the read-back raised. The store lease goes
