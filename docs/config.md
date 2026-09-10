@@ -429,7 +429,8 @@ enabled under -- a non-empty string with no `/`, the target directory's
 name when absent. `config_edit` opens this file itself to the console:
 `GET /config` is its text with the value of every key named `...token` or
 `...key` replaced by `[redacted]`, wherever and however the key is written
-(`token_file`, a path, stays), and `PUT
+(`token_file`, a path, stays; every value under a table so named is
+replaced too), and `PUT
 /config` is a replacement the daemon holds to the same checks startup
 runs -- a refused document is 400 naming the key and nothing is written --
 then writes beside a timestamped backup and records as a `config_edit`

@@ -73,6 +73,25 @@ class RedactRule(unittest.TestCase):
         self.assertNotIn("secret", shown)
         self.assertEqual(tomllib.loads(shown)["extra"]["api_key"], REDACTED)
 
+    def test_a_secret_named_table_is_redacted_however_it_is_written(self):
+        """The same table as a `[header]`, a dotted key and an `[[array]]`
+        header (the review's regression): each pair under it is a secret,
+        as the inline form already was, and the redacted text still
+        restores."""
+        text = ('[extra.api_key]\nvalue = "S-header"\nother = 1\n'
+                '[extra2]\napi_key.value = "S-dotted"\n'
+                '[[extra3.api_key]]\nvalue = "S-array"\n')
+        shown = redact(text)
+        for secret in ("S-header", "S-dotted", "S-array"):
+            self.assertNotIn(secret, shown, secret)
+        parsed = tomllib.loads(shown)
+        self.assertEqual(parsed["extra"]["api_key"],
+                         {"value": REDACTED, "other": REDACTED})
+        self.assertEqual(parsed["extra2"]["api_key"]["value"], REDACTED)
+        self.assertEqual(parsed["extra3"]["api_key"][0]["value"], REDACTED)
+        self.assertEqual(tomllib.loads(restore(shown, text)),
+                         tomllib.loads(text))
+
     def test_paths_and_plain_values_stay_and_only_values_move(self):
         shown = redact(DOCUMENT)
         parsed = tomllib.loads(shown)

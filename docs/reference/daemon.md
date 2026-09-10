@@ -109,7 +109,9 @@ replaced by `"[redacted]"`; `token_file`, a path, stays. The key may be
 bare, quoted or dotted, under a `[table]` or `[[array]]` header or inside
 an inline table, and the value is replaced whole whatever its shape --
 a multi-line string, an array, an inline table -- with a comment beside
-it left in place. The daemon checks its own work against the parsed
+it left in place. A table whose own name ends so (`[extra.api_key]`,
+`api_key.value = ...`, `api_key = { ... }`) is a secret whole: every
+value under it is replaced, whichever way the table is written. The daemon checks its own work against the parsed
 document and answers 500 rather than serve a text in which a secret is
 still readable. A target with no file yet has `text` `""`. `applies` says when a change takes effect: the loop reads
 the file once at startup, so a written change waits for the next start

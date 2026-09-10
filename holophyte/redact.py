@@ -6,7 +6,10 @@ value back wherever the client sends the placeholder. A secret is the
 value of any key whose name ends in `token` or `key` -- `api_key`,
 `token`, `"api key"` -- wherever the document puts it: a bare, quoted or
 dotted key under a `[table]` or `[[array]]` header, or a pair inside an
-inline table; `token_file`, a path, is not one.
+inline table; `token_file`, a path, is not one. A table whose own name is
+secret -- `[extra.api_key]`, `api_key.value = ...`, `api_key = { ... }`
+-- is a secret whole: every pair under it is redacted, whichever of the
+three ways TOML writes it.
 
 The text is walked as TOML syntax, not as lines, so a value is replaced
 whole whatever its shape: a basic or literal string, a multi-line string,
@@ -48,6 +51,13 @@ class Scan(Exception):
 
 def is_secret(key):
     return key.endswith(SECRET_SUFFIXES)
+
+
+def under_secret(path):
+    """Whether any key segment of the indexed `path` `is_secret()`: the
+    pair itself, or a table it sits in by header, dotted key or inline
+    table -- the three ways TOML writes the same document."""
+    return any(is_secret(p) for p in path if isinstance(p, str))
 
 
 def spans(text):
@@ -126,7 +136,10 @@ def _pair(text, pos, prefix, found):
     pos = _skip_ws(text, pos + 1)
     path = prefix + keys
     start = pos
-    secret = is_secret(path[-1])
+    # A pair is a secret when its own key is, or when any table on the
+    # way to it is: `[extra.api_key]`, `api_key.value = ...` and
+    # `api_key = { value = ... }` all put `value` inside a secret.
+    secret = under_secret(path)
     pos = _value(text, pos, path, None if secret else found)
     if secret:
         found.append((path, start, pos))
@@ -302,27 +315,36 @@ def secret_leaves(document):
     spells it."""
     leaves = {}
 
-    def walk(node, prefix):
+    def walk(node, prefix, under):
         for key, value in node.items():
             path = prefix + (key,)
+            secret = under or is_secret(key)
             if isinstance(value, dict):
-                walk(value, path)
-            elif is_secret(key):
+                # A secret-named table is its pairs' business: each is a
+                # leaf below, and `redact()` accepts the placeholder at
+                # the pair or, for an inline table `spans()` replaced
+                # whole, at the ancestor.
+                walk(value, path, secret)
+            elif isinstance(value, list) and any(
+                    isinstance(item, (dict, list)) for item in value):
+                # `[[extra.api_key]]` and `api_key = [{...}]` parse alike;
+                # the leaves are the pairs inside, and the placeholder is
+                # accepted at the pair or at the ancestor as above.
+                walk_list(value, path, secret)
+            elif secret:
                 leaves[path] = value
-            elif isinstance(value, list):
-                walk_list(value, path)
-            # A secret-named key holding a table of pairs is the table's
-            # pairs' business; `spans()` lists the whole table, so the
-            # parsed check below finds the placeholder in their place.
 
-    def walk_list(items, prefix):
+    def walk_list(items, prefix, under):
         for index, item in enumerate(items):
+            path = prefix + (index,)
             if isinstance(item, dict):
-                walk(item, prefix + (index,))
+                walk(item, path, under)
             elif isinstance(item, list):
-                walk_list(item, prefix + (index,))
+                walk_list(item, path, under)
+            elif under:
+                leaves[path] = item
 
-    walk(document, ())
+    walk(document, (), False)
     return leaves
 
 
