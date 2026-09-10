@@ -127,7 +127,12 @@ machines it walks. Back to the [README](index.md).
    each pass reads the unresolved review threads and the checks, the
    adjudicator verdicts each thread `ADDRESS`, `DECLINE` or `HUMAN`, the
    addressed ones get a fix round, a push and a reply naming the sha and
-   are resolved, the declined ones a reply and are left open. Every pass is
+   are resolved, the declined ones a reply and are left open. A thread
+   naming an existing function, helper or constant the diff duplicates is
+   a change request, not a preference: `ADDRESS`, the fix being reuse; the
+   repository's `AGENTS.md` or `CLAUDE.md` is quoted in the brief as the
+   reviewer's standard, and `DECLINE` is for a thread that asks for
+   nothing specific or for what the ticket puts out of scope. Every pass is
    a `reviewRounds` row with route `github:LOGIN`. Green checks and no
    open thread merge the PR through its merge API under `approve = "auto"`;
    under `approve = "human"`, a decline, a `HUMAN` thread, red checks or
