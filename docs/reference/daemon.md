@@ -1,8 +1,10 @@
 # The daemon's actions
 
 `--serve` is a read daemon: every `GET` route in [HTTP endpoints](http.md)
-opens the store read-only and closes it. One opt-in makes it also an
-operator's hand on the writer host. With
+opens the store read-only and closes it. Two opt-ins make it also an
+operator's hand on the writer host: `actions`, below, and `config_edit`,
+[the target's configuration](#the-targets-configuration-get-config-and-put-config).
+With
 
 ```toml
 [serve]
@@ -76,6 +78,81 @@ A `ticket` the store never mirrored, or one the store refuses to requeue
 body that is not a JSON object, or one with no `ticket`, is 400 naming it.
 A target with no store is 503.
 
+## The target's configuration: `GET /config` and `PUT /config`
+
+A second opt-in, separate from `actions`:
+
+```toml
+[serve]
+config_edit = true
+```
+
+opens the target's own `config.toml` -- the file the loop reads at
+startup, [Configuration](../config.md) -- to the console, behind the same
+bearer token on every bind, loopback included, so `config_edit = true`
+needs `[serve] token_file` as `actions` does and a bind without it exits
+naming the keys. Without `config_edit = true` both routes are 404, token
+or not. It is off by default because the file is command execution on the
+writer host: `[worktree] setup` and `[agents]` name programs the next loop
+start runs, so a client that can write the file can run what it likes as
+the loop's user.
+
+`GET /config` answers
+
+```json
+{"text": "[serve]\ntoken_file = \"...\"\n...", "path": "/home/.../config.toml", "applies": "next loop start"}
+```
+
+`text` is the file as written, except that the value of every key whose
+name ends in `token` or `key` (`api_key`, `token`, `"api key"`) is
+replaced by `"[redacted]"`; `token_file`, a path, stays. The key may be
+bare, quoted or dotted, under a `[table]` or `[[array]]` header or inside
+an inline table, and the value is replaced whole whatever its shape --
+a multi-line string, an array, an inline table -- with a comment beside
+it left in place. A table whose own name ends so (`[extra.api_key]`,
+`api_key.value = ...`, `api_key = { ... }`) is a secret whole: every
+value under it is replaced, whichever way the table is written. The daemon checks its own work against the parsed
+document and answers 500 rather than serve a text in which a secret is
+still readable. A target with no file yet has `text` `""`. `applies` says when a change takes effect: the loop reads
+the file once at startup, so a written change waits for the next start
+(`POST /actions/launch-loop`, or the supervisor's), and a running loop is
+not touched.
+
+`PUT /config` takes `{"text": "..."}`, the whole new file. Every
+`"[redacted]"` value in it -- any TOML string reading `[redacted]`,
+however quoted, a comment beside it or not -- is replaced by the current
+file's value for the same key in the same table before anything else, so
+a round trip through the page never blanks a secret; a `[redacted]` under
+a key the current file does not hold is 400 naming it. The text is then parsed as
+TOML and run through the loader's startup checks -- unknown keys, every
+constrained value, the shape of `[board]`, `[agents]` and `[worktree]` --
+exactly as
+`factory.py` does before it claims anything; what the daemon does not do
+is probe the host (whether a program is on PATH, whether Docker answers),
+which is the loop's question at its next start. A document the loader
+refuses is 400:
+
+```json
+{"ok": false, "error": "[holo2] /home/.../config.toml: [loop] workers must be an integer >= 1, got 0"}
+```
+
+and nothing is written. An accepted document is recorded first, a human
+`config_edit` interventions row on the store's newest run naming the file
+and the backup (a target with no store or no run has nothing to record
+against and is 503, the file untouched); then the previous text is copied
+to `config.toml.bak-STAMP` beside the file, `STAMP` the UTC time to the
+second (`-2`, `-3` when that second already has one), and the new text
+lands by rename from a staging file of its own, so a reader sees the old
+file or the new one and never a torn one. Writes are taken one at a time,
+from the read of the current file to the rename, so two clients cannot
+back up the same text twice and lose an edit. The reply is
+
+```json
+{"ok": true, "path": "/home/.../config.toml", "backup": "/home/.../config.toml.bak-20260910T120000Z", "applies": "next loop start", "recorded": 42}
+```
+
+`backup` is null when there was no file to keep. Backups are not pruned.
+
 ## What a `pr_open` item's action is not
 
 `/attention` ([HTTP endpoints](http.md#get-attention)) sends a run parked
@@ -90,8 +167,8 @@ parked candidate today.
 
 | Status | When |
 | --- | --- |
-| 400 | the body is not a JSON object, or `requeue` has no `ticket` |
+| 400 | the body is not a JSON object, or `requeue` has no `ticket`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value |
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
-| 404 | `[serve] actions` is not `true`, or the action is not one of the three |
-| 405 | `POST` on any path outside `/actions/` |
-| 503 | `requeue` against a target with no store yet |
+| 404 | `[serve] actions` is not `true`, or the action is not one of the three; `/config` without `[serve] config_edit = true` |
+| 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
+| 503 | `requeue` against a target with no store yet; `PUT /config` with no store or no run to record against |

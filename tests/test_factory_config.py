@@ -1657,9 +1657,28 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = [7]\n')
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.loop.check_worktree_setup(self.tgt)
+            holophyte.config.check_worktree_setup(self.tgt)
 
         self.assertIn("command string", str(raised.exception))
+
+    def test_a_table_that_is_not_a_table_is_a_startup_error_naming_it(self):
+        """`worktree = "invalid"` and `agents = 3` used to reach the first
+        reader as a string with no `.get()` -- a traceback, not a sentence;
+        from the daemon's `PUT /config` (KO-356), a dropped connection."""
+        for config, table, check in (
+            ('worktree = "invalid"\n', "[worktree]",
+             holophyte.config.check_worktree_setup),
+            ("agents = 3\n", "[agents]", holophyte.config.review_route),
+        ):
+            with self.subTest(table=table):
+                self.locate(config)
+
+                with self.assertRaises(SystemExit) as raised:
+                    check(self.tgt)
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn(f"{table} must be a table", message)
 
     def test_a_startup_check_of_a_usable_table_passes(self):
         # Startup settles the shape of the table and deliberately not the
@@ -1667,12 +1686,12 @@ class WorktreeSetupTests(ConfigTestCase):
         # exist yet.
         self.locate('[worktree]\nsetup = ["holophyte-no-such-tool --install"]\n')
 
-        self.assertIsNone(holophyte.loop.check_worktree_setup(self.tgt))
+        self.assertIsNone(holophyte.config.check_worktree_setup(self.tgt))
 
     def test_an_absent_table_checks_nothing(self):
         self.locate()
 
-        self.assertIsNone(holophyte.loop.check_worktree_setup(self.tgt))
+        self.assertIsNone(holophyte.config.check_worktree_setup(self.tgt))
 
     def test_a_run_checks_the_table_before_claiming_anything(self):
         target = self.locate('[worktree]\nsetup = "make deps"\n').path

@@ -54,6 +54,7 @@ DEFINED = {
         "check_config_keys",
         "check_default_implementer",
         "check_default_reviewer",
+        "check_worktree_setup",
         "docker_probe",
         "load_config",
         "loop_config",
@@ -179,7 +180,6 @@ DEFINED = {
         "sweep_report",
     ],
     holophyte.loop: [
-        "check_worktree_setup",
         "main",
         "report",
         "reuse_leftover",

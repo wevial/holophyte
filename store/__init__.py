@@ -331,7 +331,7 @@ CREATE TABLE IF NOT EXISTS interventions (
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
                             'close_out', 'requeue', 'approve', 'repoint',
                             'shepherd', 'reconcile', 'restart_supervisor',
-                            'launch_loop')),
+                            'launch_loop', 'config_edit')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL
@@ -369,8 +369,10 @@ CREATE TABLE IF NOT EXISTS interventions (
 # still gains it here. Version 12 is the action CHECK admitting
 # 'restart_supervisor' and 'launch_loop', the daemon's two unit actions
 # behind `[serve] actions = true`, each recorded before its `systemctl`
-# runs (KO-348).
-SCHEMA_VERSION = 12
+# runs (KO-348). Version 13 is the action CHECK admitting 'config_edit',
+# the daemon's `PUT /config` behind `[serve] config_edit = true`, recorded
+# before the file is replaced (KO-356).
+SCHEMA_VERSION = 13
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -607,7 +609,7 @@ def init(conn):
 
 def _widen_interventions_action(conn):
     """Rebuild `interventions` when its action CHECK predates 'repoint',
-    'shepherd', 'reconcile' or the daemon's unit actions.
+    'shepherd', 'reconcile', the daemon's unit actions or 'config_edit'.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
     cannot ALTER a CHECK, so a store initialized before a value shipped
@@ -616,8 +618,9 @@ def _widen_interventions_action(conn):
     'close_out' here. 'requeue' (schema version 3), 'approve' (schema
     version 5), 'repoint' (schema version 7), 'shepherd' (schema version 8)
     'reconcile' (schema version 11, which also widens the trigger CHECK
-    to 'linear_completed') and 'restart_supervisor'/'launch_loop' (schema
-    version 12) ride the same rebuild: the newest values
+    to 'linear_completed'), 'restart_supervisor'/'launch_loop' (schema
+    version 12) and 'config_edit' (schema version 13) ride the same
+    rebuild: the newest values
     are the ones tested for, so a store from before any of them shipped --
     or from a branch that shipped one of them as its own version 7 -- is
     carried forward in one pass. The stored DDL says which world this store
@@ -641,7 +644,8 @@ def _widen_interventions_action(conn):
     admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
     if all(value in admitted
            for value in ("'repoint'", "'shepherd'", "'reconcile'",
-                         "'restart_supervisor'", "'launch_loop'")):
+                         "'restart_supervisor'", "'launch_loop'",
+                         "'config_edit'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -2302,7 +2306,7 @@ INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
                         "close_out", "requeue", "approve", "repoint",
                         "shepherd", "reconcile", "restart_supervisor",
-                        "launch_loop")
+                        "launch_loop", "config_edit")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

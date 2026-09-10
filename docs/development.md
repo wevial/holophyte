@@ -38,6 +38,8 @@ Each module, one line:
 - `holophyte/supervisor.py` — the stale-run sweep, its report, the lock and
   the `--supervise` loop.
 - `holophyte/serve.py` — `--serve PORT|HOST:PORT`, the read-only HTTP daemon.
+- `holophyte/redact.py` — secret values in a `config.toml` text, found by
+  walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
   target's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: worktree setup and reuse, `run_task`,

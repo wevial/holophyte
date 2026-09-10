@@ -124,6 +124,44 @@ def check_config_keys(target):
                     f"[{table}] accepts: {', '.join(sorted(known))}")
 
 
+def check_config(target):
+    """The config checks every mode runs at startup, with the command line
+    parsed and nothing claimed: unknown keys and every table whose values
+    are held to a constraint without touching the host -- `[supervisor]`,
+    `[loop]`, `[report]`, `[merge]`, `[console]`, `[serve]`. `cli()` calls
+    this once it has a target; the daemon's `PUT /config` (KO-356) calls it
+    over a candidate document, so what the console can write is exactly
+    what startup would accept. Each check exits naming the file, the table
+    and the key, so a refusal is one sentence about the value to fix."""
+    check_config_keys(target)
+    sweep_config(target)
+    loop_config(target)
+    report_config(target)
+    merge_config(target)
+    console_config(target)
+    serve_config(target)
+
+
+def check_document(target):
+    """`check_config()` plus the shape of the tables the loop's startup
+    reads before it claims: `[board]` through `board_config()`, `[agents]`
+    through `agent_command()` and `review_route()`, `[worktree]` through
+    `check_worktree_setup()`, the loop's own startup call. What it
+    deliberately leaves out is the host: whether a program is on PATH or
+    Docker answers (`check_agent_commands()`) is the loop's question at its
+    next start, not a property of the document. A relative program path
+    is: `check_agent_commands()` refuses it whatever the host holds, so it
+    is refused here through the same `check_command_path()`."""
+    check_config(target)
+    board_config(target)
+    review_route(target)
+    for role, key in AGENT_CONFIG_KEYS.items():
+        argv = agent_command(target, role, "")
+        if argv is not None:
+            check_command_path(target, key, argv[0])
+    check_worktree_setup(target)
+
+
 def agent_command(target, role, goal):
     """The configured argv for `role`, or None when the config names none.
 
@@ -138,14 +176,20 @@ def agent_command(target, role, goal):
     operator asked for a route, and quietly running the built-in one instead
     would answer a different question than the one the config asked.
     """
-    command = (target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+    command = config_table(target, "agents").get(AGENT_CONFIG_KEYS[role])
     if command is None:
         return None
     if not isinstance(command, str):
         raise SystemExit(
             f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]} must be "
             f"a command string, got {type(command).__name__}")
-    argv = shlex.split(command)
+    try:
+        argv = shlex.split(command)
+    except ValueError as bad:
+        # `shlex` says "No closing quotation"; the key it was in is ours.
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]}"
+            f" cannot be split into a command: {bad}")
     if not argv:
         raise SystemExit(
             f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]}"
@@ -170,7 +214,7 @@ def review_route(target):
     believes. (An `adjudicator` override alone leaves the reviewer in the
     container, so the pair still has a job.)
     """
-    agents = target.config().get("agents") or {}
+    agents = config_table(target, "agents")
     model_key, effort_key = REVIEW_ROUTE_KEYS
     for key in REVIEW_ROUTE_KEYS:
         if key in agents and "reviewer" in agents:
@@ -239,11 +283,7 @@ def check_agent_commands(target):
                 default_container_keys.append(key)
             continue
         program = argv[0]
-        if os.path.dirname(program) and not os.path.isabs(program):
-            raise SystemExit(
-                f"[holo2] {target.config_path}: [agents] {key}: relative command path "
-                f"{program!r} -- rounds run in a task worktree, so name the "
-                f"program by an absolute path or leave it to PATH")
+        check_command_path(target, key, program)
         if shutil.which(program) is None:
             raise SystemExit(
                 f"[holo2] {target.config_path}: [agents] {key}: no executable "
@@ -259,6 +299,20 @@ def check_agent_commands(target):
     if merge_config(target).mode == "pr":
         from holophyte.pr import check_pr_route
         check_pr_route(target)
+
+
+def check_command_path(target, key, program):
+    """Refuse a relative program path with a directory in it (`./worker`)
+    for `[agents] key`: rounds run with `cwd` set to a task worktree that
+    does not exist yet, so the name resolves somewhere no check can look.
+    A document constraint, not a host one: `check_document()` applies it
+    to a `PUT /config` candidate as `check_agent_commands()` does at
+    startup."""
+    if os.path.dirname(program) and not os.path.isabs(program):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [agents] {key}: relative command path "
+            f"{program!r} -- rounds run in a task worktree, so name the "
+            f"program by an absolute path or leave it to PATH")
 
 
 def check_default_implementer(target):
@@ -352,7 +406,7 @@ def setup_commands(target):
     worktree nobody prepared, and that surfaces far away from the config, as a
     toolchain failure in the middle of a round.
     """
-    commands = (target.config().get("worktree") or {}).get("setup")
+    commands = config_table(target, "worktree").get("setup")
     if commands is None:
         return []
     if not isinstance(commands, list):
@@ -371,6 +425,47 @@ def setup_commands(target):
     return commands
 
 
+def config_table(target, name):
+    """The target's `[name]` table, `{}` when absent -- refused, naming
+    the table, when the key holds anything but a table. The readers of
+    `[agents]` and `[worktree]` take their keys through this rather than
+    `.get()` on whatever the file holds, so `worktree = "invalid"` is one
+    sentence at startup, and the same sentence from `PUT /config`, rather
+    than a traceback from the first reader to ask it for a key."""
+    table = target.config().get(name)
+    if table is None:
+        return {}
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [{name}] must be a table, got "
+            f"{type(table).__name__}")
+    return table
+
+
+def check_worktree_setup(target):
+    """Parse the `[worktree]` table before the loop claims work.
+
+    `check_agent_commands()`'s sibling, here for the same reason: a table read
+    for the first time inside a run would abandon a claimed ticket, a cut
+    branch and a held ticket lease over something startup could have said in
+    one sentence. It parses through `setup_commands()`, so a table this
+    accepts is exactly a table a run would accept.
+
+    What it deliberately does not settle is the commands themselves. They are
+    shell, not argv -- `run_verify()` runs them the way it runs a ticket's
+    verify command -- and they are written against a worktree that does not
+    exist yet, so there is nothing here to resolve them against. Startup
+    settles the shape of the table; the worktree settles the rest. The cap
+    the commands run under, the branch prefix and the carry list are
+    checked here too, for the same reason. `check_document()` runs the same
+    call over a `PUT /config` candidate, so the two cannot drift.
+    """
+    setup_commands(target)
+    setup_timeout(target)
+    branch_prefix(target)
+    carry_directories(target)
+
+
 def setup_timeout(target):
     """The per-command cap on `[worktree] setup`, in seconds.
 
@@ -384,7 +479,7 @@ def setup_timeout(target):
     factory quietly replaced with its default would bound the setup with a
     number nobody chose.
     """
-    value = (target.config().get("worktree") or {}).get("setup_timeout_sec")
+    value = config_table(target, "worktree").get("setup_timeout_sec")
     if value is None:
         return VERIFY_TIMEOUT
     if (isinstance(value, bool) or not isinstance(value, (int, float))
@@ -407,7 +502,7 @@ def carry_directories(target):
     against the worktree the round is about, and answered there with a
     boundary error naming the entry.
     """
-    entries = (target.config().get("worktree") or {}).get("carry")
+    entries = config_table(target, "worktree").get("carry")
     if entries is None:
         return []
     if not isinstance(entries, list):
@@ -453,7 +548,7 @@ def branch_prefix(target):
     at `git worktree add` would abandon a claimed ticket over something one
     sentence at startup could have said.
     """
-    value = (target.config().get("worktree") or {}).get("branch_prefix")
+    value = config_table(target, "worktree").get("branch_prefix")
     if value is None:
         return DEFAULT_BRANCH_PREFIX
     if not isinstance(value, str):
@@ -1040,14 +1135,20 @@ def console_config(target):
 # `name` is the systemd instance those routes address --
 # `holophyte-supervise@NAME`, `holophyte-loop@NAME` -- the target slug the
 # deploy units are enabled under; the target directory's name by default.
+# `config_edit` (KO-356) opens `GET /config` and `PUT /config` behind the
+# token: the file's text, secrets redacted, and a validated replacement.
+# Off by default and separate from `actions`: a client holding the bearer
+# that can write the file can write `[worktree] setup` and `[agents]`,
+# which is command execution on the writer host at the next loop start.
 SERVE_KEYS = {
     "token_file": None,
     "actions": False,
+    "config_edit": False,
     "name": None,
 }
 KNOWN_KEYS["serve"] = frozenset(SERVE_KEYS)
-ServeConfig = collections.namedtuple("ServeConfig",
-                                     ("token_file", "actions", "name"))
+ServeConfig = collections.namedtuple(
+    "ServeConfig", ("token_file", "actions", "name", "config_edit"))
 
 
 def serve_config(target):
@@ -1059,7 +1160,8 @@ def serve_config(target):
     sits beside the config it is named in. Whether the daemon needs it at
     all is `holophyte.serve`'s to decide from the bind address; this only
     holds the value to its shape. `actions` is a boolean, false by
-    default; `name` is the systemd instance name the action routes
+    default, as is `config_edit`, which opens the `/config` routes (KO-356);
+    `name` is the systemd instance name the action routes
     address, the target directory's name when absent (KO-348). Keys this
     version does not know are refused by `check_config_keys()`.
     """
@@ -1068,11 +1170,14 @@ def serve_config(target):
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] must be a table, got "
             f"{type(table).__name__}")
-    actions = table.get("actions", SERVE_KEYS["actions"])
-    if not isinstance(actions, bool):
-        raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] actions must be true or "
-            f"false, got {actions!r}")
+    flags = {}
+    for key in ("actions", "config_edit"):
+        flags[key] = table.get(key, SERVE_KEYS[key])
+        if not isinstance(flags[key], bool):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [serve] {key} must be true or "
+                f"false, got {flags[key]!r}")
+    actions, config_edit = flags["actions"], flags["config_edit"]
     name = table.get("name", SERVE_KEYS["name"])
     if name is None:
         name = target.path.name
@@ -1082,7 +1187,8 @@ def serve_config(target):
             f"systemd instance name without '/', got {name!r}")
     token_file = table.get("token_file", SERVE_KEYS["token_file"])
     if token_file is None:
-        return ServeConfig(token_file=None, actions=actions, name=name)
+        return ServeConfig(token_file=None, actions=actions, name=name,
+                           config_edit=config_edit)
     if not isinstance(token_file, str) or not token_file.strip():
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] token_file must be a "
@@ -1090,4 +1196,5 @@ def serve_config(target):
     path = Path(token_file).expanduser()
     if not path.is_absolute():
         path = Path(target.config_path).parent / path
-    return ServeConfig(token_file=path, actions=actions, name=name)
+    return ServeConfig(token_file=path, actions=actions, name=name,
+                       config_edit=config_edit)

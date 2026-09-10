@@ -872,5 +872,62 @@ class Version11MigrationTests(unittest.TestCase):
              ("launch_loop", "manual")])
 
 
+VERSION_12_INTERVENTIONS_TABLE = VERSION_11_INTERVENTIONS_TABLE.replace(
+    "'reconcile'))", "'reconcile', 'restart_supervisor', 'launch_loop'))")
+
+
+class Version12MigrationTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+
+    def user_version(self):
+        raw = sqlite3.connect(self.path)
+        try:
+            return raw.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            raw.close()
+
+    def test_a_version_12_store_is_rebuilt_to_accept_config_edit(self):
+        """A store stamped 12 refuses a 'config_edit' row; opening it with
+        this build rebuilds the table in place, keeps the 'launch_loop' row
+        it held, stamps the current version, and the daemon's config edit
+        then lands (KO-356)."""
+        conn = store.open(self.path)
+        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1")
+        run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        conn.execute("DROP TABLE interventions")
+        conn.executescript(VERSION_12_INTERVENTIONS_TABLE)
+        conn.execute(
+            'INSERT INTO interventions (runId, source, "trigger", "action", at)'
+            " VALUES (?, 'human', 'manual', 'launch_loop', ?)",
+            (run_id, 1_700_000_120_000))
+        conn.execute("PRAGMA user_version = 12")
+        conn.commit()
+        conn.close()
+        raw = sqlite3.connect(self.path)
+        with self.assertRaises(sqlite3.IntegrityError):
+            raw.execute(
+                'INSERT INTO interventions (runId, source, "trigger",'
+                ' "action", at) VALUES (?, \'human\', \'manual\','
+                ' \'config_edit\', 1)', (run_id,))
+        raw.close()
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertGreaterEqual(store.SCHEMA_VERSION, 13)
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        store.record_intervention(conn, run_id, "config_edit",
+                                  "config replaced over HTTP")
+        self.assertEqual(
+            conn.execute('SELECT "action", "trigger" FROM interventions'
+                         " ORDER BY id").fetchall(),
+            [("launch_loop", "manual"), ("config_edit", "manual")])
+
 if __name__ == "__main__":
     unittest.main()
