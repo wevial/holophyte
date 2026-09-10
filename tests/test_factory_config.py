@@ -406,6 +406,30 @@ class LoopConfigTests(ConfigTestCase):
         self.assertEqual(
             holophyte.config.loop_config(self.tgt).review_rounds_per_lines, 0)
 
+    def test_workers_defaults_to_one_process(self):
+        self.locate()
+
+        self.assertEqual(holophyte.config.loop_config(self.tgt).workers, 1)
+
+    def test_workers_must_be_an_integer_of_at_least_one(self):
+        """`"3"` is a string and `0` a pool that could work nothing: each
+        is a startup error naming `[loop] workers`, before anything is
+        claimed (KO-343)."""
+        for line in ('workers = "3"', "workers = 0"):
+            with self.subTest(line=line):
+                target = self.locate(f"[loop]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[loop] workers", message)
+                self.assertIn("at least 1", message)
+                report.assert_not_called()
+
+
 
 class StateDirectoryTests(ConfigTestCase):
     """Every per-target artifact lives under one `HOLOPHYTE_HOME/SLUG/`.
@@ -1325,6 +1349,27 @@ class SupervisorSpawnTests(StartupCheckTests):
                     patch.object(holophyte.cli, "file_ticket"), \
                     contextlib.redirect_stdout(io.StringIO()):
                 holophyte.cli.cli([str(target), *argv])
+        self.popen.assert_not_called()
+
+    def test_a_worker_runs_one_ticket_and_starts_no_supervisor(self):
+        """`--worker` is a child of the scheduler, which ran the route
+        probes and the supervisor spawn for the whole pool: the worker
+        goes straight to `worker()` with the board, probing nothing and
+        spawning nothing, and exits with the status it returns (KO-343)."""
+        target = self.locate(self.BOARD).path
+
+        with patch.object(holophyte.cli, "worker", return_value=3) as worker, \
+                patch.object(holophyte.cli, "main") as main, \
+                patch.object(holophyte.cli, "check_agent_commands") as probe, \
+                patch.object(holophyte.cli, "LinearProvider", self.EmptyBoard), \
+                contextlib.redirect_stdout(io.StringIO()):
+            rc = holophyte.cli.cli([str(target), "--worker"])
+
+        self.assertEqual(rc, 3)
+        worker.assert_called_once()
+        self.assertIsInstance(worker.call_args.args[1], self.EmptyBoard)
+        main.assert_not_called()
+        probe.assert_not_called()
         self.popen.assert_not_called()
 
 

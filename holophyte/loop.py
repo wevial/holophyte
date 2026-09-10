@@ -3,8 +3,10 @@
 `main()` drives one pass of the factory -- claim, mirror, lease, `run_task()`,
 close out, repeat -- and re-executes `factory.py` through the `EXEC` seam
 (`reexec_self` from `holophyte.reexec`) after merging a change to the factory
-itself (`self_hosted()`). `run_task()`
-is the loop body: the worktree (`reuse_leftover()` for a leftover,
+itself (`self_hosted()`). Under `[loop] workers > 1` `main()` is instead
+`scheduler()`, a pool of `factory.py --worker` children sized to the claimable
+queue, each one `worker()`: the same phases once, for one ticket (KO-343).
+`run_task()` is the loop body: the worktree (`reuse_leftover()` for a leftover,
 `run_worktree_setup()` for the `[worktree] setup` table, checked at startup by
 `check_worktree_setup()`), the implement/review/adjudicate turns, the verify
 gate, the `--no-ff` merge. `report()` is `--report`'s whole body. Imports the
@@ -62,7 +64,7 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
-from holophyte.reexec import reexec_self
+from holophyte.reexec import reexec_command, reexec_self
 from holophyte.report import report_lines
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import (
@@ -75,6 +77,7 @@ from holophyte.runs import (
 )
 from holophyte.supervisor import (
     SWEEP_HINT,
+    Sweep,
     supervisor_liveness_line,
     sweep,
     sweep_lines,
@@ -1951,11 +1954,23 @@ def self_hosted(target):
 
 
 def main(target, provider):
-    """One pass of the factory: claim, mirror, lease, `run_task()`, close out,
-    repeat. The phases are the plain functions below, called in the order
-    they ran when this was one function (KO-211)."""
-    restart_after_merge = self_hosted(target)
+    """The loop: one process working the queue a ticket at a time under
+    `[loop] workers = 1`, the default; a scheduler over a pool of
+    `--worker` children above it (KO-343). Returns the exit status."""
     knobs = loop_config(target)
+    if knobs.workers == 1:
+        return _serial(target, provider, knobs)
+    return scheduler(target, provider, knobs)
+
+
+def _serial(target, provider, knobs):
+    """One pass of the factory in this process: claim, mirror, lease,
+    `run_task()`, close out, repeat. The phases are the plain functions
+    below, called in the order they ran when this was one function
+    (KO-211). The loop as it was before the pool: `[loop] workers = 1`
+    runs exactly this, and a `--worker` child runs the same phases once
+    in `worker()`."""
+    restart_after_merge = self_hosted(target)
     stop_on_failure = knobs.stop_on_failure
     order = knobs.order
     # Whether any run this pass failed, for the exit code when the loop was
@@ -1979,7 +1994,8 @@ def main(target, provider):
         skip = set()
         while True:
             _mirror_queue(target, conn, project, provider)
-            task = provider.claim_next(skip=skip, order=order)
+            task, ticket_id, run_id = _claim_next(target, conn, project,
+                                                  provider, order, skip, seen)
             if not task:
                 # The exit note, in the store before it is on the terminal:
                 # a loop that was re-exec'd and found nothing to claim ends
@@ -1988,18 +2004,6 @@ def main(target, provider):
                 store.record_loop_return(conn, project)
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if failed else None
-            ticket_id = _admit_ticket(target, conn, project, provider, task,
-                                      seen)
-            if ticket_id is None:
-                skip.add(task["id"])
-                continue
-            run_id = _claim_run(conn, project, provider, ticket_id, seen)
-            if run_id is HELD:
-                # Another loop on this target took the ticket between the
-                # admission read and the claim: its work, not this loop's
-                # problem. Skipped like a held ticket found at admission.
-                skip.add(task["id"])
-                continue
             if run_id is None:
                 return
             merged = _dispatch(target, conn, run_id, provider, task, ticket_id)
@@ -2042,6 +2046,251 @@ def main(target, provider):
                 return  # only a test's EXEC returns
     finally:
         conn.close()
+
+
+def _claim_next(target, conn, project, provider, order, skip, seen):
+    """Walk the board's queue to the first ticket this process may run and
+    lease it. Returns `(task, ticket_id, run_id)`: `task` None when the
+    queue is exhausted, `run_id` None when the claim said stop for a human
+    (`_claim_run()`). Every ticket refused on the way -- unadmitted, or
+    leased by another run between the admission read and the claim -- is
+    added to `skip`, so the caller's next ask is the one after it."""
+    while True:
+        task = provider.claim_next(skip=skip, order=order)
+        if not task:
+            return None, None, None
+        ticket_id = _admit_ticket(target, conn, project, provider, task, seen)
+        if ticket_id is None:
+            skip.add(task["id"])
+            continue
+        run_id = _claim_run(conn, project, provider, ticket_id, seen)
+        if run_id is HELD:
+            # Another loop on this target took the ticket between the
+            # admission read and the claim: its work, not this loop's
+            # problem. Skipped like a held ticket found at admission.
+            skip.add(task["id"])
+            continue
+        return task, ticket_id, run_id
+
+
+# --- the pool (KO-343) -------------------------------------------------------
+#
+# A worker's exit status is its one word back to the scheduler. `0` is a
+# merge, as a clean process exit should be; `1` a failed run, the status the
+# serial loop exits with on one and the one an uncaught exception exits a
+# Python process with, so a worker that crashed outside `_dispatch()` reads
+# as the failure it is. The other three are the scheduler's alone.
+WORKER_MERGED = 0
+WORKER_FAILED = 1
+WORKER_PARKED = 2   # parked awaiting merge approval: not a failure
+WORKER_IDLE = 3     # nothing left to claim
+WORKER_STOP = 4     # the claim said stop for a human (`_claim_run()`)
+# The environment variable a worker reads its slot number from, for the
+# `[holo2 wN]` prefix on its lines: the children share the scheduler's
+# stdout, and the prefix is what tells their lines apart in one log.
+WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
+# The seams the scheduler spawns and reaps through, so a test patches these
+# and never `subprocess.Popen` or `os.wait` for the whole process.
+SPAWN = subprocess.Popen
+
+
+def _wait_any():
+    """Block until any child exits; return `(pid, exit_code)`."""
+    pid, status = os.wait()
+    return pid, os.waitstatus_to_exitcode(status)
+
+
+WAIT = _wait_any
+# A worker runs no sweep of its own -- the scheduler swept once, and a
+# second sweep would count one silence twice -- so its held-ticket lines
+# have no sweep to point at.
+NOTHING_SEEN = Sweep(0, (), False, (), ())
+
+
+def worker(target, provider):
+    """One `--worker` child: claim one ticket, run it, close it out, exit.
+
+    The serial loop's phases once, less what the scheduler has already
+    done -- the startup sweep, the reconcile, the queue mirror -- and less
+    what belongs to the scheduler alone: no re-exec after a self-merge
+    (the scheduler restarts once the pool has drained, so this worker
+    finishes on the code it started with) and no exit note. Returns one
+    of the `WORKER_*` statuses; the scheduler reads it from the exit code.
+    """
+    slot = os.environ.get(WORKER_SLOT_ENV)
+    if slot:
+        sys.stdout = _PrefixedOut(sys.stdout, f"[holo2 w{slot}]")
+    knobs = loop_config(target)
+    conn = open_store(target)
+    try:
+        project = store.ensure_project(conn, provider.team, target.path)
+        task, ticket_id, run_id = _claim_next(target, conn, project, provider,
+                                              knobs.order, set(), NOTHING_SEEN)
+        if not task:
+            print("[holo2] nothing left to claim; worker done.")
+            return WORKER_IDLE
+        if run_id is None:
+            return WORKER_STOP
+        merged = _dispatch(target, conn, run_id, provider, task, ticket_id)
+        if merged is PARKED:
+            print(f"[holo2] {task['id']} parked awaiting merge approval")
+            return WORKER_PARKED
+        if not merged:
+            return WORKER_FAILED
+        commit_findings(target, f"Complete task {task['id']}: {task['title']}")
+        return WORKER_MERGED
+    finally:
+        conn.close()
+
+
+class _PrefixedOut:
+    """A text stream that starts every line with `prefix`, folding the
+    factory's own `[holo2]` tag into it: `[holo2] run failed` from worker
+    2 reads `[holo2 w2] run failed`, and any other line is prefixed whole.
+    Writes are passed through as they come, so the line buffering the
+    package set on the real stream still lands each line when it is said.
+    """
+
+    def __init__(self, stream, prefix):
+        self.stream = stream
+        self.prefix = prefix
+        self.at_line_start = True
+
+    def write(self, text):
+        out = []
+        for piece in text.splitlines(keepends=True):
+            if self.at_line_start and piece.strip():
+                if piece.startswith("[holo2]"):
+                    piece = self.prefix + piece[len("[holo2]"):]
+                else:
+                    piece = f"{self.prefix} {piece}"
+            self.at_line_start = piece.endswith(("\n", "\r"))
+            out.append(piece)
+        return self.stream.write("".join(out))
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+def scheduler(target, provider, knobs):
+    """`[loop] workers > 1`: keep up to `knobs.workers` `--worker` children
+    running, one per claimable ticket, until the queue is empty.
+
+    The startup checks and the sweep once, then a tick per child exit:
+    mirror the board's ready listing, count the tickets a worker could
+    claim (`_claimable()`), spawn until `min(claimable, workers)` are
+    alive, block until any child exits, read its status. A failed worker
+    under `stop_on_failure` stops the spawning and the running workers are
+    waited for, as the serial loop stops on its first failure; a merge into
+    the factory itself does the same and re-execs once the pool has
+    drained, so no worker ever runs code newer than the scheduler's. A
+    worker that found nothing to claim is not a stop: the listing can run
+    ahead of a claim a sibling is about to make, so the tick spawns nothing
+    and the next exit recounts. Exits 0 with the queue empty and the pool
+    drained, nonzero when any worker failed or stopped for a human.
+    """
+    conn = open_store(target)
+    pool = {}  # pid -> slot number, the live workers
+    slots = iter(range(1, sys.maxsize))
+    state = _PoolState(self_hosted(target), knobs.stop_on_failure)
+    try:
+        project = store.ensure_project(conn, provider.team, target.path)
+        _startup_sweep(target, conn)
+        _reconcile_mirror(conn, project, provider)
+        while True:
+            if state.spawning:
+                listing = _mirror_queue(target, conn, project, provider)
+                want = min(_claimable(conn, project, listing), knobs.workers)
+                while len(pool) < want:
+                    slot = next(slots)
+                    pool[_spawn_worker(target, slot)] = slot
+            if not pool:
+                if state.restart:
+                    _reexec(target, conn, project)
+                    return  # only a test's EXEC returns
+                store.record_loop_return(conn, project)
+                print("[holo2] Linear has no ready tickets. done.")
+                return 1 if state.failed else None
+            pid, code = WAIT()
+            if pid in pool:  # else the supervisor, or another child not ours
+                state.exited(pool.pop(pid), code)
+    finally:
+        conn.close()
+
+
+class _PoolState:
+    """What the scheduler has learnt from its workers' exits: whether any
+    failed (the exit status), whether it may still spawn, and whether it
+    restarts once the pool has drained. A drain is for good -- a failure
+    under `stop_on_failure`, a stop for a human, a self-merge -- while an
+    idle worker only holds the next tick's spawning, since the listing
+    can run ahead of a claim a sibling is about to make."""
+
+    def __init__(self, restart_after_merge, stop_on_failure):
+        self.restart_after_merge = restart_after_merge
+        self.stop_on_failure = stop_on_failure
+        self.failed = False
+        self.draining = False
+        self.paused = False
+        self.restart = False
+
+    @property
+    def spawning(self):
+        return not (self.draining or self.paused)
+
+    def exited(self, slot, code):
+        """Read worker `slot`'s exit `code`; one printed line each."""
+        self.paused = False
+        if code == WORKER_MERGED:
+            print(f"[holo2] worker {slot} merged its ticket")
+            if self.restart_after_merge:
+                # Workers mid-run finish on the code they started with; none
+                # is started on it, and the scheduler restarts from the
+                # merged code once the last one is in.
+                self.restart = self.draining = True
+        elif code == WORKER_PARKED:
+            print(f"[holo2] worker {slot} parked its ticket awaiting"
+                  " merge approval")
+        elif code == WORKER_IDLE:
+            print(f"[holo2] worker {slot} found nothing to claim")
+            self.paused = True
+        elif code == WORKER_STOP:
+            print(f"[holo2] worker {slot} stopped for a human")
+            self.failed = self.draining = True
+        else:
+            print(f"[holo2] worker {slot} failed (exit {code})")
+            self.failed = True
+            if self.stop_on_failure:
+                self.draining = True
+
+
+def _claimable(conn, project, listing):
+    """How many of the board's ready `listing` a worker could claim now:
+    mirrored `ready` in the store and under no live run's lease. One
+    store read for the tick (`open_tickets()`), against the rows
+    `_mirror_queue()` just refreshed. The store's word, not the board's:
+    a ticket a failed run left `in_flight`, one parked on the operator or
+    one whose body the validator refused all sit in the board's ready
+    column, and a worker spawned for one of them would only refuse it."""
+    rows = {row.linearIdentifier: row
+            for row in store.read.open_tickets(conn, project)}
+    return sum(1 for task in listing
+               if (row := rows.get(task["id"])) is not None
+               and row.status == "ready" and row.activeRunId is None)
+
+
+def _spawn_worker(target, slot):
+    """Start `factory.py TARGET --worker` as slot `slot`, sharing this
+    process's stdout and stderr so one `tee` captures the whole pool;
+    return its pid. The command line is the scheduler's own, `--worker`
+    appended, so the interpreter flags the operator launched with (`-u`
+    above all) reach the child too."""
+    program, argv = reexec_command()
+    env = dict(os.environ, **{WORKER_SLOT_ENV: str(slot)})
+    child = SPAWN([program, *argv[1:], "--worker"], env=env,
+                  stdin=subprocess.DEVNULL)
+    print(f"[holo2] started worker {slot} as pid {child.pid}")
+    return child.pid
 
 
 def _startup_sweep(target, conn):
@@ -2087,15 +2336,20 @@ def _mirror_queue(target, conn, project, provider):
     has them. A board that cannot be asked, or a listing the mirror
     chokes on, skips the whole step in one printed line and the claim
     proceeds: this fills the Board, it does not gate the work. Nothing is
-    written to Linear.
+    written to Linear. Returns the listing it mirrored -- the scheduler
+    counts its claimable tickets from it (KO-343) -- and an empty list when
+    the step was skipped.
     """
+    mirrored = []
     try:
         for task in provider.ready_issues():
             specced = body_problem(task, target.path) is None
             mirror_task(conn, project, task, specced=specced)
+            mirrored.append(task)
     except Exception as e:  # any transport or mirror failure: not a gate
         print(f"[holo2] queue mirror skipped: the board's ready issues could"
               f" not be mirrored ({e})")
+    return mirrored
 
 
 def _reconcile_mirror(conn, project, provider):

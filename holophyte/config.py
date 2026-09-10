@@ -579,6 +579,11 @@ def sweep_config(target):
 # (`holophyte.runs.review_round_cap()`); `review_rounds_per_lines = 0`
 # turns the scaling off. The base defaults to `MAX_ROUNDS`, so a target
 # with no table pays the two rounds it always has.
+# `workers`: the ceiling on the pool of worker processes the loop keeps
+# running, one per claimable ticket up to this many (KO-343). `1`, the
+# default, is the loop as it has always been: one process, one ticket at a
+# time. Above `1` the main process is a scheduler that spawns
+# `factory.py TARGET --worker` children and works nothing itself.
 LOOP_KEYS = {
     "stop_on_failure": True,
     "order": "identifier",
@@ -586,6 +591,7 @@ LOOP_KEYS = {
     "review_rounds": 2,
     "review_rounds_per_lines": 800,
     "review_rounds_max": 4,
+    "workers": 1,
 }
 LOOP_ORDERS = ("identifier", "priority")
 # The keys that must be integers, and the least each may be: a run with no
@@ -596,12 +602,13 @@ LOOP_INTEGER_FLOORS = {
     "review_rounds": 1,
     "review_rounds_per_lines": 0,
     "review_rounds_max": 1,
+    "workers": 1,
 }
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
 LoopConfig = collections.namedtuple(
     "LoopConfig", ("stop_on_failure", "order", "spawn_supervisor",
                    "review_rounds", "review_rounds_per_lines",
-                   "review_rounds_max"))
+                   "review_rounds_max", "workers"))
 
 
 def loop_config(target):
@@ -618,7 +625,9 @@ def loop_config(target):
     `review_rounds*` keys are integers at or above `LOOP_INTEGER_FLOORS`
     (a boolean is refused too: TOML's `true` is not a count), and
     `review_rounds_max` is at least `review_rounds`, or the cap is one the
-    formula could never reach. The refusal names
+    formula could never reach. `workers` is an integer of at least 1, the
+    same way: `"3"` is a string and `0` a pool that could work nothing.
+    The refusal names
     the table, the key and the constraint, like a bad `[supervisor]`
     threshold. Keys this version does not know are refused by
     `check_config_keys()`.

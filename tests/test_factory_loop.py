@@ -56,6 +56,7 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -3647,3 +3648,200 @@ class EndedRunTests(LoopFixture):
         # The reviewer never ran: the script's APPROVE is still unconsumed.
         self.assertEqual([turn.role for turn in self.last_fake.turns],
                          ["implement"])
+
+
+class FakePool:
+    """The spawn and wait seams of the scheduler, scripted.
+
+    `SPAWN` records each command line and hands back a child with a pid of
+    its own; `WAIT` takes the next scripted exit -- `(code, before)`, where
+    `before` runs against the provider just before the exit is reported, the
+    way a real worker's merge empties its ticket out of the board's listing
+    -- and reports it for the oldest live child. Nothing here forks: the
+    pids are numbers, and the test reads what would have run.
+    """
+
+    def __init__(self, exits):
+        self.exits = list(exits)
+        self.spawned = []   # the command lines, in spawn order
+        self.envs = []
+        self.alive = []     # pids, oldest first
+        self.reaped = []
+        self.next_pid = 5000
+
+    def spawn(self, argv, **kwargs):
+        self.spawned.append(argv)
+        self.envs.append(kwargs.get("env") or {})
+        self.next_pid += 1
+        self.alive.append(self.next_pid)
+        return type("Child", (), {"pid": self.next_pid})()
+
+    def wait(self):
+        if not self.alive:
+            raise AssertionError("the scheduler waited with no child alive")
+        code, before = self.exits.pop(0)
+        if before is not None:
+            before()
+        pid = self.alive.pop(0)
+        self.reaped.append((pid, code))
+        return pid, code
+
+
+class PoolTests(LoopFixture):
+    """`[loop] workers > 1`: the main process schedules a pool of
+    `--worker` children sized to the claimable queue (KO-343). Spawn and
+    wait go through seams, so no process is started and the test reads
+    the counts."""
+
+    def run_scheduler(self, workers, provider, exits, stop_on_failure=True):
+        self.configure(f"[loop]\nworkers = {workers}\n"
+                       f"stop_on_failure = {str(stop_on_failure).lower()}\n")
+        pool = FakePool(exits)
+        out = io.StringIO()
+        with patch.object(holophyte.loop, "SPAWN", pool.spawn), \
+                patch.object(holophyte.loop, "WAIT", pool.wait), \
+                patch.object(sys, "orig_argv",
+                             ["python3", "-u", "factory.py", str(self.target)]), \
+                patch.object(sys, "stdout", out):
+            self.rc = holophyte.loop.main(self.tgt, provider)
+        self.out = out.getvalue()
+        return pool
+
+    def test_the_pool_follows_the_claimable_queue_up_to_the_ceiling(self):
+        """Five ready tickets under `workers = 3`: three workers at once, a
+        fourth when one exits with four still claimable, and the scheduler
+        exits 0 once the listing is empty and the last child is in."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 6)))
+
+        def merged_one():
+            provider.queue.pop(0)
+
+        def merged_the_rest():
+            provider.queue.clear()
+
+        pool = self.run_scheduler(3, provider, [
+            (holophyte.loop.WORKER_MERGED, merged_one),
+            (holophyte.loop.WORKER_MERGED, merged_the_rest),
+            (holophyte.loop.WORKER_MERGED, None),
+            (holophyte.loop.WORKER_MERGED, None),
+        ])
+
+        # Three at the first tick, one more at the second, none after the
+        # listing emptied: four spawns, every one waited for.
+        self.assertEqual(len(pool.spawned), 4)
+        self.assertEqual(len(pool.reaped), 4)
+        self.assertEqual(pool.alive, [])
+        self.assertIsNone(self.rc)
+        # Each child is this command line plus `--worker`, with the slot in
+        # its environment for the `[holo2 wN]` prefix.
+        self.assertEqual([argv[1:] for argv in pool.spawned],
+                         [["-u", "factory.py", str(self.target), "--worker"]] * 4)
+        self.assertEqual([env[holophyte.loop.WORKER_SLOT_ENV]
+                          for env in pool.envs], ["1", "2", "3", "4"])
+        self.assertIn("[holo2] Linear has no ready tickets. done.", self.out)
+        # The exit note a re-exec'd scheduler leaves for the sweep.
+        self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(0,)])
+
+    def test_a_leased_ticket_is_not_counted_as_claimable(self):
+        """Two ready tickets, one already held by a live run on this
+        target: one worker, not two."""
+        provider = StubProvider(a_task(1), a_task(2))
+        conn = holophyte.runs.open_store(self.tgt)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, provider.team, self.target)
+        ticket = holophyte.board.mirror_task(conn, project, a_task(1))
+        store.claim(conn, project, ticket)
+
+        pool = self.run_scheduler(3, provider, [
+            (holophyte.loop.WORKER_MERGED, provider.queue.clear),
+        ])
+
+        self.assertEqual(len(pool.spawned), 1)
+        self.assertIsNone(self.rc)
+
+    def test_stop_on_failure_drains_the_pool_and_exits_nonzero(self):
+        """`workers = 2`, `stop_on_failure = true`: a worker exits failed
+        while another runs. No new worker is spawned though tickets remain,
+        the running one is waited for, and the exit is nonzero."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 5)))
+
+        pool = self.run_scheduler(2, provider, [
+            (holophyte.loop.WORKER_FAILED, None),
+            (holophyte.loop.WORKER_MERGED, None),
+        ])
+
+        self.assertEqual(len(pool.spawned), 2)
+        self.assertEqual([code for _, code in pool.reaped],
+                         [holophyte.loop.WORKER_FAILED,
+                          holophyte.loop.WORKER_MERGED])
+        self.assertEqual(pool.alive, [])
+        self.assertEqual(self.rc, 1)
+        self.assertIn("[holo2] worker 1 failed (exit 1)", self.out)
+
+    def test_stop_on_failure_false_keeps_spawning_and_exits_nonzero(self):
+        provider = StubProvider(*(a_task(n) for n in range(1, 4)))
+
+        pool = self.run_scheduler(2, provider, [
+            (holophyte.loop.WORKER_FAILED, None),
+            (holophyte.loop.WORKER_MERGED, provider.queue.clear),
+            (holophyte.loop.WORKER_MERGED, None),
+        ], stop_on_failure=False)
+
+        self.assertEqual(len(pool.spawned), 3)
+        self.assertEqual(self.rc, 1)
+
+    def test_a_self_merge_re_execs_after_the_pool_drains(self):
+        """A worker merged a change to the factory itself: nothing new is
+        spawned, the other worker finishes on the code it started with, and
+        only then does the scheduler re-exec."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 4)))
+        execs = []
+        with patch.object(holophyte.loop, "EXEC",
+                          lambda *args: execs.append(args)), \
+                patch.object(holophyte.loop, "__file__",
+                             str(self.target / "holophyte" / "loop.py")):
+            pool = self.run_scheduler(2, provider, [
+                (holophyte.loop.WORKER_MERGED, None),
+                (holophyte.loop.WORKER_MERGED, None),
+            ])
+
+        self.assertEqual(len(pool.spawned), 2)
+        self.assertEqual(pool.alive, [])
+        self.assertEqual(len(execs), 1)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(1,)])
+
+
+class WorkerTests(LoopFixture):
+    """`--worker`: the serial loop's phases once, for one ticket."""
+
+    def worker(self, *script, provider):
+        fake = FakeAgent(*script)
+        out = io.StringIO()
+        with no_agent_processes(), \
+                patch.dict(sys.modules, {"linear_provider": provider}), \
+                patch.object(holophyte.loop, "agent", fake), \
+                patch.dict(os.environ, {holophyte.loop.WORKER_SLOT_ENV: "2"}), \
+                patch.object(sys, "stdout", out):
+            rc = holophyte.loop.worker(self.tgt, provider)
+        return rc, out.getvalue()
+
+    def test_a_worker_merges_one_ticket_and_exits_merged(self):
+        provider = StubProvider(a_task(1), a_task(2))
+
+        rc, out = self.worker(Commit("the scripted work"), APPROVE,
+                              provider=provider)
+
+        self.assertEqual(rc, holophyte.loop.WORKER_MERGED)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        # The second ticket is left for another worker.
+        self.assertEqual([t["id"] for t in provider.queue], ["KO-132"])
+        self.assertIn("Complete task KO-131: add a thing", self.subjects())
+        # Its lines carry the slot, in place of the bare tag.
+        self.assertIn("[holo2 w2] ", out)
+        self.assertNotIn("\n[holo2] ", "\n" + out)
+
+    def test_a_worker_with_nothing_to_claim_exits_idle(self):
+        rc, out = self.worker(provider=StubProvider())
+
+        self.assertEqual(rc, holophyte.loop.WORKER_IDLE)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])

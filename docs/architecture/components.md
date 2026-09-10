@@ -90,7 +90,7 @@ the target, read at startup and refused if unknown:
 | `[agents]` | the implementer, reviewer and adjudicator commands |
 | `[worktree]` | setup commands run in each fresh worktree and their cap |
 | `[supervisor]` | stale threshold, strikes, time-box grace, review-overlap threshold, sweep interval, restart grace |
-| `[loop]` | stop on failure; claim order by identifier or priority; `spawn_supervisor`; the review-round cap from `review_rounds`, `review_rounds_per_lines` and `review_rounds_max` |
+| `[loop]` | stop on failure; claim order by identifier or priority; `spawn_supervisor`; the review-round cap from `review_rounds`, `review_rounds_per_lines` and `review_rounds_max`; `workers`, the pool's ceiling |
 | `[board]` | the Linear project and team this target claims from |
 | `[report]` | the host label rendered instead of the machine name |
 | `[merge]` | `approve` (auto or human), `mode` (local or pr) and `pr_rounds`, the shepherd-pass cap |

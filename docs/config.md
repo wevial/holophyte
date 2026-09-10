@@ -204,10 +204,13 @@ spawn_supervisor = true  # false: a service manager runs the supervisor
 review_rounds = 2            # the base every run gets
 review_rounds_per_lines = 800  # one extra round per this many changed lines; 0 never scales
 review_rounds_max = 4        # the ceiling
+# How many worker processes the loop keeps running at most, one per claimable
+# ticket. Optional; the default is one process working one ticket at a time.
+workers = 1                  # 3: up to three tickets worked at once
 ```
 
 Accepted keys: `stop_on_failure`, `order`, `spawn_supervisor`,
-`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`.
+`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`, `workers`.
 
 By default one failed run ends the process after its close-out, with a nonzero
 exit, and an operator relaunches the loop — the right call while the loop is
@@ -258,6 +261,19 @@ gets two rounds, a 1,700-line one four, and a 9,000-line one four. With
 must be an integer: `review_rounds` and `review_rounds_max` at least `1`,
 `review_rounds_per_lines` at least `0`, and `review_rounds_max` no less than
 `review_rounds`; anything else is a startup error naming the key.
+
+`workers` is the ceiling on the pool of worker processes the loop keeps
+running. With `1` (the default) the loop is one process working one ticket
+at a time, exactly as before the key. Above `1` the process that ran
+`factory.py TARGET` becomes a scheduler: it runs the startup checks and the
+sweep once, then keeps `min(claimable, workers)` children running, each a
+`factory.py TARGET --worker` that claims one ticket and works it to merge or
+park -- a queue of one ticket is one worker, a queue of five under
+`workers = 3` is three (see [The loop](loop.md#the-pool)). Merges into `main`
+still serialise under the merge lock. `stop_on_failure` keeps its meaning
+per pool: a failed worker stops the spawning and the running workers are
+waited for. An integer of at least `1`; `"3"` (a string) or `0` (a pool
+that could work nothing) is a startup error naming the key.
 
 ```toml
 [board]
