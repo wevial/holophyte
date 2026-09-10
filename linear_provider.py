@@ -303,11 +303,7 @@ def label_names(issue):
 
 
 def _label_ids_of(issue_id):
-    """The ids of the labels `issue_id` carries now, by name.
-
-    Read just before each write, because `issueUpdate` takes the *whole*
-    `labelIds` list: a write built from a stale listing would drop a label
-    a human added meanwhile."""
+    """The ids of the labels `issue_id` carries now, by name."""
     data = _gql('query($id: String!) { issue(id: $id) { labels { nodes { id '
                 'name } } } }', {"id": issue_id})
     issue = data.get("issue")
@@ -336,13 +332,27 @@ def _label_id(name, team):
     return made["issueLabelCreate"]["issueLabel"]["id"]
 
 
-def _write_labels(issue_id, label_ids, what):
-    """`issueUpdate` with `labelIds`; raises when Linear says it did not
-    land, for the reason `set_state()` gives -- a refusal comes back as
-    `success: false` with no `errors` block."""
+def _add_label(issue_id, label_id, what):
+    """`issueUpdate` with `addedLabelIds`: attach one label and touch no
+    other. Additive on purpose -- the whole-list `labelIds` form would let
+    a write built from a moment-old read drop a label another writer or a
+    human attached in between, which is the one thing a lease write must
+    never do. Raises when Linear says it did not land, for the reason
+    `set_state()` gives -- a refusal comes back as `success: false` with no
+    `errors` block."""
     data = _gql('mutation($id: String!, $labels: [String!]!) { issueUpdate(id: '
-                '$id, input: { labelIds: $labels }) { success } }',
-                {"id": issue_id, "labels": label_ids})
+                '$id, input: { addedLabelIds: $labels }) { success } }',
+                {"id": issue_id, "labels": [label_id]})
+    if not data["issueUpdate"]["success"]:
+        raise RuntimeError(f"Linear refused to {what} on issue {issue_id}")
+
+
+def _remove_label(issue_id, label_id, what):
+    """`issueUpdate` with `removedLabelIds`: detach one label and touch no
+    other; see `_add_label()`."""
+    data = _gql('mutation($id: String!, $labels: [String!]!) { issueUpdate(id: '
+                '$id, input: { removedLabelIds: $labels }) { success } }',
+                {"id": issue_id, "labels": [label_id]})
     if not data["issueUpdate"]["success"]:
         raise RuntimeError(f"Linear refused to {what} on issue {issue_id}")
 
@@ -357,10 +367,24 @@ def label_issue(issue_id, name, team):
     refuses, so the caller can give the store lease back rather than start
     a run no other writer can see.
 
-    The read just before the write is also the second lease check: a label
-    under the same `prefix:` naming another holder -- another writer's
-    `holo:` lease, taken after the caller's listing -- raises `LeaseHeld`
-    and writes nothing, so two writers never both hold the ticket labelled.
+    Linear has no compare-and-swap on labels, so the lease is taken in
+    three steps that stay correct under any interleaving of two writers:
+
+    1. Read. A label under the same `prefix:` naming another holder --
+       another writer's `holo:` lease, taken after the caller's listing --
+       raises `LeaseHeld` and writes nothing.
+    2. Add, with `addedLabelIds`, never the whole-list `labelIds`: two
+       writers whose reads both saw nothing both land, and the ticket then
+       carries both labels rather than only the last writer's.
+    3. Read back. A competitor's label beside this writer's own means the
+       race was real; this writer takes its own label off and raises
+       `LeaseHeld`, so at most one of the two starts. The winner is the
+       writer whose read-back saw only itself, which is the one whose add
+       landed before the other's -- and the loser's label was never in a
+       position to be mistaken for a lease, since a writer that read back
+       clean already holds the ticket and the other reads back both.
+       Both can yield when the adds land within one read of each other;
+       the ticket is then free again and the next claim pass takes it.
     """
     have = _label_ids_of(issue_id)
     holder = competing_lease(have, name)
@@ -368,8 +392,12 @@ def label_issue(issue_id, name, team):
         raise LeaseHeld(issue_id, name, holder)
     if name in have:
         return
-    _write_labels(issue_id, [*have.values(), _label_id(name, team)],
-                  f"add the label {name!r}")
+    label_id = _label_id(name, team)
+    _add_label(issue_id, label_id, f"add the label {name!r}")
+    holder = competing_lease(_label_ids_of(issue_id), name)
+    if holder is not None:
+        _remove_label(issue_id, label_id, f"take back the label {name!r}")
+        raise LeaseHeld(issue_id, name, holder)
 
 
 def unlabel_issue(issue_id, name):
@@ -379,13 +407,13 @@ def unlabel_issue(issue_id, name):
     terminal state, and by `--requeue`, so the label never outlives the
     store lease it mirrors. A label the issue does not carry is nothing to
     remove, not an error -- the label may have gone with an earlier
-    close-out, or a human may have taken it off.
+    close-out, or a human may have taken it off. `removedLabelIds`, so the
+    ticket's other labels are not rewritten from this read.
     """
     have = _label_ids_of(issue_id)
     if name not in have:
         return
-    _write_labels(issue_id, [i for n, i in have.items() if n != name],
-                  f"remove the label {name!r}")
+    _remove_label(issue_id, have[name], f"remove the label {name!r}")
 
 
 # Linear's `priority` is 0 (none), 1 (urgent), 2 (high), 3 (medium), 4 (low).

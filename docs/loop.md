@@ -23,9 +23,13 @@ machines it walks. Back to the [README](index.md).
    lease a close-out never took off, so the label is removed and the claim
    goes ahead. The label write reads the issue as the board holds it then,
    not as the listing had it, so another writer's `holo:` label taken
-   between the two refuses the write: the store lease goes back as an
-   `infra` failure, no strike, and the loop takes the next ticket with the
-   same skip line. A label the board will not take fails the claim as an
+   between the two refuses the write; and because Linear has no
+   compare-and-swap, the write is additive (`addedLabelIds`, never the
+   whole label list) and is read back: two writers whose reads both saw
+   nothing then both land, the one whose read-back finds the other's label
+   takes its own off and yields, and at most one starts. Either way the
+   store lease goes back as an `infra` failure, no strike, and the loop
+   takes the next ticket with the same skip line. A label the board will not take fails the claim as an
    `infra` failure and gives the store lease straight back, so a run never
    starts unlabelled. The label comes off in the same close-out that moves the
    store -- a merge, a failure, a park for a human, a sweep -- and
