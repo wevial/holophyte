@@ -39,6 +39,13 @@ test("a fresh supervisor heartbeat is not shown; one past the threshold reads su
   expect(stale.getAttribute("data-stale")).toBe("true");
   expect(stale.querySelector("[aria-hidden]")!.className).toContain("bg-bad");
   expect(fresh.querySelector("[aria-hidden]")!.className).toContain("bg-ok");
+  // The rail is 220px wide: a fault beside the name would squeeze the
+  // project out, so the fault takes its own line under the name while the
+  // healthy run count shares the name's line.
+  const lineOf = (el: Element) => el.closest("[data-line]");
+  expect(lineOf(fresh.querySelector("[data-tail]")!)).toBe(lineOf(fresh.querySelector("[data-project]")!));
+  expect(lineOf(stale.querySelector("[data-tail]")!)).not.toBe(lineOf(stale.querySelector("[data-project]")!));
+  expect(stale.querySelectorAll("[data-line]").length).toBe(2);
   // The card carries the border for its stale daemon.
   expect(card.className).toContain("border-bad/50");
 });

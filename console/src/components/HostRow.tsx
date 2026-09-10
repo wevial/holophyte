@@ -21,7 +21,11 @@ export function rowTail(host: HostRecord): string | null {
 }
 
 /** One daemon's row in a host card: dot, project name, port in mono, then
- *  the run count or what is wrong. Clicking selects the daemon's project. */
+ *  the run count or what is wrong. The run count sits at the right of the
+ *  name's line; a fault (stale supervisor, no answer) is longer than the
+ *  rail leaves beside a name, so it takes its own line under the name
+ *  rather than squeezing the project out. Clicking selects the daemon's
+ *  project. */
 export function HostRow({ host, selected, onClick }: { host: HostRecord; selected: boolean; onClick: () => void }) {
   const unreachable = host.error != null;
   const tone = hostTone(host);
@@ -39,31 +43,42 @@ export function HostRow({ host, selected, onClick }: { host: HostRecord; selecte
       data-stale={stale || undefined}
       data-unreachable={unreachable || undefined}
       data-needs-token={host.needs_token || undefined}
-      className={`flex w-full items-center gap-2 rounded-button px-1 py-0.5 text-left ${
+      className={`flex w-full flex-col rounded-button px-1 py-0.5 text-left ${
         selected ? "bg-rail-selected" : "hover:bg-rail-selected/50"
       }`}
     >
-      <span
-        aria-hidden="true"
-        className={`size-2 shrink-0 rounded-chip ${
-          stale ? "animate-[pulse-dot_1.2s_ease-in-out_infinite] bg-bad" : bad ? "bg-bad" : tone === "ok" ? "bg-ok" : "bg-rail-faint"
-        }`}
-      />
-      <span data-project className="truncate text-[13px] font-semibold text-rail-text">
-        {name}
-      </span>
-      <span data-port className="shrink-0 font-mono text-[11px] text-rail-faint">
-        {port}
-      </span>
-      <span data-tail className={`ml-auto shrink-0 font-mono text-[11px] ${bad ? "text-rail-bad-text" : "text-rail-sub"}`}>
+      <span data-line className="flex w-full items-center gap-2">
+        <span
+          aria-hidden="true"
+          className={`size-2 shrink-0 rounded-chip ${
+            stale ? "animate-[pulse-dot_1.2s_ease-in-out_infinite] bg-bad" : bad ? "bg-bad" : tone === "ok" ? "bg-ok" : "bg-rail-faint"
+          }`}
+        />
+        <span data-project className="min-w-0 truncate text-[13px] font-semibold text-rail-text">
+          {name}
+        </span>
+        <span data-port className="shrink-0 font-mono text-[11px] text-rail-faint">
+          {port}
+        </span>
         {host.needs_token ? (
-          <span role="img" aria-label="needs token" title="needs token">
-            {KEY_GLYPH}
+          <span data-tail className="ml-auto shrink-0 font-mono text-[11px] text-rail-sub">
+            <span role="img" aria-label="needs token" title="needs token">
+              {KEY_GLYPH}
+            </span>
           </span>
         ) : (
-          tail
+          !bad && tail != null && (
+            <span data-tail className="ml-auto shrink-0 font-mono text-[11px] text-rail-sub">
+              {tail}
+            </span>
+          )
         )}
       </span>
+      {bad && tail != null && (
+        <span data-line data-tail className="pl-4 font-mono text-[11px] text-rail-bad-text">
+          {tail}
+        </span>
+      )}
     </button>
   );
 }
