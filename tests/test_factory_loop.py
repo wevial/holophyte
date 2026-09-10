@@ -3769,6 +3769,31 @@ class PoolTests(LoopFixture):
         self.assertEqual(len(pool.spawned), 1)
         self.assertIsNone(self.rc)
 
+    def test_the_claimable_count_is_one_store_read_per_tick(self):
+        """Five listed tickets, three of them with a dependency: the count
+        asks the store once, not once per ticket and again per dependency
+        (the ticket's note holds the tick to one store read; the review
+        counted seven selects for five tickets)."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 6)))
+        conn = holophyte.runs.open_store(self.tgt)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, provider.team, self.target)
+        ids = [holophyte.board.mirror_task(conn, project, a_task(n))
+               for n in range(1, 6)]
+        for ticket in ids[2:]:
+            conn.execute("UPDATE tickets SET dependsOn = ? WHERE id = ?",
+                         (json.dumps([a_task(1)["issue_id"]]), ticket))
+        conn.commit()
+        statements = []
+        conn.set_trace_callback(statements.append)
+        self.addCleanup(conn.set_trace_callback, None)
+
+        counted = holophyte.loop._claimable(conn, project, provider.queue)
+
+        # Two claimable: the first two; the other three wait on the first.
+        self.assertEqual(counted, 2)
+        self.assertEqual(len(statements), 1, statements)
+
     def test_a_dependency_blocked_ticket_is_not_counted_as_claimable(self):
         """Two ready tickets, the second depending on the first, which is not
         merged: one worker, not two. The count asks the store's own
@@ -3933,6 +3958,31 @@ class WorkerTests(LoopFixture):
         # Its lines carry the slot, in place of the bare tag.
         self.assertIn("[holo2 w2] ", out)
         self.assertNotIn("\n[holo2] ", "\n" + out)
+
+    def test_a_worker_prefixes_its_stderr_too(self):
+        """A worker that dies before its first line -- here the store will
+        not open -- writes its traceback to stderr, the stream the pool
+        shares with its siblings; every line of it carries the slot, or
+        the log cannot say which worker died."""
+        provider = StubProvider(a_task(1))
+        err = io.StringIO()
+        with patch.dict(os.environ, {holophyte.loop.WORKER_SLOT_ENV: "2"}), \
+                patch.object(holophyte.loop, "open_store",
+                             side_effect=RuntimeError("store locked")), \
+                patch.object(sys, "stdout", io.StringIO()), \
+                patch.object(sys, "stderr", err):
+            try:
+                holophyte.loop.worker(self.tgt, provider)
+            except RuntimeError:
+                # What the interpreter does with an exception that reaches
+                # the top of a `--worker` process.
+                sys.excepthook(*sys.exc_info())
+            else:
+                self.fail("the worker swallowed its store failure")
+        lines = err.getvalue().splitlines()
+        self.assertIn("RuntimeError: store locked", "\n".join(lines))
+        self.assertTrue(all(line.startswith("[holo2 w2] ") for line in lines),
+                        lines)
 
     def test_a_worker_commits_findings_under_the_merge_lock(self):
         """The FINDINGS.md regeneration and commit run while this worker

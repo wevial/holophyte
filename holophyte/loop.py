@@ -2158,7 +2158,11 @@ def worker(target, provider):
     """
     slot = os.environ.get(WORKER_SLOT_ENV)
     if slot:
+        # Both streams: a traceback, or a verify line's stderr, lands in the
+        # same shared log as the progress lines, and is only attributable to
+        # this worker by the prefix (the review of KO-343, second round).
         sys.stdout = _PrefixedOut(sys.stdout, f"[holo2 w{slot}]")
+        sys.stderr = _PrefixedOut(sys.stderr, f"[holo2 w{slot}]")
     knobs = loop_config(target)
     conn = open_store(target)
     try:
@@ -2367,7 +2371,7 @@ class _PoolState:
 
 def _claimable(conn, project, listing):
     """How many of the board's ready `listing` a worker could claim now:
-    the store's own `pickable()` -- mirrored `ready`, under no live run's
+    the store's own pickability -- mirrored `ready`, under no live run's
     lease, specced, and every dependency merged -- asked of the rows
     `_mirror_queue()` just refreshed. The store's word, not the board's:
     a ticket a failed run left `in_flight`, one parked on the operator, one
@@ -2375,13 +2379,12 @@ def _claimable(conn, project, listing):
     the board's ready column, and a worker spawned for one of them would
     only refuse it (the review of KO-343 found the dependency clause
     missing here: a worker spawned for a ticket `pickable()` then refused).
-    One `open_tickets()` read for the tick, then the predicate per listed
-    ticket -- a few indexed selects each, over a listing of a handful."""
-    rows = {row.linearIdentifier: row
-            for row in store.read.open_tickets(conn, project)}
-    return sum(1 for task in listing
-               if (row := rows.get(task["id"])) is not None
-               and store.pickable(conn, row.id))
+    One store read for the tick, as the ticket asks: `pickable_tickets()`
+    fetches the project's rows once and answers §2 for all of them in
+    memory (the review's second round counted seven selects for five
+    tickets when this asked `pickable()` one ticket at a time)."""
+    verdicts = store.pickable_tickets(conn, project)
+    return sum(1 for task in listing if verdicts.get(task["id"]))
 
 
 def _spawn_worker(target, slot):

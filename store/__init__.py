@@ -2010,14 +2010,53 @@ def pickable(conn, ticket_id):
     ).fetchone()
     if row is None:
         return Pickability(False, f"ticket {ticket_id} does not exist")
-    return _pickability(conn, row)
+    project_id = row[0]
+
+    def dep_status(dep):
+        dep_row = conn.execute(
+            "SELECT status FROM tickets"
+            " WHERE linearIssueId = ? AND projectId = ?",
+            (dep, project_id),
+        ).fetchone()
+        return None if dep_row is None else dep_row[0]
+
+    return _pickability(row, dep_status)
 
 
-def _pickability(conn, row):
+def pickable_tickets(conn, project_id):
+    """`pickable()` asked of every ticket in `project_id` at once, in one
+    read: `{linearIdentifier: Pickability}`.
+
+    The scheduler's tick (KO-343) counts how many of the board's ready
+    listing a worker could claim, and the ticket holds it to one store read
+    per tick: `pickable()` per listed ticket is a row fetch plus a select
+    per dependency each. So the project's rows -- every status, since a
+    dependency is resolved against a merged sibling -- are fetched once
+    and §2's clauses are evaluated over them in memory, the dependency
+    lookup answered from the same rows. The same `_pickability()` as the
+    one-ticket predicate, so the two cannot disagree on a clause.
+
+    Read-only and, like `pickable()`, not transactional: `claim()`
+    re-asserts the lease.
+    """
+    rows = conn.execute(
+        "SELECT projectId, status, activeRunId, acceptanceCriteria,"
+        " verificationCommands, dependsOn, linearIssueId, linearIdentifier"
+        " FROM tickets WHERE projectId = ?",
+        (project_id,),
+    ).fetchall()
+    status_of = {row[6]: row[1] for row in rows}
+    return {row[7]: _pickability(row[:6], status_of.get) for row in rows}
+
+
+def _pickability(row, dep_status):
     """Evaluate §2's clauses over one already-fetched `tickets` row.
 
     Split out from `pickable()` so the row fetch and the predicate stay
-    separate; a candidate walk can reuse it instead of re-deriving §2 in SQL.
+    separate: `pickable_tickets()` evaluates it over a project's rows
+    without re-deriving §2 in SQL. `dep_status(linearIssueId)` answers the
+    dependency clause -- the dependency's status, or None when this store
+    has not mirrored it.
     """
     project_id, status, active_run_id, criteria, commands, depends_on = row
     if status != "ready":
@@ -2029,16 +2068,12 @@ def _pickability(conn, row):
     if not json.loads(commands):
         return Pickability(False, "it has no verification commands")
     for dep in json.loads(depends_on):
-        dep_row = conn.execute(
-            "SELECT status FROM tickets"
-            " WHERE linearIssueId = ? AND projectId = ?",
-            (dep, project_id),
-        ).fetchone()
-        if dep_row is None:
+        dep_state = dep_status(dep)
+        if dep_state is None:
             return Pickability(False, f"it depends on {dep}, which is not mirrored")
-        if dep_row[0] != "merged":
+        if dep_state != "merged":
             return Pickability(
-                False, f"it depends on {dep}, which is {dep_row[0]}, not merged"
+                False, f"it depends on {dep}, which is {dep_state}, not merged"
             )
     return Pickability(True, None)
 
