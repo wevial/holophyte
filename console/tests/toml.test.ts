@@ -57,18 +57,60 @@ test("setting workers to 3 changes exactly that line, its trailing comment and e
   expect(edited).toContain("[[hooks]]\nworkers = 9\n");
 });
 
-test("a string value is written escaped and read back; a multi-line array collapses to one line in place", () => {
+test("a string value is written escaped and read back; an unreadable escape is unbound rather than a throw", () => {
   const command = 'codex --flag "quoted" \\ backslash';
   const edited = writeKey(TEXT, { table: "agents", key: "implementer" }, command);
   expect(readKey(edited, { table: "agents", key: "implementer" })).toBe(command);
   expect(edited.split("\n").length).toBe(TEXT.split("\n").length);
+  // `\UFFFFFFFF` is outside Unicode: `String.fromCodePoint` would throw a
+  // RangeError, which the sheet's render must never see.
+  expect(readKey('[agents]\nimplementer = "\\UFFFFFFFF"\n', { table: "agents", key: "implementer" })).toBeUndefined();
+  expect(readKey('[agents]\nimplementer = "\\uD83D"\n', { table: "agents", key: "implementer" })).toBeUndefined();
+  expect(readKey('[agents]\nimplementer = "\\U0001F600"\n', { table: "agents", key: "implementer" })).toBe("\u{1F600}");
+});
 
+test("adding a setup line edits the multi-line array in place: its inner and trailing comments stay, the new item lands before the bracket", () => {
   const setup = writeKey(TEXT, { table: "worktree", key: "setup" }, ["make deps", "bun install", "go build ./..."]);
-  const hit = findKey(setup, { table: "worktree", key: "setup" })!;
-  expect(hit.end - hit.start).toBe(1);
-  expect(setup.split("\n")[hit.start]).toBe('setup = ["make deps", "bun install", "go build ./..."]');
-  expect(setup.split("\n").length).toBe(TEXT.split("\n").length - 3);
-  expect(setup).toContain("\n[linear]\napi_key = \"[redacted]\"\n");
+  const before = TEXT.split("\n");
+  const after = setup.split("\n");
+  expect(after.length).toBe(before.length + 1);
+  expect(readKey(setup, { table: "worktree", key: "setup" })).toEqual(["make deps", "bun install", "go build ./..."]);
+  const bracket = before.indexOf("]");
+  expect(after.slice(0, bracket)).toEqual(before.slice(0, bracket));
+  expect(after[bracket]).toBe('  "go build ./...",');
+  expect(after.slice(bracket + 1)).toEqual(before.slice(bracket));
+  expect(setup).toContain('  "make deps",   # first\n');
+
+  // Dropping the first item takes its line and its comment with it; an
+  // item edited in place keeps its line's tail; the array's own comment
+  // lines survive either way.
+  const commented = TEXT.replace('setup = [\n', 'setup = [\n  # retain this explanation\n');
+  const dropped = writeKey(commented, { table: "worktree", key: "setup" }, ["bun install"]);
+  expect(dropped).toContain('setup = [\n  # retain this explanation\n  "bun install",\n]\n');
+  expect(dropped).not.toContain("make deps");
+  const replaced = writeKey(commented, { table: "worktree", key: "setup" }, ["make dep", "bun install"]);
+  expect(replaced).toContain('setup = [\n  # retain this explanation\n  "make dep",   # first\n  "bun install",\n]\n');
+
+  // A one-line array stays one line.
+  const oneLine = writeKey("[worktree]\nsetup = [\"a\"]  # x\n", { table: "worktree", key: "setup" }, ["a", "b"]);
+  expect(oneLine).toBe('[worktree]\nsetup = ["a", "b"] # x\n');
+});
+
+test("a header or a key inside a multi-line string is neither: the real [loop] workers is read and edited, the implementer text untouched", () => {
+  const text = `[agents]
+implementer = """
+[loop]
+workers = 7
+"""
+
+[loop]
+workers = 1
+`;
+  expect(readKey(text, { table: "loop", key: "workers" })).toBe(1);
+  expect(readKey(text, { table: "agents", key: "implementer" })).toBeUndefined();
+  const edited = writeKey(text, { table: "loop", key: "workers" }, 3);
+  expect(edited).toBe(text.replace("\nworkers = 1\n", "\nworkers = 3\n"));
+  expect(edited).toContain('"""\n[loop]\nworkers = 7\n"""');
 });
 
 test("a key the table lacks lands after its last key; a table the text lacks is appended; deleting drops only the key's line", () => {

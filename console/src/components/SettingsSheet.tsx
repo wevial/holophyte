@@ -46,7 +46,8 @@ type Verdict = { ok: true; detail: string } | { ok: false; error: string; at: Ke
  * to the text, each edit rewriting that key's line and nothing else
  * (`lib/toml.ts`); the Raw tab is the whole text, and the fields re-read
  * from it. Save is `PUT /config`; the daemon's verdict shows inline, a
- * refusal under the field it names or under the raw tab. A daemon whose
+ * refusal under the field it names (the Fields tab selected) or under
+ * the raw tab. A daemon whose
  * `/status` lacks `config_edit` draws every field read-only under a line
  * naming the key. Escape, the backdrop or the close button calls
  * `onClose`; focus moves to the panel on open.
@@ -121,7 +122,9 @@ export function SettingsSheet({
     const at = result.refused ? namedKey(result.error) : null;
     const field = at == null ? null : (FIELDS.find((candidate) => sameKey(candidate, at)) ?? null);
     setVerdict({ ok: false, error: result.error, at: field });
-    if (field == null) setTab("raw");
+    // The refusal lands in whichever panel holds its field, so a save from
+    // the raw tab that the daemon refuses by name is never rendered unseen.
+    setTab(field == null ? "raw" : "fields");
   };
 
   const restartRoute = ROUTES[RESTART_LABEL]!;

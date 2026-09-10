@@ -38,12 +38,44 @@ function headerOf(line: string): string | null {
   return match[1] === "[[" ? `[[${name}]]` : name;
 }
 
+/** The text split into lines, with the indices of every line a value
+ *  runs on to -- the inner lines of a multi-line array, inline table or
+ *  `"""` string -- so that a `[loop]` or a `workers = 7` inside an
+ *  implementer's multi-line string is never read as a header or a key. */
+interface Layout {
+  lines: string[];
+  continued: Set<number>;
+}
+
+function layoutOf(text: string): Layout {
+  const lines = text.split("\n");
+  const continued = new Set<number>();
+  let offset = 0;
+  for (let at = 0; at < lines.length; at += 1) {
+    const assignment = keyOfLine(lines[at]!);
+    if (assignment != null) {
+      const from = offset + assignment.valueAt;
+      const extra = text.slice(from, valueEnd(text, from)).match(/\n/g)?.length ?? 0;
+      for (let run = 1; run <= extra; run += 1) {
+        continued.add(at + run);
+        offset += lines[at + run - 1]!.length + 1;
+      }
+      at += extra;
+    }
+    offset += lines[at]!.length + 1;
+  }
+  return { lines, continued };
+}
+
 /** The line span `[start, end)` of `[table]`'s body: the lines after its
  *  header up to the next header or the end of the text; null when the
- *  text has no such header. */
-export function tableSpan(lines: string[], table: string): { start: number; end: number } | null {
+ *  text has no such header. A header-shaped line inside a multi-line
+ *  value is not a header. */
+export function tableSpan(text: string, table: string): { start: number; end: number } | null {
+  const { lines, continued } = layoutOf(text);
   let start = -1;
   for (let at = 0; at < lines.length; at += 1) {
+    if (continued.has(at)) continue;
     const name = headerOf(lines[at]!);
     if (name == null) continue;
     if (start >= 0) return { start, end: at };
@@ -126,7 +158,11 @@ export function readValue(raw: string): TomlValue | undefined {
         const width = next === "u" ? 4 : 8;
         const hex = body.slice(at + 2, at + 2 + width);
         if (hex.length !== width || !/^[0-9A-Fa-f]+$/.test(hex)) return undefined;
-        out += String.fromCodePoint(Number.parseInt(hex, 16));
+        const point = Number.parseInt(hex, 16);
+        // Outside Unicode, or a lone surrogate: not a scalar value, so unreadable
+        // rather than a RangeError from `String.fromCodePoint`.
+        if (point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) return undefined;
+        out += String.fromCodePoint(point);
         at += 1 + width;
       } else return undefined;
     }
@@ -181,14 +217,14 @@ export function formatValue(value: TomlValue): string {
 /** Where `[table] key` is assigned in `text`, or null when the table or
  *  the key is absent. The first assignment in the table's body counts. */
 export function findKey(text: string, ref: KeyRef): KeyHit | null {
-  const lines = text.split("\n");
-  const span = tableSpan(lines, ref.table);
+  const { lines, continued } = layoutOf(text);
+  const span = tableSpan(text, ref.table);
   if (span == null) return null;
   let offset = 0;
   for (let at = 0; at < span.start; at += 1) offset += lines[at]!.length + 1;
   for (let at = span.start; at < span.end; at += 1) {
     const line = lines[at]!;
-    const assignment = keyOfLine(line);
+    const assignment = continued.has(at) ? null : keyOfLine(line);
     if (assignment != null && assignment.key === ref.key) {
       const from = offset + assignment.valueAt;
       const to = valueEnd(text, from);
@@ -217,9 +253,77 @@ function lastKeyLine(lines: string[], span: { start: number; end: number }): num
   return span.start - 1;
 }
 
+/** The lines of a multi-line array (`key = [` on its own line, `]` on
+ *  its own line) rewritten to hold `items`, in order, with the comment
+ *  lines between them and each kept item's trailing comment as they
+ *  were: an item that stays keeps its line, an item edited in place
+ *  keeps its line's tail, a dropped item's line goes, and new items are
+ *  appended before the closing bracket. Null when the span is not that
+ *  shape, so the caller collapses it instead. */
+function editArrayLines(lines: string[], hit: KeyHit, items: TomlValue[]): string[] | null {
+  const opening = lines[hit.start]!;
+  const closing = lines[hit.end - 1]!;
+  const head = opening.slice(keyOfLine(opening)!.valueAt).trim();
+  if (hit.end - hit.start < 2 || !/^\[\s*(#.*)?$/.test(head) || !closing.trim().startsWith("]")) return null;
+  const old = hit.value;
+  if (!Array.isArray(old)) return null;
+  type Row = { line: string; item?: TomlValue; head?: string; tail?: string };
+  const rows: Row[] = [];
+  let indent: string | null = null;
+  for (let at = hit.start + 1; at < hit.end - 1; at += 1) {
+    const line = lines[at]!;
+    const lead = /^\s*/.exec(line)![0].length;
+    const end = valueEnd(line, lead);
+    const item = end > lead ? readValue(line.slice(lead, end)) : undefined;
+    if (item === undefined || Array.isArray(item)) rows.push({ line });
+    else {
+      indent ??= line.slice(0, lead);
+      rows.push({ line, item, head: line.slice(0, lead), tail: line.slice(end) });
+    }
+  }
+  indent ??= "  ";
+  const withComma = (tail: string) => (tail.trimStart().startsWith(",") ? tail : `,${tail}`);
+  const out: string[] = [];
+  let next = 0;
+  for (const row of rows) {
+    if (row.item === undefined) {
+      out.push(row.line);
+      continue;
+    }
+    const keep = items.findIndex((candidate, index) => index >= next && candidate === row.item);
+    if (keep >= 0) {
+      for (let index = next; index < keep; index += 1) out.push(`${indent}${formatValue(items[index]!)},`);
+      out.push(row.line);
+      next = keep + 1;
+    } else if (next < items.length && !old.includes(items[next]!)) {
+      // An item edited in place: the new text takes over its line and tail.
+      out.push(`${row.head}${formatValue(items[next]!)}${row.tail}`);
+      next += 1;
+    }
+  }
+  for (let index = next; index < items.length; index += 1) out.push(`${indent}${formatValue(items[index]!)},`);
+  // Every item line but the last must end its value with a comma; the
+  // last keeps whatever it had, TOML allowing a trailing one.
+  const itemAt = (line: string) => {
+    const lead = /^\s*/.exec(line)![0].length;
+    const end = valueEnd(line, lead);
+    return end > lead && readValue(line.slice(lead, end)) !== undefined ? end : -1;
+  };
+  let last = -1;
+  out.forEach((line, index) => {
+    if (itemAt(line) >= 0) last = index;
+  });
+  for (let index = 0; index < last; index += 1) {
+    const end = itemAt(out[index]!);
+    if (end >= 0) out[index] = `${out[index]!.slice(0, end)}${withComma(out[index]!.slice(end))}`;
+  }
+  return [opening, ...out, closing];
+}
+
 /** `text` with `[table] key` set to `value`: the key's line rewritten in
- *  place with its trailing comment kept (a multi-line value collapses to
- *  one line, its inner comments with it), appended to the table's keys
+ *  place with its trailing comment kept, a multi-line array edited line
+ *  by line with its inner comments kept (`editArrayLines`; any other
+ *  multi-line value collapses to one line), appended to the table's keys
  *  when the table has no such key, or with the table appended when the
  *  text has no such table. Every other byte is as it was. */
 export function writeKey(text: string, ref: KeyRef, value: TomlValue): string {
@@ -228,6 +332,11 @@ export function writeKey(text: string, ref: KeyRef, value: TomlValue): string {
   const assignment = `${key} = ${formatValue(value)}`;
   const hit = findKey(text, ref);
   if (hit != null) {
+    const edited = Array.isArray(value) ? editArrayLines(lines, hit, value) : null;
+    if (edited != null) {
+      lines.splice(hit.start, hit.end - hit.start, ...edited);
+      return lines.join("\n");
+    }
     const first = lines[hit.start]!;
     const indent = /^\s*/.exec(first)![0];
     const last = lines[hit.end - 1]!;
@@ -238,7 +347,7 @@ export function writeKey(text: string, ref: KeyRef, value: TomlValue): string {
     lines.splice(hit.start, hit.end - hit.start, `${indent}${assignment}${kept}`);
     return lines.join("\n");
   }
-  const span = tableSpan(lines, ref.table);
+  const span = tableSpan(text, ref.table);
   if (span == null) {
     const trimmed = text.replace(/\s+$/, "");
     return `${trimmed === "" ? "" : `${trimmed}\n\n`}[${ref.table}]\n${assignment}\n`;

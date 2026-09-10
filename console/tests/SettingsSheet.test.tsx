@@ -146,6 +146,23 @@ test("a 400 naming [loop] workers shows the daemon's sentence under the workers 
   expect(dialog.querySelector("[data-field-error]")).toBeNull();
 });
 
+test("a refusal naming [loop] workers after a save from the raw tab selects the Fields tab so the sentence is on screen", async () => {
+  const error = "[holo2] /srv/x/config.toml: [loop] workers must be an integer >= 1, got 0";
+  const { fetch, puts } = daemon(TEXT, () => Response.json({ ok: false, error }, { status: 400 }));
+  await open(editable, fetch);
+  const dialog = screen.getByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("tab", { name: "Raw TOML" }));
+  fireEvent.change(dialog.querySelector("[data-raw]")!, { target: { value: TEXT.replace("workers = 1", "workers = 0") } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await act(settle);
+
+  expect(puts.length).toBe(1);
+  expect(within(dialog).getByRole("tab", { name: "Fields" }).getAttribute("aria-selected")).toBe("true");
+  expect(within(dialog).getByRole("alert").textContent).toBe(error);
+  expect(dialog.querySelector('[data-field-error="loop.workers"]')!.textContent).toBe(error);
+  expect(field("loop.workers").value).toBe("0");
+});
+
 test("a daemon whose /status lacks config_edit opens the sheet read-only, every field inert and the enabling key named", async () => {
   const { fetch, puts } = daemon(TEXT);
   const { config_edit: _off, ...withoutFlag } = editable;
