@@ -726,9 +726,11 @@ class LoopTests(LoopFixture):
         self.fail_again()
         blocked, other = a_task(), dict(a_task(2), title="add another thing")
 
-        self.loop(Commit("the other work"), APPROVE,
-                  provider=StubProvider(blocked, other))
+        out = self.main_output(Commit("the other work"), APPROVE,
+                               provider=StubProvider(blocked, other))
 
+        self.assertIn("[holo2] KO-131 struck out after 2 failures;"
+                      " a human owns it now\n", out)
         self.assertIn("the other work", self.subjects())
         self.assertEqual(
             self.read("SELECT linearIdentifier, status FROM tickets"
@@ -845,6 +847,31 @@ class WorktreeSetupLoopTests(LoopFixture):
                    self.read("SELECT summary FROM runEvents ORDER BY seq")
                    if "worktree setup" in summary]
         self.assertIn("1 command(s)", note)
+
+
+class SkipLineTests(unittest.TestCase):
+    """The admit step's line for a parked ticket names why it is parked
+    (KO-345): the strike-out, the pull request awaiting `--approve`, or the
+    question -- so a ticket parked for the operator's merge is not reported
+    as "repeated failures" that never happened."""
+
+    def test_the_three_parks_read_as_what_they_are(self):
+        struck = holophyte.loop.skip_line("KO-131", 2, None, None)
+        self.assertIn("2 failures", struck)
+        self.assertIn("a human owns it now", struck)
+
+        url = "https://github.com/example/repo/pull/7"
+        parked = holophyte.loop.skip_line("KO-131", 0, url,
+                                          f"PR open: {url}\nready to merge")
+        self.assertIn(url, parked)
+        self.assertIn("--approve KO-131", parked)
+        self.assertNotIn("fail", parked)
+
+        asked = holophyte.loop.skip_line(
+            "KO-131", 0, None, "merge?\nthe branch is at abc123")
+        self.assertIn("a question: merge?;", asked)
+        self.assertNotIn("abc123", asked)
+        self.assertNotIn("fail", asked)
 
 
 class TicketNameTests(LoopFixture):
@@ -2488,6 +2515,34 @@ class MergeModeTests(LoopFixture):
         return StubProvider(dict(
             a_task(), body=self.BODY,
             url="https://linear.app/example/issue/KO-131/add-a-thing"))
+
+    def test_a_ticket_parked_on_a_pr_is_skipped_by_its_url(self):
+        """The park keeps the ticket in Todo, so the next pass is offered it
+        first. The skip line names the pull request and the `--approve`
+        that merges it -- not a failure -- and the ticket behind it is
+        claimed and merged in the same pass."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+        self.assertEqual(self.question().split("\n")[0],
+                         f"PR open: {self.URL}")
+        # The pass after the park, merging locally so the second ticket's
+        # own path is not this test's subject.
+        self.configure("")
+        parked, other = a_task(), dict(a_task(2), title="add another thing")
+
+        out = self.main_output(Commit("the other work"), APPROVE,
+                               provider=StubProvider(parked, other))
+
+        self.assertIn(f"[holo2] KO-131 is parked on PR {self.URL} awaiting"
+                      " --approve KO-131; skipping it\n", out)
+        self.assertNotIn("failures", out)
+        self.assertIn("the other work", self.subjects())
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, status FROM tickets"
+                      " ORDER BY id"),
+            [("KO-131", "blocked_on_operator"), ("KO-132", "merged")])
 
     def test_a_written_pr_takes_the_turns_title_and_body(self):
         """`pr_text = "written"`: after the approval one more implementer
