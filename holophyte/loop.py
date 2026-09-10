@@ -35,6 +35,7 @@ from holophyte.board import (
     close_out_failure,
     escalate,
     failure_history,
+    is_strike_question,
     ledger,
     merge_drift,
     mirror_key,
@@ -2196,21 +2197,25 @@ def skip_line(identifier, strikes, pr_url, question):
     Pure, so the wording is tested without a store. A pull request wins:
     the run behind it is parked alive, so its URL and the `--approve` that
     merges it are the whole story whatever failed before it. Then the
-    strike-out, which is the loop's own park and carries a question of its
-    own that would otherwise be read as the operator's. Then whatever
-    question a module parked the ticket on, first line only; a park with
-    neither is still a human's, and says so.
+    question a module parked the ticket on -- a merge conflict, `merge?` --
+    first line only, and *before* the strike count: the run that parked it
+    may also have been the failure that reached `MAX_FAILED_RUNS`, and the
+    conflict is what the operator has to resolve, not the count. The
+    strike form is for the escalation's own park, whose question
+    `is_strike_question()` recognises, or for a park with no question at
+    all once the count has tripped; a park with neither is still a
+    human's, and says so.
     """
     if pr_url:
         return (f"{identifier} is parked on PR {pr_url} awaiting"
                 f" --approve {identifier}; skipping it")
+    if question and question.strip() and not is_strike_question(question):
+        first = question.strip().splitlines()[0]
+        return (f"{identifier} is parked on a question: {first};"
+                " skipping it")
     if strikes >= MAX_FAILED_RUNS:
         return (f"{identifier} struck out after {strikes} failures;"
                 " a human owns it now")
-    if question:
-        first = question.strip().splitlines()[0] if question.strip() else ""
-        return (f"{identifier} is parked on a question: {first};"
-                " skipping it")
     return f"{identifier} is parked for a human; skipping it"
 
 

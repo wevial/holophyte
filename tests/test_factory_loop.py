@@ -873,6 +873,23 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("abc123", asked)
         self.assertNotIn("fail", asked)
 
+    def test_a_module_question_outranks_the_strike_count(self):
+        """The run that parked the ticket on a merge conflict may also be
+        the failure that reached the threshold. The conflict is what the
+        operator has to resolve, so it is the line; the escalation's own
+        question is the one park the count speaks for."""
+        conflicted = holophyte.loop.skip_line(
+            "KO-131", 2, None,
+            "merge conflict with main on: README.md; resolve it on the branch")
+        self.assertIn("a question: merge conflict with main on: README.md;",
+                      conflicted)
+        self.assertNotIn("struck out", conflicted)
+
+        struck = holophyte.loop.skip_line(
+            "KO-131", 2, None, holophyte.board.strike_question(2))
+        self.assertIn("struck out after 2 failures", struck)
+        self.assertNotIn("a question", struck)
+
 
 class TicketNameTests(LoopFixture):
     """The branch and worktree a run cuts are named after the ticket, not the
@@ -1627,6 +1644,37 @@ class MergeConflictTests(LoopFixture):
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), seen["branch"])
         self.assertEqual(self.git("rev-parse", "main").strip(), seen["main"])
         self.assertEqual(self.main_status(), "")
+
+    def test_a_conflict_park_after_a_strike_is_reported_as_the_conflict(self):
+        """KO-345 review: one failed run, then a run the gate parks on a
+        merge conflict -- a second counted failure. The next pass names the
+        conflict, which is what the operator must resolve, not a strike-out
+        that would send them looking for a failure of the work."""
+        self.loop(Commit("first cut"), REQUEST_CHANGES,
+                  Commit("first fix round 1"), REQUEST_CHANGES,
+                  Commit("first fix round 2"), FAIL)
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        store.walk_ticket(conn, 1, "ready")
+        self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
+                  MainDiverges(lambda: self.commit_on_main("README.md",
+                                                           "main side\n")))
+        self.assertEqual(
+            self.read("SELECT outcome FROM runs ORDER BY id"),
+            [("failed",), ("failed",)])
+        parked, other = a_task(), dict(a_task(2), title="add another thing")
+
+        out = self.main_output(Commit("the other work"), APPROVE,
+                               provider=StubProvider(parked, other))
+
+        self.assertIn("[holo2] KO-131 is parked on a question: merge conflict"
+                      " with main on: README.md;", out)
+        self.assertNotIn("struck out", out)
+        self.assertIn("the other work", self.subjects())
+        self.assertEqual(
+            self.read("SELECT linearIdentifier, status FROM tickets"
+                      " ORDER BY id"),
+            [("KO-131", "blocked_on_operator"), ("KO-132", "merged")])
 
     def test_a_main_that_moved_without_conflict_is_merged_in_and_re_verified(self):
         """KO-342: main gains an unrelated commit under review; the gate
