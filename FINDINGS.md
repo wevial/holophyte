@@ -653,10 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[434 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T23:26:03Z — KO-331
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[435 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T23:27:28Z — KO-331
 MERGED to main as b314bfb (branch task/ko-331-the-pull-request-merge-method deleted).
@@ -761,3 +758,7 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T02:48:45Z — KO-339
 MERGED to main as f6732ce (branch task/ko-339-a-loop-whose-run-the-superviso deleted).
 actual: 35.0 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T02:48:49Z — KO-343
+FAILED: cannot reuse leftover worktree: preserved commits on task/ko-343-the-loop-runs-a-pool-of-worker conflict with a main that moved on; a human resolves the merge before this ticket is run again
+actual: 0.0 min · estimate: 30 min · rounds: 0
