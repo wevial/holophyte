@@ -653,27 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[423 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T20:20:05Z — KO-329
-FAILED: swept by the supervisor in phase addressing: time_box (46.0 min against a 30 min box (1.5x grace)); branch and worktree preserved for a human
-actual: 46.0 min · estimate: 30 min · rounds: 2
-
-## 2026-09-09T21:08:47Z — KO-333
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/pr.py:474 [p2] [holophyte/pr.py:474](/home/reviewer/candidate/holophyte/pr.py:474): Only the first 100 runs are read; `total_count` is ignored. A response containing 100 suc…
-- /home/reviewer/candidate/holophyte/pr.py:477 [p2] [holophyte/pr.py:477](/home/reviewer/candidate/holophyte/pr.py:477): Unreadable responses can return green. Reproduced with `{"check_runs":"not a list"}` and…
-
-## 2026-09-09T21:24:06Z — KO-333
-FAILED: swept by the supervisor in phase addressing: time_box (45.5 min against a 30 min box (1.5x grace)); branch and worktree preserved for a human
-actual: 45.5 min · estimate: 30 min · rounds: 1
-
-## 2026-09-09T22:05:55Z — KO-333
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/pr.py:474 [p2] **P1 — Incomplete pages can become green** ([holophyte/pr.py:474](/home/reviewer/candidate/holophyte/pr.py:474)). Only the first 100 runs are read; `total_cou…
-- /home/reviewer/candidate/holophyte/pr.py:524 [p2] **P2 — Unreadable check data can become green** ([holophyte/pr.py:524](/home/reviewer/candidate/holophyte/pr.py:524)). Non-dictionary entries are silently ski…
+[427 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T22:19:23Z — KO-333
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -757,3 +737,22 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T00:51:10Z — KO-341
 MERGED to main as 329975f (branch task/ko-341-the-claim-leases-the-ticket-no deleted).
 actual: 17.6 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T01:08:59Z — KO-342
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- /home/reviewer/candidate/holophyte/supervisor.py:480 [p1] [P1] [supervisor.py:480](/home/reviewer/candidate/holophyte/supervisor.py:480): Sweep unlinks the lock without ensuring it still belongs to the stale holder.…
+- /home/reviewer/candidate/holophyte/loop.py:1093 [p1] [P1] [loop.py:1093](/home/reviewer/candidate/holophyte/loop.py:1093): A conflict confined to `FINDINGS.md` is automatically resolved and committed. Reproduced…
+- criteria:3 [p2] CRITERION 3: not met — FINDINGS.md conflicts advance the branch without parking or preserving its pre-gate SHA. Given a `main` commit that conflicts with the br…
+
+## 2026-09-10T01:20:54Z — KO-342
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/gates.py:586 [p1] [P1] [holophyte/gates.py:586](/home/reviewer/candidate/holophyte/gates.py:586): Stale-lock cleanup can break mutual exclusion. A sweep can open the stale inod…
+
+## 2026-09-10T01:28:46Z — KO-342
+Round 3: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T01:30:13Z — KO-342
+MERGED to main as d9936d4 (branch task/ko-342-merges-into-main-serialise-und deleted).
+actual: 39.0 min · estimate: 30 min · rounds: 3
