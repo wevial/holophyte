@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[530 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T21:31:21Z — KO-356
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (5):
-- /home/reviewer/candidate/holophyte/redact.py:177 [p2] **Secret disclosure:** [redact.py:177](/home/reviewer/candidate/holophyte/redact.py:177) skips secrets inside arrays. Valid TOML `items = [{token = "secret"},…
-- /home/reviewer/candidate/holophyte/redact.py:346 [p2] **Wrong secret restored:** [redact.py:346](/home/reviewer/candidate/holophyte/redact.py:346) advances stored values only for placeholders. With two `[[many]]`…
-- /home/reviewer/candidate/holophyte/serve.py:1063 [p2] **Invalid commands escape the HTTP handler:** [serve.py:1063](/home/reviewer/candidate/holophyte/serve.py:1063) catches only `SystemExit`. Setting `[agents] i…
-- /home/reviewer/candidate/holophyte/config.py:154 [p2] **Validation differs from startup:** [config.py:154](/home/reviewer/candidate/holophyte/config.py:154) accepts `[agents] implementer = "./worker"`, although s…
-- criteria:3 [p2] CRITERION 3: not met — valid array-of-tables replacements can restore another entry’s secret instead of the original value. Given a valid `PUT /config` whose te…
-
-## 2026-09-10T21:32:17Z — KO-354
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[532 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T21:33:04Z — KO-359
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -767,3 +755,10 @@ Round 4: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T22:38:15Z — KO-351
 MERGED to main as 7cd1e9a (branch task/ko-351-a-claim-leases-the-ticket-in-l deleted).
 actual: 42.7 min · estimate: 30 min · rounds: 4
+
+## 2026-09-10T22:48:05Z — KO-361
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T22:49:51Z — KO-361
+MERGED to main as b3dfbcd (branch task/ko-361-the-shepherd-treats-a-review-t deleted).
+actual: 11.5 min · estimate: 30 min · rounds: 1
