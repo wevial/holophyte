@@ -49,13 +49,16 @@ review, from the size of the candidate's diff and the `[loop]` review keys
 [config.md](config.md)). The cap is printed and recorded in the run's ledger,
 and the terminal adjudication follows the last round it allows.
 
-The first review builds `holophyte-reviewer:ubuntu24.04-v5` automatically from
+The first review builds `holophyte-reviewer:ubuntu24.04-v6` automatically from
 the digest-pinned Ubuntu image; it carries git, python3, ripgrep, a pinned
 Bun (checksum-verified, on `PATH` under `/opt/bun/bin`) so console `bun`
 criteria can be witnessed inside the container, and a pinned Go 1.26.6
 (checksum-verified, under `/usr/local/go`, `GOTOOLCHAIN=local` so no other
 toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
-Go target's `go test` criteria can be witnessed too. `/tmp` is a `noexec`
+Go target's `go test` criteria can be witnessed too. It also installs
+`tomlkit` at the version `requirements.txt` pins, so the factory's own suite
+imports inside the container; a change to the Dockerfile moves the tag so the
+next review rebuilds instead of reusing the cached image. `/tmp` is a `noexec`
 tmpfs so the reviewer cannot run what a candidate drops there; because `go
 test` executes its test binaries from the temp directory, the image sets
 `TMPDIR` and `GOTMPDIR` to `/home/reviewer/tmp`, which the container script
