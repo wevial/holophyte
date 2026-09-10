@@ -109,3 +109,26 @@ test("another project's selection empties the band with the level word; one item
   expect(screen.getByText("thing needs you")).toBeTruthy();
   expect(rows().length).toBe(1);
 });
+
+test("a pr_open item adds a PRs chip that filters to it, and the total counts it with the rest", () => {
+  const url = "https://github.com/o/r/pull/2170";
+  const [question, ...rest] = allKinds.attention.items;
+  const items: AttentionItem[] = [
+    question!,
+    { kind: "pr_open", level: "attention", ticket: "REL-120", run: 60, pr_url: url, reason: "review requested", asked_ms: allKinds.status.now - 600000 },
+    ...rest,
+  ];
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { level: "attention", now: allKinds.status.now, items })]} project="all" now={allKinds.status.now} />);
+  expect(screen.getByText("5").hasAttribute("data-count")).toBe(true);
+  expect(chips()).toEqual(["All 5", "Questions 1", "PRs 1", "Stale runs 1", "Failed 1", "Supervisor 1"]);
+  expect(pills()).toEqual(["question", "PR", "stale run", "failed"]);
+  expect(screen.getByRole("button", { name: "Show all 5" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "PRs 1" }));
+  expect(rows().length).toBe(1);
+  const [row] = rows();
+  expect(row!.getAttribute("data-kind")).toBe("pr_open");
+  expect(within(row!).getByText("REL-120")).toBeTruthy();
+  expect(within(row!).getByText(/^review requested/)).toBeTruthy();
+  expect((within(row!).getByText("PR #2170") as HTMLAnchorElement).getAttribute("href")).toBe(url);
+  expect(within(row!).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open PR"]);
+});

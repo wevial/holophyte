@@ -11,6 +11,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 /** "1 question · 2 stale runs" from a host's own `/attention`, empty with none. */
 const NOUNS: Record<Kind, string> = {
   blocked: "question",
+  pr_open: "open PR",
   stale_run: "stale run",
   failed: "failed run",
   supervisor: "supervisor",

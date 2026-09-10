@@ -47,7 +47,9 @@ export function cardsOf(host: Pick<HostRecord, "base" | "project" | "status" | "
   const cards: BoardCard[] = [];
   for (const column of body.columns) {
     for (const ticket of column.tickets) {
-      const asked = host.attention?.items.find((item) => item.kind === "blocked" && item.ticket === ticket.ticket);
+      const asked = host.attention?.items.find(
+        (item) => (item.kind === "blocked" || item.kind === "pr_open") && item.ticket === ticket.ticket,
+      );
       cards.push({
         key: `${host.base}#${ticket.ticket}`,
         ticket: ticket.ticket,

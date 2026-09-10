@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from "react";
 import { ACTIONS_OFF, NOT_WIRED, ROUTES, postAction } from "../lib/actions";
-import type { Description } from "../lib/attention";
+import { OPEN_PR, type Description } from "../lib/attention";
 import { formatAge } from "../lib/format";
 import type { Fetch } from "../lib/poll";
 import type { ThreadRow } from "../lib/threads";
@@ -16,6 +16,9 @@ export interface ThreadProps {
   open: boolean;
   onToggle: () => void;
 }
+
+/** The title of an "Open PR" on a row whose item carried no URL. */
+export const NO_PR_URL = "the item carries no PR URL";
 
 /** The page's own `fetch`; `postAction` adds the bearer itself. */
 const pageFetch: Fetch = (url, init) => globalThis.fetch(url, init);
@@ -41,7 +44,9 @@ function bodyFor(label: string, ticket: string | null): Record<string, unknown> 
  *  A row given `daemon` posts each wired label (`lib/actions.ts` ROUTES)
  *  to it on click and shows the reply's `detail` under the buttons; the
  *  next poll redraws the row. Labels without a route, and every label of
- *  a daemon without `actions`, are drawn disabled with a title saying why. */
+ *  a daemon without `actions`, are drawn disabled with a title saying why.
+ *  "Open PR" (a `pr_open` row) is the exception: it opens `prUrl` in a
+ *  new tab, posts nothing, and needs no daemon. */
 export function AttentionRow({
   kind,
   project,
@@ -61,6 +66,12 @@ export function AttentionRow({
   const toggle = thread?.onToggle;
   const [detail, setDetail] = useState<{ text: string; ok: boolean } | null>(null);
   const act = (label: string) => {
+    if (label === OPEN_PR) {
+      if (!prUrl) return undefined;
+      return async () => {
+        window.open(prUrl, "_blank", "noopener,noreferrer");
+      };
+    }
     const route = ROUTES[label];
     if (!daemon || !daemon.actions || route == null) return undefined;
     return async () => {
@@ -70,6 +81,7 @@ export function AttentionRow({
     };
   };
   const titleFor = (label: string) => {
+    if (label === OPEN_PR) return prUrl ? undefined : NO_PR_URL;
     if (ROUTES[label] == null) return NOT_WIRED;
     if (daemon && !daemon.actions) return ACTIONS_OFF;
     return undefined;
