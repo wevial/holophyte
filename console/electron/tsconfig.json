@@ -20,6 +20,7 @@
     "main.ts",
     "config.ts",
     "menu.ts",
+    "log.ts",
     "tray.ts",
     "poll.ts",
     "seed.ts",

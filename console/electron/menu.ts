@@ -9,6 +9,7 @@ export type MenuState = { openAtLogin: boolean };
 export type MenuActions = {
   showConsole?: () => void;
   setOpenAtLogin?: (enabled: boolean) => void;
+  toggleDevTools?: () => void;
   quit?: () => void;
 };
 
@@ -30,6 +31,7 @@ export function menuTemplate(state: MenuState, actions: MenuActions = {}): TrayM
       checked: state.openAtLogin,
       click: (item) => actions.setOpenAtLogin?.(item.checked),
     },
+    { label: "Developer tools", click: () => actions.toggleDevTools?.() },
     { type: "separator" },
     { label: "Quit", click: () => actions.quit?.() },
   ];
