@@ -120,9 +120,13 @@ setup_timeout_sec = 300
 # The segment ahead of the slash in a task branch name. Optional; `task` when
 # absent, so branches are `task/ko-7000-the-title-slug`.
 branch_prefix = "task"
+# Ignored install directories the review stage copies from the task worktree,
+# read-only, so the reviewer can run the ticket's verify commands. Optional;
+# empty when absent.
+carry = ["console/node_modules"]
 ```
 
-Accepted keys: `setup`, `setup_timeout_sec`, `branch_prefix`.
+Accepted keys: `setup`, `setup_timeout_sec`, `branch_prefix`, `carry`.
 
 They run in the worktree, right after its branch is cut and before the first
 agent turn — the moment that decides what the implementer and the verify gate
@@ -146,6 +150,19 @@ run there, since the worktree they are written against does not exist yet.
 What setup writes into the worktree is untracked, and the implementer is asked
 to commit its work: keep build artifacts (`.venv/`, caches) in the target's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
+
+`carry` lists the repository-relative directories, among what setup wrote and
+git ignores, that the review stage receives a copy of: the reviewer judges a
+fresh checkout of the candidate commit, which holds none of them, and a
+console ticket's `bun --cwd=console test` reports zero tests in a stage with no
+`console/node_modules`. Each listed directory is copied into the stage at the
+same path with its write bits cleared, after the checkout and before the
+reviewer starts; the stage's identity check runs before and after the copy
+with `--ignored=no`, so a carried directory neither dirties the stage nor
+counts in its fingerprint. A listed path that is tracked in git, absent from
+the worktree, or escapes the repository (`..`) fails the stage naming the path
+rather than skipping it. Startup checks the list is a list of relative paths;
+nothing is carried that the worktree does not already hold.
 
 `branch_prefix` names the segment before the slash in every branch the loop
 cuts, so a repository with its own convention (`factory/`, `ko/`, `bot/`) keeps
@@ -207,10 +224,14 @@ review_rounds_max = 4        # the ceiling
 # How many worker processes the loop keeps running at most, one per claimable
 # ticket. Optional; the default is one process working one ticket at a time.
 workers = 1                  # 3: up to three tickets worked at once
+# How often, in seconds, the scheduler recounts the queue while fewer than
+# `workers` are running. Optional; the default is two minutes.
+tick_sec = 120
 ```
 
 Accepted keys: `stop_on_failure`, `order`, `spawn_supervisor`,
-`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`, `workers`.
+`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`, `workers`,
+`tick_sec`.
 
 By default one failed run ends the process after its close-out, with a nonzero
 exit, and an operator relaunches the loop — the right call while the loop is
@@ -274,6 +295,15 @@ still serialise under the merge lock. `stop_on_failure` keeps its meaning
 per pool: a failed worker stops the spawning and the running workers are
 waited for. An integer of at least `1`; `"3"` (a string) or `0` (a pool
 that could work nothing) is a startup error naming the key.
+
+`tick_sec` is how often the scheduler recounts the queue while the pool is
+below `workers`: with a slot free, its wait on the children times out after
+this many seconds and the ready listing and the claimable count are run
+again, so a ticket filed while the pool was busy starts within a tick rather
+than at the next exit. With the pool full the scheduler waits on exits
+alone, and the tick prints nothing unless it spawns. An integer of at least
+`10`; `"120"` (a string) or `5` is a startup error naming the key. Only the
+scheduler reads it: under `workers = 1` there is no pool to tick.
 
 ```toml
 [board]

@@ -3,7 +3,7 @@ import { Board } from "./components/Board";
 import { Hosts } from "./components/Hosts";
 import { Now } from "./components/Now";
 import { Shipped } from "./components/Shipped";
-import { Rail, VIEWS, type ProjectChoice, type View } from "./components/Rail";
+import { Rail, type ProjectChoice, type View } from "./components/Rail";
 import { usePeers } from "./hooks/usePeers";
 import { useShipped } from "./hooks/useShipped";
 import { visibleHosts } from "./lib/hosts";
@@ -46,7 +46,6 @@ export function App({
   // Board's Shipped-today table read the same rows, so switching views
   // neither refetches nor forgets pages already loaded.
   const shipped = useShipped(shownHosts, polls, pollDeps);
-  const heading = VIEWS.find((candidate) => candidate.id === view)?.label ?? view;
   return (
     <div className="flex h-screen overflow-hidden bg-paper font-sans text-ink">
       <Rail
@@ -59,9 +58,6 @@ export function App({
         onTheme={chooseTheme}
       />
       <main className="min-w-0 flex-1 overflow-y-auto">
-        {view !== "shipped" && view !== "hosts" && view !== "board" && (
-          <h1 className="px-6 pt-6 pb-4 text-2xl font-semibold">{heading}</h1>
-        )}
         {view === "shipped" ? (
           <Shipped shipped={shipped} now={daemonNow} polls={polls} deps={pollDeps} />
         ) : view === "board" ? (
@@ -71,7 +67,7 @@ export function App({
         ) : view === "now" && polled ? (
           <Now hosts={hosts} project={project} now={now} polls={polls} deps={pollDeps} />
         ) : (
-          <p className="px-6 text-[13px] text-muted">Nothing to show here yet.</p>
+          <p className="px-6 pt-6 text-[13px] text-muted">Nothing to show here yet.</p>
         )}
       </main>
     </div>

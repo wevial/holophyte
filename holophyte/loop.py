@@ -23,7 +23,7 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path
-from time import monotonic, time
+from time import monotonic, sleep, time
 
 import review_runner
 import store
@@ -49,6 +49,7 @@ from holophyte.board import (
 )
 from holophyte.config import (
     branch_prefix,
+    carry_directories,
     loop_config,
     merge_config,
     report_config,
@@ -121,6 +122,7 @@ def check_worktree_setup(target):
     setup_commands(target)
     setup_timeout(target)
     branch_prefix(target)
+    carry_directories(target)
 
 
 def timeout_report(cmd, expired):
@@ -193,10 +195,13 @@ def reuse_leftover(target, wt, branch):
     commits keeps them, with main merged in when it has moved on: the
     review routes and the merge both require main to be an ancestor of the
     candidate, so a carried branch predating the current main would
-    otherwise stall the ticket on every rerun. A merge conflict, and a
-    worktree sitting off the branch while the branch holds commits of its
-    own, are a human's calls and are refused with the state named. Nothing
-    is ever deleted here.
+    otherwise stall the ticket on every rerun. A merge that stops on
+    conflicts is left mid-merge in the worktree for the implementer turn to
+    resolve as its first commit (`merge_conflicts()` names the paths for
+    its brief); the ones seen were tests appended at the same lines, never a
+    person's call. A worktree sitting off the branch while the branch holds
+    commits of its own is a human's call and is refused with the state
+    named. Nothing is ever deleted here.
     """
     sh(["git", "worktree", "prune"], target.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
@@ -259,21 +264,67 @@ def reuse_leftover(target, wt, branch):
         # and the merge gate both require main to be an ancestor of the
         # candidate, so left diverged the branch would raise out of every
         # review dispatch and stall the ticket on each rerun. Bringing main
-        # in preserves the commits and restores the invariant; a conflict is
-        # a human's merge to resolve, refused with the tree put back.
+        # in preserves the commits and restores the invariant. A conflict
+        # is left in the tree for the implementer: parking it for a person
+        # cost an operator round-trip per add/add overlap in a test file
+        # (KO-355), and the first verify fails the run if it is still there.
         r = subprocess.run(["git", "-c", "user.name=holophyte",
                             "-c", "user.email=holophyte@factory.invalid",
                             "merge", "--no-edit", "main"],
                            cwd=wt, capture_output=True, text=True)
         if r.returncode != 0:
-            subprocess.run(["git", "merge", "--abort"], cwd=wt,
-                           capture_output=True)
-            return False, (f"preserved commits on {branch} conflict with a"
-                           " main that moved on; a human resolves the merge"
-                           " before this ticket is run again")
+            conflicts = merge_conflicts(wt)
+            if not conflicts:
+                # Not a textual conflict -- the merge died some other way
+                # and left nothing an implementer can resolve.
+                subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                               capture_output=True)
+                return False, (f"merging the moved-on main into preserved"
+                               f" branch {branch} failed without a"
+                               f" conflict to resolve; a human reconciles"
+                               f" them before this ticket is run again\n"
+                               f"{(r.stdout + r.stderr).strip()}")
+            print(f"[holo2] merge of the moved-on main into preserved branch"
+                  f" {branch} stopped on conflicts in"
+                  f" {', '.join(conflicts)}; left mid-merge for the"
+                  " implementer to resolve first")
+            return True, ""
         print(f"[holo2] merged the moved-on main into preserved branch"
               f" {branch}")
     return True, ""
+
+
+def merge_conflicts(wt):
+    """The paths a merge in progress in `wt` stopped on; empty when the
+    tree is not mid-merge. `MERGE_HEAD` is the mid-merge marker git itself
+    keeps, so a merge whose conflicts were staged but never committed still
+    counts as unresolved -- the paths are then read from the merge's two
+    parents rather than from the index's unmerged entries."""
+    mid_merge = subprocess.run(
+        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+        cwd=wt, capture_output=True).returncode == 0
+    if not mid_merge:
+        return []
+    unmerged = sh(["git", "diff", "--name-only", "--diff-filter=U"],
+                  cwd=wt).splitlines()
+    return unmerged or sh(["git", "diff", "--name-only", "HEAD", "MERGE_HEAD"],
+                          cwd=wt).splitlines()
+
+
+def conflict_brief(branch, conflicts):
+    """The paragraph that opens an implementer brief whose worktree was
+    left mid-merge by `reuse_leftover()`; empty when there is nothing to
+    resolve."""
+    if not conflicts:
+        return ""
+    return (f"FIRST, before the ticket's work: the worktree is mid-merge."
+            f" Merging main into the preserved branch {branch} stopped on"
+            f" conflicts in: {', '.join(conflicts)}. Resolve each one keeping"
+            " both sides' intent (the branch's preserved work and main's new"
+            " lines both stay), then commit the merge with a message naming"
+            " both sides, so that commit is your first. Only then do the"
+            " ticket's work below. A run whose first verify still finds the"
+            " merge unresolved fails.\n\n")
 
 
 def run_task(target, task, conn=None, run_id=None, provider=None):
@@ -405,8 +456,12 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # turns are held to one contract. A ticket with no body
     # (a file-backed task line, a stub provider) degrades to the title alone.
     ticket = f"{task}\n\n{body}" if body else task
+    # A reuse that left main's merge mid-way (conflicts) hands the paths to
+    # the implementer as the opening of its brief; empty on every other cut.
+    conflicts = merge_conflicts(wt)
     sha = _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
-                     start_sha, ticket, verify_cmd, budget_min)
+                     start_sha, ticket, verify_cmd, budget_min,
+                     conflicts=conflicts)
 
     # 2. review rounds, up to the cap the candidate's size earns it. Verify
     # runs before each review and its result goes into the brief; every
@@ -859,13 +914,15 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
 
 
 def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
-               start_sha, ticket, verify_cmd, budget_min):
+               start_sha, ticket, verify_cmd, budget_min, conflicts=()):
     """The implementer phase: one turn against `ticket`, then the no-commit
-    gate. Returns the candidate's sha."""
+    gate. Returns the candidate's sha. `conflicts` are the paths a reuse
+    left mid-merge; they open the brief (`conflict_brief()`)."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
     out = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                 f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+                 conflict_brief(branch, conflicts)
+                 + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
                  "The ticket above is the contract, acceptance criteria "
                  "included; the task is done only when they hold. Commit your "
                  "work with a clear message. Stay strictly on-scope; do not "
@@ -959,6 +1016,18 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
     """
     for rnd in range(1, cap + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
+        if rnd == 1:
+            # The merge `reuse_leftover()` left for the implementer is owed
+            # as its first commit; a tree still mid-merge here is the park
+            # the handoff replaced, failed with the branch preserved.
+            unresolved = merge_conflicts(wt)
+            if unresolved:
+                raise RunFailure(
+                    f"preserved commits on {branch} conflict with a main"
+                    f" that moved on and the implementer left the merge"
+                    f" unresolved in {', '.join(unresolved)}; a human"
+                    f" resolves the merge before this ticket is run again;"
+                    f" branch {branch} preserved at {sha[:12]}")
         with heartbeat_while(conn, run_id, beat_s):
             ok, out = run_verify(verify_cmd, wt, contracts)
         if ok:
@@ -2048,7 +2117,7 @@ def _serial(target, provider, knobs):
         # well until the provider resolves the id.
         project = store.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
-        _reconcile_mirror(conn, project, provider)
+        _reconcile_at_startup(target, conn, project, provider)
         # The tickets this pass has refused to claim. A blocked ticket keeps
         # its place in the board's ready set — `blocked_on_operator` projects
         # to Todo, the column a human picks work out of — so it is offered
@@ -2056,7 +2125,14 @@ def _serial(target, provider, knobs):
         # turns "not this one" into "the one after it" instead of the same
         # ticket forever.
         skip = set()
+        first_pass = True
         while True:
+            # Before the claim: a pull request a person merged since the
+            # last pass ships its parked run here (KO-359). The first pass
+            # asked at startup, before the mirror was repaired.
+            if not first_pass:
+                _reconcile_pull_requests(target, conn, project, provider)
+            first_pass = False
             _mirror_queue(target, conn, project, provider)
             task, ticket_id, run_id = _claim_next(target, conn, project,
                                                   provider, order, skip, seen)
@@ -2167,8 +2243,14 @@ WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 SPAWN = subprocess.Popen
 
 
-def _wait_any(children):
-    """Block until any child exits; return `(pid, exit_code)`.
+# How often the timed wait looks for an exited child, in seconds.
+WAIT_POLL_S = 0.5
+
+
+def _wait_any(children, timeout):
+    """Block until any child exits, or `timeout` seconds pass; return
+    `(pid, exit_code)`, or `(None, None)` when the deadline passed with no
+    exit (KO-353). `timeout` is `None` for no deadline.
 
     `children` is the pool's live `Popen` objects by pid. The scheduler
     holds them for as long as the workers live -- a `Popen` dropped while
@@ -2178,8 +2260,22 @@ def _wait_any(children):
     its exit status is lost (the review of KO-343 reproduced it with two
     real children). Held, they are reaped here alone, and the one reaped is
     told its status so it is not put on that list when the pool drops it.
+    Under a deadline the wait is `os.waitpid(-1, WNOHANG)` every
+    `WAIT_POLL_S` until a child is reported or the deadline passes: there
+    is no `os.wait()` with a timeout, and a signal-driven one would race
+    a child that exited before the alarm was set.
     """
-    pid, status = os.wait()
+    if timeout is None:
+        pid, status = os.wait()
+    else:
+        deadline = monotonic() + timeout
+        while True:
+            pid, status = os.waitpid(-1, os.WNOHANG)
+            if pid:
+                break
+            if monotonic() >= deadline:
+                return None, None
+            sleep(min(WAIT_POLL_S, max(deadline - monotonic(), 0)))
     code = os.waitstatus_to_exitcode(status)
     if pid in children:
         children[pid].returncode = code
@@ -2310,7 +2406,11 @@ def scheduler(target, provider, knobs):
     The startup checks and the sweep once, then a tick per child exit:
     mirror the board's ready listing, count the tickets a worker could
     claim (`_claimable()`), spawn until `min(claimable, workers)` are
-    alive, block until any child exits, read its status. A failed worker
+    alive, block until any child exits, read its status. While the pool
+    is below the ceiling the block carries `knobs.tick_sec` as a deadline,
+    and a deadline that reaps nobody is a tick like any other: the
+    listing and the count run again for a ticket filed since (KO-353); a
+    full pool waits on exits alone. A failed worker
     under `stop_on_failure` stops the spawning and the running workers are
     waited for, as the serial loop stops on its first failure; a merge into
     the factory itself does the same and re-execs once the pool has
@@ -2327,8 +2427,15 @@ def scheduler(target, provider, knobs):
     try:
         project = store.ensure_project(conn, provider.team, target.path)
         _startup_sweep(target, conn)
-        _reconcile_mirror(conn, project, provider)
+        _reconcile_at_startup(target, conn, project, provider)
+        first_tick = True
         while True:
+            # Every tick, timer or exit: a pull request merged on GitHub
+            # since the last one ships its parked run (KO-359). The first
+            # tick asked at startup, before the mirror was repaired.
+            if not first_tick:
+                _reconcile_pull_requests(target, conn, project, provider)
+            first_tick = False
             listing = None
             if state.spawning:
                 listing = _mirror_queue(target, conn, project, provider)
@@ -2368,8 +2475,10 @@ def scheduler(target, provider, knobs):
                 store.record_loop_return(conn, project)
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if state.failed else None
-            pid, code = WAIT({pid: child for pid, (_, child) in pool.items()})
-            if pid in pool:  # else the supervisor, or another child not ours
+            timeout = None if len(pool) >= knobs.workers else knobs.tick_sec
+            pid, code = WAIT({pid: child for pid, (_, child) in pool.items()},
+                             timeout)
+            if pid in pool:  # else the supervisor, another child, or a tick
                 state.exited(pool.pop(pid)[0], code)
     finally:
         conn.close()
@@ -2526,6 +2635,28 @@ def _mirror_queue(target, conn, project, provider):
     return mirrored
 
 
+def _reconcile_at_startup(target, conn, project, provider):
+    """The two startup reconciles, GitHub before the board (KO-359 review).
+
+    A person who merged a parked pull request on GitHub may have moved its
+    ticket to Done on Linear as well. Asked first, the mirror reconcile
+    would see Done, walk the ticket `merged` itself and take it out of the
+    pull request reconcile's `blocked_on_operator` read: the run stayed
+    parked with no outcome and no `mergeSha`, and Shipped never showed it.
+    So the parked pull requests are read first and a merged one ships its
+    run; the mirror repair then finds that ticket already `merged` and
+    walks only the rest. Order alone is not enough: had GitHub failed on
+    that first read, the mirror repair would still have seen Done and
+    walked the ticket `merged` around its parked run, which no later pass
+    could reach -- the pull request reconcile reads `blocked_on_operator`
+    tickets only. So the mirror repair also leaves every ticket whose
+    newest run is parked on a pull request to this reconcile, whatever
+    the board says, and the next pass asks GitHub again.
+    """
+    _reconcile_pull_requests(target, conn, project, provider)
+    _reconcile_mirror(conn, project, provider)
+
+
 def _reconcile_mirror(conn, project, provider):
     """Walk the mirrored tickets Linear has since closed to their terminal
     status, one printed line each; nothing is written to Linear.
@@ -2534,10 +2665,11 @@ def _reconcile_mirror(conn, project, provider):
     when Linear later closes it elsewhere -- a ticket another target
     finished, or one the operator cancelled -- so it sat on the board as
     `ready` or `needs_spec` for good (KO-217, KO-137 and KO-138 on the
-    daemon's board). Startup only, right after the read-only sweep: the
-    five open statuses are read through the store for this project only
-    (the provider knows one team, and another project's tickets are that
-    project's loop to reconcile), a ticket with an active run is left to
+    daemon's board). Startup only, after the read-only sweep and the pull
+    request reconcile (`_reconcile_at_startup()`): the five open statuses
+    are read through the store for this project only (the provider knows
+    one team, and another project's tickets are that project's loop to
+    reconcile), a ticket with an active run is left to
     that run, and the provider is asked about the rest in one call. A
     closed one is walked along §3 edges (`walk_ticket`) with a `reconcile`
     intervention row on its most recent run first, in the same
@@ -2547,13 +2679,32 @@ def _reconcile_mirror(conn, project, provider):
     while the provider is being asked, and a verdict on the stale read
     would mark a ticket merged under a live run. A ticket that never ran
     has no run to carry the row (`interventions.runId` is NOT NULL), so
-    its printed line is its only record and says so. A provider that
+    its printed line is its only record and says so. A ticket parked on a
+    pull request is left to the pull request reconcile whatever the board
+    says (KO-359 review): a Done there means a person merged the pull
+    request, and only GitHub's answer closes the parked run out with its
+    merge commit's sha -- so it stays `blocked_on_operator` until GitHub
+    can be asked, rather than walked `merged` around a run no later pass
+    would reach. A provider that
     cannot answer -- no network, no key -- skips the reconcile in one line
     and the loop goes on as before: this is a repair of the mirror, not a
     gate on the work.
     """
-    tickets = [t for t in store.read.open_tickets(conn, project)
-               if t.activeRunId is None]
+    tickets = []
+    for ticket in store.read.open_tickets(conn, project):
+        if ticket.activeRunId is not None:
+            continue
+        if ticket.status == "blocked_on_operator" \
+                and _parked_pull_request(conn, ticket.id) is not None:
+            # GitHub's verdict, not the board's: a Done here is a person
+            # who merged the pull request, and `_reconcile_pull_requests()`
+            # closes the run out with the merge commit's sha when GitHub
+            # can be asked. Walking the ticket `merged` around a parked run
+            # would strand that run (KO-359 review).
+            print(f"[holo2] reconcile left {ticket.linearIdentifier} to its"
+                  " pull request: the run parked on it is GitHub's to close")
+            continue
+        tickets.append(ticket)
     if not tickets:
         return
     try:
@@ -2590,12 +2741,158 @@ def _reconcile_mirror(conn, project, provider):
         print(line)
 
 
+# How the ticket's question begins once its pull request was closed on
+# GitHub without merging: the run stays parked, and the skip line reads
+# this rather than the `--approve` that would merge nothing.
+PR_CLOSED_QUESTION = "PR closed without merge: "
+
+
+def _reconcile_pull_requests(target, conn, project, provider):
+    """Ask GitHub about every pull request this project's parked runs wait
+    on, and land the ones a person merged there (KO-359).
+
+    A run parked on its pull request waits for `--approve`; the operator
+    merges the pull request by hand after a coworker's review instead, and
+    the run sat parked, the ticket In Progress, Shipped without it. This
+    runs at loop startup, before the mirror reconcile so a ticket the
+    merger also moved to Done still ships its run, and at the top of every
+    later pass -- each serial claim, each scheduler tick -- over the
+    project's `blocked_on_operator` tickets whose newest run holds a
+    `prUrl` and is still parked in
+    `awaiting_merge_approval`. One `pr.pull_status()` read per ticket. A
+    merged pull request is that approval: `_land_github_merge()` ends the
+    run merged with the merge commit's sha and walks the ticket to
+    `merged`, Done on the board. One closed without merging leaves the run
+    parked and makes the question `PR closed without merge: URL`
+    (`_note_closed_pr()`); an open one changes nothing. A GitHub error is
+    one printed line for that ticket and the pass goes on to the next, as
+    the mirror reconcile skips a board that cannot be asked: this lands
+    work already landed, it does not gate the work in the queue.
+    """
+    for ticket in store.read.blocked_tickets(conn, project):
+        if not ticket.prUrl or ticket.runId is None:
+            continue
+        pull = pr.parse_pr_url(ticket.prUrl)
+        if pull is None or _parked_phase(conn, ticket.runId) is None:
+            continue
+        try:
+            status = pr.pull_status(target, pull)
+        except Exception as e:  # noqa: BLE001 - any transport failure
+            print(f"[holo2] {ticket.linearIdentifier}: {pull.url} could not"
+                  f" be read ({e}); the run stays parked")
+            continue
+        if status.merged:
+            _land_github_merge(target, conn, provider, ticket, pull, status)
+        elif status.closed:
+            _note_closed_pr(conn, ticket, pull)
+
+
+def _parked_phase(conn, run_id):
+    """The run's `(branch, phase)` if it is parked awaiting merge approval,
+    None otherwise: the reconcile acts on that run alone."""
+    row = conn.execute("SELECT branch, phase FROM runs WHERE id = ?",
+                       (run_id,)).fetchone()
+    if row is None or row[1] != "awaiting_merge_approval":
+        return None
+    return row
+
+
+def _parked_pull_request(conn, ticket_id):
+    """The `prUrl` of the ticket's newest run when that run is parked
+    awaiting merge approval on a pull request, None otherwise: the ticket
+    the pull request reconcile owns and the mirror reconcile leaves."""
+    row = conn.execute(
+        "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.id = ? AND r.phase = 'awaiting_merge_approval'"
+        " AND r.prUrl IS NOT NULL", (ticket_id,)).fetchone()
+    return None if row is None else row[0]
+
+
+def _land_github_merge(target, conn, provider, ticket, pull, status):
+    """Close out the run parked on `pull` as merged: a person merged it on
+    GitHub, and that is the `--approve` the park was waiting for.
+
+    One transaction, record before acting: the ticket and the run are
+    re-read under the write lock and must still be where the open read saw
+    them -- parked, no live run, the same newest run -- or another process
+    moved them while GitHub was being asked and nothing is written. Then
+    an `approve` intervention naming who merged it, the run released
+    `merged` with the pull request's merge commit as `mergeSha`
+    (`awaiting_merge_approval -> done`), the question cleared and the
+    ticket walked to `merged`. Outside the lock: the board's Done, the
+    merged ledger line with the merger's login, the local worktree and
+    branch removed as `_merge_pr()` removes them after an API merge (a
+    refusal is debris, not a failure), and the findings window rendered so
+    the run appears in Shipped.
+    """
+    identifier, run_id = ticket.linearIdentifier, ticket.runId
+    who = status.merged_by or "someone"
+    sha = status.merge_sha
+    short = sha[:12] if sha else "an unrecorded sha"
+    with store.transaction(conn):
+        now = store.read.ticket_by_id(conn, ticket.id)
+        parked = _parked_phase(conn, run_id)
+        if now is None or now.status != "blocked_on_operator" \
+                or now.activeRunId is not None or now.lastRunId != run_id \
+                or parked is None:
+            print(f"[holo2] {identifier}: {pull.url} is merged on GitHub but"
+                  " the ticket moved while it was asked; left alone")
+            return
+        branch = parked[0]
+        store.record_intervention(
+            conn, run_id, "approve",
+            f"{pull.url} merged on GitHub by {who} as {short}; the run is"
+            " closed out as merged", source="human", trigger="manual")
+        store.release(conn, run_id, "merged", merge_sha=sha)
+        conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
+                     (ticket.id,))
+        store.walk_ticket(conn, ticket.id, "merged")
+    mirror_push(conn, ticket.id, provider)
+    ledger(conn, run_id, identifier, "merge",
+           f"MERGED through {pull.url} as {sha} by {who} on GitHub (branch"
+           f" {branch} deleted locally; local main not moved).", provider)
+    if branch:
+        try:
+            sh(["git", "worktree", "remove", "--force",
+                str(worktree_path(target, branch))], target.path)
+            sh(["git", "branch", "-D", branch], target.path)
+        except RuntimeError as e:
+            print(f"[holo2] post-merge cleanup left debris: {e}")
+    refresh_findings(target, conn)
+    print(f"[holo2] {identifier}: {pull.url} was merged on GitHub by {who}"
+          f" as {short}; run {run_id} closed out as merged")
+
+
+def _note_closed_pr(conn, ticket, pull):
+    """The pull request was closed on GitHub without merging: the run stays
+    parked -- the branch and its candidate are still a person's to decide
+    on -- and the ticket's question becomes `PR closed without merge: URL`,
+    which the skip line then reads. Idempotent: a question already saying
+    so is left as it is, so the pass after this one writes and prints
+    nothing. The run's event stream carries the change first."""
+    question = f"{PR_CLOSED_QUESTION}{pull.url}"
+    if (ticket.blockedQuestion or "").startswith(question):
+        return
+    with store.transaction(conn):
+        store.record_event(conn, ticket.runId, "pull_request",
+                           f"{pull.url} was closed on GitHub without"
+                           " merging; the run stays parked for a person")
+        conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?"
+                     " AND status = 'blocked_on_operator'",
+                     (question, ticket.id))
+    print(f"[holo2] {ticket.linearIdentifier}: {pull.url} was closed on"
+          " GitHub without merging; the run stays parked")
+
+
 def skip_line(identifier, strikes, pr_url, question):
     """The admit step's one line for a ticket the store holds parked.
 
     Pure, so the wording is tested without a store. A pull request wins:
     the run behind it is parked alive, so its URL and the `--approve` that
-    merges it are the whole story whatever failed before it. Then the
+    merges it are the whole story whatever failed before it -- unless the
+    question says the pull request was closed without merging
+    (`PR_CLOSED_QUESTION`), when there is nothing an `--approve` would
+    merge and the question is the line. Then the
     question a module parked the ticket on -- a merge conflict, `merge?` --
     first line only, and *before* the strike count: the run that parked it
     may also have been the failure that reached `MAX_FAILED_RUNS`, and the
@@ -2605,7 +2902,8 @@ def skip_line(identifier, strikes, pr_url, question):
     all once the count has tripped; a park with neither is still a
     human's, and says so.
     """
-    if pr_url:
+    closed = (question or "").strip().startswith(PR_CLOSED_QUESTION)
+    if pr_url and not closed:
         return (f"{identifier} is parked on PR {pr_url} awaiting"
                 f" --approve {identifier}; skipping it")
     if question and question.strip() and not is_strike_question(question):

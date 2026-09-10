@@ -13,6 +13,7 @@ which imports back the names its remaining call sites use.
 import collections
 import math
 import os
+import pathlib
 import shlex
 import shutil
 import subprocess
@@ -93,7 +94,8 @@ DOCKER_PROBE_TIMEOUT = 5
 # knobs and their defaults are defined.
 KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS),
-    "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix"}),
+    "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
+                           "carry"}),
 }
 # `[loop]`'s and `[report]`'s entries are filled in beside `LOOP_KEYS` and
 # `REPORT_KEYS`, with `[supervisor]`'s.
@@ -393,6 +395,38 @@ def setup_timeout(target):
     return value
 
 
+def carry_directories(target):
+    """The target's `[worktree] carry` list, or `[]` when it names none.
+
+    Each entry is a repository-relative directory `[worktree] setup` installs
+    and git ignores -- `console/node_modules`, `.venv` -- that the review
+    stage copies in read-only so the reviewer can run the ticket's verify
+    commands (`review_runner.stage_candidate()`). Startup settles the shape:
+    a list of non-empty relative paths with no `..` segment. Whether an
+    entry exists, is ignored and is untracked is the stage's question, asked
+    against the worktree the round is about, and answered there with a
+    boundary error naming the entry.
+    """
+    entries = (target.config().get("worktree") or {}).get("carry")
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [worktree] carry must be a list of "
+            f"repository-relative directories, got {type(entries).__name__}")
+    for entry in entries:
+        if not isinstance(entry, str):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [worktree] carry: every entry must "
+                f"be a repository-relative directory, got {type(entry).__name__}")
+        parts = pathlib.PurePosixPath(entry).parts
+        if (not entry.strip() or entry.startswith("/") or not parts
+                or ".." in parts):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [worktree] carry: entry {entry!r} "
+                "must be a relative path inside the repository")
+    return entries
+
 
 # Characters git refuses anywhere in a ref name (`git check-ref-format`),
 # plus the slash the prefix must not carry: the branch is exactly
@@ -584,6 +618,11 @@ def sweep_config(target):
 # default, is the loop as it has always been: one process, one ticket at a
 # time. Above `1` the main process is a scheduler that spawns
 # `factory.py TARGET --worker` children and works nothing itself.
+# `tick_sec`: how often, in seconds, the scheduler recounts the queue while
+# the pool is below `workers` (KO-353). A scheduler waiting on child exits
+# alone let a ticket filed while the pool was busy wait for the next exit
+# with slots idle; with a slot free the wait times out after this long and
+# the listing is run again. A full pool waits on exits alone.
 LOOP_KEYS = {
     "stop_on_failure": True,
     "order": "identifier",
@@ -592,23 +631,26 @@ LOOP_KEYS = {
     "review_rounds_per_lines": 800,
     "review_rounds_max": 4,
     "workers": 1,
+    "tick_sec": 120,
 }
 LOOP_ORDERS = ("identifier", "priority")
 # The keys that must be integers, and the least each may be: a run with no
 # review round is not a run, and a ceiling under the base is a cap the
 # formula could never reach. `review_rounds_per_lines` may be `0`, the
-# documented switch for "never scale".
+# documented switch for "never scale". `tick_sec` under 10 is a poll of the
+# board, not a tick.
 LOOP_INTEGER_FLOORS = {
     "review_rounds": 1,
     "review_rounds_per_lines": 0,
     "review_rounds_max": 1,
     "workers": 1,
+    "tick_sec": 10,
 }
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
 LoopConfig = collections.namedtuple(
     "LoopConfig", ("stop_on_failure", "order", "spawn_supervisor",
                    "review_rounds", "review_rounds_per_lines",
-                   "review_rounds_max", "workers"))
+                   "review_rounds_max", "workers", "tick_sec"))
 
 
 def loop_config(target):
@@ -627,7 +669,8 @@ def loop_config(target):
     `review_rounds_max` is at least `review_rounds`, or the cap is one the
     formula could never reach. `workers` is an integer of at least 1, the
     same way: `"3"` is a string and `0` a pool that could work nothing.
-    The refusal names
+    `tick_sec` is an integer of at least 10: `"120"` is a string and `5` a
+    poll the board was never meant to answer. The refusal names
     the table, the key and the constraint, like a bad `[supervisor]`
     threshold. Keys this version does not know are refused by
     `check_config_keys()`.

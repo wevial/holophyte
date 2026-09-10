@@ -429,6 +429,28 @@ class LoopConfigTests(ConfigTestCase):
                 self.assertIn("at least 1", message)
                 report.assert_not_called()
 
+    def test_tick_sec_defaults_to_two_minutes(self):
+        self.locate()
+
+        self.assertEqual(holophyte.config.loop_config(self.tgt).tick_sec, 120)
+
+    def test_tick_sec_must_be_an_integer_of_at_least_ten(self):
+        """`"120"` is a string and `5` a poll the board could not bear: each
+        is a startup error naming `[loop] tick_sec` (KO-353)."""
+        for line in ('tick_sec = "120"', "tick_sec = 5"):
+            with self.subTest(line=line):
+                target = self.locate(f"[loop]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[loop] tick_sec", message)
+                self.assertIn("at least 10", message)
+                report.assert_not_called()
+
 
 
 class StateDirectoryTests(ConfigTestCase):
@@ -1565,6 +1587,32 @@ class WorktreeSetupTests(ConfigTestCase):
                 self.assertIn(str(self.tgt.config_path), message)
                 self.assertIn("setup_timeout_sec", message)
                 self.assertIn("positive number", message)
+
+    def test_a_carry_that_is_not_a_list_is_a_startup_error_naming_the_key(self):
+        for value in ('"console/node_modules"', "3", '["console", 2]',
+                      '["../elsewhere"]', '[""]'):
+            with self.subTest(value=value):
+                target = self.locate(f'[worktree]\ncarry = {value}\n').path
+
+                with patch.object(holophyte.config, "check_default_implementer"), \
+                        patch.object(holophyte.config, "check_default_reviewer"), \
+                        patch.object(holophyte.cli, "main",
+                                     side_effect=AssertionError("claimed work")):
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target)])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[worktree] carry", message)
+
+    def test_an_absent_carry_is_an_empty_list(self):
+        self.locate('[worktree]\nsetup = ["make deps"]\n')
+
+        self.assertEqual(holophyte.config.carry_directories(self.tgt), [])
+
+        self.locate('[worktree]\ncarry = ["console/node_modules", ".venv"]\n')
+        self.assertEqual(holophyte.config.carry_directories(self.tgt),
+                         ["console/node_modules", ".venv"])
 
     def test_a_silent_timeout_is_reported_as_silence(self):
         wt = self.worktree()

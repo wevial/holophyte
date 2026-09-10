@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { BrowserWindow, Menu, Tray, app, dialog, nativeImage } from "electron";
+import { BrowserWindow, Menu, Tray, app, dialog, nativeImage, nativeTheme, shell } from "electron";
 
 import { CONFIG_FILE, resolveConsoleUrl } from "./config.ts";
 import { appendLog, consoleLine, failedLoadLine } from "./log.ts";
@@ -34,10 +34,15 @@ function trayIconPath(): string {
 // falls back to the template glyph, as the drawer does.
 const VARIANT: Partial<Record<Level, string>> = { attention: "warn", bad: "bad" };
 
+// The variants are colour images, so macOS does not recolour them for the
+// bar the way it does the template glyph: `bun run icon` renders each twice,
+// stroke dark for a light bar and light for a dark one, and the pick
+// follows the system appearance (`nativeTheme`), re-picked when it changes.
 function trayImage(level: Level): Electron.NativeImage {
   const variant = VARIANT[level];
   if (variant !== undefined) {
-    const file = path.join(app.getAppPath(), "dist", `menubar-${variant}@1x.png`);
+    const suffix = nativeTheme.shouldUseDarkColors ? "-dark" : "";
+    const file = path.join(app.getAppPath(), "dist", `menubar-${variant}${suffix}@1x.png`);
     if (existsSync(file)) return nativeImage.createFromPath(file);
   }
   const icon = nativeImage.createFromPath(trayIconPath());
@@ -47,6 +52,8 @@ function trayImage(level: Level): Electron.NativeImage {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+/** The level the tray last drew, so an appearance change can redraw it. */
+let trayLevel: Level = "idle";
 
 function readConfigFile(): string | null {
   try {
@@ -80,6 +87,13 @@ function showConsole(url: string, configText: string | null): void {
   // no pasting. When the script changed a key the window reloads once so
   // the first poll carries it; the load after that changes nothing.
   const contents = mainWindow.webContents;
+  // A link the page opens in a new tab -- a commit, a pull request -- is
+  // for the person's browser, not a second console window: hand the URL
+  // to the desktop and open nothing here. Only http(s) leaves the app.
+  contents.setWindowOpenHandler(({ url: target }) => {
+    if (/^https?:\/\//.test(target)) void shell.openExternal(target);
+    return { action: "deny" };
+  });
   contents.on("did-finish-load", () => {
     const tokens = readTokens(configText, app.getPath("userData"));
     contents
@@ -139,6 +153,7 @@ async function refreshTray(url: string, configText: string | null): Promise<void
     actions: trayActions(url, configText),
   });
   tray.setContextMenu(Menu.buildFromTemplate(items));
+  trayLevel = level;
   tray.setImage(trayImage(level));
 }
 
@@ -155,6 +170,9 @@ function addTray(url: string, configText: string | null): void {
   };
   tick();
   setInterval(tick, POLL_INTERVAL_MS);
+  nativeTheme.on("updated", () => {
+    tray?.setImage(trayImage(trayLevel));
+  });
 }
 
 app.whenReady().then(() => {

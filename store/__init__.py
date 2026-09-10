@@ -2155,7 +2155,12 @@ RUN_PHASE_TRANSITIONS = {
     "addressing": frozenset({"verifying", "failed", "killed"}),
     "merge_gate": frozenset({"merging", "awaiting_merge_approval", "failed",
                              "killed"}),
-    "awaiting_merge_approval": frozenset({"failed", "killed"}),
+    # `awaiting_merge_approval -> done` is the pull request a person merged
+    # on GitHub while the run waited for `--approve`: the loop's reconcile
+    # ends the parked run merged with that merge commit (KO-359). The
+    # operator's own `--approve` still ends it `failed` (abandoned) and lets
+    # the next run merge.
+    "awaiting_merge_approval": frozenset({"done", "failed", "killed"}),
     "merging": frozenset({"done", "failed", "killed"}),
     "squashing": frozenset(),
     "done": frozenset(),

@@ -13,6 +13,7 @@ Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 """
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import os
@@ -873,6 +874,11 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("abc123", asked)
         self.assertNotIn("fail", asked)
 
+        closed = holophyte.loop.skip_line(
+            "KO-131", 0, url, f"PR closed without merge: {url}")
+        self.assertIn(f"a question: PR closed without merge: {url};", closed)
+        self.assertNotIn("--approve", closed)
+
     def test_a_module_question_outranks_the_strike_count(self):
         """The run that parked the ticket on a merge conflict may also be
         the failure that reached the threshold. The conflict is what the
@@ -1055,6 +1061,95 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("rescued: preserved work", self.subjects(BRANCH))
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("preserved work kept on", reason)
+
+    # --- the reuse merge stopping on conflicts (KO-355) ------------------
+
+    TEST_FILE = "tests/test_thing.py"
+    BOTH_TESTS = ("def test_it_works():\n    pass\n\n"
+                  "def test_branch_side():\n    pass\n\n"
+                  "def test_main_side():\n    pass\n")
+
+    def conflicting_leftover(self):
+        """A preserved branch and a main that both append a test at the same
+        lines of the same file: the add/add overlap the operator resolved
+        three times in one day."""
+        wt = self.leftover()
+        (wt / self.TEST_FILE).write_text(
+            "def test_it_works():\n    pass\n\ndef test_branch_side():\n"
+            "    pass\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: the branch's test", cwd=wt)
+        (self.target / self.TEST_FILE).write_text(
+            "def test_it_works():\n    pass\n\ndef test_main_side():\n"
+            "    pass\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "main moved on with its own test")
+        return wt
+
+    def test_a_conflicting_reuse_is_handed_to_the_implementer_who_resolves_it(self):
+        """The conflict is the implementer's first commit, not a person's
+        park: the brief opens by naming the path, and the run reaches its
+        first verify with the merge committed -- MERGE_HEAD gone."""
+        self.conflicting_leftover()
+        resolve = ResolveMerge(self.TEST_FILE, self.BOTH_TESTS)
+        review = ApproveNotingMergeHead()
+
+        fake, _ = self.loop(resolve, review)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        brief = fake.turns[0].goal
+        self.assertTrue(brief.startswith("FIRST, before the ticket's work"),
+                        brief[:200])
+        self.assertIn(self.TEST_FILE, brief)
+        self.assertLess(brief.index(self.TEST_FILE),
+                        brief.index("Implement this task"))
+        self.assertIn(self.TEST_FILE, resolve.conflicted)
+        self.assertFalse(review.mid_merge)
+        # The resolution and the ticket's work both reached main.
+        self.assertEqual((self.target / self.TEST_FILE).read_text(),
+                         self.BOTH_TESTS)
+        self.assertIn("Merge main into the preserved branch: both tests",
+                      self.subjects())
+        self.assertIn("rescued: the branch's test", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_an_unresolved_reuse_merge_fails_at_the_first_verify(self):
+        """An implementer that commits nothing leaves the tree mid-merge;
+        the first verify fails the run naming the unresolved merge, no
+        reviewer is asked, and the branch keeps its preserved commit."""
+        self.conflicting_leftover()
+        moved_main = self.git("rev-parse", "main").strip()
+
+        fake, _ = self.loop(Idle())
+
+        self.assertEqual(fake.roles, ["implement"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("left the merge unresolved", reason)
+        self.assertIn(self.TEST_FILE, reason)
+        self.assertIn("a human resolves the merge", reason)
+        self.assertIn(BRANCH, self.branches())
+        self.assertIn("rescued: the branch's test", self.subjects(BRANCH))
+        self.assertEqual(self.git("rev-parse", "main").strip(), moved_main)
+
+    def test_a_reuse_that_merges_main_cleanly_carries_no_conflict_paragraph(self):
+        """Main moved on in a different file: the merge lands on its own and
+        the implementer is briefed on the ticket alone."""
+        wt = self.leftover()
+        (wt / "work.txt").write_text("preserved\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=wt)
+        (self.target / "new.txt").write_text("newer main\n")
+        self.git("add", "new.txt")
+        self.git("commit", "-q", "-m", "main moved on")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE)
+
+        brief = fake.turns[0].goal
+        self.assertTrue(brief.startswith("Implement this task"), brief[:200])
+        self.assertNotIn("mid-merge", brief)
+        self.assertNotIn("conflict", brief)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_carried_candidate_reaches_review_without_a_new_commit(self):
         """A preserved branch ahead of main is a candidate, not a dead run:
@@ -1512,6 +1607,49 @@ class QueueMirrorTests(LoopFixture):
         self.assertEqual(len(skipped), 1, printed)
         self.assertIn("board unreachable", skipped[0])
         self.assertEqual(self.statuses(), {"KO-131": "merged", "KO-132": "merged"})
+
+@dataclasses.dataclass
+class ResolveMerge:
+    """An implementer turn on a worktree left mid-merge: it records the paths
+    git says are unmerged, writes `resolved` to `path`, commits the merge
+    with a message naming both sides, then does one scripted commit of the
+    ticket's own work."""
+
+    path: str
+    resolved: str
+    conflicted: list = dataclasses.field(default_factory=list)
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        self.conflicted = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=cwd,
+            capture_output=True, text=True).stdout.split()
+        (cwd / self.path).write_text(self.resolved)
+        self.git(cwd, "add", self.path)
+        self.git(cwd, "commit", "-q", "-m",
+                 "Merge main into the preserved branch: both tests")
+        return Commit("the scripted work").play(cwd, turn)
+
+    @staticmethod
+    def git(cwd, *args):
+        subprocess.run(["git", *args], cwd=cwd, check=True,
+                       capture_output=True, text=True)
+
+
+class ApproveNotingMergeHead:
+    """The approval, recording whether the worktree was still mid-merge when
+    the review turn arrived -- the state the first verify must have seen."""
+
+    role = APPROVE.role
+    mid_merge = None
+
+    def play(self, cwd, turn):
+        self.mid_merge = subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd=cwd,
+            capture_output=True).returncode == 0
+        return APPROVE.play(cwd, turn)
+
 
 class CommitThenTimeout(Commit):
     """An implementer turn that commits real work, then hits the budget.
@@ -2433,7 +2571,8 @@ class MergeModeTests(LoopFixture):
         query gets the first of `states` (each served once until the last,
         which is served forever), a mutation an empty success, the merge
         `MERGE_SHA`, a thread's further comments page the next of
-        `comments` (each a `comments_page()`); the check-runs and
+        `comments` (each a `comments_page()`), the reconcile's pull-status
+        read (KO-359) an open pull request; the check-runs and
         branch-rules reads answer no runs and no rules, so the rollup
         alone decides the checks. `push_exit` is what `git
         push` answers with --
@@ -2481,6 +2620,9 @@ class MergeModeTests(LoopFixture):
             "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"
             '  elif grep -q addPullRequestReviewThreadReply "$body"; then\n'
             "    echo '{\"data\":{\"addPullRequestReviewThreadReply\":{}}}'\n"
+            '  elif grep -q mergedBy "$body"; then\n'
+            "    echo '{\"data\":{\"repository\":{\"pullRequest\":"
+            "{\"state\":\"OPEN\",\"merged\":false}}}}'\n"
             '  elif grep -q PullRequestReviewThread "$body"; then\n'
             f'    f=$(ls "{pages}"/*.json | head -1); cat "$f"; rm "$f"\n'
             '  elif grep -q reviewThreads "$body"; then\n'
@@ -2507,13 +2649,18 @@ class MergeModeTests(LoopFixture):
                 if self.calls.exists() else [])
 
     def api_calls(self):
-        """Every `gh api` body, in order, as `(kind, variables)`: the kind
-        is `state`, `reply`, `resolve` or `merge`."""
+        """Every `gh api` body the shepherd made, in order, as `(kind,
+        variables)`: the kind is `state`, `reply`, `resolve` or `merge`.
+        The loop's per-pass pull-status read of a parked run (KO-359) is
+        left out: it is the reconcile's, tested on its own below, and
+        every pass after a park makes one."""
         calls = []
         for path in sorted(self.api_dir.iterdir(),
                            key=lambda p: int(p.stem)):
             body = json.loads(path.read_text())
             query = body.get("query", "")
+            if "mergedBy" in query:
+                continue
             kind = ("resolve" if "resolveReviewThread" in query
                     else "reply" if "addPullRequestReviewThreadReply" in query
                     else "comments" if "PullRequestReviewThread" in query
@@ -2548,13 +2695,17 @@ class MergeModeTests(LoopFixture):
 
         self.assertEqual(fake.roles, ["implement", "review"])
         calls = self.recorded()
-        self.assertEqual(len(calls), 5, calls)
+        # The sixth is the pass after the park asking GitHub whether the
+        # parked pull request has been merged (KO-359).
+        self.assertEqual(len(calls), 6, calls)
+        self.assertEqual(calls[5], "gh api --hostname github.com --method"
+                         " POST graphql --input -")
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
         # Beside the state query: the head's check runs and main's rules,
         # so a rollup that says success before the checks have reported is
         # not read as green.
         tip = self.git("rev-parse", BRANCH).strip()
-        self.assertEqual(calls[3:], [
+        self.assertEqual(calls[3:5], [
             "gh api --hostname github.com --method GET"
             f" repos/example/repo/commits/{tip}/check-runs?per_page=100",
             "gh api --hostname github.com --method GET"
@@ -3666,6 +3817,215 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(
             self.read('SELECT "action" FROM interventions'), [("shepherd",)])
 
+
+    # What GitHub says about a parked pull request when the reconcile asks
+    # (`pr.PULL_QUERY`'s node): merged by a coworker, closed unmerged, open.
+    MERGED_PULL = {"state": "MERGED", "merged": True,
+                   "mergeCommit": {"oid": MERGE_SHA},
+                   "mergedBy": {"login": "coworker"}}
+    CLOSED_PULL = {"state": "CLOSED", "merged": False, "mergeCommit": None,
+                   "mergedBy": None}
+    OPEN_PULL = {"state": "OPEN", "merged": False, "mergeCommit": None,
+                 "mergedBy": None}
+
+    def fake_client(self, *answers):
+        """The reconcile's GitHub, faked: `holophyte.pr.graphql` answers
+        each ask with the next of `answers` (the last one forever) and
+        records the pull request and variables it was asked about. An
+        answer that is an exception is raised instead: GitHub down."""
+        asked = []
+
+        def graphql(target, pull, query, variables):
+            asked.append((pull.url, query, variables))
+            node = answers[min(len(asked), len(answers)) - 1]
+            if isinstance(node, Exception):
+                raise node
+            return {"repository": {"pullRequest": node}}
+
+        patcher = patch.object(holophyte.pr, "graphql", graphql)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return asked
+
+    def parked_on_pr(self):
+        """A run parked on its pull request under `approve = "human"`, the
+        state every reconcile test starts from."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT phase, prUrl FROM runs"),
+                         [("awaiting_merge_approval", self.URL)])
+
+    def test_a_pull_request_merged_on_github_ships_its_parked_run(self):
+        """KO-359: a person merged the pull request on GitHub instead of
+        saying `--approve`. The next pass asks GitHub once, and the merge
+        is the approval: the parked run ends `merged` with the pull
+        request's merge commit as its `mergeSha`, the ticket is `merged`
+        and the board saw Done, the ledger names who merged it, the local
+        branch is gone and the findings window shows the run."""
+        self.parked_on_pr()
+        asked = self.fake_client(self.MERGED_PULL)
+        provider = StubProvider()
+
+        out = self.main_output(provider=provider)
+
+        self.assertEqual([(url, v["number"]) for url, _, v in asked],
+                         [(self.URL, 7)])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha, prUrl FROM runs"),
+            [("done", "merged", self.MERGE_SHA, self.URL)])
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion FROM tickets"),
+            [("merged", None)])
+        self.assertEqual(provider.states, [("iss-131", "Done")])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+                         [("approve",)])
+        (merge_line,) = [text for (text,) in self.read(
+            "SELECT text FROM ledger WHERE kind = 'merge'")]
+        self.assertIn("coworker", merge_line)
+        self.assertIn(self.MERGE_SHA, merge_line)
+        self.assertIn(f"{self.URL} was merged on GitHub by coworker", out)
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertIn("KO-131", (self.target / "FINDINGS.md").read_text())
+        self.assertEqual(self.subjects(), ["base"])  # local main not moved
+
+    def test_a_merged_pull_request_ships_when_linear_already_says_done(self):
+        """Review of KO-359: the person who merged the pull request on
+        GitHub also moved the ticket to Done on the board. At startup the
+        mirror reconcile used to see Done first and walk the ticket
+        `merged` on its own, and the pull request was never asked about:
+        the run stayed parked with no outcome and no `mergeSha`. GitHub
+        is asked before the mirror is repaired, so the run ships."""
+        self.parked_on_pr()
+        asked = self.fake_client(self.MERGED_PULL)
+        provider = StubProvider()
+        provider.closed = {"KO-131": "completed"}
+
+        self.main_output(provider=provider)
+
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+                         [("approve",)])
+
+    def test_a_github_error_leaves_the_parked_run_for_the_next_pass(self):
+        """Review of KO-359: GitHub could not be read at startup while the
+        board already said Done. The mirror reconcile used to take that
+        Done and walk the ticket `merged` around its parked run, and no
+        later pass asked GitHub about a ticket no longer blocked: the run
+        was stranded with no outcome and no `mergeSha`. Now the ticket
+        stays parked with its run through the failure, and the pass after
+        GitHub recovers ships it."""
+        self.parked_on_pr()
+        asked = self.fake_client(RuntimeError("GitHub is down"),
+                                 self.MERGED_PULL)
+        provider = StubProvider()
+        provider.closed = {"KO-131": "completed"}
+
+        out = self.main_output(provider=provider)
+
+        self.assertEqual(len(asked), 1)
+        self.assertIn("could not be read (GitHub is down); the run stays"
+                      " parked", out)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("awaiting_merge_approval", None, None)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+        again = StubProvider()
+        again.closed = {"KO-131": "completed"}
+        self.main_output(provider=again)
+
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(again.states, [("iss-131", "Done")])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+                         [("approve",)])
+
+    def test_a_pull_request_closed_without_merge_keeps_the_run_parked(self):
+        """The pull request was closed on GitHub unmerged: the run stays
+        parked, the ticket's question says so, the skip line reads the
+        question rather than an `--approve` that would merge nothing, and
+        a second pass finding the same neither writes nor prints again."""
+        self.parked_on_pr()
+        self.fake_client(self.CLOSED_PULL)
+
+        out = self.main_output(provider=StubProvider(
+            dict(a_task(), body=self.BODY)))
+        again = self.main_output(provider=StubProvider())
+
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl FROM runs"),
+            [("awaiting_merge_approval", None, self.URL)])
+        self.assertEqual(self.question(),
+                         f"PR closed without merge: {self.URL}")
+        self.assertIn(f"[holo2] KO-131 is parked on a question: PR closed"
+                      f" without merge: {self.URL}; skipping it\n", out)
+        self.assertNotIn("--approve", out)
+        self.assertIn("closed on GitHub without merging", out)
+        self.assertNotIn("closed on GitHub", again)
+        self.assertEqual(self.last_provider.states, [])
+
+    def test_an_open_pull_request_is_asked_about_once_and_left_alone(self):
+        self.parked_on_pr()
+        runs = self.read("SELECT * FROM runs")
+        tickets = self.read("SELECT * FROM tickets")
+        asked = self.fake_client(self.OPEN_PULL)
+        provider = StubProvider()
+
+        self.main_output(provider=provider)
+
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(self.read("SELECT * FROM runs"), runs)
+        self.assertEqual(self.read("SELECT * FROM tickets"), tickets)
+        self.assertEqual(provider.states, [])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+    def test_the_scheduler_ships_a_merged_pull_request_on_a_timer_tick(
+            self):
+        """The pool's timer tick asks too: open at startup, merged by the
+        tick, and the parked run is closed out between two waits with no
+        worker involved (KO-353's tick carrying KO-359's reconcile)."""
+        self.parked_on_pr()
+        asked = self.fake_client(self.OPEN_PULL, self.MERGED_PULL)
+        provider = StubProvider(a_task(2))
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       '[loop]\nworkers = 2\ntick_sec = 30\n')
+        pool = FakePool([(TICK, provider.queue.clear),
+                         (holophyte.loop.WORKER_MERGED, None)])
+        out = io.StringIO()
+        with patch.object(holophyte.loop, "SPAWN", pool.spawn), \
+                patch.object(holophyte.loop, "WAIT", pool.wait), \
+                patch.object(sys, "stdout", out):
+            rc = holophyte.loop.main(self.tgt, provider)
+
+        self.assertIsNone(rc)
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(pool.timeouts, [30, 30])
+        self.assertEqual(len(pool.spawned), 1)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"
+                      " WHERE linearIdentifier = 'KO-131'"),
+            [("merged",)])
+        self.assertIn(("iss-131", "Done"), provider.states)
+        self.assertIn(f"{self.URL} was merged on GitHub", out.getvalue())
+
     def test_a_refused_push_is_an_infra_failure_with_no_pull_request(self):
         """The remote said no: the run ends as an infra failure naming the
         push, the branch and worktree are preserved, `gh` was never called
@@ -3812,6 +4172,11 @@ class EndedRunTests(LoopFixture):
                          ["implement"])
 
 
+# A scripted `WAIT` "exit" that is the timer tick instead: no child exited
+# before the deadline (KO-353).
+TICK = object()
+
+
 class FakePool:
     """The spawn and wait seams of the scheduler, scripted.
 
@@ -3829,6 +4194,7 @@ class FakePool:
         self.envs = []
         self.alive = []     # pids, oldest first
         self.reaped = []
+        self.timeouts = []  # the timeout each WAIT was called with
         self.next_pid = 5000
 
     def spawn(self, argv, **kwargs):
@@ -3838,15 +4204,19 @@ class FakePool:
         self.alive.append(self.next_pid)
         return type("Child", (), {"pid": self.next_pid})()
 
-    def wait(self, children):
+    def wait(self, children, timeout):
         if not self.alive:
             raise AssertionError("the scheduler waited with no child alive")
         if set(children) != set(self.alive):
             raise AssertionError(f"the scheduler waited on {sorted(children)}"
                                  f" with {self.alive} alive")
+        self.timeouts.append(timeout)
         code, before = self.exits.pop(0)
         if before is not None:
             before()
+        if code is TICK:
+            # The deadline passed with no exit: the scheduler recounts.
+            return None, None
         pid = self.alive.pop(0)
         self.reaped.append((pid, code))
         return pid, code
@@ -3858,9 +4228,12 @@ class PoolTests(LoopFixture):
     wait go through seams, so no process is started and the test reads
     the counts."""
 
-    def run_scheduler(self, workers, provider, exits, stop_on_failure=True):
+    def run_scheduler(self, workers, provider, exits, stop_on_failure=True,
+                      tick_sec=None):
+        tick = f"tick_sec = {tick_sec}\n" if tick_sec is not None else ""
         self.configure(f"[loop]\nworkers = {workers}\n"
-                       f"stop_on_failure = {str(stop_on_failure).lower()}\n")
+                       f"stop_on_failure = {str(stop_on_failure).lower()}\n"
+                       + tick)
         pool = FakePool(exits)
         out = io.StringIO()
         with patch.object(holophyte.loop, "SPAWN", pool.spawn), \
@@ -3906,6 +4279,58 @@ class PoolTests(LoopFixture):
         self.assertIn("[holo2] Linear has no ready tickets. done.", self.out)
         # The exit note a re-exec'd scheduler leaves for the sweep.
         self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(0,)])
+
+    def test_a_timer_tick_with_a_slot_free_spawns_for_a_ticket_filed_since(self):
+        """`workers = 3`, one ticket and so one worker; a second ticket filed
+        while it runs. The wait carries the tick as its timeout while a slot
+        is free, and a wait that times out recounts the queue and spawns
+        the second worker, then waits again (KO-353)."""
+        provider = StubProvider(a_task(1))
+        conn = holophyte.runs.open_store(self.tgt)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, provider.team, self.target)
+
+        def filed_one():
+            # Worker 1 holds ticket 1; ticket 2 arrives on the board.
+            store.claim(conn, project,
+                        holophyte.board.mirror_task(conn, project, a_task(1)))
+            conn.commit()
+            provider.queue.append(a_task(2))
+
+        pool = self.run_scheduler(3, provider, [
+            (TICK, filed_one),
+            (holophyte.loop.WORKER_MERGED, provider.queue.clear),
+            (holophyte.loop.WORKER_MERGED, None),
+        ], tick_sec=45)
+
+        self.assertEqual(len(pool.spawned), 2)
+        self.assertEqual(len(pool.reaped), 2)
+        self.assertEqual(pool.timeouts, [45, 45, 45])
+        self.assertIsNone(self.rc)
+        # The tick itself printed nothing; only the spawn it made shows.
+        self.assertEqual(self.out.splitlines(), [
+            "[holo2] started worker 1 as pid 5001",
+            "[holo2] started worker 2 as pid 5002",
+            "[holo2] worker 1 merged its ticket",
+            "[holo2] worker 2 merged its ticket",
+            "[holo2] Linear has no ready tickets. done.",
+        ])
+
+    def test_a_full_pool_waits_on_exits_alone(self):
+        """Three ready tickets under `workers = 3`: the pool is full, so
+        the wait carries no timeout; once one exits with the listing
+        emptied, two slots are free and the timer is back (KO-353)."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 4)))
+
+        pool = self.run_scheduler(3, provider, [
+            (holophyte.loop.WORKER_MERGED, provider.queue.clear),
+            (holophyte.loop.WORKER_MERGED, None),
+            (holophyte.loop.WORKER_MERGED, None),
+        ])
+
+        self.assertEqual(len(pool.spawned), 3)
+        self.assertEqual(pool.timeouts, [None, 120, 120])
+        self.assertIsNone(self.rc)
 
     def test_the_pool_refills_while_live_workers_hold_their_leases(self):
         """Five ready tickets, `workers = 3`, and workers that really hold
@@ -4109,7 +4534,7 @@ class PoolTests(LoopFixture):
             children[second.pid] = second
             reaped = {}
             for _ in range(2):
-                pid, code = holophyte.loop.WAIT(children)
+                pid, code = holophyte.loop.WAIT(children, None)
                 reaped[children.pop(pid)] = code
 
         self.assertEqual(reaped, {first: 1, second: 2})
