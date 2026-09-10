@@ -134,6 +134,20 @@ mutation($thread: ID!) {
 }"""
 
 
+# The one read the loop's pull-request reconcile makes of a parked PR: is it
+# still open, merged (as which commit, by whom) or closed unmerged. Nothing
+# about threads or checks -- those are the shepherd's, and a parked run is
+# not being shepherded.
+PULL_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      state merged mergeCommit { oid } mergedBy { login }
+    }
+  }
+}"""
+
+
 class MergeRefused(Exception):
     """GitHub would not merge the pull request: its answer, verbatim."""
 
@@ -450,6 +464,40 @@ def _url_in(text):
     the PR URL as its last line, after any progress it wrote."""
     urls = re.findall(r"https://\S+", text or "")
     return urls[-1] if urls else None
+
+
+@dataclass(frozen=True)
+class PullStatus:
+    """A pull request as one `pull_status()` read saw it: open, merged as
+    `merge_sha` by `merged_by`, or closed without merging."""
+
+    merged: bool
+    closed: bool
+    merge_sha: str | None = None
+    merged_by: str | None = None
+
+
+def pull_status(target, pull):
+    """One GraphQL read of the pull request's `state`, `merged`,
+    `mergeCommit` and `mergedBy` (`PULL_QUERY`): the loop's reconcile of a
+    run parked on its PR asks this once per pass. GitHub answering without
+    the pull request is `InfraFailure`, as every read here is."""
+    data = graphql(target, pull, PULL_QUERY,
+                   {"owner": pull.owner, "name": pull.name,
+                    "number": pull.number})
+    node = ((data.get("repository") or {}).get("pullRequest")
+            if isinstance(data, dict) else None)
+    if not isinstance(node, dict):
+        raise InfraFailure(f"GitHub answered without pull request"
+                           f" {pull.url}: {_short(data)}")
+    merge = node.get("mergeCommit") or {}
+    by = node.get("mergedBy") or {}
+    return PullStatus(merged=bool(node.get("merged")),
+                      closed=node.get("state") == "CLOSED",
+                      merge_sha=merge.get("oid") if isinstance(merge, dict)
+                      else None,
+                      merged_by=by.get("login") if isinstance(by, dict)
+                      else None)
 
 
 def parse_pr_url(url):
