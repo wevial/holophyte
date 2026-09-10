@@ -19,8 +19,12 @@ machines it walks. Back to the [README](index.md).
    turn returns -- it kills the turn's process group, the loop prints
    `run N was ended by the supervisor (REASON); stopping this turn`, writes
    nothing more to that run, leaves the worktree and branch as the sweep
-   preserved them, and goes on to its next claim. Then the loop
-   reconciles its mirror: every open mirrored ticket without an active run
+   preserved them, and goes on to its next claim. Then the loop asks
+   GitHub about each pull request a parked run waits on (below, under
+   pull request mode) -- before the mirror, so a ticket the merger also
+   moved to Done ships its run rather than being walked `merged` with the
+   run left parked -- and then reconciles its mirror: every open mirrored
+   ticket without an active run
    that Linear now holds completed or canceled (archived issues included;
    an archived issue still in an open state counts as canceled) is walked
    to `merged` or `abandoned`, with a `reconcile` intervention row on its

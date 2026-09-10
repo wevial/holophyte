@@ -2115,7 +2115,7 @@ def _serial(target, provider, knobs):
         # well until the provider resolves the id.
         project = store.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
-        _reconcile_mirror(conn, project, provider)
+        _reconcile_at_startup(target, conn, project, provider)
         # The tickets this pass has refused to claim. A blocked ticket keeps
         # its place in the board's ready set — `blocked_on_operator` projects
         # to Todo, the column a human picks work out of — so it is offered
@@ -2123,10 +2123,14 @@ def _serial(target, provider, knobs):
         # turns "not this one" into "the one after it" instead of the same
         # ticket forever.
         skip = set()
+        first_pass = True
         while True:
             # Before the claim: a pull request a person merged since the
-            # last pass ships its parked run here (KO-359).
-            _reconcile_pull_requests(target, conn, project, provider)
+            # last pass ships its parked run here (KO-359). The first pass
+            # asked at startup, before the mirror was repaired.
+            if not first_pass:
+                _reconcile_pull_requests(target, conn, project, provider)
+            first_pass = False
             _mirror_queue(target, conn, project, provider)
             task, ticket_id, run_id = _claim_next(target, conn, project,
                                                   provider, order, skip, seen)
@@ -2421,11 +2425,15 @@ def scheduler(target, provider, knobs):
     try:
         project = store.ensure_project(conn, provider.team, target.path)
         _startup_sweep(target, conn)
-        _reconcile_mirror(conn, project, provider)
+        _reconcile_at_startup(target, conn, project, provider)
+        first_tick = True
         while True:
             # Every tick, timer or exit: a pull request merged on GitHub
-            # since the last one ships its parked run (KO-359).
-            _reconcile_pull_requests(target, conn, project, provider)
+            # since the last one ships its parked run (KO-359). The first
+            # tick asked at startup, before the mirror was repaired.
+            if not first_tick:
+                _reconcile_pull_requests(target, conn, project, provider)
+            first_tick = False
             listing = None
             if state.spawning:
                 listing = _mirror_queue(target, conn, project, provider)
@@ -2625,6 +2633,22 @@ def _mirror_queue(target, conn, project, provider):
     return mirrored
 
 
+def _reconcile_at_startup(target, conn, project, provider):
+    """The two startup reconciles, GitHub before the board (KO-359 review).
+
+    A person who merged a parked pull request on GitHub may have moved its
+    ticket to Done on Linear as well. Asked first, the mirror reconcile
+    would see Done, walk the ticket `merged` itself and take it out of the
+    pull request reconcile's `blocked_on_operator` read: the run stayed
+    parked with no outcome and no `mergeSha`, and Shipped never showed it.
+    So the parked pull requests are read first and a merged one ships its
+    run; the mirror repair then finds that ticket already `merged` and
+    walks only the rest.
+    """
+    _reconcile_pull_requests(target, conn, project, provider)
+    _reconcile_mirror(conn, project, provider)
+
+
 def _reconcile_mirror(conn, project, provider):
     """Walk the mirrored tickets Linear has since closed to their terminal
     status, one printed line each; nothing is written to Linear.
@@ -2633,10 +2657,11 @@ def _reconcile_mirror(conn, project, provider):
     when Linear later closes it elsewhere -- a ticket another target
     finished, or one the operator cancelled -- so it sat on the board as
     `ready` or `needs_spec` for good (KO-217, KO-137 and KO-138 on the
-    daemon's board). Startup only, right after the read-only sweep: the
-    five open statuses are read through the store for this project only
-    (the provider knows one team, and another project's tickets are that
-    project's loop to reconcile), a ticket with an active run is left to
+    daemon's board). Startup only, after the read-only sweep and the pull
+    request reconcile (`_reconcile_at_startup()`): the five open statuses
+    are read through the store for this project only (the provider knows
+    one team, and another project's tickets are that project's loop to
+    reconcile), a ticket with an active run is left to
     that run, and the provider is asked about the rest in one call. A
     closed one is walked along §3 edges (`walk_ticket`) with a `reconcile`
     intervention row on its most recent run first, in the same
@@ -2702,9 +2727,11 @@ def _reconcile_pull_requests(target, conn, project, provider):
     A run parked on its pull request waits for `--approve`; the operator
     merges the pull request by hand after a coworker's review instead, and
     the run sat parked, the ticket In Progress, Shipped without it. This
-    runs at loop startup and at the top of every pass -- each serial claim,
-    each scheduler tick -- over the project's `blocked_on_operator` tickets
-    whose newest run holds a `prUrl` and is still parked in
+    runs at loop startup, before the mirror reconcile so a ticket the
+    merger also moved to Done still ships its run, and at the top of every
+    later pass -- each serial claim, each scheduler tick -- over the
+    project's `blocked_on_operator` tickets whose newest run holds a
+    `prUrl` and is still parked in
     `awaiting_merge_approval`. One `pr.pull_status()` read per ticket. A
     merged pull request is that approval: `_land_github_merge()` ends the
     run merged with the merge commit's sha and walks the ticket to

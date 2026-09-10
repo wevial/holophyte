@@ -3887,6 +3887,29 @@ class MergeModeTests(LoopFixture):
         self.assertIn("KO-131", (self.target / "FINDINGS.md").read_text())
         self.assertEqual(self.subjects(), ["base"])  # local main not moved
 
+    def test_a_merged_pull_request_ships_when_linear_already_says_done(self):
+        """Review of KO-359: the person who merged the pull request on
+        GitHub also moved the ticket to Done on the board. At startup the
+        mirror reconcile used to see Done first and walk the ticket
+        `merged` on its own, and the pull request was never asked about:
+        the run stayed parked with no outcome and no `mergeSha`. GitHub
+        is asked before the mirror is repaired, so the run ships."""
+        self.parked_on_pr()
+        asked = self.fake_client(self.MERGED_PULL)
+        provider = StubProvider()
+        provider.closed = {"KO-131": "completed"}
+
+        self.main_output(provider=provider)
+
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+                         [("approve",)])
+
     def test_a_pull_request_closed_without_merge_keeps_the_run_parked(self):
         """The pull request was closed on GitHub unmerged: the run stays
         parked, the ticket's question says so, the skip line reads the
