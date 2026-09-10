@@ -27,11 +27,11 @@ from holophyte.config import (
     board_config,
     check_agent_commands,
     check_config,
+    check_worktree_setup,
     loop_config,
 )
 from holophyte.loop import (
     approve,
-    check_worktree_setup,
     main,
     repoint,
     report,

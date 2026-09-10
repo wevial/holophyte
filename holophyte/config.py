@@ -146,7 +146,7 @@ def check_document(target):
     """`check_config()` plus the shape of the tables the loop's startup
     reads before it claims: `[board]` through `board_config()`, `[agents]`
     through `agent_command()` and `review_route()`, `[worktree]` through
-    `setup_commands()`, `setup_timeout()` and `branch_prefix()`. What it
+    `check_worktree_setup()`, the loop's own startup call. What it
     deliberately leaves out is the host: whether a program is on PATH or
     Docker answers (`check_agent_commands()`) is the loop's question at its
     next start, not a property of the document. A relative program path
@@ -159,9 +159,7 @@ def check_document(target):
         argv = agent_command(target, role, "")
         if argv is not None:
             check_command_path(target, key, argv[0])
-    setup_commands(target)
-    setup_timeout(target)
-    branch_prefix(target)
+    check_worktree_setup(target)
 
 
 def agent_command(target, role, goal):
@@ -178,7 +176,7 @@ def agent_command(target, role, goal):
     operator asked for a route, and quietly running the built-in one instead
     would answer a different question than the one the config asked.
     """
-    command = (target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+    command = config_table(target, "agents").get(AGENT_CONFIG_KEYS[role])
     if command is None:
         return None
     if not isinstance(command, str):
@@ -216,7 +214,7 @@ def review_route(target):
     believes. (An `adjudicator` override alone leaves the reviewer in the
     container, so the pair still has a job.)
     """
-    agents = target.config().get("agents") or {}
+    agents = config_table(target, "agents")
     model_key, effort_key = REVIEW_ROUTE_KEYS
     for key in REVIEW_ROUTE_KEYS:
         if key in agents and "reviewer" in agents:
@@ -408,7 +406,7 @@ def setup_commands(target):
     worktree nobody prepared, and that surfaces far away from the config, as a
     toolchain failure in the middle of a round.
     """
-    commands = (target.config().get("worktree") or {}).get("setup")
+    commands = config_table(target, "worktree").get("setup")
     if commands is None:
         return []
     if not isinstance(commands, list):
@@ -427,6 +425,47 @@ def setup_commands(target):
     return commands
 
 
+def config_table(target, name):
+    """The target's `[name]` table, `{}` when absent -- refused, naming
+    the table, when the key holds anything but a table. The readers of
+    `[agents]` and `[worktree]` take their keys through this rather than
+    `.get()` on whatever the file holds, so `worktree = "invalid"` is one
+    sentence at startup, and the same sentence from `PUT /config`, rather
+    than a traceback from the first reader to ask it for a key."""
+    table = target.config().get(name)
+    if table is None:
+        return {}
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [{name}] must be a table, got "
+            f"{type(table).__name__}")
+    return table
+
+
+def check_worktree_setup(target):
+    """Parse the `[worktree]` table before the loop claims work.
+
+    `check_agent_commands()`'s sibling, here for the same reason: a table read
+    for the first time inside a run would abandon a claimed ticket, a cut
+    branch and a held ticket lease over something startup could have said in
+    one sentence. It parses through `setup_commands()`, so a table this
+    accepts is exactly a table a run would accept.
+
+    What it deliberately does not settle is the commands themselves. They are
+    shell, not argv -- `run_verify()` runs them the way it runs a ticket's
+    verify command -- and they are written against a worktree that does not
+    exist yet, so there is nothing here to resolve them against. Startup
+    settles the shape of the table; the worktree settles the rest. The cap
+    the commands run under, the branch prefix and the carry list are
+    checked here too, for the same reason. `check_document()` runs the same
+    call over a `PUT /config` candidate, so the two cannot drift.
+    """
+    setup_commands(target)
+    setup_timeout(target)
+    branch_prefix(target)
+    carry_directories(target)
+
+
 def setup_timeout(target):
     """The per-command cap on `[worktree] setup`, in seconds.
 
@@ -440,7 +479,7 @@ def setup_timeout(target):
     factory quietly replaced with its default would bound the setup with a
     number nobody chose.
     """
-    value = (target.config().get("worktree") or {}).get("setup_timeout_sec")
+    value = config_table(target, "worktree").get("setup_timeout_sec")
     if value is None:
         return VERIFY_TIMEOUT
     if (isinstance(value, bool) or not isinstance(value, (int, float))
@@ -463,7 +502,7 @@ def carry_directories(target):
     against the worktree the round is about, and answered there with a
     boundary error naming the entry.
     """
-    entries = (target.config().get("worktree") or {}).get("carry")
+    entries = config_table(target, "worktree").get("carry")
     if entries is None:
         return []
     if not isinstance(entries, list):
@@ -509,7 +548,7 @@ def branch_prefix(target):
     at `git worktree add` would abandon a claimed ticket over something one
     sentence at startup could have said.
     """
-    value = (target.config().get("worktree") or {}).get("branch_prefix")
+    value = config_table(target, "worktree").get("branch_prefix")
     if value is None:
         return DEFAULT_BRANCH_PREFIX
     if not isinstance(value, str):

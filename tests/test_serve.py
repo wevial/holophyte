@@ -2327,12 +2327,35 @@ class ConfigEditTests(ServeTestCase):
     BEARER = TokenTests.BEARER
     SECRET = "lin_api_0123456789abcdef"
 
-    def config(self, extra="", loop="[loop]\nworkers = 2\n", serve_token=""):
+    HOOK_TOKENS = ("hook_0123", "hook_4567")
+
+    def config(self, extra="", loop="[loop]\nworkers = 2\n"):
+        """A file `config.check_document()` accepts as written: `[serve]`
+        and `[loop]` are loader-read tables, `[linear]` and `[[hooks]]`
+        (an array of tables) are left alone by this version and hold the
+        secrets, `[worktree] setup` is a table the loader parses."""
         path = self.root / "serve.token"
         path.write_text(self.TOKEN + "\n")
         path.chmod(0o600)
-        return (f'[serve]\ntoken_file = "{path}"\n{extra}{serve_token}'
-                f'\n{loop}\n[linear]\napi_key = "{self.SECRET}"  # board\n')
+        return (f'[serve]\ntoken_file = "{path}"\n{extra}'
+                f'\n{loop}\n[worktree]\nsetup = ["make deps"]\n'
+                f'\n[linear]\napi_key = "{self.SECRET}"  # board\n'
+                f'\n[[hooks]]\ntoken = "{self.HOOK_TOKENS[0]}"\n'
+                f'[[hooks]]\ntoken = "{self.HOOK_TOKENS[1]}"\n')
+
+    def redacted(self, text):
+        """`text` with every secret the fixture placed replaced, the
+        expected reply computed from the fixture's own literal secrets
+        rather than from the redaction under test."""
+        for secret in (self.SECRET, *self.HOOK_TOKENS):
+            text = text.replace(f'"{secret}"', '"[redacted]"')
+        return text
+
+    def assert_loader_valid(self, text):
+        """`text`, on disk, is a document the loop's startup accepts."""
+        (self.db.parent / "config.toml").write_text(text)
+        tgt = holophyte.target.Target.locate(self.target)
+        self.assertIsNone(holophyte.config.check_document(tgt))
 
     def on_disk(self):
         return (self.db.parent / "config.toml").read_text()
@@ -2350,22 +2373,62 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual(list(self.db.parent.glob("config.toml.bak-*")), [])
 
     def test_get_redacts_secret_values_and_keeps_the_token_file_path(self):
+        """The route over a file startup accepts: the reply is the file
+        with the two secret shapes -- a nested key and an array-of-tables
+        entry -- redacted and the `token_file` path, comment and layout
+        byte for byte as written."""
         self.seed()
-        self.start(self.config("config_edit = true\n",
-                               serve_token=f'token = "{self.TOKEN}"\n'))
+        before = self.config("config_edit = true\n")
+        self.assert_loader_valid(before)
+        self.start(before)
         code, _, body = self.request("GET", "/config")
         self.assertEqual((code, body), (401, {}))
         code, _, body = self.request("GET", "/config", self.BEARER)
         self.assertEqual(code, 200)
-        self.assertNotIn(self.SECRET, self.raw_body)
-        self.assertNotIn(self.TOKEN, self.raw_body)
-        self.assertIn('[serve]\ntoken_file = "', body["text"])
-        self.assertIn('\ntoken = "[redacted]"\n', body["text"])
-        self.assertIn('api_key = "[redacted]"', body["text"])
+        for secret in (self.SECRET, *self.HOOK_TOKENS, self.TOKEN):
+            self.assertNotIn(secret, self.raw_body, secret)
+        expected = self.redacted(before)
+        self.assertNotEqual(expected, before)
+        self.assertEqual(body["text"], expected)
         self.assertIn(f'token_file = "{self.root / "serve.token"}"',
                       body["text"])
+        self.assertEqual(body["text"].count("[redacted]"), 3)
         self.assertEqual(body["path"], str(self.db.parent / "config.toml"))
         self.assertEqual(body["applies"], "next loop start")
+
+    def test_a_document_startup_refuses_for_its_carry_is_400(self):
+        """`[worktree] carry = ["../outside"]` passes no startup; the
+        first candidate omitted the check and wrote it (review, P1)."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        text = before.replace('setup = ["make deps"]',
+                              'setup = ["make deps"]\ncarry = ["../outside"]')
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 400, body)
+        self.assertIn("[worktree] carry", body["error"])
+        self.assertEqual(self.on_disk(), before)
+
+    def test_a_table_that_is_not_a_table_is_400_naming_it(self):
+        """`worktree = "invalid"` reached the loader's first `.get()` as
+        a string: a traceback in the handler and a dropped connection
+        instead of the 400 (review, P2). Now the loader's own sentence."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        for text, table in (
+            ('worktree = "invalid"\n'
+             + before.replace('[worktree]\nsetup = ["make deps"]\n', ""),
+             "[worktree]"),
+            ("agents = 3\n" + before, "[agents]"),
+        ):
+            with self.subTest(table=table):
+                code, _, body = self.request("PUT", "/config", self.BEARER,
+                                             body={"text": text})
+                self.assertEqual(code, 400, body)
+                self.assertIn(f"{table} must be a table", body["error"])
+                self.assertEqual(self.on_disk(), before)
 
     def test_a_document_the_loader_refuses_is_400_and_leaves_the_file(self):
         self.seed()
@@ -2434,7 +2497,7 @@ class ConfigEditTests(ServeTestCase):
         path.chmod(0o600)
         return (
             f'[serve]\ntoken_file = "{path}"\nconfig_edit = true\n'
-            'token = "S-serve"\n'
+            '[plain]\ntoken = "S-serve"\n'
             '[quoted]\n"api key" = "S-quoted" # comment\n'
             '[dotted]\nkeep.name = "shown"\n'
             "[inline]\nboard = { api_key = 'S-inline', team = \"t\" }\n"
@@ -2449,6 +2512,7 @@ class ConfigEditTests(ServeTestCase):
         self.seed()
         before = self.shapes_config().replace(
             'keep.name = "shown"', 'keep.name = "shown"\nkeep.api_key = "S-dotted"')
+        self.assert_loader_valid(before)
         self.start(before)
         code, _, body = self.request("GET", "/config", self.BEARER)
         self.assertEqual(code, 200, body)
@@ -2458,7 +2522,7 @@ class ConfigEditTests(ServeTestCase):
             self.assertNotIn(secret, self.raw_body, secret)
         shown = tomllib.loads(body["text"])
         expected = tomllib.loads(before)
-        self.assertEqual(shown["serve"]["token"], "[redacted]")
+        self.assertEqual(shown["plain"]["token"], "[redacted]")
         self.assertEqual(shown["quoted"]["api key"], "[redacted]")
         self.assertEqual(shown["dotted"]["keep"]["api_key"], "[redacted]")
         self.assertEqual(shown["inline"]["board"]["api_key"], "[redacted]")
