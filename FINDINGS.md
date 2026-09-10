@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[476 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T04:39:20Z — KO-335
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T04:40:52Z — KO-335
-MERGED to main as 04e61a2 (branch task/ko-335-a-run-with-a-pull-request-carr deleted).
-actual: 28.5 min · estimate: 30 min · rounds: 2
+[478 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T04:44:10Z — KO-338
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -761,3 +754,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T19:26:35Z — KO-349
 MERGED to main as 83b76b0 (branch task/ko-349-the-console-s-action-buttons-p deleted).
 actual: 27.0 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T19:38:46Z — KO-350
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T19:40:23Z — KO-350
+MERGED to main as 8ecdd70 (branch task/ko-350-a-run-parked-on-its-pull-reque deleted).
+actual: 13.8 min · estimate: 30 min · rounds: 1
