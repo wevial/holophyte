@@ -2,7 +2,7 @@ import logo from "../../../assets/menubar-template.svg";
 import { formatDuration } from "../lib/format";
 import { projectName, supervisorLabel } from "../lib/derive";
 import type { ProjectChoice } from "../lib/attention";
-import { hostItems, hostTone, type HostRecord, type HostTone } from "../lib/hosts";
+import { groupByHost, hostItems, hostTone, type HostRecord, type HostTone } from "../lib/hosts";
 import type { PeersState } from "../hooks/usePeers";
 import type { Theme } from "../lib/theme";
 import { HostCard } from "./HostCard";
@@ -127,8 +127,8 @@ export function Rail({
 
       <div className="mt-auto flex flex-col gap-2">
         <RailGroup label="Hosts">
-          {hosts.map((host) => (
-            <HostCard key={host.address} host={host} now={now} />
+          {groupByHost(hosts).map((group) => (
+            <HostCard key={group.label} group={group} project={project} onProject={onProject} />
           ))}
         </RailGroup>
         <p className="px-2 font-mono text-[11px] text-rail-faint">

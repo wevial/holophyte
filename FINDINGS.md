@@ -653,29 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[515 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T20:42:36Z — KO-351
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:2839 [p1] [P1] [holophyte/loop.py:2839](/home/reviewer/candidate/holophyte/loop.py:2839): A successful label addition followed by a read-back exception releases the sto…
-
-## 2026-09-10T20:47:09Z — KO-354
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- (unparsed):3513958c0433 [p2] Verification blocker: `ruff check .` cannot run: `ruff: command not found`; `python3 -m ruff` also reports no installed module. Restore the linter in the review…
-
-## 2026-09-10T20:49:20Z — KO-355
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T20:50:55Z — KO-355
-MERGED to main as 1d97130 (branch task/ko-355-a-preserved-branch-that-confli deleted).
-actual: 14.8 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T20:51:57Z — KO-351
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:2763 [p1] [P1] Acquire the store lease before removing stale labels in [holophyte/loop.py:2763](/home/reviewer/candidate/holophyte/loop.py:2763). Two loops can both pas…
+[520 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T20:53:39Z — KO-354
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
@@ -765,3 +743,22 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T21:48:04Z — KO-360
 MERGED to main as 2d1f6f0 (branch task/ko-360-the-shipped-table-s-last-colum deleted).
 actual: 2.3 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T21:54:56Z — KO-351
+FAILED: swept by the supervisor in phase working: stale_heartbeat (silent for 10.7 min over 2 consecutive sweeps); branch and worktree preserved for a human
+actual: 10.7 min · estimate: 30 min · rounds: 0
+
+## 2026-09-10T21:54:56Z — KO-352
+FAILED: swept by the supervisor in phase working: stale_heartbeat (silent for 10.7 min over 2 consecutive sweeps); branch and worktree preserved for a human
+actual: 10.7 min · estimate: 30 min · rounds: 0
+
+## 2026-09-10T21:54:56Z — KO-356
+FAILED: swept by the supervisor in phase working: stale_heartbeat (silent for 10.7 min over 2 consecutive sweeps); branch and worktree preserved for a human
+actual: 10.7 min · estimate: 30 min · rounds: 0
+
+## 2026-09-10T21:56:35Z — KO-352
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T21:56:37Z — KO-352
+MERGED to main as 17c7ab2 (branch task/ko-352-the-hosts-rail-groups-daemons deleted).
+actual: 1.1 min · estimate: 30 min · rounds: 1
