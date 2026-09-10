@@ -5,7 +5,8 @@
  *  `key = value` line -- a string, an integer, a boolean, a one-line
  *  array of those -- directly under a plain `[section]` header. A key in
  *  any other shape (a multi-line array, a quoted or dotted table name, a
- *  triple-quoted string, an inline table) is found but unread, so the
+ *  triple-quoted string, an inline table, a table the root defines as
+ *  `loop = {...}` or `loop.workers = 1`) is found but unread, so the
  *  sheet shows it read-only and it stays editable in the raw tab. The
  *  daemon validates the whole document on `PUT /config`, so a text this
  *  cannot read is not a failure here, only an unbound field. */
@@ -116,12 +117,29 @@ export function tableSpan(text: string, table: string): { start: number; end: nu
   return start >= 0 ? { start, end: lines.length, plain } : null;
 }
 
-/** The key a line assigns, bare or quoted, and where its value starts;
- *  null for a line that assigns nothing. */
-function keyOfLine(line: string): { key: string; valueAt: number } | null {
-  const match = /^\s*("([^"]*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*=\s*/.exec(line);
-  if (!match) return null;
-  return { key: match[2] ?? match[3] ?? match[4]!, valueAt: match[0].length };
+/** The key path a line assigns -- `workers` is `["workers"]`,
+ *  `loop.workers` or `"loop".workers` is `["loop", "workers"]` -- and where
+ *  its value starts; null for a line that assigns nothing. */
+function keyOfLine(line: string): { path: string[]; valueAt: number } | null {
+  const path: string[] = [];
+  let at = 0;
+  for (;;) {
+    const part = /^\s*(?:"([^"]*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*/.exec(line.slice(at));
+    if (!part) return null;
+    path.push(part[1] ?? part[2] ?? part[3]!);
+    at += part[0].length;
+    if (line[at] === ".") {
+      at += 1;
+      continue;
+    }
+    if (line[at] !== "=") return null;
+    return { path, valueAt: at + /^=\s*/.exec(line.slice(at))![0].length };
+  }
+}
+
+/** Whether `path` starts with every part of `prefix`. */
+function startsWith(path: string[], prefix: string[]): boolean {
+  return prefix.length <= path.length && prefix.every((part, at) => path[at] === part);
 }
 
 /** The end of the value that starts at `text[at]`, counted across lines
@@ -250,23 +268,40 @@ export function formatValue(value: TomlValue): string {
  *  the key is absent. The first assignment in the table's body counts.
  *  The value is read only when the assignment is one line under a plain
  *  header; a multi-line value or a quoted/dotted header leaves it
- *  `undefined`, its source in `raw`. */
+ *  `undefined`, its source in `raw`. So does a table the root defines
+ *  without a header -- `loop = { workers = 1 }` or `loop.workers = 1`
+ *  before the first `[section]` -- or a dotted key `workers.x = 1` in the
+ *  body: a `[loop]` header or a plain `workers` line cannot be added
+ *  beside those, so the whole assignment `path = value` is the hit's
+ *  `raw`, the sheet shows it read-only, and `writeKey`/`deleteKey`
+ *  leave it alone. */
 export function findKey(text: string, ref: KeyRef): KeyHit | null {
   const { lines, continued } = layoutOf(text);
   const span = tableSpan(text, ref.table);
-  if (span == null) return null;
+  const table = ref.table.split(".");
+  const firstHeader = lines.findIndex((line, at) => !continued.has(at) && headerOf(line) != null);
+  const rootEnd = firstHeader < 0 ? lines.length : firstHeader;
+  const inBody = (at: number) => span != null && at >= span.start && at < span.end;
   let offset = 0;
-  for (let at = 0; at < span.start; at += 1) offset += lines[at]!.length + 1;
-  for (let at = span.start; at < span.end; at += 1) {
+  for (let at = 0; at < lines.length; at += 1) {
     const line = lines[at]!;
     const assignment = continued.has(at) ? null : keyOfLine(line);
-    if (assignment != null && assignment.key === ref.key) {
-      const from = offset + assignment.valueAt;
-      const to = valueEnd(text, from);
-      const raw = text.slice(from, to);
-      const end = at + (raw.match(/\n/g)?.length ?? 0) + 1;
-      const bound = span.plain && end === at + 1;
-      return { start: at, end, raw, value: bound ? readValue(raw) : undefined };
+    if (assignment != null) {
+      const { path, valueAt } = assignment;
+      const inRoot = at < rootEnd && startsWith(path, table);
+      const own = inBody(at) && path[0] === ref.key;
+      if (inRoot || own) {
+        const from = offset + valueAt;
+        const source = text.slice(from, valueEnd(text, from));
+        const end = at + (source.match(/\n/g)?.length ?? 0) + 1;
+        const plainLine = path.length === 1 && end === at + 1;
+        return {
+          start: at,
+          end,
+          raw: own && path.length === 1 ? source : `${path.join(".")} = ${source.trim()}`,
+          value: own && span!.plain && plainLine ? readValue(source) : undefined,
+        };
+      }
     }
     offset += line.length + 1;
   }
@@ -276,6 +311,13 @@ export function findKey(text: string, ref: KeyRef): KeyHit | null {
 /** `[table] key`'s value in `text`, `undefined` when absent or unread. */
 export function readKey(text: string, ref: KeyRef): TomlValue | undefined {
   return findKey(text, ref)?.value;
+}
+
+/** Whether `line` assigns `ref.key` and nothing more -- not `loop.workers`
+ *  or `workers.max` -- so it is a line the sheet may rewrite or drop. */
+function ownLine(line: string, ref: KeyRef): boolean {
+  const path = keyOfLine(line)?.path ?? [];
+  return path.length === 1 && path[0] === ref.key;
 }
 
 /** The last line of a table's body that is not blank or a comment, so a
@@ -302,6 +344,7 @@ export function writeKey(text: string, ref: KeyRef, value: TomlValue): string {
   const hit = findKey(text, ref);
   if (hit != null) {
     const first = lines[hit.start]!;
+    if (!ownLine(first, ref)) return text;
     const indent = /^\s*/.exec(first)![0];
     const last = lines[hit.end - 1]!;
     const rawTail = hit.raw.length - hit.raw.lastIndexOf("\n") - 1;
@@ -320,11 +363,13 @@ export function writeKey(text: string, ref: KeyRef, value: TomlValue): string {
   return lines.join("\n");
 }
 
-/** `text` without `[table] key`'s line(s); unchanged when absent. */
+/** `text` without `[table] key`'s line(s); unchanged when absent or
+ *  when the line holds more than the key (`loop.workers = 1`). */
 export function deleteKey(text: string, ref: KeyRef): string {
   const hit = findKey(text, ref);
   if (hit == null) return text;
   const lines = text.split("\n");
+  if (!ownLine(lines[hit.start]!, ref)) return text;
   lines.splice(hit.start, hit.end - hit.start);
   return lines.join("\n");
 }

@@ -163,3 +163,25 @@ workers = 1.0
   // A key the table lacks is null, not unbound, so the sheet draws it empty and editable.
   expect(findKey(text, { table: "agents", key: "review_effort" })).toBeNull();
 });
+
+test("a table the root defines without a header, inline or by dotted keys, or a dotted key in a body, is found but unbound and never rewritten", () => {
+  const inline = `loop = { workers = 1 }\n\n[agents]\nimplementer = "claude -p"\n`;
+  expect(findKey(inline, { table: "loop", key: "workers" })).toMatchObject({ start: 0, end: 1, raw: "loop = { workers = 1 }", value: undefined });
+  const dotted = `# root\nloop.workers = 1  # one\n[agents]\nimplementer = "claude -p"\n`;
+  expect(findKey(dotted, { table: "loop", key: "workers" })).toMatchObject({ start: 1, end: 2, raw: "loop.workers = 1", value: undefined });
+  // The table exists in that shape even when the key does not, so a `[loop]`
+  // header cannot be appended: the field is unbound, not empty.
+  const sibling = `loop.sweep_interval_sec = 5\n`;
+  expect(findKey(sibling, { table: "loop", key: "workers" })).toMatchObject({ value: undefined });
+  // A dotted key in the body makes `workers` a table, not a value.
+  const body = `[loop]\nworkers.max = 3\n`;
+  expect(findKey(body, { table: "loop", key: "workers" })).toMatchObject({ raw: "workers.max = 3", value: undefined });
+  // None of these are edited: the text comes back byte for byte.
+  for (const text of [inline, dotted, sibling, body]) {
+    expect(writeKey(text, { table: "loop", key: "workers" }, 3)).toBe(text);
+    expect(deleteKey(text, { table: "loop", key: "workers" })).toBe(text);
+  }
+  // A root key of another table leaves `[loop] workers` as it was.
+  expect(readKey(`serve.port = 8\n[loop]\nworkers = 2\n`, { table: "loop", key: "workers" })).toBe(2);
+  expect(findKey(`serve.port = 8\n`, { table: "loop", key: "workers" })).toBeNull();
+});
