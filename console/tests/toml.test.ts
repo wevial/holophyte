@@ -145,6 +145,15 @@ test("a key under a quoted or dotted table header is found but unbound, so the s
   expect(readKey(`[loop]\nworkers = 1  # one\n`, { table: "loop", key: "workers" })).toBe(1);
 });
 
+test("a quoted table name holding `]` closes the table before it, so the key under it is never bound to `[loop]` nor overwritten by its edit", () => {
+  const text = `[loop]\n["other]table"]\nworkers = 9\n`;
+  expect(findKey(text, { table: "loop", key: "workers" })).toBeNull();
+  expect(findKey(text, { table: "other]table", key: "workers" })).toMatchObject({ start: 2, end: 3, raw: "9", value: undefined });
+  expect(writeKey(text, { table: "loop", key: "workers" }, 3)).toBe(`[loop]\nworkers = 3\n["other]table"]\nworkers = 9\n`);
+  // A padded plain header still binds.
+  expect(readKey(`[ loop ]\nworkers = 1\n`, { table: "loop", key: "workers" })).toBe(1);
+});
+
 test("a key held in a shape the editor does not bind is found but unread: a triple-quoted string, an inline table and a float each keep their source and read as undefined", () => {
   const text = `[agents]
 implementer = """

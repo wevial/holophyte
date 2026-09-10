@@ -29,7 +29,6 @@ export interface KeyHit {
   value: TomlValue | undefined;
 }
 
-const HEADER = /^\s*(\[\[?)\s*([^\]]*?)\s*\]\]?\s*(#.*)?$/;
 const BARE_KEY = /^[A-Za-z0-9_-]+$/;
 
 /** The header line `[name]` opens, or null for a non-header line; an
@@ -39,12 +38,48 @@ const BARE_KEY = /^[A-Za-z0-9_-]+$/;
  *  same tables their bare forms name -- but only a plain `[bare]` header
  *  is `plain`, and only its keys bind; a key under a quoted or dotted
  *  header is found (so the sheet neither draws it empty nor duplicates
- *  it) and left unread. */
+ *  it) and left unread. The name is scanned part by part rather than
+ *  matched up to the first `]`, so a quoted part holding `]` -- as in
+ *  `["other]table"]` -- still closes the table before it. */
 function headerOf(line: string): { name: string; plain: boolean } | null {
-  const match = HEADER.exec(line);
-  if (!match) return null;
-  const name = tableName(match[2]!);
-  return { name: match[1] === "[[" ? `[[${name}]]` : name, plain: match[1] === "[" && BARE_KEY.test(match[2]!) };
+  const open = /^\s*(\[\[?)/.exec(line);
+  if (!open) return null;
+  const close = open[1] === "[[" ? "]]" : "]";
+  const innerAt = open[0].length;
+  const innerEnd = headerNameEnd(line, innerAt);
+  if (innerEnd < 0) return null;
+  if (!line.startsWith(close, innerEnd)) return null;
+  if (!/^\s*(#.*)?$/.test(line.slice(innerEnd + close.length))) return null;
+  const inner = line.slice(innerAt, innerEnd).trim();
+  const name = tableName(inner);
+  return { name: open[1] === "[[" ? `[[${name}]]` : name, plain: open[1] === "[" && BARE_KEY.test(inner) };
+}
+
+/** Where a header's name ends: the offset of the closing bracket after
+ *  the dotted parts that start at `at`, each bare or quoted, a quoted
+ *  part skipped whole so a `]` or `.` inside it is not a boundary; -1
+ *  when the text is not a well-formed header name. */
+function headerNameEnd(line: string, at: number): number {
+  let index = at;
+  for (;;) {
+    index += /^\s*/.exec(line.slice(index))![0].length;
+    const char = line[index];
+    if (char === '"' || char === "'") {
+      const end = valueEnd(line, index);
+      if (end >= line.length || line[end - 1] !== char || end - index < 2) return -1;
+      index = end;
+    } else {
+      const bare = /^[A-Za-z0-9_-]+/.exec(line.slice(index));
+      if (!bare) return -1;
+      index += bare[0].length;
+    }
+    index += /^\s*/.exec(line.slice(index))![0].length;
+    if (line[index] === ".") {
+      index += 1;
+      continue;
+    }
+    return line[index] === "]" ? index : -1;
+  }
 }
 
 /** A header's inner text as the dotted name it denotes: the parts split
