@@ -382,6 +382,18 @@ class EndedRun:
     mergeSha: str | None
 
 
+def newest_run_id(conn):
+    """The id of the newest run the store holds, or None when it holds none.
+
+    The `serve` daemon's anchor for a host action's ledger note (KO-348):
+    the store's ledger is keyed by run, so a supervisor restart or a loop
+    launch asked for over HTTP is written against the newest run rather
+    than left unrecorded.
+    """
+    row = conn.execute("SELECT MAX(id) FROM runs").fetchone()
+    return row[0] if row is not None else None
+
+
 def ended_runs(conn):
     """Every run with an `endedAt`, ordered by when it ended, then by id."""
     rows = conn.execute(

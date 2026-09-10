@@ -84,6 +84,7 @@ nav:
   - Reference:
       - CLI: reference/cli.md
       - HTTP endpoints: reference/http.md
+      - The daemon's actions: reference/daemon.md
       - Config: config.md
       - Development: development.md
       - Glossary: reference/glossary.md

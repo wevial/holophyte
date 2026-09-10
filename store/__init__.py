@@ -330,7 +330,8 @@ CREATE TABLE IF NOT EXISTS interventions (
     "action"  TEXT    NOT NULL
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
                             'close_out', 'requeue', 'approve', 'repoint',
-                            'shepherd', 'reconcile')),
+                            'shepherd', 'reconcile', 'restart_supervisor',
+                            'launch_loop')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL
@@ -365,8 +366,11 @@ CREATE TABLE IF NOT EXISTS interventions (
 # `tickets.body`, the Linear body the claim-time mirror stores so `/tickets/
 # KO-n` can serve it (KO-328). Both shipped as 11: the ladder adds the
 # column by its absence, not by the stamp, so a store KO-329 stamped 11
-# still gains it here.
-SCHEMA_VERSION = 11
+# still gains it here. Version 12 is the action CHECK admitting
+# 'restart_supervisor' and 'launch_loop', the daemon's two unit actions
+# behind `[serve] actions = true`, each recorded before its `systemctl`
+# runs (KO-348).
+SCHEMA_VERSION = 12
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -603,7 +607,7 @@ def init(conn):
 
 def _widen_interventions_action(conn):
     """Rebuild `interventions` when its action CHECK predates 'repoint',
-    'shepherd' or 'reconcile'.
+    'shepherd', 'reconcile' or the daemon's unit actions.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
     cannot ALTER a CHECK, so a store initialized before a value shipped
@@ -611,8 +615,9 @@ def _widen_interventions_action(conn):
     raw SQL and four falsely-labeled 'resume' rows, the precedent that added
     'close_out' here. 'requeue' (schema version 3), 'approve' (schema
     version 5), 'repoint' (schema version 7), 'shepherd' (schema version 8)
-    and 'reconcile' (schema version 11, which also widens the trigger CHECK
-    to 'linear_completed') ride the same rebuild: the three newest values
+    'reconcile' (schema version 11, which also widens the trigger CHECK
+    to 'linear_completed') and 'restart_supervisor'/'launch_loop' (schema
+    version 12) ride the same rebuild: the newest values
     are the ones tested for, so a store from before any of them shipped --
     or from a branch that shipped one of them as its own version 7 -- is
     carried forward in one pass. The stored DDL says which world this store
@@ -635,7 +640,8 @@ def _widen_interventions_action(conn):
     (ddl,) = row
     admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
     if all(value in admitted
-           for value in ("'repoint'", "'shepherd'", "'reconcile'")):
+           for value in ("'repoint'", "'shepherd'", "'reconcile'",
+                         "'restart_supervisor'", "'launch_loop'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -2290,7 +2296,8 @@ INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
                          "manual")
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
                         "close_out", "requeue", "approve", "repoint",
-                        "shepherd", "reconcile")
+                        "shepherd", "reconcile", "restart_supervisor",
+                        "launch_loop")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

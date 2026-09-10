@@ -7,9 +7,10 @@ line names -- loopback when it names only a port -- so a drawer on this
 machine, or on another host of the private network when a host is given,
 can poll the factory without ssh. Every request opens the store through
 `store.read.open_readonly()`, reads, and closes it: the daemon never holds a
-connection between requests and never holds a write connection at all,
-which is why this module imports `store.read` and nothing from `store`
-itself. The handler calls the typed read views and formats JSON; no SQL
+connection between requests and, short of the opt-in `POST` actions at the
+end of this note, never holds a write connection at all, which is why this
+module imports `store.read` and, for those actions alone, the operator API
+of `store` itself. The handler calls the typed read views and formats JSON; no SQL
 lives here, so a later daemon can replace the module wholesale against the
 same store. `/runs` is the `--report` table as JSON: the same rows
 `report_rows()` prints, in the same order, so a dashboard and the terminal
@@ -43,7 +44,21 @@ route but `/peers` demands as `Authorization: Bearer ...`, checked in
 constant time before any store is opened; a non-loopback bind without the
 key is a startup error naming it. `/`, the console's files and `/peers`
 stay open so the page can load and learn where its peers are. A loopback
-bind ignores the key. The token is never printed or logged.
+bind ignores the key for its reads. The token is never printed or logged.
+
+`[serve] actions = true` (KO-348) is the one exception to read-only: it
+opens three `POST /actions/...` routes behind the token, each a legal
+rung of the operator ladder -- `restart-supervisor` and `launch-loop` run
+`systemctl --user` against the deploy units named by `[serve] name`, and
+`requeue` is `store.requeue()`, what `--requeue KO-n --note TEXT` does.
+The actions demand the token on every bind, loopback included -- a bind
+address guards reads, not a hand on the units -- so the opt-in needs
+`[serve] token_file` and binding without one is a startup error. Each
+records its `store.record_intervention()` row before it acts and answers
+`{"action", "ok", "detail"}`; a `systemctl` that fails is `ok: false`
+carrying its stderr, never a 500, and an action that cannot be recorded
+does not run. Off, every `/actions/` path is 404 and this module still
+opens no write connection.
 
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
@@ -67,7 +82,7 @@ import store.read
 from holophyte.config import console_config, serve_config, split_address, sweep_config
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.report import ended_rows, host_label
-from holophyte.runs import MAX_ROUNDS
+from holophyte.runs import MAX_ROUNDS, open_store
 from holophyte.supervisor import SWEEPABLE_PHASES
 from holophyte.target import worktree_path
 
@@ -84,6 +99,24 @@ TOKEN_FORBIDDEN_MODE = stat.S_IRWXG | stat.S_IRWXO
 # to load and to learn where the token goes. `/peers` and the static files
 # carry no store data.
 OPEN_PATHS = frozenset({"/peers"})
+# The token-gated `POST` routes `[serve] actions = true` opens (KO-348),
+# each the operator-ladder step it maps to. The two unit actions name the
+# deploy templates with the `[serve] name` instance appended at request
+# time; `systemctl` gets `SYSTEMCTL_TIMEOUT` seconds to answer.
+ACTIONS_PREFIX = "/actions/"
+# Route name -> (systemctl verb, unit template, interventions action).
+UNIT_ACTIONS = {
+    "restart-supervisor": ("restart", "holophyte-supervise@",
+                           "restart_supervisor"),
+    "launch-loop": ("start", "holophyte-loop@", "launch_loop")}
+REQUEUE_ACTION = "requeue"
+ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION}
+SYSTEMCTL_TIMEOUT = 20
+# The note a requeue records when the request carries none: the store
+# refuses an empty one, and the CLI's `--note` is the operator's reason.
+DEFAULT_REQUEUE_NOTE = "requeued from the console"
+# How much JSON a `POST` body may carry; a ticket and a note are far under.
+MAX_BODY = 64 * 1024
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 # How long a failed run stays on `/attention`: a failure the operator has
 # not requeued or merged past in a day is one they have not looked at.
@@ -796,6 +829,143 @@ def run_files(target, run_id):
     }
 
 
+def parse_action_body(raw):
+    """The `POST /actions/...` body as a dict; ValueError when it is not
+    JSON, not an object, or past `MAX_BODY`. An empty body is `{}`."""
+    if len(raw) > MAX_BODY:
+        raise ValueError(f"body must be under {MAX_BODY} bytes")
+    if not raw.strip():
+        return {}
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise ValueError("body must be JSON") from None
+    if not isinstance(body, dict):
+        raise ValueError("body must be a JSON object")
+    return body
+
+
+def unit_action(target, action, unit_name):
+    """Run the `systemctl --user` step `action` names against the unit
+    instance `unit_name`: `(http status, JSON-able body)`.
+
+    The interventions row lands first (`store.record_intervention()`, the
+    operator ladder's record-before-acting call), on the store's newest run
+    (`store.read.newest_run_id()`) since interventions are keyed by run. A
+    target with no store, or a store with no run yet, has nothing to record
+    against and the step does not run: 200 with `ok: false` saying so,
+    since an unrecorded hand on the units is what the ladder forbids.
+    `systemctl` exiting non-zero, being absent or outliving
+    `SYSTEMCTL_TIMEOUT` is 200 with `ok: false` and the reason in
+    `detail`: the operator asked for a thing and is told what happened,
+    which is not a server error.
+    """
+    verb, template, intervention = UNIT_ACTIONS[action]
+    unit = template + unit_name
+    argv = ["systemctl", "--user", verb, unit]
+    note = f"operator asked the daemon to {verb} {unit} (POST /actions/{action})"
+    recorded = record_action_intervention(target, intervention, note)
+    if recorded is None:
+        detail = ("the store holds no run to record the intervention"
+                  " against; nothing run")
+        return 200, {"action": action, "ok": False, "detail": detail,
+                     "unit": unit, "recorded": None}
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=SYSTEMCTL_TIMEOUT)
+    except FileNotFoundError:
+        detail = "systemctl is not on this host"
+        return 200, {"action": action, "ok": False, "detail": detail,
+                     "unit": unit, "recorded": recorded}
+    except subprocess.TimeoutExpired:
+        detail = f"systemctl did not answer within {SYSTEMCTL_TIMEOUT}s"
+        return 200, {"action": action, "ok": False, "detail": detail,
+                     "unit": unit, "recorded": recorded}
+    ok = done.returncode == 0
+    detail = (f"{' '.join(argv)} exited 0" if ok
+              else (done.stderr or done.stdout or "").strip()
+              or f"{' '.join(argv)} exited {done.returncode}")
+    return 200, {"action": action, "ok": ok, "detail": detail,
+                 "unit": unit, "recorded": recorded}
+
+
+def record_action_intervention(target, action, note):
+    """Record the human `action` with `note` as an interventions row on the
+    store's newest run, before the step it describes; the run's id, or None
+    when the store does not exist or holds no run to record against."""
+    if not target.store_path.exists():
+        return None
+    conn = open_store(target)
+    try:
+        run_id = store.read.newest_run_id(conn)
+        if run_id is not None:
+            store.record_intervention(conn, run_id, action, note,
+                                      source="human", trigger="manual")
+    finally:
+        conn.close()
+    return run_id
+
+
+def tickets_named(conn, identifier):
+    """How many mirrored tickets carry the Linear identifier `identifier`.
+
+    `linearIdentifier` is not unique in the store -- `linearIssueId` is --
+    so the same check `--requeue` makes before it writes: an identifier
+    the store holds more than once names nobody, and nothing is written.
+    """
+    (count,) = conn.execute(
+        "SELECT COUNT(*) FROM tickets WHERE linearIdentifier = ?",
+        (identifier,)).fetchone()
+    return count
+
+
+def requeue_action(target, body):
+    """`POST /actions/requeue`: `store.requeue()` on the ticket `body`
+    names, with `note` or `DEFAULT_REQUEUE_NOTE`: `(http status, JSON-able
+    body)`.
+
+    The store's one transaction is the whole write -- the `requeue`
+    interventions row carrying the note and the ticket walked to `ready`
+    -- exactly what `--requeue KO-n --note TEXT` does. A missing or
+    non-string `ticket` is 400; a store the target does not have is 503;
+    a ticket the store never mirrored, one it holds more than once (the
+    CLI refuses to pick one; so does the route), or one the store refuses
+    to requeue (a live run, not `in_flight`, its last run not `failed`),
+    is 200 with `ok: false` and the refusal in `detail`, nothing written.
+    """
+    action = REQUEUE_ACTION
+    identifier = body.get("ticket")
+    if not isinstance(identifier, str) or not identifier.strip():
+        return 400, {"error": "ticket must name a mirrored ticket (KO-n)"}
+    note = body.get("note", DEFAULT_REQUEUE_NOTE)
+    if not isinstance(note, str) or not note.strip():
+        note = DEFAULT_REQUEUE_NOTE
+    identifier = identifier.strip()
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = open_store(target)
+    try:
+        ticket = store.read.ticket_by_identifier(conn, identifier)
+        if ticket is None:
+            return 200, {"action": action, "ok": False, "ticket": identifier,
+                         "detail": f"{identifier}: no such ticket in the store"}
+        named = tickets_named(conn, identifier)
+        if named > 1:
+            return 200, {"action": action, "ok": False, "ticket": identifier,
+                         "detail": f"{identifier} names {named} tickets in the"
+                                   " store; refusing to pick one"}
+        try:
+            run_id = store.requeue(conn, ticket.id, note)
+        except (store.RequeueRefused, ValueError) as refused:
+            return 200, {"action": action, "ok": False, "ticket": identifier,
+                         "detail": str(refused)}
+    finally:
+        conn.close()
+    return 200, {"action": action, "ok": True, "ticket": identifier,
+                 "detail": f"{identifier} requeued after run {run_id}",
+                 "run": run_id}
+
+
 def is_loopback(host):
     """Whether a bind `host` reaches this machine only.
 
@@ -858,6 +1028,28 @@ def resolve_token(target, host):
             " file whose contents every request presents as"
             " `Authorization: Bearer ...`")
     return load_token(token_file)
+
+
+def resolve_action_token(target, knobs, token):
+    """The token `POST /actions/...` demands, or None when actions are off.
+
+    `token` is what `resolve_token()` gave the bind: on a non-loopback bind
+    it is already the file's contents and the actions share it. A loopback
+    bind has none, and the actions do not inherit its openness -- the bind
+    address guards reads, not a hand on the units -- so the file is read
+    for them alone, and `[serve] actions = true` without `[serve]
+    token_file` exits naming the key rather than binding open.
+    """
+    if not knobs.actions:
+        return None
+    if token is not None:
+        return token
+    if knobs.token_file is None:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [serve] actions = true needs"
+            f" {TOKEN_KEY} = \"PATH\" on every bind, loopback included:"
+            " the actions answer only to `Authorization: Bearer ...`")
+    return load_token(knobs.token_file)
 
 
 def authorized(header, token):
@@ -984,14 +1176,54 @@ class StatusHandler(BaseHTTPRequestHandler):
             code, body = found
         self.answer(code, body)
 
+    def do_POST(self):
+        """`POST /actions/NAME` when `[serve] actions = true`; 405 on any
+        other path, as every non-GET method is.
+
+        The order is token, then opt-in, then route: a 401 touches nothing
+        and tells an unauthenticated client nothing about whether actions
+        are on; a daemon without the opt-in is 404 on every `/actions/`
+        path, the token notwithstanding; an unknown action under the prefix
+        is 404 too. The token is the actions' own (`resolve_action_token()`),
+        demanded on a loopback bind as much as any other; with actions off
+        the bind's read token applies, so a non-loopback daemon is 401
+        before it is 404. The body is JSON (`parse_action_body()`), 400
+        when it is not.
+        """
+        path = urlsplit(self.path).path
+        if not path.startswith(ACTIONS_PREFIX):
+            return self.refuse()
+        token = (self.server.action_token if self.server.actions
+                 else self.server.token)
+        if token is not None and not authorized(
+                self.headers.get("Authorization"), token):
+            return self.answer(401, {})
+        action = path[len(ACTIONS_PREFIX):]
+        if not self.server.actions or action not in ACTIONS:
+            return self.answer(404, {"error": "not found", "path": path})
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not 0 <= length <= MAX_BODY:
+                raise ValueError(f"body must be under {MAX_BODY} bytes")
+            body = parse_action_body(self.rfile.read(length))
+        except ValueError as bad:
+            return self.answer(400, {"error": str(bad)})
+        if action == REQUEUE_ACTION:
+            code, body = requeue_action(self.server.target, body)
+        else:
+            code, body = unit_action(self.server.target, action,
+                                     self.server.unit_name)
+        self.answer(code, body)
+
     def open_route(self, path):
         """Whether `path` is served without the token: `/peers` and the
         console's files -- `/`, and any path no JSON route claims. The
         JSON routes are named before the static branch in `do_GET`, so a
-        file that shadows one is not an opening."""
+        file that shadows one is not an opening; the `/actions/` prefix is
+        never one either."""
         if path in OPEN_PATHS:
             return True
-        if path in JSON_PATHS:
+        if path in JSON_PATHS or path.startswith(ACTIONS_PREFIX):
             return False
         return shaped_route(path) is None
 
@@ -1014,8 +1246,9 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def __getattr__(self, name):
         # `BaseHTTPRequestHandler` dispatches on `do_<METHOD>` and answers
-        # 501 HTML when the attribute is missing; here every method but GET
-        # and OPTIONS is the same 405 JSON, whether or not the RFC names it.
+        # 501 HTML when the attribute is missing; here every method but GET,
+        # POST and OPTIONS is the same 405 JSON, whether or not the RFC
+        # names it.
         if name.startswith("do_"):
             return self.refuse
         raise AttributeError(name)
@@ -1053,7 +1286,13 @@ class StatusServer(ThreadingHTTPServer):
     answers: the target's `[console] daemons`, read once at bind, and the
     address the daemon bound as `HOST:PORT` -- the label it announces, so a
     page loaded from it can tell this daemon from the peers, not the
-    machine's name."""
+    machine's name. `actions` and `unit_name` are `[serve] actions` and
+    `[serve] name`, read once at bind too: whether `POST /actions/...`
+    answers and which unit instance it addresses; `action_token` is the
+    bearer value those routes demand on every bind, resolved at bind from
+    `[serve] token_file` when the read `token` is None, so a loopback
+    daemon with actions on exits at bind without the key rather than
+    answering them open."""
 
     daemon_threads = True
 
@@ -1062,6 +1301,10 @@ class StatusServer(ThreadingHTTPServer):
         self.console_dir = Path(console_dir)
         self.token = token
         self.peers = console_config(target).daemons
+        knobs = serve_config(target)
+        self.actions = knobs.actions
+        self.unit_name = knobs.name
+        self.action_token = resolve_action_token(target, knobs, token)
         self.started_ms = int(time() * 1000)
         super().__init__(address, StatusHandler)
         host, port = self.server_address[:2]
@@ -1105,7 +1348,8 @@ def serve(target, address, out=None):
     try:
         bound_host, bound_port = server.server_address[:2]
         guard = "open" if token is None else "behind a bearer token"
-        print(f"[holo2] serving {bound_host}:{bound_port} read-only for"
+        mode = "with actions" if server.actions else "read-only"
+        print(f"[holo2] serving {bound_host}:{bound_port} {mode} for"
               f" {target.path}, {guard}", file=out)
         try:
             server.serve_forever()

@@ -105,8 +105,8 @@ class Version10BodyMigrationTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertEqual(store.SCHEMA_VERSION, 11)
-        self.assertEqual(self.user_version(), 11)
+        self.assertGreaterEqual(store.SCHEMA_VERSION, 11)
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
         ticket = store.read.ticket_by_identifier(conn, "KO-1")
         self.assertEqual(ticket.title, "ticket 1")
         self.assertEqual(ticket.status, "ready")
