@@ -3812,6 +3812,11 @@ class EndedRunTests(LoopFixture):
                          ["implement"])
 
 
+# A scripted `WAIT` "exit" that is the timer tick instead: no child exited
+# before the deadline (KO-353).
+TICK = object()
+
+
 class FakePool:
     """The spawn and wait seams of the scheduler, scripted.
 
@@ -3829,6 +3834,7 @@ class FakePool:
         self.envs = []
         self.alive = []     # pids, oldest first
         self.reaped = []
+        self.timeouts = []  # the timeout each WAIT was called with
         self.next_pid = 5000
 
     def spawn(self, argv, **kwargs):
@@ -3838,15 +3844,19 @@ class FakePool:
         self.alive.append(self.next_pid)
         return type("Child", (), {"pid": self.next_pid})()
 
-    def wait(self, children):
+    def wait(self, children, timeout):
         if not self.alive:
             raise AssertionError("the scheduler waited with no child alive")
         if set(children) != set(self.alive):
             raise AssertionError(f"the scheduler waited on {sorted(children)}"
                                  f" with {self.alive} alive")
+        self.timeouts.append(timeout)
         code, before = self.exits.pop(0)
         if before is not None:
             before()
+        if code is TICK:
+            # The deadline passed with no exit: the scheduler recounts.
+            return None, None
         pid = self.alive.pop(0)
         self.reaped.append((pid, code))
         return pid, code
@@ -3858,9 +3868,12 @@ class PoolTests(LoopFixture):
     wait go through seams, so no process is started and the test reads
     the counts."""
 
-    def run_scheduler(self, workers, provider, exits, stop_on_failure=True):
+    def run_scheduler(self, workers, provider, exits, stop_on_failure=True,
+                      tick_sec=None):
+        tick = f"tick_sec = {tick_sec}\n" if tick_sec is not None else ""
         self.configure(f"[loop]\nworkers = {workers}\n"
-                       f"stop_on_failure = {str(stop_on_failure).lower()}\n")
+                       f"stop_on_failure = {str(stop_on_failure).lower()}\n"
+                       + tick)
         pool = FakePool(exits)
         out = io.StringIO()
         with patch.object(holophyte.loop, "SPAWN", pool.spawn), \
@@ -3906,6 +3919,58 @@ class PoolTests(LoopFixture):
         self.assertIn("[holo2] Linear has no ready tickets. done.", self.out)
         # The exit note a re-exec'd scheduler leaves for the sweep.
         self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(0,)])
+
+    def test_a_timer_tick_with_a_slot_free_spawns_for_a_ticket_filed_since(self):
+        """`workers = 3`, one ticket and so one worker; a second ticket filed
+        while it runs. The wait carries the tick as its timeout while a slot
+        is free, and a wait that times out recounts the queue and spawns
+        the second worker, then waits again (KO-353)."""
+        provider = StubProvider(a_task(1))
+        conn = holophyte.runs.open_store(self.tgt)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, provider.team, self.target)
+
+        def filed_one():
+            # Worker 1 holds ticket 1; ticket 2 arrives on the board.
+            store.claim(conn, project,
+                        holophyte.board.mirror_task(conn, project, a_task(1)))
+            conn.commit()
+            provider.queue.append(a_task(2))
+
+        pool = self.run_scheduler(3, provider, [
+            (TICK, filed_one),
+            (holophyte.loop.WORKER_MERGED, provider.queue.clear),
+            (holophyte.loop.WORKER_MERGED, None),
+        ], tick_sec=45)
+
+        self.assertEqual(len(pool.spawned), 2)
+        self.assertEqual(len(pool.reaped), 2)
+        self.assertEqual(pool.timeouts, [45, 45, 45])
+        self.assertIsNone(self.rc)
+        # The tick itself printed nothing; only the spawn it made shows.
+        self.assertEqual(self.out.splitlines(), [
+            "[holo2] started worker 1 as pid 5001",
+            "[holo2] started worker 2 as pid 5002",
+            "[holo2] worker 1 merged its ticket",
+            "[holo2] worker 2 merged its ticket",
+            "[holo2] Linear has no ready tickets. done.",
+        ])
+
+    def test_a_full_pool_waits_on_exits_alone(self):
+        """Three ready tickets under `workers = 3`: the pool is full, so
+        the wait carries no timeout; once one exits with the listing
+        emptied, two slots are free and the timer is back (KO-353)."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 4)))
+
+        pool = self.run_scheduler(3, provider, [
+            (holophyte.loop.WORKER_MERGED, provider.queue.clear),
+            (holophyte.loop.WORKER_MERGED, None),
+            (holophyte.loop.WORKER_MERGED, None),
+        ])
+
+        self.assertEqual(len(pool.spawned), 3)
+        self.assertEqual(pool.timeouts, [None, 120, 120])
+        self.assertIsNone(self.rc)
 
     def test_the_pool_refills_while_live_workers_hold_their_leases(self):
         """Five ready tickets, `workers = 3`, and workers that really hold
@@ -4109,7 +4174,7 @@ class PoolTests(LoopFixture):
             children[second.pid] = second
             reaped = {}
             for _ in range(2):
-                pid, code = holophyte.loop.WAIT(children)
+                pid, code = holophyte.loop.WAIT(children, None)
                 reaped[children.pop(pid)] = code
 
         self.assertEqual(reaped, {first: 1, second: 2})

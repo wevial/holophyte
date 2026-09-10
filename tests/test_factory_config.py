@@ -429,6 +429,28 @@ class LoopConfigTests(ConfigTestCase):
                 self.assertIn("at least 1", message)
                 report.assert_not_called()
 
+    def test_tick_sec_defaults_to_two_minutes(self):
+        self.locate()
+
+        self.assertEqual(holophyte.config.loop_config(self.tgt).tick_sec, 120)
+
+    def test_tick_sec_must_be_an_integer_of_at_least_ten(self):
+        """`"120"` is a string and `5` a poll the board could not bear: each
+        is a startup error naming `[loop] tick_sec` (KO-353)."""
+        for line in ('tick_sec = "120"', "tick_sec = 5"):
+            with self.subTest(line=line):
+                target = self.locate(f"[loop]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[loop] tick_sec", message)
+                self.assertIn("at least 10", message)
+                report.assert_not_called()
+
 
 
 class StateDirectoryTests(ConfigTestCase):
