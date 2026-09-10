@@ -60,7 +60,8 @@ test("the rail lists the project from the daemon's path and the four views", asy
     "Shipped",
   ]);
   const hosts = screen.getByRole("region", { name: "Hosts" });
-  expect(within(hosts).getByText(":7710 · hb 12s")).toBeTruthy();
+  expect(hosts.querySelector("[data-host-label]")!.getAttribute("data-host-label")).toBe("writer");
+  expect(within(hosts).getByRole("button").textContent).toBe("writer:77101 run");
   expect(within(hosts).getByText("1 run")).toBeTruthy();
 });
 
@@ -120,13 +121,13 @@ const second = await fixture<Status>("idle_second_host.json");
 const ORIGIN = "http://writer:7710";
 const PEER = "http://writer-2:7710";
 
-const hostCards = () =>
-  Array.from(screen.getByRole("region", { name: "Hosts" }).querySelectorAll("[data-host]")).map((card) => ({
-    address: card.getAttribute("data-host"),
-    heartbeat: card.querySelector("[data-heartbeat]")!.textContent,
-    unreachable: card.hasAttribute("data-unreachable"),
-    border: card.className.includes("border-bad/50"),
-    second: card.lastElementChild!.textContent,
+const hostRows = () =>
+  Array.from(screen.getByRole("region", { name: "Hosts" }).querySelectorAll("[data-host]")).map((row) => ({
+    address: row.getAttribute("data-host"),
+    project: row.querySelector("[data-project]")!.textContent,
+    tail: row.querySelector("[data-tail]")!.textContent,
+    unreachable: row.hasAttribute("data-unreachable"),
+    border: row.closest("[data-host-label]")!.className.includes("border-bad/50"),
   }));
 
 const projectRows = () =>
@@ -134,7 +135,7 @@ const projectRows = () =>
     .getAllByRole("button")
     .map((row) => row.textContent);
 
-test("two daemons in /peers: the rail lists both hosts with their heartbeats and two project rows with live run counts", async () => {
+test("two daemons in /peers: the rail lists both hosts with their run counts and two project rows with live run counts", async () => {
   const fetchImpl = peersFetch(ORIGIN, {
     [ORIGIN]: { status: working, attention: NO_ATTENTION },
     [PEER]: { status: second, attention: NO_ATTENTION },
@@ -142,16 +143,16 @@ test("two daemons in /peers: the rail lists both hosts with their heartbeats and
   const { deps } = fakeDeps(fetchImpl);
   render(<App base={ORIGIN} pollDeps={deps} />);
   await act(settle);
-  expect(hostCards()).toEqual([
-    { address: "writer:7710", heartbeat: ":7710 · hb 12s", unreachable: false, border: false, second: "1 run" },
-    { address: "writer-2:7710", heartbeat: ":7710 · hb 9s", unreachable: false, border: false, second: "0 runs" },
+  expect(hostRows()).toEqual([
+    { address: "writer:7710", project: "writer", tail: "1 run", unreachable: false, border: false },
+    { address: "writer-2:7710", project: "writer-2", tail: "0 runs", unreachable: false, border: false },
   ]);
   expect(projectRows()).toEqual(["All projects", "writerwriter · supervisor live1", "writer-2writer-2 · supervisor live0"]);
   // "All projects" shows every run on the Floor: the total across both daemons.
   expect(screen.getByText("1 run · 2 projects")).toBeTruthy();
 });
 
-test("a peer that times out reads unreachable with the bad border, keeps its last status with last seen, and adds one critical item", async () => {
+test("a peer that times out reads no answer with the bad border, keeps its project from its last status, and adds one critical item", async () => {
   let peerDown = false;
   const good = peersFetch(ORIGIN, {
     [ORIGIN]: { status: working, attention: NO_ATTENTION },
@@ -175,14 +176,8 @@ test("a peer that times out reads unreachable with the bad border, keeps its las
     firePoll();
     await settle();
   });
-  const [, lost] = hostCards();
-  expect(lost).toEqual({
-    address: "writer-2:7710",
-    heartbeat: "unreachable",
-    unreachable: true,
-    border: true,
-    second: "last seen 40s ago · 0 runs",
-  });
+  const [, lost] = hostRows();
+  expect(lost).toEqual({ address: "writer-2:7710", project: "writer-2", tail: "no answer", unreachable: true, border: true });
   expect(screen.getByRole("alert").textContent).toBe("poll failed: http://writer-2:7710/status timed out");
   // The project row stays, on the faint dot, since its last status is kept.
   expect(projectRows()[2]).toBe("writer-2writer-2 · supervisor live0");
@@ -207,7 +202,7 @@ test("selecting a project in the rail narrows the Floor and the Hosts view to it
   const floorBlocks = () => Array.from(screen.getByRole("region", { name: "Floor" }).querySelectorAll("section")).map((block) => block.getAttribute("aria-label"));
   expect(floorBlocks()).toEqual(["writer", "writer-2"]);
 
-  fireEvent.click(screen.getByRole("button", { name: /^writer-2/ }));
+  fireEvent.click(within(screen.getByRole("region", { name: "Projects" })).getByRole("button", { name: /^writer-2/ }));
   expect(floorBlocks()).toEqual(["writer-2"]);
   expect(screen.getByText("1 run · 1 project")).toBeTruthy();
 
@@ -228,7 +223,7 @@ test("both daemons failing on the first poll: Now still opens with one critical 
   const { deps } = fakeDeps(fetchImpl);
   render(<App base={ORIGIN} pollDeps={deps} />);
   await act(settle);
-  expect(hostCards().map((card) => card.heartbeat)).toEqual(["unreachable", "unreachable"]);
+  expect(hostRows().map((row) => row.tail)).toEqual(["no answer", "no answer"]);
   expect(screen.queryByText("Nothing to show here yet.")).toBeNull();
   const band = screen.getByRole("region", { name: "Needs you" });
   expect(within(band).getByText("2").hasAttribute("data-count")).toBe(true);

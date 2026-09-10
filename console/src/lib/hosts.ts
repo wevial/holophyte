@@ -131,6 +131,36 @@ export function hostName(host: HostRecord): string {
   return host.status?.host ?? host.address.replace(/:\d+$/, "");
 }
 
+/** The daemons under one host label: the card the rail draws. */
+export interface HostGroup {
+  /** What `/status` calls the host, else the host part of the address. */
+  label: string;
+  /** The daemons on that host, in poll order. */
+  hosts: HostRecord[];
+}
+
+/** Host records grouped by their label, in the order each label is first
+ *  seen; a daemon that never answered groups under its address's host. */
+export function groupByHost(hosts: HostRecord[]): HostGroup[] {
+  const groups: HostGroup[] = [];
+  for (const host of hosts) {
+    const label = hostName(host);
+    const group = groups.find((candidate) => candidate.label === label);
+    if (group) group.hosts.push(host);
+    else groups.push({ label, hosts: [host] });
+  }
+  return groups;
+}
+
+/** The foot of a host card: `daemons up 12h` when every answered daemon
+ *  started within a minute of the others, else the shortest uptime; null
+ *  when none has said when it started. Each uptime is read against its
+ *  own daemon's clock. */
+export function daemonsUp(hosts: HostRecord[]): number | null {
+  const uptimes = hosts.flatMap((host) => (host.status?.daemon ? [host.status.now - host.status.daemon.started_ms] : []));
+  return uptimes.length === 0 ? null : Math.min(...uptimes);
+}
+
 /** A host's dot and border: bad when unreachable or its supervisor is
  *  stale, ok when the supervisor is live, faint otherwise, including
  *  while the daemon waits for its token. */
