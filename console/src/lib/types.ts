@@ -8,6 +8,9 @@ export interface Status {
   daemon?: { started_ms: number; pid: number };
   supervisor: Supervisor;
   thresholds: { heartbeat_stale_ms: number; strikes: number };
+  /** Whether `[serve] actions = true` opened the `POST /actions/...`
+   *  routes; a daemon older than the field sends none, read as false. */
+  actions?: boolean;
   runs: Run[];
 }
 

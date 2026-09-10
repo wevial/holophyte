@@ -25,6 +25,7 @@ in [The daemon's actions](daemon.md). A target with no store answers 503.
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2},
+  "actions": false,
   "runs": [
     {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease", "phase": "working",
      "started_ms": 1788450461675, "heartbeat_age_ms": 71989, "elapsed_ms": 72816,
@@ -42,7 +43,10 @@ the sweep's tally for the run, 0 when it is not under suspicion.
 `supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
 serving process: its pid and when it started. `project` is the same
 string as `target`, the console's word for it; both are carried for one
-release. Every `host` passes through `[report] host_label`.
+release. `actions` is whether `[serve] actions = true` opened the
+`POST /actions/...` routes of [The daemon's actions](daemon.md); the
+console draws its action buttons disabled while it is `false`. Every
+`host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`
 
@@ -440,14 +444,17 @@ daemon bound to loopback never asks: `--serve 7710` answers every route
 open, token file or not.
 
 A page served by one daemon polls the others from the browser, and a
-cross-origin GET carrying `Authorization` is not a simple request: the
+cross-origin GET carrying `Authorization` is not a simple request, nor
+is the console's `POST /actions/...` with the bearer and a JSON body: the
 browser first sends a CORS preflight, `OPTIONS` on the path with
-`Access-Control-Request-Headers: authorization`. Every daemon answers it
-on any path with 204, no body, `Access-Control-Allow-Origin: *`,
-`Access-Control-Allow-Methods: GET`, `Access-Control-Allow-Headers:
-authorization, accept` and `Access-Control-Max-Age: 600`, token or not:
-a preflight never carries credentials, so the answer discloses nothing
-and touches no store. Every other method but GET stays 405, `POST`
+`Access-Control-Request-Headers: authorization` (`authorization,
+content-type` for an action). Every daemon answers it on any path with
+204, no body, `Access-Control-Allow-Origin: *`,
+`Access-Control-Allow-Methods: GET, POST`, `Access-Control-Allow-Headers:
+authorization, accept, content-type` and `Access-Control-Max-Age: 600`,
+token or not: a preflight never carries credentials, so the answer
+discloses nothing and touches no store, and the request it clears is
+still refused without the bearer. Every other method but GET stays 405, `POST`
 included on every path but the `/actions/` routes of
 [The daemon's actions](daemon.md).
 

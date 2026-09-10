@@ -12,6 +12,7 @@ import {
 import { projectName } from "../lib/derive";
 import { formatAge } from "../lib/format";
 import { UNREACHABLE, hostItems, type HostRecord } from "../lib/hosts";
+import type { Fetch } from "../lib/poll";
 import type { Ledgers } from "../hooks/useLedger";
 import { threadFor } from "../lib/threads";
 import type { AttentionItem } from "../lib/types";
@@ -47,11 +48,14 @@ export function NeedsYou({
   project,
   now,
   ledgers = {},
+  actionFetch,
 }: {
   hosts: HostRecord[];
   project: ProjectChoice;
   now: number;
   ledgers?: Ledgers;
+  /** The `fetch` action buttons post with; the page's own by default. */
+  actionFetch?: Fetch;
 }) {
   const [kind, setKind] = useState<KindFilter>("all");
   const [expanded, setExpanded] = useState(false);
@@ -77,6 +81,15 @@ export function NeedsYou({
     return describe(item, status.thresholds, { now: status.now, runs: status.runs });
   };
   const eldest = oldest(mine, describeRow);
+
+  /** The daemon a row's buttons post to: the host that served the item,
+   *  with whether its `/status` advertised `actions`; undefined for the
+   *  unreachable row, whose daemon is not answering. */
+  const daemonOf = (item: AttentionItem) => {
+    const host = hosts.find((candidate) => candidate.address === item.daemon);
+    if (!host || item.kind === UNREACHABLE) return undefined;
+    return { base: host.base, actions: host.status?.actions === true, fetch: actionFetch };
+  };
 
   /** A question row's thread from its daemon's ledger; undefined for any
    *  other kind or a daemon without `/ledger`. */
@@ -141,6 +154,7 @@ export function NeedsYou({
                   description={describeRow(item)}
                   thread={threadOf(item, key)}
                   prUrl={item.pr_url}
+                  daemon={daemonOf(item)}
                 />
               );
             })}

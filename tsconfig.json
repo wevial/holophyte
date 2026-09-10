@@ -1,0 +1,13 @@
+// The console's type check driven from the repository root: `bun --cwd=console
+// x tsc --noEmit` (the console tickets' frozen verify line) does not honour
+// `--cwd` for `bun x` on Bun 1.4 -- the compiler starts here, and without this
+// file prints its help and exits 1. It reads console/tsconfig.json's options
+// and checks the same files; typeRoots points it at the console's installed
+// packages, since the root has none of its own.
+{
+  "extends": "./console/tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": ["./console/node_modules/@types", "./console/node_modules"]
+  },
+  "include": ["console/src", "console/tests", "console/build.ts"]
+}
