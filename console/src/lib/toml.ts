@@ -30,12 +30,34 @@ const BARE_KEY = /^[A-Za-z0-9_-]+$/;
 
 /** The header line `[name]` opens, or null for a non-header line; an
  *  array-of-tables header `[[name]]` is its own name with the brackets
- *  kept, so `[[hooks]]` never reads as `[hooks]`. */
+ *  kept, so `[[hooks]]` never reads as `[hooks]`. Each dotted part is
+ *  decoded, so `["loop"]` and `[ 'a' . "b" ]` name `loop` and `a.b`, the
+ *  same tables their bare forms name; a part this cannot decode keeps
+ *  its source, which matches nothing the sheet binds. */
 function headerOf(line: string): string | null {
   const match = HEADER.exec(line);
   if (!match) return null;
-  const name = match[2]!.replace(/\s*\.\s*/g, ".");
+  const name = tableName(match[2]!);
   return match[1] === "[[" ? `[[${name}]]` : name;
+}
+
+/** A header's inner text as the dotted name it denotes: the parts split
+ *  on the dots outside quotes, each trimmed and unquoted. */
+function tableName(source: string): string {
+  const parts: string[] = [];
+  let at = 0;
+  while (at <= source.length) {
+    const rest = source.slice(at);
+    const lead = /^\s*/.exec(rest)![0].length;
+    const end = /^["']/.test(rest.slice(lead)) ? valueEnd(rest, lead) : rest.search(/\./) < 0 ? rest.length : rest.search(/\./);
+    const part = rest.slice(lead, end).trim();
+    const read = /^["']/.test(part) ? readValue(part) : part;
+    parts.push(typeof read === "string" ? read : part);
+    const dot = rest.indexOf(".", end);
+    if (dot < 0) break;
+    at += dot + 1;
+  }
+  return parts.join(".");
 }
 
 /** The text split into lines, with the indices of every line a value
@@ -280,8 +302,10 @@ function itemsOfLine(line: string): { head: string; items: { item: TomlValue; te
   return { head, items, tail: items.length === 0 ? "" : line.slice(tailAt) };
 }
 
-/** The lines of a multi-line array (`key = [` on its own line, `]` on
- *  its own line) rewritten to hold `items`, in order, with the comment
+/** The lines of a multi-line array (`key = [` opening, `]` closing,
+ *  each bracket line free to carry items of its own, which are edited as
+ *  if on their own line and rejoined when they come through unchanged)
+ *  rewritten to hold `items`, in order, with the comment
  *  lines between them and each kept item's trailing comment as they
  *  were: an item that stays keeps its line, an item edited in place
  *  keeps its line's tail, a dropped item's line goes, and new items are
@@ -290,15 +314,28 @@ function itemsOfLine(line: string): { head: string; items: { item: TomlValue; te
  *  item per line, the last keeping the line's tail. Null when the span
  *  is not that shape, so the caller collapses it instead. */
 function editArrayLines(lines: string[], hit: KeyHit, items: TomlValue[]): string[] | null {
-  const opening = lines[hit.start]!;
-  const closing = lines[hit.end - 1]!;
-  const head = opening.slice(keyOfLine(opening)!.valueAt).trim();
-  if (hit.end - hit.start < 2 || !/^\[\s*(#.*)?$/.test(head) || !closing.trim().startsWith("]")) return null;
   const old = hit.value;
-  if (!Array.isArray(old)) return null;
+  if (hit.end - hit.start < 2 || !Array.isArray(old)) return null;
+  // The bracket lines split at their brackets: `key = [` plus whatever
+  // follows, and whatever precedes `]` plus the bracket and its tail.
+  const first = lines[hit.start]!;
+  const bracketAt = keyOfLine(first)!.valueAt + (hit.raw.length - hit.raw.trimStart().length);
+  if (first[bracketAt] !== "[") return null;
+  const opening = first.slice(0, bracketAt + 1);
+  const afterOpen = first.slice(bracketAt + 1);
+  const lastLine = lines[hit.end - 1]!;
+  const closeAt = hit.raw.length - hit.raw.lastIndexOf("\n") - 2;
+  if (lastLine[closeAt] !== "]") return null;
+  const beforeClose = lastLine.slice(0, closeAt);
+  const closing = `${beforeClose.trim() === "" ? beforeClose : /^\s*/.exec(first)![0]}${lastLine.slice(closeAt)}`;
+  const inner = lines.slice(hit.start + 1, hit.end - 1);
+  let indent: string | null = inner.map((line) => itemsOfLine(line)).find((parts) => parts != null && parts.items.length > 0)?.head ?? null;
+  const virtualOpen = afterOpen.trim() === "" ? null : `${indent ?? "  "}${afterOpen.trimStart()}`;
+  const virtualClose = beforeClose.trim() === "" ? null : `${indent ?? "  "}${beforeClose.trimStart()}`;
+  if (virtualOpen != null) inner.unshift(virtualOpen);
+  if (virtualClose != null) inner.push(virtualClose);
   type Row = { line: string; item?: TomlValue; head?: string; tail?: string };
   const out: string[] = [];
-  let indent: string | null = null;
   let next = 0;
   const runAt = (run: TomlValue[]) =>
     items.findIndex((_, index) => index >= next && run.every((item, offset) => items[index + offset] === item));
@@ -318,8 +355,7 @@ function editArrayLines(lines: string[], hit: KeyHit, items: TomlValue[]): strin
       next += 1;
     }
   };
-  for (let at = hit.start + 1; at < hit.end - 1; at += 1) {
-    const line = lines[at]!;
+  for (const line of inner) {
     const parts = itemsOfLine(line);
     if (parts == null || parts.items.length === 0) {
       out.push(line);
@@ -357,7 +393,11 @@ function editArrayLines(lines: string[], hit: KeyHit, items: TomlValue[]): strin
     const end = itemEnd(out[index]!);
     if (end >= 0) out[index] = `${out[index]!.slice(0, end)}${withComma(out[index]!.slice(end))}`;
   }
-  return [opening, ...out, closing];
+  // A bracket line's own items that came through unchanged rejoin it,
+  // so the line keeps its bytes.
+  const openRow = virtualOpen != null && out[0] === virtualOpen ? [`${opening}${afterOpen}`, ...out.slice(1)] : [opening, ...out];
+  const closeRow = virtualClose != null && openRow[openRow.length - 1] === virtualClose ? [...openRow.slice(0, -1), `${beforeClose}${lastLine.slice(closeAt)}`] : [...openRow, closing];
+  return closeRow;
 }
 
 /** `text` with `[table] key` set to `value`: the key's line rewritten in

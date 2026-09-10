@@ -151,3 +151,24 @@ test("a multi-line array line holding two commands: adding a third keeps both on
   const swapped = writeKey(text, { table: "merge", key: "after" }, ["x"]);
   expect(readKey(swapped, { table: "merge", key: "after" })).toEqual(["x"]);
 });
+
+test("review round 3: an array whose first item shares the `[` line and whose last shares the `]` line is edited line by line, its inner comment kept", () => {
+  const text = `[worktree]\nsetup = ["a", # keep this\n  "b"]\n`;
+  const added = writeKey(text, { table: "worktree", key: "setup" }, ["a", "b", "c"]);
+  expect(readKey(added, { table: "worktree", key: "setup" })).toEqual(["a", "b", "c"]);
+  expect(added).toContain("# keep this");
+  expect(added).toBe(`[worktree]\nsetup = ["a", # keep this\n  "b",\n  "c",\n]\n`);
+  // Unchanged bracket lines keep their bytes when the edit lands between them.
+  const inner = `[worktree]\nsetup = ["a", # keep this\n  "b", # and this\n  "c"]\n`;
+  const dropped = writeKey(inner, { table: "worktree", key: "setup" }, ["a", "c"]);
+  expect(readKey(dropped, { table: "worktree", key: "setup" })).toEqual(["a", "c"]);
+  expect(dropped).toBe(`[worktree]\nsetup = ["a", # keep this\n  "c"]\n`);
+});
+
+test("review round 3: a quoted table header names the same table as its bare form, so its key is read and edited in place rather than duplicated", () => {
+  const text = `["loop"]\nworkers = 1  # one\n`;
+  expect(readKey(text, { table: "loop", key: "workers" })).toBe(1);
+  expect(writeKey(text, { table: "loop", key: "workers" }, 3)).toBe(`["loop"]\nworkers = 3 # one\n`);
+  const dotted = `[ 'a' . "b" ]\nx = true\n`;
+  expect(readKey(dotted, { table: "a.b", key: "x" })).toBe(true);
+});
