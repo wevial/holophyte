@@ -39,7 +39,18 @@ machines it walks. Back to the [README](index.md).
    `min(review_rounds_max, review_rounds + changed_lines // review_rounds_per_lines)`
    from `[loop]` (see [Config](config.md)): 2 by default, one more per 800
    changed lines, never above 4.
-6. Merge gate: the verify command passes again, and the ticket is re-read
+6. Merge gate: the gate runs under a per-target merge lock (a file in the
+   target's state directory naming the run and when it took it), so two runs
+   reaching it together take turns and merges into `main` serialise; a gate
+   that waits out the bound parks the ticket naming the holder, and
+   `--sweep --act` removes a lock whose run has ended (judged and removed
+   under the same arbiter a gate takes it under, so a lock a live process
+   still holds is left in place and said so, and a fresh lock is never
+   displaced). Under the lock, `main`
+   is merged into the branch when it has moved past it -- a conflict aborts
+   that merge, leaves the branch at its sha and parks the ticket
+   `blocked_on_operator` with the conflicting paths in the question -- then
+   the verify command passes again on the result, and the ticket is re-read
    from Linear and held against the snapshot the claim froze (title,
    acceptance criteria, verify commands). A body edited while the run was
    working refuses the merge and preserves the branch — the candidate answers

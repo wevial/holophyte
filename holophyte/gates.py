@@ -11,11 +11,14 @@ one constant it shares with worktree setup, `VERIFY_TIMEOUT`, stays in
 Second slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import contextlib
+import fcntl
 import os
 import re
 import signal
 import subprocess
 from pathlib import Path
+from time import monotonic, sleep, time
 
 import ticket_template
 from holophyte.config import VERIFY_TIMEOUT
@@ -414,6 +417,17 @@ class InfraFailure(RunFailure):
     """
 
 
+class MergeLockHeld(InfraFailure):
+    """The merge lock stayed held past the wait bound.
+
+    Another run's gate held `main` for longer than this one waited, or a
+    lock a dead run left behind has not been swept yet. Either says nothing
+    about the ticket, so it is an `InfraFailure`: the branch stays as it is,
+    no strike is spent, and the message names the holder so the operator
+    knows which run (or which stale lock) to look at.
+    """
+
+
 class MergeParked(Exception):
     """An approved, verified candidate parked for a human to say "merge".
 
@@ -438,3 +452,163 @@ def sh(args, cwd=None):
     if r.returncode != 0:
         raise RuntimeError(f"`{args}` failed:\n{r.stdout}\n{r.stderr}")
     return r.stdout.strip()
+
+
+# --- the merge lock ---------------------------------------------------------
+# Two runs on one target can reach the merge gate together (KO-341 leases the
+# ticket, not the project), and a candidate approved against an older `main`
+# can land on a `main` that moved. The gate therefore runs under one lock per
+# target: a file in the target's state directory, taken with an exclusive
+# create and held for the gate's duration -- merge `main` into the branch,
+# re-verify, `--no-ff` merge -- so merges into `main` serialise (design note
+# 11). A file rather than an flock so the supervisor, a separate process, can
+# see who holds it and clear one whose run has ended.
+
+# How long a second gate waits on the lock before parking, and how often it
+# looks. A gate is a verify and a merge -- minutes, not hours -- so a lock
+# held longer than this is a run that died at the gate, and the sweep's
+# stale rule (`supervisor.merge_lock_lines`) is the backstop that clears it.
+MERGE_LOCK_WAIT_SEC = 180
+MERGE_LOCK_POLL_SEC = 1.0
+
+
+def merge_lock_path(target):
+    """The merge lock for `target`, beside its store in the state directory
+    -- never in the repository, where a task's `git add -A` could commit it."""
+    return target.holo_dir / "merge.lock"
+
+
+def read_merge_lock(path):
+    """The `(run_id, taken_at)` the lock at `path` names, or None if none.
+
+    `run_id` is an int, or None for a lock a storeless `run_task()` wrote (it
+    has no run to name); `taken_at` is epoch seconds. A file that exists but
+    says neither is read as `(None, None)`: a lock, but not one whose holder
+    can be judged.
+    """
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    parts = text.split()
+    run_id = int(parts[0]) if parts and parts[0].isdigit() else None
+    try:
+        taken_at = float(parts[1]) if len(parts) > 1 else None
+    except ValueError:
+        taken_at = None
+    return run_id, taken_at
+
+
+@contextlib.contextmanager
+def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
+    """Hold `target`'s merge lock for the block; raise `MergeLockHeld` if it
+    cannot be had within `wait` seconds.
+
+    Create-then-check, never check-then-create: `O_EXCL` makes the create
+    the arbitration, and a create that fails means someone holds it. The
+    holder is then polled every `poll` seconds until it releases or the
+    bound passes; `on_wait` is called once per poll so the caller can keep
+    its run's heartbeat fresh through a wait the sweep would otherwise read
+    as silence. The file holds `RUN_ID TIMESTAMP` so the supervisor can tell
+    a live holder from a dead one. Released on every way out of the block,
+    and only if the file is still ours: a sweep that judged this run dead
+    and cleared the lock may have let another gate take it since.
+    """
+    wait = MERGE_LOCK_WAIT_SEC if wait is None else wait
+    poll = MERGE_LOCK_POLL_SEC if poll is None else poll
+    path = merge_lock_path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamp = f"{run_id if run_id is not None else '-'} {time():.3f}\n"
+    deadline = monotonic() + wait
+    while True:
+        try:
+            with merge_lock_arbiter(path):
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                # The flock rides on the open descriptor for the block: a
+                # sweep that finds it taken knows the holding process is
+                # alive whatever the store says of its run, and the kernel
+                # drops it with the process, so a holder that died cannot
+                # keep the lock "in use". Taken under the arbiter, so no
+                # sweep can open the fresh file before we hold it.
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                os.write(fd, stamp.encode())
+        except FileExistsError:
+            if monotonic() >= deadline:
+                holder = read_merge_lock(path)
+                who = (f"run {holder[0]}" if holder and holder[0] is not None
+                       else "a run it does not name")
+                raise MergeLockHeld(
+                    f"merge lock {path} held by {who} for longer than the"
+                    f" {wait:.0f}s wait; the gate did not run. A holder whose"
+                    " run has ended is cleared by --sweep --act")
+            if on_wait is not None:
+                on_wait()
+            sleep(poll)
+            continue
+        break
+    try:
+        yield path
+    finally:
+        try:
+            if path.read_text() == stamp:
+                path.unlink()
+        except FileNotFoundError:
+            pass
+        os.close(fd)
+
+
+@contextlib.contextmanager
+def merge_lock_arbiter(path):
+    """Serialise every change to the merge lock at `path`: the gate's
+    exclusive create and the sweep's judge-and-remove both run inside this.
+
+    A flock on a permanent sibling file (`merge.lock.arbiter`, created once
+    and never unlinked, since unlinking a flock file is what lets two
+    holders exist). Held for microseconds -- one create, or one open, probe
+    and unlink -- never across a gate. It exists because judging a lock
+    stale and removing it must be one step: a sweep that opened a stale
+    inode, paused, and acted after another sweep had cleared it and a gate
+    had taken a fresh lock at the same path would remove the live lock, and
+    two gates would merge at once. Under the arbiter no creator or remover
+    can move between the sweep's open and its unlink, so the file it opened
+    is the file at `path`.
+    """
+    fd = os.open(path.with_name(f"{path.name}.arbiter"),
+                 os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # drops the flock
+
+
+def remove_dead_merge_lock(path):
+    """Remove the merge lock at `path` if no live process holds it; say what
+    happened: `removed`, `in_use`, or `gone`.
+
+    Runs under `merge_lock_arbiter()`, as `merge_lock()`'s acquisition does,
+    so the whole of open, probe and unlink is one step against every gate
+    and every other sweep. Inside it: open the file, take its flock without
+    blocking -- a refusal means the process that created it is still alive,
+    and the lock is `in_use`, whatever the store says of its run -- else
+    unlink it, `removed`. `gone` is a lock already cleared. Nothing can
+    have replaced the file between the open and the unlink, so the file
+    judged is the file removed and a gate's fresh lock is never touched.
+    """
+    with merge_lock_arbiter(path):
+        try:
+            fd = os.open(path, os.O_RDONLY)
+        except FileNotFoundError:
+            return "gone"
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return "in_use"
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                return "gone"
+            return "removed"
+        finally:
+            os.close(fd)

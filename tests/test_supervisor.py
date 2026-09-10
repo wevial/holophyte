@@ -10,6 +10,7 @@ sweep read the box once for the whole run.
 from __future__ import annotations
 
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -17,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_supervisor_sweep import MINUTE, T0, SweepTestCase  # noqa: E402
 
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -81,6 +83,102 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
         self.assertIn(f"× {1 + holophyte.supervisor.MAX_ROUNDS} turns",
                       trip.evidence)
 
+
+class MergeLockSweepTests(SweepTestCase):
+    """KO-342: the sweep clears a merge lock whose run has ended, names it,
+    and leaves a live run's lock alone."""
+
+    def lock_for(self, run_id):
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
+        return path
+
+    def test_an_acting_sweep_removes_the_lock_of_an_ended_run(self):
+        run_id = self.a_run(phase="merge_gate")
+        store.release(self.conn, run_id, "failed", "died at the gate",
+                      now=T0 + MINUTE)
+        path = self.lock_for(run_id)
+
+        quiet = self.run_sweep(T0 + 2 * MINUTE)
+        self.assertTrue(path.exists())
+        self.assertIn(f"stale merge lock: run {run_id} ended;"
+                      " --sweep --act removes it", quiet)
+
+        acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
+
+        self.assertFalse(path.exists())
+        self.assertIn(f"removed stale merge lock: run {run_id} ended", acted)
+
+    def test_a_live_runs_lock_is_kept_and_reported(self):
+        run_id = self.a_run(phase="merge_gate")
+        path = self.lock_for(run_id)
+
+        lines = self.run_sweep(T0 + MINUTE, "--act")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(any(line.startswith(
+            f"merge lock held by run {run_id} (merge_gate)") for line in lines),
+            lines)
+
+    def test_a_lock_a_live_process_holds_survives_the_sweep_of_its_ended_run(self):
+        """The store says the run ended, but the process that took the lock
+        is still inside the gate (the flock rides on its open descriptor):
+        the sweep leaves the lock and says why, rather than deleting a lock
+        somebody is inside of."""
+        run_id = self.a_run(phase="merge_gate")
+        store.release(self.conn, run_id, "failed", "judged dead early",
+                      now=T0 + MINUTE)
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        with holophyte.gates.merge_lock(self.tgt, run_id):
+            stamp = path.read_text()
+            acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
+            self.assertEqual(path.read_text(), stamp)
+        self.assertTrue(any("process is alive and holds it; left alone" in line
+                            and f"run {run_id}" in line for line in acted), acted)
+        self.assertFalse(path.exists())  # the holder's release, not the sweep's
+
+    def test_judging_and_removing_a_stale_lock_is_one_step_against_a_gate(self):
+        """The interleaving that removed a live lock: a sweep opened the
+        stale inode, paused, and acted after another sweep had cleared it
+        and a gate had taken a fresh lock at the same path -- so two gates
+        merged at once. Judging and removing now happen under the arbiter a
+        gate's create also needs: while it is held, neither a sweep nor a
+        gate makes progress; once released, the stale lock goes exactly
+        once, the gate holds a fresh one, and a further sweep finds it in
+        use rather than displacing it."""
+        ended = self.a_run(phase="merge_gate")
+        store.release(self.conn, ended, "failed", "died at the gate",
+                      now=T0 + MINUTE)
+        path = self.lock_for(ended)
+        stale = path.read_text()
+        live = self.a_run(phase="merge_gate")
+        lines, entered = [], threading.Event()
+        sweeping = threading.Thread(
+            target=lambda: lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act")))
+
+        def gate():
+            with holophyte.gates.merge_lock(self.tgt, live, wait=10, poll=0.01):
+                entered.set()
+                lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act"))
+        gating = threading.Thread(target=gate)
+
+        with holophyte.gates.merge_lock_arbiter(path):
+            sweeping.start()
+            gating.start()
+            sweeping.join(0.3)
+            self.assertTrue(sweeping.is_alive(), "the sweep acted without the arbiter")
+            self.assertFalse(entered.is_set(), "the gate entered without the arbiter")
+            self.assertEqual(path.read_text(), stale)
+        sweeping.join(5)
+        gating.join(5)
+
+        self.assertFalse(sweeping.is_alive() or gating.is_alive())
+        self.assertIn(f"removed stale merge lock: run {ended} ended", lines)
+        self.assertTrue(any(line.startswith(f"merge lock held by run {live}")
+                            for line in lines), lines)
+        self.assertNotIn("already cleared", " ".join(lines))
+        self.assertFalse(path.exists())  # the gate's own release, last
+        self.assertEqual(list(path.parent.glob("merge.lock")), [])
 
 if __name__ == "__main__":
     unittest.main()
