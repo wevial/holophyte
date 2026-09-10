@@ -1,5 +1,6 @@
 import { groupByDay, medianRounds } from "../lib/shipped";
 import type { ShippedState } from "../hooks/useShipped";
+import type { Fetch } from "../lib/poll";
 import { ShippedTable } from "./ShippedTable";
 
 export { SHIPPED_PAGE, concatLedgers, shippedUrl } from "../hooks/useShipped";
@@ -11,9 +12,22 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
  * ledger shared with the Board's Shipped-today table), every daemon's
  * rows newest first under a sub-header per day; "Load older" fetches, for
  * every daemon with more, the page before the oldest id it has shown.
- * `now` is the clock naming "Today"; `tz` pins the zone for tests.
+ * `now` is the clock naming "Today"; `polls` and `deps` reach the expanded
+ * row's detail; `tz` pins the zone for tests.
  */
-export function Shipped({ shipped, now, tz }: { shipped: ShippedState; now: number; tz?: string }) {
+export function Shipped({
+  shipped,
+  now,
+  polls,
+  deps,
+  tz,
+}: {
+  shipped: ShippedState;
+  now: number;
+  polls?: number;
+  deps?: { fetch: Fetch };
+  tz?: string;
+}) {
   const { rows, more, errors, loading, paging, loadOlder } = shipped;
   const days = groupByDay(rows, now, tz).length;
   const median = medianRounds(rows);
@@ -41,7 +55,7 @@ export function Shipped({ shipped, now, tz }: { shipped: ShippedState; now: numb
         <p className="mt-3 text-[13px] text-muted">Nothing merged yet</p>
       ) : (
         <div className="mt-3">
-          <ShippedTable rows={rows} now={now} tz={tz} />
+          <ShippedTable rows={rows} now={now} polls={polls} deps={deps} tz={tz} />
           {more && (
             <button
               type="button"

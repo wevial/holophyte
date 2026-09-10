@@ -110,7 +110,7 @@ export function Board({
             <p className="mt-3 text-[13px] text-muted">{shipped.loading ? "" : "Nothing merged today"}</p>
           ) : (
             <div className="mt-3">
-              <ShippedTable rows={shipped.rows} now={now} tz={tz} days={1} />
+              <ShippedTable rows={shipped.rows} now={now} polls={polls} deps={deps} tz={tz} days={1} />
             </div>
           )}
         </section>
