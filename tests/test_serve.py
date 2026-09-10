@@ -167,9 +167,10 @@ class ServeTestCase(unittest.TestCase):
         self.assertEqual(code, 204)
         self.assertEqual(raw, b"")
         self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
-        self.assertEqual(headers["Access-Control-Allow-Methods"], "GET")
-        self.assertIn("authorization",
-                      headers["Access-Control-Allow-Headers"].lower())
+        self.assertEqual(headers["Access-Control-Allow-Methods"], "GET, POST")
+        allowed = headers["Access-Control-Allow-Headers"].lower()
+        self.assertIn("authorization", allowed)
+        self.assertIn("content-type", allowed)
         self.assertEqual(headers["Access-Control-Max-Age"], "600")
         self.assertNotIn("Allow", headers)
         opened.assert_not_called()
@@ -2061,6 +2062,29 @@ class ActionsTests(ServeTestCase):
                          [("intervention", "operator")])
         self.assertIn("holophyte-supervise@writer-a", entries[0].text)
         self.assertIn("restart-supervisor", entries[0].text)
+
+    def test_a_preflight_for_an_action_grants_the_post_and_its_json_body(self):
+        # The console on another daemon's page asks before posting an
+        # action with the bearer and a JSON Content-Type; a preflight
+        # that named only GET would have the browser block the click.
+        self.seed()
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+
+        with patch.object(store.read, "open_readonly") as opened:
+            code, headers, raw = self.fetch(
+                "OPTIONS", "/actions/restart-supervisor",
+                {"Origin": "http://page.example:7710",
+                 "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers":
+                     "authorization, content-type"})
+        self.assertEqual(code, 204)
+        self.assertEqual(raw, b"")
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
+        self.assertIn("POST", headers["Access-Control-Allow-Methods"])
+        allowed = headers["Access-Control-Allow-Headers"].lower()
+        self.assertIn("authorization", allowed)
+        self.assertIn("content-type", allowed)
+        opened.assert_not_called()
 
     def test_status_advertises_the_opt_in(self):
         # KO-349: the console reads `actions` before a click, so a daemon

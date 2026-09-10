@@ -444,14 +444,17 @@ daemon bound to loopback never asks: `--serve 7710` answers every route
 open, token file or not.
 
 A page served by one daemon polls the others from the browser, and a
-cross-origin GET carrying `Authorization` is not a simple request: the
+cross-origin GET carrying `Authorization` is not a simple request, nor
+is the console's `POST /actions/...` with the bearer and a JSON body: the
 browser first sends a CORS preflight, `OPTIONS` on the path with
-`Access-Control-Request-Headers: authorization`. Every daemon answers it
-on any path with 204, no body, `Access-Control-Allow-Origin: *`,
-`Access-Control-Allow-Methods: GET`, `Access-Control-Allow-Headers:
-authorization, accept` and `Access-Control-Max-Age: 600`, token or not:
-a preflight never carries credentials, so the answer discloses nothing
-and touches no store. Every other method but GET stays 405, `POST`
+`Access-Control-Request-Headers: authorization` (`authorization,
+content-type` for an action). Every daemon answers it on any path with
+204, no body, `Access-Control-Allow-Origin: *`,
+`Access-Control-Allow-Methods: GET, POST`, `Access-Control-Allow-Headers:
+authorization, accept, content-type` and `Access-Control-Max-Age: 600`,
+token or not: a preflight never carries credentials, so the answer
+discloses nothing and touches no store, and the request it clears is
+still refused without the bearer. Every other method but GET stays 405, `POST`
 included on every path but the `/actions/` routes of
 [The daemon's actions](daemon.md).
 
