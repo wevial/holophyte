@@ -653,30 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[539 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T21:48:04Z — KO-360
-MERGED to main as 2d1f6f0 (branch task/ko-360-the-shipped-table-s-last-colum deleted).
-actual: 2.3 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T21:54:56Z — KO-351
-FAILED: swept by the supervisor in phase working: stale_heartbeat (silent for 10.7 min over 2 consecutive sweeps); branch and worktree preserved for a human
-actual: 10.7 min · estimate: 30 min · rounds: 0
-
-## 2026-09-10T21:54:56Z — KO-352
-FAILED: swept by the supervisor in phase working: stale_heartbeat (silent for 10.7 min over 2 consecutive sweeps); branch and worktree preserved for a human
-actual: 10.7 min · estimate: 30 min · rounds: 0
-
-## 2026-09-10T21:54:56Z — KO-356
-FAILED: swept by the supervisor in phase working: stale_heartbeat (silent for 10.7 min over 2 consecutive sweeps); branch and worktree preserved for a human
-actual: 10.7 min · estimate: 30 min · rounds: 0
-
-## 2026-09-10T21:56:35Z — KO-352
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T21:56:37Z — KO-352
-MERGED to main as 17c7ab2 (branch task/ko-352-the-hosts-rail-groups-daemons deleted).
-actual: 1.1 min · estimate: 30 min · rounds: 1
+[545 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T22:02:45Z — KO-351
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -770,3 +747,31 @@ actual: 22.2 min · estimate: 30 min · rounds: 2
 
 ## 2026-09-10T23:00:29Z — KO-358
 Round 4: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T23:00:30Z — KO-358
+FAILED: terminal adjudication: FAIL; branch task/ko-358-a-project-s-settings-open-as-a preserved at f097a0cf03ef
+actual: 22.2 min · estimate: 30 min · rounds: 4
+
+## 2026-09-10T23:06:28Z — KO-358
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/src/lib/toml.ts:255 [p0] **Blocker:** [toml.ts:255](/home/reviewer/candidate/console/src/lib/toml.ts:255) returns bound values for multiline arrays and keys under quoted headers. Cons…
+- criteria:2 [p2] CRITERION 2: not met — Workers editing and PUT are witnessed, but multiline arrays and quoted table headers remain bound and editable; tests asserting these sha…
+
+## 2026-09-10T23:09:52Z — KO-358
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/lib/toml.ts:257 [p2] [P2] [toml.ts:257](/home/reviewer/candidate/console/src/lib/toml.ts:257): Existing keys in `loop = { workers = 1 }` or `loop.workers = 1` return `null`, so Wo…
+
+## 2026-09-10T23:14:03Z — KO-358
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/src/lib/toml.ts:44 [p1] [P1] [toml.ts:44](/home/reviewer/candidate/console/src/lib/toml.ts:44): Quoted table names containing `]` are not recognized as table boundaries. With `[loop]…
+- criteria:2 [p2] CRITERION 2: not met — a valid quoted table containing `]` leaves its workers key editable and incorrectly bound to `[loop]`; reproduced above. Given the worker…
+
+## 2026-09-10T23:16:24Z — KO-358
+Round 4: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T23:16:24Z — KO-358
+FAILED: terminal adjudication: FAIL; branch task/ko-358-a-project-s-settings-open-as-a preserved at e770d8bbf0d5
+actual: 13.8 min · estimate: 30 min · rounds: 4
