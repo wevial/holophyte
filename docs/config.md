@@ -369,9 +369,17 @@ pr_rounds = 5
 # How the shepherd merges a green, quiet pull request: "merge", "squash" or
 # "rebase". Optional; the value shown is the default.
 pr_merge_method = "merge"
+# Where the pull request's title and body come from: "ticket" (the ticket
+# pasted, titled `KO-n: TITLE`) or "written" (one implementer turn writes
+# them from the diff). Optional; the value shown is the default.
+pr_text = "ticket"
+# Instructions the written turn is given, in the repository's own words.
+# Optional; default empty.
+pr_style = ""
 ```
 
-Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`.
+Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`, `pr_text`,
+`pr_style`.
 
 With `approve = "auto"` a clean merge gate merges, as it always has. With
 `approve = "human"` the loop stops there instead: the run's phase becomes
@@ -441,3 +449,29 @@ GitHub answers, which for `"squash"` and `"rebase"` is the new commit on
 `main`. The key is validated whatever the mode; anything but the three
 strings is a startup error naming the key. The local mode's `--no-ff` merge
 is unaffected.
+
+`pr_text` is where a pull request's title and body come from under `mode =
+"pr"`. `"ticket"` (the default) is the form above: the title `KO-n: TITLE`,
+the body the ticket verbatim with the run's FINDINGS entry appended. With
+`"written"`, after the candidate is approved and verified and before the
+branch is pushed, the loop runs one more turn on the implementer route in the
+task worktree, given the diff against `main` (capped, with a note when cut),
+the ticket body, the repository's `AGENTS.md` and `CLAUDE.md` when the
+repository root has them, and `pr_style`. The turn answers with one line
+`TITLE: ...` and the description in Markdown after it; the loop takes the
+title as given, appends one line `Linear: KO-n` with the issue's URL to the
+body, and opens the pull request with them. No FINDINGS entry is appended,
+and the branch keeps its identifier. A reply with no `TITLE:` line, an empty
+title or a title over 120 characters, or a turn that runs out of its budget
+(a few minutes of the run's remaining box), falls back to the ticket form for
+that pull request and prints one line saying so, so a pull request is always
+opened. The text is written once, when the pull request opens; later shepherd
+passes leave it alone. The value must be `"ticket"` or `"written"`; anything
+else is a startup error naming the key.
+
+`pr_style` is an optional string of instructions the written turn is given
+verbatim, for the repository's own pull request conventions -- for example,
+"Title starts with [Feature Name], the feature read from the diff. No ticket
+identifier in the title. Describe what changed and why in a few short
+paragraphs; no testing plan." It is read under `pr_text = "written"` only,
+and anything but a string is a startup error naming the key.

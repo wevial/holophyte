@@ -93,7 +93,7 @@ query($project: String!, $after: String) {
     ) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        identifier id title description
+        identifier id url title description
         estimate priority
         state { type name }
         relations { nodes { type relatedIssue { identifier state { type } } } }
@@ -165,6 +165,10 @@ def parse_task(issue):
     fields the loop happens to branch on. It is prompt input only — the store
     mirrors named fields, never this one.
 
+    `url` is the issue's page on Linear, when the query carried it: it is
+    what a written pull request body links at its end (KO-336), and nothing
+    else reads it, so an issue without one is a task without the key's value.
+
     `criteria` is the "Acceptance criteria" section's items, checked ones
     included: the mirror routes a ticket carrying both criteria and a verify
     command to `ready` and everything else to `needs_spec` (state-model §2),
@@ -184,7 +188,8 @@ def parse_task(issue):
             "contracts": parsed.contract_checks,
             "body": desc,
             "budget_min": int(issue.get("estimate") or 20),
-            "priority": issue.get("priority")}
+            "priority": issue.get("priority"),
+            "url": issue.get("url")}
 
 
 ISSUE_QUERY = """
