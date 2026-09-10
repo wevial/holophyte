@@ -2701,6 +2701,29 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual(self.on_disk(), text)
         self.assertEqual(Path(body["backup"]).read_text(), before)
 
+    def test_a_route_that_cannot_start_is_reported_but_the_write_lands(self):
+        """A command that does not exist passes the document check (it is
+        absolute) and fails only at launch. The write has already landed,
+        so the reply must still carry `probe` -- naming the launch error --
+        rather than the request failing after the file was replaced."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        missing = self.root / "no-such-harness"
+        text = before + f'\n[agents]\nimplementer = "{missing}"\n'
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 200, body)
+        self.assertIs(body["ok"], True)
+        self.assertIs(body["probe"]["ok"], False)
+        self.assertIs(body["probe"]["timed_out"], False)
+        self.assertIsNone(body["probe"]["returncode"])
+        self.assertEqual(body["probe"]["command"],
+                         [str(missing), holophyte.agents.PROBE_GOAL])
+        self.assertIn("No such file", body["probe"]["launch_error"])
+        self.assertEqual(self.on_disk(), text)
+        self.assertEqual(Path(body["backup"]).read_text(), before)
+
     def test_the_backup_keeps_the_file_s_mode(self):
         """A mode-0600 file's backup holds the same secrets, so it is
         created 0600 too, whatever the umask says for a new file."""

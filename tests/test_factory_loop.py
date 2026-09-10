@@ -5321,6 +5321,19 @@ class ImplementerProbeTests(LoopFixture):
         self.assertEqual(len(self.last_provider.queue), 1)
         self.assertEqual(self.last_fake.turns, [])
 
+    def test_a_route_that_cannot_start_ends_the_pass_naming_the_reason(self):
+        """An absolute path that does not exist passes the config check and
+        fails only at launch; that is a failed probe naming the OS's reason,
+        not a traceback, and nothing is claimed."""
+        missing = self.db.parent / "no-such-harness"
+        self.configure(f'[agents]\nimplementer = "{missing}"\n')
+        out = self.main_output(Commit("work"), APPROVE)
+        self.assertEqual(self.rc, 1)
+        self.assertIn("implementer probe failed (could not start:", out)
+        self.assertIn("No such file", out)
+        self.assertIn(str(missing), out)
+        self.assertFalse(self.db.exists())
+
     def test_a_route_that_hangs_past_the_cap_ends_the_pass_naming_it(self):
         path = self.script("sleep 30\n")
         with patch.object(holophyte.agents, "PROBE_TIMEOUT", 1):
