@@ -329,10 +329,10 @@ class FakeLinear:
         if "number: { in:" in query:  # CLOSED_QUERY: team key + numbers
             nodes = [i for i in self.issues.values()
                      if i["identifier"].split("-")[0] == variables["key"]
-                     and int(i["identifier"].split("-")[1]) in variables["numbers"]
-                     and i["state"]["type"] in ("completed", "canceled")]
+                     and int(i["identifier"].split("-")[1]) in variables["numbers"]]
             return {"issues": {
-                "nodes": [{"identifier": i["identifier"], "state": i["state"]}
+                "nodes": [{"identifier": i["identifier"], "archivedAt": None,
+                           "state": i["state"]}
                           for i in nodes],
                 "pageInfo": {"hasNextPage": False, "endCursor": None}}}
         nodes = list(self.issues.values())
@@ -421,6 +421,39 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         asked = [variables["team"] for query, variables in self.board.calls
                  if "workflowStates" in query]
         self.assertEqual(asked, [self.provider.team])
+
+    def test_closed_identifiers_sees_archived_issues_and_cancels_an_archived_open(self):
+        """Linear omits archived issues unless asked, and a Done ticket
+        Linear archived on its own was a ghost on the board. The answer is
+        read straight off a fake `_paginate`: a completed issue is
+        `completed` archived or not, an archived issue whose state is still
+        open is `canceled` (nobody will work it), and an unarchived open
+        issue is absent; and the query sent asks for archived issues and
+        for the field the rule reads."""
+        recorded = []
+
+        def paginate(query, variables, path):
+            recorded.append(query)
+            return [
+                {"identifier": "KO-1", "archivedAt": None,
+                 "state": {"type": "completed"}},
+                {"identifier": "KO-2", "archivedAt": "2026-09-02T00:00:00.000Z",
+                 "state": {"type": "completed"}},
+                {"identifier": "KO-3", "archivedAt": "2026-09-02T00:00:00.000Z",
+                 "state": {"type": "unstarted"}},
+                {"identifier": "KO-4", "archivedAt": None,
+                 "state": {"type": "unstarted"}},
+            ]
+
+        with patch.object(self.linear, "_paginate", paginate):
+            closed = self.provider.closed_identifiers(
+                ["KO-1", "KO-2", "KO-3", "KO-4"])
+
+        self.assertEqual(closed, {"KO-1": "completed", "KO-2": "completed",
+                                  "KO-3": "canceled"})
+        self.assertEqual(len(recorded), 1)
+        self.assertIn("includeArchived: true", recorded[0])
+        self.assertIn("archivedAt", recorded[0])
 
     def test_construction_and_team_reach_no_transport(self):
         def tripwire(query, variables=None):
