@@ -62,6 +62,19 @@ describe("consoleLine", () => {
     expect(line).not.toContain("#");
   });
 
+  test("a query string containing brackets or quotes is dropped whole", () => {
+    const line = consoleLine(
+      "Request failed: https://writer:7710/runs?filter=(active)&token=SECRET and https://writer:7710/x?a=[1]&t=SECRET2 'https://writer:7710/y?q=\"z\"&k=SECRET3'",
+      "http://writer:7710/console.js",
+      3,
+    );
+    expect(line).toContain("https://writer:7710/runs and https://writer:7710/x");
+    expect(line).toContain("https://writer:7710/y");
+    expect(line).not.toContain("SECRET");
+    expect(line).not.toContain("token");
+    expect(line).not.toContain("?");
+  });
+
   test("a source that is not a URL is kept as-is", () => {
     expect(consoleLine("boom", "", 0)).toContain("boom");
   });

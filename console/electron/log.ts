@@ -33,9 +33,14 @@ export function sourcePath(source: string): string {
   }
 }
 
-/** Strips the query string and fragment from every URL quoted in free text. */
+/**
+ * Strips the query string and fragment from every URL quoted in free text.
+ * Once a `?` or `#` starts the query, everything up to the next whitespace
+ * goes with it — brackets and quotes included — so a value such as
+ * `filter=(active)&token=...` cannot split the match and leak its tail.
+ */
 export function redactUrls(text: string): string {
-  return text.replace(/\bhttps?:\/\/[^\s"'<>)\]]+/g, (url) => url.split(/[?#]/, 1)[0] ?? url);
+  return text.replace(/\bhttps?:\/\/[^\s"'<>)\]?#]*[?#]\S*/g, (url) => url.split(/[?#]/, 1)[0] ?? url);
 }
 
 export function consoleLine(message: string, source: string, lineNumber: number): string {
