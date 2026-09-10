@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { BrowserWindow, Menu, Tray, app, dialog, nativeImage } from "electron";
+import { BrowserWindow, Menu, Tray, app, dialog, nativeImage, shell } from "electron";
 
 import { CONFIG_FILE, resolveConsoleUrl } from "./config.ts";
 import { appendLog, consoleLine, failedLoadLine } from "./log.ts";
@@ -80,6 +80,13 @@ function showConsole(url: string, configText: string | null): void {
   // no pasting. When the script changed a key the window reloads once so
   // the first poll carries it; the load after that changes nothing.
   const contents = mainWindow.webContents;
+  // A link the page opens in a new tab -- a commit, a pull request -- is
+  // for the person's browser, not a second console window: hand the URL
+  // to the desktop and open nothing here. Only http(s) leaves the app.
+  contents.setWindowOpenHandler(({ url: target }) => {
+    if (/^https?:\/\//.test(target)) void shell.openExternal(target);
+    return { action: "deny" };
+  });
   contents.on("did-finish-load", () => {
     const tokens = readTokens(configText, app.getPath("userData"));
     contents
