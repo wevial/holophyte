@@ -9,6 +9,7 @@ import {
   deltaTone,
   groupByDay,
   minutesLabel,
+  prLabel,
   shortSha,
   withinDays,
   type DayGroup,
@@ -79,6 +80,17 @@ export function Sha({ row }: { row: { merge_sha: string | null; commit_url?: str
   );
 }
 
+/** The run's pull request as "PR #N" in the sha's link style, opening in
+ *  a new tab; nothing at all when the run opened none. */
+export function PrLink({ url }: { url: string | null | undefined }) {
+  if (!url) return null;
+  return (
+    <a data-pr href={url} target="_blank" rel="noopener noreferrer" className={`${SHA_CLASS} hover:underline`}>
+      {prLabel(url)}
+    </a>
+  );
+}
+
 /** One merge, a toggle like a Now row: clicking expands the run's detail
  *  card beneath, read from the daemon that merged it. The row is a
  *  `role="button"` div, not a button, because the sha cell is an anchor;
@@ -124,8 +136,9 @@ function Row({
         <span className="font-mono text-[13px] text-body">{row.rounds}</span>
         <span className="font-mono text-[13px] text-body">{row.findings}</span>
         <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} />
-        <span onClick={(event) => event.stopPropagation()}>
+        <span onClick={(event) => event.stopPropagation()} className="flex items-baseline gap-2">
           <Sha row={row} />
+          <PrLink url={row.pr_url} />
         </span>
       </div>
       {expanded && <RunDetail base={row.daemon ?? ""} id={row.id} now={now} polls={polls} deps={deps} />}

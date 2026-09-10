@@ -1903,7 +1903,8 @@ class MergeApprovalTests(LoopFixture):
         (beat,), = self.read("SELECT lastHeartbeat FROM runs WHERE id = 1")
         self.assertEqual(blocked, [{"kind": "blocked", "ticket": "KO-131",
                                     "question": "merge?", "run": 1,
-                                    "asked_ms": beat, "level": "attention"}])
+                                    "asked_ms": beat, "pr_url": None,
+                                    "level": "attention"}])
 
     def test_a_park_is_not_a_failure_the_loop_stops_on_or_counts(self):
         """The loop moves on to the next ready ticket without spending the

@@ -82,6 +82,26 @@ test("a row with commit_url null renders the plain short sha with no anchor", ()
   expect(document.querySelector("[data-row='236'] a")).toBeNull();
 });
 
+test("a row with pr_url renders a PR #N new-tab anchor beside the sha; a row with null has none", () => {
+  const url = "https://github.com/o/r/pull/2170";
+  const linked: ShippedRow = { ...ROWS[0]!, pr_url: url };
+  render(<ShippedTable rows={[linked]} now={now} tz="UTC" />);
+  const pr = document.querySelector("[data-row='236'] [data-pr]") as HTMLAnchorElement;
+  expect(pr.tagName).toBe("A");
+  expect(pr.textContent).toBe("PR #2170");
+  expect(pr.getAttribute("href")).toBe(url);
+  expect(pr.getAttribute("target")).toBe("_blank");
+  expect(pr.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(pr.className).toContain("text-link");
+  expect(pr.parentElement).toBe(document.querySelector("[data-row='236'] [data-sha]")!.parentElement);
+  cleanup();
+
+  const plain: ShippedRow = { ...ROWS[0]!, pr_url: null };
+  render(<ShippedTable rows={[plain]} now={now} tz="UTC" />);
+  expect(document.querySelector("[data-row='236'] [data-sha]")).not.toBeNull();
+  expect(document.querySelector("[data-row='236'] [data-pr]")).toBeNull();
+});
+
 test("days=1 keeps only today's group", () => {
   render(<ShippedTable rows={ROWS} now={now} tz="UTC" days={1} />);
   expect(dayHeaders().map((group) => group.label)).toEqual(["Today · Sat Sep 5"]);

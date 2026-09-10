@@ -70,6 +70,7 @@ non-positive or non-integer limit is 400.
    "ended_ms": 1788478953000, "actual_min": 8.4, "estimate_min": 10.0,
    "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+   "pr_url": "https://github.com/example/repo/pull/2170",
    "host": "writer-1"}
 ], "next_before": 298, "limit": 50}
 ```
@@ -99,6 +100,12 @@ merge never pushed, one rewritten on the way up, a fresh clone with no
 remote is read once per request and the ancestry checked once per row;
 a git failure is null, never an error.
 
+`pr_url` is the pull request the run merged through under `[merge] mode
+= "pr"`, as the store recorded it when the run parked (`runs.prUrl`);
+null for a run that opened none, including every run merged locally.
+Nothing is read from GitHub: the URL is the one the factory itself
+opened, so its last path segment is the PR number.
+
 ## `GET /runs/N`
 
 ```json
@@ -109,6 +116,7 @@ a git failure is null, never an error.
          "heartbeat_age_ms": null,
          "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
          "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+         "pr_url": "https://github.com/example/repo/pull/2170",
          "max_rounds": 2},
  "rounds": [
   {"round": 1, "started_ms": 1788450761675, "ended_ms": 1788450941675,
@@ -140,7 +148,9 @@ not an integer is 400; an integer with no run behind it is 404 carrying
 `run`. Leading zeros are ignored, so `/runs/007` is run 7. An integer no
 run can have (negative, or wider than SQLite's 64-bit INTEGER, however
 long) is 404 with `run` echoing the path segment as typed. `host` passes
-through `[report] host_label`.
+through `[report] host_label`. `commit_url` and `pr_url` are as
+`/shipped` carries them: the merge commit's page on `origin` and the
+pull request the run opened, each null when there is none.
 
 ## `GET /runs/N/files`
 
@@ -276,9 +286,12 @@ What needs the operator, computed where the store is:
 ```json
 {"level": "attention", "now": 1788450534491,
  "target": "/path/to/repo", "project": "/path/to/repo", "items": [
-  {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000, "level": "attention"},
-  {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000, "level": "attention"},
-  {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2, "level": "attention"},
+  {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
+   "pr_url": "https://github.com/example/repo/pull/2170", "level": "attention"},
+  {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
+   "pr_url": null, "level": "attention"},
+  {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
+   "pr_url": null, "level": "attention"},
   {"kind": "supervisor", "state": "stale", "heartbeat_age_ms": 1200000, "level": "attention"}
 ]}
 ```
@@ -287,7 +300,10 @@ A `blocked` item's `run` is the run parked for the ticket and `asked_ms`
 when the question was asked: the newest `redirect` intervention on that
 run, else the run's last heartbeat (both null only for a ticket parked
 with no run behind it). A `failed` item's `attempt` is the run's 1-based
-attempt number. `target` and `project` are the target path, as on
+attempt number. Every item that names a `run` carries its `pr_url`: the
+pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
+null when it opened none, so a console can link the parked question to
+the PR it waits on. `target` and `project` are the target path, as on
 `/status`.
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it

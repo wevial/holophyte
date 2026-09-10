@@ -136,6 +136,21 @@ test("the header shows no sha for an unmerged run, the plain short sha when merg
   expect(linked.textContent).toBe("3f9c2ab");
 });
 
+test("the header shows a PR #N anchor when pr_url is set and none otherwise", async () => {
+  await mount(DETAIL, T + 20 * MINUTE);
+  expect(document.querySelector("header [data-pr]")).toBeNull();
+  cleanup();
+
+  const url = "https://github.com/o/r/pull/2170";
+  await mount({ ...DETAIL, run: { ...DETAIL.run, pr_url: url } }, T + 20 * MINUTE);
+  const pr = document.querySelector("header [data-pr]") as HTMLAnchorElement;
+  expect(pr.tagName).toBe("A");
+  expect(pr.textContent).toBe("PR #2170");
+  expect(pr.getAttribute("href")).toBe(url);
+  expect(pr.getAttribute("target")).toBe("_blank");
+  expect(pr.getAttribute("rel")).toBe("noopener noreferrer");
+});
+
 test("past the box the header reads 10m 00s over the box in the bad tone and the segments fill the bar", async () => {
   await mount(DETAIL, T + 40 * MINUTE);
   const box = document.querySelector("[data-box]")!;
