@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[482 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T04:59:03Z — KO-345
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/loop.py:2207 [p2] [P2] [holophyte/loop.py:2207](/home/reviewer/candidate/holophyte/loop.py:2207): Strike count overrides an actual parked question. Reproduced one failed attempt…
-- criteria:1 [p2] CRITERION 1: not met — A question with two counted failures prints the strike form and omits the question. Given `skip_line` for a ticket with two strikes and n…
-
-## 2026-09-10T05:07:57Z — KO-345
-Round 2: pass · reviewer codex-astra-medium · verify passed
+[484 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T05:09:27Z — KO-345
 MERGED to main as a0179f0 (branch task/ko-345-the-loop-s-skip-line-for-a-par deleted).
@@ -762,3 +753,10 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T19:49:25Z — KO-352
 FAILED: terminal adjudication: FAIL; branch task/ko-352-the-hosts-rail-groups-daemons preserved at ef1d937e6050
 actual: 9.0 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T19:52:16Z — KO-353
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T19:53:52Z — KO-353
+MERGED to main as e158a62 (branch task/ko-353-the-scheduler-re-counts-the-qu deleted).
+actual: 13.4 min · estimate: 30 min · rounds: 1
