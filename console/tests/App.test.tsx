@@ -64,9 +64,9 @@ test("the rail lists the project from the daemon's path and the four views", asy
   expect(within(hosts).getByText("1 run")).toBeTruthy();
 });
 
-test("clicking Shipped selects it and changes the main heading", async () => {
+test("clicking Shipped selects it; the Now view carries no page heading, Shipped its own", async () => {
   await mount({ status: working, attention: NO_ATTENTION });
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Now");
+  expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
   const shipped = screen.getByRole("button", { name: "Shipped" });
   expect(shipped.getAttribute("aria-pressed")).toBe("false");
   fireEvent.click(shipped);
