@@ -653,38 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[453 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T02:01:53Z — KO-343
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/holophyte/loop.py:2153 [p2] **P1 — Serialize worker close-out with merges.** [holophyte/loop.py:2153](/home/reviewer/candidate/holophyte/loop.py:2153) commits `FINDINGS.md` after `_dispa…
-- /home/reviewer/candidate/holophyte/loop.py:2301 [p2] **P2 — Count only dependency-unblocked tickets.** [holophyte/loop.py:2301](/home/reviewer/candidate/holophyte/loop.py:2301) checks status and lease but ignore…
-- /home/reviewer/candidate/holophyte/loop.py:2215 [p2] **P2 — Distinguish listing failure from an empty queue.** [holophyte/loop.py:2215](/home/reviewer/candidate/holophyte/loop.py:2215) uses `_mirror_queue()`’s e…
-
-## 2026-09-10T02:13:38Z — KO-343
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T02:13:40Z — KO-343
-FAILED: terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 046d7d70f5e1
-actual: 43.4 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T02:36:04Z — KO-339
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/runs.py:188 [p1] [P1] [holophyte/runs.py:188](/home/reviewer/candidate/holophyte/runs.py:188): Exiting the block stops the heartbeat thread without checking whether the run en…
-- criteria:2 [p2] CRITERION 2: not met — a second connection ending the run immediately before block completion produces neither the callback nor RunSwept. Given `heartbeat_while…
-
-## 2026-09-10T02:47:18Z — KO-339
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T02:48:45Z — KO-339
-MERGED to main as f6732ce (branch task/ko-339-a-loop-whose-run-the-superviso deleted).
-actual: 35.0 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T02:48:49Z — KO-343
-FAILED: cannot reuse leftover worktree: preserved commits on task/ko-343-the-loop-runs-a-pool-of-worker conflict with a main that moved on; a human resolves the merge before this ticket is run again
-actual: 0.0 min · estimate: 30 min · rounds: 0
+[460 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T03:01:02Z — KO-344
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -762,3 +731,34 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T04:40:52Z — KO-335
 MERGED to main as 04e61a2 (branch task/ko-335-a-run-with-a-pull-request-carr deleted).
 actual: 28.5 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T04:44:10Z — KO-338
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/electron/log.ts:36 [p2] [console/electron/log.ts:36](/home/reviewer/candidate/console/electron/log.ts:36): `consoleLine` copies the message verbatim, allowing query tokens into the l…
+- criteria:3 [p2] CRITERION 3: not met — query strings survive when the console message itself contains the source URL; the existing test covers only the separate source argument…
+
+## 2026-09-10T04:46:00Z — KO-338
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/electron/log.ts:38 [p1] [P1] [log.ts:38](/home/reviewer/candidate/console/electron/log.ts:38): URL redaction stops at `)`, allowing query tokens into the log. Reproduced with message…
+
+## 2026-09-10T04:47:29Z — KO-338
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T04:47:29Z — KO-338
+FAILED: terminal adjudication: FAIL; branch task/ko-338-the-electron-app-opens-the-win preserved at 8326a60d6133
+actual: 6.5 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T04:59:03Z — KO-345
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:2207 [p2] [P2] [holophyte/loop.py:2207](/home/reviewer/candidate/holophyte/loop.py:2207): Strike count overrides an actual parked question. Reproduced one failed attempt…
+- criteria:1 [p2] CRITERION 1: not met — A question with two counted failures prints the strike form and omits the question. Given `skip_line` for a ticket with two strikes and n…
+
+## 2026-09-10T05:07:57Z — KO-345
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T05:09:27Z — KO-345
+MERGED to main as a0179f0 (branch task/ko-345-the-loop-s-skip-line-for-a-par deleted).
+actual: 21.9 min · estimate: 30 min · rounds: 2
