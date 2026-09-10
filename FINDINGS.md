@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[421 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T20:03:24Z — KO-329
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/loop.py:1852 [p1] **[P1] Recheck active runs inside the transaction** — [holophyte/loop.py:1852](/home/reviewer/candidate/holophyte/loop.py:1852). The active-run check precedes…
-- /home/reviewer/candidate/holophyte/loop.py:1835 [p2] **[P2] Scope reconciliation to the current project** — [holophyte/loop.py:1835](/home/reviewer/candidate/holophyte/loop.py:1835). The existing `store.read.ope…
-
-## 2026-09-09T20:18:57Z — KO-329
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- (unparsed):238a4b875621 [p2] Verification blocker: the exact unittest pipeline exits 1. All 879 tests pass, but stdout appears after `OK`, so `tail -1 | grep -q '^OK'` rejects the final lin…
+[423 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T20:20:05Z — KO-329
 FAILED: swept by the supervisor in phase addressing: time_box (46.0 min against a 30 min box (1.5x grace)); branch and worktree preserved for a human
@@ -761,3 +750,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T00:33:29Z — KO-337
 MERGED to main as 172e362 (branch task/ko-337-a-target-can-let-the-shepherd deleted).
 actual: 20.8 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T00:49:45Z — KO-341
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T00:51:10Z — KO-341
+MERGED to main as 329975f (branch task/ko-341-the-claim-leases-the-ticket-no deleted).
+actual: 17.6 min · estimate: 30 min · rounds: 1
