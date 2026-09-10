@@ -18,7 +18,7 @@ import re
 import signal
 import subprocess
 from pathlib import Path
-from time import monotonic, monotonic_ns, sleep, time
+from time import monotonic, sleep, time
 
 import ticket_template
 from holophyte.config import VERIFY_TIMEOUT
@@ -522,7 +522,16 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
     deadline = monotonic() + wait
     while True:
         try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            with merge_lock_arbiter(path):
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                # The flock rides on the open descriptor for the block: a
+                # sweep that finds it taken knows the holding process is
+                # alive whatever the store says of its run, and the kernel
+                # drops it with the process, so a holder that died cannot
+                # keep the lock "in use". Taken under the arbiter, so no
+                # sweep can open the fresh file before we hold it.
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                os.write(fd, stamp.encode())
         except FileExistsError:
             if monotonic() >= deadline:
                 holder = read_merge_lock(path)
@@ -536,12 +545,6 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
                 on_wait()
             sleep(poll)
             continue
-        # The flock rides on the open descriptor for the block: a sweep that
-        # finds it taken knows the holding process is alive whatever the
-        # store says of its run, and the kernel drops it with the process, so
-        # a holder that died cannot keep the lock "in use".
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        os.write(fd, stamp.encode())
         break
     try:
         yield path
@@ -554,51 +557,58 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
         os.close(fd)
 
 
+@contextlib.contextmanager
+def merge_lock_arbiter(path):
+    """Serialise every change to the merge lock at `path`: the gate's
+    exclusive create and the sweep's judge-and-remove both run inside this.
+
+    A flock on a permanent sibling file (`merge.lock.arbiter`, created once
+    and never unlinked, since unlinking a flock file is what lets two
+    holders exist). Held for microseconds -- one create, or one open, probe
+    and unlink -- never across a gate. It exists because judging a lock
+    stale and removing it must be one step: a sweep that opened a stale
+    inode, paused, and acted after another sweep had cleared it and a gate
+    had taken a fresh lock at the same path would remove the live lock, and
+    two gates would merge at once. Under the arbiter no creator or remover
+    can move between the sweep's open and its unlink, so the file it opened
+    is the file at `path`.
+    """
+    fd = os.open(path.with_name(f"{path.name}.arbiter"),
+                 os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # drops the flock
+
+
 def remove_dead_merge_lock(path):
     """Remove the merge lock at `path` if no live process holds it; say what
-    happened: `removed`, `in_use`, `gone`, or `restored`.
+    happened: `removed`, `in_use`, or `gone`.
 
-    Removal is atomic with respect to `merge_lock()`'s acquisition, which is
-    an `O_EXCL` create at `path`. A plain unlink is not: two sweeps that read
-    the same stale lock would both unlink, the second of them deleting the
-    live lock a gate took after the first cleared the way. So: open the
-    file, take its flock without blocking -- a refusal means the process
-    that created it is still alive, and the lock is `in_use`, whatever the
-    store says of its run -- then move the file aside with an atomic rename
-    to a name only this call knows, and compare inodes. The same inode: the
-    file we judged is the file we hold, unlink it. A different one: a gate
-    acquired a fresh lock between our open and the rename, and it is put
-    back with a `link` (which cannot overwrite a lock a third gate has
-    since taken) -- `restored`. `gone` is a lock already cleared.
+    Runs under `merge_lock_arbiter()`, as `merge_lock()`'s acquisition does,
+    so the whole of open, probe and unlink is one step against every gate
+    and every other sweep. Inside it: open the file, take its flock without
+    blocking -- a refusal means the process that created it is still alive,
+    and the lock is `in_use`, whatever the store says of its run -- else
+    unlink it, `removed`. `gone` is a lock already cleared. Nothing can
+    have replaced the file between the open and the unlink, so the file
+    judged is the file removed and a gate's fresh lock is never touched.
     """
-    try:
-        fd = os.open(path, os.O_RDONLY)
-    except FileNotFoundError:
-        return "gone"
-    aside = path.with_name(f"{path.name}.sweep-{os.getpid()}-{monotonic_ns()}")
-    try:
+    with merge_lock_arbiter(path):
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            return "in_use"
-        judged = os.fstat(fd).st_ino
-        try:
-            os.rename(path, aside)
+            fd = os.open(path, os.O_RDONLY)
         except FileNotFoundError:
             return "gone"
-        if os.stat(aside).st_ino == judged:
-            aside.unlink()
-            return "removed"
         try:
-            os.link(aside, path)
-        except FileExistsError:
-            # A third gate took the free path in the instant between the
-            # rename and the link: the displaced lock's holder will find
-            # its release a no-op (the stamp is not at `path`), and the two
-            # gates overlap for this one merge. Named, not hidden.
-            aside.unlink()
-            return "displaced"
-        aside.unlink()
-        return "restored"
-    finally:
-        os.close(fd)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return "in_use"
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                return "gone"
+            return "removed"
+        finally:
+            os.close(fd)

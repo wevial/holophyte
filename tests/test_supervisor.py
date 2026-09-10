@@ -9,11 +9,10 @@ sweep read the box once for the whole run.
 
 from __future__ import annotations
 
-import os
 import sys
+import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -138,36 +137,48 @@ class MergeLockSweepTests(SweepTestCase):
                             and f"run {run_id}" in line for line in acted), acted)
         self.assertFalse(path.exists())  # the holder's release, not the sweep's
 
-    def test_a_lock_a_gate_took_after_the_stale_one_was_judged_is_kept(self):
-        """The interleaving a plain unlink got wrong: between this sweep
-        reading the stale lock and removing it, another sweep clears it and
-        a live gate takes a fresh one at the same path. The removal must
-        notice it no longer holds the file it judged, and the fresh lock must
-        still be there afterwards, intact."""
+    def test_judging_and_removing_a_stale_lock_is_one_step_against_a_gate(self):
+        """The interleaving that removed a live lock: a sweep opened the
+        stale inode, paused, and acted after another sweep had cleared it
+        and a gate had taken a fresh lock at the same path -- so two gates
+        merged at once. Judging and removing now happen under the arbiter a
+        gate's create also needs: while it is held, neither a sweep nor a
+        gate makes progress; once released, the stale lock goes exactly
+        once, the gate holds a fresh one, and a further sweep finds it in
+        use rather than displacing it."""
         ended = self.a_run(phase="merge_gate")
         store.release(self.conn, ended, "failed", "died at the gate",
                       now=T0 + MINUTE)
         path = self.lock_for(ended)
-        real_rename = os.rename
-        fresh = f"{ended + 40} {T0 / 1000 + 90:.3f}\n"
+        stale = path.read_text()
+        live = self.a_run(phase="merge_gate")
+        lines, entered = [], threading.Event()
+        sweeping = threading.Thread(
+            target=lambda: lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act")))
 
-        def rename_after_another_gate_got_in(src, dst):
-            # The other sweep's unlink and the live gate's O_EXCL create
-            # land in the window before our rename.
-            os.unlink(src)
-            fd = os.open(src, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-            os.write(fd, fresh.encode())
-            os.close(fd)
-            real_rename(src, dst)
+        def gate():
+            with holophyte.gates.merge_lock(self.tgt, live, wait=10, poll=0.01):
+                entered.set()
+                lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act"))
+        gating = threading.Thread(target=gate)
 
-        with patch("holophyte.gates.os.rename", rename_after_another_gate_got_in):
-            acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
+        with holophyte.gates.merge_lock_arbiter(path):
+            sweeping.start()
+            gating.start()
+            sweeping.join(0.3)
+            self.assertTrue(sweeping.is_alive(), "the sweep acted without the arbiter")
+            self.assertFalse(entered.is_set(), "the gate entered without the arbiter")
+            self.assertEqual(path.read_text(), stale)
+        sweeping.join(5)
+        gating.join(5)
 
-        self.assertEqual(path.read_text(), fresh)
-        self.assertTrue(any("a gate took a fresh lock meanwhile, which was kept"
-                            in line for line in acted), acted)
-        self.assertEqual(list(path.parent.glob("merge.lock*")), [path])
-
+        self.assertFalse(sweeping.is_alive() or gating.is_alive())
+        self.assertIn(f"removed stale merge lock: run {ended} ended", lines)
+        self.assertTrue(any(line.startswith(f"merge lock held by run {live}")
+                            for line in lines), lines)
+        self.assertNotIn("already cleared", " ".join(lines))
+        self.assertFalse(path.exists())  # the gate's own release, last
+        self.assertEqual(list(path.parent.glob("merge.lock")), [])
 
 if __name__ == "__main__":
     unittest.main()

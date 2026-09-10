@@ -478,23 +478,16 @@ def merge_lock_lines(target, conn, act=False):
         return [f"stale merge lock: run {run_id} {why};"
                 " --sweep --act removes it"]
     # Removal must not race a gate's acquisition or another sweep: the
-    # helper takes the lock's flock (refused while the creating process
-    # lives), moves the file aside atomically and checks it is still the
-    # one judged here before unlinking. A live lock met on the way is
-    # left where it is, or put back, and the line says which.
+    # helper judges and unlinks under the same arbiter the gate creates
+    # under, and takes the lock's flock first (refused while the creating
+    # process lives). A live lock is left where it is, and the line says so.
     outcome = remove_dead_merge_lock(path)
     if outcome == "removed":
         return [f"removed stale merge lock: run {run_id} {why}"]
     if outcome == "in_use":
         return [f"merge lock names run {run_id} ({why}) but its process is"
                 " alive and holds it; left alone"]
-    if outcome == "gone":
-        return [f"stale merge lock: run {run_id} {why}; already cleared"]
-    if outcome == "restored":
-        return [f"stale merge lock: run {run_id} {why}; a gate took a fresh"
-                " lock meanwhile, which was kept"]
-    return [f"stale merge lock: run {run_id} {why}; cleared, but two gates"
-            " took the lock meanwhile and may overlap this once"]
+    return [f"stale merge lock: run {run_id} {why}; already cleared"]
 
 
 SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence", "host")
