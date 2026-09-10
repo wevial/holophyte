@@ -143,6 +143,10 @@ class Turn:
     base_sha: str | None = None
     candidate_sha: str | None = None
     timeout: float | None = None
+    # The loop's hook for the turn's process handle (KO-339): a step that
+    # really starts a process hands it over, so the loop's sweep-time kill
+    # reaches it the way it reaches a real implementer.
+    on_start: object = None
 
 
 class FakeAgent:
@@ -160,7 +164,7 @@ class FakeAgent:
         self.replies: list[str] = []
 
     def __call__(self, target, role, goal, cwd, *, base_sha=None,
-                 candidate_sha=None, timeout=None):
+                 candidate_sha=None, timeout=None, on_start=None):
         n = len(self.turns) + 1
         if not self.script:
             raise ScriptError(f"script exhausted: the loop asked for a {role!r}"
@@ -177,7 +181,7 @@ class FakeAgent:
             raise ScriptError(f"{role!r} turn #{n} arrived without an exact"
                               f" base_sha and candidate_sha")
         self.turns.append(Turn(role, goal, Path(cwd), base_sha, candidate_sha,
-                               timeout))
+                               timeout, on_start))
         reply = step.play(Path(cwd), n)
         self.replies.append(reply)
         return reply

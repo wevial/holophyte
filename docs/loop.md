@@ -12,7 +12,13 @@ machines it walks. Back to the [README](index.md).
    one target each work a ticket of their own, and a ticket another live
    run holds is skipped in one line (`ticket KO-n: lease already held by
    run N`) for the next candidate rather than stopping the loop. Before the
-   first claim the loop runs one read-only sweep of the store and then
+   first claim the loop runs one read-only sweep of the store. The sweep's
+   contract runs the other way too: a run the supervisor's sweep ends while
+   the loop is inside a turn is over, and the heartbeat that keeps the run
+   alive notices -- it kills the turn's process group, the loop prints
+   `run N was ended by the supervisor (REASON); stopping this turn`, writes
+   nothing more to that run, leaves the worktree and branch as the sweep
+   preserved them, and goes on to its next claim. Then the loop
    reconciles its mirror: every open mirrored ticket without an active run
    that Linear now holds completed or canceled is walked to `merged` or
    `abandoned`, with a `reconcile` intervention row on its most recent run

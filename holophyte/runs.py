@@ -26,6 +26,7 @@ from time import time
 
 import review_runner
 import store
+import store.read
 from holophyte.agents import agent_route
 from holophyte.review import (
     criteria_findings,
@@ -92,8 +93,26 @@ def set_phase(conn, run_id, phase, note=None):
     store.set_phase(conn, run_id, phase, note)
 
 
+class RunSwept(Exception):
+    """The run `heartbeat_while()` was keeping alive was ended from outside.
+
+    Raised when the block exits after a beat found the run's `endedAt`
+    stamped: the supervisor's sweep -- or an operator's `--sweep --act` --
+    failed the run while the loop was inside a turn (KO-339, run 160). Not a
+    `store.RunEnded`: that one is a refused write the loop finds out about
+    at its next phase change, while this one is the heartbeat noticing
+    mid-turn, with the turn's process already killed through `on_swept`.
+    `run_id` and `reason` are the ended row's, so the catcher can say what
+    ended the run without reading the store again.
+    """
+
+    def __init__(self, run_id, outcome, reason):
+        super().__init__(f"run {run_id} was swept ({outcome}: {reason})")
+        self.run_id, self.outcome, self.reason = run_id, outcome, reason
+
+
 @contextmanager
-def heartbeat_while(conn, run_id, interval_s):
+def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     """Beat run `run_id`'s heartbeat every `interval_s` seconds inside the block.
 
     The loop blocks for as long as an agent or a verify command takes, and
@@ -113,6 +132,16 @@ def heartbeat_while(conn, run_id, interval_s):
     before the loop's next phase write, so no beat lands after the stage the
     block was for. A `conn` or `run_id` of None makes this a no-op, like
     `set_phase()`, for a storeless `run_task()`.
+
+    The beat also notices the run being ended from outside. `store.heartbeat()`
+    answers False, and writes nothing, when the run's `endedAt` is stamped;
+    the beat thread takes that answer as "swept", calls `on_swept` once (the
+    implement turn's kill of its process group, so the agent stops working
+    for a run the store has already failed -- run 160, KO-339, worked on for
+    twenty minutes after its sweep), stops beating, and when the block exits
+    `RunSwept` is raised naming the run and its recorded outcome reason,
+    whether the body returned or raised. A body that ends on its own path
+    inside a live run is unaffected: no beat fails, nothing is raised.
     """
     if conn is None or run_id is None:
         yield
@@ -120,6 +149,7 @@ def heartbeat_while(conn, run_id, interval_s):
     (path,) = [row[2] for row in conn.execute("PRAGMA database_list")
                if row[1] == "main"]
     stop = threading.Event()
+    swept = []  # the ended row's (outcome, reason), set once by the beat
 
     def beat():
         try:
@@ -130,20 +160,53 @@ def heartbeat_while(conn, run_id, interval_s):
         try:
             while not stop.wait(interval_s):
                 try:
-                    store.heartbeat(own, run_id)
+                    if store.heartbeat(own, run_id):
+                        continue
+                    swept.append(_ending_of(own, run_id))
                 except Exception as e:  # noqa: BLE001 - same
                     print(f"[holo2] heartbeat failed: {e}")
+                    continue
+                # Swept: the run is over. Kill the turn, then stop beating --
+                # there is nothing left to keep alive.
+                if on_swept is not None:
+                    try:
+                        on_swept()
+                    except Exception as e:  # noqa: BLE001 - the raise below
+                        print(f"[holo2] stopping the swept turn failed: {e}")
+                return
         finally:
             own.close()
 
     thread = threading.Thread(target=beat, name=f"heartbeat-run-{run_id}",
                               daemon=True)
     thread.start()
+    failure = None
     try:
         yield
+    except BaseException as e:  # noqa: BLE001 - re-raised below, after the join
+        failure = e
     finally:
         stop.set()
         thread.join()
+    if swept:
+        outcome, reason = swept[0]
+        raise RunSwept(run_id, outcome, reason) from failure
+    if failure is not None:
+        raise failure
+
+
+def _ending_of(conn, run_id):
+    """The `(outcome, outcomeReason)` the store recorded for ended run `run_id`.
+
+    Read through the store's ended-runs view rather than SQL of this module's
+    own. `(None, None)` if the run is not among them -- a beat can find the
+    row gone only in a test that deleted it, but the raise must still name
+    the run.
+    """
+    for run in store.read.ended_runs(conn):
+        if run.id == run_id:
+            return run.outcome, run.outcomeReason
+    return None, None
 
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
