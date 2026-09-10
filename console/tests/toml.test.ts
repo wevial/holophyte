@@ -172,3 +172,22 @@ test("review round 3: a quoted table header names the same table as its bare for
   const dotted = `[ 'a' . "b" ]\nx = true\n`;
   expect(readKey(dotted, { table: "a.b", key: "x" })).toBe(true);
 });
+
+test("a key held in a shape the editor does not bind is found but unread: a triple-quoted string, an inline table and a float each keep their source and read as undefined", () => {
+  const text = `[agents]
+implementer = """
+claude --model opus -p
+"""
+review_model = { name = "opus" }
+
+[loop]
+workers = 1.0
+`;
+  const implementer = findKey(text, { table: "agents", key: "implementer" });
+  expect(implementer?.value).toBeUndefined();
+  expect(implementer?.raw).toBe('"""\nclaude --model opus -p\n"""');
+  expect(findKey(text, { table: "agents", key: "review_model" })).toMatchObject({ value: undefined, raw: '{ name = "opus" }' });
+  expect(findKey(text, { table: "loop", key: "workers" })).toMatchObject({ value: undefined, raw: "1.0" });
+  // A key the table lacks is null, not unbound, so the sheet draws it empty and editable.
+  expect(findKey(text, { table: "agents", key: "review_effort" })).toBeNull();
+});

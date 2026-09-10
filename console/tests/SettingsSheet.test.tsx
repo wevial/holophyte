@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Floor } from "../src/components/Floor";
-import { CONFIG_EDIT_OFF } from "../src/components/SettingsSheet";
+import { CONFIG_EDIT_OFF, UNBOUND_NOTE } from "../src/components/SettingsSheet";
 import type { Fetch } from "../src/lib/poll";
 import type { Run, Status } from "../src/lib/types";
 import { fixture, settle } from "./harness";
@@ -184,4 +184,33 @@ test("a daemon whose /status lacks config_edit opens the sheet read-only, every 
   expect(puts.length).toBe(0);
   fireEvent.click(within(dialog).getByRole("tab", { name: "Raw TOML" }));
   expect((within(dialog).getByRole("textbox", { name: "Raw TOML" }) as HTMLTextAreaElement).readOnly).toBe(true);
+});
+
+test("a key held in a triple-quoted string opens read-only showing its source under the raw-tab note, while the plain keys beside it stay editable", async () => {
+  const text = TEXT.replace('implementer = "claude --model opus -p"   # the default route', 'implementer = """\nclaude --model opus -p\n"""');
+  const { fetch, puts } = daemon(text);
+  await open(editable, fetch);
+  const dialog = screen.getByRole("dialog");
+  const implementer = field("agents.implementer");
+  expect(implementer.readOnly).toBe(true);
+  expect(implementer.value).toBe('""" claude --model opus -p """');
+  expect(dialog.querySelector('[data-unbound-note="agents.implementer"]')?.textContent).toBe(UNBOUND_NOTE);
+  expect(implementer.getAttribute("aria-describedby")).toBe("agents.implementer-unbound");
+  // A typed edit cannot reach the unbound key.
+  fireEvent.change(implementer, { target: { value: "codex" } });
+  expect(field("agents.implementer").value).toBe('""" claude --model opus -p """');
+  // The plain keys are unaffected: workers edits and saves as before.
+  const workers = field("loop.workers");
+  expect(workers.readOnly).toBe(false);
+  expect(dialog.querySelector('[data-unbound-note="loop.workers"]')).toBeNull();
+  fireEvent.change(workers, { target: { value: "3" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await act(settle);
+  expect(puts).toHaveLength(1);
+  const before = text.split("\n");
+  const after = puts[0]!.text.split("\n");
+  expect(after.length).toBe(before.length);
+  const changed = before.map((line, index) => (line === after[index] ? null : index)).filter((index) => index != null);
+  expect(changed).toEqual([before.indexOf("workers = 1   # one at a time")]);
+  expect(after[changed[0]!]).toBe("workers = 3 # one at a time");
 });

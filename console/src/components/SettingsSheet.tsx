@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ACTIONS_OFF, ROUTES, postAction } from "../lib/actions";
 import { fetchConfig, putConfig, type ConfigAnswer } from "../lib/config";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
-import { deleteKey, namedKey, readKey, writeKey, type KeyRef } from "../lib/toml";
+import { deleteKey, findKey, namedKey, writeKey, type KeyRef } from "../lib/toml";
 import type { Status } from "../lib/types";
 import { ActionButton } from "./ActionButton";
 import { NEEDS_TOKEN } from "./TicketSheet";
@@ -13,6 +13,10 @@ export const CONFIG_EDIT_OFF = "Read-only: this daemon has not opted into config
 export const APPLIES_LINE = "A saved change applies at the loop's next start.";
 /** The action beside the banner, the same wired label the rows post. */
 export const RESTART_LABEL = "Restart supervisor";
+/** The note under a field whose key the text holds in a shape the line
+ *  editor does not bind (a triple-quoted string, an inline table, a
+ *  float): the field shows the value's source, read-only. */
+export const UNBOUND_NOTE = "edit this one in the raw tab";
 
 type FieldKind = { kind: "text" } | { kind: "number" } | { kind: "lines" } | { kind: "select"; options: readonly string[] };
 
@@ -145,7 +149,8 @@ export function SettingsSheet({
   const control = (field: Field) => {
     const id = fieldId(field);
     const error = errorFor(field);
-    const value = readKey(text, field);
+    const hit = findKey(text, field);
+    const value = hit?.value;
     const common = {
       id,
       "data-field": id,
@@ -153,6 +158,18 @@ export function SettingsSheet({
       "aria-describedby": error != null ? `${id}-error` : undefined,
       className: "w-full rounded-button border border-chip-border bg-card px-2 py-1 font-mono text-[12px] text-ink disabled:opacity-60 read-only:opacity-60",
     };
+    if (hit != null && value === undefined) {
+      // Present, but in a shape the line editor does not bind: shown as
+      // its source on one line, read-only, so a typed edit never rewrites it.
+      return (
+        <>
+          <input {...common} type="text" readOnly data-unbound aria-describedby={`${id}-unbound`} value={hit.raw.trim().replace(/\s*\n\s*/g, " ")} />
+          <p id={`${id}-unbound`} data-unbound-note={id} className="font-mono text-[11px] text-muted">
+            {UNBOUND_NOTE}
+          </p>
+        </>
+      );
+    }
     if (field.kind === "select") {
       const current = typeof value === "string" ? value : "";
       return (
