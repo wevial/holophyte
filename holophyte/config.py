@@ -584,6 +584,11 @@ def sweep_config(target):
 # default, is the loop as it has always been: one process, one ticket at a
 # time. Above `1` the main process is a scheduler that spawns
 # `factory.py TARGET --worker` children and works nothing itself.
+# `tick_sec`: how often, in seconds, the scheduler recounts the queue while
+# the pool is below `workers` (KO-353). A scheduler waiting on child exits
+# alone let a ticket filed while the pool was busy wait for the next exit
+# with slots idle; with a slot free the wait times out after this long and
+# the listing is run again. A full pool waits on exits alone.
 LOOP_KEYS = {
     "stop_on_failure": True,
     "order": "identifier",
@@ -592,23 +597,26 @@ LOOP_KEYS = {
     "review_rounds_per_lines": 800,
     "review_rounds_max": 4,
     "workers": 1,
+    "tick_sec": 120,
 }
 LOOP_ORDERS = ("identifier", "priority")
 # The keys that must be integers, and the least each may be: a run with no
 # review round is not a run, and a ceiling under the base is a cap the
 # formula could never reach. `review_rounds_per_lines` may be `0`, the
-# documented switch for "never scale".
+# documented switch for "never scale". `tick_sec` under 10 is a poll of the
+# board, not a tick.
 LOOP_INTEGER_FLOORS = {
     "review_rounds": 1,
     "review_rounds_per_lines": 0,
     "review_rounds_max": 1,
     "workers": 1,
+    "tick_sec": 10,
 }
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
 LoopConfig = collections.namedtuple(
     "LoopConfig", ("stop_on_failure", "order", "spawn_supervisor",
                    "review_rounds", "review_rounds_per_lines",
-                   "review_rounds_max", "workers"))
+                   "review_rounds_max", "workers", "tick_sec"))
 
 
 def loop_config(target):
@@ -627,7 +635,8 @@ def loop_config(target):
     `review_rounds_max` is at least `review_rounds`, or the cap is one the
     formula could never reach. `workers` is an integer of at least 1, the
     same way: `"3"` is a string and `0` a pool that could work nothing.
-    The refusal names
+    `tick_sec` is an integer of at least 10: `"120"` is a string and `5` a
+    poll the board was never meant to answer. The refusal names
     the table, the key and the constraint, like a bad `[supervisor]`
     threshold. Keys this version does not know are refused by
     `check_config_keys()`.
