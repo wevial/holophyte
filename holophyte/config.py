@@ -142,13 +142,14 @@ def check_config(target):
 
 def check_document(target):
     """`check_config()` plus the shape of the tables the loop's startup
-    reads before it claims: `[agents]` through `agent_command()` and
-    `review_route()`, `[worktree]` through `setup_commands()`,
-    `setup_timeout()` and `branch_prefix()`. What it deliberately leaves
-    out is the host: whether a program is on PATH or Docker answers
-    (`check_agent_commands()`) is the loop's question at its next start,
-    not a property of the document."""
+    reads before it claims: `[board]` through `board_config()`, `[agents]`
+    through `agent_command()` and `review_route()`, `[worktree]` through
+    `setup_commands()`, `setup_timeout()` and `branch_prefix()`. What it
+    deliberately leaves out is the host: whether a program is on PATH or
+    Docker answers (`check_agent_commands()`) is the loop's question at its
+    next start, not a property of the document."""
     check_config(target)
+    board_config(target)
     review_route(target)
     for role in AGENT_CONFIG_KEYS:
         agent_command(target, role, "")

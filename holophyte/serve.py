@@ -89,6 +89,8 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
+import threading
 import tomllib
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -105,6 +107,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
+from holophyte.redact import RedactionError, redact, restore
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
 from holophyte.supervisor import SWEEPABLE_PHASES
@@ -142,19 +145,16 @@ DEFAULT_REQUEUE_NOTE = "requeued from the console"
 # How much JSON a `POST` body may carry; a ticket and a note are far under.
 MAX_BODY = 64 * 1024
 # `GET /config` and `PUT /config` (KO-356), behind `[serve] config_edit =
-# true` and the write token. `REDACTED` stands in for the value of any key
-# `SECRET_KEY` matches -- a bare key whose name ends in `token` or `key`,
-# so `token_file` (a path) is left alone -- one `key = value` line at a
-# time; `TABLE_LINE` tracks which table a line sits in so the value put
-# back on the way in is the one the same table held.
+# true` and the write token. `holophyte.redact` finds, hides and puts back
+# the secret values -- any key whose name ends in `token` or `key`, so
+# `token_file` (a path) is left alone. `CONFIG_LOCK` serialises the
+# read-restore-validate-backup-replace of a `PUT`: the server is threaded,
+# and two writers interleaved could back up the same previous text twice
+# and lose one of the two edits without either being told.
 CONFIG_PATH = "/config"
 CONFIG_ACTION = "config_edit"
 CONFIG_APPLIES = "next loop start"
-REDACTED = "[redacted]"
-SECRET_KEY = re.compile(
-    r"^(?P<lead>\s*)(?P<key>[A-Za-z0-9_.-]*(?:token|key))(?P<eq>\s*=\s*)"
-    r"(?P<value>.*?)\s*$")
-TABLE_LINE = re.compile(r"^\s*\[\s*(?P<table>[^\]]*?)\s*\]\s*(#.*)?$")
+CONFIG_LOCK = threading.Lock()
 BACKUP_STAMP = "%Y%m%dT%H%M%SZ"
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 # How long a failed run stays on `/attention`: a failure the operator has
@@ -1029,77 +1029,6 @@ def requeue_action(target, body):
                  "run": run_id}
 
 
-def secret_lines(text):
-    """`{(table, key): value text}` for every `key = value` line of the
-    TOML `text` whose key `SECRET_KEY` matches, keyed by the table the line
-    sits in (`""` at the top). The value is the rest of the line as
-    written, comment included, so putting it back reproduces the line."""
-    found = {}
-    table = ""
-    for line in text.splitlines():
-        heading = TABLE_LINE.match(line)
-        if heading is not None:
-            table = heading.group("table")
-            continue
-        match = SECRET_KEY.match(line)
-        if match is not None:
-            found[(table, match.group("key"))] = match.group("value")
-    return found
-
-
-def rewrite_secret_lines(text, replacement):
-    """`text` with every secret line's value replaced by what
-    `replacement(table, key, value)` returns for it; None keeps the line.
-    The line's indentation and `key =` spacing are preserved."""
-    out = []
-    table = ""
-    for line in text.splitlines(keepends=True):
-        heading = TABLE_LINE.match(line)
-        if heading is not None:
-            table = heading.group("table")
-        else:
-            match = SECRET_KEY.match(line)
-            if match is not None:
-                value = replacement(table, match.group("key"),
-                                    match.group("value"))
-                if value is not None:
-                    newline = line[len(line.rstrip("\r\n")):]
-                    line = (match.group("lead") + match.group("key")
-                            + match.group("eq") + value + newline)
-        out.append(line)
-    return "".join(out)
-
-
-def redact(text):
-    """`text` with every secret value replaced by a quoted `REDACTED`."""
-    return rewrite_secret_lines(text, lambda *_: json.dumps(REDACTED))
-
-
-def restore_secrets(text, current):
-    """`text` with every `REDACTED` value put back from `current`, the
-    file's present text: what a round trip through the console page sends
-    is the redacted text with edits, and a secret it never saw must come
-    back as it was, not as the placeholder. ValueError names a redacted
-    key the current file has no value for."""
-    held = secret_lines(current)
-    missing = []
-
-    def put_back(table, key, value):
-        if value.strip() != json.dumps(REDACTED):
-            return None
-        if (table, key) not in held:
-            missing.append(f"[{table}] {key}" if table else key)
-            return None
-        return held[(table, key)]
-
-    restored = rewrite_secret_lines(text, put_back)
-    if missing:
-        raise ValueError(
-            f"{', '.join(missing)}: {REDACTED} stands for a value the current"
-            " file does not hold; write the value")
-    return restored
-
-
 def config_text(target):
     """The target's config file as written, `""` when there is none yet."""
     try:
@@ -1110,9 +1039,14 @@ def config_text(target):
 
 def read_config(target):
     """`GET /config`: the file's text, secrets redacted, its path, and when
-    a change to it applies."""
-    return 200, {"text": redact(config_text(target)),
-                 "path": str(target.config_path), "applies": CONFIG_APPLIES}
+    a change to it applies. A text `redact()` cannot vouch for is 500 with
+    its sentence and no text: better no page than a secret on it."""
+    try:
+        text = redact(config_text(target))
+    except RedactionError as bad:
+        return 500, {"error": str(bad)}
+    return 200, {"text": text, "path": str(target.config_path),
+                 "applies": CONFIG_APPLIES}
 
 
 def validate_config(target, text):
@@ -1138,33 +1072,43 @@ def write_config(target, body, now=None):
     after validating it: `(http status, JSON-able body)`.
 
     `text` must be a string, 400 otherwise. Every `[redacted]` value in it
-    is the current file's (`restore_secrets()`) before anything is judged,
-    so the text validated and written is the whole document. A document
+    is the current file's (`restore()`) before anything is judged, so the
+    text validated and written is the whole document. A document
     `validate_config()` refuses is 400 with its sentence as `error`,
     nothing written. The `config_edit` interventions row lands first, on
     the store's newest run as the actions record theirs; a target with no
     store or no run has nothing to record against and the file is left
     alone, 503 saying so. Then the previous text is copied to
-    `config.toml.bak-STAMP` beside the file (none when there was no file)
-    and the new text lands by rename, so a reader sees the old file or
-    the new one and never a torn one. The reply names the backup.
+    `config.toml.bak-STAMP` beside the file (`-2`, `-3` when the second
+    has a sibling already; none when there was no file) and the new text
+    lands by rename from a staging file of its own, so a reader sees the
+    old file or the new one and never a torn one. One `PUT` at a time
+    holds `CONFIG_LOCK` from the read to the rename. The reply names the
+    backup.
     """
     text = body.get("text")
     if not isinstance(text, str):
         return 400, {"ok": False, "error": "text must be the file's new"
                                             " contents as a string"}
+    with CONFIG_LOCK:
+        return _write_config(target, text, now)
+
+
+def _write_config(target, text, now):
     current = config_text(target)
     try:
-        text = restore_secrets(text, current)
+        text = restore(text, current)
     except ValueError as bad:
         return 400, {"ok": False, "error": str(bad)}
     refused = validate_config(target, text)
     if refused is not None:
         return 400, {"ok": False, "error": refused}
     path = target.config_path
-    stamp = (now or datetime.now(timezone.utc)).strftime(BACKUP_STAMP)
-    backup = (path.with_name(f"{path.name}.bak-{stamp}")
-              if path.exists() else None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup = None
+    if path.exists():
+        stamp = (now or datetime.now(timezone.utc)).strftime(BACKUP_STAMP)
+        backup = next_backup(path, stamp)
     note = (f"operator replaced {path} from the console (PUT /config);"
             f" applies at the {CONFIG_APPLIES}; previous text in "
             + (str(backup) if backup else "no backup: there was no file"))
@@ -1173,15 +1117,33 @@ def write_config(target, body, now=None):
         return 503, {"ok": False, "error": "the store holds no run to record"
                                             " the intervention against;"
                                             " nothing written"}
-    path.parent.mkdir(parents=True, exist_ok=True)
     if backup is not None:
-        backup.write_text(current)
-    staging = path.with_name(f"{path.name}.new-{stamp}-{os.getpid()}")
-    staging.write_text(text)
+        with open(backup, "x") as out:
+            out.write(current)
+    handle, staging = tempfile.mkstemp(prefix=f"{path.name}.new-",
+                                       dir=path.parent)
+    with os.fdopen(handle, "w") as out:
+        out.write(text)
+    if backup is not None:
+        os.chmod(staging, stat.S_IMODE(path.stat().st_mode))
     os.replace(staging, path)
     return 200, {"ok": True, "path": str(path),
                  "backup": None if backup is None else str(backup),
                  "applies": CONFIG_APPLIES, "recorded": recorded}
+
+
+def next_backup(path, stamp):
+    """`path.bak-STAMP`, or the first of `-2`, `-3`, ... that does not
+    exist yet: two writes in one second keep two backups."""
+    first = path.with_name(f"{path.name}.bak-{stamp}")
+    if not first.exists():
+        return first
+    n = 2
+    while True:
+        candidate = path.with_name(f"{path.name}.bak-{stamp}-{n}")
+        if not candidate.exists():
+            return candidate
+        n += 1
 
 
 def is_loopback(host):

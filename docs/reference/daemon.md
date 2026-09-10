@@ -104,20 +104,27 @@ the loop's user.
 ```
 
 `text` is the file as written, except that the value of every key whose
-name ends in `token` or `key` (`api_key`, `token`) is replaced by
-`"[redacted]"`; `token_file`, a path, stays. A target with no file yet
-has `text` `""`. `applies` says when a change takes effect: the loop reads
+name ends in `token` or `key` (`api_key`, `token`, `"api key"`) is
+replaced by `"[redacted]"`; `token_file`, a path, stays. The key may be
+bare, quoted or dotted, under a `[table]` or `[[array]]` header or inside
+an inline table, and the value is replaced whole whatever its shape --
+a multi-line string, an array, an inline table -- with a comment beside
+it left in place. The daemon checks its own work against the parsed
+document and answers 500 rather than serve a text in which a secret is
+still readable. A target with no file yet has `text` `""`. `applies` says when a change takes effect: the loop reads
 the file once at startup, so a written change waits for the next start
 (`POST /actions/launch-loop`, or the supervisor's), and a running loop is
 not touched.
 
 `PUT /config` takes `{"text": "..."}`, the whole new file. Every
-`"[redacted]"` value in it is replaced by the current file's value for
-the same key in the same table before anything else, so a round trip
-through the page never blanks a secret; a `[redacted]` under a key the
-current file does not hold is 400 naming it. The text is then parsed as
+`"[redacted]"` value in it -- any TOML string reading `[redacted]`,
+however quoted, a comment beside it or not -- is replaced by the current
+file's value for the same key in the same table before anything else, so
+a round trip through the page never blanks a secret; a `[redacted]` under
+a key the current file does not hold is 400 naming it. The text is then parsed as
 TOML and run through the loader's startup checks -- unknown keys, every
-constrained value, the shape of `[agents]` and `[worktree]` -- exactly as
+constrained value, the shape of `[board]`, `[agents]` and `[worktree]` --
+exactly as
 `factory.py` does before it claims anything; what the daemon does not do
 is probe the host (whether a program is on PATH, whether Docker answers),
 which is the loop's question at its next start. A document the loader
@@ -131,9 +138,12 @@ and nothing is written. An accepted document is recorded first, a human
 `config_edit` interventions row on the store's newest run naming the file
 and the backup (a target with no store or no run has nothing to record
 against and is 503, the file untouched); then the previous text is copied
-to `config.toml.bak-STAMP` beside the file, `STAMP` the UTC time, and the
-new text lands by rename, so a reader sees the old file or the new one and
-never a torn one. The reply is
+to `config.toml.bak-STAMP` beside the file, `STAMP` the UTC time to the
+second (`-2`, `-3` when that second already has one), and the new text
+lands by rename from a staging file of its own, so a reader sees the old
+file or the new one and never a torn one. Writes are taken one at a time,
+from the read of the current file to the rename, so two clients cannot
+back up the same text twice and lose an edit. The reply is
 
 ```json
 {"ok": true, "path": "/home/.../config.toml", "backup": "/home/.../config.toml.bak-20260910T120000Z", "applies": "next loop start", "recorded": 42}

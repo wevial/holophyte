@@ -22,7 +22,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import tomllib
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep, time
 from unittest.mock import patch
@@ -2324,11 +2326,11 @@ class ConfigEditTests(ServeTestCase):
     BEARER = TokenTests.BEARER
     SECRET = "lin_api_0123456789abcdef"
 
-    def config(self, extra="", loop="[loop]\nworkers = 2\n"):
+    def config(self, extra="", loop="[loop]\nworkers = 2\n", serve_token=""):
         path = self.root / "serve.token"
         path.write_text(self.TOKEN + "\n")
         path.chmod(0o600)
-        return (f'[serve]\ntoken_file = "{path}"\n{extra}'
+        return (f'[serve]\ntoken_file = "{path}"\n{extra}{serve_token}'
                 f'\n{loop}\n[linear]\napi_key = "{self.SECRET}"  # board\n')
 
     def on_disk(self):
@@ -2348,13 +2350,16 @@ class ConfigEditTests(ServeTestCase):
 
     def test_get_redacts_secret_values_and_keeps_the_token_file_path(self):
         self.seed()
-        self.start(self.config("config_edit = true\n"))
+        self.start(self.config("config_edit = true\n",
+                               serve_token=f'token = "{self.TOKEN}"\n'))
         code, _, body = self.request("GET", "/config")
         self.assertEqual((code, body), (401, {}))
         code, _, body = self.request("GET", "/config", self.BEARER)
         self.assertEqual(code, 200)
         self.assertNotIn(self.SECRET, self.raw_body)
         self.assertNotIn(self.TOKEN, self.raw_body)
+        self.assertIn('[serve]\ntoken_file = "', body["text"])
+        self.assertIn('\ntoken = "[redacted]"\n', body["text"])
         self.assertIn('api_key = "[redacted]"', body["text"])
         self.assertIn(f'token_file = "{self.root / "serve.token"}"',
                       body["text"])
@@ -2421,6 +2426,116 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual(code, 400)
         self.assertIn("[other] token", body["error"])
         self.assertEqual(self.on_disk(), before)
+
+    def shapes_config(self):
+        path = self.root / "serve.token"
+        path.write_text(self.TOKEN + "\n")
+        path.chmod(0o600)
+        return (
+            f'[serve]\ntoken_file = "{path}"\nconfig_edit = true\n'
+            'token = "S-serve"\n'
+            '[quoted]\n"api key" = "S-quoted" # comment\n'
+            '[dotted]\nkeep.name = "shown"\n'
+            "[inline]\nboard = { api_key = 'S-inline', team = \"t\" }\n"
+            '[multi]\ntoken = """\nline one\nline two"""\n'
+            "[literal]\nkey = 'S-literal'\n"
+            '[[many]]\ntoken = "S-first"\n[[many]]\ntoken = "S-second"\n')
+
+    def test_get_redacts_every_toml_shape_a_secret_can_take(self):
+        """Quoted, dotted and inline-table keys, multi-line and literal
+        strings, arrays of tables: `tomllib` over the shown text is the
+        oracle -- every secret leaf reads `[redacted]`, nothing else moved."""
+        self.seed()
+        before = self.shapes_config().replace(
+            'keep.name = "shown"', 'keep.name = "shown"\nkeep.api_key = "S-dotted"')
+        self.start(before)
+        code, _, body = self.request("GET", "/config", self.BEARER)
+        self.assertEqual(code, 200, body)
+        for secret in ("S-serve", "S-quoted", "S-dotted", "S-inline",
+                       "line one", "S-literal", "S-first", "S-second",
+                       self.TOKEN):
+            self.assertNotIn(secret, self.raw_body, secret)
+        shown = tomllib.loads(body["text"])
+        expected = tomllib.loads(before)
+        self.assertEqual(shown["serve"]["token"], "[redacted]")
+        self.assertEqual(shown["quoted"]["api key"], "[redacted]")
+        self.assertEqual(shown["dotted"]["keep"]["api_key"], "[redacted]")
+        self.assertEqual(shown["inline"]["board"]["api_key"], "[redacted]")
+        self.assertEqual(shown["multi"]["token"], "[redacted]")
+        self.assertEqual(shown["literal"]["key"], "[redacted]")
+        self.assertEqual([m["token"] for m in shown["many"]],
+                         ["[redacted]", "[redacted]"])
+        # The rest of the document is untouched, comment included.
+        self.assertEqual(shown["serve"]["token_file"],
+                         expected["serve"]["token_file"])
+        self.assertEqual(shown["inline"]["board"]["team"], "t")
+        self.assertEqual(shown["dotted"]["keep"]["name"], "shown")
+        self.assertIn('"api key" = "[redacted]" # comment', body["text"])
+
+    def test_a_placeholder_with_a_comment_or_other_quoting_is_restored(self):
+        """`api_key = "[redacted]" # kept` and `'[redacted]'` are the
+        placeholder too: what is written carries the secret, not them."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        edited = before.replace(
+            f'api_key = "{self.SECRET}"  # board',
+            "api_key = '[redacted]' # kept")
+        edited += '\n[extra]\nnote = "x"\n'
+        edited = edited.replace('\n[extra]', '\n[linear.more]\n'
+                                'key = "[redacted]" # also kept\n[extra]')
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": edited})
+        # `[linear.more] key` was never held: refused, named, nothing written.
+        self.assertEqual(code, 400, body)
+        self.assertIn("[linear.more] key", body["error"])
+        self.assertEqual(self.on_disk(), before)
+        edited = before.replace(
+            f'api_key = "{self.SECRET}"  # board',
+            "api_key = '[redacted]' # kept")
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": edited})
+        self.assertEqual(code, 200, body)
+        after = self.on_disk()
+        self.assertIn(f'api_key = "{self.SECRET}" # kept', after)
+        self.assertNotIn("[redacted]", after)
+        self.assertEqual(tomllib.loads(after)["linear"]["api_key"],
+                         self.SECRET)
+
+    def test_a_document_startup_refuses_for_its_board_is_400(self):
+        """`[board] project_id = 123` passes no startup; it passes no PUT."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        text = before + '\n[board]\nproject_id = 123\nteam = "T"\n'
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 400, body)
+        self.assertIn("[board] project_id", body["error"])
+        self.assertEqual(self.on_disk(), before)
+
+    def test_two_writes_in_one_second_keep_two_backups(self):
+        """`write_config()` twice with the same clock: each previous text
+        is in a backup of its own and the file is the second write's."""
+        self.seed()
+        first = self.config("config_edit = true\n")
+        (self.db.parent / "config.toml").write_text(first)
+        tgt = holophyte.target.Target.locate(self.target)
+        when = datetime(2026, 9, 10, 12, 0, 0, tzinfo=timezone.utc)
+        second = first.replace("workers = 2", "workers = 3")
+        third = first.replace("workers = 2", "workers = 4")
+        code, one = holophyte.serve.write_config(tgt, {"text": second}, when)
+        self.assertEqual(code, 200, one)
+        code, two = holophyte.serve.write_config(tgt, {"text": third}, when)
+        self.assertEqual(code, 200, two)
+        self.assertNotEqual(one["backup"], two["backup"])
+        self.assertEqual(Path(one["backup"]).read_text(), first)
+        self.assertEqual(Path(two["backup"]).read_text(), second)
+        self.assertEqual(self.on_disk(), third)
+        self.assertEqual(
+            sorted(p.name for p in self.db.parent.glob("config.toml.*")),
+            ["config.toml.bak-20260910T120000Z",
+             "config.toml.bak-20260910T120000Z-2"])
 
     def test_config_edit_without_a_token_file_is_a_startup_error(self):
         self.seed()
