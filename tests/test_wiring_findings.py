@@ -274,6 +274,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
                 holophyte.loop.main(self.tgt, provider)
 
     def test_a_close_out_renders_and_commits_the_runs_entries(self):
+        self.tgt.config_path.write_text('[report]\nfindings = "repo"\n')
         self.loop("- store.py:7: the migration is missing\n"
                   "VERDICT: REQUEST_CHANGES",
                   "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
@@ -319,11 +320,10 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.assertEqual(self.git("log", "-1", "--format=%s", "main").strip(),
                          "Complete task KO-131: add a thing")
 
-    def test_findings_off_merges_without_writing_or_committing_the_file(self):
-        """`[report] findings = "off"`: the run merges as before, the store
-        has its rows, and FINDINGS.md is neither written nor committed --
-        a file already there is left exactly as it was."""
-        self.tgt.config_path.write_text('[report]\nfindings = "off"\n')
+    def test_the_default_merges_without_writing_or_committing_the_file(self):
+        """No `[report] findings` key (KO-363): the run merges as before, the
+        store has its rows, and FINDINGS.md is neither written nor committed
+        -- a file already there is left exactly as it was."""
         stale = "# Findings\n\nhand-written, not the loop's\n"
         (self.target / "FINDINGS.md").write_text(stale)
         self.git("add", "FINDINGS.md")

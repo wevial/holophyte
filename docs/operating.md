@@ -90,6 +90,10 @@ JSON.
 Every `host` passes through `[report] host_label`, so a configured label is
 what the network sees rather than the machine name.
 
+The run record is the store, read through the console or `--report`; no
+target renders it into a `FINDINGS.md` unless its config says
+`[report] findings = "repo"` ([Configuration](config.md)).
+
 On loopback the boundary is the bind address and nothing else: the
 daemon binds the one address the command line names (loopback when it names
 only a port) and anyone who can reach that port can read run and ticket

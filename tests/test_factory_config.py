@@ -1868,19 +1868,23 @@ class ReportConfigTests(ConfigTestCase):
                 self.assertIn(key, message)
                 report.assert_not_called()
 
-    def test_findings_is_window_by_default_and_off_when_switched(self):
-        """`[report] findings`: `window` renders the file as always, `off`
-        switches it off; absent is `window`."""
+    def test_findings_is_none_by_default_and_repo_when_opted_in(self):
+        """KO-363: `[report] findings` is `none` when absent -- the store is
+        the record and nothing is rendered -- and `repo` for a target that
+        wants the rendered file beside its code."""
         self.locate()
         self.assertEqual(holophyte.config.report_config(self.tgt).findings,
-                         "window")
+                         "none")
 
-        self.locate('[report]\nfindings = "off"\n')
+        self.locate('[report]\nfindings = "repo"\n')
         self.assertEqual(holophyte.config.report_config(self.tgt).findings,
-                         "off")
+                         "repo")
 
     def test_a_findings_mode_nobody_defined_is_a_startup_error_naming_it(self):
-        for line in ('findings = "sometimes"', "findings = false"):
+        """`"yes"` is not an answer (KO-363), and neither are the modes the
+        key had before it: startup fails naming `[report] findings`."""
+        for line in ('findings = "yes"', 'findings = "window"',
+                     'findings = "off"', "findings = false"):
             with self.subTest(line=line):
                 target = self.locate(f"[report]\n{line}\n").path
 
