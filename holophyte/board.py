@@ -19,6 +19,7 @@ claim-time body gate, `warn_on_run` from `holophyte.runs` and
 Fifth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import socket
 import sys
 from pathlib import Path
 
@@ -26,7 +27,54 @@ import store
 import store.read
 import ticket_template
 from holophyte.findings import refresh_findings
+from holophyte.report import host_label
 from holophyte.runs import warn_on_run
+
+# The prefix of the board lease label (KO-351): `holo:` and the writer's
+# `[report] host_label`, so the ready column says which writer holds a ticket
+# where the store lease, private to one writer's store, cannot.
+LEASE_LABEL_PREFIX = "holo:"
+
+
+def lease_label(target):
+    """This writer's board lease label: `holo:` plus `[report] host_label`,
+    or plus the hostname when the target sets no label -- a writer without
+    a label still has to hold its tickets against another writer, and the
+    hostname is the name the store already records for its runs."""
+    return LEASE_LABEL_PREFIX + host_label(target, socket.gethostname())
+
+
+def lease_holders(task):
+    """The hosts whose `holo:` labels the task carries, in board order;
+    [] for a task without one (a board that does not label, or a task
+    dict older than the key)."""
+    return [label[len(LEASE_LABEL_PREFIX):]
+            for label in (task.get("labels") or [])
+            if label.startswith(LEASE_LABEL_PREFIX)]
+
+
+def release_lease_label(target, conn, ticket_id, provider):
+    """Take this writer's lease label off the ticket's issue; never raise.
+
+    The board half of every close-out that gives the store lease back -- a
+    merge, a failure, a park, a sweep, a requeue -- so a label never outlives
+    the lease it mirrors. Best-effort like `mirror_push()`: a board that is
+    down leaves a stale label another writer will refuse, which is the
+    failure the lease is for, and a `warning` row says which label did not
+    come off. A storeless or boardless caller has nothing to release.
+    """
+    if conn is None or provider is None:
+        return
+    ticket = store.read.ticket_by_id(conn, ticket_id)
+    if ticket is None:
+        return
+    label = lease_label(target)
+    try:
+        provider.unlabel_issue(ticket.linearIssueId, label)
+    except Exception as e:  # noqa: BLE001 - best-effort board write
+        warn(conn, ticket_id, f"the lease label {label} could not be removed"
+                              f" from {ticket.linearIdentifier} ({e}); another"
+                              " writer will refuse the ticket until it is")
 
 
 def mirror_key(task):
@@ -564,6 +612,9 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
             return False
         release_run(conn, run_id, False, reason, outcome_class)
     escalate(conn, ticket_id, provider)
+    # The board lease goes with the store lease, in the same close-out
+    # (KO-351); outside the lock for the reason the escalation is.
+    release_lease_label(target, conn, ticket_id, provider)
     if refresh:
         refresh_findings(target, conn)
     return True

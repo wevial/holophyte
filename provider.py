@@ -1,8 +1,9 @@
 """The board seam: one protocol, two boards.
 
 `factory.py` never names a board. It is handed a `Provider` and drives it
-through six members -- `team`, `claim_next()`, `fetch_task()`, `set_state()`,
-`comment()` and `closed_identifiers()` -- so which board a loop runs against is
+through its members -- `team`, `claim_next()`, `ready_issues()`,
+`fetch_task()`, `set_state()`, `comment()`, `closed_identifiers()`,
+`label_issue()` and `unlabel_issue()` -- so which board a loop runs against is
 the caller's choice (`factory.cli()` builds a `LinearProvider`), not a module
 import. Two boards
 ship here: `LinearProvider`, which wraps the functions `linear_provider.py`
@@ -31,6 +32,8 @@ boards hand over the same keys:
     budget_min  the time box in minutes
     priority    Linear's 0-4 priority integer on the Linear board (0/None
                 is unprioritised); the file board has no such field
+    labels      the names of the ticket's labels, [] without any; the loop
+                reads another writer's `holo:` lease label here (KO-351)
 
 FileProvider's on-disk format
 -----------------------------
@@ -43,6 +46,8 @@ FileProvider's on-disk format
     <root>/<IDENT>.comments.md  comments, appended in order: a `## <UTC
                                 timestamp>` line, a blank line, the body, a
                                 blank line
+    <root>/<IDENT>.labels       the ticket's labels, one name per line;
+                                absent means none
 
 A ticket file's name has exactly one dot (`KO-12.md`), which is what keeps
 `KO-12.comments.md` from reading as a ticket called `KO-12.comments`. The
@@ -114,6 +119,17 @@ class Provider(Protocol):
         absent. Raise when the board cannot be asked."""
         ...
 
+    def label_issue(self, issue_id, name) -> None:
+        """Add the label `name` to the ticket, creating the label on first
+        use; a ticket already carrying it is left as it is. Raise when the
+        board did not take it: the loop gives the store lease back then."""
+        ...
+
+    def unlabel_issue(self, issue_id, name) -> None:
+        """Remove the label `name` from the ticket; a ticket without it is
+        left as it is. Raise when the board refused."""
+        ...
+
 
 class LinearProvider:
     """Linear, through the functions `linear_provider.py` already has.
@@ -163,6 +179,12 @@ class LinearProvider:
     def closed_identifiers(self, identifiers):
         return self._linear().closed_identifiers(identifiers)
 
+    def label_issue(self, issue_id, name):
+        self._linear().label_issue(issue_id, name, self._team)
+
+    def unlabel_issue(self, issue_id, name):
+        self._linear().unlabel_issue(issue_id, name)
+
 
 class FileProvider:
     """A directory of ticket files as the board; format in the module docstring."""
@@ -202,7 +224,28 @@ class FileProvider:
     def fetch_task(self, issue_id):
         if "." in issue_id or not self._path(issue_id).is_file():
             return None
-        return _parse(issue_id, self._path(issue_id).read_text())
+        task = _parse(issue_id, self._path(issue_id).read_text())
+        task["labels"] = self._labels(issue_id)
+        return task
+
+    def _labels(self, identifier):
+        path = self._path(identifier, ".labels")
+        return path.read_text().splitlines() if path.exists() else []
+
+    def label_issue(self, issue_id, name):
+        self._require(issue_id)
+        if not str(name).strip():
+            raise RuntimeError(f"refused to label {issue_id} with an empty name")
+        have = self._labels(issue_id)
+        if name not in have:
+            self._path(issue_id, ".labels").write_text(
+                "".join(f"{label}\n" for label in [*have, name]))
+
+    def unlabel_issue(self, issue_id, name):
+        self._require(issue_id)
+        left = [label for label in self._labels(issue_id) if label != name]
+        self._path(issue_id, ".labels").write_text(
+            "".join(f"{label}\n" for label in left))
 
     def set_state(self, issue_id, state_name):
         self._require(issue_id)

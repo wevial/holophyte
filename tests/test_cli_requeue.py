@@ -30,6 +30,20 @@ MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
 
 
+class StubBoard:
+    """`LinearProvider` as `cli()` builds it, recording the label calls."""
+
+    instance = None
+
+    def __init__(self, project_id, team):
+        self.team = team
+        self.unlabelled = []
+        StubBoard.instance = self
+
+    def unlabel_issue(self, issue_id, name):
+        self.unlabelled.append((issue_id, name))
+
+
 class RequeueCliTests(unittest.TestCase):
     """A target with a store holding one ticket and its ended (or live) run."""
 
@@ -68,8 +82,14 @@ class RequeueCliTests(unittest.TestCase):
 
     def cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        # The board `cli()` builds stands in for Linear: `--requeue` takes
+        # the requeued ticket's lease label off it (KO-351), and the stub
+        # records the call instead of reaching for the network.
+        self.board = StubBoard.instance = None
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
+                patch.object(holophyte.cli, "LinearProvider", StubBoard):
             holophyte.cli.cli([str(self.repo), *args])
+        self.board = StubBoard.instance
         return out.getvalue(), err.getvalue()
 
     def interventions(self):
@@ -88,6 +108,11 @@ class RequeueCliTests(unittest.TestCase):
 
         self.assertEqual(out.strip(), f"[holo2] KO-1 requeued after run {self.run}")
         self.assertEqual(self.status(), "ready")
+        # The board lease goes with the store's: the requeued issue's
+        # `holo:` label for this writer is taken off (KO-351).
+        self.assertEqual([name.startswith("holo:") for _, name in
+                          self.board.unlabelled], [True])
+        self.assertEqual(self.board.unlabelled[0][0], "issue-1")
         self.assertEqual(self.interventions(), [(self.run, "requeue")])
         (summary,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="

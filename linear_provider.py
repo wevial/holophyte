@@ -95,6 +95,7 @@ query($project: String!, $after: String) {
       nodes {
         identifier id url title description
         estimate priority
+        labels { nodes { id name } }
         state { type name }
         relations { nodes { type relatedIssue { identifier state { type } } } }
       }
@@ -169,6 +170,11 @@ def parse_task(issue):
     what a written pull request body links at its end (KO-336), and nothing
     else reads it, so an issue without one is a task without the key's value.
 
+    `labels` is the names of the issue's labels, in the order Linear lists
+    them, or [] for a query that did not ask (`ISSUE_QUERY`). The claim
+    reads it for another writer's `holo:` lease label (KO-351) and nothing
+    else does; the store never mirrors it.
+
     `criteria` is the "Acceptance criteria" section's items, checked ones
     included: the mirror routes a ticket carrying both criteria and a verify
     command to `ready` and everything else to `needs_spec` (state-model §2),
@@ -189,7 +195,8 @@ def parse_task(issue):
             "body": desc,
             "budget_min": int(issue.get("estimate") or 20),
             "priority": issue.get("priority"),
-            "url": issue.get("url")}
+            "url": issue.get("url"),
+            "labels": label_names(issue)}
 
 
 ISSUE_QUERY = """
@@ -252,6 +259,90 @@ def set_state(issue_id, state_name, team):
     if not data["issueUpdate"]["success"]:
         raise RuntimeError(
             f"Linear refused to move issue {issue_id} to {state_name!r}")
+
+
+def label_names(issue):
+    """The names of `issue`'s labels as the ready query lists them; [] when
+    the query did not ask for them."""
+    return [n["name"] for n in ((issue.get("labels") or {}).get("nodes") or [])]
+
+
+def _label_ids_of(issue_id):
+    """The ids of the labels `issue_id` carries now, by name.
+
+    Read just before each write, because `issueUpdate` takes the *whole*
+    `labelIds` list: a write built from a stale listing would drop a label
+    a human added meanwhile."""
+    data = _gql('query($id: String!) { issue(id: $id) { labels { nodes { id '
+                'name } } } }', {"id": issue_id})
+    issue = data.get("issue")
+    if not issue:
+        raise RuntimeError(f"Linear has no issue {issue_id!r}")
+    return {n["name"]: n["id"] for n in issue["labels"]["nodes"]}
+
+
+def _label_id(name, team):
+    """The id of `team`'s label called `name`, created on first use.
+
+    A team label rather than a workspace one, so the lease labels of one
+    board's team do not have to exist in every other team's picker; the
+    lookup is by name within the team for the same reason."""
+    data = _gql('query($name: String!, $team: String!) { issueLabels(filter: '
+                '{ name: { eq: $name }, team: { name: { eq: $team } } }) '
+                '{ nodes { id } } }', {"name": name, "team": team})
+    nodes = data["issueLabels"]["nodes"]
+    if nodes:
+        return nodes[0]["id"]
+    made = _gql('mutation($input: IssueLabelCreateInput!) { issueLabelCreate('
+                'input: $input) { success issueLabel { id } } }',
+                {"input": {"name": name, "teamId": _team_id(team)}})
+    if not made["issueLabelCreate"]["success"]:
+        raise RuntimeError(f"Linear refused to create the label {name!r}")
+    return made["issueLabelCreate"]["issueLabel"]["id"]
+
+
+def _write_labels(issue_id, label_ids, what):
+    """`issueUpdate` with `labelIds`; raises when Linear says it did not
+    land, for the reason `set_state()` gives -- a refusal comes back as
+    `success: false` with no `errors` block."""
+    data = _gql('mutation($id: String!, $labels: [String!]!) { issueUpdate(id: '
+                '$id, input: { labelIds: $labels }) { success } }',
+                {"id": issue_id, "labels": label_ids})
+    if not data["issueUpdate"]["success"]:
+        raise RuntimeError(f"Linear refused to {what} on issue {issue_id}")
+
+
+def label_issue(issue_id, name, team):
+    """Add `team`'s label `name` to the issue, creating the label on first use.
+
+    The board half of a claim (KO-351): the loop calls it after the store
+    lease so a second writer with a store of its own sees, in the ready
+    column, that this one holds the ticket. Idempotent -- an issue already
+    carrying the label is left as it is -- and it raises when Linear
+    refuses, so the caller can give the store lease back rather than start
+    a run no other writer can see.
+    """
+    have = _label_ids_of(issue_id)
+    if name in have:
+        return
+    _write_labels(issue_id, [*have.values(), _label_id(name, team)],
+                  f"add the label {name!r}")
+
+
+def unlabel_issue(issue_id, name):
+    """Remove the label `name` from the issue; a no-op when it is not there.
+
+    The close-out half of the lease label: called when the run ends in any
+    terminal state, and by `--requeue`, so the label never outlives the
+    store lease it mirrors. A label the issue does not carry is nothing to
+    remove, not an error -- the label may have gone with an earlier
+    close-out, or a human may have taken it off.
+    """
+    have = _label_ids_of(issue_id)
+    if name not in have:
+        return
+    _write_labels(issue_id, [i for n, i in have.items() if n != name],
+                  f"remove the label {name!r}")
 
 
 # Linear's `priority` is 0 (none), 1 (urgent), 2 (high), 3 (medium), 4 (low).

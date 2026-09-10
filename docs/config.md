@@ -312,6 +312,13 @@ from `/runs/N/ledger`, so nothing is lost but the projection. A
 `FINDINGS.md` already in the repository is left exactly as it is, not
 deleted. `--report` prints the mode in effect below the table.
 
+`host_label` also names this writer's board lease: the claim labels the
+Linear issue `holo:` plus the label (`holo:writer-1` above) for as long as
+the run holds the ticket, and another writer skips a ready issue carrying a
+`holo:` label that is not its own ([the loop](loop.md), step 1). Two writer
+hosts sharing one board therefore need two distinct labels; a host with no
+`host_label` leases under its hostname.
+
 The `host` column of `--report` and `--sweep` and the supervisor's startup
 and refusal lines show the label in place of the hostname when it is set.
 The `FINDINGS.md` window the loop commits renders no host: its run and round

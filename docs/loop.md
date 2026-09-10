@@ -11,7 +11,21 @@ machines it walks. Back to the [README](index.md).
    active run and points its `activeRunId` at the new one, so two loops on
    one target each work a ticket of their own, and a ticket another live
    run holds is skipped in one line (`ticket KO-n: lease already held by
-   run N`) for the next candidate rather than stopping the loop. Before the
+   run N`) for the next candidate rather than stopping the loop. The store
+   lease is one writer's: a second writer host has a store of its own and
+   cannot see it, so the claim leases the ticket on the board too. Once the
+   store lease is taken the issue gets the label `holo:HOST`, where `HOST`
+   is this writer's `[report] host_label` (its hostname without one), and
+   the team label is created on first use. A ready issue carrying another
+   writer's `holo:` label is skipped in one line (`KO-n is leased by HOST on
+   the board; skipping it`) and nothing is leased in the store; one carrying
+   this writer's own label with no live run under it in the store is a stale
+   lease a close-out never took off, so the label is removed and the claim
+   goes ahead. A label the board will not take fails the claim as an `infra`
+   failure and gives the store lease straight back, so a run never starts
+   unlabelled. The label comes off in the same close-out that moves the
+   store -- a merge, a failure, a park for a human, a sweep -- and
+   `--requeue` removes it too. Before the
    first claim the loop runs one read-only sweep of the store. The sweep's
    contract runs the other way too: a run the supervisor's sweep ends while
    the loop is inside a turn is over, and the heartbeat that keeps the run

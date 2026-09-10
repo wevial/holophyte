@@ -27,6 +27,7 @@ import tempfile
 import threading
 import time
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
@@ -85,6 +86,12 @@ class StubProvider:
         self.live = {task["issue_id"]: task for task in tasks}
         self.states = []
         self.comments = []
+        # The board lease label (KO-351): the labels each issue carries now,
+        # seeded from the task's `labels`, and every label call in order as
+        # `("label" | "unlabel", issue_id, name)`.
+        self.labels = {task["issue_id"]: list(task.get("labels") or [])
+                       for task in tasks}
+        self.label_calls = []
 
     def claim_next(self, skip=(), order="identifier"):
         """The first queued task the loop has not already refused.
@@ -113,6 +120,17 @@ class StubProvider:
 
     def comment(self, task_id, body):
         self.comments.append((task_id, body))
+
+    def label_issue(self, issue_id, name):
+        self.label_calls.append(("label", issue_id, name))
+        have = self.labels.setdefault(issue_id, [])
+        if name not in have:
+            have.append(name)
+
+    def unlabel_issue(self, issue_id, name):
+        self.label_calls.append(("unlabel", issue_id, name))
+        have = self.labels.setdefault(issue_id, [])
+        self.labels[issue_id] = [n for n in have if n != name]
 
     # What the board says it has closed, identifier -> state type, when the
     # startup reconcile asks; empty means the mirror is current.
@@ -3810,6 +3828,89 @@ class EndedRunTests(LoopFixture):
         # The reviewer never ran: the script's APPROVE is still unconsumed.
         self.assertEqual([turn.role for turn in self.last_fake.turns],
                          ["implement"])
+
+
+class BoardLeaseLabelTests(LoopFixture):
+    """The claim's second lease (KO-351): a `holo:HOST` label on the issue,
+    which a writer with a store of its own can see where it cannot see this
+    store's `activeRunId`."""
+
+    HOST = "writer-1"
+    LABEL = "holo:writer-1"
+
+    def setUp(self):
+        super().setUp()
+        self.configure('[report]\nhost_label = "writer-1"\n')
+
+    def labelled(self, provider, labels):
+        task = a_task()
+        task["labels"] = labels
+        return provider(task)
+
+    def test_a_claim_labels_before_the_implementer_and_a_merge_unlabels(self):
+        """The label is on the issue when the implementer's turn begins --
+        not after it, when a second writer's listing could already have
+        offered the ticket -- and comes off in the merge's close-out."""
+        provider = StubProvider(a_task())
+        at_implement = []
+
+        @dataclass
+        class Witness(Commit):
+            def play(self, cwd, turn):
+                at_implement.append(list(provider.labels["iss-131"]))
+                return super().play(cwd, turn)
+
+        self.loop(Witness("the scripted work"), APPROVE, provider=provider)
+
+        self.assertEqual(at_implement, [[self.LABEL]])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(provider.labels["iss-131"], [])
+        self.assertEqual(provider.label_calls,
+                         [("label", "iss-131", self.LABEL),
+                          ("unlabel", "iss-131", self.LABEL)])
+
+    def test_a_ticket_another_writer_labelled_is_skipped_and_nothing_is_leased(self):
+        provider = self.labelled(StubProvider, ["holo:writer-2"])
+
+        out = self.main_output(Commit("never reached"), APPROVE,
+                               provider=provider)
+
+        self.assertIn("[holo2] KO-131 is leased by writer-2 on the board;"
+                      " skipping it", out)
+        self.assertEqual(self.read("SELECT id FROM runs"), [])
+        self.assertEqual(self.last_fake.turns, [])
+        self.assertEqual(provider.label_calls, [])
+        self.assertEqual(provider.labels["iss-131"], ["holo:writer-2"])
+
+    def test_this_writers_label_with_no_live_run_is_stale_and_removed(self):
+        """A label a close-out never took off is not a lease: the store has
+        no live run under it, so it comes off and the claim goes ahead."""
+        provider = self.labelled(StubProvider, [self.LABEL])
+
+        out = self.main_output(Commit("the scripted work"), APPROVE,
+                               provider=provider)
+
+        self.assertIn("removing the stale label and claiming", out)
+        self.assertEqual(provider.label_calls[0],
+                         ("unlabel", "iss-131", self.LABEL))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.last_fake.roles, ["implement", "review"])
+
+    def test_a_label_the_board_refuses_releases_the_lease_and_starts_no_run(self):
+        class Refusing(StubProvider):
+            def label_issue(self, issue_id, name):
+                raise RuntimeError("linear is down")
+
+        provider = Refusing(a_task())
+        out = self.main_output(Commit("never reached"), APPROVE,
+                               provider=provider)
+
+        self.assertIn("did not take the lease label holo:writer-1", out)
+        self.assertEqual(self.last_fake.turns, [])
+        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
+                         [("failed", "infra")])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
+        self.assertEqual(self.branches(), ["main"])
 
 
 class FakePool:
