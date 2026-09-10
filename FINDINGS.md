@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[528 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T21:23:27Z — KO-357
-FAILED: terminal adjudication: FAIL; branch task/ko-357-a-changed-implementer-command preserved at 0e7c6dc45b09
-actual: 22.5 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T21:23:54Z — KO-359
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/loop.py:2428 [p1] [P1] Fix startup reconciliation order in [holophyte/loop.py](/home/reviewer/candidate/holophyte/loop.py:2428) and the equivalent serial path. `_reconcile_mirr…
-- criteria:1 [p2] CRITERION 1: not met — when Linear already reports Done at startup, the merged PR’s run remains parked without its mergeSha. Given a run parked on a pull reques…
+[530 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T21:31:21Z — KO-356
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -770,3 +760,10 @@ Round 4: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T22:35:49Z — KO-356
 MERGED to main as 8282372 (branch task/ko-356-the-daemon-serves-its-target-s deleted).
 actual: 40.3 min · estimate: 30 min · rounds: 4
+
+## 2026-09-10T22:36:27Z — KO-351
+Round 4: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T22:38:15Z — KO-351
+MERGED to main as 7cd1e9a (branch task/ko-351-a-claim-leases-the-ticket-in-l deleted).
+actual: 42.7 min · estimate: 30 min · rounds: 4
