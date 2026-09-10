@@ -14,6 +14,7 @@ standard library; nothing from `factory`.
 Seventh and last slice of the phase-2 module split; moved verbatim from
 `factory.py`, which is now the entry point that imports `holophyte.cli`.
 """
+import contextlib
 import os
 import re
 import subprocess
@@ -53,8 +54,10 @@ from holophyte.config import (
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import (
     InfraFailure,
+    MergeLockHeld,
     MergeParked,
     RunFailure,
+    merge_lock,
     outcome_class_of,
     run_verify,
     sh,
@@ -406,29 +409,37 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # asks. Under the `personal` autonomy profile the human half is a no-op,
     # so the run passes through the node rather than around it and a failed
     # pre-merge verify is a run stopped at the gate.
-    ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
-                     wt, beat_s, sha, verify_cmd, contracts)
     merge = merge_config(target)
-    # Under `mode = "pr"` the candidate leaves the machine instead of landing
-    # on main: pushed, opened as a pull request, and shepherded -- its
-    # threads answered, its checks awaited -- until it merges through the
-    # PR's own API or parks for the operator. `approve` is read there: the
-    # PR is what the human's answer is about.
-    if merge.mode == "pr":
-        url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                       beat_s, wt, started, budget_min, issue_url)
-        merge_sha = _shepherd(target, conn, run_id, provider, task_id,
-                              issue_id, task, branch, wt, sha, beat_s, url,
-                              ticket, verify_cmd, contracts, budget_min,
-                              criteria, reviewed=sha, verified=sha)
-        return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
-                          merge_sha, started, budget_min, rnd)
-    # The human half of the gate, when the target asks for one: the
-    # candidate is approved and verified, and a person says "merge".
-    if merge.approve == "human":
-        _park_for_approval(conn, run_id, provider, task_id, branch, sha)
-    return _land(target, conn, run_id, provider, task_id, task, branch, wt,
-                 sha, ok, started, budget_min, rnd)
+    # The gate and the merge run under the target's merge lock, so two runs
+    # reaching it together take turns and each merges the `main` the other
+    # left (KO-342). Under `mode = "pr"` the candidate leaves the machine
+    # instead of landing on main: pushed, opened as a pull request, and
+    # shepherded -- its threads answered, its checks awaited -- until it
+    # merges through the PR's own API or parks for the operator. `approve`
+    # is read there: the PR is what the human's answer is about. The lock
+    # covers the push-and-open and not the shepherd, which waits on a
+    # remote for as long as it takes.
+    with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
+                    beat_s):
+        ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
+                              issue_id, branch, wt, beat_s, sha, verify_cmd,
+                              contracts, sync_main=merge.mode != "pr")
+        if merge.mode == "pr":
+            url = _open_pr(target, conn, run_id, task_id, task, branch, body,
+                           beat_s, wt, started, budget_min, issue_url)
+        elif merge.approve == "human":
+            # The human half of the gate, when the target asks for one: the
+            # candidate is approved and verified, and a person says "merge".
+            _park_for_approval(conn, run_id, provider, task_id, branch, sha)
+        else:
+            return _land(target, conn, run_id, provider, task_id, task,
+                         branch, wt, sha, ok, started, budget_min, rnd)
+    merge_sha = _shepherd(target, conn, run_id, provider, task_id,
+                          issue_id, task, branch, wt, sha, beat_s, url,
+                          ticket, verify_cmd, contracts, budget_min,
+                          criteria, reviewed=sha, verified=sha)
+    return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
+                      merge_sha, started, budget_min, rnd)
 
 
 def _approved_candidate(conn, run_id):
@@ -536,20 +547,24 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     print(f"[holo2] {task_id}: approved candidate {branch} at {sha[:12]}"
           f" from run {carried.run_id}; skipping to the merge gate")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    ok = _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
-                     wt, beat_s, sha, verify_cmd, contracts)
-    if merge.mode == "pr":
-        url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                       beat_s, wt, started, budget_min, issue_url)
-        merge_sha = _shepherd(target, conn, run_id, provider, task_id,
-                              issue_id, task, branch, wt, sha, beat_s, url,
-                              f"{task}\n\n{body}" if body else task,
-                              verify_cmd, contracts, budget_min, criteria,
-                              reviewed=sha, verified=sha)
-        return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
-                          merge_sha, started, budget_min, 0)
-    return _land(target, conn, run_id, provider, task_id, task, branch, wt,
-                 sha, ok, started, budget_min, 0)
+    with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
+                    beat_s):
+        ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
+                              issue_id, branch, wt, beat_s, sha, verify_cmd,
+                              contracts, sync_main=merge.mode != "pr")
+        if merge.mode == "pr":
+            url = _open_pr(target, conn, run_id, task_id, task, branch, body,
+                           beat_s, wt, started, budget_min, issue_url)
+        else:
+            return _land(target, conn, run_id, provider, task_id, task,
+                         branch, wt, sha, ok, started, budget_min, 0)
+    merge_sha = _shepherd(target, conn, run_id, provider, task_id,
+                          issue_id, task, branch, wt, sha, beat_s, url,
+                          f"{task}\n\n{body}" if body else task,
+                          verify_cmd, contracts, budget_min, criteria,
+                          reviewed=sha, verified=sha)
+    return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
+                      merge_sha, started, budget_min, 0)
 
 
 def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
@@ -1021,19 +1036,107 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
            f"rounds: PASS\n\nAdjudicator reply:\n{reply}", provider)
 
 
+@contextlib.contextmanager
+def _gate_lock(target, conn, run_id, provider, task_id, branch, sha, beat_s):
+    """`merge_lock()` as the loop takes it: the run heartbeats through the
+    wait, and a wait that runs out parks the ticket naming the holder before
+    the `MergeLockHeld` ends the run (an infra failure: no strike spent,
+    branch and worktree untouched)."""
+    beat = (lambda: store.heartbeat(conn, run_id)) if run_id is not None else None
+    try:
+        with merge_lock(target, run_id, on_wait=beat):
+            yield
+    except MergeLockHeld as e:
+        _park_at_gate(conn, run_id, provider, task_id, branch, sha,
+                      f"merge lock: {e}", f"MERGE GATE DID NOT RUN: {e}.")
+        raise
+
+
+def _park_at_gate(conn, run_id, provider, task_id, branch, sha, question,
+                  ledger_text):
+    """A gate refusal that is a person's to answer: the ticket goes
+    `blocked_on_operator` asking `question`, the ledger records why, and
+    the caller raises the failure that leaves branch and worktree in place.
+    The run itself ends the way every refused merge ends."""
+    if conn is not None and run_id is not None:
+        ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+        if not block_ticket(conn, ticket_id, provider, question):
+            print(f"[holo2] {task_id} could not be moved to"
+                  " blocked_on_operator; failing the run anyway")
+    ledger(conn, run_id, task_id, "failure",
+           f"{ledger_text} Branch {branch} preserved at {sha}.", provider)
+
+
+def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
+                           wt, sha):
+    """Merge `main` into the branch in its worktree, so the gate verifies
+    and merges the candidate as it will sit on today's `main`. Returns the
+    branch's sha afterwards: unchanged when `main` is already an ancestor.
+
+    A conflict is a person's to resolve: the merge is aborted, the branch
+    left at `sha`, and the run parks with the conflicting paths in the
+    question -- except a conflict in FINDINGS.md alone, which takes the
+    branch side as the `--no-ff` merge always has (the fuller window wins).
+    """
+    if subprocess.run(["git", "merge-base", "--is-ancestor", "main", "HEAD"],
+                      cwd=wt, capture_output=True).returncode == 0:
+        return sha
+    print(f"[holo2] main moved past {branch}; merging main into the branch"
+          " before the gate's verify")
+    mr = subprocess.run(["git", "merge", "--no-edit", "main"], cwd=wt,
+                        capture_output=True, text=True)
+    if mr.returncode != 0:
+        conflicted = sorted(
+            p for p in subprocess.run(
+                ["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt,
+                capture_output=True, text=True).stdout.splitlines() if p.strip())
+        if conflicted == ["FINDINGS.md"]:
+            subprocess.run(["git", "checkout", "--ours", "FINDINGS.md"],
+                           cwd=wt, capture_output=True, text=True)
+            sh(["git", "add", "FINDINGS.md"], wt)
+            sh(["git", "commit", "--no-edit"], wt)
+        else:
+            subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                           capture_output=True, text=True)
+            paths = ", ".join(conflicted) or "(no unmerged paths reported)"
+            why = (f"merging main into {branch} conflicted on: {paths};"
+                   f" branch preserved at {sha[:12]}")
+            print(f"[holo2] {why}")
+            _park_at_gate(conn, run_id, provider, task_id, branch, sha,
+                          f"merge conflict with main on: {paths}; resolve it"
+                          f" on {branch} and --repoint, or merge by hand",
+                          f"MERGE GATE: main conflicts with {branch} on"
+                          f" {paths}; the merge of main into the branch was"
+                          " aborted.")
+            raise RunFailure(why)
+    merged = sh(["git", "rev-parse", "HEAD"], wt)
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "merge_gate",
+                           f"merged main into {branch}: {sha[:12]} ->"
+                           f" {merged[:12]}")
+    print(f"[holo2] main merged into {branch}: {sha[:12]} -> {merged[:12]}")
+    return merged
+
+
 def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
-                beat_s, sha, verify_cmd, contracts):
-    """The `merge_gate` phase: the pre-merge verify, then the drift check.
-    Returns the verify's `ok`, for the merged ledger line."""
+                beat_s, sha, verify_cmd, contracts, sync_main=True):
+    """The `merge_gate` phase: `main` merged into the branch (unless
+    `sync_main` is off -- PR mode, where the merge is the remote's), the
+    pre-merge verify on the result, then the drift check. Returns the
+    verify's `ok`, for the merged ledger line, and the branch's sha as the
+    gate leaves it. The caller holds the merge lock."""
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
+    if sync_main:
+        sha = _sync_main_into_branch(target, conn, run_id, provider, task_id,
+                                     branch, wt, sha)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts)
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
-        ledger(conn, run_id, task_id, "failure",
-               f"FAILED verify before merge; branch {branch} "
-               f"preserved at {sha}\n\n{out}", provider)
+        _park_at_gate(conn, run_id, provider, task_id, branch, sha,
+                      f"verify failed at the merge gate:\n{out[-2000:]}",
+                      f"FAILED verify before merge.\n\n{out}\n")
         raise RunFailure(f"verify failed before merge; branch {branch}"
                          f" preserved at {sha[:12]}")
     print("[holo2] verify ok before merge")
@@ -1061,7 +1164,7 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
         raise RunFailure(f"ticket drifted from the claimed contract"
                          f" ({', '.join(drift)}); branch {branch} preserved"
                          f" at {sha[:12]}")
-    return ok
+    return ok, sha
 
 
 def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
@@ -1337,7 +1440,8 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
         if merge.approve == "auto" or approved:
             if sha != verified:
                 _merge_gate(target, conn, run_id, provider, task_id, issue_id,
-                            branch, wt, beat_s, sha, verify_cmd, contracts)
+                            branch, wt, beat_s, sha, verify_cmd, contracts,
+                            sync_main=False)
                 verified = sha
             return _merge_pr(target, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, reviewed=reviewed)

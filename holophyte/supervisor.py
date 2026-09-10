@@ -44,6 +44,7 @@ import store
 import store.read
 from holophyte.board import close_out_failure
 from holophyte.config import sweep_config
+from holophyte.gates import merge_lock_path, read_merge_lock
 from holophyte.reexec import reexec_self
 from holophyte.report import REPORT_GAP, format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
@@ -138,7 +139,8 @@ Trip = collections.namedtuple(
 # other.
 Sweep = collections.namedtuple("Sweep",
                                ("swept", "trips", "acted", "watched",
-                                "outcomes", "restarts"), defaults=((),))
+                                "outcomes", "restarts", "locks"),
+                               defaults=((), ()))
 # What acting on one trip came to. `acted` is whether the run was failed;
 # `phase` is the run's phase as the re-check found it, which for a decline is
 # the status the summary names -- the run finished, moved on or answered --
@@ -444,7 +446,40 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
         outcomes = [act_on_trip(target, conn, trip, provider, knobs)
                     for trip in trips]
     return Sweep(len(swept), trips, act, tuple(watched), tuple(outcomes),
-                 restarts)
+                 restarts, tuple(merge_lock_lines(target, conn, act)))
+
+
+def merge_lock_lines(target, conn, act=False):
+    """The merge lock's line, if there is a lock: held, stale, or removed.
+
+    The gate takes `gates.merge_lock()` for the span of a merge and gives it
+    back on every way out, so a lock still on disk names either a gate in
+    progress or a run that died holding it. The run it names decides which:
+    live (no `endedAt`) and the lock is reported as held; ended, or unknown
+    to the store, and it is stale -- a bare sweep says so, an acting sweep
+    removes it, and the line names the run either way. A lock that names no
+    run (a storeless `run_task()` wrote it, or it is half-written) cannot be
+    judged and is left alone, said so.
+    """
+    path = merge_lock_path(target)
+    holder = read_merge_lock(path)
+    if holder is None:
+        return []
+    run_id, taken_at = holder
+    if run_id is None:
+        return [f"merge lock {path} names no run; left alone"]
+    snapshot = store.read.run_snapshot(conn, run_id)
+    if snapshot is not None and snapshot.endedAt is None:
+        age = (f" for {(time() - taken_at) / 60:.1f} min"
+               if taken_at is not None else "")
+        return [f"merge lock held by run {run_id} ({snapshot.phase}){age}"]
+    why = ("ended" if snapshot is not None else "not in the store")
+    if not act:
+        return [f"stale merge lock: run {run_id} {why};"
+                " --sweep --act removes it"]
+    with contextlib.suppress(FileNotFoundError):
+        path.unlink()
+    return [f"removed stale merge lock: run {run_id} {why}"]
 
 
 SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence", "host")
@@ -487,7 +522,8 @@ def sweep_lines(result, target=None):
     lines too, because "no runs in flight" is exactly what a loop that died
     in its exec leaves behind.
     """
-    return restart_lines(result) + run_lines(result, target)
+    return (restart_lines(result) + list(result.locks)
+            + run_lines(result, target))
 
 
 def restart_lines(result):

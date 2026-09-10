@@ -1573,6 +1573,63 @@ class MergeConflictTests(LoopFixture):
         self.assertIn("README.md", reason)
         self.assertIn(BRANCH, self.branches())  # preserved for a human
 
+    def test_a_conflict_with_main_parks_the_ticket_and_moves_nothing(self):
+        """KO-342: the gate merges main into the branch first, and a
+        conflict there is a person's: the ticket is blocked with the path in
+        its question, the branch sits at its pre-gate sha, main is where the
+        divergence left it."""
+        seen = {}
+
+        def diverge():
+            self.commit_on_main("README.md", "main side\n")
+            seen["main"] = self.git("rev-parse", "main").strip()
+            seen["branch"] = self.git("rev-parse", BRANCH).strip()
+
+        self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
+                  MainDiverges(diverge))
+
+        ((status, question),) = self.read(
+            "SELECT status, blockedQuestion FROM tickets")
+        self.assertEqual(status, "blocked_on_operator")
+        self.assertIn("README.md", question)
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), seen["branch"])
+        self.assertEqual(self.git("rev-parse", "main").strip(), seen["main"])
+        self.assertEqual(self.main_status(), "")
+
+    def test_a_main_that_moved_without_conflict_is_merged_in_and_re_verified(self):
+        """KO-342: main gains an unrelated commit under review; the gate
+        merges it into the branch, runs the verify once more on the result,
+        and the `--no-ff` merge lands with that commit behind it."""
+        log = self.target.parent / "verify.log"
+        task = a_task()
+        task["verify"] = f"echo ran >> {log} && echo ok"
+        moved = {}
+
+        def diverge():
+            self.commit_on_main("other.txt", "elsewhere\n")
+            moved["sha"] = self.git("rev-parse", "main").strip()
+
+        self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
+                  MainDiverges(diverge), provider=StubProvider(task))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        # one verify before review round 1, one more at the gate
+        self.assertEqual(log.read_text().splitlines(), ["ran", "ran"])
+        # The --no-ff merge commit, wherever the close-out's FINDINGS commit
+        # has since put main's HEAD.
+        merge = self.git("log", "main", "--merges", "-1", "--format=%H").strip()
+        self.assertTrue(merge, self.subjects())
+        branch_tip = self.git("rev-parse", f"{merge}^2").strip()
+        # The branch side of the --no-ff merge already contains main's move:
+        # the gate merged it in (`git` exits nonzero, and the fixture raises,
+        # when it is not an ancestor).
+        self.git("merge-base", "--is-ancestor", moved["sha"], branch_tip)
+        self.assertNotEqual(branch_tip, moved["sha"])
+        self.assertIn("main moves other.txt", self.subjects(merge))
+        self.assertEqual((self.target / "README.md").read_text(), "branch side\n")
+        self.assertEqual((self.target / "other.txt").read_text(), "elsewhere\n")
+        self.assertNotIn(BRANCH, self.branches())
+
     def test_a_conflicting_path_that_merely_contains_findings_md_is_not_resolved(self):
         """The unmerged set decides, not a substring of the merge's output: a
         conflict in `docs/FINDINGS.md-notes.md` names FINDINGS.md in every

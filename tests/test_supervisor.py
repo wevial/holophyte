@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_supervisor_sweep import MINUTE, T0, SweepTestCase  # noqa: E402
 
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -80,6 +81,43 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
         self.assertEqual(trip.condition, "time_box")
         self.assertIn(f"× {1 + holophyte.supervisor.MAX_ROUNDS} turns",
                       trip.evidence)
+
+
+class MergeLockSweepTests(SweepTestCase):
+    """KO-342: the sweep clears a merge lock whose run has ended, names it,
+    and leaves a live run's lock alone."""
+
+    def lock_for(self, run_id):
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
+        return path
+
+    def test_an_acting_sweep_removes_the_lock_of_an_ended_run(self):
+        run_id = self.a_run(phase="merge_gate")
+        store.release(self.conn, run_id, "failed", "died at the gate",
+                      now=T0 + MINUTE)
+        path = self.lock_for(run_id)
+
+        quiet = self.run_sweep(T0 + 2 * MINUTE)
+        self.assertTrue(path.exists())
+        self.assertIn(f"stale merge lock: run {run_id} ended;"
+                      " --sweep --act removes it", quiet)
+
+        acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
+
+        self.assertFalse(path.exists())
+        self.assertIn(f"removed stale merge lock: run {run_id} ended", acted)
+
+    def test_a_live_runs_lock_is_kept_and_reported(self):
+        run_id = self.a_run(phase="merge_gate")
+        path = self.lock_for(run_id)
+
+        lines = self.run_sweep(T0 + MINUTE, "--act")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(any(line.startswith(
+            f"merge lock held by run {run_id} (merge_gate)") for line in lines),
+            lines)
 
 
 if __name__ == "__main__":
