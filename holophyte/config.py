@@ -882,6 +882,16 @@ def board_config(target):
 # linear history, refuses a merge commit after every gate has passed; this
 # names the method it will take. Validated whatever the mode, like the rest.
 #
+# `pr_poll_sec` is the least time, in seconds, between two shepherd rounds
+# the loop itself starts on one parked pull request (KO-362). Every tick
+# reads each parked pull request once anyway, to notice a merge; the same
+# read now carries GitHub's `updatedAt` and the thread count, and a pull
+# request that moved past what the last shepherd pass recorded is sent
+# back to the shepherd as `--shepherd KO-n` would send it -- but no more
+# often than this, per pull request, so a reviewer typing three comments
+# in a minute gets one round rather than three. An integer of at least
+# 10; the default is 180.
+#
 # `pr_text` is where the pull request's title and body come from under
 # `mode = "pr"`: `"ticket"` (the default) titles it `KO-n: TITLE` and pastes
 # the ticket body with the run's FINDINGS entry; `"written"` spends one
@@ -911,6 +921,7 @@ MERGE_KEYS = {
     "mode": "local",
     "pr_rounds": 5,
     "pr_merge_method": "merge",
+    "pr_poll_sec": 180,
     "pr_text": "ticket",
     "pr_style": "",
     "human_threads": "park",
@@ -927,7 +938,11 @@ MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
 MergeConfig = collections.namedtuple(
     "MergeConfig", ("approve", "mode", "pr_rounds", "pr_merge_method",
-                    "pr_text", "pr_style", "human_threads", "after"))
+                    "pr_poll_sec", "pr_text", "pr_style", "human_threads",
+                    "after"))
+# The least `pr_poll_sec`: under this the loop would be polling GitHub for
+# a reviewer's next keystroke rather than their next comment.
+PR_POLL_FLOOR = 10
 
 
 def merge_config(target):
@@ -942,7 +957,9 @@ def merge_config(target):
     the default would merge work the operator asked to sign off on, or land
     locally what they asked to see as a pull request. `pr_rounds` is held to an integer
     of at least 1 -- a `true`, a `"5"` or a `0` names no number of passes
-    a shepherd can make. `pr_text` is `"ticket"` or `"written"`, and
+    a shepherd can make. `pr_poll_sec` is an integer of at least
+    `PR_POLL_FLOOR` -- `"180"` is a string and `5` a poll of GitHub, not an
+    interval between shepherd rounds. `pr_text` is `"ticket"` or `"written"`, and
     `pr_style` is a string (default empty): instructions, not a switch, so
     any text is taken and anything else is refused. `human_threads` is
     `"park"` or `"act"`: a `"reply"` names no rule for a person's thread
@@ -966,6 +983,14 @@ def merge_config(target):
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be an"
                     f" integer of at least 1, got {value!r}")
+            values[key] = value
+            continue
+        if key == "pr_poll_sec":
+            if isinstance(value, bool) or not isinstance(value, int) \
+                    or value < PR_POLL_FLOOR:
+                raise SystemExit(
+                    f"[holo2] {target.config_path}: [merge] {key} must be an"
+                    f" integer of at least {PR_POLL_FLOOR}, got {value!r}")
             values[key] = value
             continue
         if key == "pr_style":
