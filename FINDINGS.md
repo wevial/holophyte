@@ -653,44 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[484 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T05:09:27Z — KO-345
-MERGED to main as a0179f0 (branch task/ko-345-the-loop-s-skip-line-for-a-par deleted).
-actual: 21.9 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T05:11:22Z — KO-338
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/electron/log.ts:43 [p1] [P1] [console/electron/log.ts:43](/home/reviewer/candidate/console/electron/log.ts:43): URL redaction leaks query tokens when the path contains parentheses. R…
-
-## 2026-09-10T05:13:01Z — KO-338
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T05:13:03Z — KO-338
-MERGED to main as 48e6197 (branch task/ko-338-the-electron-app-opens-the-win deleted).
-actual: 3.5 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T18:05:34Z — KO-343
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T18:07:04Z — KO-343
-MERGED to main as 3350116 (branch task/ko-343-the-loop-runs-a-pool-of-worker deleted).
-actual: 9.4 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T18:18:49Z — KO-346
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T18:20:19Z — KO-346
-MERGED to main as f773612 (branch task/ko-346-the-supervisor-and-the-loop-ru deleted).
-actual: 13.2 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T18:31:55Z — KO-347
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T18:33:26Z — KO-347
-MERGED to main as fa7c689 (branch task/ko-347-a-target-runs-its-merge-after deleted).
-actual: 13.1 min · estimate: 30 min · rounds: 1
+[494 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T18:35:39Z — KO-348
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -760,3 +723,46 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T19:53:52Z — KO-353
 MERGED to main as e158a62 (branch task/ko-353-the-scheduler-re-counts-the-qu deleted).
 actual: 13.4 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T20:05:29Z — KO-351
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/linear_provider.py:325 [p1] [P1] Foreign leases are ignored if added after the ready-list read. In [linear_provider.py:325](/home/reviewer/candidate/linear_provider.py:325), the fresh la…
+
+## 2026-09-10T20:20:57Z — KO-351
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/linear_provider.py:365 [p1] **[P1] Concurrent claims can overwrite each other’s leases** — [linear_provider.py:365](/home/reviewer/candidate/linear_provider.py:365). The label check and…
+
+## 2026-09-10T20:29:57Z — KO-351
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T20:29:58Z — KO-351
+FAILED: terminal adjudication: FAIL; branch task/ko-351-a-claim-leases-the-ticket-in-l preserved at e45052160ac7
+actual: 49.5 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T20:32:01Z — KO-351
+FAILED: cannot reuse leftover worktree: preserved commits on task/ko-351-a-claim-leases-the-ticket-in-l conflict with a main that moved on; a human resolves the merge before this ticket is run again
+actual: 0.0 min · estimate: 30 min · rounds: 0
+
+## 2026-09-10T20:40:31Z — KO-354
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- (unparsed):9e45ba542ca8 [p2] Blocker: required `ruff check .` could not run: `ruff: command not found`; `python3 -m ruff` also reports no installed module. Provide Ruff in the review enviro…
+
+## 2026-09-10T20:42:36Z — KO-351
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:2839 [p1] [P1] [holophyte/loop.py:2839](/home/reviewer/candidate/holophyte/loop.py:2839): A successful label addition followed by a read-back exception releases the sto…
+
+## 2026-09-10T20:47:09Z — KO-354
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- (unparsed):3513958c0433 [p2] Verification blocker: `ruff check .` cannot run: `ruff: command not found`; `python3 -m ruff` also reports no installed module. Restore the linter in the review…
+
+## 2026-09-10T20:49:20Z — KO-355
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T20:50:55Z — KO-355
+MERGED to main as 1d97130 (branch task/ko-355-a-preserved-branch-that-confli deleted).
+actual: 14.8 min · estimate: 30 min · rounds: 1

@@ -486,12 +486,12 @@ class ContainerCommandTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v4_and_nothing_still_names_an_older_tag(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v4")
+    def test_image_tag_is_v5_and_nothing_still_names_an_older_tag(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v5")
         stale = [
             path
             for path in [*ROOT.glob("*.py"), *(ROOT / "docs").glob("*.md")]
-            if re.search(r"ubuntu24\.04-v[123]\b", path.read_text())
+            if re.search(r"ubuntu24\.04-v[1234]\b", path.read_text())
         ]
         self.assertEqual(stale, [])
 
@@ -527,6 +527,20 @@ class ReviewerImageTests(unittest.TestCase):
         self.assertRegex(text, r"(?m)^\s*GOPATH=/home/reviewer/go\b")
         self.assertRegex(text, r"(?m)^\s*GOMODCACHE=/home/reviewer/go/pkg/mod\b")
         self.assertRegex(text, r"(?m)^\s*GOCACHE=/home/reviewer/\.cache/go-build\b")
+
+    def test_dockerfile_installs_pinned_checksummed_ruff_on_path(self):
+        text = self.DOCKERFILE.read_text()
+        version = re.search(r"^ARG RUFF_VERSION=(\d+\.\d+\.\d+)$", text, re.M)
+        checksum = re.search(r"^ARG RUFF_SHA256=([0-9a-f]{64})$", text, re.M)
+        self.assertIsNotNone(version, "Dockerfile pins no Ruff version")
+        self.assertIsNotNone(checksum, "Dockerfile pins no Ruff SHA-256")
+        self.assertIn(
+            "download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz", text
+        )
+        self.assertRegex(
+            text, r"(?m)^\s*&& echo \"\$\{RUFF_SHA256\}  .*\| sha256sum -c -"
+        )
+        self.assertRegex(text, r"(?m)^ENV PATH=/opt/ruff/bin:\$PATH$")
 
     def test_go_temp_directory_is_under_the_home(self):
         # `/tmp` is a noexec tmpfs; `go test` executes its test binaries from

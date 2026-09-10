@@ -195,10 +195,13 @@ def reuse_leftover(target, wt, branch):
     commits keeps them, with main merged in when it has moved on: the
     review routes and the merge both require main to be an ancestor of the
     candidate, so a carried branch predating the current main would
-    otherwise stall the ticket on every rerun. A merge conflict, and a
-    worktree sitting off the branch while the branch holds commits of its
-    own, are a human's calls and are refused with the state named. Nothing
-    is ever deleted here.
+    otherwise stall the ticket on every rerun. A merge that stops on
+    conflicts is left mid-merge in the worktree for the implementer turn to
+    resolve as its first commit (`merge_conflicts()` names the paths for
+    its brief); the ones seen were tests appended at the same lines, never a
+    person's call. A worktree sitting off the branch while the branch holds
+    commits of its own is a human's call and is refused with the state
+    named. Nothing is ever deleted here.
     """
     sh(["git", "worktree", "prune"], target.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
@@ -261,21 +264,67 @@ def reuse_leftover(target, wt, branch):
         # and the merge gate both require main to be an ancestor of the
         # candidate, so left diverged the branch would raise out of every
         # review dispatch and stall the ticket on each rerun. Bringing main
-        # in preserves the commits and restores the invariant; a conflict is
-        # a human's merge to resolve, refused with the tree put back.
+        # in preserves the commits and restores the invariant. A conflict
+        # is left in the tree for the implementer: parking it for a person
+        # cost an operator round-trip per add/add overlap in a test file
+        # (KO-355), and the first verify fails the run if it is still there.
         r = subprocess.run(["git", "-c", "user.name=holophyte",
                             "-c", "user.email=holophyte@factory.invalid",
                             "merge", "--no-edit", "main"],
                            cwd=wt, capture_output=True, text=True)
         if r.returncode != 0:
-            subprocess.run(["git", "merge", "--abort"], cwd=wt,
-                           capture_output=True)
-            return False, (f"preserved commits on {branch} conflict with a"
-                           " main that moved on; a human resolves the merge"
-                           " before this ticket is run again")
+            conflicts = merge_conflicts(wt)
+            if not conflicts:
+                # Not a textual conflict -- the merge died some other way
+                # and left nothing an implementer can resolve.
+                subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                               capture_output=True)
+                return False, (f"merging the moved-on main into preserved"
+                               f" branch {branch} failed without a"
+                               f" conflict to resolve; a human reconciles"
+                               f" them before this ticket is run again\n"
+                               f"{(r.stdout + r.stderr).strip()}")
+            print(f"[holo2] merge of the moved-on main into preserved branch"
+                  f" {branch} stopped on conflicts in"
+                  f" {', '.join(conflicts)}; left mid-merge for the"
+                  " implementer to resolve first")
+            return True, ""
         print(f"[holo2] merged the moved-on main into preserved branch"
               f" {branch}")
     return True, ""
+
+
+def merge_conflicts(wt):
+    """The paths a merge in progress in `wt` stopped on; empty when the
+    tree is not mid-merge. `MERGE_HEAD` is the mid-merge marker git itself
+    keeps, so a merge whose conflicts were staged but never committed still
+    counts as unresolved -- the paths are then read from the merge's two
+    parents rather than from the index's unmerged entries."""
+    mid_merge = subprocess.run(
+        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+        cwd=wt, capture_output=True).returncode == 0
+    if not mid_merge:
+        return []
+    unmerged = sh(["git", "diff", "--name-only", "--diff-filter=U"],
+                  cwd=wt).splitlines()
+    return unmerged or sh(["git", "diff", "--name-only", "HEAD", "MERGE_HEAD"],
+                          cwd=wt).splitlines()
+
+
+def conflict_brief(branch, conflicts):
+    """The paragraph that opens an implementer brief whose worktree was
+    left mid-merge by `reuse_leftover()`; empty when there is nothing to
+    resolve."""
+    if not conflicts:
+        return ""
+    return (f"FIRST, before the ticket's work: the worktree is mid-merge."
+            f" Merging main into the preserved branch {branch} stopped on"
+            f" conflicts in: {', '.join(conflicts)}. Resolve each one keeping"
+            " both sides' intent (the branch's preserved work and main's new"
+            " lines both stay), then commit the merge with a message naming"
+            " both sides, so that commit is your first. Only then do the"
+            " ticket's work below. A run whose first verify still finds the"
+            " merge unresolved fails.\n\n")
 
 
 def run_task(target, task, conn=None, run_id=None, provider=None):
@@ -407,8 +456,12 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # turns are held to one contract. A ticket with no body
     # (a file-backed task line, a stub provider) degrades to the title alone.
     ticket = f"{task}\n\n{body}" if body else task
+    # A reuse that left main's merge mid-way (conflicts) hands the paths to
+    # the implementer as the opening of its brief; empty on every other cut.
+    conflicts = merge_conflicts(wt)
     sha = _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
-                     start_sha, ticket, verify_cmd, budget_min)
+                     start_sha, ticket, verify_cmd, budget_min,
+                     conflicts=conflicts)
 
     # 2. review rounds, up to the cap the candidate's size earns it. Verify
     # runs before each review and its result goes into the brief; every
@@ -861,13 +914,15 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
 
 
 def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
-               start_sha, ticket, verify_cmd, budget_min):
+               start_sha, ticket, verify_cmd, budget_min, conflicts=()):
     """The implementer phase: one turn against `ticket`, then the no-commit
-    gate. Returns the candidate's sha."""
+    gate. Returns the candidate's sha. `conflicts` are the paths a reuse
+    left mid-merge; they open the brief (`conflict_brief()`)."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
     out = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                 f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+                 conflict_brief(branch, conflicts)
+                 + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
                  "The ticket above is the contract, acceptance criteria "
                  "included; the task is done only when they hold. Commit your "
                  "work with a clear message. Stay strictly on-scope; do not "
@@ -961,6 +1016,18 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
     """
     for rnd in range(1, cap + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
+        if rnd == 1:
+            # The merge `reuse_leftover()` left for the implementer is owed
+            # as its first commit; a tree still mid-merge here is the park
+            # the handoff replaced, failed with the branch preserved.
+            unresolved = merge_conflicts(wt)
+            if unresolved:
+                raise RunFailure(
+                    f"preserved commits on {branch} conflict with a main"
+                    f" that moved on and the implementer left the merge"
+                    f" unresolved in {', '.join(unresolved)}; a human"
+                    f" resolves the merge before this ticket is run again;"
+                    f" branch {branch} preserved at {sha[:12]}")
         with heartbeat_while(conn, run_id, beat_s):
             ok, out = run_verify(verify_cmd, wt, contracts)
         if ok:
