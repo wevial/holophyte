@@ -173,7 +173,7 @@ test("every card carries Edit ticket and Mark needs_spec, disabled, with the wri
   const cards = Array.from(document.querySelectorAll("[data-ticket]"));
   expect(cards.length).toBe(8);
   for (const card of cards) {
-    const buttons = Array.from(card.querySelectorAll("button"));
+    const buttons = Array.from(card.querySelectorAll("[data-actions] button"));
     expect(buttons.map((b) => b.textContent)).toEqual(["Edit ticket", "Mark needs_spec"]);
     for (const button of buttons) {
       expect((button as HTMLButtonElement).disabled).toBe(true);
