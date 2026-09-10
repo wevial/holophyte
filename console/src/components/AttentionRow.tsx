@@ -43,6 +43,7 @@ export function AttentionRow({
               "aria-expanded": thread.open,
               onClick: toggle,
               onKeyDown: (event: KeyboardEvent) => {
+                if (event.target !== event.currentTarget) return;
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   toggle?.();
