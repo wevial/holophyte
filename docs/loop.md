@@ -98,8 +98,20 @@ machines it walks. Back to the [README](index.md).
    (`runs.prUrl`), in the ticket's question (`PR open: URL`, the open
    threads listed) and in the ledger. `--approve KO-n` resumes the run on
    the PR and merges it when green and quiet; `--shepherd KO-n` resumes it
-   for another round of passes. The factory still never pushes `main`, and
-   never moves the local one under this mode: the merge is GitHub's.
+   for another round of passes. A pull request merged on GitHub by a person
+   while the run waits is that approval: at startup and at the top of every
+   pass -- each serial claim, each scheduler tick, the timer's included --
+   the loop reads each parked pull request's state once, and one merged on
+   GitHub closes its run out as merged with the merge commit's sha
+   (`awaiting_merge_approval --> done` below), records who merged it in the
+   ledger, walks the ticket to `merged` (Done on the board), removes the
+   local worktree and branch, and renders the findings window so the run
+   appears in Shipped. One closed on GitHub without merging leaves the run
+   parked and makes the ticket's question `PR closed without merge: URL`,
+   which the skip line then reads; an open one changes nothing, and a
+   GitHub error is one printed line for that ticket and the pass goes on.
+   The factory still never pushes `main`, and never moves the local one
+   under this mode: the merge is GitHub's.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —
@@ -214,6 +226,7 @@ stateDiagram-v2
     addressing --> failed
     addressing --> killed
     addressing --> verifying
+    awaiting_merge_approval --> done
     awaiting_merge_approval --> failed
     awaiting_merge_approval --> killed
     blocked_on_operator --> working

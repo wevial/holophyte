@@ -2124,6 +2124,9 @@ def _serial(target, provider, knobs):
         # ticket forever.
         skip = set()
         while True:
+            # Before the claim: a pull request a person merged since the
+            # last pass ships its parked run here (KO-359).
+            _reconcile_pull_requests(target, conn, project, provider)
             _mirror_queue(target, conn, project, provider)
             task, ticket_id, run_id = _claim_next(target, conn, project,
                                                   provider, order, skip, seen)
@@ -2420,6 +2423,9 @@ def scheduler(target, provider, knobs):
         _startup_sweep(target, conn)
         _reconcile_mirror(conn, project, provider)
         while True:
+            # Every tick, timer or exit: a pull request merged on GitHub
+            # since the last one ships its parked run (KO-359).
+            _reconcile_pull_requests(target, conn, project, provider)
             listing = None
             if state.spawning:
                 listing = _mirror_queue(target, conn, project, provider)
@@ -2683,12 +2689,145 @@ def _reconcile_mirror(conn, project, provider):
         print(line)
 
 
+# How the ticket's question begins once its pull request was closed on
+# GitHub without merging: the run stays parked, and the skip line reads
+# this rather than the `--approve` that would merge nothing.
+PR_CLOSED_QUESTION = "PR closed without merge: "
+
+
+def _reconcile_pull_requests(target, conn, project, provider):
+    """Ask GitHub about every pull request this project's parked runs wait
+    on, and land the ones a person merged there (KO-359).
+
+    A run parked on its pull request waits for `--approve`; the operator
+    merges the pull request by hand after a coworker's review instead, and
+    the run sat parked, the ticket In Progress, Shipped without it. This
+    runs at loop startup and at the top of every pass -- each serial claim,
+    each scheduler tick -- over the project's `blocked_on_operator` tickets
+    whose newest run holds a `prUrl` and is still parked in
+    `awaiting_merge_approval`. One `pr.pull_status()` read per ticket. A
+    merged pull request is that approval: `_land_github_merge()` ends the
+    run merged with the merge commit's sha and walks the ticket to
+    `merged`, Done on the board. One closed without merging leaves the run
+    parked and makes the question `PR closed without merge: URL`
+    (`_note_closed_pr()`); an open one changes nothing. A GitHub error is
+    one printed line for that ticket and the pass goes on to the next, as
+    the mirror reconcile skips a board that cannot be asked: this lands
+    work already landed, it does not gate the work in the queue.
+    """
+    for ticket in store.read.blocked_tickets(conn, project):
+        if not ticket.prUrl or ticket.runId is None:
+            continue
+        pull = pr.parse_pr_url(ticket.prUrl)
+        if pull is None or _parked_phase(conn, ticket.runId) is None:
+            continue
+        try:
+            status = pr.pull_status(target, pull)
+        except Exception as e:  # noqa: BLE001 - any transport failure
+            print(f"[holo2] {ticket.linearIdentifier}: {pull.url} could not"
+                  f" be read ({e}); the run stays parked")
+            continue
+        if status.merged:
+            _land_github_merge(target, conn, provider, ticket, pull, status)
+        elif status.closed:
+            _note_closed_pr(conn, ticket, pull)
+
+
+def _parked_phase(conn, run_id):
+    """The run's `(branch, phase)` if it is parked awaiting merge approval,
+    None otherwise: the reconcile acts on that run alone."""
+    row = conn.execute("SELECT branch, phase FROM runs WHERE id = ?",
+                       (run_id,)).fetchone()
+    if row is None or row[1] != "awaiting_merge_approval":
+        return None
+    return row
+
+
+def _land_github_merge(target, conn, provider, ticket, pull, status):
+    """Close out the run parked on `pull` as merged: a person merged it on
+    GitHub, and that is the `--approve` the park was waiting for.
+
+    One transaction, record before acting: the ticket and the run are
+    re-read under the write lock and must still be where the open read saw
+    them -- parked, no live run, the same newest run -- or another process
+    moved them while GitHub was being asked and nothing is written. Then
+    an `approve` intervention naming who merged it, the run released
+    `merged` with the pull request's merge commit as `mergeSha`
+    (`awaiting_merge_approval -> done`), the question cleared and the
+    ticket walked to `merged`. Outside the lock: the board's Done, the
+    merged ledger line with the merger's login, the local worktree and
+    branch removed as `_merge_pr()` removes them after an API merge (a
+    refusal is debris, not a failure), and the findings window rendered so
+    the run appears in Shipped.
+    """
+    identifier, run_id = ticket.linearIdentifier, ticket.runId
+    who = status.merged_by or "someone"
+    sha = status.merge_sha
+    short = sha[:12] if sha else "an unrecorded sha"
+    with store.transaction(conn):
+        now = store.read.ticket_by_id(conn, ticket.id)
+        parked = _parked_phase(conn, run_id)
+        if now is None or now.status != "blocked_on_operator" \
+                or now.activeRunId is not None or now.lastRunId != run_id \
+                or parked is None:
+            print(f"[holo2] {identifier}: {pull.url} is merged on GitHub but"
+                  " the ticket moved while it was asked; left alone")
+            return
+        branch = parked[0]
+        store.record_intervention(
+            conn, run_id, "approve",
+            f"{pull.url} merged on GitHub by {who} as {short}; the run is"
+            " closed out as merged", source="human", trigger="manual")
+        store.release(conn, run_id, "merged", merge_sha=sha)
+        conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
+                     (ticket.id,))
+        store.walk_ticket(conn, ticket.id, "merged")
+    mirror_push(conn, ticket.id, provider)
+    ledger(conn, run_id, identifier, "merge",
+           f"MERGED through {pull.url} as {sha} by {who} on GitHub (branch"
+           f" {branch} deleted locally; local main not moved).", provider)
+    if branch:
+        try:
+            sh(["git", "worktree", "remove", "--force",
+                str(worktree_path(target, branch))], target.path)
+            sh(["git", "branch", "-D", branch], target.path)
+        except RuntimeError as e:
+            print(f"[holo2] post-merge cleanup left debris: {e}")
+    refresh_findings(target, conn)
+    print(f"[holo2] {identifier}: {pull.url} was merged on GitHub by {who}"
+          f" as {short}; run {run_id} closed out as merged")
+
+
+def _note_closed_pr(conn, ticket, pull):
+    """The pull request was closed on GitHub without merging: the run stays
+    parked -- the branch and its candidate are still a person's to decide
+    on -- and the ticket's question becomes `PR closed without merge: URL`,
+    which the skip line then reads. Idempotent: a question already saying
+    so is left as it is, so the pass after this one writes and prints
+    nothing. The run's event stream carries the change first."""
+    question = f"{PR_CLOSED_QUESTION}{pull.url}"
+    if (ticket.blockedQuestion or "").startswith(question):
+        return
+    with store.transaction(conn):
+        store.record_event(conn, ticket.runId, "pull_request",
+                           f"{pull.url} was closed on GitHub without"
+                           " merging; the run stays parked for a person")
+        conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?"
+                     " AND status = 'blocked_on_operator'",
+                     (question, ticket.id))
+    print(f"[holo2] {ticket.linearIdentifier}: {pull.url} was closed on"
+          " GitHub without merging; the run stays parked")
+
+
 def skip_line(identifier, strikes, pr_url, question):
     """The admit step's one line for a ticket the store holds parked.
 
     Pure, so the wording is tested without a store. A pull request wins:
     the run behind it is parked alive, so its URL and the `--approve` that
-    merges it are the whole story whatever failed before it. Then the
+    merges it are the whole story whatever failed before it -- unless the
+    question says the pull request was closed without merging
+    (`PR_CLOSED_QUESTION`), when there is nothing an `--approve` would
+    merge and the question is the line. Then the
     question a module parked the ticket on -- a merge conflict, `merge?` --
     first line only, and *before* the strike count: the run that parked it
     may also have been the failure that reached `MAX_FAILED_RUNS`, and the
@@ -2698,7 +2837,8 @@ def skip_line(identifier, strikes, pr_url, question):
     all once the count has tripped; a park with neither is still a
     human's, and says so.
     """
-    if pr_url:
+    closed = (question or "").strip().startswith(PR_CLOSED_QUESTION)
+    if pr_url and not closed:
         return (f"{identifier} is parked on PR {pr_url} awaiting"
                 f" --approve {identifier}; skipping it")
     if question and question.strip() and not is_strike_question(question):
