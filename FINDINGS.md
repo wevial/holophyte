@@ -653,44 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[520 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T20:53:39Z — KO-354
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T20:53:39Z — KO-354
-FAILED: terminal adjudication: FAIL; branch task/ko-354-the-review-stage-carries-the-w preserved at ecc134662d33
-actual: 23.7 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T21:00:42Z — KO-351
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T21:00:42Z — KO-351
-FAILED: terminal adjudication: FAIL; branch task/ko-351-a-claim-leases-the-ticket-in-l preserved at 0e486d3b6c68
-actual: 26.7 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T21:11:12Z — KO-357
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/serve.py:1273 [p0] **Blocker:** The required config-write integration is missing. [holophyte/serve.py:1273](/home/reviewer/candidate/holophyte/serve.py:1273) routes `PUT /config…
-
-## 2026-09-10T21:17:42Z — KO-356
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (6):
-- /home/reviewer/candidate/holophyte/serve.py:1050 [p2] **Secret redaction misses valid TOML syntax** ([serve.py:1050](/home/reviewer/candidate/holophyte/serve.py:1050)). `"api_key" = "SECRET"` and inline-table sec…
-- /home/reviewer/candidate/holophyte/serve.py:1088 [p2] **Valid placeholders can overwrite secrets** ([serve.py:1088](/home/reviewer/candidate/holophyte/serve.py:1088)). `api_key = "[redacted]" # kept` bypasses res…
-- /home/reviewer/candidate/holophyte/config.py:151 [p2] **PUT skips startup validation** ([config.py:151](/home/reviewer/candidate/holophyte/config.py:151)). `check_document()` omits `board_config()`. A document co…
-- /home/reviewer/candidate/holophyte/serve.py:1165 [p2] **Writes share backup and staging paths** ([serve.py:1165](/home/reviewer/candidate/holophyte/serve.py:1165)). Second-resolution timestamps let successive PUT…
-- criteria:1 [p2] CRITERION 1: unwitnessed — the GET test puts `api_key` in `[linear]`; no test witnesses a token value in `[serve]` as required. Given `config_edit = true` and a…
-- criteria:3 [p2] CRITERION 3: not met — a valid incoming `api_key = "[redacted]" # kept` passes validation without restoring the original secret. Given a valid `PUT /config` who…
-
-## 2026-09-10T21:18:30Z — KO-357
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/docs/config.md:83 [p0] Blocker: [docs/config.md:83](/home/reviewer/candidate/docs/config.md:83) defers the required config-write probe. The daemon has no `PUT /config` handler and r…
-
-## 2026-09-10T21:23:26Z — KO-357
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+[528 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T21:23:27Z — KO-357
 FAILED: terminal adjudication: FAIL; branch task/ko-357-a-changed-implementer-command preserved at 0e7c6dc45b09
@@ -762,3 +725,48 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T21:56:37Z — KO-352
 MERGED to main as 17c7ab2 (branch task/ko-352-the-hosts-rail-groups-daemons deleted).
 actual: 1.1 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T22:02:45Z — KO-351
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/board.py:53 [p0] Blocker: [holophyte/board.py:53](/home/reviewer/candidate/holophyte/board.py:53) generates `holo:writer-1:<run_id>` instead of the required `holo:writer-1`. The…
+- criteria:1 [p2] CRITERION 1: not met — claim adds and merge removes `holo:writer-1:1`, not `holo:writer-1`. Given a ready issue and a fake provider, when the loop claims it, th…
+
+## 2026-09-10T22:05:22Z — KO-356
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- /home/reviewer/candidate/holophyte/serve.py:1121 [p1] **[P1] Backups expose protected secrets** — [serve.py:1121](/home/reviewer/candidate/holophyte/serve.py:1121): `open(backup, "x")` uses default permissions. R…
+- /home/reviewer/candidate/holophyte/redact.py:348 [p2] **[P2] Valid nested secrets break GET** — [redact.py:348](/home/reviewer/candidate/holophyte/redact.py:348): a loader-valid document containing `[extra]` and…
+- criteria:1 [p2] CRITERION 1: not met — authenticated GET returns 500 for the loader-valid nested-secret document above. Given `config_edit = true` and the target's real file, w…
+
+## 2026-09-10T22:12:42Z — KO-351
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/board.py:98 [p1] **[P1] A late close-out can remove a fresh run’s lease.** [holophyte/board.py:98](/home/reviewer/candidate/holophyte/board.py:98) checks `activeRunId` separat…
+- /home/reviewer/candidate/holophyte/loop.py:3102 [p2] **[P2] A failed label request can leave a permanent board lease.** [holophyte/loop.py:3102](/home/reviewer/candidate/holophyte/loop.py:3102) assumes an except…
+
+## 2026-09-10T22:13:38Z — KO-356
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (4):
+- /home/reviewer/candidate/holophyte/config.py:162 [p2] **P1 — PUT accepts configuration startup rejects.** [config.py:162](/home/reviewer/candidate/holophyte/config.py:162) omits `carry_directories()` from validat…
+- /home/reviewer/candidate/holophyte/serve.py:1064 [p2] **P2 — Invalid table shapes terminate the request.** [serve.py:1064](/home/reviewer/candidate/holophyte/serve.py:1064) only catches `SystemExit`. Reproduced:…
+- /home/reviewer/candidate/tests/test_serve.py:2354 [p2] **P2 — Required valid-file GET witness is missing.** [test_serve.py:2354](/home/reviewer/candidate/tests/test_serve.py:2354) includes `[serve] token`, which s…
+- criteria:1 [p2] CRITERION 1: unwitnessed — No loader-valid GET test asserts the complete redacted text and preserved token_file paths; the nested and array-of-table rule is wit…
+
+## 2026-09-10T22:21:48Z — KO-351
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/board.py:116 [p2] **P1 — Close-out can expose an active ticket to another writer** at [holophyte/board.py:116](/home/reviewer/candidate/holophyte/board.py:116). After the initi…
+
+## 2026-09-10T22:24:04Z — KO-356
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/redact.py:308 [p1] [P1] Secret-valued tables can escape redaction. In [redact.py](/home/reviewer/candidate/holophyte/redact.py:308), dictionary values are traversed before check…
+- criteria:1 [p2] CRITERION 1: not met — Loader-valid secret-named tables expressed through headers or dotted keys expose their values unchanged. Given `config_edit = true` and t…
+
+## 2026-09-10T22:34:04Z — KO-356
+Round 4: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T22:35:49Z — KO-356
+MERGED to main as 8282372 (branch task/ko-356-the-daemon-serves-its-target-s deleted).
+actual: 40.3 min · estimate: 30 min · rounds: 4
