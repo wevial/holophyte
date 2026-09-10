@@ -898,6 +898,11 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("abc123", asked)
         self.assertNotIn("fail", asked)
 
+        closed = holophyte.loop.skip_line(
+            "KO-131", 0, url, f"PR closed without merge: {url}")
+        self.assertIn(f"a question: PR closed without merge: {url};", closed)
+        self.assertNotIn("--approve", closed)
+
     def test_a_module_question_outranks_the_strike_count(self):
         """The run that parked the ticket on a merge conflict may also be
         the failure that reached the threshold. The conflict is what the
@@ -2590,7 +2595,8 @@ class MergeModeTests(LoopFixture):
         query gets the first of `states` (each served once until the last,
         which is served forever), a mutation an empty success, the merge
         `MERGE_SHA`, a thread's further comments page the next of
-        `comments` (each a `comments_page()`); the check-runs and
+        `comments` (each a `comments_page()`), the reconcile's pull-status
+        read (KO-359) an open pull request; the check-runs and
         branch-rules reads answer no runs and no rules, so the rollup
         alone decides the checks. `push_exit` is what `git
         push` answers with --
@@ -2638,6 +2644,9 @@ class MergeModeTests(LoopFixture):
             "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"
             '  elif grep -q addPullRequestReviewThreadReply "$body"; then\n'
             "    echo '{\"data\":{\"addPullRequestReviewThreadReply\":{}}}'\n"
+            '  elif grep -q mergedBy "$body"; then\n'
+            "    echo '{\"data\":{\"repository\":{\"pullRequest\":"
+            "{\"state\":\"OPEN\",\"merged\":false}}}}'\n"
             '  elif grep -q PullRequestReviewThread "$body"; then\n'
             f'    f=$(ls "{pages}"/*.json | head -1); cat "$f"; rm "$f"\n'
             '  elif grep -q reviewThreads "$body"; then\n'
@@ -2664,13 +2673,18 @@ class MergeModeTests(LoopFixture):
                 if self.calls.exists() else [])
 
     def api_calls(self):
-        """Every `gh api` body, in order, as `(kind, variables)`: the kind
-        is `state`, `reply`, `resolve` or `merge`."""
+        """Every `gh api` body the shepherd made, in order, as `(kind,
+        variables)`: the kind is `state`, `reply`, `resolve` or `merge`.
+        The loop's per-pass pull-status read of a parked run (KO-359) is
+        left out: it is the reconcile's, tested on its own below, and
+        every pass after a park makes one."""
         calls = []
         for path in sorted(self.api_dir.iterdir(),
                            key=lambda p: int(p.stem)):
             body = json.loads(path.read_text())
             query = body.get("query", "")
+            if "mergedBy" in query:
+                continue
             kind = ("resolve" if "resolveReviewThread" in query
                     else "reply" if "addPullRequestReviewThreadReply" in query
                     else "comments" if "PullRequestReviewThread" in query
@@ -2705,13 +2719,17 @@ class MergeModeTests(LoopFixture):
 
         self.assertEqual(fake.roles, ["implement", "review"])
         calls = self.recorded()
-        self.assertEqual(len(calls), 5, calls)
+        # The sixth is the pass after the park asking GitHub whether the
+        # parked pull request has been merged (KO-359).
+        self.assertEqual(len(calls), 6, calls)
+        self.assertEqual(calls[5], "gh api --hostname github.com --method"
+                         " POST graphql --input -")
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
         # Beside the state query: the head's check runs and main's rules,
         # so a rollup that says success before the checks have reported is
         # not read as green.
         tip = self.git("rev-parse", BRANCH).strip()
-        self.assertEqual(calls[3:], [
+        self.assertEqual(calls[3:5], [
             "gh api --hostname github.com --method GET"
             f" repos/example/repo/commits/{tip}/check-runs?per_page=100",
             "gh api --hostname github.com --method GET"
@@ -3822,6 +3840,215 @@ class MergeModeTests(LoopFixture):
              (2, "awaiting_merge_approval", None, self.URL)])
         self.assertEqual(
             self.read('SELECT "action" FROM interventions'), [("shepherd",)])
+
+
+    # What GitHub says about a parked pull request when the reconcile asks
+    # (`pr.PULL_QUERY`'s node): merged by a coworker, closed unmerged, open.
+    MERGED_PULL = {"state": "MERGED", "merged": True,
+                   "mergeCommit": {"oid": MERGE_SHA},
+                   "mergedBy": {"login": "coworker"}}
+    CLOSED_PULL = {"state": "CLOSED", "merged": False, "mergeCommit": None,
+                   "mergedBy": None}
+    OPEN_PULL = {"state": "OPEN", "merged": False, "mergeCommit": None,
+                 "mergedBy": None}
+
+    def fake_client(self, *answers):
+        """The reconcile's GitHub, faked: `holophyte.pr.graphql` answers
+        each ask with the next of `answers` (the last one forever) and
+        records the pull request and variables it was asked about. An
+        answer that is an exception is raised instead: GitHub down."""
+        asked = []
+
+        def graphql(target, pull, query, variables):
+            asked.append((pull.url, query, variables))
+            node = answers[min(len(asked), len(answers)) - 1]
+            if isinstance(node, Exception):
+                raise node
+            return {"repository": {"pullRequest": node}}
+
+        patcher = patch.object(holophyte.pr, "graphql", graphql)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return asked
+
+    def parked_on_pr(self):
+        """A run parked on its pull request under `approve = "human"`, the
+        state every reconcile test starts from."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT phase, prUrl FROM runs"),
+                         [("awaiting_merge_approval", self.URL)])
+
+    def test_a_pull_request_merged_on_github_ships_its_parked_run(self):
+        """KO-359: a person merged the pull request on GitHub instead of
+        saying `--approve`. The next pass asks GitHub once, and the merge
+        is the approval: the parked run ends `merged` with the pull
+        request's merge commit as its `mergeSha`, the ticket is `merged`
+        and the board saw Done, the ledger names who merged it, the local
+        branch is gone and the findings window shows the run."""
+        self.parked_on_pr()
+        asked = self.fake_client(self.MERGED_PULL)
+        provider = StubProvider()
+
+        out = self.main_output(provider=provider)
+
+        self.assertEqual([(url, v["number"]) for url, _, v in asked],
+                         [(self.URL, 7)])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha, prUrl FROM runs"),
+            [("done", "merged", self.MERGE_SHA, self.URL)])
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion FROM tickets"),
+            [("merged", None)])
+        self.assertEqual(provider.states, [("iss-131", "Done")])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+                         [("approve",)])
+        (merge_line,) = [text for (text,) in self.read(
+            "SELECT text FROM ledger WHERE kind = 'merge'")]
+        self.assertIn("coworker", merge_line)
+        self.assertIn(self.MERGE_SHA, merge_line)
+        self.assertIn(f"{self.URL} was merged on GitHub by coworker", out)
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertIn("KO-131", (self.target / "FINDINGS.md").read_text())
+        self.assertEqual(self.subjects(), ["base"])  # local main not moved
+
+    def test_a_merged_pull_request_ships_when_linear_already_says_done(self):
+        """Review of KO-359: the person who merged the pull request on
+        GitHub also moved the ticket to Done on the board. At startup the
+        mirror reconcile used to see Done first and walk the ticket
+        `merged` on its own, and the pull request was never asked about:
+        the run stayed parked with no outcome and no `mergeSha`. GitHub
+        is asked before the mirror is repaired, so the run ships."""
+        self.parked_on_pr()
+        asked = self.fake_client(self.MERGED_PULL)
+        provider = StubProvider()
+        provider.closed = {"KO-131": "completed"}
+
+        self.main_output(provider=provider)
+
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+                         [("approve",)])
+
+    def test_a_github_error_leaves_the_parked_run_for_the_next_pass(self):
+        """Review of KO-359: GitHub could not be read at startup while the
+        board already said Done. The mirror reconcile used to take that
+        Done and walk the ticket `merged` around its parked run, and no
+        later pass asked GitHub about a ticket no longer blocked: the run
+        was stranded with no outcome and no `mergeSha`. Now the ticket
+        stays parked with its run through the failure, and the pass after
+        GitHub recovers ships it."""
+        self.parked_on_pr()
+        asked = self.fake_client(RuntimeError("GitHub is down"),
+                                 self.MERGED_PULL)
+        provider = StubProvider()
+        provider.closed = {"KO-131": "completed"}
+
+        out = self.main_output(provider=provider)
+
+        self.assertEqual(len(asked), 1)
+        self.assertIn("could not be read (GitHub is down); the run stays"
+                      " parked", out)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("awaiting_merge_approval", None, None)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+        again = StubProvider()
+        again.closed = {"KO-131": "completed"}
+        self.main_output(provider=again)
+
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(again.states, [("iss-131", "Done")])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+                         [("approve",)])
+
+    def test_a_pull_request_closed_without_merge_keeps_the_run_parked(self):
+        """The pull request was closed on GitHub unmerged: the run stays
+        parked, the ticket's question says so, the skip line reads the
+        question rather than an `--approve` that would merge nothing, and
+        a second pass finding the same neither writes nor prints again."""
+        self.parked_on_pr()
+        self.fake_client(self.CLOSED_PULL)
+
+        out = self.main_output(provider=StubProvider(
+            dict(a_task(), body=self.BODY)))
+        again = self.main_output(provider=StubProvider())
+
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl FROM runs"),
+            [("awaiting_merge_approval", None, self.URL)])
+        self.assertEqual(self.question(),
+                         f"PR closed without merge: {self.URL}")
+        self.assertIn(f"[holo2] KO-131 is parked on a question: PR closed"
+                      f" without merge: {self.URL}; skipping it\n", out)
+        self.assertNotIn("--approve", out)
+        self.assertIn("closed on GitHub without merging", out)
+        self.assertNotIn("closed on GitHub", again)
+        self.assertEqual(self.last_provider.states, [])
+
+    def test_an_open_pull_request_is_asked_about_once_and_left_alone(self):
+        self.parked_on_pr()
+        runs = self.read("SELECT * FROM runs")
+        tickets = self.read("SELECT * FROM tickets")
+        asked = self.fake_client(self.OPEN_PULL)
+        provider = StubProvider()
+
+        self.main_output(provider=provider)
+
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(self.read("SELECT * FROM runs"), runs)
+        self.assertEqual(self.read("SELECT * FROM tickets"), tickets)
+        self.assertEqual(provider.states, [])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+    def test_the_scheduler_ships_a_merged_pull_request_on_a_timer_tick(
+            self):
+        """The pool's timer tick asks too: open at startup, merged by the
+        tick, and the parked run is closed out between two waits with no
+        worker involved (KO-353's tick carrying KO-359's reconcile)."""
+        self.parked_on_pr()
+        asked = self.fake_client(self.OPEN_PULL, self.MERGED_PULL)
+        provider = StubProvider(a_task(2))
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       '[loop]\nworkers = 2\ntick_sec = 30\n')
+        pool = FakePool([(TICK, provider.queue.clear),
+                         (holophyte.loop.WORKER_MERGED, None)])
+        out = io.StringIO()
+        with patch.object(holophyte.loop, "SPAWN", pool.spawn), \
+                patch.object(holophyte.loop, "WAIT", pool.wait), \
+                patch.object(sys, "stdout", out):
+            rc = holophyte.loop.main(self.tgt, provider)
+
+        self.assertIsNone(rc)
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(pool.timeouts, [30, 30])
+        self.assertEqual(len(pool.spawned), 1)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"
+                      " WHERE linearIdentifier = 'KO-131'"),
+            [("merged",)])
+        self.assertIn(("iss-131", "Done"), provider.states)
+        self.assertIn(f"{self.URL} was merged on GitHub", out.getvalue())
 
     def test_a_refused_push_is_an_infra_failure_with_no_pull_request(self):
         """The remote said no: the run ends as an infra failure naming the

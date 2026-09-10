@@ -1588,6 +1588,32 @@ class WorktreeSetupTests(ConfigTestCase):
                 self.assertIn("setup_timeout_sec", message)
                 self.assertIn("positive number", message)
 
+    def test_a_carry_that_is_not_a_list_is_a_startup_error_naming_the_key(self):
+        for value in ('"console/node_modules"', "3", '["console", 2]',
+                      '["../elsewhere"]', '[""]'):
+            with self.subTest(value=value):
+                target = self.locate(f'[worktree]\ncarry = {value}\n').path
+
+                with patch.object(holophyte.config, "check_default_implementer"), \
+                        patch.object(holophyte.config, "check_default_reviewer"), \
+                        patch.object(holophyte.cli, "main",
+                                     side_effect=AssertionError("claimed work")):
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target)])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[worktree] carry", message)
+
+    def test_an_absent_carry_is_an_empty_list(self):
+        self.locate('[worktree]\nsetup = ["make deps"]\n')
+
+        self.assertEqual(holophyte.config.carry_directories(self.tgt), [])
+
+        self.locate('[worktree]\ncarry = ["console/node_modules", ".venv"]\n')
+        self.assertEqual(holophyte.config.carry_directories(self.tgt),
+                         ["console/node_modules", ".venv"])
+
     def test_a_silent_timeout_is_reported_as_silence(self):
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["make deps"]\n')

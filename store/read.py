@@ -108,22 +108,29 @@ class BlockedTicket:
     prUrl: str | None = None
 
 
-def blocked_tickets(conn):
-    """Every ticket whose status is `blocked_on_operator`, oldest id first.
+def blocked_tickets(conn, project_id=None):
+    """Every ticket whose status is `blocked_on_operator`, oldest id first;
+    `project_id` narrows it to one project's.
 
     The `serve` daemon's `/attention` read: a parked ticket is the one thing
     the operator must answer, and `blockedQuestion` is what it asks. None
     when the ticket was parked without one. The parked run and the moment
     of asking ride along so the band can age the question and name the run
-    without deriving either from the poll time.
+    without deriving either from the poll time. The loop's pull-request
+    reconcile reads the same rows for its project and asks GitHub about
+    each `prUrl` (KO-359).
     """
+    where, params = "t.status = 'blocked_on_operator'", ()
+    if project_id is not None:
+        where += " AND t.projectId = ?"
+        params = (project_id,)
     rows = conn.execute(
         "SELECT t.id, t.linearIdentifier, t.blockedQuestion, r.id,"
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
         " r.lastHeartbeat, r.prUrl"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
-        " WHERE t.status = 'blocked_on_operator' ORDER BY t.id").fetchall()
+        f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
                           blockedQuestion=row[2], runId=row[3],
                           askedMs=row[4] if row[4] is not None else row[5],
