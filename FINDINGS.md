@@ -653,33 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[532 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T21:33:04Z — KO-359
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:2648 [p1] **[P1] GitHub errors permanently strand merged runs** — [holophyte/loop.py:2648](/home/reviewer/candidate/holophyte/loop.py:2648). If GitHub fails at startup…
-
-## 2026-09-10T21:33:54Z — KO-354
-MERGED to main as 7357f57 (branch task/ko-354-the-review-stage-carries-the-w deleted).
-actual: 10.4 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T21:41:28Z — KO-356
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T21:41:29Z — KO-356
-FAILED: terminal adjudication: FAIL; branch task/ko-356-the-daemon-serves-its-target-s preserved at 0653b8f07d7f
-actual: 40.7 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T21:42:31Z — KO-359
-Round 3: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T21:44:10Z — KO-359
-MERGED to main as 468d1e8 (branch task/ko-359-a-pull-request-merged-on-githu deleted).
-actual: 39.3 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T21:48:02Z — KO-360
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[539 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T21:48:04Z — KO-360
 MERGED to main as 2d1f6f0 (branch task/ko-360-the-shipped-table-s-last-colum deleted).
@@ -762,3 +736,37 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T22:49:51Z — KO-361
 MERGED to main as b3dfbcd (branch task/ko-361-the-shepherd-treats-a-review-t deleted).
 actual: 11.5 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T22:50:10Z — KO-358
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (4):
+- /home/reviewer/candidate/console/src/lib/toml.ts:44 [p1] **[P1] Editing workers can overwrite command text instead.** [toml.ts:44](/home/reviewer/candidate/console/src/lib/toml.ts:44) treats headers inside multiline…
+- /home/reviewer/candidate/console/src/lib/toml.ts:238 [p2] **[P2] Editing setup destroys comments.** [toml.ts:238](/home/reviewer/candidate/console/src/lib/toml.ts:238) replaces an entire multiline array with one line…
+- /home/reviewer/candidate/console/src/components/SettingsSheet.tsx:124 [p2] **[P2] Raw-tab validation errors can be invisible.** [SettingsSheet.tsx:124](/home/reviewer/candidate/console/src/components/SettingsSheet.tsx:124) switches t…
+- /home/reviewer/candidate/console/src/lib/toml.ts:129 [p2] **[P2] Invalid raw Unicode can crash the sheet.** [toml.ts:129](/home/reviewer/candidate/console/src/lib/toml.ts:129) calls `String.fromCodePoint` without che…
+
+## 2026-09-10T22:50:35Z — KO-357
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/agents.py:116 [p2] [holophyte/agents.py:116](/home/reviewer/candidate/holophyte/agents.py:116): Catch process-launch errors and return a failed probe result. A nonexistent imple…
+
+## 2026-09-10T22:54:08Z — KO-358
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/lib/toml.ts:281 [p1] [P1] [toml.ts:281](/home/reviewer/candidate/console/src/lib/toml.ts:281): Multiline arrays containing multiple commands on one line are corrupted by field edi…
+
+## 2026-09-10T22:57:00Z — KO-358
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/src/lib/toml.ts:375 [p2] [toml.ts:375](/home/reviewer/candidate/console/src/lib/toml.ts:375): Editing a valid multiline array whose first item shares the opening line deletes internal…
+- /home/reviewer/candidate/console/src/lib/toml.ts:37 [p2] [toml.ts:37](/home/reviewer/candidate/console/src/lib/toml.ts:37): Quoted table names are not decoded. With valid `["loop"]` containing `workers = 1`, the wor…
+
+## 2026-09-10T22:58:39Z — KO-357
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T23:00:29Z — KO-357
+MERGED to main as 47fbc6c (branch task/ko-357-a-changed-implementer-command deleted).
+actual: 22.2 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T23:00:29Z — KO-358
+Round 4: changes_requested · reviewer codex-astra-medium · verify passed
