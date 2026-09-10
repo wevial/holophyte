@@ -14,10 +14,12 @@ the daemon answers three `POST` routes under `/actions/`, each mapped to a
 step the operator ladder already allows: restarting the supervisor unit,
 starting the loop unit, and `requeue` in the store. Without `actions =
 true` every `/actions/` path is 404, token or not, and the daemon writes
-nothing. Beyond loopback the routes are behind the same
-`Authorization: Bearer` token as the JSON routes
-([Authentication](http.md#authentication)): without it they answer 401
-before anything runs or is written.
+nothing. The routes are behind the same `Authorization: Bearer` token as
+the JSON routes ([Authentication](http.md#authentication)) on every bind,
+loopback included: the bind address guards reads, not a hand on the
+units. So `actions = true` needs `[serve] token_file` whatever the bind,
+and a daemon asked to bind without one exits naming the key. Without the
+exact token the routes answer 401 before anything runs or is written.
 
 The reply is always the same shape:
 
@@ -28,8 +30,10 @@ The reply is always the same shape:
 `ok` says whether the step did what was asked; `detail` says what
 happened. A step that fails is `ok: false` with the reason in `detail` and
 still status 200: the operator asked for a thing and is told the answer,
-which is not a server error. Each action is a ledger row, written before
-the action runs.
+which is not a server error. Each action is an interventions row
+(`store.record_intervention()`, the operator ladder's record-before-acting
+call) written before the action runs; an action that cannot be recorded
+does not run.
 
 ## `POST /actions/restart-supervisor`
 
@@ -40,17 +44,21 @@ target directory's name when the key is absent. `systemctl` gets 20 s to
 answer. A non-zero exit is `ok: false` with its stderr in `detail`; an
 absent `systemctl` or one that outlives the cap is `ok: false` saying so.
 The reply also carries `unit`, the instance addressed, and `recorded`, the
-run the ledger note landed on (below), null when the store holds no run.
+run the intervention landed on (below).
 
-The ledger row is an operator `note` on the store's newest run naming the
-unit and the route: the ledger is keyed by run, and a supervisor restart is
-about the runs it watches over. No body is read.
+The record is a human `restart_supervisor` intervention on the store's
+newest run, its narrative naming the unit and the route: interventions are
+keyed by run, and a supervisor restart is about the runs it watches over.
+A target with no store, or a store with no run yet, has nothing to record
+against and the unit is left alone: `ok: false` saying so, `recorded`
+null, `systemctl` not called. No body is read.
 
 ## `POST /actions/launch-loop`
 
 Runs `systemctl --user start holophyte-loop@NAME`: one pass of the loop as
 the deploy template defines it, inactive again once the queue is down.
-Everything else is as `restart-supervisor`.
+Everything else is as `restart-supervisor`, the intervention a
+`launch_loop` row.
 
 ## `POST /actions/requeue`
 
@@ -73,7 +81,7 @@ A target with no store is 503.
 | Status | When |
 | --- | --- |
 | 400 | the body is not a JSON object, or `requeue` has no `ticket` |
-| 401 | a non-loopback daemon without the exact bearer value; body `{}`, nothing run or written |
+| 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
 | 404 | `[serve] actions` is not `true`, or the action is not one of the three |
 | 405 | `POST` on any path outside `/actions/` |
 | 503 | `requeue` against a target with no store yet |

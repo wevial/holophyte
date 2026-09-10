@@ -352,7 +352,8 @@ operator gives it.
 # host other than loopback; ignored when it binds loopback.
 token_file = "~/.holophyte/holophyte/serve.token"
 # Answer `POST /actions/restart-supervisor`, `/actions/launch-loop` and
-# `/actions/requeue` behind the token. Off, every `/actions/` path is 404.
+# `/actions/requeue` behind the token, on every bind (so `token_file` is
+# required with this on). Off, every `/actions/` path is 404.
 actions = false
 # The systemd instance those actions address: `holophyte-supervise@NAME`,
 # `holophyte-loop@NAME`. The target directory's name when absent.
@@ -373,15 +374,20 @@ file must be a regular, non-empty file that is not group- or world-readable
 (`chmod 600`); anything else is a startup error naming the file and its
 mode. The token is the file's contents with surrounding whitespace stripped
 and is never printed or logged. `~` is expanded and a relative path is taken
-against the config's directory. A loopback bind ignores the key entirely:
-`--serve 7710` is as open as it always was. One token per target, no
-rotation: to change it, write the file and restart the unit.
+against the config's directory. A loopback bind ignores the key for its
+reads: `--serve 7710` is as open as it always was, unless `actions` is on
+(below). One token per target, no rotation: to change it, write the file
+and restart the unit.
 
 `actions` opts the daemon into the three `POST /actions/...` routes, off by
 default: `restart-supervisor` and `launch-loop` run `systemctl --user`
 against the deploy units, `requeue` is the store's requeue as `--requeue
-KO-n --note TEXT` does it, each a ledger row written before it runs. The
-routes are behind the same bearer token beyond loopback. `name` is the
+KO-n --note TEXT` does it, each an interventions row written before it
+runs and not run when it cannot be recorded. The routes are behind the
+bearer token on every bind, loopback included -- the bind address guards
+reads, not a hand on the units -- so `actions = true` needs `token_file`
+whatever the bind, and a bind without it is a startup error naming the
+key. `name` is the
 instance name the unit actions append -- the slug the deploy templates were
 enabled under -- a non-empty string with no `/`, the target directory's
 name when absent. Both are read once at bind. The routes, their bodies and

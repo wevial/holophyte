@@ -44,17 +44,21 @@ route but `/peers` demands as `Authorization: Bearer ...`, checked in
 constant time before any store is opened; a non-loopback bind without the
 key is a startup error naming it. `/`, the console's files and `/peers`
 stay open so the page can load and learn where its peers are. A loopback
-bind ignores the key. The token is never printed or logged.
+bind ignores the key for its reads. The token is never printed or logged.
 
 `[serve] actions = true` (KO-348) is the one exception to read-only: it
-opens three `POST /actions/...` routes behind the same token, each a legal
+opens three `POST /actions/...` routes behind the token, each a legal
 rung of the operator ladder -- `restart-supervisor` and `launch-loop` run
 `systemctl --user` against the deploy units named by `[serve] name`, and
 `requeue` is `store.requeue()`, what `--requeue KO-n --note TEXT` does.
-Each writes its ledger row before it acts and answers
+The actions demand the token on every bind, loopback included -- a bind
+address guards reads, not a hand on the units -- so the opt-in needs
+`[serve] token_file` and binding without one is a startup error. Each
+records its `store.record_intervention()` row before it acts and answers
 `{"action", "ok", "detail"}`; a `systemctl` that fails is `ok: false`
-carrying its stderr, never a 500. Off, every `/actions/` path is 404 and
-this module still opens no write connection.
+carrying its stderr, never a 500, and an action that cannot be recorded
+does not run. Off, every `/actions/` path is 404 and this module still
+opens no write connection.
 
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
@@ -100,8 +104,11 @@ OPEN_PATHS = frozenset({"/peers"})
 # deploy templates with the `[serve] name` instance appended at request
 # time; `systemctl` gets `SYSTEMCTL_TIMEOUT` seconds to answer.
 ACTIONS_PREFIX = "/actions/"
-UNIT_ACTIONS = {"restart-supervisor": ("restart", "holophyte-supervise@"),
-                "launch-loop": ("start", "holophyte-loop@")}
+# Route name -> (systemctl verb, unit template, interventions action).
+UNIT_ACTIONS = {
+    "restart-supervisor": ("restart", "holophyte-supervise@",
+                           "restart_supervisor"),
+    "launch-loop": ("start", "holophyte-loop@", "launch_loop")}
 REQUEUE_ACTION = "requeue"
 ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION}
 SYSTEMCTL_TIMEOUT = 20
@@ -842,19 +849,27 @@ def unit_action(target, action, unit_name):
     """Run the `systemctl --user` step `action` names against the unit
     instance `unit_name`: `(http status, JSON-able body)`.
 
-    The ledger note lands first, on the store's newest run (`store.read.
-    newest_run_id()`) since the ledger is keyed by run; a store with no run
-    yet has nothing to write against and the action proceeds, `detail`
-    saying so. `systemctl` exiting non-zero, being absent or outliving
+    The interventions row lands first (`store.record_intervention()`, the
+    operator ladder's record-before-acting call), on the store's newest run
+    (`store.read.newest_run_id()`) since interventions are keyed by run. A
+    target with no store, or a store with no run yet, has nothing to record
+    against and the step does not run: 200 with `ok: false` saying so,
+    since an unrecorded hand on the units is what the ladder forbids.
+    `systemctl` exiting non-zero, being absent or outliving
     `SYSTEMCTL_TIMEOUT` is 200 with `ok: false` and the reason in
     `detail`: the operator asked for a thing and is told what happened,
     which is not a server error.
     """
-    verb, template = UNIT_ACTIONS[action]
+    verb, template, intervention = UNIT_ACTIONS[action]
     unit = template + unit_name
     argv = ["systemctl", "--user", verb, unit]
     note = f"operator asked the daemon to {verb} {unit} (POST /actions/{action})"
-    recorded = record_action_note(target, note)
+    recorded = record_action_intervention(target, intervention, note)
+    if recorded is None:
+        detail = ("the store holds no run to record the intervention"
+                  " against; nothing run")
+        return 200, {"action": action, "ok": False, "detail": detail,
+                     "unit": unit, "recorded": None}
     try:
         done = subprocess.run(argv, capture_output=True, text=True,
                               timeout=SYSTEMCTL_TIMEOUT)
@@ -874,17 +889,18 @@ def unit_action(target, action, unit_name):
                  "unit": unit, "recorded": recorded}
 
 
-def record_action_note(target, note):
-    """Write `note` as an operator ledger entry on the store's newest run,
-    before the action it describes; the run's id, or None when the store
-    does not exist or holds no run to write against."""
+def record_action_intervention(target, action, note):
+    """Record the human `action` with `note` as an interventions row on the
+    store's newest run, before the step it describes; the run's id, or None
+    when the store does not exist or holds no run to record against."""
     if not target.store_path.exists():
         return None
     conn = open_store(target)
     try:
         run_id = store.read.newest_run_id(conn)
         if run_id is not None:
-            store.record_ledger(conn, run_id, "note", note, source="operator")
+            store.record_intervention(conn, run_id, action, note,
+                                      source="human", trigger="manual")
     finally:
         conn.close()
     return run_id
@@ -993,6 +1009,28 @@ def resolve_token(target, host):
             " file whose contents every request presents as"
             " `Authorization: Bearer ...`")
     return load_token(token_file)
+
+
+def resolve_action_token(target, knobs, token):
+    """The token `POST /actions/...` demands, or None when actions are off.
+
+    `token` is what `resolve_token()` gave the bind: on a non-loopback bind
+    it is already the file's contents and the actions share it. A loopback
+    bind has none, and the actions do not inherit its openness -- the bind
+    address guards reads, not a hand on the units -- so the file is read
+    for them alone, and `[serve] actions = true` without `[serve]
+    token_file` exits naming the key rather than binding open.
+    """
+    if not knobs.actions:
+        return None
+    if token is not None:
+        return token
+    if knobs.token_file is None:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [serve] actions = true needs"
+            f" {TOKEN_KEY} = \"PATH\" on every bind, loopback included:"
+            " the actions answer only to `Authorization: Bearer ...`")
+    return load_token(knobs.token_file)
 
 
 def authorized(header, token):
@@ -1127,14 +1165,19 @@ class StatusHandler(BaseHTTPRequestHandler):
         and tells an unauthenticated client nothing about whether actions
         are on; a daemon without the opt-in is 404 on every `/actions/`
         path, the token notwithstanding; an unknown action under the prefix
-        is 404 too. The body is JSON (`parse_action_body()`), 400 when it
-        is not.
+        is 404 too. The token is the actions' own (`resolve_action_token()`),
+        demanded on a loopback bind as much as any other; with actions off
+        the bind's read token applies, so a non-loopback daemon is 401
+        before it is 404. The body is JSON (`parse_action_body()`), 400
+        when it is not.
         """
         path = urlsplit(self.path).path
         if not path.startswith(ACTIONS_PREFIX):
             return self.refuse()
-        if self.server.token is not None and not authorized(
-                self.headers.get("Authorization"), self.server.token):
+        token = (self.server.action_token if self.server.actions
+                 else self.server.token)
+        if token is not None and not authorized(
+                self.headers.get("Authorization"), token):
             return self.answer(401, {})
         action = path[len(ACTIONS_PREFIX):]
         if not self.server.actions or action not in ACTIONS:
@@ -1226,7 +1269,11 @@ class StatusServer(ThreadingHTTPServer):
     page loaded from it can tell this daemon from the peers, not the
     machine's name. `actions` and `unit_name` are `[serve] actions` and
     `[serve] name`, read once at bind too: whether `POST /actions/...`
-    answers and which unit instance it addresses."""
+    answers and which unit instance it addresses; `action_token` is the
+    bearer value those routes demand on every bind, resolved at bind from
+    `[serve] token_file` when the read `token` is None, so a loopback
+    daemon with actions on exits at bind without the key rather than
+    answering them open."""
 
     daemon_threads = True
 
@@ -1238,6 +1285,7 @@ class StatusServer(ThreadingHTTPServer):
         knobs = serve_config(target)
         self.actions = knobs.actions
         self.unit_name = knobs.name
+        self.action_token = resolve_action_token(target, knobs, token)
         self.started_ms = int(time() * 1000)
         super().__init__(address, StatusHandler)
         host, port = self.server_address[:2]

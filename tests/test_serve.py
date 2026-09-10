@@ -1986,7 +1986,8 @@ class RunFilesTests(ServeTestCase):
 class ActionsTests(ServeTestCase):
     """`POST /actions/...` (KO-348): 404 on every daemon without `[serve]
     actions = true`; with it, the unit actions run `systemctl --user`
-    against the `[serve] name` instance behind the token, a failed
+    against the `[serve] name` instance behind the token -- on a loopback
+    bind as much as any other -- after their interventions row, a failed
     `systemctl` is `ok: false` carrying its stderr, and `requeue` is the
     store's own requeue with its interventions row."""
 
@@ -2041,26 +2042,106 @@ class ActionsTests(ServeTestCase):
         self.assertEqual(argv, ["systemctl", "--user", "restart",
                                 "holophyte-supervise@writer-a"])
         self.assertEqual(run.call_args.kwargs["timeout"], 20)
-        # The row lands before the unit is touched: an operator note on the
-        # store's newest run naming the action.
+        self.assertEqual(body["recorded"], self.run)
+        # The row lands before the unit is touched: a human
+        # `restart_supervisor` intervention on the store's newest run, its
+        # ledger copy naming the unit and the route.
         conn = store.read.open_readonly(self.db)
         try:
+            rows = conn.execute(
+                'SELECT runId, source, "trigger", "action" FROM interventions'
+            ).fetchall()
             entries = store.read.ledger(conn, self.run)
         finally:
             conn.close()
+        self.assertEqual(rows, [(self.run, "human", "manual",
+                                 "restart_supervisor")])
         self.assertEqual([(e.kind, e.source) for e in entries],
-                         [("note", "operator")])
+                         [("intervention", "operator")])
         self.assertIn("holophyte-supervise@writer-a", entries[0].text)
         self.assertIn("restart-supervisor", entries[0].text)
 
+    def test_a_loopback_bind_demands_the_token_for_actions(self):
+        """The bind address guards reads, not the units: on loopback `/status`
+        stays open while `POST /actions/...` is 401 without the bearer and
+        runs nothing, then 200 with it."""
+        self.seed()
+        self.start(self.token_config('actions = true\nname = "writer-a"\n'))
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertIn("runs", body)
+        with patch.object(subprocess, "run") as run:
+            for headers in (None, {"Authorization": "Bearer wrong"}):
+                with self.subTest(headers=headers):
+                    code, _, body = self.request(
+                        "POST", "/actions/restart-supervisor", headers)
+                    self.assertEqual(code, 401)
+                    self.assertEqual(body, {})
+            run.assert_not_called()
+            run.side_effect = lambda argv, **kw: self.completed(argv)
+            code, _, body = self.request("POST", "/actions/restart-supervisor",
+                                         self.BEARER)
+        self.assertEqual(code, 200)
+        self.assertIs(body["ok"], True)
+        self.assertEqual(run.call_args.args[0],
+                         ["systemctl", "--user", "restart",
+                          "holophyte-supervise@writer-a"])
+        conn = store.read.open_readonly(self.db)
+        try:
+            (count,) = conn.execute(
+                "SELECT COUNT(*) FROM interventions").fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(count, 1)
+
+    def test_actions_without_a_token_file_are_a_startup_error_on_loopback(self):
+        self.seed()
+        (self.db.parent / "config.toml").write_text("[serve]\nactions = true\n")
+        tgt = holophyte.target.Target.locate(self.target)
+        with self.assertRaises(SystemExit) as raised:
+            holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())
+        message = str(raised.exception)
+        self.assertIn("[serve] token_file", message)
+        self.assertIn("actions", message)
+
+    def test_a_unit_action_with_no_run_to_record_against_does_not_run(self):
+        """A store with no run has no row to hang the intervention on, and
+        record-before-acting means the unit is left alone: `ok: false`
+        naming why, `systemctl` never called. A target with no store is the
+        same answer."""
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+        finally:
+            conn.close()
+        self.start(self.token_config("actions = true\n"))
+        with patch.object(subprocess, "run") as run:
+            code, _, body = self.request("POST", "/actions/launch-loop",
+                                         self.BEARER)
+            run.assert_not_called()
+        self.assertEqual(code, 200)
+        self.assertIs(body["ok"], False)
+        self.assertIsNone(body["recorded"])
+        self.assertIn("no run to record", body["detail"])
+        # The same config, a second daemon, and no store at all.
+        self.db.unlink()
+        self.start()
+        with patch.object(subprocess, "run") as run:
+            code, _, body = self.request("POST", "/actions/launch-loop",
+                                         self.BEARER)
+            run.assert_not_called()
+        self.assertEqual(code, 200)
+        self.assertIs(body["ok"], False)
+
     def test_launch_loop_reports_a_failed_systemctl_as_ok_false(self):
         self.seed()
-        self.start("[serve]\nactions = true\n")
+        self.start(self.token_config("actions = true\n"))
         stderr = "Failed to start holophyte-loop@repo.service: Unit not found."
         with patch.object(subprocess, "run") as run:
             run.side_effect = lambda argv, **kw: self.completed(
                 argv, returncode=1, stderr=stderr + "\n")
-            code, _, body = self.request("POST", "/actions/launch-loop")
+            code, _, body = self.request("POST", "/actions/launch-loop",
+                                         self.BEARER)
         self.assertEqual(code, 200)
         self.assertEqual(body["action"], "launch-loop")
         self.assertIs(body["ok"], False)
