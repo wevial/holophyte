@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[431 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T23:15:29Z — KO-340
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-09T23:16:54Z — KO-340
-MERGED to main as 1e289c2 (branch task/ko-340-the-supervisor-s-time-box-coun deleted).
-actual: 43.2 min · estimate: 30 min · rounds: 2
-
-## 2026-09-09T23:17:00Z — KO-329
-FAILED: cannot reuse leftover worktree: preserved commits on task/ko-329-at-startup-the-loop-walks-mirr conflict with a main that moved on; a human resolves the merge before this ticket is run again
-actual: 0.1 min · estimate: 30 min · rounds: 0
+[434 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T23:26:03Z — KO-331
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -759,3 +748,16 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T02:13:40Z — KO-343
 FAILED: terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 046d7d70f5e1
 actual: 43.4 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T02:36:04Z — KO-339
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/runs.py:188 [p1] [P1] [holophyte/runs.py:188](/home/reviewer/candidate/holophyte/runs.py:188): Exiting the block stops the heartbeat thread without checking whether the run en…
+- criteria:2 [p2] CRITERION 2: not met — a second connection ending the run immediately before block completion produces neither the callback nor RunSwept. Given `heartbeat_while…
+
+## 2026-09-10T02:47:18Z — KO-339
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T02:48:45Z — KO-339
+MERGED to main as f6732ce (branch task/ko-339-a-loop-whose-run-the-superviso deleted).
+actual: 35.0 min · estimate: 30 min · rounds: 2
