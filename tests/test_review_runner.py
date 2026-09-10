@@ -83,6 +83,78 @@ class ReviewerBoundaryTests(unittest.TestCase):
                 "",
             )
 
+    def _worktree_with_ignored_install(self, root):
+        """A committed repository whose worktree holds an ignored directory.
+
+        Returns (source, base, candidate). `console/node_modules` stands in
+        for what `[worktree] setup` installs: present on disk, ignored by
+        git, absent from every commit.
+        """
+        source = root / "source"
+        source.mkdir()
+        git = lambda *a: subprocess.run(["git", *a], cwd=source, check=True)  # noqa: E731
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "Test")
+        git("config", "user.email", "test@example.invalid")
+        (source / ".gitignore").write_text("node_modules/\n")
+        (source / "console").mkdir()
+        (source / "console" / "package.json").write_text("{}\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        base = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+        (source / "console" / "package.json").write_text('{"name": "c"}\n')
+        git("commit", "-qam", "candidate")
+        candidate = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+        installed = source / "console" / "node_modules" / "dep"
+        installed.mkdir(parents=True)
+        (installed / "index.js").write_text("module.exports = 1;\n")
+        return source, base, candidate
+
+    def test_carried_directories_are_copied_read_only_outside_the_fingerprint(
+            self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, base, candidate = self._worktree_with_ignored_install(root)
+
+            bare = review_runner.stage_candidate(
+                source, root / "bare", base, candidate)
+            staged = review_runner.stage_candidate(
+                source, root / "stage", base, candidate,
+                carry=["console/node_modules"])
+
+            copied = staged.path / "console" / "node_modules" / "dep" / "index.js"
+            self.assertEqual(copied.read_text(), "module.exports = 1;\n")
+            for path in (copied, copied.parent, copied.parent.parent):
+                self.assertFalse(path.stat().st_mode & 0o222, path)
+            # The copy is a copy: the worktree's install is left alone.
+            self.assertTrue(os.access(
+                source / "console" / "node_modules" / "dep" / "index.js", os.W_OK))
+            # Ignored in the stage too, so the clean check and the identity
+            # the round is held to see the same tree with or without it.
+            self.assertEqual(staged.fingerprint, bare.fingerprint)
+            self.assertEqual(review_runner._fingerprint(staged.path),
+                             staged.fingerprint)
+            self.assertEqual(subprocess.check_output(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                cwd=staged.path, text=True), "")
+
+    def test_a_tracked_absent_or_escaping_carry_path_is_refused_by_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, base, candidate = self._worktree_with_ignored_install(root)
+            (root / "outside").mkdir()
+
+            for path in ("console", "console/.cache", "../outside"):
+                with self.subTest(path=path):
+                    stage = root / f"stage-{abs(hash(path))}"
+                    with self.assertRaises(review_runner.ReviewBoundaryError) as e:
+                        review_runner.stage_candidate(
+                            source, stage, base, candidate, carry=[path])
+                    self.assertIn(path, str(e.exception))
+                    self.assertIn("carry", str(e.exception))
+
     def test_container_is_hardened_and_mounts_only_allowlisted_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

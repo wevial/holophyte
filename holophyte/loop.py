@@ -49,6 +49,7 @@ from holophyte.board import (
 )
 from holophyte.config import (
     branch_prefix,
+    carry_directories,
     loop_config,
     merge_config,
     report_config,
@@ -121,6 +122,7 @@ def check_worktree_setup(target):
     setup_commands(target)
     setup_timeout(target)
     branch_prefix(target)
+    carry_directories(target)
 
 
 def timeout_report(cmd, expired):
