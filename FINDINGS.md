@@ -653,19 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[473 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T04:12:14Z — KO-332
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T04:12:17Z — KO-332
-MERGED to main as c723994 (branch task/ko-332-a-shipped-row-expands-to-the-s deleted).
-actual: 6.4 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T04:31:44Z — KO-335
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/src/components/AttentionRow.tsx:66 [p2] [P2] [AttentionRow.tsx:66](/home/reviewer/candidate/console/src/components/AttentionRow.tsx:66): When a question has a thread, pressing Enter on its PR link b…
+[476 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T04:39:20Z — KO-335
 Round 2: pass · reviewer codex-astra-medium · verify passed
@@ -756,3 +744,20 @@ Round 3: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T18:59:34Z — KO-348
 MERGED to main as 74f1c36 (branch task/ko-348-the-daemon-accepts-token-gated deleted).
 actual: 39.2 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T19:12:53Z — KO-349
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (6):
+- /home/reviewer/candidate/console/src/lib/actions.ts:38 [p0] **Blocker: peer actions fail CORS preflight.** [actions.ts:38](/home/reviewer/candidate/console/src/lib/actions.ts:38) sends JSON POSTs, but [serve.py:1245](/…
+- (unparsed):2d1c420dc943 [p0] **Blocker: verification gate is incomplete.** Bun tests report zero passes because `@happy-dom/global-registrator` is missing; the exact TypeScript command pr…
+- criteria:1 [p2] CRITERION 1: unwitnessed — the restart request, bearer, spinner, and detail test exists in console/tests/AttentionRow.test.tsx but cannot execute because its se…
+- criteria:2 [p2] CRITERION 2: unwitnessed — the requeue request/body test exists in console/tests/AttentionRow.test.tsx but cannot execute because its setup dependency is missin…
+- criteria:3 [p2] CRITERION 3: unwitnessed — the disabled-button/opt-in test exists in console/tests/AttentionRow.test.tsx but cannot execute because its setup dependency is miss…
+- criteria:4 [p2] CRITERION 4: unwitnessed — the failed-reply detail/re-enable test exists in console/tests/AttentionRow.test.tsx but cannot execute because its setup dependency…
+
+## 2026-09-10T19:24:59Z — KO-349
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T19:26:35Z — KO-349
+MERGED to main as 83b76b0 (branch task/ko-349-the-console-s-action-buttons-p deleted).
+actual: 27.0 min · estimate: 30 min · rounds: 2
