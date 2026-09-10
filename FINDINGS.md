@@ -653,25 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[478 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T04:44:10Z — KO-338
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/console/electron/log.ts:36 [p2] [console/electron/log.ts:36](/home/reviewer/candidate/console/electron/log.ts:36): `consoleLine` copies the message verbatim, allowing query tokens into the l…
-- criteria:3 [p2] CRITERION 3: not met — query strings survive when the console message itself contains the source URL; the existing test covers only the separate source argument…
-
-## 2026-09-10T04:46:00Z — KO-338
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/electron/log.ts:38 [p1] [P1] [log.ts:38](/home/reviewer/candidate/console/electron/log.ts:38): URL redaction stops at `)`, allowing query tokens into the log. Reproduced with message…
-
-## 2026-09-10T04:47:29Z — KO-338
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T04:47:29Z — KO-338
-FAILED: terminal adjudication: FAIL; branch task/ko-338-the-electron-app-opens-the-win preserved at 8326a60d6133
-actual: 6.5 min · estimate: 30 min · rounds: 3
+[482 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T04:59:03Z — KO-345
 Round 1: changes_requested · reviewer codex-astra-medium · verify passed
@@ -761,3 +743,22 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T19:40:23Z — KO-350
 MERGED to main as 8ecdd70 (branch task/ko-350-a-run-parked-on-its-pull-reque deleted).
 actual: 13.8 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T19:45:41Z — KO-352
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/console/src/components/HostRow.tsx:58 [p2] [HostRow.tsx:58](/home/reviewer/candidate/console/src/components/HostRow.tsx:58): The stale tail and port both use `shrink-0`, while the project name alone ca…
+- (unparsed):6491b2551ada [p2] Verification is blocked by missing dependencies: `bun --cwd=console test` reports zero passing tests and missing `@happy-dom/global-registrator`; `bun --cwd=c…
+
+## 2026-09-10T19:47:56Z — KO-352
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- (unparsed):ec14855eeff6 [p2] `bun --cwd=console test`: 0 pass, 33 errors; missing `@happy-dom/global-registrator`.
+- (unparsed):e0a127aaab39 [p2] `bun --cwd=console x tsc --noEmit`: fails with TS2688; missing `bun-types`.
+
+## 2026-09-10T19:49:25Z — KO-352
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T19:49:25Z — KO-352
+FAILED: terminal adjudication: FAIL; branch task/ko-352-the-hosts-rail-groups-daemons preserved at ef1d937e6050
+actual: 9.0 min · estimate: 30 min · rounds: 3
