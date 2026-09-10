@@ -73,6 +73,15 @@ review_effort = "medium"
 Accepted keys: `implementer`, `reviewer`, `adjudicator`, `review_model`,
 `review_effort`.
 
+A configured `implementer` is probed before each pass claims a ticket: the
+loop runs the exact command a turn would, with the goal `Reply with the single
+word: ready`, in an empty temporary directory under a 90 s cap, and the pass
+proceeds only when it exits 0 with `ready` in its output. A route that exits
+nonzero, answers something else or does not answer in time ends the pass nonzero
+with the command, the exit code or the timeout, and the last lines it printed --
+a typo or a stale CLI is found here, not by a failed implement turn later. The
+default route is not probed this way, and neither is the reviewer.
+
 `review_model` and `review_effort` choose what runs inside the hardened
 container when neither review role is overridden by a command. Both reach the
 container script as arguments, never as text spelled into it. The profile a

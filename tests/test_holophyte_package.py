@@ -79,8 +79,10 @@ DEFINED = {
         "vacuous_green_report",
     ],
     holophyte.agents: [
+        "ProbeResult",
         "agent",
         "agent_route",
+        "probe_implementer",
         "publish_review_refs",
     ],
     holophyte.findings: [
