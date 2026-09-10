@@ -653,20 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[460 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T03:01:02Z — KO-344
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T03:02:30Z — KO-344
-MERGED to main as 0c1d8b0 (branch task/ko-344-the-reconcile-sees-archived-li deleted).
-actual: 13.6 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T03:12:07Z — KO-343
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/loop.py:2833 [p1] **[P1] Failed workers bypass the merge lock.** At [holophyte/loop.py:2833](/home/reviewer/candidate/holophyte/loop.py:2833), `close_out_failure()` still regen…
-- (unparsed):eea9dd8dd9ac [p2] Lint verification remains incomplete: `ruff check .` could not run because Ruff is unavailable. The suite rerun passed all 946 tests.
+[463 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T03:20:32Z — KO-343
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -762,3 +749,15 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T05:09:27Z — KO-345
 MERGED to main as a0179f0 (branch task/ko-345-the-loop-s-skip-line-for-a-par deleted).
 actual: 21.9 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T05:11:22Z — KO-338
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/electron/log.ts:43 [p1] [P1] [console/electron/log.ts:43](/home/reviewer/candidate/console/electron/log.ts:43): URL redaction leaks query tokens when the path contains parentheses. R…
+
+## 2026-09-10T05:13:01Z — KO-338
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T05:13:03Z — KO-338
+MERGED to main as 48e6197 (branch task/ko-338-the-electron-app-opens-the-win deleted).
+actual: 3.5 min · estimate: 30 min · rounds: 2
