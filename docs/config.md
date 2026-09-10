@@ -207,10 +207,14 @@ review_rounds_max = 4        # the ceiling
 # How many worker processes the loop keeps running at most, one per claimable
 # ticket. Optional; the default is one process working one ticket at a time.
 workers = 1                  # 3: up to three tickets worked at once
+# How often, in seconds, the scheduler recounts the queue while fewer than
+# `workers` are running. Optional; the default is two minutes.
+tick_sec = 120
 ```
 
 Accepted keys: `stop_on_failure`, `order`, `spawn_supervisor`,
-`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`, `workers`.
+`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`, `workers`,
+`tick_sec`.
 
 By default one failed run ends the process after its close-out, with a nonzero
 exit, and an operator relaunches the loop — the right call while the loop is
@@ -274,6 +278,15 @@ still serialise under the merge lock. `stop_on_failure` keeps its meaning
 per pool: a failed worker stops the spawning and the running workers are
 waited for. An integer of at least `1`; `"3"` (a string) or `0` (a pool
 that could work nothing) is a startup error naming the key.
+
+`tick_sec` is how often the scheduler recounts the queue while the pool is
+below `workers`: with a slot free, its wait on the children times out after
+this many seconds and the ready listing and the claimable count are run
+again, so a ticket filed while the pool was busy starts within a tick rather
+than at the next exit. With the pool full the scheduler waits on exits
+alone, and the tick prints nothing unless it spawns. An integer of at least
+`10`; `"120"` (a string) or `5` is a startup error naming the key. Only the
+scheduler reads it: under `workers = 1` there is no pool to tick.
 
 ```toml
 [board]

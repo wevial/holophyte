@@ -23,7 +23,7 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path
-from time import monotonic, time
+from time import monotonic, sleep, time
 
 import review_runner
 import store
@@ -2173,8 +2173,14 @@ WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 SPAWN = subprocess.Popen
 
 
-def _wait_any(children):
-    """Block until any child exits; return `(pid, exit_code)`.
+# How often the timed wait looks for an exited child, in seconds.
+WAIT_POLL_S = 0.5
+
+
+def _wait_any(children, timeout):
+    """Block until any child exits, or `timeout` seconds pass; return
+    `(pid, exit_code)`, or `(None, None)` when the deadline passed with no
+    exit (KO-353). `timeout` is `None` for no deadline.
 
     `children` is the pool's live `Popen` objects by pid. The scheduler
     holds them for as long as the workers live -- a `Popen` dropped while
@@ -2184,8 +2190,22 @@ def _wait_any(children):
     its exit status is lost (the review of KO-343 reproduced it with two
     real children). Held, they are reaped here alone, and the one reaped is
     told its status so it is not put on that list when the pool drops it.
+    Under a deadline the wait is `os.waitpid(-1, WNOHANG)` every
+    `WAIT_POLL_S` until a child is reported or the deadline passes: there
+    is no `os.wait()` with a timeout, and a signal-driven one would race
+    a child that exited before the alarm was set.
     """
-    pid, status = os.wait()
+    if timeout is None:
+        pid, status = os.wait()
+    else:
+        deadline = monotonic() + timeout
+        while True:
+            pid, status = os.waitpid(-1, os.WNOHANG)
+            if pid:
+                break
+            if monotonic() >= deadline:
+                return None, None
+            sleep(min(WAIT_POLL_S, max(deadline - monotonic(), 0)))
     code = os.waitstatus_to_exitcode(status)
     if pid in children:
         children[pid].returncode = code
@@ -2316,7 +2336,11 @@ def scheduler(target, provider, knobs):
     The startup checks and the sweep once, then a tick per child exit:
     mirror the board's ready listing, count the tickets a worker could
     claim (`_claimable()`), spawn until `min(claimable, workers)` are
-    alive, block until any child exits, read its status. A failed worker
+    alive, block until any child exits, read its status. While the pool
+    is below the ceiling the block carries `knobs.tick_sec` as a deadline,
+    and a deadline that reaps nobody is a tick like any other: the
+    listing and the count run again for a ticket filed since (KO-353); a
+    full pool waits on exits alone. A failed worker
     under `stop_on_failure` stops the spawning and the running workers are
     waited for, as the serial loop stops on its first failure; a merge into
     the factory itself does the same and re-execs once the pool has
@@ -2374,8 +2398,10 @@ def scheduler(target, provider, knobs):
                 store.record_loop_return(conn, project)
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if state.failed else None
-            pid, code = WAIT({pid: child for pid, (_, child) in pool.items()})
-            if pid in pool:  # else the supervisor, or another child not ours
+            timeout = None if len(pool) >= knobs.workers else knobs.tick_sec
+            pid, code = WAIT({pid: child for pid, (_, child) in pool.items()},
+                             timeout)
+            if pid in pool:  # else the supervisor, another child, or a tick
                 state.exited(pool.pop(pid)[0], code)
     finally:
         conn.close()

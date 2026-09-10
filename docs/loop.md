@@ -150,7 +150,13 @@ mirror the board's ready listing, count the tickets a worker could claim
 every dependency merged -- one listing and one store read per tick, then
 the predicate per listed ticket), spawn `factory.py TARGET --worker`
 children until `min(claimable, workers)` are alive, block until any child
-exits, read its status, repeat. A listing the board could not answer is
+exits, read its status, repeat. While fewer than `workers` are alive the
+block carries `[loop] tick_sec` (default 120 seconds) as a deadline: a
+deadline that reaps nobody is a tick like any other, the listing and the
+count run again, and a ticket filed while the pool was busy is spawned for
+within a tick rather than at the next exit. The timer tick prints nothing
+unless it spawns. With the pool full the scheduler waits on exits alone,
+since no count could change what it does. A listing the board could not answer is
 not an empty queue: nothing is spawned on it, a live pool recounts at its
 next exit, and an empty pool ends the loop nonzero rather than reporting a
 queue it never saw. A queue of one ticket is one worker, as with `workers =
