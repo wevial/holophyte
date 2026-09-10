@@ -32,6 +32,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.files  # noqa: E402 - after the sys.path insert above
@@ -2648,6 +2649,80 @@ class ConfigEditTests(ServeTestCase):
         self.assertIn("[agents] implementer", body["error"])
         self.assertIn("relative", body["error"])
         self.assertEqual(self.on_disk(), before)
+
+    def implementer_script(self, body):
+        """A real route the daemon really runs for the probe: the fake
+        under test is not the command, so the verdict is the process's."""
+        path = self.root / "implementer.sh"
+        path.write_text("#!/bin/sh\n" + body)
+        path.chmod(0o755)
+        return path
+
+    def test_a_changed_implementer_is_probed_and_the_reply_says_it_answered(self):
+        """`PUT /config` setting `[agents] implementer` runs the startup
+        probe on the written document (KO-357): `probe.ok` with the exact
+        command beside the write. A write that leaves the key alone carries
+        `probe: null` -- nothing ran."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        path = self.implementer_script('echo "ready"\n')
+        text = before + f'\n[agents]\nimplementer = "{path}"\n'
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 200, body)
+        self.assertIs(body["probe"]["ok"], True)
+        self.assertEqual(body["probe"]["command"],
+                         [str(path), holophyte.agents.PROBE_GOAL])
+        self.assertEqual(self.on_disk(), text)
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text.replace(
+                                         "workers = 2", "workers = 3")})
+        self.assertEqual(code, 200, body)
+        self.assertIsNone(body["probe"])
+
+    def test_a_route_that_does_not_answer_is_reported_but_the_write_lands(self):
+        """The probe reports, it does not gate: the file and its backup are
+        already in place, and the reply carries the exit code and the
+        route's last lines so the operator can fix the key or restore."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        path = self.implementer_script("echo broken harness >&2\nexit 1\n")
+        text = before + f'\n[agents]\nimplementer = "{path}"\n'
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 200, body)
+        self.assertIs(body["ok"], True)
+        self.assertIs(body["probe"]["ok"], False)
+        self.assertEqual(body["probe"]["returncode"], 1)
+        self.assertIs(body["probe"]["timed_out"], False)
+        self.assertIn("broken harness", "\n".join(body["probe"]["output"]))
+        self.assertEqual(self.on_disk(), text)
+        self.assertEqual(Path(body["backup"]).read_text(), before)
+
+    def test_a_route_that_cannot_start_is_reported_but_the_write_lands(self):
+        """A command that does not exist passes the document check (it is
+        absolute) and fails only at launch. The write has already landed,
+        so the reply must still carry `probe` -- naming the launch error --
+        rather than the request failing after the file was replaced."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        missing = self.root / "no-such-harness"
+        text = before + f'\n[agents]\nimplementer = "{missing}"\n'
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 200, body)
+        self.assertIs(body["ok"], True)
+        self.assertIs(body["probe"]["ok"], False)
+        self.assertIs(body["probe"]["timed_out"], False)
+        self.assertIsNone(body["probe"]["returncode"])
+        self.assertEqual(body["probe"]["command"],
+                         [str(missing), holophyte.agents.PROBE_GOAL])
+        self.assertIn("No such file", body["probe"]["launch_error"])
+        self.assertEqual(self.on_disk(), text)
+        self.assertEqual(Path(body["backup"]).read_text(), before)
 
     def test_the_backup_keeps_the_file_s_mode(self):
         """A mode-0600 file's backup holds the same secrets, so it is

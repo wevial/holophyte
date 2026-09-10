@@ -148,10 +148,26 @@ from the read of the current file to the rename, so two clients cannot
 back up the same text twice and lose an edit. The reply is
 
 ```json
-{"ok": true, "path": "/home/.../config.toml", "backup": "/home/.../config.toml.bak-20260910T120000Z", "applies": "next loop start", "recorded": 42}
+{"ok": true, "path": "/home/.../config.toml", "backup": "/home/.../config.toml.bak-20260910T120000Z", "applies": "next loop start", "recorded": 42, "probe": null}
 ```
 
 `backup` is null when there was no file to keep. Backups are not pruned.
+
+`probe` is the implementer probe the loop runs at startup, run here when
+the write changed `[agents] implementer` ([config.md](../config.md)): the
+command as written, asked for the word `ready` in an empty directory under
+the loop's cap, after the file is replaced. It reports and does not gate
+-- the write is `ok` with the file and backup in place whatever the route
+said -- so a route that does not answer is found at the write, not by the
+next loop start refusing to run. Null when the key did not change or now
+names no route. Otherwise
+
+```json
+{"ok": false, "command": ["my-harness", "--fast", "Reply with the single word: ready"], "returncode": 1, "timed_out": false, "timeout": 90, "output": ["my-harness: unknown option --fast"]}
+```
+
+with `returncode` null and `timed_out` true when the cap ended it, and
+`output` the last lines the route printed.
 
 ## What a `pr_open` item's action is not
 
