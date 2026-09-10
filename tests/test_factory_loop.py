@@ -19,10 +19,12 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -203,15 +205,17 @@ class LoopFixture(unittest.TestCase):
         (self.db.parent / "config.toml").write_text(toml)
         self.tgt = holophyte.target.Target.locate(self.target)
 
-    def loop(self, *script, provider=None):
+    def loop(self, *script, provider=None, fake=None):
         """Run `main()` over the queued tasks with the script answering agents.
 
         Returns the fake and the spawn guard, so a test can read both the
         turns the loop took and the processes it did not start; `main()`'s
         return code lands in `self.rc` for the tests that pin the exit
-        contract.
+        contract. A test that needs the fake before the loop runs -- a step
+        that reads the turn the loop is asking for -- builds it and passes
+        it as `fake`; `script` is then unused.
         """
-        fake = FakeAgent(*script)
+        fake = fake or FakeAgent(*script)
         provider = provider or StubProvider(a_task())
         self.last_provider = provider
         self.last_fake = fake
@@ -3608,7 +3612,9 @@ class EndedRunTests(LoopFixture):
     verifying -> reviewing` and was heading for a merge under a row that said
     the work had failed. Here the implementer turn ends its own run through
     `store.release()` -- the sweep's write, from another connection, the
-    way `act_on_trip()` makes it -- and commits as usual.
+    way `act_on_trip()` makes it -- and commits as usual. The turn returns
+    before the next timer beat, so it is the heartbeat block's exit beat
+    (KO-339) that finds the end: the loop stops the turn and moves on.
     """
 
     def test_a_run_failed_mid_agent_stops_with_the_sweeps_verdict(self):
@@ -3629,7 +3635,7 @@ class EndedRunTests(LoopFixture):
         provider = self.last_provider
 
         self.assertIn("[holo2] run 1 was ended by the supervisor"
-                      f" (failed: {sweep_reason}); stopping", out)
+                      f" ({sweep_reason}); stopping this turn", out)
         # The stream ends where the sweep ended it: no phase event after the
         # release, so nothing reanimated the run.
         self.assertEqual(self.transitions(),
@@ -3638,10 +3644,11 @@ class EndedRunTests(LoopFixture):
             self.read("SELECT outcome, outcomeReason, phase FROM runs"),
             [("failed", sweep_reason, "failed")])
         # Nothing pushed to the board past the claim, nothing merged, and
-        # the loop stopped on the failure.
+        # the loop went on to its next claim rather than stopping.
         self.assertEqual(provider.states, [("iss-131", "In Progress")])
         self.assertEqual(self.subjects(), ["base"])
-        self.assertEqual(self.rc, 1)
+        self.assertIn("Linear has no ready tickets. done.", out)
+        self.assertIsNone(self.rc)
         # The worktree and its branch are as the implementer left them.
         self.assertIn("swept work", self.subjects("task/ko-131-add-a-thing"))
         self.assertTrue(any(p.is_dir() for p in self.worktrees.iterdir()))
@@ -3956,3 +3963,180 @@ class WorkerTests(LoopFixture):
 
         self.assertEqual(rc, holophyte.loop.WORKER_IDLE)
         self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])
+
+
+class SweptHeartbeatTests(unittest.TestCase):
+    """`heartbeat_while()` notices the run it beats for being ended (KO-339).
+
+    The block is the loop's wait on an agent; a second connection ends the
+    run mid-block the way `act_on_trip()` does. The callback -- the loop's
+    kill of the turn -- fires once, and the block's exit raises `RunSwept`
+    naming the run and the reason the store recorded.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+        self.conn = store.open(self.path)
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        project = store.ensure_project(self.conn, "team_abc", "/repos/x")
+        ticket = store.mirror_ticket(
+            self.conn, project, "iss_1", "KO-1", "ticket one",
+            acceptance_criteria=["it works"], verification_commands=["true"])
+        self.run = store.claim(self.conn, project, ticket)
+
+    def test_a_run_ended_mid_block_fires_the_callback_once_and_raises(self):
+        reason = "swept by the supervisor in phase working: time_box (99 min)"
+        calls = []
+        fired = threading.Event()
+
+        def on_swept():
+            calls.append(time.monotonic())
+            fired.set()
+
+        with self.assertRaises(holophyte.runs.RunSwept) as caught:
+            with holophyte.loop.heartbeat_while(self.conn, self.run, 0.05,
+                                                on_swept=on_swept):
+                other = store.open(self.path)
+                try:
+                    store.release(other, self.run, "failed", reason)
+                finally:
+                    other.close()
+                self.assertTrue(fired.wait(5), "the beat never saw the end")
+                # The block goes on past several more beat intervals: a
+                # callback fired per beat would show up here as a second call.
+                time.sleep(0.3)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(caught.exception.run_id, self.run)
+        self.assertEqual(caught.exception.reason, reason)
+        self.assertIn(f"run {self.run}", str(caught.exception))
+
+    def test_a_run_ended_after_the_last_beat_still_raises_at_exit(self):
+        # The sweep lands after the timer's last beat and the block returns
+        # at once: no beat sees the end. The exit has to look for itself,
+        # or the loop verifies and records against a run the store failed.
+        reason = "swept by the supervisor in phase working: time_box (99 min)"
+        calls = []
+        with self.assertRaises(holophyte.runs.RunSwept) as caught:
+            with holophyte.loop.heartbeat_while(self.conn, self.run, 60,
+                                                on_swept=calls.append):
+                other = store.open(self.path)
+                try:
+                    store.release(other, self.run, "failed", reason)
+                finally:
+                    other.close()
+        self.assertEqual(calls, [])  # nothing left to stop: the body returned
+        self.assertEqual(caught.exception.run_id, self.run)
+        self.assertEqual(caught.exception.reason, reason)
+
+    def test_a_live_run_raises_nothing_and_calls_nothing(self):
+        calls = []
+        with holophyte.loop.heartbeat_while(self.conn, self.run, 0.05,
+                                            on_swept=calls.append):
+            time.sleep(0.2)
+        self.assertEqual(calls, [])
+
+
+class SweptTurnTests(LoopFixture):
+    """A loop whose run the supervisor swept stops that run's turn (KO-339).
+
+    Run 160 was ended by the supervisor on its time box while the loop was
+    inside a fix turn; the loop kept the agent working for twenty more
+    minutes and would have verified, recorded and merged against a run the
+    store had already failed. Here the implementer turn really starts a
+    process in a session of its own and hands the loop its handle, as
+    `agent()` does, then sweeps the store with `act` the way the supervisor
+    would and waits on the process. The kill is the only way that wait ends.
+    """
+
+    def test_a_swept_run_kills_its_turn_writes_nothing_more_and_moves_on(self):
+        # 0.01 min is 600 ms of stale threshold, so the loop beats every
+        # 300 ms and notices the end within one beat.
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
+        knobs = holophyte.config.sweep_config(self.tgt)
+        db, tgt = self.db, self.tgt
+        seen = {}
+        fake = FakeAgent()
+
+        class BlockUntilKilled(Idle):
+            """An implementer that sweeps its own run from outside, then
+            blocks in a process only a kill of its group can end."""
+
+            def play(self, cwd, turn):
+                proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+                fake.turns[-1].on_start(proc)
+                conn = store.open(str(db))
+                try:
+                    (run_id,) = conn.execute("SELECT id FROM runs").fetchone()
+                    # An hour on: the run is over its 5 min time box, and
+                    # one stale sighting is short of a stale trip.
+                    result = holophyte.supervisor.sweep(
+                        tgt, conn, int(time.time() * 1000) + 3_600_000,
+                        act=True, knobs=knobs)
+                    seen["trips"] = [t.condition for t in result.trips]
+                    seen["row"] = conn.execute(
+                        "SELECT outcome, outcomeReason, endedAt FROM runs"
+                        " WHERE id = ?", (run_id,)).fetchone()
+                    seen["events"] = conn.execute(
+                        "SELECT COUNT(*) FROM runEvents WHERE runId = ?",
+                        (run_id,)).fetchone()[0]
+                    seen["rounds"] = conn.execute(
+                        "SELECT COUNT(*) FROM reviewRounds WHERE runId = ?",
+                        (run_id,)).fetchone()[0]
+                finally:
+                    conn.close()
+                try:
+                    proc.wait(timeout=20)
+                    seen["returncode"] = proc.returncode
+                except subprocess.TimeoutExpired:
+                    # The loop never killed it: end it here so the test
+                    # fails on the record below rather than hanging.
+                    proc.kill()
+                    proc.wait()
+                    seen["returncode"] = "the loop never killed the turn"
+                return "killed"
+
+        fake.script = [BlockUntilKilled(), Commit("the next work"), APPROVE]
+        provider = StubProvider(a_task(1), a_task(2))
+        out = io.StringIO()
+        with patch.object(sys, "stdout", out):
+            self.loop(provider=provider, fake=fake)
+        out = out.getvalue()
+
+        # The sweep tripped the time box and ended the run.
+        self.assertEqual(seen["trips"], ["time_box"])
+        self.assertEqual(seen["row"][0], "failed")
+        self.assertIn("swept by the supervisor", seen["row"][1])
+        self.assertIsNotNone(seen["row"][2])
+        # The turn's process was killed, not left to finish its 30 seconds.
+        self.assertEqual(seen["returncode"], -signal.SIGKILL)
+        self.assertIn("[holo2] run 1 was ended by the supervisor"
+                      f" ({seen['row'][1]}); stopping this turn", out)
+        # Nothing more was written to the swept run: its row and its
+        # streams are as the sweep left them.
+        self.assertEqual(
+            self.read("SELECT outcome, outcomeReason, endedAt FROM runs"
+                      " WHERE id = 1"), [seen["row"]])
+        self.assertEqual(
+            self.read("SELECT COUNT(*) FROM runEvents WHERE runId = 1"),
+            [(seen["events"],)])
+        self.assertEqual(
+            self.read("SELECT COUNT(*) FROM reviewRounds WHERE runId = 1"),
+            [(seen["rounds"],)])
+        # Worktree and branch are as the sweep preserved them.
+        self.assertIn("task/ko-131-add-a-thing", self.branches())
+        self.assertTrue(any(p.is_dir() for p in self.worktrees.iterdir()))
+        # The loop made its next claim and finished that run on its own.
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertIn(("iss-132", "In Progress"), provider.states)
+        self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
+                         [(1, "failed"), (2, "merged")])
+        self.assertIn("the next work", self.subjects())
+        self.assertIsNone(self.rc)
+
+
+if __name__ == "__main__":
+    unittest.main()

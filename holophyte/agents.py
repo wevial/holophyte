@@ -81,7 +81,7 @@ def publish_review_refs(repo, base_sha, candidate_sha):
 
 
 def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
-          timeout=None):
+          timeout=None, on_start=None):
     """Run one agent turn for a role. Returns combined output text.
 
     An `implement` turn runs in a process group of its own under `timeout`
@@ -89,7 +89,13 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     `claude -p` that reaches the cap is killed with every subagent and Bash
     child it started, and the turn raises `subprocess.TimeoutExpired` carrying
     what it printed first. Signalling only the CLI left its children
-    committing into a worktree the loop had already given up on.
+    committing into a worktree the loop had already given up on. `on_start`
+    is handed that group's `Popen` as it starts (`GroupKill.arm`), so the
+    loop can end the same group from outside the wait when the supervisor
+    sweeps the run mid-turn (KO-339). The review and adjudicate routes run
+    through `subprocess.run` -- the container runner's and the configured
+    command's -- and hold no handle to hand over, so `on_start` is not
+    called for them.
 
     `adjudicate` is the terminal pass/fail round. It takes the same
     independent reviewer route as `review` — a fresh dispatch that knows only
@@ -142,5 +148,8 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                            timeout=1800)
         return (r.stdout + "\n" + r.stderr).strip()
     cap = IMPL_TIMEOUT if timeout is None else min(timeout, IMPL_TIMEOUT)
-    _, out = run_capped(cmd, cwd, cap)
+    # The hook is passed only when there is one, so a turn without a
+    # sweep-time kill runs exactly the call it always did.
+    hook = {"on_start": on_start} if on_start is not None else {}
+    _, out = run_capped(cmd, cwd, cap, **hook)
     return out.strip()
