@@ -3612,7 +3612,9 @@ class EndedRunTests(LoopFixture):
     verifying -> reviewing` and was heading for a merge under a row that said
     the work had failed. Here the implementer turn ends its own run through
     `store.release()` -- the sweep's write, from another connection, the
-    way `act_on_trip()` makes it -- and commits as usual.
+    way `act_on_trip()` makes it -- and commits as usual. The turn returns
+    before the next timer beat, so it is the heartbeat block's exit beat
+    (KO-339) that finds the end: the loop stops the turn and moves on.
     """
 
     def test_a_run_failed_mid_agent_stops_with_the_sweeps_verdict(self):
@@ -3633,7 +3635,7 @@ class EndedRunTests(LoopFixture):
         provider = self.last_provider
 
         self.assertIn("[holo2] run 1 was ended by the supervisor"
-                      f" (failed: {sweep_reason}); stopping", out)
+                      f" ({sweep_reason}); stopping this turn", out)
         # The stream ends where the sweep ended it: no phase event after the
         # release, so nothing reanimated the run.
         self.assertEqual(self.transitions(),
@@ -3642,10 +3644,11 @@ class EndedRunTests(LoopFixture):
             self.read("SELECT outcome, outcomeReason, phase FROM runs"),
             [("failed", sweep_reason, "failed")])
         # Nothing pushed to the board past the claim, nothing merged, and
-        # the loop stopped on the failure.
+        # the loop went on to its next claim rather than stopping.
         self.assertEqual(provider.states, [("iss-131", "In Progress")])
         self.assertEqual(self.subjects(), ["base"])
-        self.assertEqual(self.rc, 1)
+        self.assertIn("Linear has no ready tickets. done.", out)
+        self.assertIsNone(self.rc)
         # The worktree and its branch are as the implementer left them.
         self.assertIn("swept work", self.subjects("task/ko-131-add-a-thing"))
         self.assertTrue(any(p.is_dir() for p in self.worktrees.iterdir()))
@@ -3702,6 +3705,24 @@ class SweptHeartbeatTests(unittest.TestCase):
         self.assertEqual(caught.exception.run_id, self.run)
         self.assertEqual(caught.exception.reason, reason)
         self.assertIn(f"run {self.run}", str(caught.exception))
+
+    def test_a_run_ended_after_the_last_beat_still_raises_at_exit(self):
+        # The sweep lands after the timer's last beat and the block returns
+        # at once: no beat sees the end. The exit has to look for itself,
+        # or the loop verifies and records against a run the store failed.
+        reason = "swept by the supervisor in phase working: time_box (99 min)"
+        calls = []
+        with self.assertRaises(holophyte.runs.RunSwept) as caught:
+            with holophyte.loop.heartbeat_while(self.conn, self.run, 60,
+                                                on_swept=calls.append):
+                other = store.open(self.path)
+                try:
+                    store.release(other, self.run, "failed", reason)
+                finally:
+                    other.close()
+        self.assertEqual(calls, [])  # nothing left to stop: the body returned
+        self.assertEqual(caught.exception.run_id, self.run)
+        self.assertEqual(caught.exception.reason, reason)
 
     def test_a_live_run_raises_nothing_and_calls_nothing(self):
         calls = []

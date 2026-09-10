@@ -142,6 +142,13 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     `RunSwept` is raised naming the run and its recorded outcome reason,
     whether the body returned or raised. A body that ends on its own path
     inside a live run is unaffected: no beat fails, nothing is raised.
+
+    The exit beats once more, on the caller's own `conn`, after the thread
+    is joined. A run ended between the timer's last beat and the block's
+    exit -- a sweep landing as the agent finishes -- was otherwise never
+    seen, and the loop went on to verify and record against it. That last
+    beat calls no `on_swept`: the turn it would have stopped has already
+    returned. It only decides whether the block ends normally or raises.
     """
     if conn is None or run_id is None:
         yield
@@ -150,35 +157,9 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
                if row[1] == "main"]
     stop = threading.Event()
     swept = []  # the ended row's (outcome, reason), set once by the beat
-
-    def beat():
-        try:
-            own = store.open(path)
-        except Exception as e:  # noqa: BLE001 - best effort; never the run's
-            print(f"[holo2] heartbeat failed: {e}")
-            return
-        try:
-            while not stop.wait(interval_s):
-                try:
-                    if store.heartbeat(own, run_id):
-                        continue
-                    swept.append(_ending_of(own, run_id))
-                except Exception as e:  # noqa: BLE001 - same
-                    print(f"[holo2] heartbeat failed: {e}")
-                    continue
-                # Swept: the run is over. Kill the turn, then stop beating --
-                # there is nothing left to keep alive.
-                if on_swept is not None:
-                    try:
-                        on_swept()
-                    except Exception as e:  # noqa: BLE001 - the raise below
-                        print(f"[holo2] stopping the swept turn failed: {e}")
-                return
-        finally:
-            own.close()
-
-    thread = threading.Thread(target=beat, name=f"heartbeat-run-{run_id}",
-                              daemon=True)
+    thread = threading.Thread(
+        target=_beat, args=(path, run_id, interval_s, stop, swept, on_swept),
+        name=f"heartbeat-run-{run_id}", daemon=True)
     thread.start()
     failure = None
     try:
@@ -188,11 +169,45 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     finally:
         stop.set()
         thread.join()
+    if not swept and not store.heartbeat(conn, run_id):
+        swept.append(_ending_of(conn, run_id))
     if swept:
         outcome, reason = swept[0]
         raise RunSwept(run_id, outcome, reason) from failure
     if failure is not None:
         raise failure
+
+
+def _beat(path, run_id, interval_s, stop, swept, on_swept):
+    """`heartbeat_while()`'s timer thread: beat until `stop`, or until swept.
+
+    Opens its own connection to the store at `path`. A beat that finds the
+    run ended appends the ending to `swept`, calls `on_swept` once, and
+    returns: there is nothing left to keep alive.
+    """
+    try:
+        own = store.open(path)
+    except Exception as e:  # noqa: BLE001 - best effort; never the run's
+        print(f"[holo2] heartbeat failed: {e}")
+        return
+    try:
+        while not stop.wait(interval_s):
+            try:
+                if store.heartbeat(own, run_id):
+                    continue
+                swept.append(_ending_of(own, run_id))
+            except Exception as e:  # noqa: BLE001 - same
+                print(f"[holo2] heartbeat failed: {e}")
+                continue
+            # Swept: the run is over. Kill the turn, then stop beating.
+            if on_swept is not None:
+                try:
+                    on_swept()
+                except Exception as e:  # noqa: BLE001 - the raise follows
+                    print(f"[holo2] stopping the swept turn failed: {e}")
+            return
+    finally:
+        own.close()
 
 
 def _ending_of(conn, run_id):

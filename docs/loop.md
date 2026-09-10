@@ -15,7 +15,8 @@ machines it walks. Back to the [README](index.md).
    first claim the loop runs one read-only sweep of the store. The sweep's
    contract runs the other way too: a run the supervisor's sweep ends while
    the loop is inside a turn is over, and the heartbeat that keeps the run
-   alive notices -- it kills the turn's process group, the loop prints
+   alive notices, whether at a beat mid-turn or at the last check when the
+   turn returns -- it kills the turn's process group, the loop prints
    `run N was ended by the supervisor (REASON); stopping this turn`, writes
    nothing more to that run, leaves the worktree and branch as the sweep
    preserved them, and goes on to its next claim. Then the loop
