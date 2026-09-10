@@ -53,6 +53,7 @@ from holophyte.config import (
 )
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import (
+    GroupKill,
     InfraFailure,
     MergeLockHeld,
     MergeParked,
@@ -66,6 +67,7 @@ from holophyte.reexec import reexec_self
 from holophyte.report import report_lines
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import (
+    RunSwept,
     heartbeat_while,
     open_store,
     record_round,
@@ -271,7 +273,9 @@ def reuse_leftover(target, wt, branch):
 def run_task(target, task, conn=None, run_id=None, provider=None):
     """Run `task` through `_run_stages()`, and stop if the store ended the run.
 
-    The one catch for `store.RunEnded`. The supervisor's `act_on_trip()` --
+    The one catch for `store.RunEnded`, and the one for `RunSwept`, its
+    mid-turn counterpart from `heartbeat_while()` (see the second `except`).
+    The supervisor's `act_on_trip()` --
     or an operator's `--sweep --act` -- fails a run, releases its leases and
     records the outcome while this loop is blocked in an agent call and
     cannot know. When the agent returns, the loop's next `set_phase()` is
@@ -291,6 +295,15 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         print(f"[holo2] run {ended.run_id} was ended by the supervisor"
               f" ({ended.outcome}: {ended.reason}); stopping")
         return ended.outcome == "merged"
+    except RunSwept as swept:
+        # The heartbeat found the run ended mid-turn and killed the turn
+        # (KO-339, run 160): the sweep already released the lease and
+        # recorded the outcome, so there is nothing to write and nothing
+        # to release. `SWEPT` tells `_dispatch()` to skip the close-out and
+        # `main()` to go on to its next claim.
+        print(f"[holo2] run {swept.run_id} was ended by the supervisor"
+              f" ({swept.reason}); stopping this turn")
+        return SWEPT
 
 
 def _run_stages(target, task, conn=None, run_id=None, provider=None):
@@ -776,10 +789,14 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
     worktree. `agent()` kills the whole group before raising, and what
     the turn printed before the kill is kept in the log.
     """
+    # The sweep's hook: a beat that finds the run ended kills the turn's
+    # whole process group, the same kill the budget sends, and the block
+    # raises `RunSwept` for `run_task()` once the turn has stopped.
+    kill = GroupKill()
     try:
-        with heartbeat_while(conn, run_id, beat_s):
+        with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
             return agent(target, "implement", goal, wt,
-                         timeout=budget_min * 60)
+                         timeout=budget_min * 60, on_start=kill.arm)
     except subprocess.TimeoutExpired as expired:
         print(f"[holo2] task exceeded {budget_min} min budget")
         partial = expired.output or ""
@@ -2012,6 +2029,15 @@ def main(target, provider):
                 print(f"[holo2] {task['id']} parked awaiting merge approval;"
                       " continuing to the next ready ticket")
                 continue
+            if merged is SWEPT:
+                # The sweep closed the run out and the loop honoured it by
+                # stopping the turn; the ticket's mirror says what the sweep
+                # left it saying, so it is not offered again this pass, and
+                # a failure the sweep already counted is not counted twice.
+                skip.add(task["id"])
+                print(f"[holo2] {task['id']} was swept mid-turn; continuing"
+                      " to the next ready ticket")
+                continue
             if not merged:
                 # The regenerated window stays uncommitted, like the preserved
                 # branch it describes: a human closes both out. Nonzero so the
@@ -2391,10 +2417,27 @@ class _Parked:
 PARKED = _Parked()
 
 
+class _Swept:
+    """`_dispatch()`'s answer for a run the supervisor ended mid-turn: the
+    heartbeat noticed, the turn was killed, and the sweep's own close-out is
+    the last word on the run. Falsy like a failure, so no caller mistakes it
+    for a merge, and its own object so `main()` can tell it from one."""
+
+    def __bool__(self):
+        return False
+
+    def __repr__(self):
+        return "SWEPT"
+
+
+SWEPT = _Swept()
+
+
 def _dispatch(target, conn, run_id, provider, task, ticket_id):
     """One run of `task` under `run_id`, with its failure accounting and
-    close-out. Returns whether the run merged, or `PARKED` for a run stopped
-    at the gate by `[merge] approve = "human"`.
+    close-out. Returns whether the run merged, `PARKED` for a run stopped
+    at the gate by `[merge] approve = "human"`, or `SWEPT` for a run the
+    supervisor ended mid-turn, whose close-out the sweep already did.
 
     `run_task()` answers with the merge commit's sha when it merged, and
     that sha is what the release stamps on the run; a bare `True` (the
@@ -2426,9 +2469,11 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
         print(f"[holo2] run crashed: {reason}")
         _record_crash(conn, run_id, e, reason)
     finally:
-        if merged is PARKED:
+        if merged is PARKED or merged is SWEPT:
             # Parked, alive, lease released: the run's own outcome is still
             # open, so there is no entry to render and no failure to count.
+            # Swept: ended, released and rendered by the sweep itself, and
+            # the swept run is over -- nothing more is written to it.
             pass
         elif merged:
             release_run(conn, run_id, True,

@@ -17,6 +17,7 @@ import os
 import re
 import signal
 import subprocess
+import threading
 from pathlib import Path
 from time import monotonic, sleep, time
 
@@ -317,9 +318,56 @@ def reap_group(proc, expired):
     return out
 
 
-def run_capped(cmd, cwd, timeout):
+class GroupKill:
+    """A kill of the process group a turn runs in, callable before it starts.
+
+    The hook `heartbeat_while()` fires when the run it is beating for has
+    been ended from outside (`on_swept`), bound to the turn `agent()` is
+    running: `arm()` is handed the turn's `Popen` the moment it starts
+    (`run_capped()`'s `on_start`), and calling the instance kills the whole
+    group the way the timeout does, through `reap_group()`'s `SIGKILL`. The
+    two can arrive in either order -- a sweep that lands before the turn's
+    process exists kills it as soon as `arm()` names it -- and the kill is
+    sent once. `fired` says whether a kill was sent, for the caller's log.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._proc = None
+        self._wanted = False
+        self.fired = False
+
+    def arm(self, proc):
+        with self._lock:
+            self._proc = proc
+            if self._wanted:
+                self._kill()
+
+    def __call__(self):
+        with self._lock:
+            self._wanted = True
+            if self._proc is not None:
+                self._kill()
+
+    def _kill(self):
+        if self.fired:
+            return
+        self.fired = True
+        try:
+            os.killpg(self._proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            self._proc.kill()
+
+
+def run_capped(cmd, cwd, timeout, on_start=None):
     """Run one command under a hard cap. Returns `(returncode, output)`,
     or raises `subprocess.TimeoutExpired` carrying whatever it printed first.
+
+    `on_start`, when given, is called with the `Popen` as soon as the command
+    is running: the handle a caller needs to end the group from outside the
+    wait -- `GroupKill.arm` for a turn the supervisor may sweep mid-way. A
+    group killed that way ends the wait normally, with the signal as the
+    return code and what it printed first as the output.
 
     `cmd` is a shell string (a ticket's verify command, a setup command) or an
     argv list (an agent dispatch, where the prompt is data and must never
@@ -336,6 +384,8 @@ def run_capped(cmd, cwd, timeout):
     with subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=str(cwd),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           text=True, start_new_session=True) as proc:
+        if on_start is not None:
+            on_start(proc)
         try:
             out, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired as expired:
