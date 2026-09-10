@@ -6,7 +6,7 @@ rewrite. Stdlib ``sqlite3`` only.
 
 The API so far is ``open()`` and ``init()`` for the schema,
 ``ensure_project()`` for the repo's projects row, ``claim()``/``release()``
-for the per-project lease, ``mirror_ticket()``/``transition()`` for ticket
+for the per-ticket lease, ``mirror_ticket()``/``transition()`` for ticket
 status, ``pickable()`` for the pickability predicate,
 ``resume()`` for the resume guidance invariant,
 ``findings_fingerprint()``/``findings_overlap()`` for stuck-review
@@ -32,9 +32,9 @@ Conventions, fixed here for every later ticket to follow:
 * **Rows are keyed by a synthetic ``id INTEGER PRIMARY KEY``**, standing in
   for the contract's Convex-shaped ``Id<table>`` references.
 
-Contract source: docs/v2/state-model.md §1-§3, plus the per-project lease
-column from §7. That document is deliberately gitignored, so the sections
-are cited here instead of vendored.
+Contract source: docs/v2/state-model.md §1-§3, plus the lease column from
+§7, which KO-341 moved from the project to the ticket. That document is
+deliberately gitignored, so the sections are cited here instead of vendored.
 """
 from __future__ import annotations
 
@@ -783,11 +783,16 @@ def contract_drift(before, after):
 
 
 def claim(conn, project_id, ticket_id, now=None):
-    """Take the project's lease for a new run on `ticket_id`; return its id.
+    """Take the ticket's lease for a new run on `ticket_id`; return its id.
 
-    One `BEGIN IMMEDIATE` transaction, per state-model §7: assert
-    `projects.activeRunId IS NULL`, insert the `runs` row in phase `claimed`,
-    then point both `projects.activeRunId` and `tickets.activeRunId` at it.
+    One `BEGIN IMMEDIATE` transaction, per state-model §7 as KO-341 narrows
+    it: assert `tickets.activeRunId IS NULL` for the chosen ticket, insert
+    the `runs` row in phase `claimed`, then point `tickets.activeRunId` at
+    it. The lease is per ticket, not per project: two loops on one target
+    each claim a ticket of their own, and only a claim naming a ticket
+    another live run holds is refused. `projects.activeRunId` is neither
+    asserted nor written any more; a store from before this ticket keeps
+    the column and it simply stays null from now on.
 
     IMMEDIATE matters. The lease is a read (is it free?) followed by a write
     (take it), and a deferred transaction takes no write lock until the write,
@@ -816,17 +821,19 @@ def claim(conn, project_id, ticket_id, now=None):
         now = int(time.time() * 1000)
     conn.execute("BEGIN IMMEDIATE")
     try:
-        # A project row that does not exist matches nothing here and fails a
-        # moment later on the runs.projectId foreign key: an unknown project is
-        # a malformed claim, not a lease conflict, and reads better as one.
+        # A ticket row that does not exist matches nothing here and is
+        # refused a moment later by the ownership check below: an unknown
+        # ticket is a malformed claim, not a lease conflict, and reads
+        # better as one. The refusal names the ticket by its identifier,
+        # which is what the loop's line and the operator's `--sweep` use.
         held = conn.execute(
-            "SELECT activeRunId FROM projects"
+            "SELECT activeRunId, linearIdentifier FROM tickets"
             " WHERE id = ? AND activeRunId IS NOT NULL",
-            (project_id,),
+            (ticket_id,),
         ).fetchone()
         if held is not None:
             raise ClaimConflict(
-                f"project {project_id}: lease already held by run {held[0]}"
+                f"ticket {held[1]}: lease already held by run {held[0]}"
             )
         (prior,) = conn.execute(
             "SELECT COUNT(*) FROM runs WHERE ticketId = ?", (ticket_id,)
@@ -851,12 +858,8 @@ def claim(conn, project_id, ticket_id, now=None):
             (ticket_id, project_id, prior + 1, now, now, estimate, snapshot,
              socket.gethostname()),
         ).lastrowid
-        conn.execute(
-            "UPDATE projects SET activeRunId = ? WHERE id = ?",
-            (run_id, project_id),
-        )
         # Scoped by projectId as well as id: claiming another project's ticket
-        # would otherwise hand out this project's lease for work it does not
+        # would otherwise open a run of this project on work it does not
         # own. Zero rows updated means exactly that, and is refused.
         updated = conn.execute(
             "UPDATE tickets SET activeRunId = ? WHERE id = ? AND projectId = ?",
@@ -1143,17 +1146,17 @@ OUTCOME_CLASSES = frozenset({"work", "infra"})
 
 def release(conn, run_id, outcome, reason=None, now=None,
             outcome_class="work", merge_sha=None):
-    """End run `run_id` with `outcome` and give the project's lease back.
+    """End run `run_id` with `outcome` and give the ticket's lease back.
 
     The mirror of `claim()`, and the reason a crashed loop does not brick the
-    queue: `projects.activeRunId` is the lease, so a run that ends without
-    clearing it blocks every later claim on that project forever. Callers
+    ticket: `tickets.activeRunId` is the lease, so a run that ends without
+    clearing it blocks every later claim on that ticket forever. Callers
     therefore release on failure paths too, not only on the happy one.
 
     One `BEGIN IMMEDIATE`, for the same read-then-write reason `claim()` takes
     it: stamp `endedAt`/`outcome`/`outcomeReason` and the terminal phase
-    `TERMINAL_PHASES` gives for the outcome, then clear both `activeRunId`
-    fields, moving the ticket's pointer to `lastRunId` so the finished run is
+    `TERMINAL_PHASES` gives for the outcome, then clear the ticket's
+    `activeRunId`, moving its pointer to `lastRunId` so the finished run is
     still reachable from the ticket.
 
     Through `_transaction()` rather than a `BEGIN` of its own, so a caller
@@ -1215,12 +1218,12 @@ def release(conn, run_id, outcome, reason=None, now=None,
         now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
-            "SELECT ticketId, projectId, endedAt, phase FROM runs WHERE id = ?",
+            "SELECT ticketId, endedAt, phase FROM runs WHERE id = ?",
             (run_id,),
         ).fetchone()
         if row is None:
             raise ValueError(f"no run {run_id}")
-        ticket_id, project_id, ended_at, phase = row
+        ticket_id, ended_at, phase = row
         if ended_at is not None and phase in ENDED_PHASES:
             # Already over. Returning leaves the block having written nothing
             # rather than re-stamping an ending over the real one; an owned
@@ -1258,11 +1261,6 @@ def release(conn, run_id, outcome, reason=None, now=None,
              run_id, run_id),
         )
         conn.execute(
-            "UPDATE projects SET activeRunId = NULL"
-            " WHERE id = ? AND activeRunId = ?",
-            (project_id, run_id),
-        )
-        conn.execute(
             "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
             " WHERE id = ? AND activeRunId = ?",
             (run_id, ticket_id, run_id),
@@ -1271,7 +1269,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
 
 def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
          now=None, approved_sha=None):
-    """Park the live run `run_id` in `phase` and give its leases back.
+    """Park the live run `run_id` in `phase` and give its lease back.
 
     `[merge] approve = "human"`: the reviewer approved and the pre-merge
     verify passed, and a person now has to say "merge". The run is not over
@@ -1281,9 +1279,9 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
     for as long as the run waits, which is what the acceptance criterion and
     `/attention` read. What it shares with `release()` is the lease half,
     written the same way and in the same transaction as the phase move:
-    `projects.activeRunId` is cleared so the loop can claim the next ticket,
-    and the ticket's pointer moves from `activeRunId` to `lastRunId` so the
-    parked run stays reachable from its ticket exactly as an ended one is.
+    the ticket's pointer moves from `activeRunId` to `lastRunId`, so the
+    ticket is free to be claimed again and the parked run stays reachable
+    from it exactly as an ended one is.
 
     `candidate_sha` is the full sha of the candidate the park is about --
     the one the reviewer approved and the pre-merge verify passed -- stored
@@ -1312,11 +1310,11 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
         now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
-            "SELECT ticketId, projectId FROM runs WHERE id = ?", (run_id,),
+            "SELECT ticketId FROM runs WHERE id = ?", (run_id,),
         ).fetchone()
         if row is None:
             raise ValueError(f"no run {run_id}")
-        ticket_id, project_id = row
+        (ticket_id,) = row
         # `set_phase()` is what refuses an ended run, with `RunEnded`.
         set_phase(conn, run_id, phase, note=note, now=now)
         if candidate_sha is not None:
@@ -1328,11 +1326,6 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
         if approved_sha is not None:
             conn.execute("UPDATE runs SET approvedSha = ? WHERE id = ?",
                          (approved_sha, run_id))
-        conn.execute(
-            "UPDATE projects SET activeRunId = NULL"
-            " WHERE id = ? AND activeRunId = ?",
-            (project_id, run_id),
-        )
         conn.execute(
             "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
             " WHERE id = ? AND activeRunId = ?",

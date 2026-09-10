@@ -1,10 +1,10 @@
 """Claim-lease contract for the v2 store (docs/v2/state-model.md §7).
 
-v0 is single-threaded, enforced as a per-project lease: claiming is one
-transaction that asserts `projects.activeRunId IS NULL` and records the new
-run. These tests read the tables back with their own SQL rather than through
-store helpers, so the oracle is the stored state, not the module's own view
-of it.
+The lease is per ticket (KO-341): claiming is one transaction that asserts
+`tickets.activeRunId IS NULL` for the chosen ticket and records the new run;
+`projects.activeRunId` is left alone. These tests read the tables back with
+their own SQL rather than through store helpers, so the oracle is the stored
+state, not the module's own view of it.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
@@ -65,74 +65,66 @@ class ClaimLeaseTests(unittest.TestCase):
             ).fetchone()[0],
         )
 
-    def test_claim_records_a_claimed_run_and_takes_both_leases(self):
+    def test_claim_records_a_claimed_run_and_takes_the_tickets_lease(self):
         run_id = store.claim(self.conn, self.project_id, self.ticket_id, now=1700)
 
         self.assertEqual(
             self.runs(),
             [(run_id, self.ticket_id, self.project_id, 1, "claimed", 1700, 1700)],
         )
-        self.assertEqual(self.leases(), (run_id, run_id))
+        # The ticket carries the run; the project column is not the lease
+        # any more and stays null.
+        self.assertEqual(self.leases(), (None, run_id))
 
-    def test_a_second_claim_loses_and_mutates_nothing(self):
+    def test_a_second_claim_on_the_same_ticket_loses_and_mutates_nothing(self):
         run_id = store.claim(self.conn, self.project_id, self.ticket_id)
-        other_ticket = self.add_ticket("iss_2", "HOL-2")
-        self.conn.commit()
         before = self.runs()
 
         with self.assertRaises(store.ClaimConflict):
-            store.claim(self.conn, self.project_id, other_ticket)
+            store.claim(self.conn, self.project_id, self.ticket_id)
 
         # No orphan run row, and the incumbent still holds the lease.
         self.assertEqual(self.runs(), before)
-        self.assertEqual(self.leases(), (run_id, run_id))
-        self.assertIsNone(
-            self.conn.execute(
-                "SELECT activeRunId FROM tickets WHERE id = ?", (other_ticket,)
-            ).fetchone()[0]
-        )
+        self.assertEqual(self.leases(), (None, run_id))
 
-    def test_concurrent_claims_produce_exactly_one_winner(self):
+    def test_concurrent_claims_on_one_ticket_produce_exactly_one_winner(self):
         # Each thread needs its own connection; sqlite3 connections are not
-        # shared across threads. The barrier makes them collide on purpose.
-        tickets = [self.ticket_id, self.add_ticket("iss_2", "HOL-2")]
-        self.conn.commit()
-        start = threading.Barrier(len(tickets))
+        # shared across threads. The barrier makes them collide on purpose,
+        # both naming the same ticket: that is the one race the lease is for.
+        claimers = 2
+        start = threading.Barrier(claimers)
         outcomes = {}
 
-        def claim(ticket_id):
+        def claim(n):
             conn = store.open(self.path)
             try:
                 start.wait()
-                outcomes[ticket_id] = store.claim(conn, self.project_id, ticket_id)
+                outcomes[n] = store.claim(conn, self.project_id, self.ticket_id)
             except Exception as exc:  # noqa: BLE001 - the loser's error is the assertion
-                outcomes[ticket_id] = exc
+                outcomes[n] = exc
             finally:
                 conn.close()
 
-        threads = [threading.Thread(target=claim, args=(t,)) for t in tickets]
+        threads = [threading.Thread(target=claim, args=(n,)) for n in range(claimers)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join(timeout=30)
 
-        self.assertEqual(len(outcomes), len(tickets), "a claim thread never finished")
-        winners = [t for t, out in outcomes.items() if not isinstance(out, Exception)]
+        self.assertEqual(len(outcomes), claimers, "a claim thread never finished")
+        winners = [out for out in outcomes.values() if not isinstance(out, Exception)]
         losers = [out for out in outcomes.values() if isinstance(out, Exception)]
         self.assertEqual(len(winners), 1, outcomes)
         # The loser lost on the lease, not on a lock timeout: serializing the
         # claim is the point, and "database is locked" would not be that.
         self.assertIsInstance(losers[0], store.ClaimConflict)
         self.assertEqual(len(self.runs()), 1)
-        self.assertEqual(self.leases()[0], outcomes[winners[0]])
+        self.assertEqual(self.leases()[1], winners[0])
 
     def test_attempt_counts_the_tickets_prior_runs(self):
         first = store.claim(self.conn, self.project_id, self.ticket_id)
         # Stand in for the run ending: the lease is released, the ticket is
         # free again. Releasing is a later ticket's API.
-        self.conn.execute(
-            "UPDATE projects SET activeRunId = NULL WHERE id = ?", (self.project_id,)
-        )
         self.conn.execute(
             "UPDATE tickets SET activeRunId = NULL WHERE id = ?", (self.ticket_id,)
         )
@@ -230,8 +222,8 @@ class ContractSnapshotTests(unittest.TestCase):
 
 class ParkTests(ClaimLeaseTests):
     """`park()`: the write behind `[merge] approve = "human"`. The run
-    stays alive in the parked phase; the leases come back as `release()`
-    gives them back; so the next claim on the project succeeds."""
+    stays alive in the parked phase; the ticket's lease comes back as
+    `release()` gives it back; so the ticket can be claimed again."""
 
     def test_park_frees_the_leases_but_does_not_end_the_run(self):
         run_id = store.claim(self.conn, self.project_id, self.ticket_id, now=1700)
@@ -249,10 +241,9 @@ class ParkTests(ClaimLeaseTests):
         self.assertEqual(
             self.conn.execute("SELECT lastRunId FROM tickets").fetchone(),
             (run_id,))
-        other = self.add_ticket("iss_2", "HOL-2")
-        self.conn.commit()
         self.assertEqual(
-            store.claim(self.conn, self.project_id, other, now=2000), run_id + 1)
+            store.claim(self.conn, self.project_id, self.ticket_id, now=2000),
+            run_id + 1)
 
     def test_park_refuses_an_ended_run_and_a_phase_that_is_not_a_park(self):
         run_id = store.claim(self.conn, self.project_id, self.ticket_id, now=1700)

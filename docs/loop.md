@@ -6,7 +6,12 @@ machines it walks. Back to the [README](index.md).
 ## The loop
 
 1. Claim the first ready ticket — non-terminal and unblocked (Linear
-   `blocks` relations are the only machine-checked dependencies). Before the
+   `blocks` relations are the only machine-checked dependencies). The lease
+   is per ticket, not per project: the claim asserts that the ticket has no
+   active run and points its `activeRunId` at the new one, so two loops on
+   one target each work a ticket of their own, and a ticket another live
+   run holds is skipped in one line (`ticket KO-n: lease already held by
+   run N`) for the next candidate rather than stopping the loop. Before the
    first claim the loop runs one read-only sweep of the store and then
    reconciles its mirror: every open mirrored ticket without an active run
    that Linear now holds completed or canceled is walked to `merged` or
