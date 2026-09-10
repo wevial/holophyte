@@ -82,8 +82,11 @@ with the command, the exit code or the timeout, and the last lines it printed --
 a typo or a stale CLI is found here, not by a failed implement turn later. The
 default route is not probed this way, and neither is the reviewer. The probe
 runs when a pass starts: the daemon has no config-write route, so an edited
-`implementer` is proved at the next `factory.py` start, and a route that
-lets a client write `config.toml` inherits the duty to re-probe on that key.
+`implementer` is proved at the next `factory.py` start. A route that lets a
+client write `config.toml` inherits the duty to re-probe on that key and to
+report the result beside the write -- and, because the probe executes whatever
+command the key names, must sit behind the same opt-in and token as
+`POST /actions/NAME`, never the read token alone.
 
 `review_model` and `review_effort` choose what runs inside the hardened
 container when neither review role is overridden by a command. Both reach the
