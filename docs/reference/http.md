@@ -334,6 +334,32 @@ to `needs_spec`, so the queue is on the board before the loop starts on
 it; a ticket the loop could not claim (Backlog, closed, blocked in Linear)
 is not.
 
+## `GET /tickets/KO-n`
+
+One mirrored ticket by its Linear identifier, body included: what the
+console shows when the operator opens a ticket without leaving for Linear.
+
+```json
+{"ticket": "KO-n", "title": "…", "status": "in_flight",
+ "body": "# The store mirrors a ticket's body…\n\n## Summary\n…",
+ "acceptance_criteria": ["Given …, when …, then …"],
+ "verification_commands": ["ruff check ."],
+ "time_box_ms": 1800000, "run": 52, "mirrored_ms": 1788449000000}
+```
+
+`ticket` is the identifier as the store mirrors it; `status` is the
+store's status, any of the seven including `merged` and `abandoned`;
+`body` is the issue text the loop last read at claim time, served as the
+text Linear held then and not rendered, so it is the exact contract the
+run worked from, which Linear's current text may no longer be (empty for
+a ticket mirrored before the store kept bodies); `acceptance_criteria`
+and `verification_commands` are the lists the mirror parsed from it;
+`run` is the ticket's active run, null when none is working it;
+`mirrored_ms` is when the store last mirrored the ticket. An identifier
+the store has never mirrored is 404 with an empty object, like an absent
+run. The endpoint reads the store's mirror and nothing more; it never
+calls the provider.
+
 ## `GET /peers`
 
 Where the other daemons are, so the page can fan out from whichever
@@ -413,7 +439,7 @@ and touches no store. Every other method but GET stays 405.
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}` |
 | 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
-| 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
+| 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET and OPTIONS; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | the target has no store yet |

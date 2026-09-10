@@ -622,6 +622,75 @@ class ConsoleTests(ServeTestCase):
                 self.assertNotIn("a file named", self.raw_body)
 
 
+class TicketTests(ServeTestCase):
+    """`/tickets/KO-n`: one mirrored ticket with its body; 404 for one the
+    store never mirrored; behind the token like `/board`."""
+
+    BODY = "# A ticket\n\n## Summary\n\nThe body the loop read at claim.\n"
+
+    def seed_ticket(self):
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.ensure_project(conn, "team-1", self.target)
+            ticket = store.mirror_ticket(
+                conn, project, linear_issue_id="issue-7",
+                linear_identifier="KO-7", title="ticket 7",
+                acceptance_criteria=["Given KO-7, then it is worked"],
+                verification_commands=["echo ok"], time_box_ms=25 * MIN,
+                body=self.BODY, now=self.now - 5 * MIN)
+            store.transition(conn, ticket, "in_flight")
+            self.run = store.claim(conn, project, ticket, now=self.now - 2 * MIN)
+        finally:
+            conn.close()
+
+    def test_a_mirrored_ticket_answers_its_nine_fields_and_body(self):
+        self.seed_ticket()
+        self.start()
+
+        code, headers, body = self.request("GET", "/tickets/KO-7")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body, {
+            "ticket": "KO-7", "title": "ticket 7", "status": "in_flight",
+            "body": self.BODY,
+            "acceptance_criteria": ["Given KO-7, then it is worked"],
+            "verification_commands": ["echo ok"],
+            "time_box_ms": 25 * MIN, "run": self.run,
+            "mirrored_ms": self.now - 5 * MIN})
+
+    def test_an_identifier_never_mirrored_is_404_with_an_empty_object(self):
+        self.seed_ticket()
+        self.start()
+
+        code, headers, body = self.request("GET", "/tickets/KO-9999")
+
+        self.assertEqual(code, 404)
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(body, {})
+
+    def test_the_route_is_behind_the_token_like_the_board(self):
+        self.seed_ticket()
+        token = self.root / "serve.token"
+        token.write_text(TokenTests.TOKEN + "\n")
+        token.chmod(0o600)
+        self.start(f'[serve]\ntoken_file = "{token}"\n', host="0.0.0.0")
+
+        with patch.object(store.read, "open_readonly") as opened:
+            code, _, body = self.request("GET", "/tickets/KO-7")
+        self.assertEqual(code, 401)
+        self.assertEqual(body, {})
+        opened.assert_not_called()
+        code, _, _ = self.request("GET", "/board")
+        self.assertEqual(code, 401)
+
+        code, _, body = self.request("GET", "/tickets/KO-7", TokenTests.BEARER)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["body"], self.BODY)
+
+
 class AttentionTests(ServeTestCase):
     """`/attention`: the four item kinds, their order, the window, the level."""
 

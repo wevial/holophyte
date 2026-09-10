@@ -182,6 +182,48 @@ def open_tickets(conn, project_id=None):
             for row in rows]
 
 
+@dataclass(frozen=True)
+class MirroredTicket:
+    """One ticket as the store mirrors it, body included: what `/tickets/KO-n`
+    answers. `activeRunId` is the live run's id, None when none is working
+    it; the two lists are decoded from their JSON columns."""
+
+    id: int
+    linearIdentifier: str
+    title: str
+    status: str
+    body: str
+    acceptanceCriteria: tuple[str, ...]
+    verificationCommands: tuple[str, ...]
+    timeBoxMs: int | None
+    activeRunId: int | None
+    mirroredAt: int
+
+
+def ticket_by_identifier(conn, identifier):
+    """The mirrored ticket named `identifier` (e.g. "KO-328"), or None when
+    the store has never mirrored one by that name.
+
+    The `serve` daemon's `/tickets/KO-n` read (KO-328): the store's mirror
+    and nothing more, so the body is the one the loop last read at claim,
+    not whatever Linear holds now. Any status, terminal ones included -- a
+    merged ticket's contract is still worth reading.
+    """
+    row = conn.execute(
+        "SELECT id, linearIdentifier, title, status, body,"
+        " acceptanceCriteria, verificationCommands, timeBoxMs, activeRunId,"
+        " mirroredAt FROM tickets WHERE linearIdentifier = ?",
+        (identifier,)).fetchone()
+    if row is None:
+        return None
+    return MirroredTicket(id=row[0], linearIdentifier=row[1], title=row[2],
+                          status=row[3], body=row[4],
+                          acceptanceCriteria=tuple(json.loads(row[5])),
+                          verificationCommands=tuple(json.loads(row[6])),
+                          timeBoxMs=row[7], activeRunId=row[8],
+                          mirroredAt=row[9])
+
+
 # --- runs --------------------------------------------------------------------
 
 
