@@ -48,6 +48,22 @@ ENV PATH=/usr/local/go/bin:$PATH \
     TMPDIR=/home/reviewer/tmp \
     GOTMPDIR=/home/reviewer/tmp
 
+# Ruff is pinned to one release so `ruff check .`, a verify command on
+# every factory ticket, runs inside the container instead of being reported
+# as missing. The tarball's SHA-256 is the release's published checksum; a
+# mismatch fails the build.
+ARG RUFF_VERSION=0.16.5
+ARG RUFF_SHA256=65b8bae7e43f12a91b71036a52176012b3aefb725d5ae263e2771474110a0983
+RUN set -eu \
+    && curl -fsSL -o /tmp/ruff.tar.gz \
+        "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
+    && echo "${RUFF_SHA256}  /tmp/ruff.tar.gz" | sha256sum -c - \
+    && mkdir -p /opt/ruff/bin \
+    && tar -C /opt/ruff/bin --strip-components=1 -xzf /tmp/ruff.tar.gz \
+    && chmod 0755 /opt/ruff/bin/ruff \
+    && rm /tmp/ruff.tar.gz
+ENV PATH=/opt/ruff/bin:$PATH
+
 RUN mkdir -p /home/reviewer /workspace \
     && chmod 0755 /home/reviewer /workspace
 
