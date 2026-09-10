@@ -183,3 +183,48 @@ test("the band hands each row its own daemon: the fixture's status without actio
   });
   expect(seen.map((request) => request.url)).toEqual([`${BASE}/actions/restart-supervisor`]);
 });
+
+test("a pr_open row reads PR, shows the reason with the PR link, and its one action opens the URL in a new tab", () => {
+  const url = "https://github.com/o/r/pull/2170";
+  const item: AttentionItem = {
+    kind: "pr_open",
+    level: "attention",
+    ticket: "REL-120",
+    run: 60,
+    pr_url: url,
+    reason: "review requested from a coworker\n1. src/x.py:3 by @coworker",
+    asked_ms: allKinds.status.now - 600000,
+  };
+  const opened: unknown[][] = [];
+  const realOpen = window.open;
+  window.open = ((...args: unknown[]) => {
+    opened.push(args);
+    return null;
+  }) as typeof window.open;
+  try {
+    render(
+      <ul>
+        <AttentionRow
+          kind={item.kind}
+          project="writer"
+          description={describe(item, thresholds, { now: allKinds.status.now })}
+          prUrl={item.pr_url}
+          daemon={{ base: BASE, actions: false, fetch: fakeFetch({}).fetchImpl }}
+        />
+      </ul>,
+    );
+    const [row] = screen.getAllByRole("listitem");
+    expect(row!.querySelector("[data-kind]")!.textContent).toBe("PR");
+    expect(within(row!).getByText(/^review requested from a coworker/).textContent).not.toContain("PR open:");
+    const link = within(row!).getByText("PR #2170") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe(url);
+    expect(within(row!).getByText(/^run #60 · parked at \d\d:\d\d$/)).toBeTruthy();
+    const buttons = within(row!).getAllByRole("button") as HTMLButtonElement[];
+    expect(buttons.map((b) => b.textContent)).toEqual(["Open PR"]);
+    expect(buttons[0]!.disabled).toBe(false);
+    fireEvent.click(buttons[0]!);
+    expect(opened).toEqual([[url, "_blank", "noopener,noreferrer"]]);
+  } finally {
+    window.open = realOpen;
+  }
+});

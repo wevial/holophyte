@@ -45,6 +45,6 @@ test("newer-daemon fields show only when present", () => {
 test("the fixture's oldest item is the failure that ended two hours ago, and counts are one per kind", () => {
   const { items, now } = allKinds.attention;
   expect(oldest(items, now)).toEqual({ ageMs: 7200000, ticket: "KO-229" });
-  expect(countsByKind(items)).toEqual({ all: 4, blocked: 1, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
+  expect(countsByKind(items)).toEqual({ all: 4, blocked: 1, pr_open: 0, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
   expect(oldest([{ kind: "blocked", level: "attention", ticket: "KO-1", question: "?" }], now)).toBeNull();
 });

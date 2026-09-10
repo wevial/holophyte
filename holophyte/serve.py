@@ -284,11 +284,36 @@ def supervisor_view(target, beat, now, knobs):
             "host": host_label(target, beat.host)}
 
 
+PR_OPEN_PREFIX = "PR open:"
+
+
+def parked_item(ticket):
+    """One `blocked_on_operator` ticket as an `/attention` item. A ticket
+    whose run has a `prUrl` and whose question opens with `PR open:` -- the
+    line `_park_on_pr()` writes first -- is `pr_open`: the run waits on a
+    review or a merge, not on an answer, so the item carries the URL and
+    the `reason` (the question with that first line removed). Every other
+    ticket is `blocked` with its `question`."""
+    question = ticket.blockedQuestion or ""
+    if ticket.prUrl and question.startswith(PR_OPEN_PREFIX):
+        _, _, reason = question.partition("\n")
+        return {"kind": "pr_open", "ticket": ticket.linearIdentifier,
+                "run": ticket.runId, "pr_url": ticket.prUrl,
+                "reason": reason, "asked_ms": ticket.askedMs,
+                "level": "attention"}
+    return {"kind": "blocked", "ticket": ticket.linearIdentifier,
+            "question": ticket.blockedQuestion,
+            "run": ticket.runId, "asked_ms": ticket.askedMs,
+            "pr_url": ticket.prUrl, "level": "attention"}
+
+
 def attention(target, now=None):
     """The `/attention` answer: `(http status, JSON-able body)`.
 
     `items` is what needs the operator, in the order they should read it:
-    every ticket parked `blocked_on_operator` with its question; every live
+    every ticket parked `blocked_on_operator` with its question, as
+    `pr_open` when the park is a pull request waiting on a review or a
+    merge (`parked_item()`); every live
     run whose heartbeat age exceeds `heartbeat_stale_ms`; every run that
     ended `failed` within `FAILED_WINDOW_MS` and whose ticket is still
     `in_flight` (a requeue walks it to `ready`, a later attempt merges it,
@@ -317,11 +342,7 @@ def attention(target, now=None):
     finally:
         conn.close()
     knobs = sweep_config(target)
-    items = [{"kind": "blocked", "ticket": ticket.linearIdentifier,
-              "question": ticket.blockedQuestion, "run": ticket.runId,
-              "asked_ms": ticket.askedMs, "pr_url": ticket.prUrl,
-              "level": "attention"}
-             for ticket in blocked]
+    items = [parked_item(ticket) for ticket in blocked]
     for run in runs:
         age = now - run.lastHeartbeat
         if age > knobs.heartbeat_stale_ms:

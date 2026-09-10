@@ -805,6 +805,51 @@ class AttentionTests(ServeTestCase):
         for item in body["items"]:
             self.assertEqual(item["level"], "attention", item)
 
+    def test_a_park_on_a_pull_request_is_pr_open_and_a_question_stays_blocked(self):
+        """KO-8 is parked with a plain question and no PR; KO-10 is parked
+        the way `_park_on_pr()` parks: `runs.prUrl` set and the ticket
+        asking `PR open: URL` with the reason under it. Only KO-10 is
+        `pr_open`, its `reason` the question without that first line."""
+        self.seed_attention()
+        url = "https://github.com/example/repo/pull/2170"
+        conn = store.open(str(self.db))
+        try:
+            project = store.ensure_project(conn, "team-1", self.target)
+            parked = store.mirror_ticket(
+                conn, project, linear_issue_id="issue-KO-10",
+                linear_identifier="KO-10", title="ticket KO-10",
+                acceptance_criteria=["Given KO-10, then it is worked"],
+                verification_commands=["echo ok"], time_box_ms=25 * MIN)
+            store.transition(conn, parked, "in_flight")
+            run = store.claim(conn, project, parked, now=self.now - 5 * MIN)
+            store.set_phase(conn, run, "working", now=self.now - 5 * MIN)
+            store.heartbeat(conn, run, now=self.now - 2 * MIN)
+            store.transition(conn, parked, "blocked_on_operator")
+            conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                         (f"PR open: {url}\nreview requested from a coworker"
+                          "\n1. src/x.py:3 by @coworker", parked))
+            conn.commit()
+            store.park(conn, run, "awaiting_merge_approval", "PR open",
+                       candidate_sha="a" * 40, pr_url=url,
+                       now=self.now - 2 * MIN)
+        finally:
+            conn.close()
+        self.start()
+
+        _, _, body = self.request("GET", "/attention")
+
+        by_ticket = {item["ticket"]: item for item in body["items"]
+                     if item["kind"] in ("blocked", "pr_open")}
+        self.assertEqual(by_ticket["KO-8"]["kind"], "blocked")
+        self.assertEqual(by_ticket["KO-8"]["question"],
+                         "Which branch is canonical?")
+        self.assertEqual(by_ticket["KO-10"], {
+            "kind": "pr_open", "ticket": "KO-10", "run": run, "pr_url": url,
+            "reason": "review requested from a coworker"
+                      "\n1. src/x.py:3 by @coworker",
+            "asked_ms": self.now - 2 * MIN, "level": "attention"})
+        self.assertEqual(body["level"], "attention")
+
     def test_the_body_names_the_target_as_status_does(self):
         self.seed_attention()
         self.start()

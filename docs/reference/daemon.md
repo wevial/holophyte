@@ -76,6 +76,16 @@ A `ticket` the store never mirrored, or one the store refuses to requeue
 body that is not a JSON object, or one with no `ticket`, is 400 naming it.
 A target with no store is 503.
 
+## What a `pr_open` item's action is not
+
+`/attention` ([HTTP endpoints](http.md#get-attention)) sends a run parked
+on its pull request as kind `pr_open`, with the PR's URL and the reason it
+parked. The console's one action on it, "Open PR", opens that URL in a
+new tab and posts nothing: the pull request waits on a review or a merge
+by a person, and the daemon has no route for either. An "Approve" route
+belongs to a later ticket; `--approve KO-n` on the writer host merges a
+parked candidate today.
+
 ## Errors
 
 | Status | When |
