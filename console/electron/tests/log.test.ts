@@ -75,6 +75,13 @@ describe("consoleLine", () => {
     expect(line).not.toContain("?");
   });
 
+  test("a path containing parentheses still loses its query string", () => {
+    const line = consoleLine("Request failed: https://writer:7710/runs(active)?token=SECRET", "", 0);
+    expect(line).toContain("https://writer:7710/runs(active)");
+    expect(line).not.toContain("SECRET");
+    expect(line).not.toContain("?");
+  });
+
   test("a source that is not a URL is kept as-is", () => {
     expect(consoleLine("boom", "", 0)).toContain("boom");
   });
