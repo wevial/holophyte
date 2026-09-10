@@ -40,6 +40,7 @@ from holophyte.board import (
     failure_history,
     foreign_lease_holders,
     is_strike_question,
+    lease_holders,
     lease_host,
     lease_label,
     ledger,
@@ -50,7 +51,6 @@ from holophyte.board import (
     mirror_task,
     release_lease_label,
     release_run,
-    stale_lease_labels,
     store_status,
 )
 from holophyte.config import (
@@ -2977,12 +2977,12 @@ def _admit_ticket(target, conn, project, provider, task, seen):
                    seen)
         return None
     # The board's lease (KO-351): another writer's store is not readable
-    # from here, but its `holo:HOST:RUN` label is, and a ticket carrying one
+    # from here, but its `holo:HOST` label is, and a ticket carrying one
     # is that writer's for as long as the label stays. Asked after the
     # store's own lease so a ticket this store holds reads as the store
-    # lease it is. This writer's own labels are not asked about here: the
-    # store just said no live run holds the ticket, so any are stale, and
-    # `_lease_on_board()` takes them off once the store lease is held.
+    # lease it is. This writer's own label is not asked about here: the
+    # store just said no live run holds the ticket, so one is stale, and
+    # `_lease_on_board()` takes it off once the store lease is held.
     others = foreign_lease_holders(task.get("labels"), lease_host(target))
     if others:
         print(f"[holo2] {task['id']} is leased by {others[0]} on the board;"
@@ -3063,36 +3063,40 @@ def _refuse_claim(conn, task, run_id, reason):
 
 def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
     """The board half of the claim (KO-351), under the store lease run
-    `run_id` just took: add this run's label, read the issue's labels back,
-    decide. Returns True when the claim stands, `HELD` when another writer
-    holds the ticket, None when the loop must stop.
+    `run_id` just took: take off a stale label of this writer's, add the
+    label, read the issue's labels back, decide. Returns True when the
+    claim stands, `HELD` when another writer holds the ticket, None when
+    the loop must stop.
 
     The order is the whole design. The store lease is the atomic one, so
-    it goes first and nothing here touches the board without it; the label
-    names this run, so every removal here -- and every close-out later --
-    takes `holo:HOST:RUN` for this run and never a label another run wrote.
-    Four outcomes:
+    it goes first and nothing here touches the board without it. This
+    writer's own `holo:HOST` label already on the listing is stale -- the
+    store, asked at admission and again by the claim, has no live run
+    behind it: a run that ended with the board down -- and comes off now,
+    under the lease that proves no sibling loop on this store holds the
+    ticket, before the fresh one is written; a board that will not release
+    it leaves a `warning` row, and the add below re-asserts the same name.
+    Then the add and the read-back, four ways:
 
     - The add raises: nothing landed and there is nothing to remove; the
       store lease goes back and the loop stops for a human.
-    - The read-back raises: the add may have landed, so this run's label is
-      taken off best-effort, once, and then the same release and stop.
+    - The read-back raises: the add may have landed, so this writer's
+      label is taken off best-effort, once, and then the same release and
+      stop.
     - The read-back shows another writer's `holo:` label, taken between
       the listing and this write: that writer holds the ticket, whichever
-      add landed first. This run's own label comes off -- only that one --
-      the store lease goes back without a strike, the skip line names the
-      holder, and the loop takes the next ticket. (Two writers reading
+      add landed first. This writer's own label comes off -- only that one
+      -- the store lease goes back without a strike, the skip line names
+      the holder, and the loop takes the next ticket. (Two writers reading
       each other back both yield; the ticket is free again and the next
       pass takes it.)
-    - The read-back shows only this writer's labels: the claim stands. Any
-      of them that is not this run's -- a run that ended with the board
-      down, or a label from before labels carried a run id -- is stale
-      and comes off now, under the lease that proves no live run of this
-      store holds it. A stale label the board will not release stays, with
-      a `warning` row: another writer refuses the ticket on it, and this
-      writer's next claim treats it the same way.
+    - The read-back shows no other writer: the claim stands.
     """
-    issue_id, label = task["issue_id"], lease_label(target, run_id)
+    issue_id, label = task["issue_id"], lease_label(target)
+    if lease_host(target) in lease_holders(task.get("labels")):
+        print(f"[holo2] {task['id']} carries this writer's lease label {label}"
+              " with no live run; removing the stale label and claiming")
+        drop_lease_label(conn, ticket_id, provider, issue_id, label)
     try:
         provider.label_issue(issue_id, label)
     except Exception as e:  # noqa: BLE001 - any board refusal fails the claim
@@ -3104,8 +3108,7 @@ def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
         drop_lease_label(conn, ticket_id, provider, issue_id, label)
         return _refuse_claim(conn, task, run_id, "the board did not take the"
                              f" lease label {label} ({e}); no work started")
-    host = lease_host(target)
-    others = foreign_lease_holders(have, host)
+    others = foreign_lease_holders(have, lease_host(target))
     if others:
         drop_lease_label(conn, ticket_id, provider, issue_id, label)
         store.release(conn, run_id, "failed",
@@ -3114,10 +3117,6 @@ def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
         print(f"[holo2] {task['id']} is leased by {others[0]} on the board;"
               " skipping it")
         return HELD
-    for stale in stale_lease_labels(conn, have, host, run_id):
-        print(f"[holo2] {task['id']} carries this writer's lease label {stale}"
-              " with no live run; removing the stale label and claiming")
-        drop_lease_label(conn, ticket_id, provider, issue_id, stale)
     return True
 
 
@@ -3413,11 +3412,11 @@ def requeue(target, identifier, note, out=None, provider=None):
     `store.requeue()` makes -- and in all of those nothing is written. A
     target with no store has nothing to requeue and says so the same way.
 
-    With a `provider`, the failed run's board lease label comes off too
-    (KO-351): the label naming that run -- `holo:HOST:<run>`, the run the
-    requeue is after -- and no other, taken off before the store's
-    transaction makes the ticket claimable, so a claim that follows finds
-    its own label untouched whatever the order of the two. Best-effort: the
+    With a `provider`, the board lease label comes off too (KO-351): this
+    writer's `holo:HOST`, taken off before the store's transaction makes
+    the ticket claimable, and only while the store names no other live run
+    on the ticket, so a claim that follows finds its own label untouched
+    whatever the order of the two. Best-effort: the
     failed run's close-out should already have removed it, and a board that
     was down then gets one more chance here; one still down leaves a label
     this writer's next claim treats as stale.

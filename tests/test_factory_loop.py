@@ -4197,11 +4197,9 @@ class EndedRunTests(LoopFixture):
 
 
 class BoardLeaseLabelTests(LoopFixture):
-    """The claim's second lease (KO-351): a `holo:HOST:RUN` label on the
+    """The claim's second lease (KO-351): a `holo:HOST` label on the
     issue, which a writer with a store of its own can see where it cannot
-    see this store's `activeRunId`. The run id in the label is what every
-    test below leans on: each removal names one run's label, so no path
-    can take off a lease it does not hold."""
+    see this store's `activeRunId`."""
 
     HOST = "writer-1"
 
@@ -4210,8 +4208,8 @@ class BoardLeaseLabelTests(LoopFixture):
         self.configure('[report]\nhost_label = "writer-1"\n')
 
     @staticmethod
-    def label(run_id, host="writer-1"):
-        return f"holo:{host}:{run_id}"
+    def label(host="writer-1"):
+        return f"holo:{host}"
 
     def labelled(self, provider, labels, *more):
         task = a_task()
@@ -4222,7 +4220,7 @@ class BoardLeaseLabelTests(LoopFixture):
         """A run of this store on KO-131 that ended `failed` -- with the
         board down, so its label is still on the issue -- and, unless told
         otherwise, the requeue that put the ticket back. Returns the run
-        id, for the label the loop must find stale."""
+        id."""
         conn = store.open(str(self.db))
         try:
             project = store.ensure_project(conn, StubProvider.TEAM,
@@ -4238,20 +4236,11 @@ class BoardLeaseLabelTests(LoopFixture):
             conn.close()
         return run_id
 
-    def test_a_lease_label_parses_to_its_host_and_run(self):
-        parse = holophyte.board.parse_lease_label
-        self.assertEqual(parse("holo:writer-1:12"), ("writer-1", 12))
-        self.assertEqual(parse("holo:writer-1"), ("writer-1", None))
-        self.assertEqual(parse("holo:10:3"), ("10", 3))
-        self.assertEqual(parse("holo:10"), ("10", None))
-        self.assertIsNone(parse("other"))
-        self.assertIsNone(parse("holo-writer-1"))
-
     def test_a_claim_labels_before_the_implementer_and_a_merge_unlabels(self):
-        """The label names the run and is on the issue when the
-        implementer's turn begins -- not after it, when a second writer's
-        listing could already have offered the ticket -- and the merge's
-        close-out takes that run's label off."""
+        """The label `holo:writer-1` is on the issue when the implementer's
+        turn begins -- not after it, when a second writer's listing could
+        already have offered the ticket -- and the merge's close-out takes
+        it off."""
         provider = StubProvider(a_task())
         at_implement = []
 
@@ -4265,71 +4254,60 @@ class BoardLeaseLabelTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT id, outcome FROM runs"),
                          [(1, "merged")])
-        self.assertEqual(at_implement, [[self.label(1)]])
+        self.assertEqual(at_implement, [["holo:writer-1"]])
         self.assertEqual(provider.labels["iss-131"], [])
         self.assertEqual(provider.label_calls,
-                         [("label", "iss-131", self.label(1)),
-                          ("unlabel", "iss-131", self.label(1))])
+                         [("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1")])
         # One read-back, between the add and the implementer.
         self.assertEqual(provider.read_calls, ["iss-131"])
 
     def test_a_ticket_another_writer_labelled_is_skipped_and_nothing_is_leased(self):
-        """Another host's label is its lease whether or not it carries a
-        run id: KO-131 under the new shape, KO-132 under the old."""
-        legacy = a_task(2)
-        legacy["labels"] = ["holo:writer-2"]
-        provider = self.labelled(StubProvider, [self.label(7, "writer-2")],
-                                 legacy)
+        provider = self.labelled(StubProvider, [self.label("writer-2")])
 
         out = self.main_output(Commit("never reached"), APPROVE,
                                provider=provider)
 
         self.assertIn("[holo2] KO-131 is leased by writer-2 on the board;"
                       " skipping it", out)
-        self.assertIn("[holo2] KO-132 is leased by writer-2 on the board;"
-                      " skipping it", out)
         self.assertEqual(self.read("SELECT id FROM runs"), [])
         self.assertEqual(self.last_fake.turns, [])
         self.assertEqual(provider.label_calls, [])
         self.assertEqual(provider.read_calls, [])
-        self.assertEqual(provider.labels["iss-131"], [self.label(7, "writer-2")])
-        self.assertEqual(provider.labels["iss-132"], ["holo:writer-2"])
+        self.assertEqual(provider.labels["iss-131"], ["holo:writer-2"])
 
     def test_this_writers_labels_with_no_live_run_are_stale_and_removed(self):
-        """Run 1 ended with the board down and its label stayed; a label
-        from before labels carried a run id stayed too. Neither is a lease:
-        the store has no live run under them, so the claim goes ahead --
-        its own label first, under the store lease, then the stale ones
-        off, each by its exact name."""
-        ended = self.seed_ended_run()
-        provider = self.labelled(StubProvider,
-                                 [self.label(ended), "holo:writer-1"])
+        """Run 1 ended with the board down and its label stayed. It is no
+        lease: the store has no live run under it, so the claim goes ahead
+        -- the stale label off under the store lease, then the fresh one
+        on, then off again at the merge."""
+        self.seed_ended_run()
+        provider = self.labelled(StubProvider, [self.label()])
 
         out = self.main_output(Commit("the scripted work"), APPROVE,
                                provider=provider)
 
-        self.assertIn(f"carries this writer's lease label {self.label(ended)}"
+        self.assertIn("carries this writer's lease label holo:writer-1"
                       " with no live run; removing the stale label and"
                       " claiming", out)
         self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
                          [(1, "failed"), (2, "merged")])
         self.assertEqual(provider.label_calls,
-                         [("label", "iss-131", self.label(2)),
-                          ("unlabel", "iss-131", self.label(ended)),
-                          ("unlabel", "iss-131", "holo:writer-1"),
-                          ("unlabel", "iss-131", self.label(2))])
+                         [("unlabel", "iss-131", "holo:writer-1"),
+                          ("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1")])
         self.assertEqual(provider.labels["iss-131"], [])
         self.assertEqual(self.last_fake.roles, ["implement", "review"])
 
     def test_a_stale_label_seen_by_two_loops_is_touched_only_by_the_claim_holder(self):
         """Two loops on one store admit the same stale label. The one whose
-        `store.claim()` lands writes its own label and takes the stale one
-        off; the other reaches its claim a moment later -- here, at the
-        instant the first is writing its label -- and is refused by the
-        store before it has touched the board. The loser's `_claim_run()`
-        is the real one: the witness is that the provider saw no call from
-        it at all."""
-        ended = self.seed_ended_run()
+        `store.claim()` lands takes the stale one off and writes its own;
+        the other reaches its claim a moment later -- here, at the instant
+        the first is writing its label -- and is refused by the store
+        before it has touched the board. The loser's `_claim_run()` is the
+        real one: the witness is that the provider saw no call from it at
+        all."""
+        self.seed_ended_run()
         db, target, tgt = self.db, self.target, self.tgt
         seen = type("Seen", (), {"trips": (), "watched": ()})()
         competitor = []
@@ -4351,7 +4329,7 @@ class BoardLeaseLabelTests(LoopFixture):
                         conn.close()
                 super().label_issue(issue_id, name)
 
-        provider = self.labelled(Contended, [self.label(ended)])
+        provider = self.labelled(Contended, [self.label()])
         out = self.main_output(Commit("the scripted work"), APPROVE,
                                provider=provider)
 
@@ -4362,40 +4340,64 @@ class BoardLeaseLabelTests(LoopFixture):
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
         # Every board call is the winner's; the loser made none.
         self.assertEqual(provider.label_calls,
-                         [("label", "iss-131", self.label(2)),
-                          ("unlabel", "iss-131", self.label(ended)),
-                          ("unlabel", "iss-131", self.label(2))])
+                         [("unlabel", "iss-131", "holo:writer-1"),
+                          ("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1")])
         self.assertEqual(provider.labels["iss-131"], [])
+
+    def test_a_late_close_out_leaves_the_label_a_fresh_claim_re_asserted(self):
+        """The label names the writer, not the run, so the store decides
+        whether a close-out may take it off: run 1's release, arriving
+        after run 2 has claimed the same ticket and re-asserted the label,
+        finds the store naming run 2 as the live one and leaves the label
+        on; run 2's own release takes it off."""
+        ended = self.seed_ended_run()
+        conn = store.open(str(self.db))
+        try:
+            project = store.ensure_project(conn, StubProvider.TEAM,
+                                           str(self.target))
+            (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
+            live = store.claim(conn, project, ticket_id)
+            conn.commit()
+            provider = StubProvider(a_task())
+            provider.label_issue("iss-131", "holo:writer-1")
+
+            holophyte.board.release_lease_label(self.tgt, conn, ticket_id,
+                                                provider, ended)
+            self.assertEqual(provider.labels["iss-131"], ["holo:writer-1"])
+
+            holophyte.board.release_lease_label(self.tgt, conn, ticket_id,
+                                                provider, live)
+            self.assertEqual(provider.labels["iss-131"], [])
+        finally:
+            conn.close()
 
     def test_a_foreign_label_on_read_back_backs_off_removing_only_our_own_label(self):
         """The admission check reads the listing; the read-back reads the
-        issue as it is. A `holo:writer-2:4` that landed in between is
-        writer-2's lease: this run's own label comes off and nothing else
-        on the issue does -- not writer-2's, not the stale label of an old
-        run of ours beside it -- the store lease goes back without a
+        issue as it is. A `holo:writer-2` that landed in between is
+        writer-2's lease: this writer's own label comes off and nothing
+        else on the issue does, the store lease goes back without a
         strike, no run starts, and the loop moves on to the next ticket."""
         class Raced(StubProvider):
             def label_issue(self, issue_id, name):
                 # writer-2 labels KO-131 after this writer's listing and
                 # before its write; the read-back has it.
                 if issue_id == "iss-131":
-                    self.labels[issue_id].append(
-                        BoardLeaseLabelTests.label(4, "writer-2"))
+                    self.labels[issue_id].append("holo:writer-2")
                 super().label_issue(issue_id, name)
 
-        provider = self.labelled(Raced, [self.label(9)], a_task(2))
+        provider = self.labelled(Raced, ["other"], a_task(2))
         out = self.main_output(Commit("the scripted work"), APPROVE,
                                provider=provider)
 
         self.assertIn("[holo2] KO-131 is leased by writer-2 on the board;"
                       " skipping it", out)
-        self.assertEqual(provider.labels["iss-131"],
-                         [self.label(9), self.label(4, "writer-2")])
+        self.assertEqual(provider.labels["iss-131"], ["other", "holo:writer-2"])
         self.assertEqual(provider.label_calls,
-                         [("label", "iss-131", self.label(1)),
-                          ("unlabel", "iss-131", self.label(1)),
-                          ("label", "iss-132", self.label(2)),
-                          ("unlabel", "iss-132", self.label(2))])
+                         [("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1"),
+                          ("label", "iss-132", "holo:writer-1"),
+                          ("unlabel", "iss-132", "holo:writer-1")])
         self.assertEqual(
             self.read("SELECT t.linearIdentifier, r.outcome, r.outcomeClass"
                       " FROM runs r JOIN tickets t ON t.id = r.ticketId"
@@ -4418,38 +4420,38 @@ class BoardLeaseLabelTests(LoopFixture):
         out = self.main_output(Commit("never reached"), APPROVE,
                                provider=provider)
 
-        self.assertIn(f"did not take the lease label {self.label(1)}", out)
+        self.assertIn("did not take the lease label holo:writer-1", out)
         self.assertEqual(self.last_fake.turns, [])
         self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
                          [("failed", "infra")])
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
-        self.assertEqual(provider.label_calls, [("label", "iss-131", self.label(1))])
+        self.assertEqual(provider.label_calls,
+                         [("label", "iss-131", "holo:writer-1")])
         self.assertEqual(provider.read_calls, [])
         self.assertEqual(self.branches(), ["main"])
 
     def test_a_read_back_the_board_refuses_ends_with_our_label_off_and_no_lease(self):
         """The add landed and the read-back raised. The store lease goes
-        back as before; this run's label goes with it -- and only this
-        run's: a stale label of an old run beside it is not touched, since
-        the read-back that would have proven it stale never answered."""
+        back as before; this writer's label goes with it -- and only that
+        one: the issue's other labels are not touched."""
         class HalfTaken(StubProvider):
             def issue_labels(self, issue_id):
                 self.read_calls.append(issue_id)
                 raise RuntimeError("linear timed out on the read-back")
 
-        provider = self.labelled(HalfTaken, [self.label(9)])
+        provider = self.labelled(HalfTaken, ["other"])
         out = self.main_output(Commit("never reached"), APPROVE,
                                provider=provider)
 
-        self.assertIn(f"did not take the lease label {self.label(1)}", out)
+        self.assertIn("did not take the lease label holo:writer-1", out)
         self.assertEqual(self.last_fake.turns, [])
         self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
                          [("failed", "infra")])
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
-        self.assertEqual(provider.labels["iss-131"], [self.label(9)])
+        self.assertEqual(provider.labels["iss-131"], ["other"])
         self.assertEqual(provider.label_calls,
-                         [("label", "iss-131", self.label(1)),
-                          ("unlabel", "iss-131", self.label(1))])
+                         [("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1")])
 
     def test_a_read_back_failure_tries_the_removal_once_and_still_releases(self):
         """The board is down for the read-back and for the removal that
@@ -4468,9 +4470,9 @@ class BoardLeaseLabelTests(LoopFixture):
         self.main_output(Commit("never reached"), APPROVE, provider=provider)
 
         self.assertEqual(provider.label_calls,
-                         [("label", "iss-131", self.label(1)),
-                          ("unlabel", "iss-131", self.label(1))])
-        self.assertEqual(provider.labels["iss-131"], [self.label(1)])
+                         [("label", "iss-131", "holo:writer-1"),
+                          ("unlabel", "iss-131", "holo:writer-1")])
+        self.assertEqual(provider.labels["iss-131"], ["holo:writer-1"])
         self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
                          [("failed", "infra")])
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
@@ -4478,18 +4480,16 @@ class BoardLeaseLabelTests(LoopFixture):
             self.read("SELECT COUNT(*) FROM runEvents WHERE kind = 'warning'"
                       " AND summary LIKE '%could not be removed%'"), [(1,)])
 
-    def test_a_requeue_takes_off_the_failed_runs_label_and_no_other(self):
-        """`--requeue KO-131` removes the label of the run it requeues --
-        run 1's, the one whose close-out the board missed -- and nothing
-        else, while the ticket is still `in_flight` and no loop can claim
-        it. A fresh claim's label landing at that very moment (the
-        interleaving an earlier `--requeue` lost a live lease to) is left
-        exactly where it is."""
+    def test_a_requeue_takes_off_the_label_before_the_ticket_is_claimable(self):
+        """`--requeue KO-131` removes this writer's label -- run 1's, the
+        one whose close-out the board missed -- while the ticket is still
+        `in_flight` and no loop can claim it, so a fresh claim's label can
+        never be the one it takes off; nothing else on the issue moves."""
         ended = self.seed_ended_run(requeue=False)
         db = self.db
         status_at_removal = []
 
-        class Racing(StubProvider):
+        class Watched(StubProvider):
             def unlabel_issue(self, issue_id, name):
                 conn = store.open(str(db))
                 try:
@@ -4498,10 +4498,9 @@ class BoardLeaseLabelTests(LoopFixture):
                         (issue_id,)).fetchone()[0])
                 finally:
                     conn.close()
-                self.labels[issue_id].append(BoardLeaseLabelTests.label(2))
                 super().unlabel_issue(issue_id, name)
 
-        provider = self.labelled(Racing, [self.label(ended)])
+        provider = self.labelled(Watched, ["other", self.label()])
         out = io.StringIO()
         holophyte.loop.requeue(self.tgt, "KO-131", "board back", out,
                                provider=provider)
@@ -4511,8 +4510,8 @@ class BoardLeaseLabelTests(LoopFixture):
         self.assertEqual(status_at_removal, ["in_flight"])
         self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
         self.assertEqual(provider.label_calls,
-                         [("unlabel", "iss-131", self.label(ended))])
-        self.assertEqual(provider.labels["iss-131"], [self.label(2)])
+                         [("unlabel", "iss-131", "holo:writer-1")])
+        self.assertEqual(provider.labels["iss-131"], ["other"])
 
 # A scripted `WAIT` "exit" that is the timer tick instead: no child exited
 # before the deadline (KO-353).

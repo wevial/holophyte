@@ -14,34 +14,34 @@ machines it walks. Back to the [README](index.md).
    run N`) for the next candidate rather than stopping the loop. The store
    lease is one writer's: a second writer host has a store of its own and
    cannot see it, so the claim leases the ticket on the board too. Once the
-   store lease is taken the issue gets the label `holo:HOST:RUN`, where
-   `HOST` is this writer's `[report] host_label` (its hostname without one)
-   and `RUN` the store run id the claim opened -- `holo:writer-1:12` -- and
-   the team label is created on first use. The order is fixed: the store
-   lease first, since it is the atomic one; then the label; then the
-   issue's labels read back, because Linear has no compare-and-swap and the
-   write is additive (`addedLabelIds`, never the whole label list). A ready
-   issue carrying another writer's `holo:` label is skipped at admission in
-   one line (`KO-n is leased by HOST on the board; skipping it`) and
-   nothing is leased in the store; another writer's label the read-back
-   shows instead, taken between the listing and the write, backs the claim
-   off the same way: this run's own label comes off, the store lease goes
-   back as an `infra` failure, no strike, and the loop takes the next
-   ticket with the same skip line. The run id is what makes every removal
-   safe. Each close-out -- a merge, a failure, a park for a human, a sweep
-   -- and `--requeue` take off the one label naming the run that ended,
-   `holo:HOST:RUN`, and never another run's; a label naming this writer
-   with no live run under it in this store (a run that ended with the
-   board down, or a label from before labels carried a run id) is stale,
-   and comes off only once this loop's store lease is held, so two loops
-   admitting the same stale label cannot strip the one the faster of them
-   has just written. A label the board will not take fails the claim as an
-   `infra` failure and gives the store lease straight back with nothing to
-   remove; a read-back the board will not answer takes this run's label
-   off once, best-effort, and fails the claim the same way -- so a run
-   never starts unlabelled, and a label never outlives its run unseen.
-   `--requeue` takes the failed run's label off before the ticket is
-   claimable again. Before the
+   store lease is taken the issue gets the label `holo:HOST`, where `HOST`
+   is this writer's `[report] host_label` (its hostname without one) --
+   `holo:writer-1` -- and the team label is created on first use. The
+   order is fixed: the store lease first, since it is the atomic one; then
+   the label; then the issue's labels read back, because Linear has no
+   compare-and-swap and the write is additive (`addedLabelIds`, never the
+   whole label list). A ready issue carrying another writer's `holo:`
+   label is skipped at admission in one line (`KO-n is leased by HOST on
+   the board; skipping it`) and nothing is leased in the store; another
+   writer's label the read-back shows instead, taken between the listing
+   and the write, backs the claim off the same way: this writer's own
+   label comes off, the store lease goes back as an `infra` failure, no
+   strike, and the loop takes the next ticket with the same skip line. A
+   ready issue carrying this writer's own label with no live run under it
+   in this store (a run that ended with the board down) is a stale lease a
+   close-out never took off: the claim goes ahead, the stale label is
+   removed and the fresh one written, both only once this loop's store
+   lease is held, so two loops admitting the same stale label cannot strip
+   the one the faster of them has just written. Each close-out -- a merge,
+   a failure, a park for a human, a sweep -- and `--requeue` take the
+   label off, and only while the store names no other live run on the
+   ticket, so a close-out that runs late cannot strip the label a fresh
+   claim has since re-asserted. A label the board will not take fails the
+   claim as an `infra` failure and gives the store lease straight back
+   with nothing to remove; a read-back the board will not answer takes
+   the label off once, best-effort, and fails the claim the same way --
+   so a run never starts unlabelled. `--requeue` takes the label off
+   before the ticket is claimable again. Before the
    first claim the loop runs one read-only sweep of the store. The sweep's
    contract runs the other way too: a run the supervisor's sweep ends while
    the loop is inside a turn is over, and the heartbeat that keeps the run
