@@ -31,15 +31,16 @@ import store.read
 from holophyte import pr, shepherd
 from holophyte.agents import agent, agent_route
 from holophyte.board import (
-    LEASE_LABEL_PREFIX,
     MAX_FAILED_RUNS,
     block_ticket,
     body_problem,
     close_out_failure,
+    drop_lease_label,
     escalate,
     failure_history,
+    foreign_lease_holders,
     is_strike_question,
-    lease_holders,
+    lease_host,
     lease_label,
     ledger,
     merge_drift,
@@ -49,6 +50,7 @@ from holophyte.board import (
     mirror_task,
     release_lease_label,
     release_run,
+    stale_lease_labels,
     store_status,
 )
 from holophyte.config import (
@@ -92,7 +94,6 @@ from holophyte.supervisor import (
     sweep_lines,
 )
 from holophyte.target import worktree_path
-from provider import LeaseHeld
 
 # The paths a run works against, plus the config they carry, are a `Target`
 # (below): built once by `cli()` from the command line and passed to every
@@ -2771,12 +2772,13 @@ def _admit_ticket(target, conn, project, provider, task, seen):
                    seen)
         return None
     # The board's lease (KO-351): another writer's store is not readable
-    # from here, but its `holo:HOST` label is, and a ticket carrying one is
-    # that writer's for as long as the label stays. Asked after the store's
-    # own lease so a ticket this store holds reads as the store lease it is.
-    mine = lease_label(target)
-    others = [host for host in lease_holders(task)
-              if f"{LEASE_LABEL_PREFIX}{host}" != mine]
+    # from here, but its `holo:HOST:RUN` label is, and a ticket carrying one
+    # is that writer's for as long as the label stays. Asked after the
+    # store's own lease so a ticket this store holds reads as the store
+    # lease it is. This writer's own labels are not asked about here: the
+    # store just said no live run holds the ticket, so any are stale, and
+    # `_lease_on_board()` takes them off once the store lease is held.
+    others = foreign_lease_holders(task.get("labels"), lease_host(target))
     if others:
         print(f"[holo2] {task['id']} is leased by {others[0]} on the board;"
               " skipping it")
@@ -2823,23 +2825,7 @@ def _admit_ticket(target, conn, project, provider, task, seen):
               f" not claimable ({verdict.reason}); skipping it")
         mirror_push(conn, ticket_id, provider)
         return None
-    # This writer's own label with no live run behind it -- the checks
-    # above found none -- is a lease a close-out never took off (a board
-    # that was down at the time). It is admitted here and taken off in
-    # `_claim_run()`, under this loop's store lease: removed before the
-    # claim, two loops admitting the same stale label would let the slower
-    # one strip the label the faster one had just claimed and re-asserted.
     return ticket_id
-
-
-def _drop_stale_label(task, label, provider):
-    """Remove this writer's stale lease label from `task`'s issue, or raise
-    what the board raised. Called only under the store lease, so the label
-    coming off is this loop's own stale one, never a live run's; the
-    claim's own label write follows and puts a fresh one on."""
-    print(f"[holo2] {task['id']} carries this writer's lease label {label}"
-          " with no live run; removing the stale label and claiming")
-    provider.unlabel_issue(task["issue_id"], label)
 
 
 class _Held:
@@ -2860,11 +2846,81 @@ def _skip_held(refusal, seen):
               " last signs of life")
 
 
+def _refuse_claim(conn, task, run_id, reason):
+    """Give the store lease of a run the board would not lease back --
+    `infra`, no work started, no strike -- and say the loop stops."""
+    refused = InfraFailure(reason)
+    store.release(conn, run_id, "failed", str(refused),
+                  outcome_class=outcome_class_of(refused))
+    print(f"[holo2] {task['id']}: {refused}; stopping for a human")
+    return None
+
+
+def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
+    """The board half of the claim (KO-351), under the store lease run
+    `run_id` just took: add this run's label, read the issue's labels back,
+    decide. Returns True when the claim stands, `HELD` when another writer
+    holds the ticket, None when the loop must stop.
+
+    The order is the whole design. The store lease is the atomic one, so
+    it goes first and nothing here touches the board without it; the label
+    names this run, so every removal here -- and every close-out later --
+    takes `holo:HOST:RUN` for this run and never a label another run wrote.
+    Four outcomes:
+
+    - The add raises: nothing landed and there is nothing to remove; the
+      store lease goes back and the loop stops for a human.
+    - The read-back raises: the add may have landed, so this run's label is
+      taken off best-effort, once, and then the same release and stop.
+    - The read-back shows another writer's `holo:` label, taken between
+      the listing and this write: that writer holds the ticket, whichever
+      add landed first. This run's own label comes off -- only that one --
+      the store lease goes back without a strike, the skip line names the
+      holder, and the loop takes the next ticket. (Two writers reading
+      each other back both yield; the ticket is free again and the next
+      pass takes it.)
+    - The read-back shows only this writer's labels: the claim stands. Any
+      of them that is not this run's -- a run that ended with the board
+      down, or a label from before labels carried a run id -- is stale
+      and comes off now, under the lease that proves no live run of this
+      store holds it. A stale label the board will not release stays, with
+      a `warning` row: another writer refuses the ticket on it, and this
+      writer's next claim treats it the same way.
+    """
+    issue_id, label = task["issue_id"], lease_label(target, run_id)
+    try:
+        provider.label_issue(issue_id, label)
+    except Exception as e:  # noqa: BLE001 - any board refusal fails the claim
+        return _refuse_claim(conn, task, run_id, "the board did not take the"
+                             f" lease label {label} ({e}); no work started")
+    try:
+        have = provider.issue_labels(issue_id)
+    except Exception as e:  # noqa: BLE001 - the add may have landed
+        drop_lease_label(conn, ticket_id, provider, issue_id, label)
+        return _refuse_claim(conn, task, run_id, "the board did not take the"
+                             f" lease label {label} ({e}); no work started")
+    host = lease_host(target)
+    others = foreign_lease_holders(have, host)
+    if others:
+        drop_lease_label(conn, ticket_id, provider, issue_id, label)
+        store.release(conn, run_id, "failed",
+                      f"the board showed {others[0]}'s lease label at claim;"
+                      " no work started", outcome_class="infra")
+        print(f"[holo2] {task['id']} is leased by {others[0]} on the board;"
+              " skipping it")
+        return HELD
+    for stale in stale_lease_labels(conn, have, host, run_id):
+        print(f"[holo2] {task['id']} carries this writer's lease label {stale}"
+              " with no live run; removing the stale label and claiming")
+        drop_lease_label(conn, ticket_id, provider, issue_id, stale)
+    return True
+
+
 def _claim_run(target, conn, project, provider, task, ticket_id, seen):
     """The lease, the board's lease label and the `ready -> in_flight`
-    move. Returns the claimed run id, `HELD` when another run took the
-    ticket first, or None when the loop must stop rather than start a
-    run."""
+    move. Returns the claimed run id, `HELD` when another run or another
+    writer took the ticket first, or None when the loop must stop rather
+    than start a run."""
     try:
         run_id = store.claim(conn, project, ticket_id)
     except store.ClaimConflict as e:
@@ -2874,49 +2930,11 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
         # holder on a different ticket is the design, not a conflict.
         _skip_held(str(e), seen)
         return HELD
-    # The board half of the lease (KO-351), right after the store half and
-    # before the run is anything another writer could collide with: the
-    # `holo:HOST` label is what a writer with a store of its own refuses
-    # the ticket on. A label the board will not take fails the claim --
-    # the lease goes straight back, an `infra` failure like the refused
-    # move below -- because a run no other writer can see holding the
-    # ticket is the double claim the label exists to prevent.
-    label = lease_label(target)
-    try:
-        # Admission let through a label naming this writer only, with no
-        # live run under it: stale, and this loop now holds the lease that
-        # says so. Off first, then the fresh label; a board refusing either
-        # write fails the claim below.
-        if lease_holders(task):
-            _drop_stale_label(task, label, provider)
-        provider.label_issue(task["issue_id"], label)
-    except LeaseHeld as e:
-        # The admission read was a listing; the write reads the issue as it
-        # is now, and another writer's label taken in between is that
-        # writer's lease. The same answer as a store lease lost in the
-        # race above: give the run back -- `infra`, the factory racing
-        # itself, not a strike against the ticket -- and take the next
-        # ticket, with the same line admission prints for a lease it saw.
-        store.release(conn, run_id, "failed",
-                      f"the board showed {e.holder}'s lease label at claim;"
-                      " no work started", outcome_class="infra")
-        print(f"[holo2] {task['id']} is leased by {e.holder} on the board;"
-              " skipping it")
-        return HELD
-    except Exception as e:  # noqa: BLE001 - any board refusal fails the claim
-        refused = InfraFailure(f"the board did not take the lease label"
-                               f" {label} ({e}); no work started")
-        store.release(conn, run_id, "failed", str(refused),
-                      outcome_class=outcome_class_of(refused))
-        # The write is add-then-read-back, so a refusal can arrive after
-        # the add landed: the label is on the board with no run behind it,
-        # and every other writer refuses the ticket on it. Take it off
-        # best-effort, as every other release of the store lease does; a
-        # board that is still down leaves the `warning` row and a stale
-        # label this writer's next claim pass treats as stale.
-        release_lease_label(target, conn, ticket_id, provider)
-        print(f"[holo2] {task['id']}: {refused}; stopping for a human")
-        return None
+    # The board half of the lease, right after the store half and before
+    # the run is anything another writer could collide with.
+    leased = _lease_on_board(target, conn, provider, task, ticket_id, run_id)
+    if leased is not True:
+        return leased
     # §3's `ready -> in_flight`, and the first thing the board is told
     # about this run: the claim is the moment the ticket starts being
     # worked, and the projection replaces the state call the provider
@@ -2943,7 +2961,7 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
                                " was claimed; no work started")
         store.release(conn, run_id, "failed", str(refused),
                       outcome_class=outcome_class_of(refused))
-        release_lease_label(target, conn, ticket_id, provider)
+        release_lease_label(target, conn, ticket_id, provider, run_id)
         # This refusal is a failed run, but an `infra` one: no work
         # started, so it says nothing about the ticket and does not
         # count towards parking it. The threshold is still checked
@@ -3090,7 +3108,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
             # open, so there is no entry to render and no failure to count.
             # The board lease goes with the store lease `store.park()` gave
             # back: a parked ticket is a human's, not this writer's.
-            release_lease_label(target, conn, ticket_id, provider)
+            release_lease_label(target, conn, ticket_id, provider, run_id)
         elif merged is SWEPT:
             # Swept: ended, released, unlabelled and rendered by the sweep
             # itself, and the swept run is over -- nothing more is written
@@ -3104,7 +3122,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
             # branch is preserved for a human and the board should go
             # on saying the work is open, so there is nothing to push.
             mirror_status(conn, ticket_id, "merged", provider)
-            release_lease_label(target, conn, ticket_id, provider)
+            release_lease_label(target, conn, ticket_id, provider, run_id)
             # Close-out, and the first moment the run's own outcome is
             # a row: the window is regenerated here rather than inside
             # `run_task()` so the entry that ends the run is in it.
@@ -3190,24 +3208,43 @@ def requeue(target, identifier, note, out=None, provider=None):
     `store.requeue()` makes -- and in all of those nothing is written. A
     target with no store has nothing to requeue and says so the same way.
 
-    With a `provider`, the requeued ticket's board lease label comes off
-    too (KO-351), best-effort and after the store's transaction: the failed
-    run's close-out should already have removed it, and a board that was
-    down then gets one more chance before the ticket is offered again.
+    With a `provider`, the failed run's board lease label comes off too
+    (KO-351): the label naming that run -- `holo:HOST:<run>`, the run the
+    requeue is after -- and no other, taken off before the store's
+    transaction makes the ticket claimable, so a claim that follows finds
+    its own label untouched whatever the order of the two. Best-effort: the
+    failed run's close-out should already have removed it, and a board that
+    was down then gets one more chance here; one still down leaves a label
+    this writer's next claim treats as stale.
     """
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
+        failed_run = _requeue_candidate(conn, ticket_id)
+        if failed_run is not None:
+            release_lease_label(target, conn, ticket_id, provider, failed_run)
         try:
             run_id = store.requeue(conn, ticket_id, note)
         except (store.RequeueRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} requeued after run {run_id}", file=out)
-        release_lease_label(target, conn, ticket_id, provider)
     finally:
         conn.close()
 
+
+def _requeue_candidate(conn, ticket_id):
+    """The failed run `store.requeue()` would requeue `ticket_id` after, or
+    None when it would refuse: a read of the same rows, made first so the
+    run's lease label can come off while the ticket is still `in_flight`.
+    `store.requeue()` re-reaches the verdict inside its own transaction."""
+    ticket = store.read.ticket_by_id(conn, ticket_id)
+    if ticket is None or ticket.activeRunId is not None \
+            or ticket.status != "in_flight" or ticket.lastRunId is None:
+        return None
+    row = conn.execute("SELECT outcome FROM runs WHERE id = ?",
+                       (ticket.lastRunId,)).fetchone()
+    return ticket.lastRunId if row and row[0] == "failed" else None
 
 def approve(target, identifier, note, out=None):
     """Release the ticket `identifier` parked for merge approval. Returns

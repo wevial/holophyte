@@ -3,7 +3,8 @@
 `factory.py` never names a board. It is handed a `Provider` and drives it
 through its members -- `team`, `claim_next()`, `ready_issues()`,
 `fetch_task()`, `set_state()`, `comment()`, `closed_identifiers()`,
-`label_issue()` and `unlabel_issue()` -- so which board a loop runs against is
+`label_issue()`, `issue_labels()` and `unlabel_issue()` -- so which board a
+loop runs against is
 the caller's choice (`factory.cli()` builds a `LinearProvider`), not a module
 import. Two boards
 ship here: `LinearProvider`, which wraps the functions `linear_provider.py`
@@ -68,11 +69,6 @@ from typing import Protocol
 
 import ticket_template
 
-# The lease refusal both boards raise from `label_issue()` (KO-351), owned
-# by the Linear module so it imports standalone; re-exported here as the
-# seam's name for it.
-from linear_provider import LeaseHeld, competing_lease
-
 # The same fence `linear_provider.parse_task()` reads, so a body parsed by
 # either board yields the same `verify`.
 VERIFY_RE = re.compile(r"## Verify command\(s\)\s*```\n(.*?)```", re.S)
@@ -126,11 +122,15 @@ class Provider(Protocol):
 
     def label_issue(self, issue_id, name) -> None:
         """Add the label `name` to the ticket, creating the label on first
-        use; a ticket already carrying it is left as it is. Raise when the
-        board did not take it: the loop gives the store lease back then.
-        A `prefix:` label is a lease, exclusive per prefix: when the ticket
-        already carries another holder's label under `name`'s prefix, raise
-        `LeaseHeld` naming that holder and write nothing."""
+        use; a ticket already carrying it is left as it is, and no other
+        label is touched. Raise when the board did not take it: the loop
+        gives the store lease back then."""
+        ...
+
+    def issue_labels(self, issue_id) -> list[str]:
+        """The names of the ticket's labels as the board holds them now --
+        the read-back a lease write is judged by (KO-351). Raise when the
+        board cannot be asked."""
         ...
 
     def unlabel_issue(self, issue_id, name) -> None:
@@ -190,6 +190,9 @@ class LinearProvider:
     def label_issue(self, issue_id, name):
         self._linear().label_issue(issue_id, name, self._team)
 
+    def issue_labels(self, issue_id):
+        return self._linear().issue_labels(issue_id)
+
     def unlabel_issue(self, issue_id, name):
         self._linear().unlabel_issue(issue_id, name)
 
@@ -245,12 +248,13 @@ class FileProvider:
         if not str(name).strip():
             raise RuntimeError(f"refused to label {issue_id} with an empty name")
         have = self._labels(issue_id)
-        holder = competing_lease(have, name)
-        if holder is not None:
-            raise LeaseHeld(issue_id, name, holder)
         if name not in have:
             self._path(issue_id, ".labels").write_text(
                 "".join(f"{label}\n" for label in [*have, name]))
+
+    def issue_labels(self, issue_id):
+        self._require(issue_id)
+        return self._labels(issue_id)
 
     def unlabel_issue(self, issue_id, name):
         self._require(issue_id)

@@ -30,51 +30,117 @@ from holophyte.findings import refresh_findings
 from holophyte.report import host_label
 from holophyte.runs import warn_on_run
 
-# The prefix of the board lease label (KO-351): `holo:` and the writer's
-# `[report] host_label`, so the ready column says which writer holds a ticket
+# The prefix of the board lease label (KO-351): `holo:HOST:RUN`, the writer's
+# `[report] host_label` and the store run id the claim opened, so the ready
+# column says which writer holds a ticket -- and under which of its runs --
 # where the store lease, private to one writer's store, cannot.
 LEASE_LABEL_PREFIX = "holo:"
 
 
-def lease_label(target):
-    """This writer's board lease label: `holo:` plus `[report] host_label`,
-    or plus the hostname when the target sets no label -- a writer without
-    a label still has to hold its tickets against another writer, and the
+def lease_host(target):
+    """The host half of this writer's lease labels: `[report] host_label`,
+    or the hostname when the target sets no label -- a writer without a
+    label still has to hold its tickets against another writer, and the
     hostname is the name the store already records for its runs."""
-    return LEASE_LABEL_PREFIX + host_label(target, socket.gethostname())
+    return host_label(target, socket.gethostname())
 
 
-def lease_holders(task):
-    """The hosts whose `holo:` labels the task carries, in board order;
-    [] for a task without one (a board that does not label, or a task
+def lease_label(target, run_id):
+    """The label run `run_id` of this writer holds a ticket under:
+    `holo:HOST:RUN`. The run id is what makes every removal safe: a
+    close-out, a requeue or a claim backing off takes this exact label and
+    no other, so no path can strip a lease a different run holds."""
+    return f"{LEASE_LABEL_PREFIX}{lease_host(target)}:{run_id}"
+
+
+def parse_lease_label(label):
+    """`(host, run_id)` for a `holo:` label, `run_id` None for a label with
+    no run id -- the shape from before labels carried one; None for any
+    other label. `holo:writer-1:12` is `("writer-1", 12)`; `holo:writer-1`
+    is `("writer-1", None)`. A trailing `:N` is the run id only when a host
+    precedes it, so a host label that is all digits stays a host."""
+    label = str(label)
+    if not label.startswith(LEASE_LABEL_PREFIX):
+        return None
+    rest = label[len(LEASE_LABEL_PREFIX):]
+    host, colon, tail = rest.rpartition(":")
+    if colon and host and tail.isdigit():
+        return host, int(tail)
+    return rest, None
+
+
+def lease_holders(labels):
+    """`[(label, host, run_id)]` for every `holo:` label in `labels`, in
+    board order; [] without one (a board that does not label, or a task
     dict older than the key)."""
-    return [label[len(LEASE_LABEL_PREFIX):]
-            for label in (task.get("labels") or [])
-            if label.startswith(LEASE_LABEL_PREFIX)]
+    found = []
+    for label in labels or []:
+        parsed = parse_lease_label(label)
+        if parsed is not None:
+            found.append((label, *parsed))
+    return found
 
 
-def release_lease_label(target, conn, ticket_id, provider):
-    """Take this writer's lease label off the ticket's issue; never raise.
+def foreign_lease_holders(labels, host):
+    """The hosts other than `host` holding a `holo:` lease in `labels`, in
+    board order. A label with no run id is another writer's lease all the
+    same when its host is not ours."""
+    return [holder for _, holder, _ in lease_holders(labels) if holder != host]
+
+
+def stale_lease_labels(conn, labels, host, run_id):
+    """This writer's own `holo:` labels in `labels`, other than run
+    `run_id`'s, that no live run in this store stands behind: a run that
+    has ended, one this store never had, or a label with no run id. Asked
+    only under run `run_id`'s store lease (`_claim_run()`), which is what
+    makes the answer safe to act on -- no sibling loop on this store can
+    hold the ticket while this one does."""
+    stale = []
+    for label, holder, held_by in lease_holders(labels):
+        if holder != host or held_by == run_id:
+            continue
+        if held_by is None or not _run_is_live(conn, held_by):
+            stale.append(label)
+    return stale
+
+
+def _run_is_live(conn, run_id):
+    row = conn.execute("SELECT endedAt FROM runs WHERE id = ?",
+                       (run_id,)).fetchone()
+    return row is not None and row[0] is None
+
+
+def drop_lease_label(conn, ticket_id, provider, issue_id, label):
+    """Take exactly `label` off `issue_id`, once; never raise. A board that
+    refuses leaves a `warning` row naming the label another writer will
+    refuse the ticket on, and this writer's next claim treats as stale."""
+    try:
+        provider.unlabel_issue(issue_id, label)
+    except Exception as e:  # noqa: BLE001 - best-effort board write
+        warn(conn, ticket_id, f"the lease label {label} could not be removed"
+                              f" from {issue_id} ({e}); another writer will"
+                              " refuse the ticket until it is")
+
+
+def release_lease_label(target, conn, ticket_id, provider, run_id):
+    """Take run `run_id`'s lease label -- that one, and no other -- off the
+    ticket's issue; never raise.
 
     The board half of every close-out that gives the store lease back -- a
-    merge, a failure, a park, a sweep, a requeue -- so a label never outlives
-    the lease it mirrors. Best-effort like `mirror_push()`: a board that is
-    down leaves a stale label another writer will refuse, which is the
-    failure the lease is for, and a `warning` row says which label did not
-    come off. A storeless or boardless caller has nothing to release.
+    merge, a failure, a park, a sweep, a requeue -- so a label never
+    outlives the run it names. Naming the run is the point: a close-out
+    that ran late, or a requeue of a run long over, can only ever remove
+    the label of the run it is closing, never one a fresh claim has since
+    written. Best-effort like `mirror_push()`; a storeless or boardless
+    caller has nothing to release.
     """
     if conn is None or provider is None:
         return
     ticket = store.read.ticket_by_id(conn, ticket_id)
     if ticket is None:
         return
-    label = lease_label(target)
-    try:
-        provider.unlabel_issue(ticket.linearIssueId, label)
-    except Exception as e:  # noqa: BLE001 - best-effort board write
-        warn(conn, ticket_id, f"the lease label {label} could not be removed"
-                              f" from {ticket.linearIdentifier} ({e}); another"
-                              " writer will refuse the ticket until it is")
+    drop_lease_label(conn, ticket_id, provider, ticket.linearIssueId,
+                     lease_label(target, run_id))
 
 
 def mirror_key(task):
@@ -614,7 +680,7 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
     escalate(conn, ticket_id, provider)
     # The board lease goes with the store lease, in the same close-out
     # (KO-351); outside the lock for the reason the escalation is.
-    release_lease_label(target, conn, ticket_id, provider)
+    release_lease_label(target, conn, ticket_id, provider, run_id)
     if refresh:
         refresh_findings(target, conn)
     return True

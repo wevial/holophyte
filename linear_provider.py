@@ -261,41 +261,6 @@ def set_state(issue_id, state_name, team):
             f"Linear refused to move issue {issue_id} to {state_name!r}")
 
 
-class LeaseHeld(RuntimeError):
-    """`label_issue()`'s refusal when the ticket already carries another
-    holder's label under the same `prefix:` (KO-351): the board showed the
-    lease being taken *after* the caller's listing, so the caller's own
-    label was not written. `holder` is the other label's suffix -- the
-    writer's host label -- for the caller's skip line."""
-
-    def __init__(self, issue_id, name, holder):
-        super().__init__(f"issue {issue_id} already carries the lease label"
-                         f" {lease_prefix(name)}{holder}, not {name}")
-        self.holder = holder
-
-
-def lease_prefix(name):
-    """The `prefix:` of a lease label, `holo:` for `holo:writer-1`; None for
-    a label without a colon, which is an ordinary label and excludes
-    nothing."""
-    head, colon, _ = str(name).partition(":")
-    return head + colon if colon else None
-
-
-def competing_lease(have, name):
-    """The holder named by a label in `have` that shares `name`'s `prefix:`
-    but not its suffix, or None. Read against the ticket's labels *as the
-    board holds them at the write*, not the listing: the lease another
-    writer took between the two is exactly what this catches."""
-    prefix = lease_prefix(name)
-    if prefix is None:
-        return None
-    for label in have:
-        if label != name and str(label).startswith(prefix):
-            return label[len(prefix):]
-    return None
-
-
 def label_names(issue):
     """The names of `issue`'s labels as the ready query lists them; [] when
     the query did not ask for them."""
@@ -362,42 +327,23 @@ def label_issue(issue_id, name, team):
 
     The board half of a claim (KO-351): the loop calls it after the store
     lease so a second writer with a store of its own sees, in the ready
-    column, that this one holds the ticket. Idempotent -- an issue already
-    carrying the label is left as it is -- and it raises when Linear
-    refuses, so the caller can give the store lease back rather than start
-    a run no other writer can see.
-
-    Linear has no compare-and-swap on labels, so the lease is taken in
-    three steps that stay correct under any interleaving of two writers:
-
-    1. Read. A label under the same `prefix:` naming another holder --
-       another writer's `holo:` lease, taken after the caller's listing --
-       raises `LeaseHeld` and writes nothing.
-    2. Add, with `addedLabelIds`, never the whole-list `labelIds`: two
-       writers whose reads both saw nothing both land, and the ticket then
-       carries both labels rather than only the last writer's.
-    3. Read back. A competitor's label beside this writer's own means the
-       race was real; this writer takes its own label off and raises
-       `LeaseHeld`, so at most one of the two starts. The winner is the
-       writer whose read-back saw only itself, which is the one whose add
-       landed before the other's -- and the loser's label was never in a
-       position to be mistaken for a lease, since a writer that read back
-       clean already holds the ticket and the other reads back both.
-       Both can yield when the adds land within one read of each other;
-       the ticket is then free again and the next claim pass takes it.
+    column, that this one holds the ticket. Additive -- `addedLabelIds`,
+    never the whole-list `labelIds`, so a write built from a moment-old
+    read cannot drop a label another writer or a human attached in between
+    -- and it raises when Linear refuses, so the caller can give the store
+    lease back rather than start a run no other writer can see. Linear has
+    no compare-and-swap on labels: the write decides nothing by itself, and
+    the caller reads the issue back (`issue_labels()`) to learn whether
+    another writer's lease landed beside its own.
     """
-    have = _label_ids_of(issue_id)
-    holder = competing_lease(have, name)
-    if holder is not None:
-        raise LeaseHeld(issue_id, name, holder)
-    if name in have:
-        return
-    label_id = _label_id(name, team)
-    _add_label(issue_id, label_id, f"add the label {name!r}")
-    holder = competing_lease(_label_ids_of(issue_id), name)
-    if holder is not None:
-        _remove_label(issue_id, label_id, f"take back the label {name!r}")
-        raise LeaseHeld(issue_id, name, holder)
+    _add_label(issue_id, _label_id(name, team), f"add the label {name!r}")
+
+
+def issue_labels(issue_id):
+    """The names of the issue's labels as Linear holds them now: the
+    read-back a lease write is judged by (KO-351). Raises when Linear
+    cannot be asked, or has no such issue."""
+    return list(_label_ids_of(issue_id))
 
 
 def unlabel_issue(issue_id, name):

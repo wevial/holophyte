@@ -326,10 +326,11 @@ from `/runs/N/ledger`, so nothing is lost but the projection. A
 deleted. `--report` prints the mode in effect below the table.
 
 `host_label` also names this writer's board lease: the claim labels the
-Linear issue `holo:` plus the label (`holo:writer-1` above) for as long as
-the run holds the ticket, and another writer skips a ready issue carrying a
-`holo:` label that is not its own ([the loop](loop.md), step 1). Two writer
-hosts sharing one board therefore need two distinct labels; a host with no
+Linear issue `holo:` plus the label plus the run's store id
+(`holo:writer-1:12` above, for run 12) for as long as that run holds the
+ticket, and another writer skips a ready issue carrying a `holo:` label
+whose host is not its own ([the loop](loop.md), step 1). Two writer hosts
+sharing one board therefore need two distinct labels; a host with no
 `host_label` leases under its hostname.
 
 The `host` column of `--report` and `--sweep` and the supervisor's startup

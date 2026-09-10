@@ -225,28 +225,17 @@ class ConformanceMixin:
 
         (task,) = self.provider.ready_issues()
         self.assertEqual(task["labels"], ["holo:writer-1", "other"])
+        # The read-back a lease write is judged by: the board as it is now.
+        self.assertEqual(self.provider.issue_labels(self.issue_id("KO-1")),
+                         ["holo:writer-1", "other"])
 
         self.provider.unlabel_issue(self.issue_id("KO-1"), "holo:writer-1")
         self.provider.unlabel_issue(self.issue_id("KO-1"), "holo:writer-1")
 
         self.assertEqual(self.claim()["labels"], ["other"])
+        self.assertEqual(self.provider.issue_labels(self.issue_id("KO-1")),
+                         ["other"])
 
-    def test_a_lease_label_another_holder_carries_refuses_the_write(self):
-        """A `prefix:` label is a lease, exclusive per prefix (KO-351):
-        `label_issue()` reads the ticket at the write, and one already
-        carrying `holo:writer-2` refuses `holo:writer-1` with `LeaseHeld`
-        naming writer-2, writing nothing. An ordinary label is not a lease
-        and lands beside it; the holder's own label is idempotent."""
-        self.seed("KO-1")
-        self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-2")
-
-        with self.assertRaises(board_seam.LeaseHeld) as held:
-            self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-1")
-        self.assertEqual(held.exception.holder, "writer-2")
-
-        self.provider.label_issue(self.issue_id("KO-1"), "other")
-        self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-2")
-        self.assertEqual(self.claim()["labels"], ["holo:writer-2", "other"])
 
 
 class FileProviderTests(ConformanceMixin, unittest.TestCase):
@@ -331,7 +320,6 @@ class FakeLinear:
         self.comments = []
         self.calls = []
         self.team_labels = {}  # name -> id, created on first use
-        self.on_add = None
 
     def add(self, identifier, title, description, estimate=None, state="Todo",
             priority=0):
@@ -354,9 +342,7 @@ class FakeLinear:
         """The label half of the transport (KO-351): the team's label
         lookup and creation, and the `addedLabelIds`/`removedLabelIds`
         forms of `issueUpdate`, each touching only the labels named; None
-        for a query that is none of those. `on_add`, when set, runs after
-        an add lands -- a second writer's hand on the same ticket, for the
-        race test."""
+        for a query that is none of those."""
         if "issueUpdate" in query and "LabelIds" in query:
             issue = self.find(variables["id"])
             if issue is None:
@@ -366,8 +352,6 @@ class FakeLinear:
             if "addedLabelIds" in query:
                 nodes.extend({"id": i, "name": by_id[i]} for i in variables["labels"]
                              if all(n["id"] != i for n in nodes))
-                if self.on_add is not None:
-                    self.on_add(issue)
             else:
                 nodes[:] = [n for n in nodes if n["id"] not in variables["labels"]]
             return {"issueUpdate": {"success": True}}
@@ -487,33 +471,6 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
 
         self.assertEqual(self.claim(order="identifier")["id"], "KO-1")
         self.assertEqual(self.claim()["id"], "KO-1")
-
-    def test_two_writers_whose_reads_both_saw_nothing_do_not_both_hold(self):
-        """The lease race the label cannot lose (KO-351 review): Linear has
-        no compare-and-swap, so writer-1 reads no lease, and writer-2 --
-        having read the same -- lands its own label the moment writer-1's
-        add does. The whole-list `labelIds` write would let the last one
-        replace the first and both would start; the additive write keeps
-        both labels on the ticket, writer-1's read-back sees writer-2 and
-        writer-1 yields: `LeaseHeld` naming writer-2, its own label taken
-        back, and nothing else on the ticket touched. Writer-2's later
-        read-back then sees only itself and holds -- one writer, not two."""
-        self.seed("KO-1")
-        self.provider.label_issue(self.issue_id("KO-1"), "human-added")
-        writer_2 = self.linear._label_id("holo:writer-2", "test-team")
-
-        def writer_2_lands_too(issue):
-            issue["labels"]["nodes"].append({"id": writer_2, "name": "holo:writer-2"})
-            self.board.on_add = None
-        self.board.on_add = writer_2_lands_too
-
-        with self.assertRaises(board_seam.LeaseHeld) as held:
-            self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-1")
-        self.assertEqual(held.exception.holder, "writer-2")
-        self.assertEqual(self.claim()["labels"], ["human-added", "holo:writer-2"])
-        # Writer-2, reading back, finds only itself: its claim stands.
-        self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-2")
-        self.assertEqual(self.claim()["labels"], ["human-added", "holo:writer-2"])
 
     def test_the_ready_query_asks_for_priority(self):
         """The sort is only as good as the field: the ready query names
