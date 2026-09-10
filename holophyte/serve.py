@@ -1118,7 +1118,12 @@ def _write_config(target, text, now):
                                             " the intervention against;"
                                             " nothing written"}
     if backup is not None:
-        with open(backup, "x") as out:
+        # The backup holds the same secrets as the file: it is born with
+        # the file's mode, never the umask's default for a new file.
+        mode = stat.S_IMODE(path.stat().st_mode)
+        handle = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(handle, "w") as out:
+            os.fchmod(handle, mode)
             out.write(current)
     handle, staging = tempfile.mkstemp(prefix=f"{path.name}.new-",
                                        dir=path.parent)

@@ -62,6 +62,17 @@ class RedactRule(unittest.TestCase):
                          [REDACTED, REDACTED])
         self.assertEqual(parsed["many"][1]["inner"][0]["key"], REDACTED)
 
+    def test_a_table_under_a_secret_key_is_redacted_whole(self):
+        """`api_key = { token = "secret" }` is one value: the scanner
+        replaces the whole table, and the parsed check accepts the
+        placeholder where the table was rather than demanding the pair
+        inside it. Such a file parses and the loader leaves an unknown
+        table alone, so it must be served, not 500."""
+        text = '[extra]\napi_key = { token = "secret" }\n'
+        shown = redact(text)
+        self.assertNotIn("secret", shown)
+        self.assertEqual(tomllib.loads(shown)["extra"]["api_key"], REDACTED)
+
     def test_paths_and_plain_values_stay_and_only_values_move(self):
         shown = redact(DOCUMENT)
         parsed = tomllib.loads(shown)

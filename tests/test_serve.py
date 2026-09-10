@@ -18,6 +18,7 @@ import os
 import signal
 import socket
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -2583,6 +2584,23 @@ class ConfigEditTests(ServeTestCase):
         self.assertIn("[agents] implementer", body["error"])
         self.assertIn("relative", body["error"])
         self.assertEqual(self.on_disk(), before)
+
+    def test_the_backup_keeps_the_file_s_mode(self):
+        """A mode-0600 file's backup holds the same secrets, so it is
+        created 0600 too, whatever the umask says for a new file."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        path = self.db.parent / "config.toml"
+        path.chmod(0o600)
+        was = os.umask(0o022)
+        self.addCleanup(os.umask, was)
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": before})
+        self.assertEqual(code, 200, body)
+        mode = stat.S_IMODE(Path(body["backup"]).stat().st_mode)
+        self.assertEqual(oct(mode), oct(0o600))
+        self.assertEqual(oct(stat.S_IMODE(path.stat().st_mode)), oct(0o600))
 
     def test_two_writes_in_one_second_keep_two_backups(self):
         """`write_config()` twice with the same clock: each previous text

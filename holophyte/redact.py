@@ -345,18 +345,15 @@ def redact(text):
         result = secret_leaves(tomllib.loads(redacted))
     except tomllib.TOMLDecodeError as bad:
         raise RedactionError(f"redaction left the file unparsable: {bad}")
-    for path, value in secret_leaves(original).items():
-        if result.get(path) != REDACTED and not (
-                isinstance(value, dict) and _all_redacted(value)):
+    for path in secret_leaves(original):
+        # A leaf under a secret-named table (`api_key = { token = "x" }`)
+        # is gone with the table: the placeholder sits at the ancestor.
+        if not any(result.get(path[:n]) == REDACTED
+                   for n in range(len(path), 0, -1)):
             raise RedactionError(
                 f"{describe(path)}: the value would still be readable;"
                 " not served")
     return redacted
-
-
-def _all_redacted(value):
-    return all(v == REDACTED or (isinstance(v, dict) and _all_redacted(v))
-               for v in value.values())
 
 
 def describe(path):
