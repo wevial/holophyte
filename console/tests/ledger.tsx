@@ -17,7 +17,7 @@ interface LedgerProps<H> {
 
 export function ShippedWithLedger({ hosts, now, polls = 0, deps, tz, limit = SHIPPED_PAGE }: LedgerProps<Pick<HostRecord, "base" | "project">>) {
   const shipped = useShipped(hosts, polls, deps, limit);
-  return <Shipped shipped={shipped} now={now} tz={tz} />;
+  return <Shipped shipped={shipped} now={now} polls={polls} deps={deps} tz={tz} />;
 }
 
 export function BoardWithLedger({ hosts, now, polls = 0, deps, tz, limit = SHIPPED_PAGE }: LedgerProps<HostRecord>) {

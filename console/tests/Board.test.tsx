@@ -194,6 +194,18 @@ test("Shipped today shows only today's rows of a three-day ledger, under its cou
   expect(shipped.querySelector("[data-shipped-subtitle]")!.textContent).toBe("3 merges · median 2 rounds");
 });
 
+test("a Shipped today row expands to its run detail the way a Now row does", async () => {
+  render(<Board hosts={[host]} now={now} deps={{ fetch: daemonFetch }} tz="UTC" />);
+  await act(settle);
+  const shipped = screen.getByRole("region", { name: "Shipped today" });
+  const rows = Array.from(shipped.querySelectorAll<HTMLElement>("[data-row]"));
+  expect(rows.map((row) => row.getAttribute("aria-expanded"))).toEqual(["false", "false", "false"]);
+  fireEvent.click(rows[0]!);
+  await act(settle);
+  expect(rows.map((row) => row.getAttribute("aria-expanded"))).toEqual(["true", "false", "false"]);
+  expect(shipped.querySelectorAll("[data-detail]").length).toBe(1);
+});
+
 test("clicking Board in the rail opens the view, polling /board from the daemon", async () => {
   const asked: string[] = [];
   const { deps } = fakeDeps(async (url, init) => {
