@@ -3762,6 +3762,44 @@ class PoolTests(LoopFixture):
         self.assertEqual(len(pool.spawned), 1)
         self.assertIsNone(self.rc)
 
+    def test_a_dependency_blocked_ticket_is_not_counted_as_claimable(self):
+        """Two ready tickets, the second depending on the first, which is not
+        merged: one worker, not two. The count asks the store's own
+        `pickable()`, dependencies included, not status and lease alone."""
+        provider = StubProvider(a_task(1), a_task(2))
+        conn = holophyte.runs.open_store(self.tgt)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, provider.team, self.target)
+        holophyte.board.mirror_task(conn, project, a_task(1))
+        second = holophyte.board.mirror_task(conn, project, a_task(2))
+        conn.execute("UPDATE tickets SET dependsOn = ? WHERE id = ?",
+                     (json.dumps([a_task(1)["issue_id"]]), second))
+        conn.commit()
+
+        pool = self.run_scheduler(3, provider, [
+            (holophyte.loop.WORKER_MERGED, lambda: provider.queue.pop(0)),
+        ])
+
+        self.assertEqual(len(pool.spawned), 1)
+        self.assertIsNone(self.rc)
+
+    def test_a_listing_failure_is_not_an_empty_queue(self):
+        """The board cannot be asked: nothing is spawned, and the scheduler
+        exits nonzero rather than reporting an empty queue it never saw."""
+        provider = StubProvider(a_task(1), a_task(2))
+
+        def down():
+            raise RuntimeError("linear unreachable")
+
+        provider.ready_issues = down
+
+        pool = self.run_scheduler(2, provider, [])
+
+        self.assertEqual(pool.spawned, [])
+        self.assertEqual(self.rc, 1)
+        self.assertNotIn("Linear has no ready tickets", self.out)
+        self.assertIn("linear unreachable", self.out)
+
     def test_stop_on_failure_drains_the_pool_and_exits_nonzero(self):
         """`workers = 2`, `stop_on_failure = true`: a worker exits failed
         while another runs. No new worker is spawned though tickets remain,
@@ -3888,6 +3926,30 @@ class WorkerTests(LoopFixture):
         # Its lines carry the slot, in place of the bare tag.
         self.assertIn("[holo2 w2] ", out)
         self.assertNotIn("\n[holo2] ", "\n" + out)
+
+    def test_a_worker_commits_findings_under_the_merge_lock(self):
+        """The FINDINGS.md regeneration and commit run while this worker
+        holds the merge lock, so no sibling is merging in the checkout while
+        the file is written and `git commit` runs."""
+        provider = StubProvider(a_task(1))
+        lock = holophyte.gates.merge_lock_path(self.tgt)
+        held = []
+        real = holophyte.loop.commit_findings
+
+        def commit_under_lock(target, message):
+            held.append(lock.exists())
+            return real(target, message)
+
+        with patch.object(holophyte.loop, "commit_findings", commit_under_lock):
+            rc, _ = self.worker(Commit("the scripted work"), APPROVE,
+                                provider=provider)
+
+        self.assertEqual(rc, holophyte.loop.WORKER_MERGED)
+        # Two commits in the run -- the gate's pre-merge one and the
+        # close-out -- and the lock was held for each.
+        self.assertEqual(held, [True, True])
+        self.assertIn("Complete task KO-131: add a thing", self.subjects())
+        self.assertFalse(lock.exists())  # and released after
 
     def test_a_worker_with_nothing_to_claim_exits_idle(self):
         rc, out = self.worker(provider=StubProvider())

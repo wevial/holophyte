@@ -2144,16 +2144,41 @@ def worker(target, provider):
             return WORKER_IDLE
         if run_id is None:
             return WORKER_STOP
-        merged = _dispatch(target, conn, run_id, provider, task, ticket_id)
+        merged = _dispatch(target, conn, run_id, provider, task, ticket_id,
+                           refresh=False)
         if merged is PARKED:
             print(f"[holo2] {task['id']} parked awaiting merge approval")
             return WORKER_PARKED
         if not merged:
             return WORKER_FAILED
-        commit_findings(target, f"Complete task {task['id']}: {task['title']}")
+        _close_out_merged(target, conn, run_id, task)
         return WORKER_MERGED
     finally:
         conn.close()
+
+
+def _close_out_merged(target, conn, run_id, task):
+    """A worker's close-out of a merged run: regenerate FINDINGS.md and
+    commit it, under the merge lock.
+
+    The serial loop writes and commits the window after its gate has let
+    the lock go, which costs nothing when it is the only process in the
+    checkout. A worker is not: a sibling can be merging in the same
+    checkout at that moment, and a `git add`/`git commit` beside its merge
+    is an index-lock failure for one of them, or a window written into the
+    other's index (the review of KO-343). So the write and the commit are
+    one held span, the same lock the gate takes. A lock that cannot be had
+    within the gate's wait leaves the window uncommitted, as a failed run's
+    is, and says so: the merge itself is done and in the store, and the
+    next close-out in this checkout renders these rows with its own.
+    """
+    try:
+        with merge_lock(target, run_id):
+            refresh_findings(target, conn)
+            commit_findings(target,
+                            f"Complete task {task['id']}: {task['title']}")
+    except MergeLockHeld as e:
+        print(f"[holo2] FINDINGS.md left uncommitted for {task['id']}: {e}")
 
 
 class _PrefixedOut:
@@ -2211,14 +2236,29 @@ def scheduler(target, provider, knobs):
         _startup_sweep(target, conn)
         _reconcile_mirror(conn, project, provider)
         while True:
+            listing = None
             if state.spawning:
                 listing = _mirror_queue(target, conn, project, provider)
-                want = min(_claimable(conn, project, listing), knobs.workers)
-                while len(pool) < want:
-                    slot = next(slots)
-                    child = _spawn_worker(target, slot)
-                    pool[child.pid] = (slot, child)
+                if listing is None:
+                    # The board could not be asked: an empty listing would
+                    # end the loop reporting a queue it never saw. Nothing
+                    # is spawned on it; a live pool recounts at its next
+                    # exit, an empty one ends the loop nonzero, as the
+                    # serial loop's claim ends it when the board is down.
+                    state.unlisted()
+                else:
+                    want = min(_claimable(conn, project, listing),
+                               knobs.workers)
+                    while len(pool) < want:
+                        slot = next(slots)
+                        child = _spawn_worker(target, slot)
+                        pool[child.pid] = (slot, child)
             if not pool:
+                if listing is None and state.spawning:
+                    print("[holo2] the board's ready listing failed and no"
+                          " worker is running; stopping. relaunch once the"
+                          " board answers")
+                    return 1
                 if state.restart and not state.stopped:
                     # Not after a stop: a restarted scheduler would know
                     # nothing of the failure, spawn again and exit clean
@@ -2262,6 +2302,11 @@ class _PoolState:
     def spawning(self):
         return not (self.draining or self.paused)
 
+    def unlisted(self):
+        """This tick's listing failed: no verdict on the queue, no spawn,
+        and the loop's exit is nonzero whatever the pool goes on to do."""
+        self.failed = True
+
     def exited(self, slot, code):
         """Read worker `slot`'s exit `code`; one printed line each."""
         self.paused = False
@@ -2290,17 +2335,21 @@ class _PoolState:
 
 def _claimable(conn, project, listing):
     """How many of the board's ready `listing` a worker could claim now:
-    mirrored `ready` in the store and under no live run's lease. One
-    store read for the tick (`open_tickets()`), against the rows
+    the store's own `pickable()` -- mirrored `ready`, under no live run's
+    lease, specced, and every dependency merged -- asked of the rows
     `_mirror_queue()` just refreshed. The store's word, not the board's:
-    a ticket a failed run left `in_flight`, one parked on the operator or
-    one whose body the validator refused all sit in the board's ready
-    column, and a worker spawned for one of them would only refuse it."""
+    a ticket a failed run left `in_flight`, one parked on the operator, one
+    whose body the validator refused or one waiting on a sibling all sit in
+    the board's ready column, and a worker spawned for one of them would
+    only refuse it (the review of KO-343 found the dependency clause
+    missing here: a worker spawned for a ticket `pickable()` then refused).
+    One `open_tickets()` read for the tick, then the predicate per listed
+    ticket -- a few indexed selects each, over a listing of a handful."""
     rows = {row.linearIdentifier: row
             for row in store.read.open_tickets(conn, project)}
     return sum(1 for task in listing
                if (row := rows.get(task["id"])) is not None
-               and row.status == "ready" and row.activeRunId is None)
+               and store.pickable(conn, row.id))
 
 
 def _spawn_worker(target, slot):
@@ -2362,8 +2411,9 @@ def _mirror_queue(target, conn, project, provider):
     chokes on, skips the whole step in one printed line and the claim
     proceeds: this fills the Board, it does not gate the work. Nothing is
     written to Linear. Returns the listing it mirrored -- the scheduler
-    counts its claimable tickets from it (KO-343) -- and an empty list when
-    the step was skipped.
+    counts its claimable tickets from it (KO-343) -- and None when the step
+    was skipped: a board that could not be asked has said nothing about the
+    queue, and an empty list would say it is empty.
     """
     mirrored = []
     try:
@@ -2374,6 +2424,7 @@ def _mirror_queue(target, conn, project, provider):
     except Exception as e:  # any transport or mirror failure: not a gate
         print(f"[holo2] queue mirror skipped: the board's ready issues could"
               f" not be mirrored ({e})")
+        return None
     return mirrored
 
 
@@ -2670,7 +2721,7 @@ class _Parked:
 PARKED = _Parked()
 
 
-def _dispatch(target, conn, run_id, provider, task, ticket_id):
+def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
     """One run of `task` under `run_id`, with its failure accounting and
     close-out. Returns whether the run merged, or `PARKED` for a run stopped
     at the gate by `[merge] approve = "human"`.
@@ -2678,7 +2729,10 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
     `run_task()` answers with the merge commit's sha when it merged, and
     that sha is what the release stamps on the run; a bare `True` (the
     supervisor ended the run as merged, or a test's stand-in) merges the
-    run without one."""
+    run without one. `refresh=False` leaves a merged run's FINDINGS.md
+    regeneration to the caller: a worker does it under the merge lock
+    (`_close_out_merged()`), where the file is not written beside a
+    sibling's merge."""
     merged = False
     reason = None
     outcome_class = "work"
@@ -2720,7 +2774,8 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id):
             # Close-out, and the first moment the run's own outcome is
             # a row: the window is regenerated here rather than inside
             # `run_task()` so the entry that ends the run is in it.
-            refresh_findings(target, conn)
+            if refresh:
+                refresh_findings(target, conn)
         else:
             # The failure close-out: release, escalate if this failure
             # was one too many, regenerate the window. Shared with the
