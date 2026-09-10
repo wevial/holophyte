@@ -139,3 +139,15 @@ test("the daemon's refusal names its key the loader's way; a sentence without on
   });
   expect(namedKey("malformed TOML: Expected '=' after a key (at line 3, column 1)")).toBeNull();
 });
+
+test("a multi-line array line holding two commands: adding a third keeps both once, the shared comment stays; dropping the first splits the line and keeps the second", () => {
+  const text = `[worktree]\nsetup = [\n  "echo a", "echo b", # shared line\n]\n`;
+  const added = writeKey(text, { table: "worktree", key: "setup" }, ["echo a", "echo b", "echo c"]);
+  expect(readKey(added, { table: "worktree", key: "setup" })).toEqual(["echo a", "echo b", "echo c"]);
+  expect(added).toBe(`[worktree]\nsetup = [\n  "echo a", "echo b", # shared line\n  "echo c",\n]\n`);
+  const dropped = writeKey(text, { table: "worktree", key: "setup" }, ["echo b"]);
+  expect(readKey(dropped, { table: "worktree", key: "setup" })).toEqual(["echo b"]);
+  expect(dropped).toContain("# shared line");
+  const swapped = writeKey(text, { table: "merge", key: "after" }, ["x"]);
+  expect(readKey(swapped, { table: "merge", key: "after" })).toEqual(["x"]);
+});

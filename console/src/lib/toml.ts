@@ -253,13 +253,42 @@ function lastKeyLine(lines: string[], span: { start: number; end: number }): num
   return span.start - 1;
 }
 
+/** The items written on one line of a multi-line array, each with its
+ *  source text, plus the indent before the first and the tail after the
+ *  last (a comma, a comment). Null for a line whose items are not all
+ *  readable scalars (a nested array, a comment-only line reads as no
+ *  items). */
+function itemsOfLine(line: string): { head: string; items: { item: TomlValue; text: string }[]; tail: string } | null {
+  const head = /^\s*/.exec(line)![0];
+  const items: { item: TomlValue; text: string }[] = [];
+  let at = head.length;
+  let tailAt = at;
+  while (at < line.length) {
+    const char = line[at]!;
+    if (char === "#") break;
+    if (/[\s,]/.test(char)) {
+      at += 1;
+      continue;
+    }
+    const end = valueEnd(line, at);
+    if (end <= at) return null;
+    const item = readValue(line.slice(at, end));
+    if (item === undefined || Array.isArray(item)) return null;
+    items.push({ item, text: line.slice(at, end) });
+    at = tailAt = end;
+  }
+  return { head, items, tail: items.length === 0 ? "" : line.slice(tailAt) };
+}
+
 /** The lines of a multi-line array (`key = [` on its own line, `]` on
  *  its own line) rewritten to hold `items`, in order, with the comment
  *  lines between them and each kept item's trailing comment as they
  *  were: an item that stays keeps its line, an item edited in place
  *  keeps its line's tail, a dropped item's line goes, and new items are
- *  appended before the closing bracket. Null when the span is not that
- *  shape, so the caller collapses it instead. */
+ *  appended before the closing bracket. A line holding several items
+ *  stays whole while its run survives in order, else it is split one
+ *  item per line, the last keeping the line's tail. Null when the span
+ *  is not that shape, so the caller collapses it instead. */
 function editArrayLines(lines: string[], hit: KeyHit, items: TomlValue[]): string[] | null {
   const opening = lines[hit.start]!;
   const closing = lines[hit.end - 1]!;
@@ -268,29 +297,17 @@ function editArrayLines(lines: string[], hit: KeyHit, items: TomlValue[]): strin
   const old = hit.value;
   if (!Array.isArray(old)) return null;
   type Row = { line: string; item?: TomlValue; head?: string; tail?: string };
-  const rows: Row[] = [];
-  let indent: string | null = null;
-  for (let at = hit.start + 1; at < hit.end - 1; at += 1) {
-    const line = lines[at]!;
-    const lead = /^\s*/.exec(line)![0].length;
-    const end = valueEnd(line, lead);
-    const item = end > lead ? readValue(line.slice(lead, end)) : undefined;
-    if (item === undefined || Array.isArray(item)) rows.push({ line });
-    else {
-      indent ??= line.slice(0, lead);
-      rows.push({ line, item, head: line.slice(0, lead), tail: line.slice(end) });
-    }
-  }
-  indent ??= "  ";
-  const withComma = (tail: string) => (tail.trimStart().startsWith(",") ? tail : `,${tail}`);
   const out: string[] = [];
+  let indent: string | null = null;
   let next = 0;
-  for (const row of rows) {
+  const runAt = (run: TomlValue[]) =>
+    items.findIndex((_, index) => index >= next && run.every((item, offset) => items[index + offset] === item));
+  const emit = (row: Row) => {
     if (row.item === undefined) {
       out.push(row.line);
-      continue;
+      return;
     }
-    const keep = items.findIndex((candidate, index) => index >= next && candidate === row.item);
+    const keep = runAt([row.item]);
     if (keep >= 0) {
       for (let index = next; index < keep; index += 1) out.push(`${indent}${formatValue(items[index]!)},`);
       out.push(row.line);
@@ -300,21 +317,44 @@ function editArrayLines(lines: string[], hit: KeyHit, items: TomlValue[]): strin
       out.push(`${row.head}${formatValue(items[next]!)}${row.tail}`);
       next += 1;
     }
+  };
+  for (let at = hit.start + 1; at < hit.end - 1; at += 1) {
+    const line = lines[at]!;
+    const parts = itemsOfLine(line);
+    if (parts == null || parts.items.length === 0) {
+      out.push(line);
+      continue;
+    }
+    indent ??= parts.head;
+    const run = parts.items.map((part) => part.item);
+    const keep = run.length > 1 ? runAt(run) : -1;
+    if (keep >= 0) {
+      for (let index = next; index < keep; index += 1) out.push(`${indent}${formatValue(items[index]!)},`);
+      out.push(line);
+      next = keep + run.length;
+      continue;
+    }
+    parts.items.forEach((part, index) => {
+      const rowHead = index === 0 ? parts.head : indent!;
+      const rowTail = index === parts.items.length - 1 ? parts.tail : ",";
+      emit({ line: `${rowHead}${part.text}${rowTail}`, item: part.item, head: rowHead, tail: rowTail });
+    });
   }
+  indent ??= "  ";
   for (let index = next; index < items.length; index += 1) out.push(`${indent}${formatValue(items[index]!)},`);
   // Every item line but the last must end its value with a comma; the
   // last keeps whatever it had, TOML allowing a trailing one.
-  const itemAt = (line: string) => {
-    const lead = /^\s*/.exec(line)![0].length;
-    const end = valueEnd(line, lead);
-    return end > lead && readValue(line.slice(lead, end)) !== undefined ? end : -1;
+  const withComma = (tail: string) => (tail.trimStart().startsWith(",") ? tail : `,${tail}`);
+  const itemEnd = (line: string) => {
+    const parts = itemsOfLine(line);
+    return parts != null && parts.items.length > 0 ? line.length - parts.tail.length : -1;
   };
   let last = -1;
   out.forEach((line, index) => {
-    if (itemAt(line) >= 0) last = index;
+    if (itemEnd(line) >= 0) last = index;
   });
   for (let index = 0; index < last; index += 1) {
-    const end = itemAt(out[index]!);
+    const end = itemEnd(out[index]!);
     if (end >= 0) out[index] = `${out[index]!.slice(0, end)}${withComma(out[index]!.slice(end))}`;
   }
   return [opening, ...out, closing];
