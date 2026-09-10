@@ -94,7 +94,8 @@ High ticket run first.
 Every run leaves a comment on its ticket: the rounds, their findings, the
 adjudications (`ADDRESS`, `FOLLOW_UP`, `DECLINE`), and any operator step
 taken after the merge with its time. The store holds the rows;
-`FINDINGS.md` renders the window; the ledger is the narrative. A contract
+`FINDINGS.md`, in a target that opts in, renders the window; the ledger is
+the narrative. A contract
 revision is recorded there too, with what was wrong and why, so a rerun's
 reviewer can read the history.
 
