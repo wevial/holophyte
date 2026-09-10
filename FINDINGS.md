@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[416 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-09T17:28:06Z — KO-324
-MERGED to main as d9f337e (branch task/ko-324-the-electron-tray-menu-carries deleted).
-actual: 9.3 min · estimate: 30 min · rounds: 2
-
-## 2026-09-09T18:53:30Z — KO-326
-Round 1: pass · reviewer codex-astra-medium · verify passed
+[418 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-09T18:53:31Z — KO-326
 MERGED to main as f1915bc (branch task/ko-326-the-electron-window-seeds-the deleted).
@@ -760,3 +753,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-09T23:57:32Z — KO-334
 MERGED to main as 15981f9 (branch task/ko-334-the-loop-mirrors-every-ready-i deleted).
 actual: 21.3 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T00:11:10Z — KO-336
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T00:12:35Z — KO-336
+MERGED to main as 88426a2 (branch task/ko-336-a-target-can-have-its-pull-req deleted).
+actual: 15.0 min · estimate: 30 min · rounds: 1
