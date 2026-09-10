@@ -667,10 +667,17 @@ def _candidate_drift(wt, branch, approved):
 
 def _land(target, conn, run_id, provider, task_id, task, branch, wt, sha, ok,
           started, budget_min, rnd):
-    """The merge and the merged ledger line; returns the merge commit's sha.
-    Shared by the ordinary run and the approved candidate's."""
+    """The merge, the target's `[merge] after` commands and the merged ledger
+    line; returns the merge commit's sha. Shared by the ordinary run and the
+    approved candidate's."""
     merge_sha = _merge(target, conn, run_id, provider, task_id, task, branch,
                        wt, sha)
+    # Still under the merge lock, so the checkout the commands see is the
+    # main this merge left and no sibling's merge moves it under them. A
+    # failure parks the run rather than failing it: the merge has landed,
+    # and a failed run would send the loop back to redo work main holds.
+    _run_after(target, conn, run_id, provider, task_id, merge_sha,
+               merge_config(target).after)
     # Nothing tells Linear the ticket is done here any more. The merge makes
     # the ticket `merged` in the store, and `main()` projects that status onto
     # the board through `mirror_push()` once the run has been released — one
@@ -691,6 +698,43 @@ def _land(target, conn, run_id, provider, task_id, task, branch, wt, sha, ok,
     # The merge commit itself, for the close-out to stamp on the run: truthy,
     # so every caller that read this as "did it merge" still does.
     return merge_sha
+
+
+# How much of a failed `[merge] after` command's output the park's note and
+# ledger carry: the last lines, where a build tool says what went wrong.
+AFTER_TAIL_LINES = 20
+
+
+def _run_after(target, conn, run_id, provider, task_id, merge_sha, commands):
+    """`[merge] after` (KO-347): run `commands` in order in the main checkout
+    once the merge commit exists, each printed with its exit code. The first
+    nonzero exit stops the list and parks the run `blocked_on_operator` with
+    the command and the tail of its output as the note and the ticket's
+    question; `MergeParked` then unwinds the run without marking it merged.
+    Nothing here touches the merge commit: main keeps it either way.
+    """
+    for cmd in commands:
+        done = subprocess.run(cmd, shell=True, cwd=target.path,
+                              capture_output=True, text=True)
+        print(f"[holo2] after: {cmd} -> exit {done.returncode}")
+        if done.returncode == 0:
+            continue
+        tail = "\n".join((done.stdout + done.stderr).splitlines()
+                         [-AFTER_TAIL_LINES:])
+        why = (f"[merge] after command failed with exit {done.returncode}:"
+               f" {cmd}\n{tail}")
+        if conn is not None and run_id is not None:
+            ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+            if not block_ticket(conn, ticket_id, provider, why):
+                print(f"[holo2] {task_id} could not be moved to"
+                      " blocked_on_operator; parking the run anyway")
+            store.park(conn, run_id, "blocked_on_operator", why)
+        print(f"[holo2] parked after merge {merge_sha[:12]}: {why}")
+        ledger(conn, run_id, task_id, "note",
+               f"MERGED to main at {merge_sha}, then {why}\nThe merge stands;"
+               " the run waits in blocked_on_operator.", provider)
+        raise MergeParked(f"merged at {merge_sha[:12]}; after command failed:"
+                          f" {cmd}")
 
 
 def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):

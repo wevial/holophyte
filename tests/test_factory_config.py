@@ -1888,7 +1888,17 @@ class MergeConfigTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(holophyte.config.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", "ticket", "", "park"))
+                         ("auto", "local", 5, "merge", "ticket", "", "park",
+                          ()))
+
+    def test_after_is_read_as_a_list_of_commands(self):
+        """`after` is the console build the daemon's bundle depends on, in
+        order; absent, nothing runs after a merge (KO-347)."""
+        self.locate('[merge]\nafter = ["bun --cwd=console run build",'
+                    ' "sh -c true"]\n')
+
+        self.assertEqual(holophyte.config.merge_config(self.tgt).after,
+                         ("bun --cwd=console run build", "sh -c true"))
 
     def test_pr_text_and_pr_style_are_read(self):
         """`pr_text = "written"` with the target's own instructions; absent,
@@ -1946,6 +1956,8 @@ class MergeConfigTests(ConfigTestCase):
                           ('pr_text = "agent"', "pr_text"),
                           ("pr_style = true", "pr_style"),
                           ('human_threads = "reply"', "human_threads"),
+                          ('after = "bun run build"', "after"),
+                          ("after = [1]", "after"),
                           ('approve_by = "human"', "approve_by")):
             with self.subTest(line=line):
                 target = self.locate(f"[merge]\n{line}\n").path
