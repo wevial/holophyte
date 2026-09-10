@@ -489,7 +489,7 @@ def block_ticket(conn, ticket_id, provider, question):
 
 
 def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=None,
-                      confirm=None, outcome_class="work"):
+                      confirm=None, outcome_class="work", refresh=True):
     """End a failed run the one way the factory ends failed runs.
 
     Three writes in a fixed order, and the order is the point. The failure
@@ -532,13 +532,19 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
     `outcome_class` is the row's `outcomeClass`: `work` unless the failure
     was an `InfraFailure`, in which case the escalation that follows does
     not count it.
+
+    `refresh=False` leaves the window to the caller: a pool worker renders
+    it under the merge lock, where the file is not written into the
+    checkout beside a sibling's merge (the review of KO-343). The release
+    and the escalation are the same either way.
     """
     with store.transaction(conn):
         if confirm is not None and not confirm():
             return False
         release_run(conn, run_id, False, reason, outcome_class)
     escalate(conn, ticket_id, provider)
-    refresh_findings(target, conn)
+    if refresh:
+        refresh_findings(target, conn)
     return True
 
 

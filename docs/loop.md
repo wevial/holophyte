@@ -140,8 +140,9 @@ merge approval, `3` nothing left to claim, `4` stopped for a human. The
 children share the scheduler's stdout, so one `tee` captures the pool, and
 each worker prints `[holo2 wN]` in place of `[holo2]`, `N` its slot. Merges
 into `main` take turns under the merge lock of step 6, and so does a
-worker's close-out -- the `FINDINGS.md` regeneration and its commit -- so
-no worker writes the checkout while a sibling merges in it. `stop_on_failure =
+worker's close-out -- the `FINDINGS.md` regeneration, and its commit when
+the run merged -- so no worker writes the checkout while a sibling merges
+in it, whether the worker's own run merged or failed. `stop_on_failure =
 true` stops the spawning at the first failed worker and waits for the
 running ones; the scheduler exits nonzero, as the serial loop does. With
 the listing empty and no child alive it exits `0`, as the serial loop does

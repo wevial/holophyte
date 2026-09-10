@@ -2176,35 +2176,41 @@ def worker(target, provider):
             print(f"[holo2] {task['id']} parked awaiting merge approval")
             return WORKER_PARKED
         if not merged:
+            _render_findings_locked(target, conn, run_id, task)
             return WORKER_FAILED
-        _close_out_merged(target, conn, run_id, task)
+        _render_findings_locked(target, conn, run_id, task,
+                                commit=f"Complete task {task['id']}: {task['title']}")
         return WORKER_MERGED
     finally:
         conn.close()
 
 
-def _close_out_merged(target, conn, run_id, task):
-    """A worker's close-out of a merged run: regenerate FINDINGS.md and
-    commit it, under the merge lock.
+def _render_findings_locked(target, conn, run_id, task, commit=None):
+    """A worker's rendering of FINDINGS.md, under the merge lock: the
+    regeneration, and for a merged run its commit with `commit`'s message.
 
-    The serial loop writes and commits the window after its gate has let
-    the lock go, which costs nothing when it is the only process in the
-    checkout. A worker is not: a sibling can be merging in the same
-    checkout at that moment, and a `git add`/`git commit` beside its merge
-    is an index-lock failure for one of them, or a window written into the
-    other's index (the review of KO-343). So the write and the commit are
-    one held span, the same lock the gate takes. A lock that cannot be had
-    within the gate's wait leaves the window uncommitted, as a failed run's
-    is, and says so: the merge itself is done and in the store, and the
-    next close-out in this checkout renders these rows with its own.
+    The serial loop writes the window (and commits it, for a merged run)
+    after its gate has let the lock go, which costs nothing when it is the
+    only process in the checkout. A worker is not: a sibling can be merging
+    in the same checkout at that moment, and a write to FINDINGS.md beside
+    its merge dirties the checkout it is merging in or lands in its index,
+    while a `git add`/`git commit` beside it is an index-lock failure for
+    one of them (the review of KO-343, both rounds). So the write, and the
+    commit when there is one, are one held span, the same lock the gate
+    takes; a failed run's close-out passes `refresh=False` to
+    `close_out_failure()` and renders here instead. A lock that cannot be
+    had within the gate's wait leaves the window unrendered and says so:
+    the run's outcome is in the store, and the next close-out in this
+    checkout renders these rows with its own.
     """
     try:
         with merge_lock(target, run_id):
             refresh_findings(target, conn)
-            commit_findings(target,
-                            f"Complete task {task['id']}: {task['title']}")
+            if commit is not None:
+                commit_findings(target, commit)
     except MergeLockHeld as e:
-        print(f"[holo2] FINDINGS.md left uncommitted for {task['id']}: {e}")
+        what = "uncommitted" if commit is not None else "unrendered"
+        print(f"[holo2] FINDINGS.md left {what} for {task['id']}: {e}")
 
 
 class _PrefixedOut:
@@ -2772,9 +2778,10 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
     `run_task()` answers with the merge commit's sha when it merged, and
     that sha is what the release stamps on the run; a bare `True` (the
     supervisor ended the run as merged, or a test's stand-in) merges the
-    run without one. `refresh=False` leaves a merged run's FINDINGS.md
-    regeneration to the caller: a worker does it under the merge lock
-    (`_close_out_merged()`), where the file is not written beside a
+    run without one. `refresh=False` leaves the run's FINDINGS.md
+    regeneration -- a merged run's and a failed run's alike -- to the
+    caller: a worker does it under the merge lock
+    (`_render_findings_locked()`), where the file is not written beside a
     sibling's merge."""
     merged = False
     reason = None
@@ -2833,7 +2840,8 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
                 close_out_failure(target, conn, run_id, ticket_id,
                                   reason,
                                   provider=provider,
-                                  outcome_class=outcome_class)
+                                  outcome_class=outcome_class,
+                                  refresh=refresh)
             except Exception as close_err:  # noqa: BLE001
                 print(f"[holo2] close-out failed: {close_err}")
     return merged

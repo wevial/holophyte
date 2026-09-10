@@ -3958,6 +3958,30 @@ class WorkerTests(LoopFixture):
         self.assertIn("Complete task KO-131: add a thing", self.subjects())
         self.assertFalse(lock.exists())  # and released after
 
+    def test_a_failed_worker_renders_findings_under_the_merge_lock(self):
+        """A failed run's close-out regenerates FINDINGS.md too, and a
+        worker's does so under the merge lock: a sibling may be merging in
+        the checkout at that moment (the review of KO-343)."""
+        provider = StubProvider(a_task(1))
+        lock = holophyte.gates.merge_lock_path(self.tgt)
+        held = []
+        real = holophyte.findings.refresh_findings
+
+        def render_under_lock(target, conn):
+            held.append(lock.exists())
+            return real(target, conn)
+
+        with patch.object(holophyte.loop, "refresh_findings", render_under_lock), \
+                patch.object(holophyte.board, "refresh_findings", render_under_lock):
+            rc, _ = self.worker(Refuse(), provider=provider)
+
+        self.assertEqual(rc, holophyte.loop.WORKER_FAILED)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        # Rendered once, with the lock held, and released after.
+        self.assertEqual(held, [True])
+        self.assertIn("KO-131", (self.tgt.path / "FINDINGS.md").read_text())
+        self.assertFalse(lock.exists())
+
     def test_a_worker_with_nothing_to_claim_exits_idle(self):
         rc, out = self.worker(provider=StubProvider())
 
