@@ -120,6 +120,41 @@ class VerdictTests(unittest.TestCase):
             {2: "guarded the load", 1: "renamed"})
 
 
+class WrittenPrTextTests(unittest.TestCase):
+    """`pr.parse_pr_text()`: the `TITLE:` line and the body after it, or
+    None for a reply the loop cannot open a PR from; `pr.pr_body_written()`
+    ends the body with the Linear line (KO-336)."""
+
+    def test_the_title_line_and_the_body_after_it_are_read(self):
+        reply = ("TITLE: [Contacts] Put Contact Name first\n\n"
+                 "The two forms now \u2026")
+
+        self.assertEqual(pr.parse_pr_text(reply),
+                         ("[Contacts] Put Contact Name first",
+                          "The two forms now \u2026"))
+
+    def test_a_reply_without_a_title_line_is_none(self):
+        self.assertIsNone(pr.parse_pr_text(
+            "Here is the description.\n\nThe two forms now \u2026"))
+
+    def test_an_empty_or_overlong_title_is_none(self):
+        self.assertIsNone(pr.parse_pr_text("TITLE:\n\nA body."))
+        self.assertIsNone(pr.parse_pr_text(f"TITLE: {'x' * 121}\n\nA body."))
+        self.assertIsNotNone(
+            pr.parse_pr_text(f"TITLE: {'x' * 120}\n\nA body."))
+
+    def test_the_written_body_ends_with_the_linear_line(self):
+        body = pr.pr_body_written("What changed.\n", "KO-336",
+                                  "https://linear.app/example/issue/KO-336")
+
+        self.assertEqual(body.splitlines()[-1],
+                         "Linear: KO-336 (https://linear.app/example/issue/"
+                         "KO-336)")
+        self.assertTrue(body.startswith("What changed.\n\n"))
+        self.assertEqual(pr.pr_body_written("Text", "KO-1", None).splitlines()[-1],
+                         "Linear: KO-1")
+
+
 class AuthorKindTests(unittest.TestCase):
     def test_an_author_is_read_as_bot_user_or_unknown_by_github_type(self):
         page = {"nodes": [

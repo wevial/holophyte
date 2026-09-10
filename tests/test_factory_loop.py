@@ -2352,6 +2352,95 @@ class MergeModeTests(LoopFixture):
                       " ORDER BY round")[-1],
             (2, "pass", "github:ci"))
 
+    AGENTS_MD = ("# Agent guide\n\nTitle starts with [Feature Name]."
+                 " No testing plan.\n")
+    WRITTEN = Idle("Reading the diff.\n"
+                   "TITLE: [Contacts] Put Contact Name first\n\n"
+                   "The two forms now ask for the contact's name before"
+                   " anything else.\n\nThe thing file is what changed.\n")
+
+    def written_target(self):
+        """`pr_text = "written"` with a style line, and an `AGENTS.md` on
+        main for the worktree to carry."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'pr_text = "written"\n'
+                       'pr_style = "No ticket identifier in the title."\n')
+        (self.target / "AGENTS.md").write_text(self.AGENTS_MD)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "agent guide")
+        self.base = self.git("rev-parse", "main").strip()
+        self.fake_route()
+        return StubProvider(dict(
+            a_task(), body=self.BODY,
+            url="https://linear.app/example/issue/KO-131/add-a-thing"))
+
+    def test_a_written_pr_takes_the_turns_title_and_body(self):
+        """`pr_text = "written"`: after the approval one more implementer
+        turn is given the diff, the ticket, the repository's `AGENTS.md`
+        and the style line; the PR is created with the title it answered
+        and a body ending with the Linear line, with no FINDINGS entry."""
+        provider = self.written_target()
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            self.WRITTEN, provider=provider)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        prompt = fake.turns[2].goal
+        self.assertEqual(fake.turns[2].cwd,
+                         self.worktrees / "ko-131-add-a-thing")
+        self.assertIn("+the scripted work", prompt)  # the diff
+        self.assertIn("The thing, added.", prompt)  # the ticket
+        self.assertIn(self.AGENTS_MD.strip(), prompt)
+        self.assertIn("No ticket identifier in the title.", prompt)
+        # A small budget from the run's remaining box, never the whole run.
+        self.assertTrue(60 <= fake.turns[2].timeout <= 5 * 60,
+                        fake.turns[2].timeout)
+        create = [c for c in self.recorded() if c.startswith("gh pr create")]
+        self.assertEqual(create, [
+            f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
+            " --title [Contacts] Put Contact Name first --body-file -"])
+        body = self.pr_body.read_text()
+        self.assertTrue(body.startswith(
+            "The two forms now ask for the contact's name"), body)
+        self.assertEqual(
+            body.rstrip().splitlines()[-1],
+            "Linear: KO-131 (https://linear.app/example/issue/KO-131/"
+            "add-a-thing)")
+        self.assertNotIn("\u2014 KO-131", body)  # no FINDINGS entry heading
+        self.assertNotIn("estimate: 5 min", body)
+        self.assertNotIn("Reading the diff.", body)
+        self.assertEqual(
+            self.read("SELECT phase, prUrl FROM runs"),
+            [("awaiting_merge_approval", self.URL)])
+
+    def test_a_reply_without_a_title_falls_back_to_the_ticket_form(self):
+        """No `TITLE:` line: the PR is still opened, titled `KO-n: TITLE`
+        with the ticket body and the FINDINGS entry, and one printed line
+        says the written text was refused."""
+        provider = self.written_target()
+
+        out = self.main_output(
+            Commit("the scripted work"), APPROVE,
+            Idle("I would call this [Contacts] Put Contact Name first.\n\n"
+                 "The two forms now \u2026"),
+            provider=provider)
+
+        create = [c for c in self.recorded() if c.startswith("gh pr create")]
+        self.assertEqual(create, [
+            f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
+            " --title KO-131: add a thing --body-file -"])
+        body = self.pr_body.read_text()
+        self.assertIn("The thing, added.", body)
+        self.assertIn("\u2014 KO-131", body)
+        refused = [line for line in out.splitlines()
+                   if "written PR text refused" in line]
+        self.assertEqual(len(refused), 1, out)
+        self.assertIn("KO-131", refused[0])
+        self.assertIn("TITLE:", refused[0])
+        self.assertEqual(
+            self.read("SELECT phase, prUrl FROM runs"),
+            [("awaiting_merge_approval", self.URL)])
+
     def test_a_squash_only_repository_merges_with_its_configured_method(self):
         """`[merge] pr_merge_method = "squash"`: the one `PUT
         .../pulls/7/merge` carries `merge_method` `squash`, still pinned to

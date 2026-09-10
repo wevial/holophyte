@@ -734,20 +734,34 @@ def board_config(target):
 # `"rebase"`. A repository whose ruleset allows squash only, or requires
 # linear history, refuses a merge commit after every gate has passed; this
 # names the method it will take. Validated whatever the mode, like the rest.
+#
+# `pr_text` is where the pull request's title and body come from under
+# `mode = "pr"`: `"ticket"` (the default) titles it `KO-n: TITLE` and pastes
+# the ticket body with the run's FINDINGS entry; `"written"` spends one
+# implementer turn on the diff, the ticket and the repository's agent guide
+# and opens the PR with the title and description that turn writes, the
+# Linear issue linked at the end (KO-336). `pr_style` is an optional string
+# of instructions that turn is given -- the repository's own PR conventions
+# in the operator's words. A reply the loop cannot read falls back to the
+# ticket form for that PR, so a PR is always opened.
 MERGE_KEYS = {
     "approve": "auto",
     "mode": "local",
     "pr_rounds": 5,
     "pr_merge_method": "merge",
+    "pr_text": "ticket",
+    "pr_style": "",
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
 MERGE_METHODS = ("merge", "squash", "rebase")
+MERGE_PR_TEXTS = ("ticket", "written")
 MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
-                "pr_merge_method": MERGE_METHODS}
+                "pr_merge_method": MERGE_METHODS, "pr_text": MERGE_PR_TEXTS}
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
 MergeConfig = collections.namedtuple(
-    "MergeConfig", ("approve", "mode", "pr_rounds", "pr_merge_method"))
+    "MergeConfig", ("approve", "mode", "pr_rounds", "pr_merge_method",
+                    "pr_text", "pr_style"))
 
 
 def merge_config(target):
@@ -762,9 +776,11 @@ def merge_config(target):
     the default would merge work the operator asked to sign off on, or land
     locally what they asked to see as a pull request. `pr_rounds` is held to an integer
     of at least 1 -- a `true`, a `"5"` or a `0` names no number of passes
-    a shepherd can make. The refusal names the table, the key and the
-    constraint, like a bad `[loop]` value. Keys this version does not know
-    are refused by `check_config_keys()`.
+    a shepherd can make. `pr_text` is `"ticket"` or `"written"`, and
+    `pr_style` is a string (default empty): instructions, not a switch, so
+    any text is taken and anything else is refused. The refusal names the
+    table, the key and the constraint, like a bad `[loop]` value. Keys this
+    version does not know are refused by `check_config_keys()`.
     """
     table = target.config().get("merge", {})
     if not isinstance(table, dict):
@@ -780,6 +796,13 @@ def merge_config(target):
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be an"
                     f" integer of at least 1, got {value!r}")
+            values[key] = value
+            continue
+        if key == "pr_style":
+            if not isinstance(value, str):
+                raise SystemExit(
+                    f"[holo2] {target.config_path}: [merge] {key} must be a"
+                    f" string, got {value!r}")
             values[key] = value
             continue
         if value not in MERGE_VALUES[key]:

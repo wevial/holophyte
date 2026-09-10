@@ -332,6 +332,9 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # The criteria the reviewer must account for one by one, numbered in the
     # order the body lists them.
     criteria = list(task.get("criteria") or ())
+    # The issue's page on Linear, for a written pull request body to link;
+    # None for a provider that carries none.
+    issue_url = task.get("url")
     task = task["title"]
     # The name carries the ticket identifier ahead of the title slug: two
     # tickets whose titles agree for 30 characters must not share a branch or
@@ -353,7 +356,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
         return _resume_at_merge_gate(
             target, conn, run_id, provider, task_id, issue_id, task, branch,
             wt, carried, started, verify_cmd, contracts, budget_min, body,
-            criteria)
+            criteria, issue_url=issue_url)
     fresh = _cut_worktree(target, conn, run_id, provider, task_id, task,
                           branch, wt)
 
@@ -413,7 +416,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # PR is what the human's answer is about.
     if merge.mode == "pr":
         url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                       beat_s)
+                       beat_s, wt, started, budget_min, issue_url)
         merge_sha = _shepherd(target, conn, run_id, provider, task_id,
                               issue_id, task, branch, wt, sha, beat_s, url,
                               ticket, verify_cmd, contracts, budget_min,
@@ -439,7 +442,8 @@ def _approved_candidate(conn, run_id):
 
 def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                           task, branch, wt, carried, started, verify_cmd,
-                          contracts, budget_min, body, criteria=()):
+                          contracts, budget_min, body, criteria=(),
+                          issue_url=None):
     """The approved candidate's run: the preserved worktree, the pre-merge
     verify against the main of today, the merge. No implementer, no reviewer.
 
@@ -536,7 +540,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                      wt, beat_s, sha, verify_cmd, contracts)
     if merge.mode == "pr":
         url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                       beat_s)
+                       beat_s, wt, started, budget_min, issue_url)
         merge_sha = _shepherd(target, conn, run_id, provider, task_id,
                               issue_id, task, branch, wt, sha, beat_s, url,
                               f"{task}\n\n{body}" if body else task,
@@ -1097,7 +1101,79 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
                       f" at {sha[:12]}")
 
 
-def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s):
+# The most of `git diff main...HEAD` a written-PR turn is shown, in
+# characters; past it the diff is cut and the prompt says so (KO-336).
+PR_TEXT_DIFF_CAP = 60_000
+# The wall clock a written-PR turn gets, in minutes, unless less of the
+# run's box is left: a description, not an implementation.
+PR_TEXT_BUDGET_MIN = 5
+
+
+def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
+                     beat_s, wt, started, budget_min, issue_url):
+    """`[merge] pr_text = "written"`: one implementer turn writes the PR's
+    title and body from the diff; `(title, body)`, or None when its reply
+    could not be read or the turn ran out of time, with one printed line
+    saying so.
+
+    The turn is given the diff against `main` (capped at `PR_TEXT_DIFF_CAP`,
+    with a note when cut), the ticket, the repository's `AGENTS.md` and
+    `CLAUDE.md` when the worktree root has them, and the target's `pr_style`
+    instructions; it answers with a line `TITLE: ...` and the body after it.
+    The body carries `Linear: KO-n` and the issue URL as its last line, and
+    no FINDINGS entry: the description is the repository's, the entry is the
+    factory's. The budget is `PR_TEXT_BUDGET_MIN` or what is left of the
+    run's box, whichever is less, and at least one minute.
+    """
+    diff = sh(["git", "diff", "main...HEAD"], cwd=wt)
+    if len(diff) > PR_TEXT_DIFF_CAP:
+        diff = (diff[:PR_TEXT_DIFF_CAP]
+                + "\n\n[diff truncated here: the change is larger than this"
+                " prompt can carry; describe what is shown]")
+    parts = [
+        f"Write the pull request title and description for branch {branch},"
+        f" the candidate for ticket {task_id}: {task}.",
+        "Answer with exactly one line `TITLE: ...` (the title alone, under"
+        f" {pr.PR_TITLE_MAX} characters) followed by the description in"
+        " Markdown. Describe what the diff changes and why, in this"
+        " repository's own style; do not paste the ticket, and do not add"
+        " a link to the ticket -- the loop appends one. Do not edit, commit"
+        " or run anything: answer with the text only.",
+    ]
+    style = merge_config(target).pr_style.strip()
+    if style:
+        parts.append(f"Style instructions from the target's configuration:"
+                     f"\n{style}")
+    for name in ("AGENTS.md", "CLAUDE.md"):
+        guide = wt / name
+        if guide.is_file():
+            parts.append(f"The repository's {name}:\n\n"
+                         + guide.read_text(errors="replace").strip())
+    parts.append(f"The ticket:\n\n{body or task}")
+    parts.append(f"The diff against main (`git diff main...HEAD`):\n\n"
+                 f"```diff\n{diff}\n```")
+    goal = "\n\n".join(parts)
+    left = budget_min - (monotonic() - started) / 60
+    minutes = max(1, min(PR_TEXT_BUDGET_MIN, int(left)))
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "pull_request",
+                           f"writing the pull request text for {branch}"
+                           " from the diff")
+    reply = _timed(target, conn, run_id, beat_s, wt, minutes, goal)
+    parsed = pr.parse_pr_text(reply) if reply is not None else None
+    if parsed is None:
+        why = ("the turn ran out of time" if reply is None
+               else "the reply has no `TITLE:` line, an empty title, or a"
+               f" title over {pr.PR_TITLE_MAX} characters")
+        print(f"[holo2] written PR text refused for {task_id}: {why};"
+              " opening the pull request with the ticket's title and body")
+        return None
+    title, text = parsed
+    return title, pr.pr_body_written(text, task_id, issue_url)
+
+
+def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
+             wt=None, started=None, budget_min=None, issue_url=None):
     """`[merge] mode = "pr"`: push the approved candidate and open its pull
     request; return the PR's URL.
 
@@ -1108,11 +1184,24 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s):
     not the ticket, so no strike is spent and the branch and worktree stay
     exactly as after a refused merge. Nothing touches main.
 
+    Under `[merge] pr_text = "written"` the title and body are what
+    `_written_pr_text()` had one implementer turn write from the diff,
+    before the push; a reply it cannot read is the ticket form above for
+    this PR, so a PR is always opened (KO-336). `wt`, `started` and
+    `budget_min` are that turn's worktree and box, and `issue_url` the
+    link its body ends with; a direct call with none of them takes the
+    ticket form.
+
     Both calls leave the machine and block for as long as the remote takes,
     so they run under `heartbeat_while()` like every other wait: a slow push
     is not a dead loop for the supervisor to sweep before the URL is on the
     run (KO-259 review round 1).
     """
+    written = None
+    if wt is not None and merge_config(target).pr_text == "written":
+        written = _written_pr_text(target, conn, run_id, task_id, task,
+                                   branch, body, beat_s, wt, started,
+                                   budget_min, issue_url)
     # Still the `merge_gate` phase: the push and the create are the mode's
     # way out of the gate, named on the stream rather than as a phase move.
     if conn is not None and run_id is not None:
@@ -1123,9 +1212,12 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s):
         pr.push_branch(target, branch)
         print(f"[holo2] pushed {branch} to {pr.REMOTE}")
         now = int(time() * 1000)
-        url = pr.create_pull_request(target, branch,
-                                     pr.pr_title(task_id, task),
-                                     pr.pr_body(conn, run_id, body, now))
+        if written is not None:
+            title, text = written
+        else:
+            title = pr.pr_title(task_id, task)
+            text = pr.pr_body(conn, run_id, body, now)
+        url = pr.create_pull_request(target, branch, title, text)
     print(f"[holo2] pull request open: {url}")
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "pull_request",

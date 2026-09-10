@@ -293,6 +293,46 @@ def pr_body(conn, run_id, body, now):
     return f"{body}\n\n{entry}" if body else entry
 
 
+# The longest title a written reply may carry; GitHub truncates past 256, and
+# a title longer than this is a paragraph, not a title (KO-336).
+PR_TITLE_MAX = 120
+
+
+def parse_pr_text(reply):
+    """`(title, body)` from a written reply, or None when it has no
+    `TITLE:` line, an empty title, or a title over `PR_TITLE_MAX`.
+
+    The turn is asked for a line `TITLE: ...` followed by the body in
+    Markdown. The first line starting with `TITLE:` is the title -- an agent
+    that opens with a sentence of prose before it is still read -- and what
+    lies after that line, stripped, is the body; an empty body is allowed,
+    since a title alone is a PR the operator can still read. Whatever the
+    reply printed before the title line is dropped: it is the turn's
+    narration, not the description.
+    """
+    if not reply:
+        return None
+    lines = reply.splitlines()
+    for n, line in enumerate(lines):
+        if line.lstrip().startswith("TITLE:"):
+            title = line.lstrip()[len("TITLE:"):].strip()
+            if not title or len(title) > PR_TITLE_MAX:
+                return None
+            return title, "\n".join(lines[n + 1:]).strip()
+    return None
+
+
+def pr_body_written(body, task_id, issue_url):
+    """The written body with one line `Linear: KO-n` appended, the issue's
+    URL beside it when the provider carried one. No FINDINGS entry: the
+    written form is the repository's description, not the factory's."""
+    body = (body or "").strip()
+    link = f"Linear: {task_id}"
+    if issue_url:
+        link = f"{link} ({issue_url})"
+    return f"{body}\n\n{link}" if body else link
+
+
 def push_branch(target, branch):
     """`git push origin BRANCH` from the target checkout; a refusal is an
     `InfraFailure` naming the remote's answer, with the branch untouched."""
