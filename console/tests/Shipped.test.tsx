@@ -82,7 +82,7 @@ test("a row with commit_url null renders the plain short sha with no anchor", ()
   expect(document.querySelector("[data-row='236'] a")).toBeNull();
 });
 
-test("a row with pr_url renders a PR #N new-tab anchor beside the sha; a row with null has none", () => {
+test("a row with pr_url renders a PR #N new-tab anchor in place of the sha; a row with null keeps the sha", () => {
   const url = "https://github.com/o/r/pull/2170";
   const linked: ShippedRow = { ...ROWS[0]!, pr_url: url };
   render(<ShippedTable rows={[linked]} now={now} tz="UTC" />);
@@ -93,7 +93,7 @@ test("a row with pr_url renders a PR #N new-tab anchor beside the sha; a row wit
   expect(pr.getAttribute("target")).toBe("_blank");
   expect(pr.getAttribute("rel")).toBe("noopener noreferrer");
   expect(pr.className).toContain("text-link");
-  expect(pr.parentElement).toBe(document.querySelector("[data-row='236'] [data-sha]")!.parentElement);
+  expect(document.querySelector("[data-row='236'] [data-sha]")).toBeNull();
   cleanup();
 
   const plain: ShippedRow = { ...ROWS[0]!, pr_url: null };

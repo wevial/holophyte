@@ -24,7 +24,7 @@ const GRID = "grid grid-cols-[20px_56px_90px_1fr_70px_60px_70px_200px_80px] item
 /** The chevron is the row's `::before` so the eight cells stay its only
  *  children: "▸" shut, "▾" while `aria-expanded`. */
 const CHEVRON = "before:text-[12px] before:text-faint before:content-['▸'] aria-expanded:before:content-['▾']";
-const COLUMNS = ["Merged", "Ticket", "Title", "Project", "Rounds", "Findings", "Actual vs time box", "SHA"];
+const COLUMNS = ["Merged", "Ticket", "Title", "Project", "Rounds", "Findings", "Actual vs time box", "Change"];
 const FILLS = { ok: "bg-ok", warn: "bg-warn", over: "bg-bad" };
 const DELTA = { ok: "text-ok-text", over: "text-bad-text", muted: "text-muted" };
 
@@ -81,11 +81,13 @@ export function Sha({ row }: { row: { merge_sha: string | null; commit_url?: str
 }
 
 /** The run's pull request as "PR #N" in the sha's link style, opening in
- *  a new tab; nothing at all when the run opened none. */
-export function PrLink({ url }: { url: string | null | undefined }) {
+ *  a new tab; nothing at all when the run opened none. `title` is the
+ *  anchor's tooltip: the Shipped table hands it the merge sha the cell no
+ *  longer shows. */
+export function PrLink({ url, title }: { url: string | null | undefined; title?: string | null }) {
   if (!url) return null;
   return (
-    <a data-pr href={url} target="_blank" rel="noopener noreferrer" className={`${SHA_CLASS} hover:underline`}>
+    <a data-pr href={url} title={title ?? undefined} target="_blank" rel="noopener noreferrer" className={`${SHA_CLASS} hover:underline`}>
       {prLabel(url)}
     </a>
   );
@@ -93,8 +95,10 @@ export function PrLink({ url }: { url: string | null | undefined }) {
 
 /** One merge, a toggle like a Now row: clicking expands the run's detail
  *  card beneath, read from the daemon that merged it. The row is a
- *  `role="button"` div, not a button, because the sha cell is an anchor;
- *  a click or Enter on the sha follows the link without toggling the row. */
+ *  `role="button"` div, not a button, because the Change cell is an anchor;
+ *  a click or Enter on it follows the link without toggling the row. The
+ *  Change cell is the pull request when the run had one, its merge sha as
+ *  the tooltip, else the commit's short sha. */
 function Row({
   row,
   expanded,
@@ -136,9 +140,8 @@ function Row({
         <span className="font-mono text-[13px] text-body">{row.rounds}</span>
         <span className="font-mono text-[13px] text-body">{row.findings}</span>
         <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} />
-        <span onClick={(event) => event.stopPropagation()} className="flex items-baseline gap-2">
-          <Sha row={row} />
-          <PrLink url={row.pr_url} />
+        <span onClick={(event) => event.stopPropagation()} className="flex items-baseline">
+          {row.pr_url ? <PrLink url={row.pr_url} title={row.merge_sha} /> : <Sha row={row} />}
         </span>
       </div>
       {expanded && <RunDetail base={row.daemon ?? ""} id={row.id} now={now} polls={polls} deps={deps} />}
