@@ -9,7 +9,9 @@ ignored rather than filed against a thread that does not exist.
 
 Run: python3 -m unittest discover -s tests -p 'test_shepherd*' -v
 """
+import tempfile
 import unittest
+from pathlib import Path
 
 from holophyte import pr, shepherd
 from holophyte.pr import PullRequest, Thread
@@ -73,6 +75,45 @@ class FoldChecksTests(unittest.TestCase):
                                         []), "pending")
         self.assertEqual(pr.fold_checks("SUCCESS", [run("lint"), None], []),
                          "pending")
+
+
+class AdjudicationBriefTests(unittest.TestCase):
+    """A thread naming an existing function the diff re-implements is a
+    change request: the brief says so, and quotes the repository's
+    conventions when it has a file of them."""
+    THREAD = thread(1, "This duplicates `getTxSide` in lib/tx.py; reuse it.")
+
+    def brief(self, wt):
+        return shepherd.adjudication_brief(
+            PULL, (self.THREAD,), "the ticket", "c" * 40,
+            shepherd.conventions(wt))
+
+    def test_the_rule_and_the_conventions_excerpt_with_an_agents_md(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = Path(tmp)
+            (wt / "AGENTS.md").write_text("# Guide\n\nKeep it KISS and DRY.\n")
+
+            text = self.brief(wt)
+
+        self.assertIn("getTxSide", text)
+        self.assertIn("which the diff duplicates is a concrete change "
+                      "request", text)
+        self.assertIn("The repository's AGENTS.md:\n\n# Guide\n\nKeep it KISS "
+                      "and DRY.", text)
+        self.assertIn("DECLINE is for a thread that asks for nothing "
+                      "specific, or asks for what the ticket puts out of "
+                      "scope.", text)
+        self.assertNotIn("style preference", text)
+
+    def test_the_rule_and_no_excerpt_without_a_conventions_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(shepherd.conventions(Path(tmp)), ())
+            text = self.brief(Path(tmp))
+
+        self.assertIn("which the diff duplicates is a concrete change "
+                      "request", text)
+        self.assertNotIn("The repository's AGENTS.md", text)
+        self.assertNotIn("The repository's CLAUDE.md", text)
 
 
 class VerdictTests(unittest.TestCase):

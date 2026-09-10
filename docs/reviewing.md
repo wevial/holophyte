@@ -102,10 +102,13 @@ One pass:
    `refs/review/base` and `refs/review/candidate` pair a review round gets,
    and the bots' threads numbered with their whole conversation, and answers one
    line per thread: `THREAD n:
-   ADDRESS` (a concrete defect), `DECLINE` (a style preference, a
-   duplicate, a request beyond the ticket) or `HUMAN` (a genuine question,
-   a rejection of the approach, anything it would not answer on the
-   operator's behalf). A thread with no verdict line is `HUMAN`. The pass
+   ADDRESS` (a concrete defect -- a thread naming an existing function,
+   helper or constant the diff duplicates is one, the fix being reuse),
+   `DECLINE` (a thread asking for nothing specific, or for what the ticket
+   puts out of scope) or `HUMAN` (a genuine question, a rejection of the
+   approach, anything it would not answer on the operator's behalf). The
+   repository's `AGENTS.md` or `CLAUDE.md`, when it has one, is quoted in
+   the brief as the reviewer's standard. A thread with no verdict line is `HUMAN`. The pass
    is recorded as a `reviewRounds` row -- route `github:LOGIN`, the
    threads' authors; `github:ci` for a pass that found none -- before
    anything is posted, so an interrupted pass has its row.
