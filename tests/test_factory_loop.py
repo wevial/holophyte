@@ -3235,6 +3235,34 @@ class MergeModeTests(LoopFixture):
         self.assertIn("src/app.py:30 by @wevial", question)
         self.assertNotIn(self.DEFECT[3], question)
 
+    def test_under_act_a_bot_s_human_verdict_still_parks_before_acting(self):
+        """Review finding (KO-337): `human_threads = "act"` and two bots'
+        threads, one the adjudicator marks HUMAN and one ADDRESS. Bot
+        handling is unchanged by the setting: no fix round runs, nothing is
+        posted or resolved, and the run parks with the HUMAN thread
+        quoted -- as it does under the default."""
+        self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
+        asks = ("src/app.py", 30, "ask-bot",
+                "Is this API shape what the operator wants long term?")
+        self.fake_route(states=[self.pr_state([asks, self.DEFECT])])
+        verdicts = Reply("THREAD 1: HUMAN -- a design question for the"
+                         " operator\nTHREAD 2: ADDRESS -- a real crash")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [f"git push origin {BRANCH}"])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl FROM runs"),
+            [("awaiting_merge_approval", None, self.URL)])
+        question = self.question()
+        self.assertIn("needs a human's answer", question)
+        self.assertIn(f"> {asks[3]}", question)
+        self.assertNotIn(f"> {self.DEFECT[3]}", question)
+
     def test_pr_rounds_caps_the_passes_and_parks_naming_the_cap(self):
         """Acceptance: `pr_rounds = 2` and a thread that keeps reappearing:
         two passes each fix and answer it, the third pass does not happen,

@@ -1493,10 +1493,11 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
 
     Under `[merge] human_threads = "act"` a person's thread is judged too:
     an `ADDRESS` on it is fixed and answered like a bot's but never
-    resolved, and any other verdict folds to `HUMAN`. The fix round runs
-    before the `HUMAN` park then, so a bot's defect is not held up by a
+    resolved, and any other verdict folds to `HUMAN`. A person's `HUMAN`
+    parks after the fix round then, so a bot's defect is not held up by a
     person's question, and a pass that answered a person parks with their
-    thread listed as left open for them to close.
+    thread listed as left open for them to close. A bot's `HUMAN` still
+    ends the pass before anything is posted.
     """
     threads = state.threads
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
@@ -1536,12 +1537,15 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     by_verdict = {v: [(n, t, verdicts[n][1]) for n, t in
                       enumerate(threads, 1) if verdicts[n][0] == v]
                   for v in shepherd.VERDICTS}
-    # Under `park` a HUMAN verdict ends the pass before anything is posted.
-    # Under `act` the bots' threads and the person's ADDRESSes are fixed
-    # and answered first, and the pass parks after: a person's thread that
-    # is HUMAN is quoted, unanswered, and one that was addressed is left
-    # open for them to close -- so the next pass does not judge it again.
-    if by_verdict["HUMAN"] and not act:
+    # A HUMAN verdict on a bot's thread ends the pass before anything is
+    # posted, under either setting -- bot handling does not move. Only a
+    # person's HUMAN under `act` waits: the bots' threads and the person's
+    # ADDRESSes are fixed and answered first, and the pass parks after,
+    # the person's HUMAN thread quoted, unanswered, and one that was
+    # addressed listed as left open for them to close -- so the next pass
+    # does not judge it again.
+    if by_verdict["HUMAN"] and (not act or any(
+            t.author_kind == "bot" for _, t, _ in by_verdict["HUMAN"])):
         _park_human(conn, run_id, provider, task_id, branch, sha, pull,
                     by_verdict["HUMAN"], threads, reviewed)
     if by_verdict["ADDRESS"]:
