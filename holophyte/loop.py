@@ -2758,27 +2758,21 @@ def _admit_ticket(target, conn, project, provider, task, seen):
         return None
     # This writer's own label with no live run behind it -- the checks
     # above found none -- is a lease a close-out never took off (a board
-    # that was down at the time), so it comes off here and the claim goes
-    # on. Last, so a ticket refused above is left labelled as it was found.
-    if lease_holders(task) and not _drop_stale_label(task, mine, provider):
-        return None
+    # that was down at the time). It is admitted here and taken off in
+    # `_claim_run()`, under this loop's store lease: removed before the
+    # claim, two loops admitting the same stale label would let the slower
+    # one strip the label the faster one had just claimed and re-asserted.
     return ticket_id
 
 
 def _drop_stale_label(task, label, provider):
-    """Remove this writer's stale lease label from `task`'s issue; whether
-    it came off. A label that will not come off is a ticket to skip: a
-    claim would relabel it anyway, but a board refusing one label write is
-    unlikely to take the next, and the claim's own write fails the claim."""
+    """Remove this writer's stale lease label from `task`'s issue, or raise
+    what the board raised. Called only under the store lease, so the label
+    coming off is this loop's own stale one, never a live run's; the
+    claim's own label write follows and puts a fresh one on."""
     print(f"[holo2] {task['id']} carries this writer's lease label {label}"
           " with no live run; removing the stale label and claiming")
-    try:
-        provider.unlabel_issue(task["issue_id"], label)
-    except Exception as e:  # noqa: BLE001 - the board's refusal is the answer
-        print(f"[holo2] {task['id']}: the stale label {label} could not be"
-              f" removed ({e}); skipping it")
-        return False
-    return True
+    provider.unlabel_issue(task["issue_id"], label)
 
 
 class _Held:
@@ -2822,6 +2816,12 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
     # ticket is the double claim the label exists to prevent.
     label = lease_label(target)
     try:
+        # Admission let through a label naming this writer only, with no
+        # live run under it: stale, and this loop now holds the lease that
+        # says so. Off first, then the fresh label; a board refusing either
+        # write fails the claim below.
+        if lease_holders(task):
+            _drop_stale_label(task, label, provider)
         provider.label_issue(task["issue_id"], label)
     except LeaseHeld as e:
         # The admission read was a listing; the write reads the issue as it

@@ -20,8 +20,11 @@ machines it walks. Back to the [README](index.md).
    writer's `holo:` label is skipped in one line (`KO-n is leased by HOST on
    the board; skipping it`) and nothing is leased in the store; one carrying
    this writer's own label with no live run under it in the store is a stale
-   lease a close-out never took off, so the label is removed and the claim
-   goes ahead. The label write reads the issue as the board holds it then,
+   lease a close-out never took off, so the claim goes ahead and the stale
+   label is removed under the store lease, just before the fresh one is
+   written -- never before the claim, where a slower loop admitting the
+   same stale label would strip the one a faster loop had just taken. The
+   label write reads the issue as the board holds it then,
    not as the listing had it, so another writer's `holo:` label taken
    between the two refuses the write; and because Linear has no
    compare-and-swap, the write is additive (`addedLabelIds`, never the

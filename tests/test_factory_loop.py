@@ -3900,6 +3900,50 @@ class BoardLeaseLabelTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual(self.last_fake.roles, ["implement", "review"])
 
+    def test_a_stale_label_comes_off_only_under_this_loops_store_lease(self):
+        """Two loops on one store admit the same stale label. The one that
+        claims first re-asserts the label as its live lease; the slower one
+        must not strip it on its way to a claim the store then refuses.
+        The competitor here is a claim attempted at the moment this loop
+        removes the stale label: it must find the lease already held."""
+        db, target = self.db, self.target
+        competitor = []
+
+        class Contended(StubProvider):
+            def unlabel_issue(self, issue_id, name):
+                if competitor:
+                    # The merge's own release; the race is the first call.
+                    return super().unlabel_issue(issue_id, name)
+                conn = store.open(str(db))
+                try:
+                    project = store.ensure_project(conn, StubProvider.TEAM,
+                                                   str(target))
+                    ticket_id, held = conn.execute(
+                        "SELECT id, activeRunId FROM tickets"
+                        " WHERE linearIssueId = ?", (issue_id,)).fetchone()
+                    try:
+                        run_id = store.claim(conn, project, ticket_id)
+                    except store.ClaimConflict:
+                        competitor.append(("refused", held))
+                    else:
+                        competitor.append(("won", run_id))
+                        super().label_issue(issue_id, name)
+                finally:
+                    conn.close()
+                super().unlabel_issue(issue_id, name)
+
+        provider = self.labelled(Contended, [self.LABEL])
+        self.main_output(Commit("the scripted work"), APPROVE,
+                         provider=provider)
+
+        # The competitor found this loop's lease in place, and this loop's
+        # run -- the store's only one -- was the one worked and merged.
+        self.assertEqual(competitor, [("refused", 1)])
+        self.assertEqual(self.read("SELECT id, outcome FROM runs"),
+                         [(1, "merged")])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
+        self.assertEqual(provider.labels["iss-131"], [])
+
     def test_a_lease_another_writer_took_after_the_listing_is_refused(self):
         """The admission check reads the listing; the label write reads the
         issue as it is. A `holo:writer-2` that landed in between is
