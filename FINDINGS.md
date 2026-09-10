@@ -653,21 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[450 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T01:28:46Z — KO-342
-Round 3: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T01:30:13Z — KO-342
-MERGED to main as d9936d4 (branch task/ko-342-merges-into-main-serialise-und deleted).
-actual: 39.0 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T01:52:37Z — KO-343
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/holophyte/loop.py:2290 [p1] **[P1] Preserve child handles and exit statuses** — [holophyte/loop.py:2290](/home/reviewer/candidate/holophyte/loop.py:2290). `_spawn_worker()` discards the…
-- /home/reviewer/candidate/holophyte/loop.py:2208 [p1] **[P1] Preserve stop-on-failure across self-merge** — [holophyte/loop.py:2208](/home/reviewer/candidate/holophyte/loop.py:2208). When one worker fails and ano…
-- criteria:3 [p2] CRITERION 3: not met — a self-merge by the remaining worker causes re-exec instead of the required nonzero exit and loses the spawning prohibition Given `worker…
+[453 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T02:01:53Z — KO-343
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -764,3 +750,15 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T04:12:17Z — KO-332
 MERGED to main as c723994 (branch task/ko-332-a-shipped-row-expands-to-the-s deleted).
 actual: 6.4 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T04:31:44Z — KO-335
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/console/src/components/AttentionRow.tsx:66 [p2] [P2] [AttentionRow.tsx:66](/home/reviewer/candidate/console/src/components/AttentionRow.tsx:66): When a question has a thread, pressing Enter on its PR link b…
+
+## 2026-09-10T04:39:20Z — KO-335
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T04:40:52Z — KO-335
+MERGED to main as 04e61a2 (branch task/ko-335-a-run-with-a-pull-request-carr deleted).
+actual: 28.5 min · estimate: 30 min · rounds: 2
