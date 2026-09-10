@@ -101,6 +101,10 @@ class ConformanceMixin:
     def comments_on(self, identifier):
         raise NotImplementedError
 
+    def issue_id(self, identifier):
+        """The board's canonical id for a seeded ticket."""
+        raise NotImplementedError
+
     def claim(self, skip=(), **kwargs):
         # `linear_provider.claim_next()` prints the claim line; a passing
         # suite should not narrate it.
@@ -207,6 +211,32 @@ class ConformanceMixin:
         self.assertEqual(self.comments_on("KO-1"), ["first", "second"])
         self.assertEqual(self.comments_on("KO-2"), [])
 
+    def test_a_label_added_rides_the_listing_and_comes_off_on_unlabel(self):
+        """The board lease (KO-351): `label_issue()` puts a label on the
+        ticket the next claim and listing can read back in `labels`,
+        creating the label on first use; `unlabel_issue()` takes exactly
+        that one off and leaves the ticket's other labels alone."""
+        self.seed("KO-1")
+        self.assertEqual(self.claim()["labels"], [])
+
+        self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-1")
+        self.provider.label_issue(self.issue_id("KO-1"), "other")
+        self.provider.label_issue(self.issue_id("KO-1"), "holo:writer-1")
+
+        (task,) = self.provider.ready_issues()
+        self.assertEqual(task["labels"], ["holo:writer-1", "other"])
+        # The read-back a lease write is judged by: the board as it is now.
+        self.assertEqual(self.provider.issue_labels(self.issue_id("KO-1")),
+                         ["holo:writer-1", "other"])
+
+        self.provider.unlabel_issue(self.issue_id("KO-1"), "holo:writer-1")
+        self.provider.unlabel_issue(self.issue_id("KO-1"), "holo:writer-1")
+
+        self.assertEqual(self.claim()["labels"], ["other"])
+        self.assertEqual(self.provider.issue_labels(self.issue_id("KO-1")),
+                         ["other"])
+
+
 
 class FileProviderTests(ConformanceMixin, unittest.TestCase):
     """`FileProvider` over a temporary directory, in the documented format."""
@@ -231,6 +261,9 @@ class FileProviderTests(ConformanceMixin, unittest.TestCase):
         if not path.exists():
             return []
         return re.findall(r"^## \S+\n\n(.*?)\n\n", path.read_text(), re.S | re.M)
+
+    def issue_id(self, identifier):
+        return identifier  # a ticket file has one name
 
     def test_priority_order_is_identifier_order_on_a_board_without_priority(self):
         """`[loop] order = "priority"` against the file board: a ticket file
@@ -286,6 +319,7 @@ class FakeLinear:
         self.issues = {}
         self.comments = []
         self.calls = []
+        self.team_labels = {}  # name -> id, created on first use
 
     def add(self, identifier, title, description, estimate=None, state="Todo",
             priority=0):
@@ -294,6 +328,7 @@ class FakeLinear:
             "title": title, "description": description, "estimate": estimate,
             "priority": priority,
             "state": {"name": state, "type": STATE_TYPES[state]},
+            "labels": {"nodes": []},
             "relations": {"nodes": []}}
 
     def find(self, ref):
@@ -303,6 +338,35 @@ class FakeLinear:
                 return issue
         return None
 
+    def labels_gql(self, query, variables):
+        """The label half of the transport (KO-351): the team's label
+        lookup and creation, and the `addedLabelIds`/`removedLabelIds`
+        forms of `issueUpdate`, each touching only the labels named; None
+        for a query that is none of those."""
+        if "issueUpdate" in query and "LabelIds" in query:
+            issue = self.find(variables["id"])
+            if issue is None:
+                return {"issueUpdate": {"success": False}}
+            by_id = {i: n for n, i in self.team_labels.items()}
+            nodes = issue["labels"]["nodes"]
+            if "addedLabelIds" in query:
+                nodes.extend({"id": i, "name": by_id[i]} for i in variables["labels"]
+                             if all(n["id"] != i for n in nodes))
+            else:
+                nodes[:] = [n for n in nodes if n["id"] not in variables["labels"]]
+            return {"issueUpdate": {"success": True}}
+        if "issueLabels(filter:" in query:
+            label_id = self.team_labels.get(variables["name"])
+            return {"issueLabels": {"nodes": [{"id": label_id}] if label_id else []}}
+        if "issueLabelCreate" in query:
+            name = variables["input"]["name"]
+            self.team_labels[name] = f"label-{name}"
+            return {"issueLabelCreate": {"success": True,
+                                         "issueLabel": {"id": f"label-{name}"}}}
+        if "teams(filter:" in query:
+            return {"teams": {"nodes": [{"id": "team-1"}]}}
+        return None
+
     def gql(self, query, variables=None):
         variables = variables or {}
         self.calls.append((query, variables))
@@ -310,6 +374,9 @@ class FakeLinear:
             return {"workflowStates": {"nodes": [
                 {"id": f"state-{name}", "name": name, "type": kind}
                 for name, kind in STATE_TYPES.items()]}}
+        labelled = self.labels_gql(query, variables)
+        if labelled is not None:
+            return labelled
         if "issueUpdate" in query:
             issue = self.find(variables["id"])
             if issue is None:
@@ -372,6 +439,9 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
 
     def comments_on(self, identifier):
         return [body for issue, body in self.board.comments if issue == identifier]
+
+    def issue_id(self, identifier):
+        return self.board.issues[identifier]["id"]
 
     def test_priority_order_claims_the_most_urgent_first_and_unprioritised_last(self):
         """`order="priority"`: Linear's 1 (urgent) before 3 (medium) before

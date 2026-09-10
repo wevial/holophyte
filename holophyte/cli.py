@@ -387,8 +387,8 @@ def _store_verb(args, target, board):
     # it claims it again, so a target with no board exits here naming the
     # key, before anything is written.
     if args.requeue is not None:
-        require_board(target, board)
-        requeue(target, args.requeue, args.note)
+        requeue(target, args.requeue, args.note,
+                provider=require_board(target, board))
         return True
     # Same shape and the same reason: the released ticket is claimed by a
     # loop that mirrors it to the board, so a target with no board exits here.

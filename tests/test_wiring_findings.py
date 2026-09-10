@@ -54,6 +54,20 @@ class StubProvider:
                 return self.queue.pop(i)
         return None
 
+    # The board lease label (KO-351): what the loop labelled and unlabelled,
+    # per issue, so the stub answers the claim's and the close-out's calls.
+    def label_issue(self, issue_id, name):
+        self.__dict__.setdefault("labels", {}).setdefault(issue_id, [])
+        if name not in self.labels[issue_id]:
+            self.labels[issue_id].append(name)
+
+    def unlabel_issue(self, issue_id, name):
+        self.__dict__.setdefault("labels", {}).setdefault(issue_id, [])
+        self.labels[issue_id] = [n for n in self.labels[issue_id] if n != name]
+
+    def issue_labels(self, issue_id):
+        return list(self.__dict__.setdefault("labels", {}).get(issue_id, []))
+
     def set_state(self, issue_id, state):
         self.states.append((issue_id, state))
 
