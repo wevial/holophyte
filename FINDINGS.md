@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[465 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T03:36:28Z — KO-343
-Round 4: changes_requested · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T03:36:29Z — KO-343
-FAILED: terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 476ac0cd9d61
-actual: 33.9 min · estimate: 30 min · rounds: 4
+[467 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T03:55:05Z — KO-328
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -757,3 +750,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T18:07:04Z — KO-343
 MERGED to main as 3350116 (branch task/ko-343-the-loop-runs-a-pool-of-worker deleted).
 actual: 9.4 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T18:18:49Z — KO-346
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T18:20:19Z — KO-346
+MERGED to main as f773612 (branch task/ko-346-the-supervisor-and-the-loop-ru deleted).
+actual: 13.2 min · estimate: 30 min · rounds: 1
