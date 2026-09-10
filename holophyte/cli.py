@@ -3,7 +3,8 @@
 `--report`, `--requeue KO-n --note TEXT`, `--approve KO-n [--note TEXT]`,
 `--shepherd KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT` and the loop itself
+`--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT`, the internal
+`--worker` and the loop itself
 dispatch from here to `holophyte.loop`, `holophyte.board`,
 `holophyte.supervisor` and `holophyte.serve`; the `Target`
 is built once from the command line and handed down, and the board
@@ -41,6 +42,7 @@ from holophyte.loop import (
     report,
     requeue,
     shepherd_ticket,
+    worker,
 )
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.supervisor import (
@@ -242,6 +244,16 @@ def cli(argv=None):
              "until SIGINT/SIGTERM; a read-only connection per request, "
              "a bearer token from [serve] token_file beyond loopback, and "
              "writes nothing" % ADDRESS_SHAPE)
+    # Internal: the child the scheduler spawns under `[loop] workers > 1`.
+    # One ticket, claim to close, exit with the run's status; the scheduler
+    # has already run the startup checks, the sweep and the supervisor spawn
+    # for the whole pool, so this mode skips them.
+    modes.add_argument(
+        "--worker", action="store_true",
+        help="internal: run as one worker of the loop's pool -- claim one "
+             "ticket, work it to merge or park, exit with the run's status; "
+             "spawned by the scheduler under [loop] workers > 1, not meant "
+             "to be typed")
     # Not a mode of its own: it says what `--sweep` does with what it finds,
     # so it is refused rather than ignored anywhere else. Silently doing
     # nothing would be the worse answer for the operator who typed
@@ -353,6 +365,11 @@ def cli(argv=None):
             # lock and a stale one is a watcher to go and look at.
             raise SystemExit(
                 f"{held}\n{supervisor_liveness_line(target)}") from None
+    # A worker of the pool: the scheduler that spawned it live-probed the
+    # routes, checked the worktree setup and started the supervisor moments
+    # ago for the whole pool, so none of that is repeated per child.
+    if args.worker:
+        return worker(target, require_board(target, board))
     # And, on the path that actually dispatches agents, every route the config
     # names resolves before the loop claims a ticket. `--report` skips this: it
     # calls nobody, so a reviewer that is not installed on the machine reading

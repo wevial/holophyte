@@ -42,6 +42,8 @@ EXPECTED = [
     # `awaiting_merge_approval` and frees its lease without ending it.
     "park",
     "pickable",
+    # KO-343: the scheduler's one-read count of the claimable queue.
+    "pickable_tickets",
     "record_event",
     "record_intervention",
     # KO-250: the run's narrative lives in the store; `board.ledger()` writes

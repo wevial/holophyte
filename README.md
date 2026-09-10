@@ -30,6 +30,7 @@ python3 factory.py --shepherd KO-n [--note TEXT] /path/to/repo # look at a parke
 python3 factory.py --repoint KO-n SHA --note TEXT /path/to/repo # move a parked candidate to a rebuilt branch tip
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
+python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
 ```
 
 `--file-ticket` validates the file against the target, creates the issue,

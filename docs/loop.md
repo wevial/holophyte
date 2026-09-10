@@ -117,6 +117,41 @@ machines it walks. Back to the [README](index.md).
    one is claimed: a blocked ticket still projects to Todo and still sorts
    where it sorts, so stopping on it would starve every ticket behind it.
 
+### The pool
+
+Under `[loop] workers = N` with `N > 1` (see [Config](config.md)) the
+process that ran `factory.py TARGET` works no ticket itself: it is the
+scheduler of a pool. It runs the startup checks, the read-only sweep, the
+reconcile and the supervisor spawn once, for the whole pool, then ticks:
+mirror the board's ready listing, count the tickets a worker could claim
+(the store's own pickability: mirrored `ready`, under no live run's lease,
+every dependency merged -- one listing and one store read per tick, then
+the predicate per listed ticket), spawn `factory.py TARGET --worker`
+children until `min(claimable, workers)` are alive, block until any child
+exits, read its status, repeat. A listing the board could not answer is
+not an empty queue: nothing is spawned on it, a live pool recounts at its
+next exit, and an empty pool ends the loop nonzero rather than reporting a
+queue it never saw. A queue of one ticket is one worker, as with `workers =
+1`; a queue of five under `workers = 3` is three, and the fourth starts when
+one of the three exits. Each worker is step 1 through 7 above for one
+ticket -- claim, worktree, implementer, verify, review, merge gate -- and
+exits with the run's status: `0` merged, `1` failed, `2` parked awaiting
+merge approval, `3` nothing left to claim, `4` stopped for a human. The
+children share the scheduler's stdout, so one `tee` captures the pool, and
+each worker prints `[holo2 wN]` in place of `[holo2]`, `N` its slot. Merges
+into `main` take turns under the merge lock of step 6, and so does a
+worker's close-out -- the `FINDINGS.md` regeneration, and its commit when
+the run merged -- so no worker writes the checkout while a sibling merges
+in it, whether the worker's own run merged or failed. `stop_on_failure =
+true` stops the spawning at the first failed worker and waits for the
+running ones; the scheduler exits nonzero, as the serial loop does. With
+the listing empty and no child alive it exits `0`, as the serial loop does
+on an empty board. A worker that merged a change to the factory itself
+stops the spawning too: the workers already running finish on the code they
+started with, and the scheduler re-execs itself once the last one is in,
+so no worker ever runs code newer than its scheduler. The supervisor is
+spawned by the scheduler, never by a worker.
+
 ## State machines
 
 Both diagrams below are generated from the code, not drawn:
