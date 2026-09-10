@@ -18,6 +18,7 @@ export function TicketCard({ card, open = false, onOpen }: { card: BoardCard; op
   return (
     <article
       data-ticket={card.ticket}
+      data-card-key={card.key}
       data-state={card.status}
       className="flex flex-col gap-[6px] rounded-[8px] border border-line bg-card px-3 py-[10px] shadow-card"
     >

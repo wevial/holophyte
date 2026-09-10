@@ -164,6 +164,41 @@ test("a poll that replaces the board data leaves the open sheet on the same tick
   expect(asked.filter((url) => url.endsWith("/tickets/KO-242")).length).toBe(fetches);
 });
 
+test("a poll that moves the open ticket to another column re-mounts its card; Escape still returns focus to the identifier", async () => {
+  let moved = false;
+  const board = () => {
+    const body = boardBody();
+    if (moved) {
+      body.now = now + MIN;
+      body.columns[2]!.tickets = [];
+      body.columns[4]!.tickets.push(wire("KO-242", "Console reads /runs with cursor paging", 92));
+    }
+    return body;
+  };
+  const { fetch } = daemon(() => Response.json(ticket), board);
+  const { rerender } = render(<Board hosts={[host]} now={now} polls={0} deps={{ fetch }} tz="UTC" />);
+  await act(settle);
+  const before = identifier("KO-242");
+  before.focus();
+  fireEvent.click(before);
+  await act(settle);
+  expect(document.activeElement).toBe(screen.getByRole("dialog"));
+
+  moved = true;
+  rerender(<Board hosts={[host]} now={now} polls={1} deps={{ fetch }} tz="UTC" />);
+  await act(settle);
+  const after = identifier("KO-242");
+  expect(after).not.toBe(before);
+  expect(before.isConnected).toBe(false);
+  expect(after.closest("[data-column]")!.getAttribute("data-column")).toBe("in_flight");
+  expect(screen.getByRole("dialog")).toBeTruthy();
+
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(after);
+  expect(after.getAttribute("aria-pressed")).toBe("false");
+});
+
 test("a 401 shows the host's needs-token line and a 404 says the ticket is not mirrored here; neither throws", async () => {
   let answer = 401;
   const { fetch } = daemon(() => new Response(answer === 401 ? "unauthorized" : "{}", { status: answer }));

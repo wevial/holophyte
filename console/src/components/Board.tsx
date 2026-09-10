@@ -11,6 +11,14 @@ import { TicketSheet } from "./TicketSheet";
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
+/** The identifier button of the card rendered for `key`, if any. */
+function identifierFor(key: string): HTMLElement | null {
+  for (const article of document.querySelectorAll<HTMLElement>("[data-card-key]")) {
+    if (article.dataset.cardKey === key) return article.querySelector<HTMLElement>("[data-open-ticket]");
+  }
+  return null;
+}
+
 /**
  * The Board view: every host's `/board` as five columns, left to right
  * the path to merge, each card joined with the host's live run or open
@@ -49,9 +57,15 @@ export function Board({
   }, []);
   const closeSheet = useCallback(() => {
     setOpen(null);
-    opener.current?.focus();
+    // A poll may have moved the card to another column since it opened,
+    // unmounting the button that had focus; find the card's live
+    // identifier by its key, and fall back to the opener only while it
+    // is still in the document.
+    const live = open == null ? null : identifierFor(open.key);
+    const target = live ?? (opener.current?.isConnected ? opener.current : null);
+    target?.focus();
     opener.current = null;
-  }, []);
+  }, [open]);
   // The live card for the open ticket, so the header's bar follows the
   // poll; the card as opened when the poll has since dropped it.
   const openCard = open == null ? null : (board.cards.find((card) => card.key === open.key) ?? open);

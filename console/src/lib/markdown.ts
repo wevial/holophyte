@@ -17,11 +17,14 @@ type Block =
   | { kind: "paragraph"; lines: string[] };
 
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
-const FENCE = /^\s*(```|~~~)/;
+// A fence is a line opening with ``` or ~~~, or a line that is a lone
+// backtick: the ticket template's contract writes a fence that way, and
+// a bare backtick means nothing else in prose.
+const FENCE = /^\s*(?:```|~~~|`\s*$)/;
 const BULLET = /^\s*[-*+]\s+(.*)$/;
 const CHECKBOX = /^\[([ xX])\]\s*(.*)$/;
 
-/** The body split into blocks: fenced code swallows every line until its
+/** The body split into blocks: fenced code swallows every line until a
  *  closing fence (or the end), consecutive bullets form one list, other
  *  consecutive non-blank lines form one paragraph. */
 export function blocksOf(body: string): Block[] {

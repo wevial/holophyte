@@ -12,8 +12,8 @@ const dom = (body: string) => {
   return root;
 };
 
-test("the ticket's body: h2, an unchecked list item, a pre, strong, inline code, and raw HTML as literal text", () => {
-  const body = "## In scope\n- [ ] one\n\n```\ncode\n```\n**bold** and `x` and a <b>bold</b> tag as raw HTML";
+test("the ticket's body, as the contract writes it: h2, an unchecked list item, a pre from lone-backtick fences, strong, inline code, and raw HTML as literal text", () => {
+  const body = "## In scope\n- [ ] one\n\n`\ncode\n`\n**bold** and `x` and a <b>bold</b> tag as raw HTML";
   const root = dom(body);
   expect(root.querySelector("h2")!.textContent).toBe("In scope");
   const item = root.querySelector("li")!;
