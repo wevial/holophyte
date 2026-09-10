@@ -231,7 +231,9 @@ def status(target, now=None, started_ms=None):
     guess it from `elapsed_ms`), `round` (the review rounds recorded so
     far) and `strikes` (the sweep's tally, 0 when the run is not under
     suspicion). `project` is the same string as `target`: the console's
-    word for it; the wire carries both for one release.
+    word for it; the wire carries both for one release. `actions` is
+    `[serve] actions`, so the console knows before a click whether the
+    `POST /actions/...` routes exist here or its buttons stay disabled.
     """
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
@@ -254,6 +256,7 @@ def status(target, now=None, started_ms=None):
         "supervisor": supervisor_view(target, beat, now, knobs),
         "thresholds": {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                        "strikes": knobs.stale_strikes},
+        "actions": serve_config(target).actions,
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,
                   "title": run.title,
                   "phase": run.phase,

@@ -370,6 +370,7 @@ class StatusTests(ServeTestCase):
         self.assertEqual(body["thresholds"],
                          {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                           "strikes": knobs.stale_strikes})
+        self.assertIs(body["actions"], False)
 
     def test_a_run_carries_title_start_round_and_strikes(self):
         # KO-263: what the console's floor row draws. A run in `reviewing`
@@ -2060,6 +2061,16 @@ class ActionsTests(ServeTestCase):
                          [("intervention", "operator")])
         self.assertIn("holophyte-supervise@writer-a", entries[0].text)
         self.assertIn("restart-supervisor", entries[0].text)
+
+    def test_status_advertises_the_opt_in(self):
+        # KO-349: the console reads `actions` before a click, so a daemon
+        # without the routes draws its buttons disabled instead of
+        # posting into a 404.
+        self.seed()
+        self.start(self.token_config('actions = true\nname = "writer-a"\n'))
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertIs(body["actions"], True)
 
     def test_a_loopback_bind_demands_the_token_for_actions(self):
         """The bind address guards reads, not the units: on loopback `/status`

@@ -25,6 +25,7 @@ in [The daemon's actions](daemon.md). A target with no store answers 503.
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2},
+  "actions": false,
   "runs": [
     {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease", "phase": "working",
      "started_ms": 1788450461675, "heartbeat_age_ms": 71989, "elapsed_ms": 72816,
@@ -42,7 +43,10 @@ the sweep's tally for the run, 0 when it is not under suspicion.
 `supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
 serving process: its pid and when it started. `project` is the same
 string as `target`, the console's word for it; both are carried for one
-release. Every `host` passes through `[report] host_label`.
+release. `actions` is whether `[serve] actions = true` opened the
+`POST /actions/...` routes of [The daemon's actions](daemon.md); the
+console draws its action buttons disabled while it is `false`. Every
+`host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`
 

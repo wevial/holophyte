@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { NeedsYou } from "../src/components/NeedsYou";
-import { WRITES_LATER } from "../src/components/ActionButton";
+import { ACTIONS_OFF, NOT_WIRED, ROUTES } from "../src/lib/actions";
 import type { Attention, AttentionItem, Status } from "../src/lib/types";
 import { fixture, hostOf } from "./harness";
 
@@ -81,7 +81,7 @@ test("a question row with pr_url shows a PR #N anchor on its line; the fixture's
   expect(document.querySelector("[data-pr]")).toBeNull();
 });
 
-test("every action button is disabled and says writes come later", () => {
+test("every action button of a daemon without actions is disabled: wired ones name the opt-in, the rest not wired yet", () => {
   render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
   const actions = rows().flatMap((row) => within(row).getAllByRole("button"));
   expect(actions.map((button) => button.textContent)).toEqual([
@@ -95,7 +95,7 @@ test("every action button is disabled and says writes come later", () => {
   ]);
   for (const button of actions) {
     expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(button.getAttribute("title")).toBe(WRITES_LATER);
+    expect(button.getAttribute("title")).toBe(button.textContent! in ROUTES ? ACTIONS_OFF : NOT_WIRED);
   }
 });
 
