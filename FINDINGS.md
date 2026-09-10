@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[463 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T03:20:32Z — KO-343
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/loop.py:2380 [p2] [P2] [holophyte/loop.py:2380](/home/reviewer/candidate/holophyte/loop.py:2380): Claimable counting violates the required one store read per tick. Five ready t…
-- /home/reviewer/candidate/holophyte/loop.py:2161 [p2] [P2] [holophyte/loop.py:2161](/home/reviewer/candidate/holophyte/loop.py:2161): Only stdout receives worker prefixes. Reproducing an exception from `open_stor…
-
-## 2026-09-10T03:29:41Z — KO-343
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:2236 [p2] [holophyte/loop.py:2236](/home/reviewer/candidate/holophyte/loop.py:2236): `_PrefixedOut.write()` loses the worker prefix when indentation arrives separately:…
+[465 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T03:36:28Z — KO-343
 Round 4: changes_requested · reviewer codex-astra-medium · verify passed
@@ -761,3 +750,10 @@ Round 2: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T05:13:03Z — KO-338
 MERGED to main as 48e6197 (branch task/ko-338-the-electron-app-opens-the-win deleted).
 actual: 3.5 min · estimate: 30 min · rounds: 2
+
+## 2026-09-10T18:05:34Z — KO-343
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T18:07:04Z — KO-343
+MERGED to main as 3350116 (branch task/ko-343-the-loop-runs-a-pool-of-worker deleted).
+actual: 9.4 min · estimate: 30 min · rounds: 1
