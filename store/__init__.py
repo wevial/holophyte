@@ -83,6 +83,10 @@ CREATE TABLE IF NOT EXISTS tickets (
     linearIssueId        TEXT    NOT NULL UNIQUE,
     linearIdentifier     TEXT    NOT NULL,  -- e.g. "HOL-142", for humans
     title                TEXT    NOT NULL,
+    -- The Linear body the loop last read at claim time, so what the daemon
+    -- serves is the exact contract the run worked from (KO-328). Empty,
+    -- not NULL, for a row mirrored before the column existed.
+    body                 TEXT    NOT NULL DEFAULT '',
     status               TEXT    NOT NULL
         CHECK (status IN ('needs_spec', 'ready', 'in_flight', 'blocked_on_deps',
                           'blocked_on_operator', 'merged', 'abandoned')),
@@ -357,7 +361,11 @@ CREATE TABLE IF NOT EXISTS interventions (
 # loop gave the run, so `/runs/N` serves the cap the run had rather than
 # the module constant (KO-321). Version 11 is the action CHECK admitting
 # 'reconcile' and the trigger CHECK 'linear_completed': the loop's startup
-# walk of a mirrored ticket Linear has closed elsewhere (KO-329).
+# walk of a mirrored ticket Linear has closed elsewhere (KO-329), and also
+# `tickets.body`, the Linear body the claim-time mirror stores so `/tickets/
+# KO-n` can serve it (KO-328). Both shipped as 11: the ladder adds the
+# column by its absence, not by the stamp, so a store KO-329 stamped 11
+# still gains it here.
 SCHEMA_VERSION = 11
 
 # How long a connection waits for another writer's lock before raising
@@ -508,6 +516,11 @@ ADDED_COLUMNS = (
         "runs",
         "reviewRoundCap",
         "reviewRoundCap INTEGER",
+    ),
+    (
+        "tickets",
+        "body",
+        "body TEXT NOT NULL DEFAULT ''",
     ),
 )
 
@@ -1863,8 +1876,14 @@ def mirror_ticket(
     affinity="any",
     depends_on=None,
     now=None,
+    body="",
 ):
     """Upsert the Holophyte mirror of a Linear issue; return its ticket id.
+
+    `body` is the issue's text as the caller read it; it is written on
+    insert and on every re-mirror, so the stored body is always the last
+    one the loop read, and `ticket_by_identifier()` serves that rather than
+    whatever Linear holds now. Empty when the caller has none.
 
     The routing rule, state-model §2: a ticket lacking acceptance criteria or
     a verification command is **not pickable**, so a new one lands in
@@ -1922,13 +1941,13 @@ def mirror_ticket(
         if row is None:
             ticket_id = conn.execute(
                 "INSERT INTO tickets"
-                " (projectId, linearIssueId, linearIdentifier, title, status,"
-                "  acceptanceCriteria, verificationCommands, timeBoxMs,"
+                " (projectId, linearIssueId, linearIdentifier, title, body,"
+                "  status, acceptanceCriteria, verificationCommands, timeBoxMs,"
                 "  affinity, dependsOn, mirroredAt)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     project_id, linear_issue_id, linear_identifier, title,
-                    derived, criteria, commands, time_box_ms, affinity,
+                    body, derived, criteria, commands, time_box_ms, affinity,
                     "[]" if depends is None else depends, now,
                 ),
             ).lastrowid
@@ -1937,13 +1956,13 @@ def mirror_ticket(
             if status in ("needs_spec", "ready"):
                 status = derived
             conn.execute(
-                "UPDATE tickets SET linearIdentifier = ?, title = ?,"
+                "UPDATE tickets SET linearIdentifier = ?, title = ?, body = ?,"
                 " status = ?, acceptanceCriteria = ?, verificationCommands = ?,"
                 " timeBoxMs = ?, affinity = ?,"
                 " dependsOn = COALESCE(?, dependsOn), mirroredAt = ?"
                 " WHERE id = ?",
                 (
-                    linear_identifier, title, status, criteria, commands,
+                    linear_identifier, title, body, status, criteria, commands,
                     time_box_ms, affinity, depends, now, ticket_id,
                 ),
             )

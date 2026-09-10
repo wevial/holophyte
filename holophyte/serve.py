@@ -120,7 +120,10 @@ REMOTE_SHAPES = (
 RUN_PATH = re.compile(r"^/runs/([^/]+)$")
 RUN_FILES_PATH = re.compile(r"^/runs/([^/]+)/files$")
 RUN_LEDGER_PATH = re.compile(r"^/runs/([^/]+)/ledger$")
-RUN_SHAPES = (RUN_PATH, RUN_FILES_PATH, RUN_LEDGER_PATH)
+# `/tickets/KO-n`: one mirrored ticket by its Linear identifier, body
+# included (KO-328). Behind the token like the run routes; `SHAPED_ROUTES`
+# below pairs each of these with its handler.
+TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 # The fixed JSON paths that read the store; every one is behind the token.
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger",
                         "/attention", "/board"})
@@ -342,6 +345,34 @@ def board(target, now=None):
     return 200, {"columns": [{"state": state, "tickets": columns[state]}
                              for state in BOARD_STATES],
                  "now": now}
+
+
+def ticket_detail(target, identifier):
+    """The `/tickets/KO-n` answer: `(http status, JSON-able body)`.
+
+    One mirrored ticket by identifier: `ticket`, `title`, `status`, `body`
+    (the Linear text the loop last read at claim, served as it is, not
+    rendered), `acceptance_criteria`, `verification_commands`,
+    `time_box_ms`, `run` (the active run's id, null when none) and
+    `mirrored_ms`. An identifier the store has never mirrored is 404 with
+    an empty object, like an absent run. The store's mirror is the whole
+    answer; nothing here calls the provider.
+    """
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        ticket = store.read.ticket_by_identifier(conn, identifier)
+    finally:
+        conn.close()
+    if ticket is None:
+        return 404, {}
+    return 200, {"ticket": ticket.linearIdentifier, "title": ticket.title,
+                 "status": ticket.status, "body": ticket.body,
+                 "acceptance_criteria": list(ticket.acceptanceCriteria),
+                 "verification_commands": list(ticket.verificationCommands),
+                 "time_box_ms": ticket.timeBoxMs, "run": ticket.activeRunId,
+                 "mirrored_ms": ticket.mirroredAt}
 
 
 def no_store(target):
@@ -861,6 +892,27 @@ def static_file(console_dir, path):
     return file.read_bytes(), CONTENT_TYPES.get(file.suffix, OCTET_STREAM)
 
 
+# The JSON routes with a path segment to capture, each with the handler
+# that takes `(target, segment)`. Every one is behind the token; `dispatch`
+# tries them in this order after the fixed paths.
+SHAPED_ROUTES = (
+    (RUN_PATH, run_detail),
+    (RUN_FILES_PATH, run_files),
+    (RUN_LEDGER_PATH, run_ledger),
+    (TICKET_PATH, ticket_detail),
+)
+
+
+def shaped_route(path):
+    """`(handler, captured segment)` for the `SHAPED_ROUTES` entry `path`
+    matches, or None when none does."""
+    for shape, handler in SHAPED_ROUTES:
+        match = shape.match(path)
+        if match is not None:
+            return handler, match.group(1)
+    return None
+
+
 class StatusHandler(BaseHTTPRequestHandler):
     """`GET /status`, `GET /runs`, `GET /runs/N`, `GET /runs/N/files`,
     `GET /attention`, `GET /board` and `GET /peers` as JSON; any other GET
@@ -914,12 +966,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif path == "/peers":
             code, body = 200, {"self": self.server.self_address,
                                "peers": list(self.server.peers)}
-        elif (run := RUN_PATH.match(path)) is not None:
-            code, body = run_detail(self.server.target, run.group(1))
-        elif (run := RUN_FILES_PATH.match(path)) is not None:
-            code, body = run_files(self.server.target, run.group(1))
-        elif (run := RUN_LEDGER_PATH.match(path)) is not None:
-            code, body = run_ledger(self.server.target, run.group(1))
+        elif (shaped := shaped_route(path)) is not None:
+            handler, segment = shaped
+            code, body = handler(self.server.target, segment)
         else:
             found = static_file(self.server.console_dir, path)
             if isinstance(found[0], bytes):
@@ -936,7 +985,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             return True
         if path in JSON_PATHS:
             return False
-        return not any(shape.match(path) for shape in RUN_SHAPES)
+        return shaped_route(path) is None
 
     def refuse(self):
         self.answer(405, {"error": "method not allowed",

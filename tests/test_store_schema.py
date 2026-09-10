@@ -28,6 +28,9 @@ DOCUMENTED_COLUMNS = {
         "status", "acceptanceCriteria", "verificationCommands", "timeBoxMs",
         "affinity", "dependsOn", "activeRunId", "lastRunId", "blockedQuestion",
         "splitDepth", "mirroredAt",
+        # Store-owned: the Linear body the claim-time mirror last read, so
+        # the daemon serves the contract the run worked from (KO-328).
+        "body",
     },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
