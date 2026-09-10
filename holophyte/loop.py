@@ -8,7 +8,7 @@ itself (`self_hosted()`). Under `[loop] workers > 1` `main()` is instead
 queue, each one `worker()`: the same phases once, for one ticket (KO-343).
 `run_task()` is the loop body: the worktree (`reuse_leftover()` for a leftover,
 `run_worktree_setup()` for the `[worktree] setup` table, checked at startup by
-`check_worktree_setup()`), the implement/review/adjudicate turns, the verify
+`config.check_worktree_setup()`), the implement/review/adjudicate turns, the verify
 gate, the `--no-ff` merge. `report()` is `--report`'s whole body. Imports the
 package modules, `store`, `store.read`, `review_runner`, `provider` and the
 standard library; nothing from `factory`.
@@ -56,7 +56,6 @@ from holophyte.board import (
 )
 from holophyte.config import (
     branch_prefix,
-    carry_directories,
     loop_config,
     merge_config,
     report_config,
@@ -108,28 +107,6 @@ from holophyte.target import worktree_path
 # process image is replaced, never a module reloaded. A seam so tests can
 # see the decision without exec-ing the test runner.
 EXEC = os.execv
-
-
-def check_worktree_setup(target):
-    """Parse the `[worktree] setup` table before the loop claims work.
-
-    `check_agent_commands()`'s sibling, here for the same reason: a table read
-    for the first time inside a run would abandon a claimed ticket, a cut
-    branch and a held ticket lease over something startup could have said in
-    one sentence. It parses through `setup_commands()`, so a table this
-    accepts is exactly a table a run would accept.
-
-    What it deliberately does not settle is the commands themselves. They are
-    shell, not argv -- `run_verify()` runs them the way it runs a ticket's
-    verify command -- and they are written against a worktree that does not
-    exist yet, so there is nothing here to resolve them against. Startup
-    settles the shape of the table; the worktree settles the rest. The cap
-    the commands run under is checked here too, for the same reason.
-    """
-    setup_commands(target)
-    setup_timeout(target)
-    branch_prefix(target)
-    carry_directories(target)
 
 
 def timeout_report(cmd, expired):

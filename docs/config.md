@@ -392,12 +392,18 @@ token_file = "~/.holophyte/holophyte/serve.token"
 # `/actions/requeue` behind the token, on every bind (so `token_file` is
 # required with this on). Off, every `/actions/` path is 404.
 actions = false
+# Answer `GET /config` (this file, token and key values redacted) and
+# `PUT /config` (a replacement, validated as startup validates, written
+# beside a `config.toml.bak-STAMP`) behind the token, on every bind. Off
+# by default: whoever can write this file writes `[worktree] setup` and
+# `[agents]`, which the next loop start runs as commands on this host.
+config_edit = false
 # The systemd instance those actions address: `holophyte-supervise@NAME`,
 # `holophyte-loop@NAME`. The target directory's name when absent.
 name = "holophyte"
 ```
 
-Accepted keys: `token_file`, `actions`, `name`.
+Accepted keys: `token_file`, `actions`, `config_edit`, `name`.
 
 The daemon's bind address is its only boundary, and once the bind is
 anything but loopback that is not enough. With `--serve HOST:PORT` where
@@ -427,8 +433,21 @@ whatever the bind, and a bind without it is a startup error naming the
 key. `name` is the
 instance name the unit actions append -- the slug the deploy templates were
 enabled under -- a non-empty string with no `/`, the target directory's
-name when absent. Both are read once at bind. The routes, their bodies and
-replies are in [The daemon's actions](reference/daemon.md).
+name when absent. `config_edit` opens this file itself to the console:
+`GET /config` is its text with the value of every key named `...token` or
+`...key` replaced by `[redacted]`, wherever and however the key is written
+(`token_file`, a path, stays; every value under a table so named is
+replaced too), and `PUT
+/config` is a replacement the daemon holds to the same checks startup
+runs -- a refused document is 400 naming the key and nothing is written --
+then writes beside a timestamped backup and records as a `config_edit`
+intervention; a `[redacted]` sent back is the current value, so a round
+trip never blanks a secret. The change applies at the next loop start, not
+to a running loop. It needs `token_file` on every bind as `actions` does,
+and is off by default because the file is command execution on the writer
+host (`[worktree] setup`, `[agents]`). All three are read once at bind. The
+routes, their bodies and replies are in [The daemon's
+actions](reference/daemon.md).
 
 ```toml
 [merge]

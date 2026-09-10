@@ -33,21 +33,37 @@ const renderInBar = () =>
 
 afterEach(cleanup);
 
-test("a 40 px first segment keeps its whole label beneath the bar: no truncate class, the cell never narrower than its text", () => {
+test("the labels are a legend beneath the bar: one entry per phase in order, no widths, a dot in the phase colour", () => {
   renderInBar();
-  const bar = screen.getByRole("list", { name: "Round timeline" });
-  const first = bar.querySelector("li") as HTMLElement;
-  expect(Math.round(resolvePx(first.style.width, BAR_PX))).toBe(40);
   const labels = document.querySelector("[data-segment-labels]") as HTMLElement;
-  expect(labels.textContent).toContain("implement");
-  expect(labels.textContent).toContain("1m 12s");
+  expect(labels.className).toContain("flex-wrap");
   const cells = Array.from(labels.querySelectorAll("[data-segment-label]")) as HTMLElement[];
   expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["implement", "review"]);
   expect(cells[0]!.textContent).toBe("implement1m 12s");
-  for (const element of Array.from(labels.querySelectorAll("*"))) expect(element.classList.contains("truncate")).toBe(false);
-  expect(Math.round(resolvePx(cells[0]!.style.width, BAR_PX))).toBe(40);
-  expect(cells[0]!.style.minWidth).toBe("max-content");
-  expect(labels.className).toContain("flex-wrap");
+  for (const cell of cells) {
+    expect(cell.style.width).toBe("");
+    expect(cell.style.minWidth).toBe("");
+  }
+  expect(cells[0]!.querySelector("span")!.className).toContain("bg-accent");
+  expect(cells[1]!.querySelector("span")!.className).toContain("bg-review");
+  const bar = screen.getByRole("list", { name: "Round timeline" });
+  expect((bar.querySelector("li") as HTMLElement).getAttribute("title")).toBe("implement · 1m 12s");
+});
+
+test("a phase shorter than a second is drawn in the bar but left out of the legend", () => {
+  render(
+    <RoundTimeline
+      segments={[
+        { kind: "implement", label: "implement", from: 0, to: 400, width: 0.001, running: false },
+        { kind: "implement", label: "implement", from: 400, to: 60_400, width: 0.5, running: false },
+      ]}
+    />,
+  );
+  const bar = screen.getByRole("list", { name: "Round timeline" });
+  expect(bar.querySelectorAll("li[data-segment='implement']").length).toBe(2);
+  const cells = Array.from(document.querySelectorAll("[data-segment-label]"));
+  expect(cells.length).toBe(1);
+  expect(cells[0]!.textContent).toBe("implement1m 00s");
 });
 
 test("the bar keeps its proportional widths and its remainder; the labels are not inside it", () => {
