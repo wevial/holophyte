@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parent
-IMAGE = "holophyte-reviewer:ubuntu24.04-v4"
+IMAGE = "holophyte-reviewer:ubuntu24.04-v5"
 # The Codex route the container runs, and the profile a round records for
 # it. The pair is the default an absent `[agents] review_model` /
 # `review_effort` leaves in place; `holophyte.config` reads the keys and hands
@@ -70,12 +70,13 @@ class StagedCandidate:
 
 
 def _run(
-    args: Sequence[str], *, cwd: Path | None = None, timeout: int = 300
+    args: Sequence[str], *, cwd: Path | None = None, timeout: int = 300,
+    check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         list(args), cwd=cwd, capture_output=True, text=True, timeout=timeout
     )
-    if result.returncode:
+    if check and result.returncode:
         raise ReviewBoundaryError(
             f"command failed ({result.returncode}): {' '.join(args)}\n"
             f"{result.stdout}{result.stderr}".strip()
@@ -106,10 +107,75 @@ def _fingerprint(repo: Path) -> str:
     return hashlib.sha256("\n".join(facts).encode()).hexdigest()
 
 
+def _check_clean(stage: Path) -> None:
+    """Refuse a stage with a remote or anything git would report as a change.
+
+    `--ignored=no` is the default git already applies; it is spelled so the
+    check reads the same before and after a carried directory lands, and so
+    a carried directory that git did *not* ignore in the stage is caught.
+    """
+    if _git(stage, "remote") or _git(
+        stage, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=no"
+    ):
+        raise ReviewBoundaryError("staged candidate is not clean and zero-remote")
+
+
+def _carry_into(source: Path, stage: Path, carry: Sequence[str]) -> None:
+    """Copy each `[worktree] carry` directory from the worktree into the stage.
+
+    Each entry is a repository-relative directory the worktree's setup
+    installed and git ignores -- `console/node_modules`, `.venv` -- so the
+    reviewer can run the ticket's verify commands against the packages the
+    candidate was verified with. The copy lands at the same path with every
+    write bit cleared, so the reviewer reads it the way it reads the tree.
+    An entry that escapes the repository, is absent from the worktree, or
+    is tracked (in which case the checkout already holds it, and a copy
+    would be a second source of truth) fails the stage naming the entry:
+    a carry the stage silently skipped would fail the round later, as an
+    unverified gate, far from the config that asked for it.
+    """
+    for entry in carry:
+        relative = Path(entry)
+        if (relative.is_absolute() or not entry
+                or any(part in ("..", "") for part in relative.parts)):
+            raise ReviewBoundaryError(
+                f"[worktree] carry: {entry!r} escapes the repository")
+        origin = source / relative
+        if not origin.is_dir() or origin.is_symlink():
+            raise ReviewBoundaryError(
+                f"[worktree] carry: {entry!r} is not a directory in the worktree "
+                f"{source}")
+        if _run(["git", "ls-files", "--error-unmatch", "--", entry],
+                cwd=source, check=False).returncode == 0:
+            raise ReviewBoundaryError(
+                f"[worktree] carry: {entry!r} is tracked in git; only an ignored "
+                "install directory can be carried")
+        if _run(["git", "check-ignore", "-q", "--", entry],
+                cwd=source, check=False).returncode:
+            raise ReviewBoundaryError(
+                f"[worktree] carry: {entry!r} is not ignored by git in the worktree")
+        shutil.copytree(origin, stage / relative, symlinks=True)
+        for root, dirs, files in os.walk(stage / relative, topdown=False):
+            for name in files + dirs:
+                path = Path(root) / name
+                if not path.is_symlink():
+                    path.chmod(path.stat().st_mode & ~0o222)
+        (stage / relative).chmod((stage / relative).stat().st_mode & ~0o222)
+
+
 def stage_candidate(
-    source: Path, stage: Path, base_revision: str, candidate_revision: str
+    source: Path,
+    stage: Path,
+    base_revision: str,
+    candidate_revision: str,
+    carry: Sequence[str] = (),
 ) -> StagedCandidate:
-    """Create a self-contained detached, clean, zero-remote review checkout."""
+    """Create a self-contained detached, clean, zero-remote review checkout.
+
+    `carry` names the worktree's ignored install directories to copy in
+    read-only after the checkout (`_carry_into()`); the fingerprint covers
+    the tracked tree alone, and is the same with or without them.
+    """
     source = source.expanduser().resolve(strict=True)
     if _git(source, "rev-parse", "--is-inside-work-tree") != "true":
         raise ReviewBoundaryError(f"not a Git worktree: {source}")
@@ -129,8 +195,9 @@ def stage_candidate(
     _git(stage, "update-ref", "refs/review/base", base)
     _git(stage, "update-ref", "refs/review/candidate", candidate)
     _git(stage, "checkout", "--quiet", "--detach", candidate)
-    if _git(stage, "remote") or _git(stage, "status", "--porcelain"):
-        raise ReviewBoundaryError("staged candidate is not clean and zero-remote")
+    _check_clean(stage)
+    _carry_into(source, stage, carry)
+    _check_clean(stage)
     return StagedCandidate(stage, base, candidate, _fingerprint(stage))
 
 
@@ -384,8 +451,13 @@ def run_review(
     profile: str | None = None,
     timeout: int = 1800,
     verdicts: Sequence[str] | None = REVIEW_VERDICTS,
+    carry: Sequence[str] = (),
 ) -> str:
     """Review `candidate_sha` against `base_sha` in the container; the reply.
+
+    `carry` is the target's `[worktree] carry` list, handed to
+    `stage_candidate()` so the stage holds the worktree's installed
+    dependencies and the reviewer can run the ticket's verify commands.
 
     `model` and `effort` are the Codex route the container runs. `profile`,
     when given, is what the caller intends to record for the round, and has
@@ -410,7 +482,8 @@ def run_review(
     scratch = tempfile.TemporaryDirectory(prefix=SCRATCH_PREFIX, dir=SCRATCH_ROOT)
     with scratch as temporary:
         root = Path(temporary)
-        staged = stage_candidate(repo, root / "candidate", base_sha, candidate_sha)
+        staged = stage_candidate(
+            repo, root / "candidate", base_sha, candidate_sha, carry=carry)
         home, toolchain = _prepare_runtime(root, CODEX_AUTH, Path(codex))
         name = "holophyte-" + root.name.replace(".", "-")
         command = container_command(
