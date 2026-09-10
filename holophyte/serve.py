@@ -906,6 +906,19 @@ def record_action_intervention(target, action, note):
     return run_id
 
 
+def tickets_named(conn, identifier):
+    """How many mirrored tickets carry the Linear identifier `identifier`.
+
+    `linearIdentifier` is not unique in the store -- `linearIssueId` is --
+    so the same check `--requeue` makes before it writes: an identifier
+    the store holds more than once names nobody, and nothing is written.
+    """
+    (count,) = conn.execute(
+        "SELECT COUNT(*) FROM tickets WHERE linearIdentifier = ?",
+        (identifier,)).fetchone()
+    return count
+
+
 def requeue_action(target, body):
     """`POST /actions/requeue`: `store.requeue()` on the ticket `body`
     names, with `note` or `DEFAULT_REQUEUE_NOTE`: `(http status, JSON-able
@@ -915,9 +928,10 @@ def requeue_action(target, body):
     interventions row carrying the note and the ticket walked to `ready`
     -- exactly what `--requeue KO-n --note TEXT` does. A missing or
     non-string `ticket` is 400; a store the target does not have is 503;
-    a ticket the store never mirrored, or one the store refuses to requeue
-    (a live run, not `in_flight`, its last run not `failed`), is 200 with
-    `ok: false` and the refusal in `detail`, nothing written.
+    a ticket the store never mirrored, one it holds more than once (the
+    CLI refuses to pick one; so does the route), or one the store refuses
+    to requeue (a live run, not `in_flight`, its last run not `failed`),
+    is 200 with `ok: false` and the refusal in `detail`, nothing written.
     """
     action = REQUEUE_ACTION
     identifier = body.get("ticket")
@@ -935,6 +949,11 @@ def requeue_action(target, body):
         if ticket is None:
             return 200, {"action": action, "ok": False, "ticket": identifier,
                          "detail": f"{identifier}: no such ticket in the store"}
+        named = tickets_named(conn, identifier)
+        if named > 1:
+            return 200, {"action": action, "ok": False, "ticket": identifier,
+                         "detail": f"{identifier} names {named} tickets in the"
+                                   " store; refusing to pick one"}
         try:
             run_id = store.requeue(conn, ticket.id, note)
         except (store.RequeueRefused, ValueError) as refused:

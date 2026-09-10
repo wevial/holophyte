@@ -2187,6 +2187,50 @@ class ActionsTests(ServeTestCase):
         self.assertEqual(code, 400)
         self.assertIn("ticket", body["error"])
 
+    def test_requeue_refuses_an_identifier_the_store_holds_twice(self):
+        # The CLI's `--requeue` refuses to pick one of two tickets named
+        # alike; the route must refuse the same way, and neither may move.
+        self.seed_ended()
+        conn = store.open(str(self.db))
+        try:
+            project = store.ensure_project(conn, "team-1", self.target)
+            twin = store.mirror_ticket(
+                conn, project, linear_issue_id="issue-KO-2-twin",
+                linear_identifier="KO-2", title="ticket KO-2 again",
+                acceptance_criteria=["Given KO-2, then it is worked"],
+                verification_commands=["echo ok"], time_box_ms=20 * MIN)
+            store.transition(conn, twin, "in_flight")
+            run = store.claim(conn, project, twin, now=self.now - 30 * MIN)
+            store.release(conn, run, "failed", now=self.now - 20 * MIN)
+        finally:
+            conn.close()
+
+        def twins():
+            conn = store.read.open_readonly(self.db)
+            try:
+                statuses = [row[0] for row in conn.execute(
+                    "SELECT status FROM tickets WHERE linearIdentifier = 'KO-2'"
+                    " ORDER BY id")]
+                entries = store.read.ledger_since(conn, 0, kind="intervention",
+                                                  ticket="KO-2")
+            finally:
+                conn.close()
+            return statuses, entries
+
+        before = twins()
+        self.assertEqual(len(before[0]), 2)
+        self.assertNotIn("ready", before[0])
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+        code, _, body = self.request("POST", "/actions/requeue", self.BEARER,
+                                     body={"ticket": "KO-2", "note": "retry"})
+        self.assertEqual(code, 200)
+        self.assertIs(body["ok"], False)
+        self.assertIn("2 tickets", body["detail"])
+        after = twins()
+        self.assertEqual(after, before)
+        self.assertNotIn("ready", after[0])
+        self.assertEqual(after[1], [])
+
 
 class ParseAddressTests(unittest.TestCase):
 
