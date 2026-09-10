@@ -972,11 +972,20 @@ def console_config(target):
 # in config, so the config can be committed to a host's notes and the
 # token cannot. `holophyte.serve` reads the file and holds it to a private
 # mode.
+# `actions` opts the daemon into the three `POST /actions/...` routes
+# (KO-348): restart the supervisor unit, start the loop unit, requeue a
+# ticket. Off, every `/actions/` path is 404 and the daemon writes nothing.
+# `name` is the systemd instance those routes address --
+# `holophyte-supervise@NAME`, `holophyte-loop@NAME` -- the target slug the
+# deploy units are enabled under; the target directory's name by default.
 SERVE_KEYS = {
     "token_file": None,
+    "actions": False,
+    "name": None,
 }
 KNOWN_KEYS["serve"] = frozenset(SERVE_KEYS)
-ServeConfig = collections.namedtuple("ServeConfig", ("token_file",))
+ServeConfig = collections.namedtuple("ServeConfig",
+                                     ("token_file", "actions", "name"))
 
 
 def serve_config(target):
@@ -987,17 +996,31 @@ def serve_config(target):
     relative path is taken against the config's directory, so the file
     sits beside the config it is named in. Whether the daemon needs it at
     all is `holophyte.serve`'s to decide from the bind address; this only
-    holds the value to its shape. Keys this version does not know are
-    refused by `check_config_keys()`.
+    holds the value to its shape. `actions` is a boolean, false by
+    default; `name` is the systemd instance name the action routes
+    address, the target directory's name when absent (KO-348). Keys this
+    version does not know are refused by `check_config_keys()`.
     """
     table = target.config().get("serve", {})
     if not isinstance(table, dict):
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] must be a table, got "
             f"{type(table).__name__}")
+    actions = table.get("actions", SERVE_KEYS["actions"])
+    if not isinstance(actions, bool):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [serve] actions must be true or "
+            f"false, got {actions!r}")
+    name = table.get("name", SERVE_KEYS["name"])
+    if name is None:
+        name = target.path.name
+    elif not isinstance(name, str) or not name.strip() or "/" in name:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [serve] name must be a non-empty "
+            f"systemd instance name without '/', got {name!r}")
     token_file = table.get("token_file", SERVE_KEYS["token_file"])
     if token_file is None:
-        return ServeConfig(token_file=None)
+        return ServeConfig(token_file=None, actions=actions, name=name)
     if not isinstance(token_file, str) or not token_file.strip():
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] token_file must be a "
@@ -1005,4 +1028,4 @@ def serve_config(target):
     path = Path(token_file).expanduser()
     if not path.is_absolute():
         path = Path(target.config_path).parent / path
-    return ServeConfig(token_file=path)
+    return ServeConfig(token_file=path, actions=actions, name=name)

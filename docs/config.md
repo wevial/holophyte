@@ -351,9 +351,15 @@ operator gives it.
 # present as `Authorization: Bearer ...`. Required when `--serve` names a
 # host other than loopback; ignored when it binds loopback.
 token_file = "~/.holophyte/holophyte/serve.token"
+# Answer `POST /actions/restart-supervisor`, `/actions/launch-loop` and
+# `/actions/requeue` behind the token. Off, every `/actions/` path is 404.
+actions = false
+# The systemd instance those actions address: `holophyte-supervise@NAME`,
+# `holophyte-loop@NAME`. The target directory's name when absent.
+name = "holophyte"
 ```
 
-Accepted keys: `token_file`.
+Accepted keys: `token_file`, `actions`, `name`.
 
 The daemon's bind address is its only boundary, and once the bind is
 anything but loopback that is not enough. With `--serve HOST:PORT` where
@@ -370,6 +376,16 @@ and is never printed or logged. `~` is expanded and a relative path is taken
 against the config's directory. A loopback bind ignores the key entirely:
 `--serve 7710` is as open as it always was. One token per target, no
 rotation: to change it, write the file and restart the unit.
+
+`actions` opts the daemon into the three `POST /actions/...` routes, off by
+default: `restart-supervisor` and `launch-loop` run `systemctl --user`
+against the deploy units, `requeue` is the store's requeue as `--requeue
+KO-n --note TEXT` does it, each a ledger row written before it runs. The
+routes are behind the same bearer token beyond loopback. `name` is the
+instance name the unit actions append -- the slug the deploy templates were
+enabled under -- a non-empty string with no `/`, the target directory's
+name when absent. Both are read once at bind. The routes, their bodies and
+replies are in [The daemon's actions](reference/daemon.md).
 
 ```toml
 [merge]

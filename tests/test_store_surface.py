@@ -117,6 +117,8 @@ EXPECTED_READ = [
     # KO-269: the `serve` daemon's `/runs/N` reads.
     "narrative_events",
     "newest_ended_rounds",
+    # KO-348: the `serve` daemon's anchor for an action's ledger note.
+    "newest_run_id",
     # KO-280: the `serve` daemon's `/board` read of the open tickets.
     "open_tickets",
     "open_readonly",
