@@ -65,6 +65,9 @@ class Ticket:
     status: str
     activeRunId: int | None
     lastRunId: int | None
+    # What a `blocked_on_operator` ticket asks; None otherwise. The admit
+    # step's skip line reads it to say why the ticket is parked (KO-345).
+    blockedQuestion: str | None = None
 
 
 def ticket_by_id(conn, ticket_id):
@@ -75,12 +78,13 @@ def ticket_by_id(conn, ticket_id):
     """
     row = conn.execute(
         "SELECT id, linearIssueId, linearIdentifier, status,"
-        " activeRunId, lastRunId FROM tickets WHERE id = ?",
+        " activeRunId, lastRunId, blockedQuestion FROM tickets WHERE id = ?",
         (ticket_id,)).fetchone()
     if row is None:
         return None
     return Ticket(id=row[0], linearIssueId=row[1], linearIdentifier=row[2],
-                  status=row[3], activeRunId=row[4], lastRunId=row[5])
+                  status=row[3], activeRunId=row[4], lastRunId=row[5],
+                  blockedQuestion=row[6])
 
 
 @dataclass(frozen=True)

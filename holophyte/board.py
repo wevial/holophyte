@@ -420,6 +420,26 @@ def escalation_comment(history):
     return "\n".join(lines)
 
 
+STRIKE_QUESTION_TAIL = (
+    " runs failed on this ticket since the last recorded human intervention"
+    " and the factory stopped claiming it; a human decides what happens next.")
+
+
+def strike_question(count):
+    """The question the escalation parks a ticket on: the count, then a
+    fixed sentence. Fixed so `is_strike_question()` can tell the loop's own
+    park from one a module asked for (a merge conflict, `merge?`, an open
+    pull request) when both leave the ticket `blocked_on_operator` with
+    enough counted failures behind it (KO-345)."""
+    return f"{count}{STRIKE_QUESTION_TAIL}"
+
+
+def is_strike_question(question):
+    """Whether `question` is the escalation's, as `strike_question()` wrote
+    it, rather than a park reason of a module's own."""
+    return bool(question) and question.endswith(STRIKE_QUESTION_TAIL)
+
+
 def escalate(conn, ticket_id, provider):
     """Park a ticket whose failed runs have reached `MAX_FAILED_RUNS`.
 
@@ -456,10 +476,7 @@ def escalate(conn, ticket_id, provider):
     if len(history) < MAX_FAILED_RUNS:
         return False
     if not block_ticket(conn, ticket_id, provider,
-                        f"{len(history)} runs failed on this ticket since the"
-                        " last recorded human intervention and the factory"
-                        " stopped claiming it; a human decides what happens"
-                        " next."):
+                        strike_question(len(history))):
         return False
     try:
         provider.comment(issue_id, escalation_comment(history))
