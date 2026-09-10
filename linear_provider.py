@@ -322,25 +322,29 @@ def comment(task_id, body):
          {"issue": task_id, "body": body})
 
 
-# Issues named by identifier that Linear holds closed. An identifier is the
-# team's key and the issue's number (`KO-217`), and those two are what the
-# filter takes: IssueFilter has no `identifier` field, so the pair is the
-# identifier spelled in the terms the API filters on. The state filter is
-# server-side, so only the closed ones come back and the answer for an open
-# project is one small page.
+# Issues named by identifier, with their state type and whether Linear has
+# archived them. An identifier is the team's key and the issue's number
+# (`KO-217`), and those two are what the filter takes: IssueFilter has no
+# `identifier` field, so the pair is the identifier spelled in the terms the
+# API filters on. `includeArchived` is what makes an archived issue come back
+# at all -- Linear omits them by default, and it archives a Done issue on its
+# own after a while, which is how a finished ticket stayed on the board as a
+# ghost -- and there is no state filter because an archived issue whose state
+# is still open is one the caller reports too. The number filter bounds the
+# answer to the identifiers asked, so it is still a small page.
 CLOSED_QUERY = """
 query($key: String!, $numbers: [Float!]!, $after: String) {
   issues(
     first: 50
     after: $after
+    includeArchived: true
     filter: {
       team: { key: { eq: $key } }
       number: { in: $numbers }
-      state: { type: { in: ["completed", "canceled"] } }
     }
   ) {
     pageInfo { hasNextPage endCursor }
-    nodes { identifier state { type } }
+    nodes { identifier archivedAt state { type } }
   }
 }"""
 
@@ -356,7 +360,10 @@ def closed_identifiers(identifiers):
     and a store can hold tens of them. The value is the state *type*, one of
     `CLOSED_STATE_TYPES`, so the caller tells a finished ticket from a
     cancelled one without learning the team's state names; an open identifier
-    or one Linear has no issue for is simply absent. A read, like
+    or one Linear has no issue for is simply absent. Archived issues are
+    included: an archived issue with a closed state answers that state, and
+    an archived issue whose state is still open answers `canceled`, since an
+    archived issue is one nobody will work. A read, like
     `fetch_task()`: nothing here moves a ticket. An identifier not of the
     `KEY-n` shape is skipped rather than sent, since the filter could not
     name it.
@@ -372,9 +379,13 @@ def closed_identifiers(identifiers):
         nodes = _paginate(CLOSED_QUERY, {"key": key, "numbers": numbers},
                           ("issues",))
         for node in nodes:
+            if node["identifier"] not in asked:
+                continue
             state_type = (node.get("state") or {}).get("type")
-            if node["identifier"] in asked and state_type in CLOSED_STATE_TYPES:
+            if state_type in CLOSED_STATE_TYPES:
                 closed[node["identifier"]] = state_type
+            elif node.get("archivedAt"):
+                closed[node["identifier"]] = "canceled"
     return closed
 
 
