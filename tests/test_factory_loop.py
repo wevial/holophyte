@@ -13,6 +13,7 @@ Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 """
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import os
@@ -1056,6 +1057,95 @@ class LeftoverWorktreeTests(LoopFixture):
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("preserved work kept on", reason)
 
+    # --- the reuse merge stopping on conflicts (KO-355) ------------------
+
+    TEST_FILE = "tests/test_thing.py"
+    BOTH_TESTS = ("def test_it_works():\n    pass\n\n"
+                  "def test_branch_side():\n    pass\n\n"
+                  "def test_main_side():\n    pass\n")
+
+    def conflicting_leftover(self):
+        """A preserved branch and a main that both append a test at the same
+        lines of the same file: the add/add overlap the operator resolved
+        three times in one day."""
+        wt = self.leftover()
+        (wt / self.TEST_FILE).write_text(
+            "def test_it_works():\n    pass\n\ndef test_branch_side():\n"
+            "    pass\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: the branch's test", cwd=wt)
+        (self.target / self.TEST_FILE).write_text(
+            "def test_it_works():\n    pass\n\ndef test_main_side():\n"
+            "    pass\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "main moved on with its own test")
+        return wt
+
+    def test_a_conflicting_reuse_is_handed_to_the_implementer_who_resolves_it(self):
+        """The conflict is the implementer's first commit, not a person's
+        park: the brief opens by naming the path, and the run reaches its
+        first verify with the merge committed -- MERGE_HEAD gone."""
+        self.conflicting_leftover()
+        resolve = ResolveMerge(self.TEST_FILE, self.BOTH_TESTS)
+        review = ApproveNotingMergeHead()
+
+        fake, _ = self.loop(resolve, review)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        brief = fake.turns[0].goal
+        self.assertTrue(brief.startswith("FIRST, before the ticket's work"),
+                        brief[:200])
+        self.assertIn(self.TEST_FILE, brief)
+        self.assertLess(brief.index(self.TEST_FILE),
+                        brief.index("Implement this task"))
+        self.assertIn(self.TEST_FILE, resolve.conflicted)
+        self.assertFalse(review.mid_merge)
+        # The resolution and the ticket's work both reached main.
+        self.assertEqual((self.target / self.TEST_FILE).read_text(),
+                         self.BOTH_TESTS)
+        self.assertIn("Merge main into the preserved branch: both tests",
+                      self.subjects())
+        self.assertIn("rescued: the branch's test", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_an_unresolved_reuse_merge_fails_at_the_first_verify(self):
+        """An implementer that commits nothing leaves the tree mid-merge;
+        the first verify fails the run naming the unresolved merge, no
+        reviewer is asked, and the branch keeps its preserved commit."""
+        self.conflicting_leftover()
+        moved_main = self.git("rev-parse", "main").strip()
+
+        fake, _ = self.loop(Idle())
+
+        self.assertEqual(fake.roles, ["implement"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("left the merge unresolved", reason)
+        self.assertIn(self.TEST_FILE, reason)
+        self.assertIn("a human resolves the merge", reason)
+        self.assertIn(BRANCH, self.branches())
+        self.assertIn("rescued: the branch's test", self.subjects(BRANCH))
+        self.assertEqual(self.git("rev-parse", "main").strip(), moved_main)
+
+    def test_a_reuse_that_merges_main_cleanly_carries_no_conflict_paragraph(self):
+        """Main moved on in a different file: the merge lands on its own and
+        the implementer is briefed on the ticket alone."""
+        wt = self.leftover()
+        (wt / "work.txt").write_text("preserved\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=wt)
+        (self.target / "new.txt").write_text("newer main\n")
+        self.git("add", "new.txt")
+        self.git("commit", "-q", "-m", "main moved on")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE)
+
+        brief = fake.turns[0].goal
+        self.assertTrue(brief.startswith("Implement this task"), brief[:200])
+        self.assertNotIn("mid-merge", brief)
+        self.assertNotIn("conflict", brief)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def test_a_carried_candidate_reaches_review_without_a_new_commit(self):
         """A preserved branch ahead of main is a candidate, not a dead run:
         the implementer that correctly no-ops on finished work used to fail
@@ -1512,6 +1602,49 @@ class QueueMirrorTests(LoopFixture):
         self.assertEqual(len(skipped), 1, printed)
         self.assertIn("board unreachable", skipped[0])
         self.assertEqual(self.statuses(), {"KO-131": "merged", "KO-132": "merged"})
+
+@dataclasses.dataclass
+class ResolveMerge:
+    """An implementer turn on a worktree left mid-merge: it records the paths
+    git says are unmerged, writes `resolved` to `path`, commits the merge
+    with a message naming both sides, then does one scripted commit of the
+    ticket's own work."""
+
+    path: str
+    resolved: str
+    conflicted: list = dataclasses.field(default_factory=list)
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        self.conflicted = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=cwd,
+            capture_output=True, text=True).stdout.split()
+        (cwd / self.path).write_text(self.resolved)
+        self.git(cwd, "add", self.path)
+        self.git(cwd, "commit", "-q", "-m",
+                 "Merge main into the preserved branch: both tests")
+        return Commit("the scripted work").play(cwd, turn)
+
+    @staticmethod
+    def git(cwd, *args):
+        subprocess.run(["git", *args], cwd=cwd, check=True,
+                       capture_output=True, text=True)
+
+
+class ApproveNotingMergeHead:
+    """The approval, recording whether the worktree was still mid-merge when
+    the review turn arrived -- the state the first verify must have seen."""
+
+    role = APPROVE.role
+    mid_merge = None
+
+    def play(self, cwd, turn):
+        self.mid_merge = subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd=cwd,
+            capture_output=True).returncode == 0
+        return APPROVE.play(cwd, turn)
+
 
 class CommitThenTimeout(Commit):
     """An implementer turn that commits real work, then hits the budget.

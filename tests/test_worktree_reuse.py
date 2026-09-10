@@ -192,7 +192,10 @@ class CarriedCommitsTests(ReuseFixture):
         self.assertIn("rescued: preserved work",
                       self.git("log", "--format=%s", cwd=self.wt))
 
-    def test_conflicting_preserved_commits_are_refused_with_the_tree_intact(self):
+    def test_conflicting_preserved_commits_are_left_mid_merge_for_the_implementer(self):
+        """A textual conflict no longer refuses the reuse (KO-355): the tree
+        is left mid-merge with the branch tip untouched, and
+        `merge_conflicts()` names the path for the implementer's brief."""
         self.leftover_worktree()
         (self.wt / "README.md").write_text("preserved line\n")
         self.git("add", "-A", cwd=self.wt)
@@ -204,12 +207,13 @@ class CarriedCommitsTests(ReuseFixture):
 
         ok, why = holophyte.loop.reuse_leftover(self.tgt, self.wt, self.branch)
 
-        self.assertFalse(ok)
-        self.assertIn("conflict", why)
+        self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
                          tip)
-        self.assertEqual((self.wt / "README.md").read_text(),
-                         "preserved line\n")
+        self.assertEqual(self.git("rev-parse", "MERGE_HEAD", cwd=self.wt).strip(),
+                         self.git("rev-parse", "main").strip())
+        self.assertEqual(holophyte.loop.merge_conflicts(self.wt), ["README.md"])
+        self.assertIn("<<<<<<<", (self.wt / "README.md").read_text())
 
     def test_a_detached_worktree_over_a_diverged_branch_is_refused(self):
         """`checkout -B` moves the branch to HEAD, so a worktree a human
