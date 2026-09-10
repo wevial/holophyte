@@ -653,56 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[494 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T18:35:39Z — KO-348
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (3):
-- /home/reviewer/candidate/holophyte/serve.py:1136 [p2] **Token bypass** — [serve.py:1136](/home/reviewer/candidate/holophyte/serve.py:1136): loopback binds set `token=None`, allowing actions without authentication…
-- /home/reviewer/candidate/holophyte/serve.py:877 [p2] **Missing intervention records** — [serve.py:877](/home/reviewer/candidate/holophyte/serve.py:877): unit actions call `record_ledger`, not the required `recor…
-- criteria:2 [p2] CRITERION 2: not met — unauthenticated loopback requests execute restart-supervisor instead of returning 401; the existing test covers only non-loopback. Given…
-
-## 2026-09-10T18:49:24Z — KO-348
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/serve.py:934 [p2] **[P2] Reject ambiguous ticket identifiers before requeueing** — [holophyte/serve.py:934](/home/reviewer/candidate/holophyte/serve.py:934) uses a lookup that…
-
-## 2026-09-10T18:57:59Z — KO-348
-Round 3: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T18:59:34Z — KO-348
-MERGED to main as 74f1c36 (branch task/ko-348-the-daemon-accepts-token-gated deleted).
-actual: 39.2 min · estimate: 30 min · rounds: 3
-
-## 2026-09-10T19:12:53Z — KO-349
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (6):
-- /home/reviewer/candidate/console/src/lib/actions.ts:38 [p0] **Blocker: peer actions fail CORS preflight.** [actions.ts:38](/home/reviewer/candidate/console/src/lib/actions.ts:38) sends JSON POSTs, but [serve.py:1245](/…
-- (unparsed):2d1c420dc943 [p0] **Blocker: verification gate is incomplete.** Bun tests report zero passes because `@happy-dom/global-registrator` is missing; the exact TypeScript command pr…
-- criteria:1 [p2] CRITERION 1: unwitnessed — the restart request, bearer, spinner, and detail test exists in console/tests/AttentionRow.test.tsx but cannot execute because its se…
-- criteria:2 [p2] CRITERION 2: unwitnessed — the requeue request/body test exists in console/tests/AttentionRow.test.tsx but cannot execute because its setup dependency is missin…
-- criteria:3 [p2] CRITERION 3: unwitnessed — the disabled-button/opt-in test exists in console/tests/AttentionRow.test.tsx but cannot execute because its setup dependency is miss…
-- criteria:4 [p2] CRITERION 4: unwitnessed — the failed-reply detail/re-enable test exists in console/tests/AttentionRow.test.tsx but cannot execute because its setup dependency…
-
-## 2026-09-10T19:24:59Z — KO-349
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T19:26:35Z — KO-349
-MERGED to main as 83b76b0 (branch task/ko-349-the-console-s-action-buttons-p deleted).
-actual: 27.0 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T19:38:46Z — KO-350
-Round 1: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T19:40:23Z — KO-350
-MERGED to main as 8ecdd70 (branch task/ko-350-a-run-parked-on-its-pull-reque deleted).
-actual: 13.8 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T19:45:41Z — KO-352
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/console/src/components/HostRow.tsx:58 [p2] [HostRow.tsx:58](/home/reviewer/candidate/console/src/components/HostRow.tsx:58): The stale tail and port both use `shrink-0`, while the project name alone ca…
-- (unparsed):6491b2551ada [p2] Verification is blocked by missing dependencies: `bun --cwd=console test` reports zero passing tests and missing `@happy-dom/global-registrator`; `bun --cwd=c…
+[504 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T19:47:56Z — KO-352
 Round 2: changes_requested · reviewer codex-astra-medium · verify passed
@@ -766,3 +717,49 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T20:50:55Z — KO-355
 MERGED to main as 1d97130 (branch task/ko-355-a-preserved-branch-that-confli deleted).
 actual: 14.8 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T20:51:57Z — KO-351
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/loop.py:2763 [p1] [P1] Acquire the store lease before removing stale labels in [holophyte/loop.py:2763](/home/reviewer/candidate/holophyte/loop.py:2763). Two loops can both pas…
+
+## 2026-09-10T20:53:39Z — KO-354
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T20:53:39Z — KO-354
+FAILED: terminal adjudication: FAIL; branch task/ko-354-the-review-stage-carries-the-w preserved at ecc134662d33
+actual: 23.7 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T21:00:42Z — KO-351
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T21:00:42Z — KO-351
+FAILED: terminal adjudication: FAIL; branch task/ko-351-a-claim-leases-the-ticket-in-l preserved at 0e486d3b6c68
+actual: 26.7 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T21:11:12Z — KO-357
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/serve.py:1273 [p0] **Blocker:** The required config-write integration is missing. [holophyte/serve.py:1273](/home/reviewer/candidate/holophyte/serve.py:1273) routes `PUT /config…
+
+## 2026-09-10T21:17:42Z — KO-356
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (6):
+- /home/reviewer/candidate/holophyte/serve.py:1050 [p2] **Secret redaction misses valid TOML syntax** ([serve.py:1050](/home/reviewer/candidate/holophyte/serve.py:1050)). `"api_key" = "SECRET"` and inline-table sec…
+- /home/reviewer/candidate/holophyte/serve.py:1088 [p2] **Valid placeholders can overwrite secrets** ([serve.py:1088](/home/reviewer/candidate/holophyte/serve.py:1088)). `api_key = "[redacted]" # kept` bypasses res…
+- /home/reviewer/candidate/holophyte/config.py:151 [p2] **PUT skips startup validation** ([config.py:151](/home/reviewer/candidate/holophyte/config.py:151)). `check_document()` omits `board_config()`. A document co…
+- /home/reviewer/candidate/holophyte/serve.py:1165 [p2] **Writes share backup and staging paths** ([serve.py:1165](/home/reviewer/candidate/holophyte/serve.py:1165)). Second-resolution timestamps let successive PUT…
+- criteria:1 [p2] CRITERION 1: unwitnessed — the GET test puts `api_key` in `[linear]`; no test witnesses a token value in `[serve]` as required. Given `config_edit = true` and a…
+- criteria:3 [p2] CRITERION 3: not met — a valid incoming `api_key = "[redacted]" # kept` passes validation without restoring the original secret. Given a valid `PUT /config` who…
+
+## 2026-09-10T21:18:30Z — KO-357
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/docs/config.md:83 [p0] Blocker: [docs/config.md:83](/home/reviewer/candidate/docs/config.md:83) defers the required config-write probe. The daemon has no `PUT /config` handler and r…
+
+## 2026-09-10T21:23:26Z — KO-357
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T21:23:27Z — KO-357
+FAILED: terminal adjudication: FAIL; branch task/ko-357-a-changed-implementer-command preserved at 0e7c6dc45b09
+actual: 22.5 min · estimate: 30 min · rounds: 3
