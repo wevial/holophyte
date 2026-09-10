@@ -147,12 +147,16 @@ def check_document(target):
     `setup_commands()`, `setup_timeout()` and `branch_prefix()`. What it
     deliberately leaves out is the host: whether a program is on PATH or
     Docker answers (`check_agent_commands()`) is the loop's question at its
-    next start, not a property of the document."""
+    next start, not a property of the document. A relative program path
+    is: `check_agent_commands()` refuses it whatever the host holds, so it
+    is refused here through the same `check_command_path()`."""
     check_config(target)
     board_config(target)
     review_route(target)
-    for role in AGENT_CONFIG_KEYS:
-        agent_command(target, role, "")
+    for role, key in AGENT_CONFIG_KEYS.items():
+        argv = agent_command(target, role, "")
+        if argv is not None:
+            check_command_path(target, key, argv[0])
     setup_commands(target)
     setup_timeout(target)
     branch_prefix(target)
@@ -179,7 +183,13 @@ def agent_command(target, role, goal):
         raise SystemExit(
             f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]} must be "
             f"a command string, got {type(command).__name__}")
-    argv = shlex.split(command)
+    try:
+        argv = shlex.split(command)
+    except ValueError as bad:
+        # `shlex` says "No closing quotation"; the key it was in is ours.
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]}"
+            f" cannot be split into a command: {bad}")
     if not argv:
         raise SystemExit(
             f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]}"
@@ -273,11 +283,7 @@ def check_agent_commands(target):
                 default_container_keys.append(key)
             continue
         program = argv[0]
-        if os.path.dirname(program) and not os.path.isabs(program):
-            raise SystemExit(
-                f"[holo2] {target.config_path}: [agents] {key}: relative command path "
-                f"{program!r} -- rounds run in a task worktree, so name the "
-                f"program by an absolute path or leave it to PATH")
+        check_command_path(target, key, program)
         if shutil.which(program) is None:
             raise SystemExit(
                 f"[holo2] {target.config_path}: [agents] {key}: no executable "
@@ -293,6 +299,20 @@ def check_agent_commands(target):
     if merge_config(target).mode == "pr":
         from holophyte.pr import check_pr_route
         check_pr_route(target)
+
+
+def check_command_path(target, key, program):
+    """Refuse a relative program path with a directory in it (`./worker`)
+    for `[agents] key`: rounds run with `cwd` set to a task worktree that
+    does not exist yet, so the name resolves somewhere no check can look.
+    A document constraint, not a host one: `check_document()` applies it
+    to a `PUT /config` candidate as `check_agent_commands()` does at
+    startup."""
+    if os.path.dirname(program) and not os.path.isabs(program):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [agents] {key}: relative command path "
+            f"{program!r} -- rounds run in a task worktree, so name the "
+            f"program by an absolute path or leave it to PATH")
 
 
 def check_default_implementer(target):

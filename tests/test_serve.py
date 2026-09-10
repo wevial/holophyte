@@ -2514,6 +2514,76 @@ class ConfigEditTests(ServeTestCase):
         self.assertIn("[board] project_id", body["error"])
         self.assertEqual(self.on_disk(), before)
 
+    def test_a_secret_inside_an_array_is_redacted_and_restored_in_place(self):
+        """`items = [{token = "S"}, 1]` is a secret in an array element; the
+        earlier walk stepped over arrays and served it. Redacted on the way
+        out, and put back by its position on the way in, whatever the value
+        beside it became."""
+        self.seed()
+        before = self.config("config_edit = true\n") + (
+            '\n[extra]\nitems = [{token = "S-array", n = 1}, 1,'
+            ' [{key = "S-nested"}]]\n')
+        self.start(before)
+        code, _, body = self.request("GET", "/config", self.BEARER)
+        self.assertEqual(code, 200, body)
+        self.assertNotIn("S-array", self.raw_body)
+        self.assertNotIn("S-nested", self.raw_body)
+        shown = tomllib.loads(body["text"])["extra"]["items"]
+        self.assertEqual(shown[0], {"token": "[redacted]", "n": 1})
+        self.assertEqual(shown[2], [{"key": "[redacted]"}])
+        edited = body["text"].replace("n = 1", "n = 2")
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": edited})
+        self.assertEqual(code, 200, body)
+        after = tomllib.loads(self.on_disk())["extra"]["items"]
+        self.assertEqual(after, [{"token": "S-array", "n": 2}, 1,
+                                 [{"key": "S-nested"}]])
+
+    def test_a_placeholder_in_an_array_of_tables_takes_its_own_entry(self):
+        """Two `[[many]]` entries, the first token rewritten by hand and the
+        second left as the placeholder: the second gets its own secret back,
+        not the first's. Values are matched by array position, not by the
+        order the placeholders happen to appear."""
+        self.seed()
+        before = self.config("config_edit = true\n") + (
+            '\n[[many]]\ntoken = "S-first"\n[[many]]\ntoken = "S-second"\n')
+        self.start(before)
+        edited = before.replace('token = "S-first"', 'token = "S-new"').replace(
+            'token = "S-second"', 'token = "[redacted]"')
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": edited})
+        self.assertEqual(code, 200, body)
+        self.assertEqual([m["token"] for m in tomllib.loads(self.on_disk())["many"]],
+                         ["S-new", "S-second"])
+
+    def test_an_unquotable_agent_command_is_400_naming_the_key(self):
+        """`implementer = "echo '"` has no closing quotation: 400 with the
+        key in the sentence, nothing written -- not a request that dies."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        text = before + "\n[agents]\nimplementer = \"echo '\"\n"
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 400, body)
+        self.assertIn("[agents] implementer", body["error"])
+        self.assertIn("quotation", body["error"])
+        self.assertEqual(self.on_disk(), before)
+
+    def test_a_relative_agent_command_path_is_400_as_at_startup(self):
+        """Startup refuses `./worker` (rounds run in a worktree that does not
+        exist yet); the document check holds the PUT to the same rule."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        text = before + '\n[agents]\nimplementer = "./worker --fast"\n'
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"text": text})
+        self.assertEqual(code, 400, body)
+        self.assertIn("[agents] implementer", body["error"])
+        self.assertIn("relative", body["error"])
+        self.assertEqual(self.on_disk(), before)
+
     def test_two_writes_in_one_second_keep_two_backups(self):
         """`write_config()` twice with the same clock: each previous text
         is in a backup of its own and the file is the second write's."""

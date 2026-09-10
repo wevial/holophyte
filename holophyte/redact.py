@@ -11,7 +11,12 @@ inline table; `token_file`, a path, is not one.
 The text is walked as TOML syntax, not as lines, so a value is replaced
 whole whatever its shape: a basic or literal string, a multi-line string,
 a number, an array, an inline table. Comments beside a value stay, since
-only the value's span is touched. `tomllib` parses, so it cannot say
+only the value's span is touched. An array is walked
+element by element, so a pair of an inline table inside one is found
+too, and a path carries the index of every array it passes through
+(`("many", 1, "token")` for the second `[[many]]`), so `restore()` puts a
+value back by its position, not by the order the placeholders appear.
+`tomllib` parses, so it cannot say
 where a value sits in the text; `spans()` is the small scanner that can,
 and the parsed document is the oracle `redact()` checks its work against:
 a parsable text whose redaction still shows a secret is refused rather
@@ -48,9 +53,12 @@ def is_secret(key):
 def spans(text):
     """`[(path, start, end)]` for every `key = value` pair of the TOML
     `text` whose key's last segment `is_secret()`, `path` the tuple of key
-    segments from the enclosing header down (`("linear", "api_key")`),
-    `text[start:end]` the value as written. Pairs of an inline table under
-    a secret key are not listed separately: the table is the value.
+    segments from the enclosing header down (`("linear", "api_key")`) with
+    the index of every array on the way (`("many", 1, "token")` under the
+    second `[[many]]`, `("items", 0, "token")` inside `items = [{...}]`),
+    as `secret_leaves()` spells the same leaf; `text[start:end]` the value
+    as written. Pairs of an inline table under a secret key are not listed
+    separately: the table is the value.
 
     Text the scanner cannot walk -- a header without its `]`, a string
     without its closing quote -- ends the walk at that point, so a
@@ -68,6 +76,9 @@ def _walk(text, found):
     n = len(text)
     pos = 0
     table = ()
+    # `[[array]]` headers seen so far, by their indexed path, and how many
+    # elements each has: `[a.b]` under an `[[a]]` names the current element.
+    arrays = {}
     while pos < n:
         pos = _skip_blank(text, pos)
         if pos >= n:
@@ -78,7 +89,8 @@ def _walk(text, found):
         elif ch == "[":
             double = text.startswith("[[", pos)
             pos = _skip_ws(text, pos + (2 if double else 1))
-            table, pos = _key(text, pos)
+            segments, pos = _key(text, pos)
+            table = _header_path(segments, double, arrays)
             pos = _skip_ws(text, pos)
             close = "]]" if double else "]"
             if not text.startswith(close, pos):
@@ -88,6 +100,21 @@ def _walk(text, found):
             pos = _pair(text, pos, table, found)
             pos = _end_of_line(text, pos)
     return pos
+
+
+def _header_path(segments, double, arrays):
+    """The indexed path a `[a.b]` (`[[a.b]]` when `double`) header opens:
+    each segment that names an array of tables seen so far is followed by
+    the index of its current element, the last one of a `[[...]]` header
+    first counted up as the element the header appends."""
+    path = ()
+    for i, segment in enumerate(segments):
+        path += (segment,)
+        if double and i == len(segments) - 1:
+            arrays[path] = arrays.get(path, -1) + 1
+        if path in arrays:
+            path += (arrays[path],)
+    return path
 
 
 def _pair(text, pos, prefix, found):
@@ -144,7 +171,7 @@ def _value(text, pos, path, found):
     if ch in "\"'":
         return _string(text, pos)
     if ch == "[":
-        return _array(text, pos + 1, path)
+        return _array(text, pos + 1, path, found)
     if ch == "{":
         return _inline_table(text, pos + 1, path, found)
     # A bare scalar -- number, boolean, date-time (which may hold a space)
@@ -159,10 +186,13 @@ def _value(text, pos, path, found):
     return end
 
 
-def _array(text, pos, path):
+def _array(text, pos, path, found):
     """The rest of an array whose `[` sits before `pos`: the offset after
-    its `]`. Newlines and comments may sit between its values."""
+    its `]`. Newlines and comments may sit between its values. Each
+    element is walked under `path` plus its index, so a secret pair of an
+    inline table inside the array is recorded like any other."""
     n = len(text)
+    index = 0
     while True:
         pos = _skip_blank(text, pos)
         while pos < n and text[pos] == "#":
@@ -174,7 +204,8 @@ def _array(text, pos, path):
         if text[pos] == ",":
             pos += 1
             continue
-        pos = _value(text, pos, path, None)
+        pos = _value(text, pos, path + (index,), found)
+        index += 1
 
 
 def _inline_table(text, pos, path, found):
@@ -266,7 +297,9 @@ def _rewrite(text, replacements):
 
 def secret_leaves(document):
     """`{path: value}` for every leaf of the parsed `document` whose key
-    `is_secret()`, arrays of tables indexed into the path."""
+    `is_secret()`, every array on the way indexed into the path -- an
+    array of tables, or a table inside a plain array -- as `spans()`
+    spells it."""
     leaves = {}
 
     def walk(node, prefix):
@@ -274,15 +307,20 @@ def secret_leaves(document):
             path = prefix + (key,)
             if isinstance(value, dict):
                 walk(value, path)
-            elif isinstance(value, list) and value and \
-                    all(isinstance(item, dict) for item in value):
-                for index, item in enumerate(value):
-                    walk(item, path + (index,))
             elif is_secret(key):
                 leaves[path] = value
+            elif isinstance(value, list):
+                walk_list(value, path)
             # A secret-named key holding a table of pairs is the table's
             # pairs' business; `spans()` lists the whole table, so the
             # parsed check below finds the placeholder in their place.
+
+    def walk_list(items, prefix):
+        for index, item in enumerate(items):
+            if isinstance(item, dict):
+                walk(item, prefix + (index,))
+            elif isinstance(item, list):
+                walk_list(item, prefix + (index,))
 
     walk(document, ())
     return leaves
@@ -335,22 +373,20 @@ def restore(text, current):
     is the redacted text with edits, and a secret it never saw must come
     back as it was, not as the placeholder. A placeholder is any TOML
     string whose value is `REDACTED`, whatever its quoting, a comment
-    beside it left alone. Under one path the n-th placeholder takes the
-    n-th current value (`[[array]]` tables repeat a path). ValueError
+    beside it left alone. A placeholder takes the current value at the
+    same indexed path, so the second `[[many]]` entry's placeholder is put
+    back from the second entry whatever was done to the first. ValueError
     names a redacted key the current file has no value for."""
-    held = {}
-    for path, start, end in spans(current):
-        held.setdefault(path, []).append(current[start:end])
+    held = {path: current[start:end] for path, start, end in spans(current)}
     missing = []
     replacements = []
     for path, start, end in spans(text):
         if _parse("k = " + text[start:end]) != REDACTED:
             continue
-        values = held.get(path)
-        if not values:
+        if path not in held:
             missing.append(describe(path))
             continue
-        replacements.append((start, end, values.pop(0)))
+        replacements.append((start, end, held[path]))
     if missing:
         raise ValueError(
             f"{', '.join(missing)}: {REDACTED} stands for a value the current"
