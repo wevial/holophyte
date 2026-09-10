@@ -653,16 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[442 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T00:12:35Z — KO-336
-MERGED to main as 88426a2 (branch task/ko-336-a-target-can-have-its-pull-req deleted).
-actual: 15.0 min · estimate: 30 min · rounds: 1
-
-## 2026-09-10T00:25:05Z — KO-337
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/loop.py:1544 [p1] [P1] Preserve bot HUMAN handling in [holophyte/loop.py:1544](/home/reviewer/candidate/holophyte/loop.py:1544). The `and not act` condition disables the early pa…
+[444 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T00:32:04Z — KO-337
 Round 2: pass · reviewer codex-astra-medium · verify passed
@@ -765,3 +756,10 @@ Round 4: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T03:36:29Z — KO-343
 FAILED: terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 476ac0cd9d61
 actual: 33.9 min · estimate: 30 min · rounds: 4
+
+## 2026-09-10T03:55:05Z — KO-328
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T03:56:33Z — KO-328
+MERGED to main as a9cb4f6 (branch task/ko-328-the-store-mirrors-a-ticket-s-b deleted).
+actual: 20.0 min · estimate: 30 min · rounds: 1
