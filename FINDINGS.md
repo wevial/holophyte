@@ -653,18 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[457 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T02:47:18Z — KO-339
-Round 2: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T02:48:45Z — KO-339
-MERGED to main as f6732ce (branch task/ko-339-a-loop-whose-run-the-superviso deleted).
-actual: 35.0 min · estimate: 30 min · rounds: 2
-
-## 2026-09-10T02:48:49Z — KO-343
-FAILED: cannot reuse leftover worktree: preserved commits on task/ko-343-the-loop-runs-a-pool-of-worker conflict with a main that moved on; a human resolves the merge before this ticket is run again
-actual: 0.0 min · estimate: 30 min · rounds: 0
+[460 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T03:01:02Z — KO-344
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -760,3 +749,16 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T04:47:29Z — KO-338
 FAILED: terminal adjudication: FAIL; branch task/ko-338-the-electron-app-opens-the-win preserved at 8326a60d6133
 actual: 6.5 min · estimate: 30 min · rounds: 3
+
+## 2026-09-10T04:59:03Z — KO-345
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (2):
+- /home/reviewer/candidate/holophyte/loop.py:2207 [p2] [P2] [holophyte/loop.py:2207](/home/reviewer/candidate/holophyte/loop.py:2207): Strike count overrides an actual parked question. Reproduced one failed attempt…
+- criteria:1 [p2] CRITERION 1: not met — A question with two counted failures prints the strike form and omits the question. Given `skip_line` for a ticket with two strikes and n…
+
+## 2026-09-10T05:07:57Z — KO-345
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T05:09:27Z — KO-345
+MERGED to main as a0179f0 (branch task/ko-345-the-loop-s-skip-line-for-a-par deleted).
+actual: 21.9 min · estimate: 30 min · rounds: 2
