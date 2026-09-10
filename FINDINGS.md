@@ -653,17 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[509 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T20:05:29Z — KO-351
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/linear_provider.py:325 [p1] [P1] Foreign leases are ignored if added after the ready-list read. In [linear_provider.py:325](/home/reviewer/candidate/linear_provider.py:325), the fresh la…
-
-## 2026-09-10T20:20:57Z — KO-351
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/linear_provider.py:365 [p1] **[P1] Concurrent claims can overwrite each other’s leases** — [linear_provider.py:365](/home/reviewer/candidate/linear_provider.py:365). The label check and…
+[511 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T20:29:57Z — KO-351
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
@@ -770,3 +760,10 @@ Findings (1):
 ## 2026-09-10T21:33:54Z — KO-354
 MERGED to main as 7357f57 (branch task/ko-354-the-review-stage-carries-the-w deleted).
 actual: 10.4 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T21:41:28Z — KO-356
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T21:41:29Z — KO-356
+FAILED: terminal adjudication: FAIL; branch task/ko-356-the-daemon-serves-its-target-s preserved at 0653b8f07d7f
+actual: 40.7 min · estimate: 30 min · rounds: 3
