@@ -1214,7 +1214,10 @@ def check_patch_value(key, value):
 def set_patched(tomlkit, section, name, value):
     """`section[name] = value`, editing an existing array item by item so
     a multi-line array keeps its lines and the comments beside them:
-    replacing the whole array would rewrite it on one line."""
+    replacing the whole array would rewrite it on one line. A removed
+    entry leaves with its own line, inline comment included -- a note
+    about a command no longer in the file would only mislead -- and
+    every comment outside that line stays."""
     existing = section.get(name)
     if not (isinstance(value, list)
             and isinstance(existing, tomlkit.items.Array)):

@@ -2841,6 +2841,28 @@ class ConfigPatchTests(ServeTestCase):
         self.assertEqual(len(notes), 1, notes)
         self.assertIn("loop.workers, worktree.setup", notes[0][0])
 
+    def test_shortening_an_array_removes_only_the_entry_and_its_own_line(self):
+        """An entry taken out of a multi-line array leaves with the
+        inline comment on its line -- it described that entry -- and
+        nothing else: the comment above the array, the one on the entry
+        kept and a full-line comment between entries all survive."""
+        self.seed()
+        before = self.config("config_edit = true\n").replace(
+            '  "make deps",  # the toolchain\n',
+            '  "make deps",  # the toolchain\n  # then the checks\n'
+            '  "make lint",  # the linter\n')
+        self.assert_loader_valid(before)
+        self.start(before)
+        code, _, body = self.request(
+            "PUT", "/config", self.BEARER,
+            body={"patch": {"worktree.setup": ["make deps"]}})
+        self.assertEqual(code, 200, body)
+        after = self.on_disk()
+        self.assertEqual(self.changed_lines(before, after),
+                         ['-  "make lint",  # the linter'])
+        self.assertEqual(tomllib.loads(after)["worktree"]["setup"],
+                         ["make deps"])
+
     def test_a_patch_the_loader_refuses_is_400_naming_the_key(self):
         self.seed()
         before = self.config("config_edit = true\n")
