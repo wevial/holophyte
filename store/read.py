@@ -100,6 +100,8 @@ class BlockedTicket:
     blockedQuestion: str | None
     runId: int | None = None
     askedMs: int | None = None
+    # The pull request the parked run opened (`runs.prUrl`), None when none.
+    prUrl: str | None = None
 
 
 def blocked_tickets(conn):
@@ -115,12 +117,13 @@ def blocked_tickets(conn):
         "SELECT t.id, t.linearIdentifier, t.blockedQuestion, r.id,"
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
-        " r.lastHeartbeat"
+        " r.lastHeartbeat, r.prUrl"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         " WHERE t.status = 'blocked_on_operator' ORDER BY t.id").fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
                           blockedQuestion=row[2], runId=row[3],
-                          askedMs=row[4] if row[4] is not None else row[5])
+                          askedMs=row[4] if row[4] is not None else row[5],
+                          prUrl=row[6])
             for row in rows]
 
 
@@ -275,6 +278,8 @@ class LiveRun:
     # None until the loop measures the candidate, or on a row from before the
     # column. The sweep bounds its per-turn time box with it (KO-340).
     reviewRoundCap: int | None
+    # The pull request the run opened (`runs.prUrl`), None when none.
+    prUrl: str | None = None
 
 
 @dataclass(frozen=True)
@@ -337,7 +342,7 @@ def live_runs(conn, phases):
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
         " r.startedAt, r.timeBoxMs, r.host,"
         " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id),"
-        " r.reviewRoundCap"
+        " r.reviewRoundCap, r.prUrl"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
         f"   AND r.phase IN ({', '.join('?' * len(phases))})"
@@ -345,7 +350,7 @@ def live_runs(conn, phases):
     return [LiveRun(id=row[0], linearIdentifier=row[1], title=row[2],
                     phase=row[3], lastHeartbeat=row[4], startedAt=row[5],
                     timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8],
-                    reviewRoundCap=row[9])
+                    reviewRoundCap=row[9], prUrl=row[10])
             for row in rows]
 
 
@@ -406,6 +411,8 @@ class MergedRun:
     findingCount: int
     host: str | None
     mergeSha: str | None
+    # The pull request the run merged through (`runs.prUrl`), None when none.
+    prUrl: str | None = None
 
 
 # The range of a SQLite INTEGER, and so of any run id a cursor can name.
@@ -438,7 +445,7 @@ def merged_runs(conn, limit, before=None):
         " r.timeBoxMs, r.reviewRoundCount,"
         " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
         "    FROM reviewRounds rr WHERE rr.runId = r.id),"
-        " r.host, r.mergeSha"
+        " r.host, r.mergeSha, r.prUrl"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         f" WHERE {where}"
         " ORDER BY r.endedAt DESC, r.id DESC LIMIT ?",
@@ -446,7 +453,7 @@ def merged_runs(conn, limit, before=None):
     return [MergedRun(id=row[0], linearIdentifier=row[1], title=row[2],
                       startedAt=row[3], endedAt=row[4], timeBoxMs=row[5],
                       reviewRoundCount=row[6], findingCount=row[7],
-                      host=row[8], mergeSha=row[9])
+                      host=row[8], mergeSha=row[9], prUrl=row[10])
             for row in rows]
 
 
@@ -505,6 +512,9 @@ class RecentFailedRun:
     endedAt: int
     ticketStatus: str
     attempt: int = 0
+    # The pull request the run opened before failing (`runs.prUrl`), None
+    # when none.
+    prUrl: str | None = None
 
 
 def recent_failed_runs(conn, since_ms):
@@ -515,13 +525,14 @@ def recent_failed_runs(conn, since_ms):
     """
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status, r.attempt"
+        " t.status, r.attempt, r.prUrl"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.outcome = 'failed' AND r.endedAt > ?"
         " ORDER BY r.endedAt, r.id", (since_ms,)).fetchall()
     return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
                             outcomeReason=row[2], endedAt=row[3],
-                            ticketStatus=row[4], attempt=row[5])
+                            ticketStatus=row[4], attempt=row[5],
+                            prUrl=row[6])
             for row in rows]
 
 
@@ -608,6 +619,8 @@ class RunDetail:
     # The review-round cap the loop gave the run; None on a run recorded
     # before the column existed, which `/runs/N` answers with the constant.
     reviewRoundCap: int | None
+    # The pull request the run opened (`runs.prUrl`), None when none.
+    prUrl: str | None = None
 
 
 def run_detail(conn, run_id):
@@ -615,7 +628,7 @@ def run_detail(conn, run_id):
     row = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.attempt,"
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
-        " r.branch, r.host, r.mergeSha, r.reviewRoundCap"
+        " r.branch, r.host, r.mergeSha, r.reviewRoundCap, r.prUrl"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.id = ?", (run_id,)).fetchone()
     if row is None:
@@ -624,7 +637,8 @@ def run_detail(conn, run_id):
                      phase=row[3], attempt=row[4], startedAt=row[5],
                      endedAt=row[6], lastHeartbeat=row[7], outcome=row[8],
                      timeBoxMs=row[9], branch=row[10], host=row[11],
-                     mergeSha=row[12], reviewRoundCap=row[13])
+                     mergeSha=row[12], reviewRoundCap=row[13],
+                     prUrl=row[14])
 
 
 @dataclass(frozen=True)

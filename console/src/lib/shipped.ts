@@ -162,3 +162,11 @@ export function shortSha(sha: string | null): string {
 export function commitLink(row: { merge_sha: string | null; commit_url?: string | null }): string | null {
   return row.merge_sha && row.commit_url ? row.commit_url : null;
 }
+
+/** The text a pull request link shows: "PR #N" from the URL's last path
+ *  segment, which is the number on a URL the factory itself opened, else
+ *  "PR" when that segment is not digits. */
+export function prLabel(url: string): string {
+  const segment = url.replace(/\/+$/, "").split("/").pop() ?? "";
+  return /^\d+$/.test(segment) ? `PR #${segment}` : "PR";
+}

@@ -257,7 +257,9 @@ def attention(target, now=None):
     ended `failed` within `FAILED_WINDOW_MS` and whose ticket is still
     `in_flight` (a requeue walks it to `ready`, a later attempt merges it,
     and either drops the failure); then the supervisor when it is not
-    live. Each item carries its `level`. `level` on the body is the worst
+    live. Each item that names a run carries the run's `pr_url`
+    (`runs.prUrl`, null when it opened none). Each item carries its
+    `level`. `level` on the body is the worst
     over the items -- `attention` when there is any -- else `working` when
     a run is live, else `none`. `critical` is in the enum for a client to
     rank above `attention` (a daemon it cannot reach); nothing here is
@@ -281,18 +283,20 @@ def attention(target, now=None):
     knobs = sweep_config(target)
     items = [{"kind": "blocked", "ticket": ticket.linearIdentifier,
               "question": ticket.blockedQuestion, "run": ticket.runId,
-              "asked_ms": ticket.askedMs, "level": "attention"}
+              "asked_ms": ticket.askedMs, "pr_url": ticket.prUrl,
+              "level": "attention"}
              for ticket in blocked]
     for run in runs:
         age = now - run.lastHeartbeat
         if age > knobs.heartbeat_stale_ms:
             items.append({"kind": "stale_run", "run": run.id,
                           "ticket": run.linearIdentifier, "phase": run.phase,
-                          "heartbeat_age_ms": age, "level": "attention"})
+                          "heartbeat_age_ms": age, "pr_url": run.prUrl,
+                          "level": "attention"})
     items.extend({"kind": "failed", "run": run.id,
                   "ticket": run.linearIdentifier, "reason": run.outcomeReason,
                   "ended_ms": run.endedAt, "attempt": run.attempt,
-                  "level": "attention"}
+                  "pr_url": run.prUrl, "level": "attention"}
                  for run in failed if run.ticketStatus == "in_flight")
     supervisor = supervisor_view(target, beat, now, knobs)
     if supervisor["state"] != "live":
@@ -548,7 +552,9 @@ def shipped(target, query=""):
     run's `id`, `ticket`, `title`, `rounds`, `findings` (the count over its
     review rounds), `started_ms`, `ended_ms`, `actual_min`, `estimate_min`,
     `merge_sha`, `commit_url` (the merge commit's page on `origin` when the
-    sha has reached `origin/main`, `commit_url()`) and `host`. `limit`
+    sha has reached `origin/main`, `commit_url()`), `pr_url` (the pull
+    request the run merged through, `runs.prUrl`, null when none) and
+    `host`. `limit`
     defaults to `SHIPPED_LIMIT` and is capped at `SHIPPED_CAP`;
     `before=RUN_ID` answers the rows that ended before that run (ties by
     id), and `next_before` is the id to pass back for the next page, null
@@ -581,6 +587,7 @@ def shipped(target, query=""):
                                    if run.timeBoxMs else None),
                   "merge_sha": run.mergeSha,
                   "commit_url": commit_url(target, run.mergeSha, origin),
+                  "pr_url": run.prUrl,
                   "host": json_host(target, run.host)}
                  for run in runs],
         "next_before": runs[-1].id if more else None,
@@ -624,8 +631,8 @@ def run_detail(target, run_id, now=None):
     here against `now` while the run is live and null once it has ended --
     an ended run's heartbeat is history, not a liveness signal -- and
     `max_rounds`, the loop's review-round cap, so a client can say "round 2
-    of 3" without knowing the constant, and `commit_url` as `/shipped`
-    carries it. `rounds` is oldest first, each with
+    of 3" without knowing the constant, and `commit_url` and `pr_url` as
+    `/shipped` carries them. `rounds` is oldest first, each with
     its findings decoded once here into objects; `events` is the narrative
     level of the stream, oldest first, without the detail rows. `run_id`
     that is not an integer is 400; an integer with no run is 404 carrying
@@ -653,6 +660,7 @@ def run_detail(target, run_id, now=None):
                 "merge_sha": run.mergeSha,
                 "commit_url": commit_url(target, run.mergeSha,
                                          origin_web_url(target)),
+                "pr_url": run.prUrl,
                 # The cap the loop gave this run; a run recorded before the
                 # store carried one answers the constant.
                 "max_rounds": run.reviewRoundCap or MAX_ROUNDS},

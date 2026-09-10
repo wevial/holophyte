@@ -5,6 +5,7 @@ import type { ThreadRow } from "../lib/threads";
 import { ActionButton } from "./ActionButton";
 import { KindPill } from "./KindPill";
 import { QuestionThread } from "./QuestionThread";
+import { PrLink } from "./ShippedTable";
 
 /** A question row's thread, when the daemon serves `/ledger`: its rows,
  *  whether it is the one open thread, and the toggle. */
@@ -15,17 +16,20 @@ export interface ThreadProps {
 }
 
 /** One item: pill, ticket over project, body over meta, age, actions. A
- *  row given `thread` toggles its thread card on click. */
+ *  row given `thread` toggles its thread card on click; one given `prUrl`
+ *  ends its body line with a "PR #N" link that follows without toggling. */
 export function AttentionRow({
   kind,
   project,
   description,
   thread,
+  prUrl,
 }: {
   kind: string;
   project: string;
   description: Description;
   thread?: ThreadProps;
+  prUrl?: string | null;
 }) {
   const { pill, ticket, body, meta, ageMs, actions } = description;
   const toggle = thread?.onToggle;
@@ -39,6 +43,7 @@ export function AttentionRow({
               "aria-expanded": thread.open,
               onClick: toggle,
               onKeyDown: (event: KeyboardEvent) => {
+                if (event.target !== event.currentTarget) return;
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   toggle?.();
@@ -56,7 +61,14 @@ export function AttentionRow({
           <div className="truncate text-[11px] text-faint">{project}</div>
         </div>
         <div className="min-w-0">
-          <p className="text-[13px] leading-[1.4] text-body">{body}</p>
+          <p className="text-[13px] leading-[1.4] text-body">
+            {body}
+            {prUrl && (
+              <span onClick={(event) => event.stopPropagation()} className="ml-2">
+                <PrLink url={prUrl} />
+              </span>
+            )}
+          </p>
           {meta && <p className="text-[12px] text-faint">{meta}</p>}
           {thread && (
             <p data-thread-hint className="text-[12px] font-semibold text-needs-you-link">

@@ -195,3 +195,22 @@ test("a daemon without /ledger shows no thread hint and no fold, and the band re
   expect(screen.getByText("things need you")).toBeTruthy();
   expect(within(screen.getByRole("region", { name: "Needs you" })).getAllByRole("listitem").length).toBe(2);
 });
+
+test("Enter on a question row's focused PR link follows the link instead of toggling the thread", () => {
+  const url = "https://github.com/o/r/pull/2170";
+  const attention = blocked();
+  attention.items[0]!.pr_url = url;
+  const ledgers: Ledgers = { "writer:7710": { rows: [], threads: { "KO-240": THREAD }, absent: false } };
+  render(<NeedsYou hosts={[hostOf(allKinds.status, attention, BASE)]} project="all" now={NOW} ledgers={ledgers} />);
+  const first = question("KO-240");
+  const toggle = within(first).getByRole("button", { expanded: false });
+  const link = within(first).getByText("PR #2170");
+
+  const followed = fireEvent.keyDown(link, { key: "Enter" });
+  expect(followed).toBe(true);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(first.querySelector("[data-thread]")).toBeNull();
+
+  fireEvent.keyDown(toggle, { key: "Enter" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+});
