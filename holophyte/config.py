@@ -744,6 +744,13 @@ def board_config(target):
 # of instructions that turn is given -- the repository's own PR conventions
 # in the operator's words. A reply the loop cannot read falls back to the
 # ticket form for that PR, so a PR is always opened.
+#
+# `human_threads` is what the shepherd does with a review thread a person
+# opened: `"park"` (the default, KO-327) is HUMAN before the adjudicator is
+# asked -- no reply, the run parks; `"act"` (KO-337) judges it beside the
+# bots' threads, fixes and answers an ADDRESS with the sha, and hands
+# anything else to the operator unanswered. The factory never declines a
+# person and never resolves their thread, whichever the setting.
 MERGE_KEYS = {
     "approve": "auto",
     "mode": "local",
@@ -751,17 +758,20 @@ MERGE_KEYS = {
     "pr_merge_method": "merge",
     "pr_text": "ticket",
     "pr_style": "",
+    "human_threads": "park",
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
 MERGE_METHODS = ("merge", "squash", "rebase")
 MERGE_PR_TEXTS = ("ticket", "written")
+MERGE_HUMAN_THREADS = ("park", "act")
 MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
-                "pr_merge_method": MERGE_METHODS, "pr_text": MERGE_PR_TEXTS}
+                "pr_merge_method": MERGE_METHODS, "pr_text": MERGE_PR_TEXTS,
+                "human_threads": MERGE_HUMAN_THREADS}
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
 MergeConfig = collections.namedtuple(
     "MergeConfig", ("approve", "mode", "pr_rounds", "pr_merge_method",
-                    "pr_text", "pr_style"))
+                    "pr_text", "pr_style", "human_threads"))
 
 
 def merge_config(target):
@@ -778,7 +788,9 @@ def merge_config(target):
     of at least 1 -- a `true`, a `"5"` or a `0` names no number of passes
     a shepherd can make. `pr_text` is `"ticket"` or `"written"`, and
     `pr_style` is a string (default empty): instructions, not a switch, so
-    any text is taken and anything else is refused. The refusal names the
+    any text is taken and anything else is refused. `human_threads` is
+    `"park"` or `"act"`: a `"reply"` names no rule for a person's thread
+    the shepherd has. The refusal names the
     table, the key and the constraint, like a bad `[loop]` value. Keys this
     version does not know are refused by `check_config_keys()`.
     """

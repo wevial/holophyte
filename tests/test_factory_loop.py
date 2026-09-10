@@ -3135,6 +3135,134 @@ class MergeModeTests(LoopFixture):
         self.assertIn(f"> {person[3]}", question)
         self.assertIn("src/app.py:30 by @wevial", question)
 
+    def test_under_act_a_person_s_address_is_fixed_replied_and_left_open(self):
+        """Acceptance (KO-337): `human_threads = "act"`, a thread a person
+        opened asking for a concrete change, and an adjudicator answering
+        ADDRESS for it. The thread reaches the adjudicator and the fix
+        round, the fix is pushed, a reply naming the sha is posted on it,
+        and `resolve_thread` is never called: the thread is the person's
+        to close."""
+        self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
+        person = ("src/app.py", 30, ("wevial", "User"),
+                  "Rename `thing` to `default_thing` here; the bare name"
+                  " shadows the module.")
+        self.fake_route(states=[self.pr_state([person])])
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: ADDRESS -- rename as asked"),
+                            Commit("fix: rename thing to default_thing"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "adjudicate", "implement"])
+        goal = fake.turns[2].goal
+        self.assertIn("THREAD 1 -- src/app.py:30 by @wevial", goal)
+        self.assertIn(person[3], goal)
+        self.assertIn("opened by a person", goal)
+        self.assertIn("Never DECLINE a person's thread", goal)
+        # The fix round was given the person's thread.
+        self.assertIn(person[3], fake.turns[3].goal)
+        self.assertIn("@wevial", fake.turns[3].goal)
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [f"git push origin {BRANCH}"] * 2)
+        calls = self.api_calls()
+        self.assertEqual([kind for kind, _ in calls], ["state", "reply"])
+        model = holophyte.agents.agent_route(self.tgt, "adjudicate")
+        self.assertEqual(calls[1][1]["thread"], "PRRT_1")
+        self.assertTrue(calls[1][1]["body"].startswith(
+            f"---- Comment by {model} ----\n"), calls[1][1]["body"])
+        self.assertIn(fixed, calls[1][1]["body"])
+        events = [summary for (summary,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'pull_request'"
+            " ORDER BY seq")]
+        self.assertEqual(
+            [e.split(" thread ")[0] for e in events if " thread " in e],
+            ["replied on"])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl, candidateSha FROM runs"),
+            [("awaiting_merge_approval", None, self.URL, fixed)])
+        question = self.question()
+        self.assertNotIn("needs a human's answer", question)
+        self.assertIn("1 person's thread(s) addressed and left open",
+                      question)
+        self.assertIn("src/app.py:30 (@wevial)", question)
+
+    def test_under_act_a_declined_person_is_human_and_the_bot_is_fixed(self):
+        """Acceptance (KO-337): `human_threads = "act"`, a person's thread
+        the adjudicator would DECLINE beside a bot's it would ADDRESS. The
+        bot's thread is fixed, replied to and resolved; the person's gets no
+        reply and no resolve -- the factory never declines a person -- and
+        the run parks with the person's thread quoted."""
+        self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
+        person = ("src/app.py", 30, ("wevial", "User"),
+                  "Should this be configurable at all? I would leave it.")
+        self.fake_route(states=[self.pr_state([person, self.DEFECT])])
+        verdicts = Reply("THREAD 1: DECLINE -- a preference, not a defect\n"
+                         "THREAD 2: ADDRESS -- a real crash")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+                            Commit("fix: default load() to an empty thing"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "adjudicate", "implement"])
+        self.assertIn("THREAD 1 -- src/app.py:30 by @wevial",
+                      fake.turns[2].goal)
+        self.assertIn("THREAD 2 -- src/app.py:10 by @review-bot",
+                      fake.turns[2].goal)
+        self.assertNotIn(person[3], fake.turns[3].goal)
+        self.assertIn(self.DEFECT[3], fake.turns[3].goal)
+        fixed = self.git("rev-parse", BRANCH).strip()
+        calls = self.api_calls()
+        self.assertEqual([kind for kind, _ in calls],
+                         ["state", "reply", "resolve"])
+        self.assertEqual(calls[1][1]["thread"], "PRRT_2")
+        self.assertIn(fixed, calls[1][1]["body"])
+        self.assertEqual(calls[2][1], {"thread": "PRRT_2"})
+        ((findings,),) = self.read(
+            "SELECT findings FROM reviewRounds WHERE round = 2")
+        messages = [f["message"] for f in json.loads(findings)]
+        self.assertIn("-- HUMAN: a person's thread the adjudicator would not"
+                      " address", messages[0])
+        self.assertIn("-- ADDRESS: a real crash", messages[1])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl, candidateSha FROM runs"),
+            [("awaiting_merge_approval", None, self.URL, fixed)])
+        question = self.question()
+        self.assertIn("needs a human's answer", question)
+        self.assertIn(f"> {person[3]}", question)
+        self.assertIn("src/app.py:30 by @wevial", question)
+        self.assertNotIn(self.DEFECT[3], question)
+
+    def test_under_act_a_bot_s_human_verdict_still_parks_before_acting(self):
+        """Review finding (KO-337): `human_threads = "act"` and two bots'
+        threads, one the adjudicator marks HUMAN and one ADDRESS. Bot
+        handling is unchanged by the setting: no fix round runs, nothing is
+        posted or resolved, and the run parks with the HUMAN thread
+        quoted -- as it does under the default."""
+        self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
+        asks = ("src/app.py", 30, "ask-bot",
+                "Is this API shape what the operator wants long term?")
+        self.fake_route(states=[self.pr_state([asks, self.DEFECT])])
+        verdicts = Reply("THREAD 1: HUMAN -- a design question for the"
+                         " operator\nTHREAD 2: ADDRESS -- a real crash")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual([c for c in self.recorded() if c.startswith("git")],
+                         [f"git push origin {BRANCH}"])
+        self.assertEqual(
+            self.read("SELECT phase, outcome, prUrl FROM runs"),
+            [("awaiting_merge_approval", None, self.URL)])
+        question = self.question()
+        self.assertIn("needs a human's answer", question)
+        self.assertIn(f"> {asks[3]}", question)
+        self.assertNotIn(f"> {self.DEFECT[3]}", question)
+
     def test_pr_rounds_caps_the_passes_and_parks_naming_the_cap(self):
         """Acceptance: `pr_rounds = 2` and a thread that keeps reappearing:
         two passes each fix and answer it, the third pass does not happen,

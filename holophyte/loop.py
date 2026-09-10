@@ -1490,15 +1490,27 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     resolved; each declined thread gets a reply with the reason and stays
     open. Every reply and resolve is a `runEvents` row. Declines park the
     run with those threads listed -- they are the reviewer's to close.
+
+    Under `[merge] human_threads = "act"` a person's thread is judged too:
+    an `ADDRESS` on it is fixed and answered like a bot's but never
+    resolved, and any other verdict folds to `HUMAN`. A person's `HUMAN`
+    parks after the fix round then, so a bot's defect is not held up by a
+    person's question, and a pass that answered a person parks with their
+    thread listed as left open for them to close. A bot's `HUMAN` still
+    ends the pass before anything is posted.
     """
     threads = state.threads
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
-    # A thread a person opened is the operator's whatever it says: it is
-    # HUMAN before the adjudicator is asked, and the adjudicator sees the
-    # bots' threads alone, renumbered so its reply and `parse_verdicts()`
-    # agree. A deleted account reads as a person: silence is the safe side.
-    judged = tuple(t for t in threads if t.author_kind == "bot")
+    # Under `human_threads = "park"` a thread a person opened is the
+    # operator's whatever it says: it is HUMAN before the adjudicator is
+    # asked, and the adjudicator sees the bots' threads alone, renumbered
+    # so its reply and `parse_verdicts()` agree. Under `"act"` the person's
+    # threads are judged too, but only an ADDRESS on one stands: anything
+    # else folds to HUMAN, so a person is never declined. A deleted account
+    # reads as a person: silence is the safe side.
+    act = merge_config(target).human_threads == "act"
+    judged = tuple(t for t in threads if act or t.author_kind == "bot")
     reply = "(no bot opened a thread; the adjudicator was not asked)"
     if judged:
         with heartbeat_while(conn, run_id, beat_s):
@@ -1507,7 +1519,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                                                       sha),
                           wt, base_sha=base_sha, candidate_sha=sha)
     verdicts = _verdicts_by_kind(
-        threads, shepherd.parse_verdicts(reply, len(judged)))
+        threads, judged, shepherd.parse_verdicts(reply, len(judged)))
     record_round(target, conn, run_id, rnd, "review",
                  shepherd.round_reply(pull, pass_no, threads, verdicts,
                                       state.checks, sha),
@@ -1516,18 +1528,26 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     ledger(conn, run_id, task_id, "round",
            f"Shepherd pass {pass_no} over {pull.url}: {len(threads)}"
            f" unresolved thread(s), checks {state.checks}\n"
-           f"{len(threads) - len(judged)} opened by a person, HUMAN before"
-           f" the adjudicator was asked\n"
-           f"Adjudicator verdicts:\n{reply}", provider)
+           + (f"{len(threads) - len(judged)} opened by a person, HUMAN"
+              " before the adjudicator was asked\n" if not act else
+              f"{sum(t.author_kind != 'bot' for t in threads)} opened by a"
+              " person, judged (human_threads = act): ADDRESS is fixed and"
+              " answered, anything else is HUMAN\n")
+           + f"Adjudicator verdicts:\n{reply}", provider)
     by_verdict = {v: [(n, t, verdicts[n][1]) for n, t in
                       enumerate(threads, 1) if verdicts[n][0] == v]
                   for v in shepherd.VERDICTS}
-    if by_verdict["HUMAN"]:
-        quoted = "\n\n".join(shepherd.quoted(t)
-                              for _, t, _ in by_verdict["HUMAN"])
-        _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
-                    "a thread needs a human's answer; nothing was posted on"
-                    f" it:\n{quoted}", threads, reviewed=reviewed)
+    # A HUMAN verdict on a bot's thread ends the pass before anything is
+    # posted, under either setting -- bot handling does not move. Only a
+    # person's HUMAN under `act` waits: the bots' threads and the person's
+    # ADDRESSes are fixed and answered first, and the pass parks after,
+    # the person's HUMAN thread quoted, unanswered, and one that was
+    # addressed listed as left open for them to close -- so the next pass
+    # does not judge it again.
+    if by_verdict["HUMAN"] and (not act or any(
+            t.author_kind == "bot" for _, t, _ in by_verdict["HUMAN"])):
+        _park_human(conn, run_id, provider, task_id, branch, sha, pull,
+                    by_verdict["HUMAN"], threads, reviewed)
     if by_verdict["ADDRESS"]:
         sha = _fix_threads(target, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
@@ -1535,31 +1555,64 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     for _, thread, reason in by_verdict["DECLINE"]:
         _post(target, conn, run_id, beat_s, pull, thread,
               shepherd.declined_reply(model, reason), resolve=False)
-    if by_verdict["DECLINE"]:
-        open_threads = tuple(t for _, t, _ in by_verdict["DECLINE"])
+    left_open = tuple(t for _, t, _ in by_verdict["DECLINE"]) + tuple(
+        t for _, t, _ in by_verdict["ADDRESS"] if t.author_kind != "bot")
+    if by_verdict["HUMAN"]:
+        _park_human(conn, run_id, provider, task_id, branch, sha, pull,
+                    by_verdict["HUMAN"],
+                    tuple(t for _, t, _ in by_verdict["HUMAN"]) + left_open,
+                    reviewed)
+    if left_open:
+        declined, answered = (len(by_verdict["DECLINE"]),
+                              len(left_open) - len(by_verdict["DECLINE"]))
+        why = [f"{declined} thread(s) declined and left open for their"
+               " authors"] if declined else []
+        why += [f"{answered} person's thread(s) addressed and left open for"
+                " them to close"] if answered else []
         _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
-                    f"{len(open_threads)} thread(s) declined and left open"
-                    " for their authors", open_threads, reviewed=reviewed)
+                    "; ".join(why), left_open, reviewed=reviewed)
     return sha
 
 
-def _verdicts_by_kind(threads, judged):
+def _park_human(conn, run_id, provider, task_id, branch, sha, pull, human,
+                listed, reviewed):
+    """Park the run on the threads the pass found `HUMAN`, each quoted in
+    the ticket's question, with `listed` as the open threads."""
+    quoted = "\n\n".join(shepherd.quoted(t) for _, t, _ in human)
+    _park_on_pr(conn, run_id, provider, task_id, branch, sha, pull,
+                "a thread needs a human's answer; nothing was posted on"
+                f" it:\n{quoted}", listed, reviewed=reviewed)
+
+
+def _verdicts_by_kind(threads, judged, parsed):
     """`{number: (verdict, reason)}` over all of `threads`, numbered as the
-    round row lists them: a thread a person opened (or one whose opener is
-    unknown) is `HUMAN`, "opened by a person"; a bot's thread takes the
-    next verdict off `judged`, the adjudicator's verdicts over the bots'
-    threads in order."""
-    pending = iter(sorted(judged))
-    return {n: (judged[next(pending)] if t.author_kind == "bot"
-                else ("HUMAN", "opened by a person"))
-            for n, t in enumerate(threads, 1)}
+    round row lists them: a thread not in `judged` -- a person's (or one
+    whose opener is unknown) under `human_threads = "park"` -- is `HUMAN`,
+    "opened by a person"; a judged thread takes the next verdict off
+    `parsed`, the adjudicator's verdicts over `judged` in order. A verdict
+    on a person's thread that is not `ADDRESS` folds to `HUMAN`: the
+    factory never declines a person, and the adjudicator's silence on
+    them is not a licence either."""
+    pending = iter(sorted(parsed))
+    verdicts = {}
+    for n, t in enumerate(threads, 1):
+        if t not in judged:
+            verdicts[n] = ("HUMAN", "opened by a person")
+            continue
+        verdict = parsed[next(pending)]
+        if t.author_kind != "bot" and verdict[0] != "ADDRESS":
+            verdict = ("HUMAN",
+                       "a person's thread the adjudicator would not address")
+        verdicts[n] = verdict
+    return verdicts
 
 
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min):
     """The fix round for the addressed threads, then the push, then a reply
-    and a resolve on each; return the fixed candidate's sha."""
+    on each and a resolve on each bot's; return the fixed candidate's
+    sha."""
     fixes = _timed(target, conn, run_id, beat_s, wt, budget_min,
                    shepherd.fix_brief(pull, addressed, ticket))
     if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
@@ -1597,10 +1650,13 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         pr.push_branch(target, branch)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
     summaries = shepherd.parse_summaries(fixes)
+    # A person's thread is theirs to close: the reply names the fix and
+    # the sha, and the thread is left unresolved for its author.
     for n, thread, reason in addressed:
         _post(target, conn, run_id, beat_s, pull, thread,
               shepherd.addressed_reply(model, summaries.get(n, reason),
-                                       fixed), resolve=True)
+                                       fixed),
+              resolve=thread.author_kind == "bot")
     return fixed
 
 

@@ -19,6 +19,12 @@ Three verdicts, one per thread, from the adjudicator role:
   ticket's question quotes the thread. A thread the reply gives no verdict
   for is `HUMAN` too: silence is not a licence to answer.
 
+A thread a person opened is judged only when the target's `[merge]
+human_threads` is `"act"`; then its verdicts are `ADDRESS` or `HUMAN`, never
+`DECLINE` -- the factory does what a person asked and says so, or hands the
+thread to the operator; it does not argue with them -- and an addressed
+thread is left unresolved for its author to close.
+
 Every reply the loop posts opens with `---- Comment by MODEL ----`, the
 model being the adjudicator's route, so a reader of the PR can tell the
 factory's comments from a person's at a glance.
@@ -91,7 +97,8 @@ def adjudication_brief(pull, threads, ticket, sha):
         "thread asking for work outside it is out of scope.\n\n"
         f"{ticket}\n\n"
         f"Unresolved review threads ({len(threads)}):\n\n{listing}\n\n"
-        "For EACH thread give exactly one verdict line, in this form and "
+        + people_paragraph(threads)
+        + "For EACH thread give exactly one verdict line, in this form and "
         "nothing else on the line:\n"
         "THREAD n: ADDRESS -- one sentence naming the defect to fix\n"
         "THREAD n: DECLINE -- one sentence saying why it is not a defect or "
@@ -104,6 +111,26 @@ def adjudication_brief(pull, threads, ticket, sha):
         "thread by its whole conversation: a follow-up can withdraw, "
         "sharpen, or turn a finding into a question. Do not modify "
         "anything.")
+
+
+def people_paragraph(threads):
+    """The brief's paragraph on the threads a person opened, numbered as
+    the listing has them; empty when every thread is a bot's."""
+    people = [str(n) for n, t in enumerate(threads, 1)
+              if t.author_kind != "bot"]
+    if not people:
+        return ""
+    return (
+        f"THREAD {', '.join(people)} " + ("was" if len(people) == 1 else
+                                          "were")
+        + " opened by a person, not a bot. For a person's thread give "
+        "ADDRESS only when it asks for a concrete change the diff can make "
+        "(\"change X to Y\", \"this should also handle Z\", \"rename "
+        "this\"). A question, a request for reasoning, a design objection, "
+        "a request outside the ticket, or anything you are not sure is a "
+        "change request is HUMAN -- do not guess in the person's favour. "
+        "Never DECLINE a person's thread: the factory does not argue with a "
+        "person; a DECLINE on it is read as HUMAN.\n\n")
 
 
 def parse_verdicts(reply, count):

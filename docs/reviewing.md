@@ -80,6 +80,12 @@ One pass:
    GitHub `User`, or an account GitHub no longer names -- is `HUMAN`,
    "opened by a person", before the adjudicator is asked: bots get
    replies, people do not, and no reviewer is named to tell them apart.
+   A target that sets `[merge] human_threads = "act"` has a person's
+   thread judged with the bots': one asking for a concrete change is
+   addressed -- fixed, answered with the sha, and left unresolved for its
+   author to close, the run parking after the fix with it listed -- and
+   anything else is handed to the operator as `HUMAN`; a person's thread
+   is never declined.
    The adjudicator route (`[agents] adjudicator`, or the
    default container) is given the ticket, the candidate as the same frozen
    `refs/review/base` and `refs/review/candidate` pair a review round gets,
