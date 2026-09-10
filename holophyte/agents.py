@@ -74,11 +74,23 @@ class ProbeResult:
             why = f"exit {self.returncode}"
         else:
             why = f"exit 0 but no {PROBE_WORD!r} in the output"
-        tail = self.output.strip().splitlines()[-PROBE_TAIL_LINES:]
+        tail = self.tail()
         lines = [f"[holo2] implementer probe failed ({why}): {shown}"]
         lines += [f"[holo2]   | {line}" for line in tail] or [
             "[holo2]   | (no output)"]
         return "\n".join(lines)
+
+    def tail(self):
+        """The last `PROBE_TAIL_LINES` lines the route printed."""
+        return self.output.strip().splitlines()[-PROBE_TAIL_LINES:]
+
+    def to_json(self):
+        """The result as the daemon's `PUT /config` reply carries it: the
+        verdict, the exact argv, the exit code (`null` on the timeout, with
+        `timed_out` saying so), the cap and the output's last lines."""
+        return {"ok": self.ok, "command": list(self.command),
+                "returncode": self.returncode, "timed_out": self.timed_out,
+                "timeout": self.timeout, "output": self.tail()}
 
 
 def probe_implementer(target, timeout=None):

@@ -81,12 +81,12 @@ nonzero, answers something else or does not answer in time ends the pass nonzero
 with the command, the exit code or the timeout, and the last lines it printed --
 a typo or a stale CLI is found here, not by a failed implement turn later. The
 default route is not probed this way, and neither is the reviewer. The probe
-runs when a pass starts: the daemon has no config-write route, so an edited
-`implementer` is proved at the next `factory.py` start. A route that lets a
-client write `config.toml` inherits the duty to re-probe on that key and to
-report the result beside the write -- and, because the probe executes whatever
-command the key names, must sit behind the same opt-in and token as
-`POST /actions/NAME`, never the read token alone.
+runs when a pass starts and again when the daemon's `PUT /config` (behind
+`[serve] config_edit` and the write token, never the read token alone: the
+probe executes whatever command the key names) changes this key: the write
+lands either way, and the reply's `probe` carries the same verdict, command,
+exit code and last lines the loop would print, so a route that does not answer
+is known at the write and not at the next `factory.py` start.
 
 `review_model` and `review_effort` choose what runs inside the hardened
 container when neither review role is overridden by a command. Both reach the
@@ -457,8 +457,10 @@ replaced too), and `PUT
 runs -- a refused document is 400 naming the key and nothing is written --
 then writes beside a timestamped backup and records as a `config_edit`
 intervention; a `[redacted]` sent back is the current value, so a round
-trip never blanks a secret. The change applies at the next loop start, not
-to a running loop. It needs `token_file` on every bind as `actions` does,
+trip never blanks a secret. A write that changes `[agents] implementer`
+runs the startup probe on it (`[agents]` above) and reports the verdict as
+`probe` beside the write, which lands regardless. The change applies at the
+next loop start, not to a running loop. It needs `token_file` on every bind as `actions` does,
 and is off by default because the file is command execution on the writer
 host (`[worktree] setup`, `[agents]`). All three are read once at bind. The
 routes, their bodies and replies are in [The daemon's
