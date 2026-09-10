@@ -4,6 +4,19 @@ Process management is the operator's; the factory ships the invocation and
 nothing around it. What lives here is the checked-in shape of that management
 on a writer host, to copy under `~/.config/systemd/user/` and enable by hand.
 
+## Install
+
+The daemon has one Python dependency, `tomlkit`, which `PUT /config` uses
+to edit the target's config in place without losing comments; it is pinned
+in `requirements.txt`. On the writer host, before enabling the serve unit:
+
+```
+python3 -m pip install --user -r requirements.txt
+```
+
+A daemon started without it exits with one line naming the module and this
+command.
+
 ## Files
 
 - `deploy/holophyte-serve@.service` — systemd **user** unit template, one

@@ -11,6 +11,7 @@ Run: python3 -m unittest discover -s tests -p 'test_serve*' -v
 from __future__ import annotations
 
 import contextlib
+import difflib
 import http.client
 import io
 import json
@@ -2774,6 +2775,140 @@ class ConfigEditTests(ServeTestCase):
         message = str(raised.exception)
         self.assertIn("[serve] token_file", message)
         self.assertIn("config_edit", message)
+
+
+class ConfigPatchTests(ServeTestCase):
+    """`PUT /config` with `{"patch": ...}` and `values` on `GET /config`
+    (KO-364): the file edited in place with `tomlkit`, so what the
+    console cannot rewrite -- a comment, a multi-line array, a
+    triple-quoted string, a quoted table -- survives or is read as plain
+    JSON. The fixture is `ConfigEditTests`' with comments around every
+    value a patch touches and a multi-line `[worktree] setup`; the
+    helpers are borrowed, the tests are not."""
+
+    TOKEN = ConfigEditTests.TOKEN
+    BEARER = ConfigEditTests.BEARER
+    SECRET = ConfigEditTests.SECRET
+    HOOK_TOKENS = ConfigEditTests.HOOK_TOKENS
+    assert_loader_valid = ConfigEditTests.assert_loader_valid
+    on_disk = ConfigEditTests.on_disk
+
+    def config(self, extra="", loop="[loop]\nworkers = 2\n"):
+        text = ConfigEditTests.config(self, extra, loop)
+        text = text.replace("workers = 2\n", "workers = 2  # two seats\n")
+        return text.replace(
+            'setup = ["make deps"]\n',
+            "# what a fresh worktree runs first\nsetup = [\n"
+            '  "make deps",  # the toolchain\n]\n')
+
+    def changed_lines(self, before, after):
+        """The `-`/`+` lines of a zero-context unified diff, so a test
+        states exactly which lines a patch may touch."""
+        return [line for line in difflib.unified_diff(
+                    before.splitlines(), after.splitlines(), n=0, lineterm="")
+                if line[:1] in "+-" and not line.startswith(("+++", "---"))]
+
+    def test_a_patch_changes_only_its_values_and_keeps_every_comment(self):
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.assert_loader_valid(before)
+        self.start(before)
+        code, _, body = self.request(
+            "PUT", "/config", self.BEARER,
+            body={"patch": {"loop.workers": 3,
+                            "worktree.setup": ["make deps", "make lint"]}})
+        self.assertEqual(code, 200, body)
+        after = self.on_disk()
+        self.assertEqual(self.changed_lines(before, after),
+                         ["-workers = 2  # two seats",
+                          "+workers = 3  # two seats",
+                          '+  "make lint",'])
+        expected = tomllib.loads(before)
+        expected["loop"]["workers"] = 3
+        expected["worktree"]["setup"].append("make lint")
+        self.assertEqual(tomllib.loads(after), expected)
+        self.assertEqual(Path(body["backup"]).read_text(), before)
+        conn = store.read.open_readonly(self.db)
+        try:
+            rows = conn.execute(
+                'SELECT "action" FROM interventions').fetchall()
+            notes = conn.execute(
+                "SELECT summary FROM runEvents WHERE summary LIKE"
+                " '%PUT /config patch%'").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [("config_edit",)])
+        self.assertEqual(len(notes), 1, notes)
+        self.assertIn("loop.workers, worktree.setup", notes[0][0])
+
+    def test_a_patch_the_loader_refuses_is_400_naming_the_key(self):
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        code, _, body = self.request("PUT", "/config", self.BEARER,
+                                     body={"patch": {"loop.workers": 0}})
+        self.assertEqual(code, 400, body)
+        self.assertIs(body["ok"], False)
+        self.assertIn("[loop] workers", body["error"])
+        self.assertEqual(self.on_disk(), before)
+        self.assertEqual(list(self.db.parent.glob("config.toml.bak-*")), [])
+
+    def test_a_patch_creates_a_missing_table_and_refuses_an_unknown_one(self):
+        """`[report]` is not in the fixture and is created; `[linear]` is
+        in the file but not a table the loader reads, `workers` names no
+        table, and a float is no patch value: each 400 names the key."""
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        for edit, key in (({"linear.api_key": "x"}, "linear.api_key"),
+                           ({"workers": 3}, "workers"),
+                           ({"loop.workers": 2.5}, "loop.workers"),
+                           ({"worktree.setup": ["ok", 1]}, "worktree.setup")):
+            with self.subTest(key=key):
+                code, _, body = self.request("PUT", "/config", self.BEARER,
+                                             body={"patch": edit})
+                self.assertEqual(code, 400, body)
+                self.assertIn(key, body["error"])
+                self.assertEqual(self.on_disk(), before)
+        code, _, body = self.request(
+            "PUT", "/config", self.BEARER,
+            body={"patch": {"report.findings": "off"}})
+        self.assertEqual(code, 200, body)
+        after = self.on_disk()
+        self.assertEqual(self.changed_lines(before, after),
+                         ["+", "+[report]", '+findings = "off"'])
+        tgt = holophyte.target.Target.locate(self.target)
+        self.assertEqual(holophyte.config.report_config(tgt).findings, "off")
+
+    def test_get_values_reads_a_triple_quoted_string_and_a_quoted_table(self):
+        self.seed()
+        before = self.config("config_edit = true\n") + (
+            '\n[agents]\nimplementer = """\nclaude -p"""\n'
+            '\n["writer host"]\nname = "seat"\n')
+        self.assert_loader_valid(before)
+        self.start(before)
+        code, _, body = self.request("GET", "/config", self.BEARER)
+        self.assertEqual(code, 200, body)
+        values = body["values"]
+        self.assertEqual(values["agents"]["implementer"], "claude -p")
+        self.assertEqual(values["writer host"], {"name": "seat"})
+        self.assertEqual(values["worktree"]["setup"], ["make deps"])
+        self.assertEqual(values["loop"]["workers"], 2)
+        # Parsed from the redacted text: the secret is not in the values.
+        self.assertEqual(values["linear"]["api_key"], "[redacted]")
+        self.assertNotIn(self.SECRET, self.raw_body)
+
+    def test_a_daemon_without_tomlkit_fails_at_start_naming_it(self):
+        self.seed()
+        (self.db.parent / "config.toml").write_text(
+            self.config("config_edit = true\n"))
+        tgt = holophyte.target.Target.locate(self.target)
+        with patch.dict(sys.modules, {"tomlkit": None}):
+            with self.assertRaises(SystemExit) as raised:
+                holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())
+        message = str(raised.exception)
+        self.assertIn("tomlkit", message)
+        self.assertIn("pip install --user -r requirements.txt", message)
 
 
 class ParseAddressTests(unittest.TestCase):

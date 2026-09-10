@@ -11,7 +11,10 @@ pass. Stdlib Python and SQLite; no frameworks.
 
 Python 3.11+ and Git on the host, Docker for the reviewer container, and
 `LINEAR_API_KEY` in the environment or a `.env` beside `linear_provider.py`.
-`ruff` is the one developer tool (`pip install --user ruff`). Bun is needed
+`ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` is the one runtime dependency, pinned in
+`requirements.txt` (`python3 -m pip install --user -r requirements.txt`);
+the daemon needs it to edit a config in place and exits naming it when it
+is missing. Bun is needed
 only to build the console (`bun --cwd=console run build`); see
 [Development](docs/development.md). Per-target settings go in
 `~/.holophyte/<slug>/config.toml`; see [Config](docs/config.md).
