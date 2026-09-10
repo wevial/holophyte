@@ -2643,7 +2643,13 @@ def _reconcile_at_startup(target, conn, project, provider):
     parked with no outcome and no `mergeSha`, and Shipped never showed it.
     So the parked pull requests are read first and a merged one ships its
     run; the mirror repair then finds that ticket already `merged` and
-    walks only the rest.
+    walks only the rest. Order alone is not enough: had GitHub failed on
+    that first read, the mirror repair would still have seen Done and
+    walked the ticket `merged` around its parked run, which no later pass
+    could reach -- the pull request reconcile reads `blocked_on_operator`
+    tickets only. So the mirror repair also leaves every ticket whose
+    newest run is parked on a pull request to this reconcile, whatever
+    the board says, and the next pass asks GitHub again.
     """
     _reconcile_pull_requests(target, conn, project, provider)
     _reconcile_mirror(conn, project, provider)
@@ -2671,13 +2677,32 @@ def _reconcile_mirror(conn, project, provider):
     while the provider is being asked, and a verdict on the stale read
     would mark a ticket merged under a live run. A ticket that never ran
     has no run to carry the row (`interventions.runId` is NOT NULL), so
-    its printed line is its only record and says so. A provider that
+    its printed line is its only record and says so. A ticket parked on a
+    pull request is left to the pull request reconcile whatever the board
+    says (KO-359 review): a Done there means a person merged the pull
+    request, and only GitHub's answer closes the parked run out with its
+    merge commit's sha -- so it stays `blocked_on_operator` until GitHub
+    can be asked, rather than walked `merged` around a run no later pass
+    would reach. A provider that
     cannot answer -- no network, no key -- skips the reconcile in one line
     and the loop goes on as before: this is a repair of the mirror, not a
     gate on the work.
     """
-    tickets = [t for t in store.read.open_tickets(conn, project)
-               if t.activeRunId is None]
+    tickets = []
+    for ticket in store.read.open_tickets(conn, project):
+        if ticket.activeRunId is not None:
+            continue
+        if ticket.status == "blocked_on_operator" \
+                and _parked_pull_request(conn, ticket.id) is not None:
+            # GitHub's verdict, not the board's: a Done here is a person
+            # who merged the pull request, and `_reconcile_pull_requests()`
+            # closes the run out with the merge commit's sha when GitHub
+            # can be asked. Walking the ticket `merged` around a parked run
+            # would strand that run (KO-359 review).
+            print(f"[holo2] reconcile left {ticket.linearIdentifier} to its"
+                  " pull request: the run parked on it is GitHub's to close")
+            continue
+        tickets.append(ticket)
     if not tickets:
         return
     try:
@@ -2768,6 +2793,17 @@ def _parked_phase(conn, run_id):
     if row is None or row[1] != "awaiting_merge_approval":
         return None
     return row
+
+
+def _parked_pull_request(conn, ticket_id):
+    """The `prUrl` of the ticket's newest run when that run is parked
+    awaiting merge approval on a pull request, None otherwise: the ticket
+    the pull request reconcile owns and the mirror reconcile leaves."""
+    row = conn.execute(
+        "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.id = ? AND r.phase = 'awaiting_merge_approval'"
+        " AND r.prUrl IS NOT NULL", (ticket_id,)).fetchone()
+    return None if row is None else row[0]
 
 
 def _land_github_merge(target, conn, provider, ticket, pull, status):

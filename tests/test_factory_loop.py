@@ -3831,12 +3831,15 @@ class MergeModeTests(LoopFixture):
     def fake_client(self, *answers):
         """The reconcile's GitHub, faked: `holophyte.pr.graphql` answers
         each ask with the next of `answers` (the last one forever) and
-        records the pull request and variables it was asked about."""
+        records the pull request and variables it was asked about. An
+        answer that is an exception is raised instead: GitHub down."""
         asked = []
 
         def graphql(target, pull, query, variables):
             asked.append((pull.url, query, variables))
             node = answers[min(len(asked), len(answers)) - 1]
+            if isinstance(node, Exception):
+                raise node
             return {"repository": {"pullRequest": node}}
 
         patcher = patch.object(holophyte.pr, "graphql", graphql)
@@ -3907,6 +3910,47 @@ class MergeModeTests(LoopFixture):
             [("done", "merged", self.MERGE_SHA)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("merged",)])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+                         [("approve",)])
+
+    def test_a_github_error_leaves_the_parked_run_for_the_next_pass(self):
+        """Review of KO-359: GitHub could not be read at startup while the
+        board already said Done. The mirror reconcile used to take that
+        Done and walk the ticket `merged` around its parked run, and no
+        later pass asked GitHub about a ticket no longer blocked: the run
+        was stranded with no outcome and no `mergeSha`. Now the ticket
+        stays parked with its run through the failure, and the pass after
+        GitHub recovers ships it."""
+        self.parked_on_pr()
+        asked = self.fake_client(RuntimeError("GitHub is down"),
+                                 self.MERGED_PULL)
+        provider = StubProvider()
+        provider.closed = {"KO-131": "completed"}
+
+        out = self.main_output(provider=provider)
+
+        self.assertEqual(len(asked), 1)
+        self.assertIn("could not be read (GitHub is down); the run stays"
+                      " parked", out)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("awaiting_merge_approval", None, None)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+        again = StubProvider()
+        again.closed = {"KO-131": "completed"}
+        self.main_output(provider=again)
+
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(again.states, [("iss-131", "Done")])
         self.assertEqual(self.read('SELECT "action" FROM interventions'),
                          [("approve",)])
 

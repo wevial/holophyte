@@ -113,7 +113,11 @@ machines it walks. Back to the [README](index.md).
    appears in Shipped. One closed on GitHub without merging leaves the run
    parked and makes the ticket's question `PR closed without merge: URL`,
    which the skip line then reads; an open one changes nothing, and a
-   GitHub error is one printed line for that ticket and the pass goes on.
+   GitHub error is one printed line for that ticket and the pass goes on,
+   with the run still parked for the next pass to ask again. The startup
+   mirror reconcile leaves a ticket parked on a pull request alone even
+   when the board already says Done, since only GitHub's answer closes the
+   run out with its merge commit.
    The factory still never pushes `main`, and never moves the local one
    under this mode: the merge is GitHub's.
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
