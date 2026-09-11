@@ -68,9 +68,13 @@ reconcile sends a run back to the shepherd (new review activity on its
 pull request walks the ticket to `ready`) and no loop is live to claim it,
 the pass starts the loop the way the console's launch-loop action does,
 `systemctl --user start holophyte-loop@NAME` with `[serve] name`, and
-prints that it did; a `systemctl` that fails is printed and the pass goes
-on, so on a host without the units the ticket waits for the operator's
-launcher as before. The sweep also
+prints that it did. "No loop live" is no fresh heartbeat and nobody
+holding the target's `lease.lock` turn, and the start is recorded as a
+`launch_loop` intervention on the run sent back, so a loop still booting
+is not started twice; a `systemctl` that fails is printed, records
+nothing, and the next pass tries again while the ticket is still `ready`
+and the loop still free, so on a host without the units the line repeats
+until the operator's launcher takes the ticket. The sweep also
 watches the loop's own restarts: a loop that merges a change to the
 factory itself writes a `loopRestarts` row and re-executes,
 and if no claim, heartbeat or "no ready tickets" exit follows within

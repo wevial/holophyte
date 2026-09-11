@@ -42,7 +42,7 @@ import holophyte
 import review_runner
 import store
 import store.read
-from holophyte.board import close_out_failure
+from holophyte.board import close_out_failure, lease_turn_held
 from holophyte.config import serve_config, sweep_config
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
 from holophyte.reexec import reexec_self, start_loop
@@ -950,18 +950,27 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     to its heartbeat, so nothing about GitHub ever counts as a strike or
     ends a pass.
 
-    When the reconcile sent a ticket back -- new review activity on its
-    pull request, the run ended and the ticket walked to `ready` -- and
-    no loop was live to claim it, the pass starts the target's loop unit
-    through `start_loop()`, the call the daemon's `launch-loop` action
-    makes, and prints that it did (KO-376): the loop exited on a board
-    with no ready ticket, so without this the ticket waits in the store
-    for a hand on the launcher. Once per pass, however many were sent
-    back. A `systemctl` that fails is one printed line and the pass goes
-    on; the next pass, finding the ticket still ready and no loop live,
-    sends nothing back again and does not retry -- the operator's
-    launcher does, as before this ticket. A sweep that sent nothing back
-    starts nothing.
+    When the reconcile has sent a ticket back -- new review activity on
+    its pull request, the run ended and the ticket walked to `ready` --
+    and no loop is live to claim it, the pass starts the target's loop
+    unit through `start_loop()`, the call the daemon's `launch-loop`
+    action makes, and prints that it did (KO-376): the loop exited on a
+    board with no ready ticket, so without this the ticket waits in the
+    store for a hand on the launcher. What is owed a loop is read from
+    the store, not from this pass's reconcile
+    (`store.read.pending_loop_launches()`): the shepherd row the send-back
+    wrote, on a ticket still `ready`, with no `launch_loop` row since. A
+    start `systemctl` took is recorded as that row, so a loop that is
+    booting and has not claimed yet is not started again by the next pass;
+    a start that failed is one printed line and no row, so the next pass,
+    finding the ticket still owed and the loop still free, tries again.
+    Once per pass, however many tickets are owed: the unit is the
+    target's. "No loop live" is two looks: no fresh heartbeat on a run of
+    the project (`loop_is_live()`) and nobody holding the lease turn
+    (`lease_turn_held()`), the flock a claim or close-out of this store
+    holds between its look and its write -- a loop between its startup and
+    its first claim's heartbeat is visible only there. A sweep that has
+    nothing owed starts nothing.
 
     Returns the project ids reconciled.
     """
@@ -971,36 +980,47 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     out = out or sys.stdout
     knobs = sweep_config(target) if knobs is None else knobs
     asked = []
-    sent = set()
+    owed = []
     for (project,) in conn.execute("SELECT id FROM projects ORDER BY id"):
         if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
             continue
         try:
             with contextlib.redirect_stdout(out):
-                sent |= _reconcile_pull_requests(target, conn, project,
-                                                 provider)
+                _reconcile_pull_requests(target, conn, project, provider)
         except Exception as e:  # noqa: BLE001 - never a strike, never the pass
             print(f"[holo2] parked pull requests could not be reconciled"
                   f" ({e}); the next pass asks again", file=out)
             continue
         asked.append(project)
-    if sent:
-        start_loop_for(target, len(sent), out)
+        owed.extend(store.read.pending_loop_launches(conn, project))
+    if owed and not lease_turn_held(target):
+        start_loop_for(target, conn, owed, now, out)
     return asked
 
 
-def start_loop_for(target, count, out):
-    """Start the target's loop unit for the `count` tickets the sweep just
-    sent back, printing the unit started or why it was not."""
+def start_loop_for(target, conn, owed, now, out):
+    """Start the target's loop unit for the `(ticket, run)` pairs `owed` a
+    loop, printing the unit started or why it was not. A start `systemctl`
+    took is recorded as a `launch_loop` intervention on each run, which is
+    what stops the next pass starting it again; a failed one records
+    nothing, so the next pass retries."""
     unit, ok, detail = start_loop(serve_config(target).name)
+    count = len(owed)
     noun = "ticket" if count == 1 else "tickets"
-    if ok:
-        print(f"[holo2] {count} {noun} sent back and no loop live; started"
-              f" {unit}", file=out)
-    else:
+    if not ok:
         print(f"[holo2] {count} {noun} sent back and no loop live, but"
-              f" {unit} could not be started ({detail}); launch the loop"
-              " by hand", file=out)
+              f" {unit} could not be started ({detail}); the next pass"
+              " tries again", file=out)
+        return
+    note = (f"the supervisor started {unit} for {count} {noun} sent back to"
+            " the shepherd while no loop was live")
+    with store.transaction(conn):
+        for _ticket, run_id in owed:
+            store.record_intervention(conn, run_id, "launch_loop", note,
+                                      source="supervisor", trigger="manual",
+                                      now=now)
+    print(f"[holo2] {count} {noun} sent back and no loop live; started"
+          f" {unit}", file=out)
 
 
 def factory_revision():

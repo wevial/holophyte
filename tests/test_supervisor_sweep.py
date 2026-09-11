@@ -17,6 +17,7 @@ Run: python3 -m unittest discover -s tests -p 'test_supervisor*' -v
 """
 from __future__ import annotations
 
+import fcntl
 import io
 import os
 import signal
@@ -33,6 +34,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
+import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
@@ -1940,6 +1942,54 @@ class ParkedPullRequestTests(SweepTestCase):
 
         self.assertEqual(calls(), [])
         self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_sweep_under_a_held_lease_turn_starts_nothing(self):
+        """A loop between its startup and its first claim's heartbeat is
+        visible only as the holder of the lease turn (`lease.lock`), so a
+        held turn is a live loop for the launch, whatever the runs say."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+        lock = holophyte.board.lease_turn_path(self.tgt)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_failed_start_is_retried_next_pass_and_a_taken_one_is_not(self):
+        """The ticket the send-back walked to `ready` is still owed a loop
+        after a start `systemctl` refused, so the next pass tries again;
+        once a start is taken the loop is booting, and the pass after that
+        leaves it alone rather than starting it a second time."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+        script = self.root / "fake-bin" / "systemctl"
+        good = script.read_text()
+        script.write_text("#!/bin/sh\necho 'Failed to connect to bus' >&2\n"
+                          "exit 1\n")
+
+        first = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+        script.write_text(good)
+        second = self.one_pass(T0 + 21 * MINUTE, StubProvider())
+        third = self.one_pass(T0 + 22 * MINUTE, StubProvider())
+
+        self.assertIn("could not be started (Failed to connect to bus)", first)
+        self.assertIn("started holophyte-loop@repo", second)
+        self.assertNotIn("holophyte-loop@", third)
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM tickets WHERE id = ?",
+                              (self.ticket_of[run_id],)).fetchone(),
+            ("ready",))
 
     def test_a_sweep_that_sent_nothing_back_starts_nothing(self):
         """An open pull request with no activity past the mark sends
