@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- The candidate the last independent judgement covered: the reviewer's
     -- approval, or the operator's `--approve`. Written by `park()` under
     -- `[merge] mode = "pr"` beside `candidateSha`, which a fix round or a
-    -- rejected fix can move past it; read by the shepherd a `--shepherd`
+    -- rejected fix can move past it; read by the babysitter a `--babysit`
     -- resumes, which reviews a candidate at any other sha again before
     -- the merge API is called rather than merging on the branch's word.
     -- NULL on every run parked with no judgement to record.
@@ -201,12 +201,12 @@ CREATE TABLE IF NOT EXISTS runs (
     -- round timeline by the cap this run had rather than a constant
     -- (KO-321). NULL on every run recorded before the column existed.
     reviewRoundCap    INTEGER,
-    -- What the last shepherd pass saw of the pull request a run is parked
+    -- What the last babysitter pass saw of the pull request a run is parked
     -- on, recorded after the pass's own pushes and replies (KO-362):
     -- GitHub's `updatedAt` as the ISO 8601 string it answers, and the
     -- count of review threads. The loop's per-tick reconcile holds the
     -- pull request's current values against these, and a newer
-    -- `updatedAt` or a grown count is review activity the shepherd has
+    -- `updatedAt` or a grown count is review activity the babysitter has
     -- not answered. NULL on a run parked with no pull request, by a
     -- module older than the columns, or when GitHub could not be asked
     -- at the park, which the reconcile reads as "record, do not
@@ -344,7 +344,7 @@ CREATE TABLE IF NOT EXISTS interventions (
     "action"  TEXT    NOT NULL
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
                             'close_out', 'requeue', 'approve', 'repoint',
-                            'shepherd', 'reconcile', 'restart_supervisor',
+                            'babysit', 'reconcile', 'restart_supervisor',
                             'launch_loop', 'config_edit')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
@@ -371,7 +371,7 @@ CREATE TABLE IF NOT EXISTS interventions (
 # shipped as 7 on their own branches, and a store one of them stamped
 # would otherwise never be rebuilt to admit the other's value. Version 9
 # is `runs.approvedSha`, the sha the last independent judgement covered,
-# so a shepherd resumed by `--shepherd` knows what still needs a review
+# so a babysitter resumed by `--babysit` knows what still needs a review
 # (KO-262). Version 10 is `runs.reviewRoundCap`, the review-round cap the
 # loop gave the run, so `/runs/N` serves the cap the run had rather than
 # the module constant (KO-321). Version 11 is the action CHECK admitting
@@ -386,13 +386,15 @@ CREATE TABLE IF NOT EXISTS interventions (
 # runs (KO-348). Version 13 is the action CHECK admitting 'config_edit',
 # the daemon's `PUT /config` behind `[serve] config_edit = true`, recorded
 # before the file is replaced (KO-356). Version 14 is `runs.prSeenAt`
-# and `runs.prSeenThreads`, what the last shepherd pass saw of the
+# and `runs.prSeenThreads`, what the last babysitter pass saw of the
 # pull request its run parked on, so the loop's tick can tell new
 # review activity from its own (KO-362). Version 15 is `runs.prSeenChecks`
 # and `runs.prSeenReview`, the head's checks rollup and the review decision
 # the same read saw, so `/attention`'s `pr_open` item can carry them
-# (KO-368).
-SCHEMA_VERSION = 15
+# (KO-368). Version 16 renames the action 'shepherd' to 'babysit', the word
+# the operator reads everywhere else since KO-373: the CHECK swaps the value
+# and the rebuild rewrites every row that carried the old one (KO-374).
+SCHEMA_VERSION = 16
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -649,7 +651,8 @@ def init(conn):
 
 def _widen_interventions_action(conn):
     """Rebuild `interventions` when its action CHECK predates 'repoint',
-    'shepherd', 'reconcile', the daemon's unit actions or 'config_edit'.
+    'shepherd', 'reconcile', the daemon's unit actions, 'config_edit' or
+    the rename of 'shepherd' to 'babysit'.
 
     `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
     cannot ALTER a CHECK, so a store initialized before a value shipped
@@ -683,7 +686,7 @@ def _widen_interventions_action(conn):
     (ddl,) = row
     admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
     if all(value in admitted
-           for value in ("'repoint'", "'shepherd'", "'reconcile'",
+           for value in ("'repoint'", "'babysit'", "'reconcile'",
                          "'restart_supervisor'", "'launch_loop'",
                          "'config_edit'")):
         return
@@ -702,7 +705,11 @@ def _widen_interventions_action(conn):
         conn.execute("ALTER TABLE interventions RENAME TO interventions_old")
         conn.execute(_INTERVENTIONS_DDL)
         conn.execute(
-            "INSERT INTO interventions SELECT * FROM interventions_old")
+            "INSERT INTO interventions"
+            ' SELECT id, runId, source, "trigger",'
+            "   CASE \"action\" WHEN 'shepherd' THEN 'babysit'"
+            '   ELSE "action" END, question, guidance, at'
+            " FROM interventions_old")
         conn.execute("DROP TABLE interventions_old")
 
 
@@ -1800,15 +1807,15 @@ def approve(conn, ticket_id, note, now=None):
         " at the merge gate", now)
 
 
-def shepherd(conn, ticket_id, note, now=None, source="human"):
-    """Send a ticket parked on its pull request back to the shepherd; return
+def babysit(conn, ticket_id, note, now=None, source="human"):
+    """Send a ticket parked on its pull request back to the babysitter; return
     the parked run's id.
 
     `approve()`'s twin for `[merge] mode = "pr"`, and the same transaction
-    with the action `shepherd` on the `interventions` row: the parked run is
+    with the action `babysit` on the `interventions` row: the parked run is
     ended `abandoned` with its resume point at the merge gate and the ticket
     walked to `ready`, so the loop's next claim resumes the candidate --
-    and, the run carrying a pull request, shepherds it again: reads the
+    and, the run carrying a pull request, babysits it again: reads the
     threads that arrived since the park, verdicts them, fixes and replies,
     waits for the checks. What it is not is an approval: a PR that comes up
     ready to merge under `[merge] approve = "human"` parks again for the
@@ -1817,21 +1824,21 @@ def shepherd(conn, ticket_id, note, now=None, source="human"):
     own: a run parked with no pull request (`runs.prUrl` NULL -- parked
     under `[merge] mode = "local"`) has no threads to look at again, and
     releasing it would send the candidate down the local gate, where a
-    release is a merge; that is `approve()`'s to do, so the shepherd
+    release is a merge; that is `approve()`'s to do, so the babysitter
     refuses it with nothing written. `source` is who sent it back:
-    `"human"` for `--shepherd`, `"supervisor"` when the loop's own tick
+    `"human"` for `--babysit`, `"supervisor"` when the loop's own tick
     saw new review activity on the pull request (KO-362), so the
     intervention row and the ledger say which.
     """
     return _release_parked(
-        conn, ticket_id, "shepherd", note,
-        "sent back to the shepherd; the next claim resumes the candidate"
+        conn, ticket_id, "babysit", note,
+        "sent back to the babysitter; the next claim resumes the candidate"
         " on its pull request", now, require_pr=True, source=source)
 
 
 def _release_parked(conn, ticket_id, action, note, reason, now,
                     require_pr=False, source="human"):
-    """The transaction `approve()` and `shepherd()` share: the intervention
+    """The transaction `approve()` and `babysit()` share: the intervention
     row with `action`, the parked run ended `abandoned` for `reason` with
     its resume point at the merge gate, the ticket walked to `ready`.
     `require_pr` refuses, before the first write, a parked run that has no
@@ -2418,7 +2425,7 @@ INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
                          "manual")
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
                         "close_out", "requeue", "approve", "repoint",
-                        "shepherd", "reconcile", "restart_supervisor",
+                        "babysit", "reconcile", "restart_supervisor",
                         "launch_loop", "config_edit")
 
 

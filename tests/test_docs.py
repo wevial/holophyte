@@ -181,16 +181,15 @@ class UsageTests(unittest.TestCase):
 
 class BabysitterTests(unittest.TestCase):
     """KO-373: the pass over an open pull request is the babysitter wherever
-    the operator reads it. The store's action value and `store.shepherd()`
-    keep the old word until the migration ticket; nothing else does."""
+    the operator reads it; KO-374 renamed the store's action value and
+    `store.babysit()` with it, so the old word is gone from everything the
+    operator reads."""
 
-    def test_the_old_word_survives_only_as_the_store_call(self):
+    def test_the_old_word_is_gone_from_what_the_operator_reads(self):
         hits = subprocess.run(
             ["git", "grep", "-in", "shepherd", "--", "docs", "README.md",
              "holophyte"], cwd=ROOT, capture_output=True, text=True).stdout
-        stray = [line for line in hits.splitlines()
-                 if "store.shepherd(" not in line]
-        self.assertEqual(stray, [])
+        self.assertEqual(hits.splitlines(), [])
 
     def test_the_cli_and_glossary_pages_name_the_babysitter(self):
         self.assertIn("--babysit", (DOCS / "reference" / "cli.md").read_text())

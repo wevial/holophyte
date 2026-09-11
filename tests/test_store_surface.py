@@ -27,6 +27,10 @@ EXPECTED = [
     # KO-258: the operator's `--approve`, the release of a run parked in
     # `awaiting_merge_approval`, one transaction like `requeue`.
     "approve",
+    # KO-262: `--babysit`, the release of a run parked on its pull request
+    # back to the babysitter; `approve`'s transaction with its own action
+    # (`shepherd` until KO-374 renamed it with the rows).
+    "babysit",
     "claim",
     "contract_drift",
     "contract_snapshot",
@@ -78,9 +82,6 @@ EXPECTED = [
     # KO-321: the review-round cap the loop gave a run, written where the
     # loop computes it so `/runs/N` serves the cap this run had.
     "set_review_round_cap",
-    # KO-262: `--shepherd`, the release of a run parked on its pull request
-    # back to the shepherd; `approve`'s transaction with its own action.
-    "shepherd",
     "transaction",
     "transition",
     "unreturned_loop_restarts",
