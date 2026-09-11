@@ -168,6 +168,12 @@ class ApproveCliTests(unittest.TestCase):
         self.park(pr_url="https://example.test/pull/7")
         self.cli("--babysit", "KO-1")
         self.assertEqual(self.interventions(), [(self.run, "shepherd")])
+        # The persisted note is the literal the ticket names, not whatever
+        # the module's default happens to be.
+        (summary,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+            " 'intervention'", (self.run,)).fetchone()
+        self.assertEqual(summary, "human shepherd: sent back to the babysitter")
 
         with self.assertRaises(SystemExit) as raised:
             self.cli("--babysit", "KO-1")
