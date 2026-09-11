@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
-import { RoundTimeline } from "../src/components/RoundTimeline";
+import { LABEL_MIN_PX, RoundTimeline, labelFits } from "../src/components/RoundTimeline";
 import type { Segment } from "../src/lib/timeline";
 
 const MINUTE = 60_000;
@@ -13,7 +13,7 @@ const NARROW_FIRST: Segment[] = [
   { kind: "review", label: "review 1", from: T + 1.2 * MINUTE, to: T + 21.2 * MINUTE, running: true, width: 20 / 30 },
 ];
 
-/** The bar's container in the fixture: 1000 px, so a 4 % segment is 40 px. */
+/** The measured bar width the tests pin through the `barPx` seam. */
 const BAR_PX = 1000;
 
 /** happy-dom lays nothing out, so resolve the component's `calc(A% - Bpx)`
@@ -24,46 +24,44 @@ const resolvePx = (calc: string, containerPx: number): number => {
   return (Number(match[1]) / 100) * containerPx - Number(match[2]);
 };
 
-const renderInBar = () =>
-  render(
-    <div data-fixture-bar style={{ width: `${BAR_PX}px` }}>
-      <RoundTimeline segments={NARROW_FIRST} />
-    </div>,
-  );
+const renderInBar = (barPx = BAR_PX) => render(<RoundTimeline segments={NARROW_FIRST} barPx={barPx} />);
 
 afterEach(cleanup);
 
-test("the labels are a legend beneath the bar: one entry per phase in order, no widths, a dot in the phase colour", () => {
+test("each label sits under its segment's left edge: the phase and its duration, no colour dot", () => {
   renderInBar();
-  const labels = document.querySelector("[data-segment-labels]") as HTMLElement;
-  expect(labels.className).toContain("flex-wrap");
-  const cells = Array.from(labels.querySelectorAll("[data-segment-label]")) as HTMLElement[];
-  expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["implement", "review"]);
-  expect(cells[0]!.textContent).toBe("implement1m 12s");
-  for (const cell of cells) {
-    expect(cell.style.width).toBe("");
-    expect(cell.style.minWidth).toBe("");
-  }
-  expect(cells[0]!.querySelector("span")!.className).toContain("bg-accent");
-  expect(cells[1]!.querySelector("span")!.className).toContain("bg-review");
+  const row = document.querySelector("[data-segment-labels]") as HTMLElement;
+  expect(row.className).toContain("relative");
+  const cells = Array.from(row.querySelectorAll("[data-segment-label]")) as HTMLElement[];
+  // The implement segment is 40 px of the 1000 px bar — under LABEL_MIN_PX —
+  // so only the running review is labelled, at its 4 % start share.
+  expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["review"]);
+  expect(cells[0]!.className).toContain("absolute");
+  expect(cells[0]!.style.left).toBe("4%");
+  const spans = Array.from(cells[0]!.querySelectorAll("span"));
+  expect(spans.map((span) => span.textContent)).toEqual(["review 1", "20m 00s"]);
   const bar = screen.getByRole("list", { name: "Round timeline" });
   expect((bar.querySelector("li") as HTMLElement).getAttribute("title")).toBe("implement · 1m 12s");
 });
 
-test("a phase shorter than a second is drawn in the bar but left out of the legend", () => {
-  render(
-    <RoundTimeline
-      segments={[
-        { kind: "implement", label: "implement", from: 0, to: 400, width: 0.001, running: false },
-        { kind: "implement", label: "implement", from: 400, to: 60_400, width: 0.5, running: false },
-      ]}
-    />,
-  );
-  const bar = screen.getByRole("list", { name: "Round timeline" });
-  expect(bar.querySelectorAll("li[data-segment='implement']").length).toBe(2);
-  const cells = Array.from(document.querySelectorAll("[data-segment-label]"));
+test("labelFits: a segment needs LABEL_MIN_PX of the measured bar, or over 15 % of it unmeasured", () => {
+  expect(labelFits(LABEL_MIN_PX / 600, 600)).toBe(true);
+  expect(labelFits(0.05, 600)).toBe(false);
+  expect(labelFits(0.05, 200)).toBe(false);
+  expect(labelFits(0.15, null)).toBe(false);
+  expect(labelFits(0.16, null)).toBe(true);
+});
+
+test("before the bar is measured only segments over 15 % of it carry a label", () => {
+  render(<RoundTimeline segments={NARROW_FIRST} />);
+  const cells = document.querySelectorAll("[data-segment-label]");
   expect(cells.length).toBe(1);
-  expect(cells[0]!.textContent).toBe("implement1m 00s");
+  expect(cells[0]!.getAttribute("data-segment-label")).toBe("review");
+});
+
+test("a measured bar too narrow for any segment shows no labels", () => {
+  renderInBar(100);
+  expect(document.querySelectorAll("[data-segment-label]").length).toBe(0);
 });
 
 test("the bar keeps its proportional widths and its remainder; the labels are not inside it", () => {
