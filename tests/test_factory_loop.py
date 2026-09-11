@@ -2688,7 +2688,7 @@ class MergeModeFixture(LoopFixture):
                 "nodes": nodes}}}}}
 
     def fake_route(self, push_exit=0, push_sh="", states=None,
-                   comments=()):
+                   comments=(), open_pr=None):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -2699,7 +2699,9 @@ class MergeModeFixture(LoopFixture):
         query gets the first of `states` (each served once until the last,
         which is served forever), a mutation an empty success, the merge
         `MERGE_SHA`, a thread's further comments page the next of
-        `comments` (each a `comments_page()`), the reconcile's pull-status
+        `comments` (each a `comments_page()`), the open step's
+        `pullRequests(headRefName:)` lookup (KO-407) one open pull request
+        at `open_pr` -- none without it -- and the reconcile's pull-status
         read (KO-359) an open pull request; the check-runs and
         branch-rules reads answer no runs and no rules, so the rollup
         alone decides the checks. `push_exit` is what `git
@@ -2720,6 +2722,13 @@ class MergeModeFixture(LoopFixture):
         self.push_log = bindir / "pushes.log"
         self.api_dir = bindir / "api"
         self.api_dir.mkdir()
+        # The open step's lookup answer: `open_pr` is the URL the branch
+        # is already open as, None the common "no open pull request".
+        self.open_answer = bindir / "open.json"
+        nodes = [{"url": open_pr}] if open_pr else []
+        self.open_answer.write_text(json.dumps(
+            {"data": {"repository":
+                      {"pullRequests": {"nodes": nodes}}}}))
         answers = bindir / "states"
         answers.mkdir()
         for n, state in enumerate([self.pr_state()] if states is None
@@ -2782,6 +2791,8 @@ class MergeModeFixture(LoopFixture):
             "{\"state\":\"OPEN\",\"merged\":false}}}}'\n"
             '  elif grep -q PullRequestReviewThread "$body"; then\n'
             f'    f=$(ls "{pages}"/*.json | head -1); cat "$f"; rm "$f"\n'
+            '  elif grep -q headRefName "$body"; then\n'
+            f'    cat "{self.open_answer}"\n'
             '  elif grep -q reviewThreads "$body"; then\n'
             f'    f=$(ls "{answers}"/*.json | head -1)\n'
             f'    tip=$("{real_git}" -C "{self.target}" rev-parse {BRANCH})\n'
@@ -2830,13 +2841,16 @@ class MergeModeFixture(LoopFixture):
         variables)`: the kind is `state`, `reply`, `resolve` or `merge`.
         The loop's per-pass pull-status read of a parked run (KO-359) is
         left out: it is the reconcile's, tested on its own below, and
-        every pass after a park makes one."""
+        every pass after a park makes one. The open step's
+        `pullRequests(headRefName:)` lookup (KO-407) is left out too: it
+        is the open step's, not the pass's, and is witnessed by
+        `recorded()` and the api bodies instead."""
         calls = []
         for path in sorted(self.api_dir.iterdir(),
                            key=lambda p: int(p.stem)):
             body = json.loads(path.read_text())
             query = body.get("query", "")
-            if "mergedBy" in query:
+            if "mergedBy" in query or "headRefName" in query:
                 continue
             kind = ("resolve" if "resolveReviewThread" in query
                     else "reply" if "addPullRequestReviewThreadReply" in query
@@ -2879,19 +2893,23 @@ class MergeModeTests(MergeModeFixture):
 
         self.assertEqual(fake.roles, ["implement", "review"])
         calls = self.recorded()
-        # The sixth is the park reading the pull request once more, after
+        # The seventh is the park reading the pull request once more, after
         # the pass's own writes, for the activity mark it records (KO-362);
-        # the seventh is the pass after the park asking GitHub whether the
+        # the eighth is the pass after the park asking GitHub whether the
         # parked pull request has been merged (KO-359).
-        self.assertEqual(len(calls), 7, calls)
-        self.assertEqual(calls[5:], ["gh api --hostname github.com --method"
+        self.assertEqual(len(calls), 8, calls)
+        self.assertEqual(calls[6:], ["gh api --hostname github.com --method"
                                      " POST graphql --input -"] * 2)
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        # Between the push and the create, the open step's lookup of an
+        # open pull request on the branch (KO-407) -- answered none here.
+        self.assertEqual(calls[1], "gh api --hostname github.com --method"
+                                   " POST graphql --input -")
         # Beside the state query: the head's check runs and main's rules,
         # so a rollup that says success before the checks have reported is
         # not read as green.
         tip = self.git("rev-parse", BRANCH).strip()
-        self.assertEqual(calls[3:5], [
+        self.assertEqual(calls[4:6], [
             "gh api --hostname github.com --method GET"
             f" repos/example/repo/commits/{tip}/check-runs?per_page=100",
             "gh api --hostname github.com --method GET"
@@ -2899,7 +2917,7 @@ class MergeModeTests(MergeModeFixture):
         # Pinned to the repository the push went to, not `gh`'s own default
         # repository (`gh repo set-default`), which can point elsewhere.
         self.assertEqual(
-            calls[1],
+            calls[2],
             f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
             " --title KO-131: add a thing --body-file -")
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
@@ -2929,6 +2947,106 @@ class MergeModeTests(MergeModeFixture):
             self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
                       " ORDER BY round")[-1],
             (2, "pass", "github:ci"))
+
+    def test_an_open_pull_request_on_the_branch_is_adopted_not_created(self):
+        """KO-407: a run resumed on a branch its failed predecessor left
+        open as a pull request -- the requeue scenario -- must not call
+        `gh pr create`: GitHub refuses a second open PR for one head, and
+        the run used to fail after doing everything right. The open step
+        asks GitHub first; a hit is adopted -- `runs.prUrl` is that PR --
+        and the run goes straight into a babysit pass, which here finds
+        green checks and no threads and parks "ready to merge"."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        adopted = "https://github.com/example/repo/pull/2177"
+        self.fake_route(open_pr=adopted)
+        provider = self.provider()
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            provider=provider)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        calls = self.recorded()
+        self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        # The lookup, between the push and where the create would be --
+        # and no `gh pr create` follows it.
+        self.assertEqual(calls[1], "gh api --hostname github.com --method"
+                                   " POST graphql --input -")
+        body = json.loads((self.api_dir / "1.json").read_text())
+        self.assertIn("headRefName", body["query"])
+        self.assertIn("states: OPEN", body["query"])
+        self.assertEqual(body["variables"],
+                         {"owner": "example", "name": "repo",
+                          "branch": BRANCH})
+        self.assertFalse(any(c.startswith("gh pr create") for c in calls),
+                         calls)
+        # The adopted PR is babysat like an opened one: the state read is
+        # the pass's, the round is stamped, and the park names the PR.
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual(
+            self.read("SELECT phase, prUrl, candidateSha FROM runs"),
+            [("awaiting_merge_approval", adopted,
+              self.git("rev-parse", BRANCH).strip())])
+        question = self.question()
+        self.assertTrue(question.startswith(f"PR open: {adopted}\n"),
+                        question)
+        self.assertIn("ready to merge", question)
+        (_, comment) = provider.comments[-1]
+        self.assertIn("PR OPEN", comment)
+        self.assertIn(adopted, comment)
+        self.assertEqual(
+            self.read("SELECT verdict, reviewerModel FROM reviewRounds"
+                      " ORDER BY round")[-1],
+            ("pass", "github:ci"))
+
+    def test_an_open_pull_request_is_adopted_through_a_slashed_origin(self):
+        """An `origin` ending in `/` -- `https://github.com/example/repo/`
+        is a URL `git remote add` accepts -- must still reach GitHub:
+        `_origin_pull()` gluing `/pull/0` onto the slash would hand
+        `PR_URL_RE` a doubled slash it refuses, the lookup would return
+        None without asking, and `gh pr create` would fire and fail just
+        as before KO-407. With the slash normalized the branch's open PR
+        is found and adopted."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        adopted = "https://github.com/example/repo/pull/2177"
+        self.fake_route(open_pr=adopted)
+        self.git("remote", "set-url", "origin",
+                 "https://github.com/example/repo/")
+
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+
+        calls = self.recorded()
+        self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        self.assertEqual(calls[1], "gh api --hostname github.com --method"
+                                   " POST graphql --input -")
+        body = json.loads((self.api_dir / "1.json").read_text())
+        self.assertEqual(body["variables"],
+                         {"owner": "example", "name": "repo",
+                          "branch": BRANCH})
+        self.assertFalse(any(c.startswith("gh pr create") for c in calls),
+                         calls)
+        self.assertEqual(self.read("SELECT prUrl FROM runs"), [(adopted,)])
+
+    def test_no_open_pull_request_on_the_branch_opens_one_as_today(self):
+        """The lookup answering no open pull request for the branch: the
+        push and the lookup run, then `gh pr create` opens the PR exactly
+        as before (KO-407)."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()  # open_pr=None: no open pull request
+
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+
+        calls = self.recorded()
+        self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        self.assertEqual(calls[1], "gh api --hostname github.com --method"
+                                   " POST graphql --input -")
+        self.assertEqual(
+            calls[2],
+            f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
+            " --title KO-131: add a thing --body-file -")
+        self.assertEqual(self.read("SELECT prUrl FROM runs"),
+                         [(self.URL,)])
 
     AGENTS_MD = ("# Agent guide\n\nTitle starts with [Feature Name]."
                  " No testing plan.\n")

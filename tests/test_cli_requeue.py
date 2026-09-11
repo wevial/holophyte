@@ -130,6 +130,31 @@ class RequeueCliTests(unittest.TestCase):
             (self.run,)).fetchone()
         self.assertEqual(entries[0].at, intervention_at)
 
+    def test_a_requeue_of_a_run_with_a_pull_request_names_it_in_the_note(self):
+        """KO-407: a failed run that left its branch open as a pull request
+        (one that adopted the PR, or parked on it, before it failed) keeps
+        the link while the ticket waits: the requeue's intervention note
+        names the PR URL."""
+        url = "https://github.com/example/repo/pull/2177"
+        store.park(self.conn, self.run, "awaiting_merge_approval",
+                   "parked on its pull request", pr_url=url)
+        store.release(self.conn, self.run, "failed",
+                      "the babysit pass died", now=T0 + MINUTE)
+
+        out, _ = self.cli("--requeue", "KO-1", "--note", "github went down")
+
+        self.assertEqual(out.strip(),
+                         f"[holo2] KO-1 requeued after run {self.run}")
+        self.assertEqual(self.status(), "ready")
+        (summary,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+            " 'intervention'", (self.run,)).fetchone()
+        self.assertIn("github went down", summary)
+        self.assertIn(url, summary)
+        entries = store.read.ledger(self.conn, self.run)
+        self.assertEqual(entries[-1].kind, "intervention")
+        self.assertIn(url, entries[-1].text)
+
     def test_a_target_with_no_board_exits_naming_the_key_and_writes_nothing(self):
         self.fail_the_run()
         self.target.config_path.unlink()
