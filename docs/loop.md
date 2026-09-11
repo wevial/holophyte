@@ -129,7 +129,12 @@ machines it walks. Back to the [README](index.md).
    Under `[merge] mode = "pr"` the clean gate leaves the machine instead of
    landing on `main`: `git push origin BRANCH`, then a pull request against
    `main` titled `KO-n: TITLE` whose body is the ticket body plus the run's
-   FINDINGS entry, in that order. A push the remote refuses or a PR create
+   FINDINGS entry, in that order. Between the push and the create the run
+   asks GitHub once whether the branch is already the head of an open pull
+   request (KO-407): on a hit -- a requeued run's predecessor left one
+   open -- the run adopts that PR instead of opening a second, which
+   `gh pr create` would refuse; the run's `prUrl` is that PR and the
+   babysit passes below proceed as if the run had opened it. A push the remote refuses or a PR create
    that fails is an infra failure -- no strike, branch and worktree
    preserved, no PR recorded. Then the loop babysits the pull request for
    up to `[merge] pr_rounds` passes (see [PR rounds](reviewing.md#pr-rounds)):

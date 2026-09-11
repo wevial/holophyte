@@ -132,6 +132,18 @@ RESOLVE_MUTATION = """
 mutation($thread: ID!) {
   resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
 }"""
+# The one read `_open_pr` makes between the push and `gh pr create`
+# (KO-407): is the branch already the head of an open pull request? A run
+# resumed on a branch its failed predecessor opened as a PR adopts that PR;
+# the create would refuse with one still open.
+OPEN_PULL_QUERY = """
+query($owner: String!, $name: String!, $branch: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(headRefName: $branch, states: OPEN, first: 1) {
+      nodes { url }
+    }
+  }
+}"""
 
 
 # The one read the loop's pull-request reconcile makes of a parked PR: is it
@@ -482,6 +494,59 @@ def _url_in(text):
     the PR URL as its last line, after any progress it wrote."""
     urls = re.findall(r"https://\S+", text or "")
     return urls[-1] if urls else None
+
+
+def open_pull_request(target, branch):
+    """The URL of the open pull request `branch` is the head of, or None.
+
+    Asked between the push and `create_pull_request()` (KO-407): a run
+    resumed on a branch its failed predecessor already opened as a pull
+    request adopts that PR instead of opening a second one, which GitHub
+    would refuse. The repository is `origin`'s, its owner and name read
+    off the remote URL by `parse_pr_url()` the way a PR's own URL is. An
+    `origin` this cannot read, or a repository answer carrying no open
+    pull request for the branch, is None -- the create that follows
+    answers with its own InfraFailure. A node without a URL
+    `parse_pr_url()` can read is InfraFailure, as every unreadable answer
+    here is.
+    """
+    pull = _origin_pull(target)
+    if pull is None:
+        return None
+    data = graphql(target, pull, OPEN_PULL_QUERY,
+                   {"owner": pull.owner, "name": pull.name,
+                    "branch": branch})
+    repository = data.get("repository") if isinstance(data, dict) else None
+    nodes = (((repository or {}).get("pullRequests") or {})
+             .get("nodes"))
+    if not nodes:
+        return None
+    first = nodes[0]
+    url = first.get("url") if isinstance(first, dict) else None
+    if not isinstance(url, str) or parse_pr_url(url) is None:
+        raise InfraFailure(f"GitHub answered the open pull requests of"
+                           f" {branch} without a readable URL:"
+                           f" {_short(first)}")
+    return url
+
+
+def _origin_pull(target):
+    """The repository `origin` names as a `PullRequest` shell -- the host
+    its API answers on and the owner and name the queries are scoped by,
+    with the number and url `parse_pr_url()` filled in left as dummies --
+    or None when the remote's URL is not one this can read. The remote
+    URL is put in the shape `PR_URL_RE` matches first, so the ssh forms
+    and an Enterprise host read the same way as an https one.
+    """
+    url = origin_url(target)
+    if not url:
+        return None
+    text = url.strip()
+    ssh = re.match(r"(?:git@|ssh://git@)([^/:]+)[:/](.*)", text)
+    if ssh:
+        text = f"https://{ssh.group(1)}/{ssh.group(2)}"
+    text = re.sub(r"\.git/?$", "", text)
+    return parse_pr_url(f"{text}/pull/0")
 
 
 @dataclass(frozen=True)

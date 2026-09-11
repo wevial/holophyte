@@ -1661,6 +1661,14 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     not the ticket, so no strike is spent and the branch and worktree stay
     exactly as after a refused merge. Nothing touches main.
 
+    Between the two, one GraphQL read asks whether the branch is already
+    the head of an open pull request (KO-407): a run requeued onto a
+    branch its failed predecessor opened as a PR would otherwise be
+    refused by the create with everything else done right. A hit is the
+    run's `pr_url`, adopted rather than opened again -- the babysit pass
+    that follows is the same one a created PR gets, and a park through
+    `_park_on_pr()` records it like every other PR park.
+
     Under `[merge] pr_text = "written"` the title and body are what
     `_written_pr_text()` had one implementer turn write from the diff,
     before the push; a reply it cannot read is the ticket form above for
@@ -1685,20 +1693,39 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
         store.record_event(conn, run_id, "pull_request",
                            f"pushing {branch} to {pr.REMOTE} and opening its"
                            " pull request")
+    adopted = False
     with heartbeat_while(conn, run_id, beat_s):
         pr.push_branch(target, branch)
         print(f"[holo2] pushed {branch} to {pr.REMOTE}")
-        now = int(time() * 1000)
-        if written is not None:
-            title, text = written
+        # A branch already open as a pull request is adopted, not opened
+        # again: `gh pr create` refuses with one still open, which is how
+        # a requeued run used to fail after doing everything right.
+        url = pr.open_pull_request(target, branch)
+        if url is None:
+            now = int(time() * 1000)
+            if written is not None:
+                title, text = written
+            else:
+                title = pr.pr_title(task_id, task)
+                text = pr.pr_body(conn, run_id, body, now)
+            url = pr.create_pull_request(target, branch, title, text)
+            print(f"[holo2] pull request open: {url}")
         else:
-            title = pr.pr_title(task_id, task)
-            text = pr.pr_body(conn, run_id, body, now)
-        url = pr.create_pull_request(target, branch, title, text)
-    print(f"[holo2] pull request open: {url}")
+            adopted = True
+            print(f"[holo2] {branch} is already open as {url};"
+                  " adopting it")
     if conn is not None and run_id is not None:
-        store.record_event(conn, run_id, "pull_request",
-                           f"pull request open: {url}")
+        with store.transaction(conn):
+            store.record_event(
+                conn, run_id, "pull_request",
+                f"adopted the branch's open pull request: {url}"
+                if adopted else f"pull request open: {url}")
+            if adopted:
+                # The hit is the run's `prUrl` from this moment, not only
+                # from a later park: a run that merges through the adopted
+                # PR without parking still names it on its row.
+                conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
+                             (url, run_id))
     return url
 
 
@@ -3919,7 +3946,14 @@ def requeue(target, identifier, note, out=None, provider=None):
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         failed_run = _requeue_candidate(conn, ticket_id)
         if failed_run is not None:
-            release_lease_label(target, conn, ticket_id, provider, failed_run)
+            run_id, pr_url = failed_run
+            release_lease_label(target, conn, ticket_id, provider, run_id)
+            if pr_url:
+                # The console's row keeps its link while the ticket waits:
+                # the branch is still open as a pull request, and the next
+                # run adopts it rather than opening a second (KO-407).
+                note = (f"{note}\n\nThe failed run's branch is still open"
+                        f" as {pr_url}")
         try:
             run_id = store.requeue(conn, ticket_id, note)
         except (store.RequeueRefused, ValueError) as refused:
@@ -3933,19 +3967,22 @@ def _requeue_candidate(conn, ticket_id):
     """The failed run `store.requeue()` would requeue `ticket_id` after, or
     None when it would refuse: a read of the same rows, made first so the
     run's lease label can come off while the ticket is still `in_flight`.
-    `store.requeue()` re-reaches the verdict inside its own transaction."""
+    `store.requeue()` re-reaches the verdict inside its own transaction.
+    Returns `(run_id, pr_url)` -- the pull request the failed run left open
+    (`runs.prUrl`, None when it opened none) rides along so the requeue
+    note can name it."""
     ticket = store.read.ticket_by_id(conn, ticket_id)
     if ticket is None or ticket.activeRunId is not None \
             or ticket.lastRunId is None:
         return None
-    row = conn.execute("SELECT outcome, outcomeReason FROM runs WHERE id = ?",
-                       (ticket.lastRunId,)).fetchone()
+    row = conn.execute("SELECT outcome, outcomeReason, prUrl FROM runs"
+                       " WHERE id = ?", (ticket.lastRunId,)).fetchone()
     if not row or row[0] != "failed":
         return None
     if ticket.status == "in_flight" or (
             ticket.status == "blocked_on_operator"
             and store.is_gate_conflict(row[1])):
-        return ticket.lastRunId
+        return ticket.lastRunId, row[2]
     return None
 
 def approve(target, identifier, note, out=None):
