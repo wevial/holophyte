@@ -51,6 +51,10 @@ EXPECTED = [
     "record_ledger",
     "record_loop_restart",
     "record_loop_return",
+    # KO-368: what one read of a parked run's pull request saw, the four
+    # `runs.prSeen*` columns in one statement, for `park()` and the loop's
+    # reconcile alike.
+    "record_pr_seen",
     "record_review_round",
     "record_strike",
     "record_supervisor_heartbeat",

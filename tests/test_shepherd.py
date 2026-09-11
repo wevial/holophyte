@@ -12,6 +12,7 @@ Run: python3 -m unittest discover -s tests -p 'test_shepherd*' -v
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from holophyte import pr, shepherd
 from holophyte.pr import PullRequest, Thread
@@ -194,6 +195,54 @@ class WrittenPrTextTests(unittest.TestCase):
         self.assertTrue(body.startswith("What changed.\n\n"))
         self.assertEqual(pr.pr_body_written("Text", "KO-1", None).splitlines()[-1],
                          "Linear: KO-1")
+
+
+class PullStatusTests(unittest.TestCase):
+    """`pr.pull_status()` reads the facts `/attention` shows on a parked
+    pull request (KO-368) from the same answer the reconcile already
+    makes: the head's `statusCheckRollup` and `reviewDecision`."""
+
+    OPEN = {"state": "OPEN", "merged": False, "mergeCommit": None,
+            "mergedBy": None, "updatedAt": "2026-09-10T10:00:00Z",
+            "reviewThreads": {"totalCount": 2}}
+
+    def read(self, node):
+        with patch.object(pr, "graphql",
+                          return_value={"repository": {"pullRequest": node}}):
+            return pr.pull_status(None, PULL)
+
+    def test_checks_and_review_are_read_from_the_head_rollup_and_decision(
+            self):
+        status = self.read(dict(
+            self.OPEN, reviewDecision="CHANGES_REQUESTED",
+            commits={"nodes": [{"commit": {"statusCheckRollup":
+                                            {"state": "FAILURE"}}}]}))
+
+        self.assertEqual((status.checks, status.review, status.threads),
+                         ("failure", "changes_requested", 2))
+
+    def test_a_pending_rollup_and_an_approval_read_as_such(self):
+        status = self.read(dict(
+            self.OPEN, reviewDecision="APPROVED",
+            commits={"nodes": [{"commit": {"statusCheckRollup":
+                                            {"state": "PENDING"}}}]}))
+
+        self.assertEqual((status.checks, status.review),
+                         ("pending", "approved"))
+
+    def test_an_answer_without_them_reads_none_for_both(self):
+        """A pull request with no checks has no rollup (`null`), and a
+        repository requiring no review has no decision: neither is
+        "pending" -- there is nothing to wait for -- so both are None, as
+        is an answer that predates the fields."""
+        no_rollup = self.read(dict(
+            self.OPEN, reviewDecision=None,
+            commits={"nodes": [{"commit": {"statusCheckRollup": None}}]}))
+        older = self.read(self.OPEN)
+
+        self.assertEqual((no_rollup.checks, no_rollup.review), (None, None))
+        self.assertEqual((older.checks, older.review), (None, None))
+        self.assertEqual(older.threads, 2)
 
 
 class AuthorKindTests(unittest.TestCase):

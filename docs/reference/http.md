@@ -297,7 +297,8 @@ What needs the operator, computed where the store is:
   {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
    "pr_url": null, "level": "attention"},
   {"kind": "pr_open", "ticket": "KO-n", "run": 53, "pr_url": "https://github.com/example/repo/pull/2170",
-   "reason": "…", "asked_ms": 1788449000000, "level": "attention"},
+   "reason": "…", "asked_ms": 1788449000000,
+   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2}, "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
    "pr_url": null, "level": "attention"},
   {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
@@ -314,7 +315,13 @@ ticket whose run has a `pr_url` and whose question opens with `PR open:`,
 the line a park under `[merge] mode = "pr"` writes first: the run waits
 on a review or a merge, not on an answer, so the item carries `pr_url`
 and `reason` (the question with that first line removed) in place of
-`question`; its `run` and `asked_ms` are as on `blocked`. A `failed` item's `attempt` is the run's 1-based
+`question`; its `run` and `asked_ms` are as on `blocked`. Its `pr` is
+the pull request as the loop's reconcile last read it: `number` from the
+URL, `checks` (`success`, `pending`, `failure`, null for a PR with no
+checks), `review` (GitHub's review decision lower-cased: `approved`,
+`changes_requested`, `review_required`, null when none is required) and
+`threads`, the review-thread count (`runs.prSeenChecks`, `prSeenReview`,
+`prSeenThreads`); all three facts are null for a run never polled. A `failed` item's `attempt` is the run's 1-based
 attempt number. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
 null when it opened none, so a console can link the parked question to

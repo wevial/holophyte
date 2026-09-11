@@ -4044,9 +4044,19 @@ class MergeModeTests(LoopFixture):
     T1, T2, T3 = ("2026-09-10T10:00:00Z", "2026-09-10T11:00:00Z",
                   "2026-09-10T11:00:30Z")
 
-    def open_pull(self, at, threads):
-        return dict(self.OPEN_PULL, updatedAt=at,
+    def open_pull(self, at, threads, checks=None, review=None):
+        """The open pull request read at `at` with `threads` review
+        threads; `checks` is the head's `statusCheckRollup.state` and
+        `review` GitHub's `reviewDecision`, both absent when None (a PR
+        with no checks, a repository requiring no review)."""
+        pull = dict(self.OPEN_PULL, updatedAt=at,
                     reviewThreads={"totalCount": threads})
+        if checks is not None:
+            pull["commits"] = {"nodes": [
+                {"commit": {"statusCheckRollup": {"state": checks}}}]}
+        if review is not None:
+            pull["reviewDecision"] = review
+        return pull
 
     def parked_with_mark(self, at, threads):
         """A run parked on its pull request whose park recorded `at` and
@@ -4072,19 +4082,25 @@ class MergeModeTests(LoopFixture):
         what it saw *after* its own writes (the third answer), so the tick
         after that, reading the same, sends nothing."""
         self.parked_with_mark(self.T1, 0)
-        asked = self.fake_client(self.open_pull(self.T2, 1),
-                                 self.open_pull(self.T3, 1))
+        asked = self.fake_client(
+            self.open_pull(self.T2, 1, checks="PENDING",
+                           review="CHANGES_REQUESTED"),
+            self.open_pull(self.T3, 1, checks="SUCCESS", review="APPROVED"))
 
         out = self.main_output(provider=self.provider())
 
         self.assertIn(f"KO-131: {self.URL} has new review activity (updated"
                       f" {self.T2}, 1 review threads); run 1 sent back to"
                       " the shepherd", out)
+        # Each write records the checks rollup and review decision the
+        # same read saw beside the mark (KO-368).
         self.assertEqual(
-            self.read("SELECT id, phase, outcome, prSeenAt, prSeenThreads"
-                      " FROM runs ORDER BY id"),
-            [(1, "failed", "abandoned", self.T2, 1),
-             (2, "awaiting_merge_approval", None, self.T3, 1)])
+            self.read("SELECT id, phase, outcome, prSeenAt, prSeenThreads,"
+                      " prSeenChecks, prSeenReview FROM runs ORDER BY id"),
+            [(1, "failed", "abandoned", self.T2, 1, "pending",
+              "changes_requested"),
+             (2, "awaiting_merge_approval", None, self.T3, 1, "success",
+              "approved")])
         self.assertEqual(
             self.read('SELECT "action", source FROM interventions'),
             [("shepherd", "supervisor")])
@@ -4117,17 +4133,45 @@ class MergeModeTests(LoopFixture):
         what it saw without shepherding; the second finds the same and
         does nothing. No round, no intervention, the run still parked."""
         self.parked_on_pr()
-        asked = self.fake_client(self.open_pull(self.T1, 0))
+        asked = self.fake_client(self.open_pull(self.T1, 0, checks="SUCCESS"))
 
         first = self.main_output(provider=StubProvider())
         second = self.main_output(provider=StubProvider())
 
         self.assertEqual(len(asked), 2)
         self.assertNotIn("review activity", first + second)
+        # No `reviewDecision` in the answer is a null review, not an error.
         self.assertEqual(
-            self.read("SELECT phase, outcome, prSeenAt, prSeenThreads"
-                      " FROM runs"),
-            [("awaiting_merge_approval", None, self.T1, 0)])
+            self.read("SELECT phase, outcome, prSeenAt, prSeenThreads,"
+                      " prSeenChecks, prSeenReview FROM runs"),
+            [("awaiting_merge_approval", None, self.T1, 0, "success", None)])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
+    def test_an_unchanged_pull_request_still_refreshes_its_facts(self):
+        """KO-368 review round 1: the run holds a mark from the last pass
+        and facts from the same read (checks pending, review required).
+        The pull request has not moved -- same `updatedAt`, same thread
+        count -- but its checks went green and a review landed. The tick
+        starts no round and leaves the mark alone, yet the facts on the
+        run are what the read saw, not what the last pass saw."""
+        self.parked_with_mark(self.T1, 0)
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("UPDATE runs SET prSeenChecks = 'pending',"
+                         " prSeenReview = 'review_required'")
+        conn.close()
+        self.fake_client(self.open_pull(self.T1, 0, checks="SUCCESS",
+                                        review="APPROVED"))
+
+        out = self.main_output(provider=StubProvider())
+
+        self.assertNotIn("review activity", out)
+        self.assertEqual(
+            self.read("SELECT phase, prSeenAt, prSeenThreads, prSeenChecks,"
+                      " prSeenReview FROM runs"),
+            [("awaiting_merge_approval", self.T1, 0, "success",
+              "approved")])
         self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
                          [(0,)])
 

@@ -116,6 +116,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
+from holophyte.pr import PR_URL_RE
 from holophyte.redact import RedactionError, redact, restore
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
@@ -347,15 +348,24 @@ def parked_item(ticket):
     """One `blocked_on_operator` ticket as an `/attention` item. A ticket
     whose run has a `prUrl` and whose question opens with `PR open:` -- the
     line `_park_on_pr()` writes first -- is `pr_open`: the run waits on a
-    review or a merge, not on an answer, so the item carries the URL and
-    the `reason` (the question with that first line removed). Every other
-    ticket is `blocked` with its `question`."""
+    review or a merge, not on an answer, so the item carries the URL, the
+    `reason` (the question with that first line removed) and `pr`: the
+    pull request's `number` from the URL (null when the URL is not of
+    GitHub's shape) and the `checks`, `review` and `threads` the
+    reconcile last saw on it (`runs.prSeenChecks`, `prSeenReview`,
+    `prSeenThreads`, KO-368), each null for a run never polled. Every
+    other ticket is `blocked` with its `question`."""
     question = ticket.blockedQuestion or ""
     if ticket.prUrl and question.startswith(PR_OPEN_PREFIX):
         _, _, reason = question.partition("\n")
+        match = PR_URL_RE.match(ticket.prUrl)
         return {"kind": "pr_open", "ticket": ticket.linearIdentifier,
                 "run": ticket.runId, "pr_url": ticket.prUrl,
                 "reason": reason, "asked_ms": ticket.askedMs,
+                "pr": {"number": int(match.group(4)) if match else None,
+                       "checks": ticket.prSeenChecks,
+                       "review": ticket.prSeenReview,
+                       "threads": ticket.prSeenThreads},
                 "level": "attention"}
     return {"kind": "blocked", "ticket": ticket.linearIdentifier,
             "question": ticket.blockedQuestion,
