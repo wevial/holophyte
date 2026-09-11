@@ -3336,6 +3336,11 @@ class MergeModeTests(LoopFixture):
         # the sha the merge recorded, not by a branch that no longer exists.
         self.assertEqual(fake.roles, ["review"])
         self.assertEqual(fake.turns[0].candidate_sha, theirs)
+        # The new head is judged against the sha the reviewer approved,
+        # as a fix round's commit is: the brief names that approval, and
+        # would say the last review asked for changes had it been lost.
+        self.assertIn(f"candidate was approved at {approved[:12]}",
+                      fake.turns[0].goal)
         self.assertEqual(
             self.read("SELECT summary FROM runEvents WHERE runId = 2 AND"
                       " summary LIKE 'resuming run%'"),
