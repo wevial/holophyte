@@ -192,6 +192,39 @@ test("a DECLINE citing path:line names only that line's finding, not the same pa
   expect(byLine.get(1)!.sentence).toBeNull();
 });
 
+test("a DECLINE naming tests/config.py does not adjudicate the root config.py finding", () => {
+  const nested = finding({ path: "tests/config.py", line: 3, message: "Obsolete defaults linger on" });
+  const root = finding({ path: "config.py", line: 1, message: "The header comment is stale" });
+  const rounds: Round[] = [
+    { round: 1, started_ms: T, ended_ms: T + 60_000, verdict: "changes_requested", findings: [nested, root] },
+    { round: 2, started_ms: T + 120_000, ended_ms: T + 180_000, verdict: "pass", findings: [] },
+  ];
+  const ledger: LedgerRow[] = [
+    {
+      at: T + 90_000,
+      run: 228,
+      ticket: "KO-372",
+      kind: "round",
+      source: "loop",
+      text:
+        "Round 1: REQUEST_CHANGES -> fix round\n" +
+        "Reviewer findings:\nthe verdict text\n\n" +
+        "Implementer response:\n" +
+        "DECLINE tests/config.py — obsolete defaults are deliberate",
+    },
+  ];
+  const history = findingsHistory(rounds, ledger);
+  const byPath = new Map(history[1]!.findings.map((entry) => [entry.finding.path, entry]));
+  expect(byPath.get("tests/config.py")!.fate).toBe("declined");
+  expect(byPath.get("tests/config.py")!.sentence).toBe(
+    "DECLINE tests/config.py — obsolete defaults are deliberate",
+  );
+  // Round 2 approved without the root finding: it is fixed — the nested
+  // path's trailing segments did not mark it declined.
+  expect(byPath.get("config.py")!.fate).toBe("fixed");
+  expect(byPath.get("config.py")!.sentence).toBeNull();
+});
+
 test("a finding in the last round of a run that ended unmerged is open", () => {
   const failed: Round[] = [
     ROUNDS[0]!,

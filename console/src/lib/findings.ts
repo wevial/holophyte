@@ -141,6 +141,10 @@ const RESPONSE_MARK = "Implementer response:";
 const ADJUDICATION_RE = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(DECLINE|FOLLOW[ _-]?UP)\b/i;
 // A `path:line` citation in an adjudication line, e.g. `notes.md:10`.
 const CITATION_RE = /[\w./-]+:\d+/g;
+// A path-shaped token: `[\w./-]+` keeps the directory separators, so a
+// token matches a path only whole — the `tests/config.py` token never
+// names a `config.py` finding.
+const PATH_TOKEN_RE = /[\w./-]+/g;
 
 /** The implementer-response lines of `round`'s ledger row: the last
  *  `Round N:` row carrying the mark, else none. */
@@ -162,8 +166,9 @@ function wordStream(text: string): string {
 }
 
 /** True when an adjudication `line` names the finding: by its path under
- *  either spelling, its title, or its first words — always on whole
- *  words, so `criteria:10` never names `criteria:1`. An explicit
+ *  either spelling — matched on whole path tokens, so `tests/config.py`
+ *  never names `config.py` — by its title, or by its first words on
+ *  whole words, so `criteria:10` never names `criteria:1`. An explicit
  *  `path:line` citation is the strongest signal: when one spells out the
  *  finding's path, only the cited line's finding is named. */
 function namesFinding(line: string, finding: Finding): boolean {
@@ -178,8 +183,11 @@ function namesFinding(line: string, finding: Finding): boolean {
       (token) => finding.line == null || Number(token.slice(token.lastIndexOf(":") + 1)) === finding.line,
     );
   }
+  for (const token of line.match(PATH_TOKEN_RE) ?? []) {
+    if (paths.has(token) || paths.has(relativePath(token))) return true;
+  }
   const stream = ` ${wordStream(line)} `;
-  const needles = [...paths].map(wordStream);
+  const needles: string[] = [];
   if (parts.title != null) {
     needles.push(wordStream(parts.title));
     const criterion = /^criterion\s+(\d+)/i.exec(parts.title);
