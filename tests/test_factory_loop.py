@@ -4947,6 +4947,86 @@ class GateConflictImplementerTests(LoopFixture):
             self.read("SELECT status FROM tickets"),
             [("blocked_on_operator",)])
 
+    def test_a_turn_that_discards_the_candidate_fails_and_parks(self):
+        """The turn can end the merge and reset the branch to main: HEAD
+        is then clean with main its ancestor, but the candidate's
+        pre-merge sha is not -- going on would verify main, not the
+        merge, and the branch's work would be lost."""
+        provider = StubProvider(a_task())
+        conn, run_id, branch, wt, sha = self.conflicted()
+
+        class AbortThenResetToMain:
+            role = "implement"
+
+            @staticmethod
+            def play(cwd, turn):
+                subprocess.run(["git", "merge", "--abort"], cwd=cwd,
+                               check=True, capture_output=True)
+                subprocess.run(["git", "reset", "--hard", "main"], cwd=cwd,
+                               check=True, capture_output=True)
+                return "aborted the merge and reset the branch to main"
+
+        with patch.object(holophyte.loop, "agent",
+                          FakeAgent(AbortThenResetToMain())):
+            with self.assertRaises(holophyte.gates.RunFailure) as failed:
+                holophyte.loop._sync_main_into_branch(
+                    self.tgt, conn, run_id, provider, "KO-131", branch,
+                    wt, sha, 60, "add a thing", 5)
+
+        self.assertEqual(
+            str(failed.exception),
+            f"merging main into {branch} conflicted on: README.md;"
+            f" branch preserved at {sha[:12]}")
+        self.assertEqual(self.git("rev-parse", branch).strip(), sha)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(), sha)
+        self.assertNotEqual(
+            subprocess.run(["git", "rev-parse", "-q", "--verify",
+                            "MERGE_HEAD"], cwd=wt,
+                           capture_output=True).returncode, 0)
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"),
+            [("blocked_on_operator",)])
+
+    def test_a_resolution_that_times_out_fails_and_parks(self):
+        """The turn commits the merge, then the budget kills it: the run
+        is over its budget and must not sail on a commit the kill raced --
+        `_timed` reports the timeout and the gate fails as before."""
+        provider = StubProvider(a_task())
+        conn, run_id, branch, wt, sha = self.conflicted()
+
+        class CommitMergeThenTimeout(Commit):
+            def play(self, cwd, turn):
+                super().play(cwd, turn)
+                raise subprocess.TimeoutExpired(
+                    "claude", 300, output="resolved, then the cap fired")
+
+        fake = FakeAgent(CommitMergeThenTimeout(
+            "merge main into the branch", path="README.md",
+            body="merged\n"))
+        with patch.object(holophyte.loop, "agent", fake):
+            with self.assertRaises(holophyte.gates.RunFailure) as failed:
+                holophyte.loop._sync_main_into_branch(
+                    self.tgt, conn, run_id, provider, "KO-131", branch,
+                    wt, sha, 60, "add a thing", 5)
+
+        self.assertEqual(
+            str(failed.exception),
+            f"merging main into {branch} conflicted on: README.md;"
+            f" branch preserved at {sha[:12]}")
+        # The turn's merge commit is unwound with the timeout: the branch
+        # is back at its pre-merge sha and the tree is clean.
+        self.assertEqual(self.git("rev-parse", branch).strip(), sha)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(), sha)
+        self.assertNotEqual(
+            subprocess.run(["git", "rev-parse", "-q", "--verify",
+                            "MERGE_HEAD"], cwd=wt,
+                           capture_output=True).returncode, 0)
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"),
+            [("blocked_on_operator",)])
+
     def test_a_clean_gate_merge_never_calls_the_implementer(self):
         # `main` moved past the branch but on another file, so the merge
         # succeeds on its own and no agent turn is owed.

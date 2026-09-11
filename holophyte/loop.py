@@ -313,7 +313,7 @@ def conflict_brief(branch, conflicts):
             " merge unresolved fails.\n\n")
 
 
-def _resolve_merge_conflict(target, conn, run_id, branch, wt, conflicts,
+def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
                             ticket, beat_s, budget_min):
     """The conflict-resolution turn `reuse_leftover()` hands the
     implementer at claim time, run from the merge gate's mid-merge
@@ -325,38 +325,43 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, conflicts,
     ticket goes along for context -- the branch already holds its work,
     so resolving the merge and committing it is the whole task. The turn
     counts against the run's budget as a fix round does. A timeout, a
-    tree still mid-merge, one `main` never landed in, or uncommitted
-    edits on top of the merge commit all resolve nothing -- the gate's
-    verify reads the worktree, so the sha it goes on to must be the tree
-    it reads -- and the caller aborts and fails the run as it did before
-    this hand-off existed.
+    tree still mid-merge, a HEAD that does not hold both `main` and the
+    candidate's pre-merge `sha`, or uncommitted edits on top of the merge
+    commit all resolve nothing -- the gate's verify reads the worktree,
+    so the sha it goes on to must be the tree it reads and must be the
+    merge of the candidate it claimed -- and the caller aborts and fails
+    the run as it did before this hand-off existed.
     """
     paths = ", ".join(conflicts)
     set_phase(conn, run_id, "merge_gate",
               f"implementer resolving the merge conflict on {paths}")
-    out = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                 f"The merge gate merged main into the candidate branch"
-                 f" {branch} and the merge stopped on conflicts in:"
-                 f" {paths}. The ticket's work is already committed on the"
-                 " branch, so resolving the merge is the whole task:"
-                 " resolve each conflict keeping both sides' intent (the"
-                 " branch's work and main's new lines both stay), then"
-                 " commit the merge with a message naming both sides. Make"
-                 " no other change; a gate that still finds the merge"
-                 " unresolved fails the run.\n\nThe ticket the branch"
-                 f" answers:\n\n{ticket}")
-    if out is None or merge_conflicts(wt):
+    _, timed_out = _timed(target, conn, run_id, beat_s, wt, budget_min,
+                          f"The merge gate merged main into the candidate"
+                          f" branch {branch} and the merge stopped on"
+                          f" conflicts in: {paths}. The ticket's work is"
+                          " already committed on the branch, so resolving"
+                          " the merge is the whole task: resolve each"
+                          " conflict keeping both sides' intent (the"
+                          " branch's work and main's new lines both stay),"
+                          " then commit the merge with a message naming"
+                          " both sides. Make no other change; a gate that"
+                          " still finds the merge unresolved fails the"
+                          " run.\n\nThe ticket the branch"
+                          f" answers:\n\n{ticket}")
+    if timed_out or merge_conflicts(wt):
         return None
-    if subprocess.run(["git", "merge-base", "--is-ancestor", "main", "HEAD"],
-                      cwd=wt, capture_output=True).returncode != 0:
-        # The turn ended the merge itself rather than resolving it.
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if not (_is_ancestor(wt, "main", head) and _is_ancestor(wt, sha, head)):
+        # The turn ended the merge itself rather than resolving it -- or
+        # reset the candidate's work away: a HEAD main alone reaches would
+        # send the gate's verify over main, not the merge.
         return None
     if sh(["git", "status", "--porcelain"], cwd=wt):
         # The merge commit landed but the turn left uncommitted edits;
         # the verify would read them and the merged sha does not hold
         # them.
         return None
-    return sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    return head
 
 
 def run_task(target, task, conn=None, run_id=None, provider=None):
@@ -1473,7 +1478,7 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
     if status == "conflicted":
         if detail:
             merged = _resolve_merge_conflict(
-                target, conn, run_id, branch, wt, detail, ticket,
+                target, conn, run_id, branch, wt, sha, detail, ticket,
                 beat_s, budget_min)
             if merged is not None:
                 note = (f"gate conflict on {', '.join(detail)}"
