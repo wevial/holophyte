@@ -2993,6 +2993,35 @@ class MergeModeTests(MergeModeFixture):
                       " ORDER BY round")[-1],
             ("pass", "github:ci"))
 
+    def test_an_open_pull_request_is_adopted_through_a_slashed_origin(self):
+        """An `origin` ending in `/` -- `https://github.com/example/repo/`
+        is a URL `git remote add` accepts -- must still reach GitHub:
+        `_origin_pull()` gluing `/pull/0` onto the slash would hand
+        `PR_URL_RE` a doubled slash it refuses, the lookup would return
+        None without asking, and `gh pr create` would fire and fail just
+        as before KO-407. With the slash normalized the branch's open PR
+        is found and adopted."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        adopted = "https://github.com/example/repo/pull/2177"
+        self.fake_route(open_pr=adopted)
+        self.git("remote", "set-url", "origin",
+                 "https://github.com/example/repo/")
+
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+
+        calls = self.recorded()
+        self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        self.assertEqual(calls[1], "gh api --hostname github.com --method"
+                                   " POST graphql --input -")
+        body = json.loads((self.api_dir / "1.json").read_text())
+        self.assertEqual(body["variables"],
+                         {"owner": "example", "name": "repo",
+                          "branch": BRANCH})
+        self.assertFalse(any(c.startswith("gh pr create") for c in calls),
+                         calls)
+        self.assertEqual(self.read("SELECT prUrl FROM runs"), [(adopted,)])
+
     def test_no_open_pull_request_on_the_branch_opens_one_as_today(self):
         """The lookup answering no open pull request for the branch: the
         push and the lookup run, then `gh pr create` opens the PR exactly

@@ -545,7 +545,7 @@ def _origin_pull(target):
     ssh = re.match(r"(?:git@|ssh://git@)([^/:]+)[:/](.*)", text)
     if ssh:
         text = f"https://{ssh.group(1)}/{ssh.group(2)}"
-    text = re.sub(r"\.git/?$", "", text)
+    text = re.sub(r"\.git$", "", text.rstrip("/"))
     return parse_pr_url(f"{text}/pull/0")
 
 
