@@ -388,9 +388,14 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.assertEqual(self.git("rev-parse", "HEAD^2", cwd=wt).strip(),
                          moved)
         self.assertNotEqual(self.git("rev-parse", "main").strip(), moved)
-        pushes = [c for c in self.recorded()
-                  if c == f"git push origin {BRANCH}"]
-        self.assertEqual(len(pushes), 2, self.recorded())
+        self.assertEqual([c for c in self.recorded()
+                          if c.startswith("git")],
+                         [f"git push origin {BRANCH}"] * 2)
+        # What the pushes delivered: the candidate at open, then the
+        # merge commit -- resolved at push time, so a push ordered
+        # before the merge would record the pre-merge tip here.
+        self.assertEqual(self.pushed(),
+                         [(BRANCH, approved), (BRANCH, head)])
         self.assertEqual(
             self.read("SELECT text FROM ledger WHERE kind = 'note' AND"
                       " text LIKE 'Merged main into%'"),
@@ -427,9 +432,9 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.assertEqual(
             self.read("SELECT phase FROM runs WHERE id = 2"),
             [("awaiting_merge_approval",)])
-        pushes = [c for c in self.recorded()
-                  if c == f"git push origin {BRANCH}"]
-        self.assertEqual(len(pushes), 1, self.recorded())
+        # The only push ever was the candidate's, at open; the aborted
+        # merge pushed nothing.
+        self.assertEqual(self.pushed(), [(BRANCH, approved)])
 
     def test_mergeable_and_unknown_pull_requests_are_not_merged(self):
         """KO-377: MERGEABLE is left alone -- a PR that is merely behind
@@ -439,19 +444,18 @@ class ConflictingPullRequestTests(MergeModeFixture):
         approved = self.parked_on_a_nit(Commit("the scripted work"))
         self.remote_main("MOVED.md", "main moved on\n")
         wt = self.worktrees / "ko-131-add-a-thing"
-        pushes = f"git push origin {BRANCH}"
 
         self.serve(self.pr_state(mergeable="MERGEABLE"))
         self.resume()
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(),
                          approved)
-        self.assertEqual(self.recorded().count(pushes), 1)
+        self.assertEqual(self.pushed(), [(BRANCH, approved)])
 
         self.serve(self.pr_state(mergeable=None))
         self.resume()
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(),
                          approved)
-        self.assertEqual(self.recorded().count(pushes), 1)
+        self.assertEqual(self.pushed(), [(BRANCH, approved)])
         self.assertEqual(
             self.read("SELECT COUNT(*) FROM ledger WHERE kind = 'note'"
                       " AND text LIKE 'Merged main into%'"), [(0,)])

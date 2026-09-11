@@ -2691,7 +2691,11 @@ class MergeModeFixture(LoopFixture):
         alone decides the checks. `push_exit` is what `git
         push` answers with --
         non-zero is a remote refusing -- and `push_sh` is shell the fake
-        push runs first, for a push that takes its time.
+        push runs first, for a push that takes its time. A push the fake
+        answers successfully also appends `REF SHA` to `self.push_log`:
+        the refspec's source resolved in the pushing checkout at push
+        time, which is the tip a real remote's branch would have
+        received (`pushed()` reads it back).
         """
         self.git("remote", "add", "origin", self.ORIGIN)
         tmp = tempfile.TemporaryDirectory()
@@ -2699,6 +2703,7 @@ class MergeModeFixture(LoopFixture):
         bindir = Path(tmp.name)
         self.calls = bindir / "calls.log"
         self.pr_body = bindir / "pr_body.md"
+        self.push_log = bindir / "pushes.log"
         self.api_dir = bindir / "api"
         self.api_dir.mkdir()
         answers = bindir / "states"
@@ -2730,8 +2735,18 @@ class MergeModeFixture(LoopFixture):
             'if [ "$1" = push ]; then\n'
             f'  printf "git %s\\n" "$*" >> "{self.calls}"\n'
             f"{push_sh}\n"
-            f'  [ {push_exit} -eq 0 ] || echo "remote: refused" >&2\n'
-            f"  exit {push_exit}\n"
+            f'  if [ {push_exit} -ne 0 ]; then\n'
+            '    echo "remote: refused" >&2\n'
+            f"    exit {push_exit}\n"
+            "  fi\n"
+            # The push is witnessed, not made; what a real remote's
+            # branch would have received is the refspec's source
+            # resolved now, in the pushing checkout.
+            '  for src in "$@"; do :; done\n'
+            '  src="${src%%:*}"; src="${src#+}"\n'
+            f'  printf "%s %s\\n" "$src" "$("{real_git}" rev-parse'
+            f' "$src" 2>/dev/null || echo MISSING)" >> "{self.push_log}"\n'
+            "  exit 0\n"
             "fi\n"
             f'exec "{real_git}" "$@"\n')
         (bindir / "gh").write_text(
@@ -2775,6 +2790,15 @@ class MergeModeFixture(LoopFixture):
     def recorded(self):
         return (self.calls.read_text().splitlines()
                 if self.calls.exists() else [])
+
+    def pushed(self):
+        """Every `git push` the fake answered, as `(ref, sha)`: the
+        refspec's source resolved in the pushing checkout at push time --
+        the tip a real remote's branch would have received, which is the
+        witness a bare argv count cannot give."""
+        return [tuple(line.split())
+                for line in (self.push_log.read_text().splitlines()
+                             if self.push_log.exists() else [])]
 
     def serve(self, *states):
         """Replace the state answers the fake `gh` still owes with `states`
