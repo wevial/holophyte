@@ -228,3 +228,62 @@ test("a pr_open row reads PR, shows the reason with the PR link, and its one act
     window.open = realOpen;
   }
 });
+
+test("a pr_open row carrying pr leads with the PR link, keeps the reason's first line only, and draws three fact chips", () => {
+  const url = "https://github.com/o/r/pull/2170";
+  const item: AttentionItem = {
+    kind: "pr_open",
+    level: "attention",
+    ticket: "REL-120",
+    run: 60,
+    pr_url: url,
+    reason: "ready to merge; waiting for a human to say merge\n1. src/x.py:3 by @coworker",
+    asked_ms: allKinds.status.now - 600000,
+    pr: { number: 2170, checks: "success", review: "changes_requested", threads: 2 },
+  };
+  render(
+    <ul>
+      <AttentionRow
+        kind={item.kind}
+        project="writer"
+        description={describe(item, thresholds, { now: allKinds.status.now })}
+        prUrl={item.pr_url}
+        daemon={{ base: BASE, actions: false, fetch: fakeFetch({}).fetchImpl }}
+      />
+    </ul>,
+  );
+  const [row] = screen.getAllByRole("listitem");
+  const body = within(row!).getByText(/ready to merge/).closest("p")!;
+  expect(body.textContent).toMatch(/^PR #2170\s*ready to merge; waiting for a human to say merge$/);
+  expect(body.firstElementChild!.querySelector("a[data-pr]")!.getAttribute("href")).toBe(url);
+  expect(row!.textContent).not.toContain("src/x.py:3");
+  const chips = Array.from(row!.querySelectorAll("[data-fact]"));
+  expect(chips.map((chip) => [chip.textContent, chip.getAttribute("data-tone")])).toEqual([
+    ["checks green", "ok"],
+    ["changes requested", "bad"],
+    ["2 threads open", "warn"],
+  ]);
+  expect(chips[0]!.className).toContain("bg-ok-bg");
+  expect(chips[1]!.className).toContain("bg-bad-bg");
+  expect(chips[2]!.className).toContain("bg-warn-bg");
+  expect(within(row!).getByText(/^run #60 · parked at \d\d:\d\d$/)).toBeTruthy();
+});
+
+test("a pr_open row without pr draws no fact chips", () => {
+  const item: AttentionItem = {
+    kind: "pr_open",
+    level: "attention",
+    ticket: "REL-120",
+    run: 60,
+    pr_url: "https://github.com/o/r/pull/2170",
+    reason: "review requested from a coworker\n1. src/x.py:3 by @coworker",
+  };
+  render(
+    <ul>
+      <AttentionRow kind={item.kind} project="writer" description={describe(item, thresholds, { now: allKinds.status.now })} prUrl={item.pr_url} />
+    </ul>,
+  );
+  const [row] = screen.getAllByRole("listitem");
+  expect(row!.querySelectorAll("[data-fact]")).toHaveLength(0);
+  expect(row!.textContent).toContain("src/x.py:3");
+});

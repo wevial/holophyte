@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from "react";
 import { ACTIONS_OFF, NOT_WIRED, ROUTES, postAction } from "../lib/actions";
-import { OPEN_PR, type Description } from "../lib/attention";
+import { OPEN_PR, type Description, type Tone } from "../lib/attention";
 import { formatAge } from "../lib/format";
 import type { Fetch } from "../lib/poll";
 import type { ThreadRow } from "../lib/threads";
@@ -32,6 +32,15 @@ export interface RowDaemon {
   fetch?: Fetch;
 }
 
+/** A fact chip's classes by tone: the theme's ok, warn and bad washes;
+ *  a neutral chip is outlined and faint. */
+const TONE_CLASS: Record<Tone, string> = {
+  ok: "bg-ok-bg text-ok-text",
+  warn: "bg-warn-bg text-warn-text",
+  bad: "bg-bad-bg text-bad-text",
+  neutral: "border border-chip-border text-faint",
+};
+
 /** The body one wired label posts: the row's ticket for "Requeue"
  *  (holophyte/serve.py `requeue_action()`), nothing for the unit actions. */
 function bodyFor(label: string, ticket: string | null): Record<string, unknown> {
@@ -40,7 +49,8 @@ function bodyFor(label: string, ticket: string | null): Record<string, unknown> 
 
 /** One item: pill, ticket over project, body over meta, age, actions. A
  *  row given `thread` toggles its thread card on click; one given `prUrl`
- *  ends its body line with a "PR #N" link that follows without toggling.
+ *  opens its body line with a "PR #N" link that follows without toggling,
+ *  and one whose description carries `facts` draws them as chips under it.
  *  A row given `daemon` posts each wired label (`lib/actions.ts` ROUTES)
  *  to it on click and shows the reply's `detail` under the buttons; the
  *  next poll redraws the row. Labels without a route, and every label of
@@ -62,7 +72,7 @@ export function AttentionRow({
   prUrl?: string | null;
   daemon?: RowDaemon;
 }) {
-  const { pill, ticket, body, meta, ageMs, actions } = description;
+  const { pill, ticket, body, meta, ageMs, actions, facts } = description;
   const toggle = thread?.onToggle;
   const [detail, setDetail] = useState<{ text: string; ok: boolean } | null>(null);
   const act = (label: string) => {
@@ -115,13 +125,27 @@ export function AttentionRow({
         </div>
         <div className="min-w-0">
           <p className="text-[13px] leading-[1.4] text-body">
-            {body}
             {prUrl && (
-              <span onClick={(event) => event.stopPropagation()} className="ml-2">
+              <span onClick={(event) => event.stopPropagation()} className="mr-2">
                 <PrLink url={prUrl} />
               </span>
             )}
+            {body}
           </p>
+          {facts && facts.length > 0 && (
+            <p data-facts className="mt-1 flex flex-wrap gap-1.5">
+              {facts.map((fact) => (
+                <span
+                  key={fact.label}
+                  data-fact
+                  data-tone={fact.tone}
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONE_CLASS[fact.tone]}`}
+                >
+                  {fact.label}
+                </span>
+              ))}
+            </p>
+          )}
           {meta && <p className="text-[12px] text-faint">{meta}</p>}
           {thread && (
             <p data-thread-hint className="text-[12px] font-semibold text-needs-you-link">
