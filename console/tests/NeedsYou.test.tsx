@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { NeedsYou } from "../src/components/NeedsYou";
 import { ACTIONS_OFF, NOT_WIRED, ROUTES } from "../src/lib/actions";
+import type { Ledgers } from "../src/hooks/useLedger";
 import type { Attention, AttentionItem, Status } from "../src/lib/types";
 import { fixture, hostOf } from "./harness";
 
@@ -154,4 +155,83 @@ test("a pr_open item adds a PRs chip that filters to it, and the total counts it
   expect(within(row!).getByText(/^review requested/)).toBeTruthy();
   expect((within(row!).getByText("PR #2170") as HTMLAnchorElement).getAttribute("href")).toBe(url);
   expect(within(row!).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open PR"]);
+});
+
+test("three failed attempts of one ticket are one row with a ×3 badge, counted once; its card lists every attempt and closes with a second click", () => {
+  const strike = (run: number, reason: string): AttentionItem => ({
+    kind: "failed",
+    level: "attention",
+    ticket: "KO-343",
+    run,
+    reason,
+    attempt: 1,
+    ended_ms: allKinds.status.now - (200 - run) * 60000,
+  });
+  const [question] = allKinds.attention.items;
+  const items: AttentionItem[] = [
+    strike(176, "terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 046d7d70f5e1"),
+    question!,
+    strike(172, "verify failed before merge; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 7f2e1a0b9c8d"),
+    { kind: "failed", level: "attention", ticket: "KO-229", run: 88, reason: "verify failed: nope", attempt: 1, ended_ms: allKinds.status.now - 60000 },
+    strike(174, "implementer made no commits; nothing to review"),
+  ];
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { level: "attention", now: allKinds.status.now, items })]} project="all" now={allKinds.status.now} />);
+  expect(screen.getByText("3").hasAttribute("data-count")).toBe(true);
+  expect(chips()).toEqual(["All 3", "Questions 1", "Failed 2"]);
+  expect(rows().map((row) => row.getAttribute("data-kind"))).toEqual(["failed", "blocked", "failed"]);
+  const [grouped, , single] = rows();
+  expect(within(grouped!).getByText("Review adjudicated FAIL")).toBeTruthy();
+  expect(within(grouped!).getByText("run #176 · strike 1 of 2 · task/ko-343-the-loop-runs-a-pool-of-worker @ 046d7d7")).toBeTruthy();
+  expect(within(grouped!).getByText("24m")).toBeTruthy();
+  const badge = grouped!.querySelector("[data-attempts]")!;
+  expect(badge.textContent).toBe("×3");
+  expect(badge.parentElement!.textContent).toBe("KO-343×3");
+  expect(single!.querySelector("[data-attempts]")).toBeNull();
+  expect(Array.from(grouped!.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Requeue", "Mark needs_spec"]);
+
+  expect(document.querySelector("[data-attempts-card]")).toBeNull();
+  fireEvent.click(within(grouped!).getByText("attempts ▾"));
+  const card = grouped!.querySelector("[data-attempts-card]")!;
+  expect(Array.from(card.querySelectorAll("[data-attempt]")).map((line) => line.textContent)).toEqual([
+    "run #172 · Verify command failed · task/ko-343-the-loop-runs-a-pool-of-worker @ 7f2e1a0",
+    "run #174 · Implementer exited without committing",
+    "run #176 · Review adjudicated FAIL · task/ko-343-the-loop-runs-a-pool-of-worker @ 046d7d7",
+  ]);
+  expect(within(card as HTMLElement).queryByText(/046d7d70f5e1/)).toBeNull();
+  expect(within(grouped!).getByText("hide attempts ▴")).toBeTruthy();
+  fireEvent.click(within(grouped!).getByText("hide attempts ▴"));
+  expect(document.querySelector("[data-attempts-card]")).toBeNull();
+  expect(within(grouped!).getByText("attempts ▾")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Failed 2" }));
+  expect(rows().length).toBe(2);
+  expect(rows().map((row) => within(row).getByText(/^KO-/).textContent)).toEqual(["KO-343×3", "KO-229"]);
+});
+
+test("an open attempts card closes when a question row opens its thread: one card at a time", () => {
+  const ledgers: Ledgers = {
+    "writer:7710": {
+      rows: [],
+      threads: { "KO-240": [{ at: allKinds.status.now - 1000, run: 50, ticket: "KO-240", kind: "note", source: "loop", text: "Which branch?" }] },
+      absent: false,
+    },
+  };
+  const question: AttentionItem = { kind: "blocked", level: "attention", ticket: "KO-240", run: 50, question: "Which branch?" };
+  const items: AttentionItem[] = [
+    { kind: "failed", level: "attention", ticket: "KO-343", run: 172, reason: "verify failed: a", attempt: 1 },
+    question,
+    { kind: "failed", level: "attention", ticket: "KO-343", run: 176, reason: "verify failed: b", attempt: 2 },
+  ];
+  render(
+    <NeedsYou hosts={[hostOf(allKinds.status, { level: "attention", now: allKinds.status.now, items })]} project="all" now={allKinds.status.now} ledgers={ledgers} />,
+  );
+  const [grouped, blocked] = rows();
+  fireEvent.click(within(grouped!).getByText("attempts ▾"));
+  expect(grouped!.querySelector("[data-attempts-card]")).toBeTruthy();
+  fireEvent.click(within(blocked!).getByText("thread ▾"));
+  expect(grouped!.querySelector("[data-attempts-card]")).toBeNull();
+  expect(blocked!.querySelector("[data-thread]")).toBeTruthy();
+  fireEvent.click(within(grouped!).getByText("attempts ▾"));
+  expect(blocked!.querySelector("[data-thread]")).toBeNull();
+  expect(document.querySelectorAll("[data-attempts-card]").length).toBe(1);
 });
