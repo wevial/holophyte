@@ -775,9 +775,10 @@ class Version10MigrationTests(unittest.TestCase):
 
     def test_a_version_10_store_is_rebuilt_to_accept_reconcile(self):
         """A store stamped 10 refuses a 'reconcile' row; opening it with this
-        build rebuilds the table in place, keeps the 'shepherd' row it held,
-        stamps the current version, and a reconcile row with the
-        'linear_completed' trigger then lands (KO-329)."""
+        build rebuilds the table in place, keeps the 'shepherd' row it held
+        (as 'babysit', the word KO-374 renamed it to), stamps the current
+        version, and a reconcile row with the 'linear_completed' trigger
+        then lands (KO-329)."""
         conn = store.open(self.path)
         project = store.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.mirror_ticket(
@@ -811,7 +812,7 @@ class Version10MigrationTests(unittest.TestCase):
         self.assertEqual(
             conn.execute('SELECT "action", "trigger" FROM interventions'
                          " ORDER BY id").fetchall(),
-            [("shepherd", "manual"), ("reconcile", "linear_completed")])
+            [("babysit", "manual"), ("reconcile", "linear_completed")])
 
 
 # `interventions` exactly as schema version 11 shipped it: 'reconcile' and
@@ -934,6 +935,77 @@ class Version12MigrationTests(unittest.TestCase):
             conn.execute('SELECT "action", "trigger" FROM interventions'
                          " ORDER BY id").fetchall(),
             [("launch_loop", "manual"), ("config_edit", "manual")])
+
+# `interventions` exactly as schema version 15 shipped it: 'shepherd' still
+# the action a `--babysit` wrote, every daemon action already admitted.
+VERSION_15_INTERVENTIONS_TABLE = VERSION_12_INTERVENTIONS_TABLE.replace(
+    "'launch_loop'))", "'launch_loop', 'config_edit'))")
+
+
+class Version15MigrationTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+
+    def user_version(self):
+        raw = sqlite3.connect(self.path)
+        try:
+            return raw.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            raw.close()
+
+    def test_a_version_15_store_is_rebuilt_with_its_shepherd_rows_renamed(self):
+        """A store stamped 15 holds 'shepherd' rows and refuses 'babysit';
+        opening it with this build rebuilds the table in place, rewrites
+        every 'shepherd' row to 'babysit' with the rest of the row intact,
+        stamps the current version, and a babysit row then lands (KO-374)."""
+        conn = store.open(self.path)
+        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1")
+        run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        conn.execute("DROP TABLE interventions")
+        conn.executescript(VERSION_15_INTERVENTIONS_TABLE)
+        conn.executemany(
+            'INSERT INTO interventions (runId, source, "trigger", "action", at)'
+            " VALUES (?, ?, 'manual', ?, ?)",
+            [(run_id, "human", "shepherd", 1_700_000_120_000),
+             (run_id, "supervisor", "launch_loop", 1_700_000_130_000),
+             (run_id, "supervisor", "shepherd", 1_700_000_140_000)])
+        conn.execute("PRAGMA user_version = 15")
+        conn.commit()
+        conn.close()
+        raw = sqlite3.connect(self.path)
+        with self.assertRaises(sqlite3.IntegrityError):
+            raw.execute(
+                'INSERT INTO interventions (runId, source, "trigger",'
+                ' "action", at) VALUES (?, \'human\', \'manual\','
+                ' \'babysit\', 1)', (run_id,))
+        raw.close()
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertGreaterEqual(store.SCHEMA_VERSION, 16)
+        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertEqual(
+            conn.execute('SELECT id, source, "action", at FROM interventions'
+                         " ORDER BY id").fetchall(),
+            [(1, "human", "babysit", 1_700_000_120_000),
+             (2, "supervisor", "launch_loop", 1_700_000_130_000),
+             (3, "supervisor", "babysit", 1_700_000_140_000)])
+        store.record_intervention(conn, run_id, "babysit", "look again")
+        self.assertEqual(
+            conn.execute('SELECT "action" FROM interventions'
+                         " WHERE id = 4").fetchall(), [("babysit",)])
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute(
+                'INSERT INTO interventions (runId, source, "trigger",'
+                ' "action", at) VALUES (?, \'human\', \'manual\','
+                ' \'shepherd\', 1)', (run_id,))
+
 
 if __name__ == "__main__":
     unittest.main()
