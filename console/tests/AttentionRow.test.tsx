@@ -169,13 +169,13 @@ test("the band hands each row its own daemon: the fixture's status without actio
     (within(row).getAllByRole("button") as HTMLButtonElement[]).map((b) => [b.textContent, b.disabled]),
   );
   expect(states).toEqual([
-    ["Answer", true],
-    ["Requeue", false],
-    ["Kill run", true],
-    ["Requeue", false],
     ["Requeue", false],
     ["Mark needs_spec", true],
     ["Restart supervisor", false],
+    ["Kill run", true],
+    ["Requeue", false],
+    ["Answer", true],
+    ["Requeue", false],
   ]);
   await act(async () => {
     fireEvent.click(button("Restart supervisor"));
