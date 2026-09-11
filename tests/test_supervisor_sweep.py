@@ -1886,7 +1886,7 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertIn(f"{self.URL} was merged on GitHub by coworker", out)
         self.assertIn(f"run {run_id} closed out as merged", out)
 
-    # KO-376: a sweep that sent a run back to the shepherd walked its
+    # KO-376: a sweep that sent a run back to the babysitter walked its
     # ticket to `ready` on a board whose loop has exited, so it starts the
     # loop as the console's launch-loop action does, through a `systemctl`
     # a fake on PATH records.
@@ -1910,7 +1910,7 @@ class ParkedPullRequestTests(SweepTestCase):
                         if record.exists() else [])
 
     def seen_before_activity(self, run_id):
-        """The mark the shepherd's park left: a read older than
+        """The mark the babysitter's park left: a read older than
         `ACTIVE_PULL`'s activity, so the next read is new activity."""
         store.record_pr_seen(self.conn, run_id,
                              ("2026-09-01T10:00:00Z", 1, None, None))
