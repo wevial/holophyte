@@ -61,6 +61,9 @@ EXPECTED = [
     # KO-223: the operator's requeue-after-failure, one transaction behind
     # `--requeue`, so the ladder's rung-3 pair is a rung-1 command.
     "requeue",
+    # KO-365: the merge gate's conflict reason, recognised by `requeue()`
+    # and the loop's `--requeue` candidate read alike.
+    "is_gate_conflict",
     "render_state_graph",
     "render_state_graph_section",
     "resume",
