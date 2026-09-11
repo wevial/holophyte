@@ -76,6 +76,7 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
+from holophyte.redact import RedactionError, redact
 from holophyte.reexec import reexec_command, reexec_self
 from holophyte.report import report_lines
 from holophyte.review import criteria_brief, criteria_findings
@@ -898,6 +899,33 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
         return None
 
 
+# How much of the implementer's final output a no-commit turn keeps on the
+# run (KO-375): the last characters, where a refusal or a "this contract
+# cannot be met" explanation ends up.
+OUTPUT_TAIL = 4000
+
+
+def _record_implementer_output(conn, run_id, out):
+    """Keep the tail of a no-commit turn's output as an `implementer_output`
+    event, before the worktree it may have explained itself in is gone.
+
+    A `detail` row, like `crash`: the summary is the message's first line and
+    the payload its last `OUTPUT_TAIL` characters, redacted the way the
+    config page's text is so a secret the implementer echoed never reaches
+    the store. Output the redactor cannot vouch for is replaced by its
+    sentence rather than stored readable."""
+    if conn is None or run_id is None:
+        return
+    text = (out or "").strip()
+    try:
+        text = redact(text)
+    except RedactionError as bad:
+        text = f"(implementer output withheld: {bad})"
+    summary = text.splitlines()[0] if text else "(implementer printed nothing)"
+    store.record_event(conn, run_id, "implementer_output", summary,
+                       level="detail", payload=text[-OUTPUT_TAIL:])
+
+
 def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=()):
     """The implementer phase: one turn against `ticket`, then the no-commit
@@ -924,6 +952,9 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
                        cwd=wt, capture_output=True).returncode)
     if head == start_sha and not carried:
         print(f"[holo2] implementer made no commits for: {task}")
+        # What the turn said is the only evidence left once the worktree
+        # goes; it is on the run before the discard, whatever the exit code.
+        _record_implementer_output(conn, run_id, out)
         if fresh:
             sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
             sh(["git", "branch", "-D", branch], target.path)

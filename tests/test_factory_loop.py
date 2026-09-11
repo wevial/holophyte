@@ -5647,6 +5647,76 @@ class SweptTurnTests(LoopFixture):
         self.assertIsNone(self.rc)
 
 
+class NoCommitOutputTests(LoopFixture):
+    """A turn that ends without a commit keeps what the implementer said on
+    the run (KO-375): the worktree it may have explained itself in is
+    discarded, so the event is the operator's only evidence."""
+
+    def events(self):
+        return self.read("SELECT summary, payload FROM runEvents"
+                         " WHERE kind = 'implementer_output'")
+
+    def removals_seen(self):
+        """Wrap the loop's `sh` so the moment the worktree is removed, the
+        store is read for the event: the order witness."""
+        seen = []
+        real = holophyte.loop.sh
+
+        def sh(args, cwd=None):
+            if args[:3] == ["git", "worktree", "remove"]:
+                seen.append(self.events())
+            return real(args, cwd)
+        patcher = patch.object(holophyte.loop, "sh", sh)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return seen
+
+    def test_a_no_commit_turn_keeps_the_message_before_the_discard(self):
+        seen = self.removals_seen()
+        message = "This contract cannot be met.\nThe verify line names no file."
+
+        self.loop(Idle(message))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(self.events(),
+                         [("This contract cannot be met.", message)])
+        # Recorded before the removal, not after: the event was already in
+        # the store when the worktree went.
+        self.assertEqual(seen, [[("This contract cannot be met.", message)]])
+
+    def test_a_nonzero_exit_without_commits_keeps_its_output_too(self):
+        """A real route, not the fake: the turn's exit code is the process's,
+        so this is the loop reading a failed harness's last words."""
+        path = self.db.parent / "implementer.sh"
+        path.write_text(
+            "#!/bin/sh\n"
+            'case "$1" in *ready*) echo ready; exit 0;; esac\n'
+            "echo refusing this ticket\necho a second line\nexit 3\n")
+        path.chmod(0o755)
+        self.configure(f'[agents]\nimplementer = "{path}"\n')
+        provider = StubProvider(a_task())
+        with no_agent_processes():
+            with patch.dict(sys.modules, {"linear_provider": provider}):
+                holophyte.loop.main(self.tgt, provider)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.events(), [("refusing this ticket",
+                                          "refusing this ticket\na second line")])
+
+    def test_the_payload_keeps_only_the_last_characters_up_to_the_constant(self):
+        cap = holophyte.loop.OUTPUT_TAIL
+        head = "first line\n"
+        message = head + "x" * cap
+
+        self.loop(Idle(message))
+
+        ((summary, payload),) = self.events()
+        self.assertEqual(summary, "first line")
+        self.assertEqual(len(payload), cap)
+        self.assertEqual(payload, message[-cap:])
+
+
 class ImplementerProbeTests(LoopFixture):
     """A configured `[agents] implementer` is asked for one word before the
     pass claims anything (KO-357). The route under test is a real script the
