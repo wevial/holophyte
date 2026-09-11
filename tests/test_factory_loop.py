@@ -1771,6 +1771,15 @@ class CommitThenTimeout(Commit):
                                         output="partial progress before cap")
 
 
+class IdleThenTimeout(Idle):
+    """`CommitThenTimeout`'s empty-branch counterpart: the turn said its
+    piece and committed nothing before the cap killed it, so its words exist
+    only in the `TimeoutExpired`'s captured output."""
+
+    def play(self, cwd, turn):
+        raise subprocess.TimeoutExpired("claude", 300, output=self.reply)
+
+
 class Boom:
     """An implementer turn that dies the way a failed `sh()` does."""
 
@@ -5896,6 +5905,21 @@ class NoCommitOutputTests(LoopFixture):
                          [("This contract cannot be met.", message)])
         # Recorded before the removal, not after: the event was already in
         # the store when the worktree went.
+        self.assertEqual(seen, [[("This contract cannot be met.", message)]])
+
+    def test_a_timed_out_turn_without_commits_keeps_its_output(self):
+        """The cap can fire after the implementer has explained itself but
+        before it commits: what `agent()` captured before the kill is the
+        run's evidence, not an empty payload saying it printed nothing."""
+        message = "This contract cannot be met.\nThe verify line names no file."
+        seen = self.removals_seen()
+
+        self.loop(IdleThenTimeout(message))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(self.events(),
+                         [("This contract cannot be met.", message)])
         self.assertEqual(seen, [[("This contract cannot be met.", message)]])
 
     def test_a_nonzero_exit_without_commits_keeps_its_output_too(self):
