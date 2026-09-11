@@ -202,10 +202,12 @@ final message and its payload the message's last 4000 characters
 (`OUTPUT_TAIL` in `holophyte/loop.py`), passed through the prose redactor
 (`redact_prose()` in `holophyte/redact.py`): every credential the config
 and the environment hold, and every `name = value` pair with a secret's
-name wherever it sits in the text, read `[redacted]`. It sits beside the stream's other kinds (`phase_change`,
-`crash`, `carried_candidate`, `merge_gate`, `pull_request`) and is what
-tells a contract the implementer judged unwinnable from a crash or a
-refusal.
+name wherever it sits in the text, read `[redacted]`. It sits beside the
+stream's other kinds (`phase_change`, `crash`, `carried_candidate`,
+`merge_gate`, `pull_request`) and is what tells a contract the implementer
+judged unwinnable from a crash or a refusal. `GET /runs/N` answers it among
+the run's `events` by its summary, the one `detail` kind the route shows;
+the payload is read from the store.
 
 ## What a `pr_open` item's action is not
 

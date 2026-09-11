@@ -1886,7 +1886,7 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertIn(f"{self.URL} was merged on GitHub by coworker", out)
         self.assertIn(f"run {run_id} closed out as merged", out)
 
-    # KO-376: a sweep that sent a run back to the shepherd walked its
+    # KO-376: a sweep that sent a run back to the babysitter walked its
     # ticket to `ready` on a board whose loop has exited, so it starts the
     # loop as the console's launch-loop action does, through a `systemctl`
     # a fake on PATH records.
@@ -1923,7 +1923,7 @@ class ParkedPullRequestTests(SweepTestCase):
 
         out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
 
-        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertIn(f"run {run_id} sent back to the babysitter", out)
         self.assertEqual(
             self.conn.execute("SELECT status FROM tickets WHERE id = ?",
                               (self.ticket_of[run_id],)).fetchone(),
@@ -1959,7 +1959,7 @@ class ParkedPullRequestTests(SweepTestCase):
 
         out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
 
-        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertIn(f"run {run_id} sent back to the babysitter", out)
         self.assertEqual(calls(), [])
         self.assertNotIn("holophyte-loop@", out)
 
@@ -2077,7 +2077,7 @@ class ParkedPullRequestTests(SweepTestCase):
 
         out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
 
-        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertIn(f"run {run_id} sent back to the babysitter", out)
         self.assertIn("holophyte-loop@repo could not be started"
                       " (Unit holophyte-loop@repo.service not found.)", out)
         self.assertEqual(
