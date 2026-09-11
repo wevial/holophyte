@@ -312,6 +312,7 @@ def status(target, now=None, started_ms=None):
         "thresholds": {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                        "strikes": knobs.stale_strikes},
         "actions": serve_config(target).actions,
+        "config_edit": serve_config(target).config_edit,
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,
                   "title": run.title,
                   "phase": run.phase,
