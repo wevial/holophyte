@@ -96,7 +96,9 @@ class BlockedTicket:
     was asked: the newest `redirect` intervention on that run, else the
     run's `lastHeartbeat` for a ticket parked by a module that recorded no
     redirect. Both are None only for a ticket that was parked with no run
-    behind it at all.
+    behind it at all. `prSeenChecks`, `prSeenReview` and `prSeenThreads`
+    are what the reconcile last saw of the run's pull request
+    (`runs.prSeen*`, KO-368), None for a run never polled or with no run.
     """
 
     id: int
@@ -106,6 +108,9 @@ class BlockedTicket:
     askedMs: int | None = None
     # The pull request the parked run opened (`runs.prUrl`), None when none.
     prUrl: str | None = None
+    prSeenChecks: str | None = None
+    prSeenReview: str | None = None
+    prSeenThreads: int | None = None
 
 
 def blocked_tickets(conn, project_id=None):
@@ -128,13 +133,15 @@ def blocked_tickets(conn, project_id=None):
         "SELECT t.id, t.linearIdentifier, t.blockedQuestion, r.id,"
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
-        " r.lastHeartbeat, r.prUrl"
+        " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
+        " r.prSeenThreads"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
                           blockedQuestion=row[2], runId=row[3],
                           askedMs=row[4] if row[4] is not None else row[5],
-                          prUrl=row[6])
+                          prUrl=row[6], prSeenChecks=row[7],
+                          prSeenReview=row[8], prSeenThreads=row[9])
             for row in rows]
 
 

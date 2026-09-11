@@ -213,6 +213,8 @@ CREATE TABLE IF NOT EXISTS runs (
     -- shepherd".
     prSeenAt          TEXT,
     prSeenThreads     INTEGER,
+    prSeenChecks      TEXT,
+    prSeenReview      TEXT,
     UNIQUE (ticketId, attempt)
 );
 
@@ -386,8 +388,11 @@ CREATE TABLE IF NOT EXISTS interventions (
 # before the file is replaced (KO-356). Version 14 is `runs.prSeenAt`
 # and `runs.prSeenThreads`, what the last shepherd pass saw of the
 # pull request its run parked on, so the loop's tick can tell new
-# review activity from its own (KO-362).
-SCHEMA_VERSION = 14
+# review activity from its own (KO-362). Version 15 is `runs.prSeenChecks`
+# and `runs.prSeenReview`, the head's checks rollup and the review decision
+# the same read saw, so `/attention`'s `pr_open` item can carry them
+# (KO-368).
+SCHEMA_VERSION = 15
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -552,6 +557,16 @@ ADDED_COLUMNS = (
         "runs",
         "prSeenThreads",
         "prSeenThreads INTEGER",
+    ),
+    (
+        "runs",
+        "prSeenChecks",
+        "prSeenChecks TEXT",
+    ),
+    (
+        "runs",
+        "prSeenReview",
+        "prSeenReview TEXT",
     ),
 )
 
@@ -1347,12 +1362,12 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
     ways once a fix round moves the candidate: the resumed shepherd merges
     the candidate only at this sha, and reviews it again at any other.
 
-    `pr_seen` is `(updated_at, threads)` as the pull request read after
-    the pass's own writes -- GitHub's `updatedAt` string and its review
-    thread count -- stored as `runs.prSeenAt` and `runs.prSeenThreads`
-    in the same transaction (KO-362), so the loop's per-tick reconcile
-    knows what activity the pass has already answered. None records
-    nothing.
+    `pr_seen` is `(updated_at, threads, checks, review)` as the pull
+    request read after the pass's own writes -- GitHub's `updatedAt`
+    string, its review thread count, the head's checks rollup and the
+    review decision -- written by `record_pr_seen()` in the same
+    transaction (KO-362, KO-368), so the loop's per-tick reconcile knows
+    what activity the pass has already answered. None records nothing.
 
     `phase` must be one of `PARKED_PHASES`; the sweep leaves those alone, so
     a run parked here is not reported dead for having no heartbeat. Parking
@@ -1382,13 +1397,35 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
             conn.execute("UPDATE runs SET approvedSha = ? WHERE id = ?",
                          (approved_sha, run_id))
         if pr_seen is not None:
-            conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?"
-                         " WHERE id = ?", (*pr_seen, run_id))
+            record_pr_seen(conn, run_id, pr_seen)
         conn.execute(
             "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
             " WHERE id = ? AND activeRunId = ?",
             (run_id, ticket_id, run_id),
         )
+
+
+def record_pr_seen(conn, run_id, seen, parked_only=False):
+    """Record what one read of the pull request run `run_id` is parked on
+    saw: `seen` is `(updated_at, threads, checks, review)` -- GitHub's
+    `updatedAt` string, the review-thread count, the head's checks rollup
+    ("success", "pending", "failure") and the review decision
+    ("approved", "changes_requested", "review_required"), each None when
+    GitHub did not say -- written as `runs.prSeenAt`, `prSeenThreads`,
+    `prSeenChecks` and `prSeenReview` in one statement. The loop's
+    reconcile holds the first two against the next read to tell new
+    review activity from its own (KO-362); `/attention`'s `pr_open` item
+    carries the last three (KO-368). `parked_only` writes nothing to a
+    run no longer in `awaiting_merge_approval`, for a caller that read
+    the run outside the transaction it writes in. Joins the caller's
+    transaction when one is open.
+    """
+    updated_at, threads, checks, review = seen
+    guard = " AND phase = 'awaiting_merge_approval'" if parked_only else ""
+    with _transaction(conn):
+        conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?,"
+                     f" prSeenChecks = ?, prSeenReview = ? WHERE id = ?{guard}",
+                     (updated_at, threads, checks, review, run_id))
 
 
 def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
