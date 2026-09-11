@@ -99,12 +99,15 @@ absent loses its copy and nothing else. `record_intervention()` writes the
 entries. `store.read.ledger(conn, run_id)` returns a run's entries oldest
 first and `store.read.ledger_since()` a window across runs, newest first.
 The daemon serves them as `/runs/N/ledger` and `/ledger?since=MS`
-([HTTP endpoints](../reference/http.md)). `FINDINGS.md` is rendered from
-`runs` and `reviewRounds` as before.
+([HTTP endpoints](../reference/http.md)). A target with
+`[report] findings = "repo"` also has `FINDINGS.md` rendered from `runs` and
+`reviewRounds`; by default (`"none"`) nothing is rendered.
 
 ## FINDINGS
 
-`FINDINGS.md` in the target repository is a rendered window over the store:
+`FINDINGS.md` in a target repository that opts in with
+`[report] findings = "repo"` (the default `"none"` renders nothing: the
+store is the record) is a rendered window over the store:
 above a `<!-- store-rendered below -->` marker, frozen pre-store history
 that is never rewritten; below it, the newest twenty-five run and round
 entries rendered from `runs` and `reviewRounds` at every close-out, with

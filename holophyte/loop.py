@@ -3572,8 +3572,8 @@ def report(target, conn=None, out=None, now=None):
     for the sake of an empty table; it is reported.
 
     Below the table, one line naming the `[report] findings` mode, so an
-    operator can see whether this target still renders FINDINGS.md at
-    close-out or has switched the file off, then one on the target's
+    operator can see whether this target has opted into rendering
+    FINDINGS.md at close-out (`repo`) or not (`none`), then one on the target's
     supervisor -- see `supervisor_liveness_line()`, always last. `now` is
     the clock the heartbeat's age is taken against, injectable so a test
     can place a beat in time.

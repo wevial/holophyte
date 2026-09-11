@@ -486,12 +486,12 @@ class ContainerCommandTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v5_and_nothing_still_names_an_older_tag(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v5")
+    def test_image_tag_is_v6_and_nothing_still_names_an_older_tag(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v6")
         stale = [
             path
             for path in [*ROOT.glob("*.py"), *(ROOT / "docs").glob("*.md")]
-            if re.search(r"ubuntu24\.04-v[1234]\b", path.read_text())
+            if re.search(r"ubuntu24\.04-v[12345]\b", path.read_text())
         ]
         self.assertEqual(stale, [])
 

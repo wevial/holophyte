@@ -6,6 +6,7 @@ RUN apt-get update \
         curl \
         git \
         python3 \
+        python3-pip \
         ripgrep \
         unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -63,6 +64,13 @@ RUN set -eu \
     && chmod 0755 /opt/ruff/bin/ruff \
     && rm /tmp/ruff.tar.gz
 ENV PATH=/opt/ruff/bin:$PATH
+
+# tomlkit is the factory's one Python dependency (`requirements.txt`, the
+# daemon's `PUT /config` patch): the suite imports it, so the reviewer's
+# `python3 -m unittest discover` needs it at the same pinned version.
+ARG TOMLKIT_VERSION=0.15.1
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+        "tomlkit==${TOMLKIT_VERSION}"
 
 RUN mkdir -p /home/reviewer /workspace \
     && chmod 0755 /home/reviewer /workspace

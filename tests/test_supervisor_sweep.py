@@ -755,7 +755,10 @@ class ActingSweepTests(SweepTestCase):
     def test_the_trip_condition_is_recorded_where_a_human_will_read_it(self):
         """A freed lease with no account of why is a mystery in the morning:
         the run's own event stream says the supervisor arrived, and the
-        rendered window names the condition beside the run it ended."""
+        rendered window, in a target that renders one, names the condition
+        beside the run it ended."""
+        self.tgt.config_path.write_text('[report]\nfindings = "repo"\n')
+        self.tgt = holophyte.target.Target.locate(self.target)
         run_id = self.a_run(phase="reviewing")
         at = self.trip()
 

@@ -19,8 +19,8 @@ worktree and merged only after mechanical verification and independent review.
   never review or approve its own candidate.
 - Keep one independent review plus at most one narrow re-review. Record review
   findings and their `ADDRESS`, `FOLLOW_UP`, or `DECLINE` adjudications in the
-  Linear ticket ledger; the factory records the round in the store and renders
-  it into `FINDINGS.md`.
+  Linear ticket ledger; the factory records the round in the store, which is
+  the run record (read it through the console or `factory.py --report`).
 - Do not treat a worker's report as proof. Inspect the diff and reproduce the
   ticket's verification commands before reporting completion.
 
@@ -50,10 +50,11 @@ worktree and merged only after mechanical verification and independent review.
   secrets.
 - The repository is public: code, comments, docs and commit messages name roles
   (the writer host, the operator seat), never machine names or personal paths.
-- `FINDINGS.md` is regenerated from the store at each close-out: a bounded
-  window over `runs`/`reviewRounds` below the frozen pre-store preamble. The
-  execution evidence is the rows — do not hand-edit the rendered window or drop
-  rows to make a run appear clean.
+- The store is the run record: `runs`/`reviewRounds` are the execution
+  evidence, read through the console or `--report`. This repository keeps no
+  `FINDINGS.md`; a target opts into that rendered window with
+  `[report] findings = "repo"`, and even then the rows are the record — do not
+  hand-edit the rendered window or drop rows to make a run appear clean.
 - Model/harness routing is an explicit factory policy: live-probe the exact
   configured CLI/provider/model path before dispatching a task, and do not
   silently substitute a model or harness when a route fails.
@@ -102,13 +103,14 @@ worktree and merged only after mechanical verification and independent review.
   independent review pass over the final branch state (the loop's gate
   is verify *and* approve — substitute the reviewer, never skip it),
   `--no-ff` with a message naming the why, and store + Linear walked to
-  their terminal states in the same sitting (`store.walk_ticket()`),
-  FINDINGS window committed. When the human is present or watching: ask
+  their terminal states in the same sitting (`store.walk_ticket()`), and the
+  FINDINGS window committed where `[report] findings = "repo"`. When the
+  human is present or watching: ask
   before the first out-of-band state edit and always before a manual
   merge to main. When absent: freeing a work-blocking lease and
   preserving at-risk work (stash rescue) are authorized — reversible,
   additive — with the merge question parked `blocked_on_operator` until
   they return.
 - **Close the loop afterwards.** Reconcile every touched surface (store
-  status, board status, FINDINGS, branches/stashes) before ending the
+  status, board status, branches/stashes) before ending the
   incident, and file one ticket per gap the incident revealed.
