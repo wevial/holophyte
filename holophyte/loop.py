@@ -532,7 +532,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     changed) goes through the gate below and then leaves the machine as a
     fresh run's would, pushed and opened -- but only on an approval. The
     gate below merges, so a candidate carried here with `carried.approved`
-    False (the intervention `store.shepherd()` writes as the newest on its
+    False (the intervention `store.babysit()` writes as the newest on its
     run, which it refuses to write on a PR-less run but a hand-written
     store row could) is not taken through it: the run fails naming the
     release, the tree untouched, and a human answers with `--approve`.
@@ -650,7 +650,6 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
     merge gate -- the ticket's verify commands, then the drift check --
     on the candidate before the merge API is called."""
     url = carried.pr_url
-    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     reviewed = carried.sha if carried.approved else carried.approved_sha
     if sh(["git", "status", "--porcelain"], cwd=wt):
         ledger(conn, run_id, task_id, "failure",
@@ -660,6 +659,8 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
                provider)
         raise RunFailure(f"worktree of {branch} holds uncommitted changes;"
                          f" not babysitting {url}")
+    sha = _sync_branch_from_origin(target, conn, run_id, provider, task_id,
+                                   branch, wt, url, reviewed)
     store.record_event(conn, run_id, "pull_request",
                        f"resuming run {carried.run_id}'s candidate {branch}"
                        f" at {sha[:12]} on {url}"
@@ -677,6 +678,63 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
                           verified=None)
     return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                       merge_sha, started, budget_min, 0)
+
+
+def _sync_branch_from_origin(target, conn, run_id, provider, task_id,
+                             branch, wt, url, reviewed):
+    """Fast-forward the worktree and `branch` to what `origin` holds for
+    it, and return the branch's sha afterwards (KO-379).
+
+    A person pushing commits on top of a parked candidate is the normal way
+    a factory pull request is adjusted, and it leaves the local branch
+    behind the remote: judged from there, the pass would read the pull
+    request's head as "not the candidate this run pushed" and park again.
+    So the resume fetches the branch first and compares the two the way
+    `_sync_main_into_branch()` compares `main`: the remote an ancestor of
+    the local tip (or equal) means nothing to do; the local tip an ancestor
+    of the remote means a fast-forward, with a ledger note saying why the
+    reviewed delta grew -- the new commits are held to `reviewed` exactly as
+    a fix round's are; neither means the two diverged, and the run parks
+    naming both shas with the worktree untouched. A fetch that cannot
+    resolve (no remote, an unreachable one) is one printed line, and the
+    pass goes on from the local branch as before: the pull-request pass's
+    own "someone else pushed" park still covers a head it cannot see.
+    """
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    fetched = subprocess.run(["git", "fetch", "origin", branch], cwd=wt,
+                             capture_output=True, text=True)
+    if fetched.returncode != 0:
+        print(f"[holo2] could not fetch {branch} from origin; babysitting"
+              f" from the local branch at {sha[:12]}:"
+              f" {fetched.stderr.strip() or fetched.stdout.strip()}")
+        return sha
+    remote = sh(["git", "rev-parse", "FETCH_HEAD"], cwd=wt)
+
+    def is_ancestor(a, b):
+        return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                              cwd=wt, capture_output=True).returncode == 0
+
+    if remote == sha or is_ancestor(remote, sha):
+        return sha
+    if not is_ancestor(sha, remote):
+        pull = pr.parse_pr_url(url)
+        if pull is None:
+            raise RunFailure(f"cannot read a pull request off {url!r};"
+                             f" branch {branch} preserved at {sha[:12]}")
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+                    f"the local branch {branch} at {sha[:12]} and origin's at"
+                    f" {remote[:12]} diverged; neither fast-forwards to the"
+                    " other, so nothing was fetched into the worktree and"
+                    " a human reconciles them", (), reviewed=reviewed)
+    count = sh(["git", "rev-list", "--count", f"{sha}..{remote}"], cwd=wt)
+    sh(["git", "merge", "--ff-only", remote], cwd=wt)
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    note = (f"Fast-forwarded {branch} to {sha} from origin ({count}"
+            f" commit(s) pushed by someone else)")
+    print(f"[holo2] {note}")
+    if conn is not None and run_id is not None:
+        store.record_ledger(conn, run_id, "note", note)
+    return sha
 
 
 def _candidate_drift(wt, branch, approved):
@@ -778,6 +836,62 @@ def _run_after(target, conn, run_id, provider, task_id, merge_sha, commands):
                           f" {cmd}")
 
 
+def _refresh_main(target, run_id=None):
+    """Fetch `origin` and fast-forward the checkout's `main` when
+    `origin/main` is ahead, so every branch is cut from everything already
+    on `main` anywhere (KO-378). Three cases after the fetch: `origin/main`
+    already an ancestor of `main` (equal, or the local-mode checkout ahead
+    on unpushed merges) and nothing changes; `main` an ancestor of
+    `origin/main` and it is fast-forwarded -- never reset, origin is not the
+    source of truth for a local-mode target; neither, and the two diverged:
+    the refusal names both shas and the run fails before any cut. A target
+    with no `origin` skips the step. A fetch that fails is the network's
+    failure, not the ticket's, so it is `InfraFailure`; so is a divergence,
+    which a person untangles and which says nothing about the ticket.
+
+    Under the merge lock, as the gate's merge is, so a fast-forward and a
+    `--no-ff` merge into `main` never interleave.
+    """
+    if "origin" not in sh(["git", "remote"], target.path).splitlines():
+        return
+
+    def is_ancestor(a, b):
+        return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                              cwd=target.path, capture_output=True).returncode == 0
+
+    with merge_lock(target, run_id):
+        fr = subprocess.run(["git", "fetch", "origin"], cwd=target.path,
+                            capture_output=True, text=True)
+        if fr.returncode != 0:
+            raise InfraFailure("git fetch origin failed before the cut:"
+                               f" {fr.stderr.strip() or fr.stdout.strip()}")
+        if subprocess.run(["git", "rev-parse", "--verify", "-q", "origin/main"],
+                          cwd=target.path, capture_output=True).returncode != 0:
+            return  # a remote with no `main` yet: nothing to compare against
+        local = sh(["git", "rev-parse", "main"], target.path)
+        remote = sh(["git", "rev-parse", "origin/main"], target.path)
+        if is_ancestor("origin/main", "main"):
+            return
+        if is_ancestor("main", "origin/main"):
+            # `merge --ff-only` moves the checked-out branch; a checkout
+            # sitting elsewhere gets its `main` ref moved directly, the
+            # ancestry just proved it a fast-forward.
+            head = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], target.path)
+            if head == "main":
+                sh(["git", "merge", "--ff-only", "origin/main"], target.path)
+            else:
+                sh(["git", "update-ref", "refs/heads/main", remote, local],
+                   target.path)
+            print(f"[holo2] main fast-forwarded to origin/main:"
+                  f" {local[:12]} -> {remote[:12]}")
+            return
+    raise InfraFailure(f"main diverged from origin/main: main is at {local},"
+                       f" origin/main is at {remote}; neither contains the"
+                       " other, so no branch was cut -- a person reconciles"
+                       " the checkout with origin before this ticket is run"
+                       " again")
+
+
 def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
     """The worktree phase: cut `branch` at `wt`, or reuse the leftover there.
 
@@ -824,6 +938,7 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
                f"FAILED to cut a fresh worktree for: {task}\n"
                f"{why}\nNothing was deleted.", provider)
         raise RunFailure(f"cannot cut a fresh worktree: {why}")
+    _refresh_main(target, run_id)
     sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
     sh(["git", "checkout", "-b", branch], cwd=wt)
     return True
@@ -2960,7 +3075,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     item as soon as the next tick reads it. The interval is per
     pull request, measured from the park (`runs.lastHeartbeat`, the
     park's stamp): activity within `poll_ms` of it is named and waits.
-    Otherwise `store.shepherd()`'s one transaction -- its
+    Otherwise `store.babysit()`'s one transaction -- its
     intervention row, source `supervisor` (the loop's own machinery, not
     a person), naming what moved, the run ended with its resume
     point at the merge gate, the ticket walked to `ready` -- with the
@@ -3003,7 +3118,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)
-            store.shepherd(conn, ticket.id, note, source="supervisor")
+            store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
         print(f"[holo2] {identifier}: {pull.url} has new review activity but"
               f" the ticket moved while GitHub was asked ({refused}); left"
@@ -3723,7 +3838,7 @@ def babysit_ticket(target, identifier, note, out=None):
     """Send the ticket `identifier`, parked on its pull request, back to the
     babysitter. Returns nothing.
 
-    `--babysit`'s whole body and `approve()`'s twin: `store.shepherd()`'s
+    `--babysit`'s whole body and `approve()`'s twin: `store.babysit()`'s
     one transaction -- its intervention row carrying `note`, the
     parked run ended with its resume point at the merge gate, the ticket
     walked to `ready` -- printed and done. The loop's next claim of the
@@ -3737,7 +3852,7 @@ def babysit_ticket(target, identifier, note, out=None):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            run_id = store.shepherd(conn, ticket_id, note)
+            run_id = store.babysit(conn, ticket_id, note)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} sent back to the babysitter: run {run_id}"

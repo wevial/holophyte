@@ -796,6 +796,81 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.read("SELECT branch FROM runs"), [(BRANCH,)])
 
 
+class RefreshMainLoopTests(LoopFixture):
+    """Every cut starts from everything already on `main` anywhere (KO-378):
+    the checkout fetches `origin` and fast-forwards its `main` when behind,
+    keeps it when ahead, and refuses to cut when the two diverged. A bare
+    repository stands in for origin; a second clone is the other seat that
+    commits to it after the checkout last saw it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.bare = self.target.parent / "origin.git"
+        self.git("init", "-q", "--bare", "-b", "main", str(self.bare))
+        self.git("remote", "add", "origin", str(self.bare))
+        self.git("push", "-q", "origin", "main")
+        self.seat = self.target.parent / "seat"
+        self.git("clone", "-q", str(self.bare), str(self.seat))
+        self.git("config", "user.email", "seat@example.invalid", cwd=self.seat)
+        self.git("config", "user.name", "Other Seat", cwd=self.seat)
+
+    def push_from_seat(self, name):
+        """A commit made to origin's `main` from another seat."""
+        (self.seat / name).write_text(f"{name}\n")
+        self.git("add", "-A", cwd=self.seat)
+        self.git("commit", "-q", "-m", name, cwd=self.seat)
+        self.git("push", "-q", "origin", "main", cwd=self.seat)
+        return self.git("rev-parse", "main", cwd=self.seat).strip()
+
+    def commit_locally(self, name):
+        """An unpushed commit on the checkout's `main` (a local-mode merge)."""
+        (self.target / name).write_text(f"{name}\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", name)
+        return self.git("rev-parse", "main").strip()
+
+    def first_branch_parent(self):
+        return self.git("rev-parse", f"{BRANCH}~1").strip()
+
+    def test_a_checkout_behind_origin_is_fast_forwarded_before_the_cut(self):
+        remote = self.push_from_seat("from-the-other-seat")
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+
+        # The turn commits and times out, so the branch is preserved with
+        # its commit and `main` is left as the cut found it.
+        self.loop(CommitThenTimeout("the scripted work"))
+
+        self.assertEqual(self.first_branch_parent(), remote)
+        self.assertEqual(self.git("rev-parse", "main").strip(), remote)
+
+    def test_a_checkout_ahead_of_origin_keeps_its_main(self):
+        ahead = self.commit_locally("unpushed-local-merge")
+
+        self.loop(CommitThenTimeout("the scripted work"))
+
+        self.assertEqual(self.git("rev-parse", "main").strip(), ahead)
+        self.assertEqual(self.first_branch_parent(), ahead)
+
+    def test_a_diverged_checkout_refuses_the_cut_naming_both_shas(self):
+        remote = self.push_from_seat("from-the-other-seat")
+        local = self.commit_locally("unpushed-local-merge")
+
+        # An empty script: any agent turn would raise, and none must run.
+        self.loop()
+
+        self.assertEqual(self.rc, 1)
+        ((outcome, klass, reason),) = self.read(
+            "SELECT outcome, outcomeClass, outcomeReason FROM runs")
+        self.assertEqual((outcome, klass), ("failed", "infra"))
+        self.assertIn("diverged", reason)
+        self.assertIn(local, reason)
+        self.assertIn(remote, reason)
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertEqual(self.git("rev-parse", "main").strip(), local)
+
+
 class WorktreeSetupLoopTests(LoopFixture):
     """`[worktree] setup` as a whole run walks it: real repo, real worktree.
 
@@ -2244,10 +2319,10 @@ class MergeApprovalTests(LoopFixture):
             [(1, BRANCH, "abandoned"), (2, BRANCH, "merged")])
 
     def test_a_babysitter_release_of_a_local_park_does_not_merge(self):
-        """`--babysit` is not an approval. `store.shepherd()` refuses a run
+        """`--babysit` is not an approval. `store.babysit()` refuses a run
         parked with no pull request, but the resumed claim holds the line
         on its own: a parked local candidate whose newest intervention is
-        `shepherd` (written here through the store API, the way an operator
+        `babysit` (written here through the store API, the way an operator
         at the REPL rung could) is not taken through the gate -- the next
         run fails naming the release, main is untouched, the branch and
         worktree stay for `--approve`."""
@@ -2260,7 +2335,7 @@ class MergeApprovalTests(LoopFixture):
         self.assertIn("no pull request", str(refused.exception))
         conn = holophyte.runs.open_store(self.tgt)
         try:
-            store.record_intervention(conn, 1, "shepherd", "look again")
+            store.record_intervention(conn, 1, "babysit", "look again")
             store.release(conn, 1, "abandoned", "released by hand")
             conn.execute("UPDATE runs SET resumePhase = 'merge_gate'"
                          " WHERE id = 1")
@@ -2630,8 +2705,19 @@ class MergeModeTests(LoopFixture):
         for n, page in enumerate(comments, 1):
             (pages / f"{n:03d}.json").write_text(json.dumps(page))
         real_git = shutil.which("git")
+        # The fetch before every cut (KO-378) is `git fetch origin` with
+        # no refspec and would ask the example remote for real; the fake
+        # route answers just that call as an origin with nothing new,
+        # unrecorded: `self.calls` witnesses what the loop sends out
+        # (pushes, pull requests), and a fetch sends nothing. A fetch
+        # with a refspec is a different caller — the babysit resume's
+        # `fetch origin BRANCH` and the fixture's fetches into a bare
+        # remote — and reaches the real git, which fails against the
+        # example remote or succeeds against a bare one as it would.
         (bindir / "git").write_text(
             "#!/bin/sh\n"
+            'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
+            " then exit 0; fi\n"
             'if [ "$1" = push ]; then\n'
             f'  printf "git %s\\n" "$*" >> "{self.calls}"\n'
             f"{push_sh}\n"
@@ -3279,6 +3365,133 @@ class MergeModeTests(LoopFixture):
                                    " WHERE id = 2"),
                          [("merged", self.MERGE_SHA)])
 
+    def park_on_a_declined_nit_with_a_bare_origin(self):
+        """A run parked on a declined nit at its approved sha, and the
+        target's `origin` then pointed at a bare repository holding the
+        candidate branch -- the remote a person pushes on top of. Returns
+        `(approved sha, bare path, scratch clone path)`; the clone is where
+        a test makes the person's commits, and `publish()` moves them to
+        the bare branch (`force` for a rewritten history)."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.NIT]), self.pr_state()])
+        self.loop(Commit("the scripted work"), APPROVE,
+                  Reply("THREAD 1: DECLINE -- a naming preference"),
+                  provider=self.provider())
+        approved = self.git("rev-parse", BRANCH).strip()
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        bare = self.worktrees.parent / "origin.git"
+        self.git("init", "-q", "--bare", str(bare))
+        self.git("fetch", "-q", str(self.target), f"{BRANCH}:{BRANCH}",
+                 cwd=bare)
+        self.git("remote", "set-url", "origin", str(bare))
+        clone = self.worktrees.parent / "person"
+        self.git("clone", "-q", "-b", BRANCH, str(bare), str(clone))
+        self.git("config", "user.email", "person@example.invalid", cwd=clone)
+        self.git("config", "user.name", "A Person", cwd=clone)
+        holophyte.loop.babysit_ticket(self.tgt, "KO-131", "look again",
+                                       out=io.StringIO())
+        return approved, bare, clone
+
+    def publish(self, clone, bare, force=False):
+        """The person's branch in `clone` moved onto the bare remote --
+        by a fetch into the bare repository, since the fixture's `git
+        push` is the witnessed fake."""
+        spec = f"{'+' if force else ''}{BRANCH}:{BRANCH}"
+        self.git("fetch", "-q", str(clone), spec, cwd=bare)
+        return self.git("rev-parse", BRANCH, cwd=bare).strip()
+
+    def test_a_babysit_resume_fast_forwards_to_the_remote_branch(self):
+        """A person pushed one commit on top of the parked candidate. The
+        resume fetches the branch, fast-forwards the worktree and the
+        local branch to the remote's head, notes the fast-forward in the
+        ledger naming one commit, and judges that head against the
+        approved sha as a fix round's commit is judged: a review, whose
+        approval lets the green, quiet PR merge."""
+        approved, bare, clone = self.park_on_a_declined_nit_with_a_bare_origin()
+        (clone / "README.md").write_text("a person's touch\n")
+        self.git("commit", "-q", "-am", "operator: adjust the candidate",
+                 cwd=clone)
+        theirs = self.publish(clone, bare)
+        self.assertNotEqual(theirs, approved)
+
+        fake, _ = self.loop(APPROVE, provider=self.provider())
+
+        # The merged run removes the worktree and branch at close-out, so
+        # the fast-forward is witnessed by what the review was handed and
+        # the sha the merge recorded, not by a branch that no longer exists.
+        self.assertEqual(fake.roles, ["review"])
+        self.assertEqual(fake.turns[0].candidate_sha, theirs)
+        # The new head is judged against the sha the reviewer approved,
+        # as a fix round's commit is: the brief names that approval, and
+        # would say the last review asked for changes had it been lost.
+        self.assertIn(f"candidate was approved at {approved[:12]}",
+                      fake.turns[0].goal)
+        self.assertEqual(
+            self.read("SELECT summary FROM runEvents WHERE runId = 2 AND"
+                      " summary LIKE 'resuming run%'"),
+            [(f"resuming run 1's candidate {BRANCH} at {theirs[:12]} on"
+              f" {self.URL} for another babysit pass",)])
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE kind = 'note' AND text"
+                      " LIKE 'Fast-forwarded%'"),
+            [(f"Fast-forwarded {BRANCH} to {theirs} from origin (1 commit(s)"
+              " pushed by someone else)",)])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"
+                                   " WHERE id = 2"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_a_babysit_resume_parks_when_the_branches_diverged(self):
+        """The remote branch was rewritten past the candidate rather than
+        built on it. Nothing fast-forwards: the worktree and the local
+        branch stay at the candidate, and the run parks with a question
+        naming both shas, no review and no merge."""
+        approved, bare, clone = self.park_on_a_declined_nit_with_a_bare_origin()
+        self.git("reset", "-q", "--hard", "HEAD~1", cwd=clone)
+        (clone / "README.md").write_text("rewritten\n")
+        self.git("commit", "-q", "-am", "operator: a rewrite", cwd=clone)
+        theirs = self.publish(clone, bare, force=True)
+
+        fake, _ = self.loop(provider=self.provider())
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.api_calls(), [])
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), approved)
+        self.assertEqual(self.git("rev-parse", "HEAD",
+                                  cwd=self.worktrees / "ko-131-add-a-thing")
+                         .strip(), approved)
+        question = self.question()
+        self.assertIn(approved[:12], question)
+        self.assertIn(theirs[:12], question)
+        self.assertIn("diverged", question)
+        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM"
+                                   " runs WHERE id = 2"),
+                         [("awaiting_merge_approval", None, approved)])
+
+    def test_a_babysit_resume_with_an_equal_remote_writes_no_note(self):
+        """The remote holds exactly the candidate: no note is written, and
+        the pass goes on as before -- the approved sha merges with no
+        second review."""
+        approved, bare, clone = self.park_on_a_declined_nit_with_a_bare_origin()
+
+        fake, _ = self.loop(provider=self.provider())
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(
+            self.read("SELECT summary FROM runEvents WHERE runId = 2 AND"
+                      " summary LIKE 'resuming run%'"),
+            [(f"resuming run 1's candidate {BRANCH} at {approved[:12]} on"
+              f" {self.URL} for another babysit pass",)])
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE text LIKE"
+                      " 'Fast-forwarded%'"), [])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 2"),
+                         [("merged",)])
+
     def test_babysit_re_entry_runs_the_merge_gate_before_the_api_merge(self):
         """Regression: a resumed, approved PR reached the merge API with
         no verify at all -- the park's verify was a process old, and
@@ -3855,7 +4068,7 @@ class MergeModeTests(LoopFixture):
             [(1, "failed", "abandoned", self.URL),
              (2, "awaiting_merge_approval", None, self.URL)])
         self.assertEqual(
-            self.read('SELECT "action" FROM interventions'), [("shepherd",)])
+            self.read('SELECT "action" FROM interventions'), [("babysit",)])
 
 
     # What GitHub says about a parked pull request when the reconcile asks
@@ -4083,7 +4296,7 @@ class MergeModeTests(LoopFixture):
             self):
         """KO-362: the pull request's `updatedAt` moved past what the last
         pass recorded. The tick sends the run back to the babysitter as
-        `--babysit` would -- a `shepherd` intervention, the run ended
+        `--babysit` would -- a `babysit` intervention, the run ended
         with the ticket ready -- and the same pass claims it: the resumed
         run babysits the pull request and parks again, its park recording
         what it saw *after* its own writes (the third answer), so the tick
@@ -4110,11 +4323,11 @@ class MergeModeTests(LoopFixture):
               "approved")])
         self.assertEqual(
             self.read('SELECT "action", source FROM interventions'),
-            [("shepherd", "supervisor")])
+            [("babysit", "supervisor")])
         self.assertEqual(
             self.read("SELECT summary FROM runEvents"
                       " WHERE kind = 'intervention'"),
-            [(f"supervisor shepherd: new review activity on {self.URL}:"
+            [(f"supervisor babysit: new review activity on {self.URL}:"
               f" updated {self.T2} (last seen {self.T1}), 1 review threads"
               " (last seen 0)",)])
         self.assertEqual(self.read("SELECT status FROM tickets"),

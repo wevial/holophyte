@@ -63,7 +63,16 @@ machines it walks. Back to the [README](index.md).
    to `merged` or `abandoned`, with a `reconcile` intervention row on its
    most recent run and one printed line naming the move; a board that
    cannot be asked skips the reconcile in one line and the loop goes on.
-2. Cut a per-task branch in a sibling worktree (`<repo>.worktrees/`), so
+2. Every target refreshes `main` from origin before every cut: `git fetch
+   origin` in the checkout, under the merge lock of step 6, then a
+   fast-forward of local `main` when `origin/main` is ahead. Local ahead
+   or equal (a local-mode checkout's unpushed merges) changes nothing --
+   behind is fast-forwarded, never reset. Diverged -- neither `main` nor
+   `origin/main` contains the other -- refuses the cut with an infra
+   failure naming both shas, for a person to reconcile; a target with no
+   `origin` skips the step, and a failed fetch is the network's failure,
+   not the ticket's strike. Then cut a per-task branch in a sibling
+   worktree (`<repo>.worktrees/`), so
    the main checkout stays untouched, and run the target's configured
    `[worktree] setup` commands there — a worktree that borrows the main
    checkout's environment tests something other than the branch it is on.
@@ -140,7 +149,21 @@ machines it walks. Back to the [README](index.md).
    (`runs.prUrl`), in the ticket's question (`PR open: URL`, the open
    threads listed) and in the ledger. `--approve KO-n` resumes the run on
    the PR and merges it when green and quiet; `--babysit KO-n` resumes it
-   for another round of passes. A pull request merged on GitHub by a person
+   for another round of passes.
+   A babysit resume fast-forwards to the remote branch first (KO-379):
+   the pass fetches the branch from `origin` and compares it to the local
+   branch the way the merge gate compares `main`. A remote ahead by a
+   fast-forward moves the worktree and the local branch to its head, with
+   a ledger note (`Fast-forwarded BRANCH to SHA from origin (N commit(s)
+   pushed by someone else)`) saying why the reviewed delta grew, and the
+   pass treats the new commits as a fix round: they are held to the sha
+   the last independent judgement covered, so a person's commits on top
+   of a candidate are reviewed before anything merges. Branches that
+   diverged park the run with a question naming both shas and nothing
+   fetched into the worktree; equal branches change nothing and write no
+   note. A fetch that cannot resolve leaves the pass judging from the
+   local branch as before, where a head it did not push still parks as
+   "someone else pushed". A pull request merged on GitHub by a person
    while the run waits is that approval: at startup and at the top of every
    pass -- each serial claim, each scheduler tick, the timer's included --
    the loop reads each parked pull request's state once, and one merged on
@@ -164,7 +187,7 @@ machines it walks. Back to the [README](index.md).
    moved past that mark, or whose thread count has grown, is a reviewer's
    comment nobody has answered: the tick sends the run back to the
    babysitter exactly as `--babysit KO-n` does -- the intervention row
-   `store.shepherd()` writes, with source `supervisor`, the run ended with its resume point at the
+   `store.babysit()` writes, with source `supervisor`, the run ended with its resume point at the
    merge gate, the ticket `ready` -- and the next claim (the same pass, in
    the serial loop) resumes the candidate on its pull request for another
    round of passes. At most one such round per `[merge] pr_poll_sec`

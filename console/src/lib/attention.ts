@@ -55,6 +55,72 @@ export function filterItems(items: AttentionItem[], kind: KindFilter, project: P
   );
 }
 
+const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+const str = (value: unknown): string | null => (typeof value === "string" ? value : null);
+
+/** The `failed` items of one ticket on one daemon: every attempt oldest
+ *  first (by run number, then `ended_ms`) and the latest of them, whose
+ *  reason and age the ticket's one row shows. */
+export interface FailedGroup {
+  daemon: string | null;
+  ticket: string | null;
+  latest: AttentionItem;
+  attempts: AttentionItem[];
+}
+
+const groupKey = (item: AttentionItem): string =>
+  `${str(item.daemon) ?? ""}\u0000${str(item.ticket) ?? `run:${String(num(item.run) ?? "")}`}`;
+
+const byRun = (a: AttentionItem, b: AttentionItem): number =>
+  (num(a.run) ?? 0) - (num(b.run) ?? 0) || (num(a.ended_ms) ?? 0) - (num(b.ended_ms) ?? 0);
+
+/** One group per ticket (per daemon) among the `failed` items, in the
+ *  order their first item appeared; other kinds are ignored. An item
+ *  without a ticket stands alone. */
+export function groupFailed(items: AttentionItem[]): FailedGroup[] {
+  const groups = new Map<string, AttentionItem[]>();
+  for (const item of items) {
+    if (item.kind !== "failed") continue;
+    const key = groupKey(item);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(item);
+    else groups.set(key, [item]);
+  }
+  return Array.from(groups.values()).map((bucket) => {
+    const attempts = [...bucket].sort(byRun);
+    const latest = attempts[attempts.length - 1]!;
+    return { daemon: str(latest.daemon), ticket: str(latest.ticket), latest, attempts };
+  });
+}
+
+/** One band row: the item it describes and, for a ticket that failed
+ *  more than once, every attempt oldest first. */
+export interface BandEntry {
+  item: AttentionItem;
+  attempts?: AttentionItem[];
+}
+
+/** The items as the band rows them: every `failed` ticket collapsed to
+ *  its latest attempt at the place its first attempt held, every other
+ *  item as itself, in the order given. */
+export function collapseFailed(items: AttentionItem[]): BandEntry[] {
+  const groups = new Map(groupFailed(items).map((group) => [groupKey(group.latest), group]));
+  const emitted = new Set<string>();
+  const entries: BandEntry[] = [];
+  for (const item of items) {
+    if (item.kind !== "failed") {
+      entries.push({ item });
+      continue;
+    }
+    const key = groupKey(item);
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    const group = groups.get(key)!;
+    entries.push(group.attempts.length > 1 ? { item: group.latest, attempts: group.attempts } : { item: group.latest });
+  }
+  return entries;
+}
+
 export type Counts = Record<KindFilter, number>;
 
 export function countsByKind(items: AttentionItem[]): Counts {
@@ -65,8 +131,6 @@ export function countsByKind(items: AttentionItem[]): Counts {
   return counts;
 }
 
-const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const str = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
 /** How long an item has waited: `asked_ms`/`ended_ms` against `now`, or
  *  the heartbeat age the item carries; null when it says none of them. */
@@ -78,19 +142,18 @@ export function ageOf(item: AttentionItem, now: number): number | null {
   return num(item.heartbeat_age_ms);
 }
 
-/** The item that has waited longest, with its age; null when no item
- *  carries an age. `at` is the clock every item is aged against, or a
- *  function answering each item's own age (a `describe` per host). */
-export function oldest(
-  items: AttentionItem[],
-  at: number | ((item: AttentionItem) => { ageMs: number | null }),
-): { ageMs: number; ticket: string | null } | null {
-  let best: { ageMs: number; ticket: string | null } | null = null;
-  for (const item of items) {
-    const ageMs = typeof at === "number" ? ageOf(item, at) : at(item).ageMs;
-    if (ageMs != null && (best == null || ageMs > best.ageMs)) best = { ageMs, ticket: str(item.ticket) };
-  }
-  return best;
+/** `items` longest-waited first: a stable sort, so equal ages keep the
+ *  order they came in (the daemons') and items `ageOf` answers null for
+ *  go last in that same order. `ageOf` is each item's own `describe`. */
+export function orderByAge<T>(items: T[], ageOf: (item: T) => number | null): T[] {
+  return items
+    .map((item, index) => ({ item, index, age: ageOf(item) }))
+    .sort((a, b) => {
+      if (a.age == null) return b.age == null ? a.index - b.index : 1;
+      if (b.age == null) return -1;
+      return b.age - a.age || a.index - b.index;
+    })
+    .map((entry) => entry.item);
 }
 
 /** A fact chip's wash: `ok`, `warn` and `bad` on the theme's washes,

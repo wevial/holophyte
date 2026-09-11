@@ -1910,7 +1910,7 @@ class ParkedPullRequestTests(SweepTestCase):
                         if record.exists() else [])
 
     def seen_before_activity(self, run_id):
-        """The mark the shepherd's park left: a read older than
+        """The mark the babysitter's park left: a read older than
         `ACTIVE_PULL`'s activity, so the next read is new activity."""
         store.record_pr_seen(self.conn, run_id,
                              ("2026-09-01T10:00:00Z", 1, None, None))

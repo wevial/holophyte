@@ -48,7 +48,7 @@ machines.
 
 **Intervention.** A row recording an operator or supervisor decision on a
 run: `redirect`, `kill`, `extend_time_box`, `resume`, `close_out`,
-`requeue`, `approve`, `repoint` and the babysit action `store.shepherd()`
+`requeue`, `approve`, `repoint` and the babysit action `store.babysit()`
 writes. Written before the change it
 describes.
 
