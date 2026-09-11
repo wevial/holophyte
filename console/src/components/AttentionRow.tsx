@@ -96,6 +96,9 @@ export function AttentionRow({
     if (daemon && !daemon.actions) return ACTIONS_OFF;
     return undefined;
   };
+  // A row with fact chips leads with the PR link (KO-370); any other row
+  // keeps the link after the prose, as before.
+  const leadsWithLink = facts != null && facts.length > 0;
   return (
     <li data-kind={kind} className="border-t border-needs-you-rule">
       <div
@@ -125,12 +128,17 @@ export function AttentionRow({
         </div>
         <div className="min-w-0">
           <p className="text-[13px] leading-[1.4] text-body">
-            {prUrl && (
+            {prUrl && leadsWithLink && (
               <span onClick={(event) => event.stopPropagation()} className="mr-2">
                 <PrLink url={prUrl} />
               </span>
             )}
             {body}
+            {prUrl && !leadsWithLink && (
+              <span onClick={(event) => event.stopPropagation()} className="ml-2">
+                <PrLink url={prUrl} />
+              </span>
+            )}
           </p>
           {facts && facts.length > 0 && (
             <p data-facts className="mt-1 flex flex-wrap gap-1.5">

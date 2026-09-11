@@ -269,7 +269,7 @@ test("a pr_open row carrying pr leads with the PR link, keeps the reason's first
   expect(within(row!).getByText(/^run #60 · parked at \d\d:\d\d$/)).toBeTruthy();
 });
 
-test("a pr_open row without pr draws no fact chips", () => {
+test("a pr_open row without pr draws no fact chips and keeps the PR link after the prose", () => {
   const item: AttentionItem = {
     kind: "pr_open",
     level: "attention",
@@ -286,4 +286,7 @@ test("a pr_open row without pr draws no fact chips", () => {
   const [row] = screen.getAllByRole("listitem");
   expect(row!.querySelectorAll("[data-fact]")).toHaveLength(0);
   expect(row!.textContent).toContain("src/x.py:3");
+  const body = within(row!).getByText(/^review requested from a coworker/).closest("p")!;
+  expect(body.textContent).toMatch(/^review requested from a coworker[\s\S]*PR #2170$/);
+  expect(body.lastElementChild!.querySelector("a[data-pr]")).toBeTruthy();
 });
