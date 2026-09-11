@@ -3279,6 +3279,133 @@ class MergeModeTests(LoopFixture):
                                    " WHERE id = 2"),
                          [("merged", self.MERGE_SHA)])
 
+    def park_on_a_declined_nit_with_a_bare_origin(self):
+        """A run parked on a declined nit at its approved sha, and the
+        target's `origin` then pointed at a bare repository holding the
+        candidate branch -- the remote a person pushes on top of. Returns
+        `(approved sha, bare path, scratch clone path)`; the clone is where
+        a test makes the person's commits, and `publish()` moves them to
+        the bare branch (`force` for a rewritten history)."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.NIT]), self.pr_state()])
+        self.loop(Commit("the scripted work"), APPROVE,
+                  Reply("THREAD 1: DECLINE -- a naming preference"),
+                  provider=self.provider())
+        approved = self.git("rev-parse", BRANCH).strip()
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        bare = self.worktrees.parent / "origin.git"
+        self.git("init", "-q", "--bare", str(bare))
+        self.git("fetch", "-q", str(self.target), f"{BRANCH}:{BRANCH}",
+                 cwd=bare)
+        self.git("remote", "set-url", "origin", str(bare))
+        clone = self.worktrees.parent / "person"
+        self.git("clone", "-q", "-b", BRANCH, str(bare), str(clone))
+        self.git("config", "user.email", "person@example.invalid", cwd=clone)
+        self.git("config", "user.name", "A Person", cwd=clone)
+        holophyte.loop.babysit_ticket(self.tgt, "KO-131", "look again",
+                                       out=io.StringIO())
+        return approved, bare, clone
+
+    def publish(self, clone, bare, force=False):
+        """The person's branch in `clone` moved onto the bare remote --
+        by a fetch into the bare repository, since the fixture's `git
+        push` is the witnessed fake."""
+        spec = f"{'+' if force else ''}{BRANCH}:{BRANCH}"
+        self.git("fetch", "-q", str(clone), spec, cwd=bare)
+        return self.git("rev-parse", BRANCH, cwd=bare).strip()
+
+    def test_a_babysit_resume_fast_forwards_to_the_remote_branch(self):
+        """A person pushed one commit on top of the parked candidate. The
+        resume fetches the branch, fast-forwards the worktree and the
+        local branch to the remote's head, notes the fast-forward in the
+        ledger naming one commit, and judges that head against the
+        approved sha as a fix round's commit is judged: a review, whose
+        approval lets the green, quiet PR merge."""
+        approved, bare, clone = self.park_on_a_declined_nit_with_a_bare_origin()
+        (clone / "README.md").write_text("a person's touch\n")
+        self.git("commit", "-q", "-am", "operator: adjust the candidate",
+                 cwd=clone)
+        theirs = self.publish(clone, bare)
+        self.assertNotEqual(theirs, approved)
+
+        fake, _ = self.loop(APPROVE, provider=self.provider())
+
+        # The merged run removes the worktree and branch at close-out, so
+        # the fast-forward is witnessed by what the review was handed and
+        # the sha the merge recorded, not by a branch that no longer exists.
+        self.assertEqual(fake.roles, ["review"])
+        self.assertEqual(fake.turns[0].candidate_sha, theirs)
+        # The new head is judged against the sha the reviewer approved,
+        # as a fix round's commit is: the brief names that approval, and
+        # would say the last review asked for changes had it been lost.
+        self.assertIn(f"candidate was approved at {approved[:12]}",
+                      fake.turns[0].goal)
+        self.assertEqual(
+            self.read("SELECT summary FROM runEvents WHERE runId = 2 AND"
+                      " summary LIKE 'resuming run%'"),
+            [(f"resuming run 1's candidate {BRANCH} at {theirs[:12]} on"
+              f" {self.URL} for another babysit pass",)])
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE kind = 'note' AND text"
+                      " LIKE 'Fast-forwarded%'"),
+            [(f"Fast-forwarded {BRANCH} to {theirs} from origin (1 commit(s)"
+              " pushed by someone else)",)])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"
+                                   " WHERE id = 2"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_a_babysit_resume_parks_when_the_branches_diverged(self):
+        """The remote branch was rewritten past the candidate rather than
+        built on it. Nothing fast-forwards: the worktree and the local
+        branch stay at the candidate, and the run parks with a question
+        naming both shas, no review and no merge."""
+        approved, bare, clone = self.park_on_a_declined_nit_with_a_bare_origin()
+        self.git("reset", "-q", "--hard", "HEAD~1", cwd=clone)
+        (clone / "README.md").write_text("rewritten\n")
+        self.git("commit", "-q", "-am", "operator: a rewrite", cwd=clone)
+        theirs = self.publish(clone, bare, force=True)
+
+        fake, _ = self.loop(provider=self.provider())
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.api_calls(), [])
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), approved)
+        self.assertEqual(self.git("rev-parse", "HEAD",
+                                  cwd=self.worktrees / "ko-131-add-a-thing")
+                         .strip(), approved)
+        question = self.question()
+        self.assertIn(approved[:12], question)
+        self.assertIn(theirs[:12], question)
+        self.assertIn("diverged", question)
+        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM"
+                                   " runs WHERE id = 2"),
+                         [("awaiting_merge_approval", None, approved)])
+
+    def test_a_babysit_resume_with_an_equal_remote_writes_no_note(self):
+        """The remote holds exactly the candidate: no note is written, and
+        the pass goes on as before -- the approved sha merges with no
+        second review."""
+        approved, bare, clone = self.park_on_a_declined_nit_with_a_bare_origin()
+
+        fake, _ = self.loop(provider=self.provider())
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(
+            self.read("SELECT summary FROM runEvents WHERE runId = 2 AND"
+                      " summary LIKE 'resuming run%'"),
+            [(f"resuming run 1's candidate {BRANCH} at {approved[:12]} on"
+              f" {self.URL} for another babysit pass",)])
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE text LIKE"
+                      " 'Fast-forwarded%'"), [])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 2"),
+                         [("merged",)])
+
     def test_babysit_re_entry_runs_the_merge_gate_before_the_api_merge(self):
         """Regression: a resumed, approved PR reached the merge API with
         no verify at all -- the park's verify was a process old, and
