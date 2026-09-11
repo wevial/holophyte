@@ -796,6 +796,81 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.read("SELECT branch FROM runs"), [(BRANCH,)])
 
 
+class RefreshMainLoopTests(LoopFixture):
+    """Every cut starts from everything already on `main` anywhere (KO-378):
+    the checkout fetches `origin` and fast-forwards its `main` when behind,
+    keeps it when ahead, and refuses to cut when the two diverged. A bare
+    repository stands in for origin; a second clone is the other seat that
+    commits to it after the checkout last saw it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.bare = self.target.parent / "origin.git"
+        self.git("init", "-q", "--bare", "-b", "main", str(self.bare))
+        self.git("remote", "add", "origin", str(self.bare))
+        self.git("push", "-q", "origin", "main")
+        self.seat = self.target.parent / "seat"
+        self.git("clone", "-q", str(self.bare), str(self.seat))
+        self.git("config", "user.email", "seat@example.invalid", cwd=self.seat)
+        self.git("config", "user.name", "Other Seat", cwd=self.seat)
+
+    def push_from_seat(self, name):
+        """A commit made to origin's `main` from another seat."""
+        (self.seat / name).write_text(f"{name}\n")
+        self.git("add", "-A", cwd=self.seat)
+        self.git("commit", "-q", "-m", name, cwd=self.seat)
+        self.git("push", "-q", "origin", "main", cwd=self.seat)
+        return self.git("rev-parse", "main", cwd=self.seat).strip()
+
+    def commit_locally(self, name):
+        """An unpushed commit on the checkout's `main` (a local-mode merge)."""
+        (self.target / name).write_text(f"{name}\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", name)
+        return self.git("rev-parse", "main").strip()
+
+    def first_branch_parent(self):
+        return self.git("rev-parse", f"{BRANCH}~1").strip()
+
+    def test_a_checkout_behind_origin_is_fast_forwarded_before_the_cut(self):
+        remote = self.push_from_seat("from-the-other-seat")
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+
+        # The turn commits and times out, so the branch is preserved with
+        # its commit and `main` is left as the cut found it.
+        self.loop(CommitThenTimeout("the scripted work"))
+
+        self.assertEqual(self.first_branch_parent(), remote)
+        self.assertEqual(self.git("rev-parse", "main").strip(), remote)
+
+    def test_a_checkout_ahead_of_origin_keeps_its_main(self):
+        ahead = self.commit_locally("unpushed-local-merge")
+
+        self.loop(CommitThenTimeout("the scripted work"))
+
+        self.assertEqual(self.git("rev-parse", "main").strip(), ahead)
+        self.assertEqual(self.first_branch_parent(), ahead)
+
+    def test_a_diverged_checkout_refuses_the_cut_naming_both_shas(self):
+        remote = self.push_from_seat("from-the-other-seat")
+        local = self.commit_locally("unpushed-local-merge")
+
+        # An empty script: any agent turn would raise, and none must run.
+        self.loop()
+
+        self.assertEqual(self.rc, 1)
+        ((outcome, klass, reason),) = self.read(
+            "SELECT outcome, outcomeClass, outcomeReason FROM runs")
+        self.assertEqual((outcome, klass), ("failed", "infra"))
+        self.assertIn("diverged", reason)
+        self.assertIn(local, reason)
+        self.assertIn(remote, reason)
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertEqual(self.git("rev-parse", "main").strip(), local)
+
+
 class WorktreeSetupLoopTests(LoopFixture):
     """`[worktree] setup` as a whole run walks it: real repo, real worktree.
 
@@ -2630,8 +2705,19 @@ class MergeModeTests(LoopFixture):
         for n, page in enumerate(comments, 1):
             (pages / f"{n:03d}.json").write_text(json.dumps(page))
         real_git = shutil.which("git")
+        # The fetch before every cut (KO-378) is `git fetch origin` with
+        # no refspec and would ask the example remote for real; the fake
+        # route answers just that call as an origin with nothing new,
+        # unrecorded: `self.calls` witnesses what the loop sends out
+        # (pushes, pull requests), and a fetch sends nothing. A fetch
+        # with a refspec is a different caller — the babysit resume's
+        # `fetch origin BRANCH` and the fixture's fetches into a bare
+        # remote — and reaches the real git, which fails against the
+        # example remote or succeeds against a bare one as it would.
         (bindir / "git").write_text(
             "#!/bin/sh\n"
+            'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
+            " then exit 0; fi\n"
             'if [ "$1" = push ]; then\n'
             f'  printf "git %s\\n" "$*" >> "{self.calls}"\n'
             f"{push_sh}\n"
