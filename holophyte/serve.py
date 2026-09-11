@@ -1152,7 +1152,8 @@ def patch_config(target, patch, now):
     but the patched values are kept byte for byte; a multi-line array is
     edited item by item so its lines and their comments stay. A key the
     patch cannot apply -- no table part, a table the loader does not read,
-    a value of another shape, a `[table]` that is not a table -- is 400
+    a value of another shape, a `[table]` that is not a table (an inline
+    `table = { ... }` is one, edited in place) -- is 400
     naming it and nothing is written; a result the loader refuses is the
     same 400 a `text` gets."""
     if not isinstance(patch, dict):
@@ -1193,7 +1194,8 @@ def apply_patch(current, patch):
         if section is None:
             document[table] = tomlkit.table()
             section = document[table]
-        elif not isinstance(section, tomlkit.items.Table):
+        elif not isinstance(section, (tomlkit.items.Table,
+                                      tomlkit.items.InlineTable)):
             raise PatchError(f"{key}: [{table}] must be a table")
         set_patched(tomlkit, section, name, value)
     return tomlkit.dumps(document)

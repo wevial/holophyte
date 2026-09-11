@@ -2841,6 +2841,23 @@ class ConfigPatchTests(ServeTestCase):
         self.assertEqual(len(notes), 1, notes)
         self.assertIn("loop.workers, worktree.setup", notes[0][0])
 
+    def test_a_patch_into_an_inline_table_keeps_it_inline(self):
+        """`loop = { workers = 2 }` is a table to the loader, so it is one
+        to a patch: the value changes in place and the line keeps its
+        braces, its other entries and its comment."""
+        self.seed()
+        before = ("loop = { workers = 2, tick_sec = 30 }  # one line\n"
+                  + self.config("config_edit = true\n", loop=""))
+        self.assert_loader_valid(before)
+        self.start(before)
+        code, _, body = self.request(
+            "PUT", "/config", self.BEARER, body={"patch": {"loop.workers": 3}})
+        self.assertEqual(code, 200, body)
+        after = self.on_disk()
+        self.assertEqual(self.changed_lines(before, after),
+                         ["-loop = { workers = 2, tick_sec = 30 }  # one line",
+                          "+loop = { workers = 3, tick_sec = 30 }  # one line"])
+
     def test_shortening_an_array_removes_only_the_entry_and_its_own_line(self):
         """An entry taken out of a multi-line array leaves with the
         inline comment on its line -- it described that entry -- and
