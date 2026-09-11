@@ -483,6 +483,122 @@ class ContainerCommandTests(unittest.TestCase):
         self.assertFalse(any(":/workspace:rw" in m for m in mounts), mounts)
 
 
+# --- the image follows the candidate ------------------------------------------
+# A candidate that adds a tool to the reviewer image must be reviewed in an
+# image built from its own Dockerfile under its own tag. This shim `docker`
+# answers `image inspect` from a list of present tags, records each `build`
+# and keeps the Dockerfile out of its context (a temporary directory the
+# runner removes afterwards), and stands in a reviewer that approves.
+
+IMAGE_SHIM = """#!/bin/sh
+printf '%s\\n' "$*" >> "$HOLOPHYTE_DOCKER_LOG"
+case "$1" in
+  image) grep -qxF "$3" "$HOLOPHYTE_DOCKER_IMAGES" 2>/dev/null; exit $? ;;
+  build)
+    while [ $# -gt 1 ]; do
+      [ "$1" = "--file" ] && file="$2"
+      shift
+    done
+    cp "$file" "$HOLOPHYTE_DOCKER_BUILT"
+    grep -q '^# unbuildable' "$file" && { echo "step failed" >&2; exit 1; }
+    ;;
+  run)
+    echo "PREFLIGHT_OK candidate=test" >&2
+    item='{"type":"command_execution","exit_code":0}'
+    echo "{\\"type\\":\\"item.completed\\",\\"item\\":$item}"
+    item='{"type":"agent_message","text":"VERDICT: APPROVE"}'
+    echo "{\\"type\\":\\"item.completed\\",\\"item\\":$item}"
+    ;;
+  inspect) exit 1 ;;
+esac
+exit 0
+"""
+
+
+class CandidateImageTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.bin_dir, self.env = docker_shim(self.root)
+        (self.bin_dir / "docker").write_text(IMAGE_SHIM)
+        self.env["HOLOPHYTE_DOCKER_IMAGES"] = str(self.root / "docker.images")
+        self.env["HOLOPHYTE_DOCKER_BUILT"] = str(self.root / "docker.built")
+        (self.root / "auth.json").write_text("{}")
+        self.base, self.candidate = two_commit_repo(self.root / "repo")
+
+    def commit_image(self, tag: str, dockerfile: str) -> str:
+        """A candidate commit that names `tag` and carries `dockerfile`."""
+        repo = self.root / "repo"
+        (repo / "docker").mkdir(exist_ok=True)
+        (repo / "docker" / "reviewer.Dockerfile").write_text(dockerfile)
+        (repo / "review_runner.py").write_text(
+            f'ROOT = None\nIMAGE = "{tag}"\nMODEL = "gpt-5.6-sol"\n')
+        git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+        subprocess.run([*git, "add", "-A"], cwd=repo, check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "image"], cwd=repo, check=True)
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo,
+                                       text=True).strip()
+
+    def review(self, candidate: str, present: tuple[str, ...]) -> list[str]:
+        """Run a review of `candidate` on a host holding the `present` tags;
+        the shim's argv log."""
+        (self.root / "docker.images").write_text("".join(f"{t}\n" for t in present))
+        with patch.dict(os.environ, self.env), \
+                patch.object(review_runner, "SCRATCH_ROOT", self.root / "reviews"), \
+                patch.object(review_runner, "CODEX_AUTH", self.root / "auth.json"):
+            review_runner.run_review(
+                repo=self.root / "repo", base_sha=self.base, candidate_sha=candidate,
+                prompt="review")
+        return Path(self.env["HOLOPHYTE_DOCKER_LOG"]).read_text().splitlines()
+
+    def test_a_candidate_that_changed_the_dockerfile_is_reviewed_in_its_own_image(
+            self):
+        """The tag and the Dockerfile come out of the candidate commit, not
+        the main checkout: the build names the candidate's tag, and the
+        context it is given holds the candidate's Dockerfile byte for byte."""
+        dockerfile = review_runner.DOCKERFILE.read_text() + "RUN pip install x\n"
+        candidate = self.commit_image("holophyte-reviewer:candidate-v9", dockerfile)
+
+        lines = self.review(candidate, present=(review_runner.IMAGE,))
+
+        build = [line.split() for line in lines if line.startswith("build ")]
+        self.assertEqual(len(build), 1, lines)
+        self.assertEqual(build[0][build[0].index("--tag") + 1],
+                         "holophyte-reviewer:candidate-v9")
+        self.assertEqual((self.root / "docker.built").read_text(), dockerfile)
+        run = next(line.split() for line in lines if line.startswith("run "))
+        self.assertIn("holophyte-reviewer:candidate-v9", run)
+        self.assertNotIn(review_runner.IMAGE, run)
+
+    def test_a_candidate_that_kept_the_dockerfile_uses_the_image_main_names(self):
+        """Nothing is built and the container runs main's tag -- for a
+        candidate whose Dockerfile and tag match main's, and for a target
+        that carries no reviewer Dockerfile at all."""
+        same = self.commit_image(review_runner.IMAGE,
+                                 review_runner.DOCKERFILE.read_text())
+        for label, candidate in (("matches main", same),
+                                 ("no dockerfile", self.candidate)):
+            with self.subTest(label):
+                Path(self.env["HOLOPHYTE_DOCKER_LOG"]).unlink(missing_ok=True)
+                lines = self.review(candidate, present=(review_runner.IMAGE,))
+                self.assertEqual(
+                    [line for line in lines if line.startswith("build ")], [])
+                run = next(line.split() for line in lines if line.startswith("run "))
+                self.assertIn(review_runner.IMAGE, run)
+
+    def test_a_dockerfile_that_fails_to_build_is_a_boundary_error_naming_the_sha(
+            self):
+        candidate = self.commit_image("holophyte-reviewer:candidate-v9",
+                                      "# unbuildable\nFROM scratch\n")
+
+        with self.assertRaises(review_runner.ReviewBoundaryError) as e:
+            self.review(candidate, present=(review_runner.IMAGE,))
+
+        self.assertIn(candidate, str(e.exception))
+        self.assertIn("docker/reviewer.Dockerfile", str(e.exception))
+        self.assertIn("step failed", str(e.exception))
+
+
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 

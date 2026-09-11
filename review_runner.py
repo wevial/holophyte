@@ -7,6 +7,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -49,6 +50,10 @@ CONTAINER_PREFIX = "holophyte-review-"
 REMOVAL_SIGNALS = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
 CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
+# Where the candidate commit keeps the two, read by `image_for()`.
+DOCKERFILE_PATH = "docker/reviewer.Dockerfile"
+RUNNER_PATH = "review_runner.py"
+IMAGE_LINE = re.compile(r'^IMAGE = "([^"\s]+)"$', re.MULTILINE)
 CODEX_FILES = ("codex", "codex-code-mode-host")
 
 # Verdict vocabularies. A review round argues for or against the candidate; the
@@ -346,24 +351,56 @@ def parse_codex_output(
     return message, terminal_verdict(message, verdicts)
 
 
-def _ensure_image() -> None:
+def image_for(candidate: StagedCandidate) -> tuple[str, str]:
+    """The image tag and Dockerfile text the candidate commit names.
+
+    A candidate that adds a tool to the reviewer image is reviewed in that
+    image, not in the one the main checkout names: both come out of the
+    candidate commit itself (`git show SHA:path` in the stage), so the review
+    sees the tag and the Dockerfile the candidate was written against. A
+    commit that does not carry both files -- every target that is not the
+    factory -- gets the pair this checkout names, as before.
+    """
+    dockerfile = _run(
+        ["git", "show", f"{candidate.candidate_sha}:{DOCKERFILE_PATH}"],
+        cwd=candidate.path, check=False)
+    runner = _run(
+        ["git", "show", f"{candidate.candidate_sha}:{RUNNER_PATH}"],
+        cwd=candidate.path, check=False)
+    tag = IMAGE_LINE.search(runner.stdout) if runner.returncode == 0 else None
+    if dockerfile.returncode or tag is None:
+        return IMAGE, DOCKERFILE.read_text()
+    return tag.group(1), dockerfile.stdout
+
+
+def _ensure_image(image: str, dockerfile: str, *, candidate: str) -> None:
+    """Build `image` from `dockerfile` when the host does not hold it.
+
+    The build context is a temporary directory holding that Dockerfile
+    alone, so what the candidate committed is what gets built, whatever the
+    main checkout's copy says. The build runs on the host with network; only
+    the review container is sealed. A failed build is an infra failure of
+    the run, named after the candidate whose Dockerfile it was.
+    """
     if subprocess.run(
-        ["docker", "image", "inspect", IMAGE], capture_output=True, text=True
-    ).returncode:
-        _run(
-            [
-                "docker",
-                "build",
-                "--pull=false",
-                "--tag",
-                IMAGE,
-                "--file",
-                str(DOCKERFILE),
-                str(DOCKERFILE.parent),
-            ],
-            cwd=ROOT,
-            timeout=900,
-        )
+        ["docker", "image", "inspect", image], capture_output=True, text=True
+    ).returncode == 0:
+        return
+    with tempfile.TemporaryDirectory(prefix="reviewer-image.") as context:
+        path = Path(context) / Path(DOCKERFILE_PATH).name
+        path.write_text(dockerfile)
+        try:
+            _run(
+                ["docker", "build", "--pull=false", "--tag", image,
+                 "--file", str(path), context],
+                cwd=ROOT,
+                timeout=900,
+            )
+        except ReviewBoundaryError as exc:
+            raise ReviewBoundaryError(
+                f"reviewer image {image} failed to build from candidate "
+                f"{candidate}:{DOCKERFILE_PATH}: {exc}"
+            ) from exc
 
 
 def _remove_container(name: str) -> None:
@@ -473,7 +510,6 @@ def run_review(
         raise ReviewBoundaryError(
             f"reviewer profile {profile} does not name the route "
             f"{model} at {effort} ({profile_for(model, effort)})")
-    _ensure_image()
     codex = shutil.which("codex")
     if not codex:
         raise ReviewBoundaryError("Codex CLI is not installed")
@@ -484,10 +520,12 @@ def run_review(
         root = Path(temporary)
         staged = stage_candidate(
             repo, root / "candidate", base_sha, candidate_sha, carry=carry)
+        image, dockerfile = image_for(staged)
+        _ensure_image(image, dockerfile, candidate=staged.candidate_sha)
         home, toolchain = _prepare_runtime(root, CODEX_AUTH, Path(codex))
         name = "holophyte-" + root.name.replace(".", "-")
         command = container_command(
-            image=IMAGE,
+            image=image,
             workspace=staged.path,
             reviewer_home=home,
             toolchain=toolchain,

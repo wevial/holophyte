@@ -58,7 +58,14 @@ toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
 Go target's `go test` criteria can be witnessed too. It also installs
 `tomlkit` at the version `requirements.txt` pins, so the factory's own suite
 imports inside the container; a change to the Dockerfile moves the tag so the
-next review rebuilds instead of reusing the cached image. `/tmp` is a `noexec`
+next review rebuilds instead of reusing the cached image. The image follows
+the candidate: the runner reads the tag and the Dockerfile out of the candidate
+commit, so a candidate that changed either is reviewed in an image built from
+the candidate's Dockerfile under the candidate's tag before its review starts,
+and a candidate that changed neither runs in the image `main` names. That
+build runs on the host, with network, and a build that fails is an infra
+failure of the run naming the candidate; pruning old tags is the operator's
+`docker image prune`. `/tmp` is a `noexec`
 tmpfs so the reviewer cannot run what a candidate drops there; because `go
 test` executes its test binaries from the temp directory, the image sets
 `TMPDIR` and `GOTMPDIR` to `/home/reviewer/tmp`, which the container script
