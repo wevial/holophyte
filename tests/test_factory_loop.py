@@ -5704,6 +5704,32 @@ class NoCommitOutputTests(LoopFixture):
         self.assertEqual(self.events(), [("refusing this ticket",
                                           "refusing this ticket\na second line")])
 
+    def test_a_secret_in_prose_output_never_reaches_the_store(self):
+        """The review's repro: `redact()` walks TOML and stops at the first
+        word of prose, so a credential echoed after a sentence went into
+        the store readable. The config's own secret, the board key the
+        environment holds, and a pair the loop has no other knowledge of
+        are all hidden; the sentence around them stays."""
+        self.configure('[agents]\n[linear]\napi_key = "cfg-secret-value"\n')
+        message = ("Cannot continue.\n"
+                   'api_key = "example-secret-value"\n'
+                   "the board answered 401 for cfg-secret-value\n"
+                   "and env-secret-value was refused too\n"
+                   "GH_TOKEN: ghp_pasted\n"
+                   "the token_file path is /run/secrets/x")
+
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "env-secret-value"}):
+            self.loop(Idle(message))
+
+        ((summary, payload),) = self.events()
+        self.assertEqual(summary, "Cannot continue.")
+        for secret in ("example-secret-value", "cfg-secret-value",
+                       "env-secret-value", "ghp_pasted"):
+            self.assertNotIn(secret, payload)
+        self.assertIn("the board answered 401 for [redacted]", payload)
+        self.assertIn("api_key = [redacted]", payload)
+        self.assertIn("the token_file path is /run/secrets/x", payload)
+
     def test_the_payload_keeps_only_the_last_characters_up_to_the_constant(self):
         cap = holophyte.loop.OUTPUT_TAIL
         head = "first line\n"
