@@ -466,7 +466,11 @@ then writes beside a timestamped backup and records as a `config_edit`
 intervention; a `[redacted]` sent back is the current value, so a round
 trip never blanks a secret. A write that changes `[agents] implementer`
 runs the startup probe on it (`[agents]` above) and reports the verdict as
-`probe` beside the write, which lands regardless. The change applies at the
+`probe` beside the write, which lands regardless. A `PUT /config` may
+also carry `{"patch": {"loop.workers": 3, ...}}`, dotted keys the daemon
+sets in this file with `tomlkit` -- comments and layout kept -- and holds
+to the same checks; `GET /config` carries the redacted text parsed as
+`values` beside it, so the console never parses TOML. The change applies at the
 next loop start, not to a running loop. It needs `token_file` on every bind as `actions` does,
 and is off by default because the file is command execution on the writer
 host (`[worktree] setup`, `[agents]`). All three are read once at bind. The

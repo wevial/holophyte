@@ -100,7 +100,7 @@ the loop's user.
 `GET /config` answers
 
 ```json
-{"text": "[serve]\ntoken_file = \"...\"\n...", "path": "/home/.../config.toml", "applies": "next loop start"}
+{"text": "[serve]\ntoken_file = \"...\"\n...", "values": {"serve": {"token_file": "..."}, "loop": {"workers": 2}}, "path": "/home/.../config.toml", "applies": "next loop start"}
 ```
 
 `text` is the file as written, except that the value of every key whose
@@ -113,7 +113,10 @@ it left in place. A table whose own name ends so (`[extra.api_key]`,
 `api_key.value = ...`, `api_key = { ... }`) is a secret whole: every
 value under it is replaced, whichever way the table is written. The daemon checks its own work against the parsed
 document and answers 500 rather than serve a text in which a secret is
-still readable. A target with no file yet has `text` `""`. `applies` says when a change takes effect: the loop reads
+still readable. A target with no file yet has `text` `""`. `values` is the same redacted
+text parsed with `tomllib`, as JSON: a quoted table name or a triple-quoted
+string is an ordinary key or value here, so a client reads settings from
+`values` and never parses TOML itself; null when the text does not parse. `applies` says when a change takes effect: the loop reads
 the file once at startup, so a written change waits for the next start
 (`POST /actions/launch-loop`, or the supervisor's), and a running loop is
 not touched.
@@ -153,6 +156,26 @@ back up the same text twice and lose an edit. The reply is
 
 `backup` is null when there was no file to keep. Backups are not pruned.
 
+`PUT /config` also takes `{"patch": {...}}` in place of `text`: a flat
+object of dotted `table.key` to a string, an integer, a boolean or a list
+of strings,
+
+```json
+{"patch": {"loop.workers": 3, "worktree.setup": ["make deps", "make lint"], "agents.implementer": "claude -p"}}
+```
+
+The daemon loads the current file with `tomlkit`, sets each key -- creating
+a `[table]` the file lacks, editing a multi-line array item by item so its
+lines and comments stay -- and serialises it, so comments, order and the
+formatting of everything but the patched values survive byte for byte;
+the result is then held, recorded, backed up and written exactly as a
+`text` is, with the same reply. A key with no table part, a table this
+version does not read, a value of another shape or a `[table]` that is
+not one is 400 naming the key and nothing is written; a value the loader
+refuses is the same 400 a `text` gets. The interventions note names the
+patched keys. `tomlkit` is the factory's one dependency (`requirements.txt`);
+a daemon started without it exits naming the module and the install line.
+
 `probe` is the implementer probe the loop runs at startup, run here when
 the write changed `[agents] implementer` ([config.md](../config.md)): the
 command as written, asked for the word `ready` in an empty directory under
@@ -183,7 +206,7 @@ parked candidate today.
 
 | Status | When |
 | --- | --- |
-| 400 | the body is not a JSON object, or `requeue` has no `ticket`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value |
+| 400 | the body is not a JSON object, or `requeue` has no `ticket`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value; a `patch` that is not an object, or with a key the daemon cannot apply |
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
 | 404 | `[serve] actions` is not `true`, or the action is not one of the three; `/config` without `[serve] config_edit = true` |
 | 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
