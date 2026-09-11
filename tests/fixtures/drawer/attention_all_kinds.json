@@ -11,7 +11,7 @@
   },
   "thresholds": {
    "heartbeat_stale_ms": 180000,
-   "strikes": 3
+   "strikes": 2
   },
   "runs": [
    {
@@ -49,6 +49,7 @@
     "run": 88,
     "ticket": "KO-229",
     "reason": "verify failed: 2 tests errored in test_store_surface after the rename",
+    "attempt": 1,
     "ended_ms": 1756892800000,
     "level": "attention"
    },

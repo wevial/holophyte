@@ -35,11 +35,34 @@ test("the Failed chip keeps only KO-229; All brings the four back", () => {
   expect(rows().length).toBe(1);
   const [row] = rows();
   expect(within(row!).getByText("KO-229")).toBeTruthy();
-  expect(within(row!).getByText(/^verify failed/)).toBeTruthy();
-  expect(within(row!).getByText("run #88")).toBeTruthy();
+  expect(within(row!).getByText("Verify command failed")).toBeTruthy();
+  expect(within(row!).getByText("run #88 · strike 1 of 2")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Failed 1" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "All 4" }));
   expect(rows().length).toBe(4);
+});
+
+test("a failed row says what happened in plain words; the verbatim reason stays out of the row", () => {
+  const [failed] = allKinds.attention.items.filter((item) => item.kind === "failed");
+  const raw = failed!.reason as string;
+  render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
+  const row = rows().find((candidate) => candidate.getAttribute("data-kind") === "failed")!;
+  expect(within(row).getByText("Verify command failed")).toBeTruthy();
+  expect(within(row).getByText("run #88 · strike 1 of 2")).toBeTruthy();
+  expect(within(row).queryByText(raw)).toBeNull();
+  expect(within(row).queryByText(/test_store_surface/)).toBeNull();
+  cleanup();
+
+  const adjudicated: AttentionItem = {
+    ...failed!,
+    reason: "terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 046d7d70f5e1",
+  };
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { ...allKinds.attention, items: [adjudicated] })]} project="all" now={allKinds.status.now} />);
+  const [only] = rows();
+  expect(within(only!).getByText("Review adjudicated FAIL")).toBeTruthy();
+  expect(within(only!).getByText("run #88 · strike 1 of 2 · task/ko-343-the-loop-runs-a-pool-of-worker @ 046d7d7")).toBeTruthy();
+  expect(within(only!).queryByText(adjudicated.reason as string)).toBeNull();
+  expect(within(only!).queryByText(/046d7d70f5e1/)).toBeNull();
 });
 
 test("six questions cap at four with Show all 6, expand, and a chip choice caps again", () => {
