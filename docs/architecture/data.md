@@ -23,7 +23,7 @@ the loop and its supervisor contend on one file without either dying.
 | `supervisorHeartbeats` | supervisor process | supervisor | pid, start, last beat, passes, host |
 | `loopRestarts` | self-merge re-exec | loop | sha; the supervisor checks the loop came back |
 | `linearDeliveries` | push to Linear | loop | what was projected, when |
-| `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue, approve, repoint, shepherd` (a fixed set, currently 9 values); the record-before-acting rule lives here |
+| `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue, approve, repoint` plus the babysit action `store.shepherd()` writes (a fixed set, currently 9 values); the record-before-acting rule lives here |
 | `ledger` | entry in a run's narrative | loop, operator commands | `kind` ∈ `merge, failure, round, adjudication, intervention, note`, `source` ∈ `loop, operator`; written before the Linear comment that projects it; served at `/ledger` and `/runs/N/ledger` |
 
 ## The two state machines
@@ -78,7 +78,7 @@ never disagree.
 
 Every out-of-band change to a run has a row here before the change, with an
 action from the fixed set and a narrative event carrying the note. The
-operator commands (`--requeue`, `--approve`, `--shepherd`, `--repoint`)
+operator commands (`--requeue`, `--approve`, `--babysit`, `--repoint`)
 write it; the REPL rung of the escalation
 ladder calls `store.record_intervention()` directly. Backdating or
 mislabelling a row is worse than no row; the [runbook](../operating/runbook.md)

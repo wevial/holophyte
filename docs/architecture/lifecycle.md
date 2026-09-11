@@ -38,7 +38,7 @@ sequenceDiagram
   Fac->>WT: verify gate again
   Fac->>Lin: re-read body, refuse on drift from the snapshot
   alt mode = "pr"
-    Fac->>Fac: git push the branch, open a pull request, shepherd it
+    Fac->>Fac: git push the branch, open a pull request, babysitter it
     Note over Fac: approve is read against the PR
   else mode = "local", approve = "human"
     Fac->>Store: park awaiting_merge_approval, release the lease
@@ -166,7 +166,7 @@ Under `[merge] approve = "human"` in local mode the clean gate parks the run ins
 phase `awaiting_merge_approval`, ticket `blocked_on_operator`, branch and
 worktree preserved, lease released, until `--approve KO-n` sends it back
 through this gate. Under `[merge] mode = "pr"` the clean gate pushes the
-branch and opens a pull request against `main`, which the loop shepherds
+branch and opens a pull request against `main`, which the loop babysits
 for up to `pr_rounds` passes before merging it through the API or parking;
 PR mode is checked first, and `approve` is then read against the PR.
 Both paths are described in the [loop](../loop.md) page.

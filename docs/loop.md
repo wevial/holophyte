@@ -122,7 +122,7 @@ machines it walks. Back to the [README](index.md).
    `main` titled `KO-n: TITLE` whose body is the ticket body plus the run's
    FINDINGS entry, in that order. A push the remote refuses or a PR create
    that fails is an infra failure -- no strike, branch and worktree
-   preserved, no PR recorded. Then the loop shepherds the pull request for
+   preserved, no PR recorded. Then the loop babysits the pull request for
    up to `[merge] pr_rounds` passes (see [PR rounds](reviewing.md#pr-rounds)):
    each pass reads the unresolved review threads and the checks, the
    adjudicator verdicts each thread `ADDRESS`, `DECLINE` or `HUMAN`, the
@@ -139,7 +139,7 @@ machines it walks. Back to the [README](index.md).
    the cap park the run as above, with the PR's URL on the run
    (`runs.prUrl`), in the ticket's question (`PR open: URL`, the open
    threads listed) and in the ledger. `--approve KO-n` resumes the run on
-   the PR and merges it when green and quiet; `--shepherd KO-n` resumes it
+   the PR and merges it when green and quiet; `--babysit KO-n` resumes it
    for another round of passes. A pull request merged on GitHub by a person
    while the run waits is that approval: at startup and at the top of every
    pass -- each serial claim, each scheduler tick, the timer's included --
@@ -163,8 +163,8 @@ machines it walks. Back to the [README](index.md).
    `runs.prSeenThreads`), and an open pull request whose `updatedAt` has
    moved past that mark, or whose thread count has grown, is a reviewer's
    comment nobody has answered: the tick sends the run back to the
-   shepherd exactly as `--shepherd KO-n` does -- a `shepherd` intervention
-   with source `supervisor`, the run ended with its resume point at the
+   babysitter exactly as `--babysit KO-n` does -- the intervention row
+   `store.shepherd()` writes, with source `supervisor`, the run ended with its resume point at the
    merge gate, the ticket `ready` -- and the next claim (the same pass, in
    the serial loop) resumes the candidate on its pull request for another
    round of passes. At most one such round per `[merge] pr_poll_sec`

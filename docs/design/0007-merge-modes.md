@@ -2,7 +2,7 @@
 
 **Status:** accepted · 2026-09-08
 
-Accepted because `[merge] mode = "pr"`, the round cap and `--shepherd` are how the factory works today.
+Accepted because `[merge] mode = "pr"`, the round cap and `--babysit` are how the factory works today.
 
 ## Context
 
@@ -14,7 +14,7 @@ a PR, which means pushing a branch.
 
 A `[merge]` table per target: `mode = local | pr`. In `pr` mode the loop
 pushes the branch, opens a PR carrying the ticket body and its FINDINGS
-entry, then runs a shepherd loop until terminal: fetch unresolved review
+entry, then runs a babysitter loop until terminal: fetch unresolved review
 threads, verdict each on merit, fix the accepted ones, reply with what
 changed and the sha, resolve, wait for CI and new threads, repeat. Each
 pass is a `reviewRounds` row with route `github:<bot>`, so FINDINGS and the

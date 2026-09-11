@@ -1,7 +1,7 @@
 """The command line: `cli()` parses the arguments and runs the mode they name.
 
 `--report`, `--requeue KO-n --note TEXT`, `--approve KO-n [--note TEXT]`,
-`--shepherd KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
+`--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--file-ticket PATH [--state] [--priority]`,
 `--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT`, the internal
 `--worker` and the loop itself
@@ -32,11 +32,11 @@ from holophyte.config import (
 )
 from holophyte.loop import (
     approve,
+    babysit_ticket,
     main,
     repoint,
     report,
     requeue,
-    shepherd_ticket,
     worker,
 )
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
@@ -64,8 +64,8 @@ FILE_TICKET_STATES = ("Todo", "Backlog")
 # the point of the mode, and "merge" is the whole of what a bare approval
 # says, so it needs no reason the way `--requeue` does.
 APPROVE_DEFAULT_NOTE = "approved for merge"
-# And `--shepherd`'s: "look at the pull request again" is all a bare one says.
-SHEPHERD_DEFAULT_NOTE = "sent back to the shepherd"
+# And `--babysit`'s: "look at the pull request again" is all a bare one says.
+BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
 
 
 def serve_address(text):
@@ -103,9 +103,9 @@ def _file_ticket_only(parser, args):
 
 def _note_checks(parser, args):
     """`--note` belongs to `--requeue` and `--repoint`, which require it,
-    and to `--approve` and `--shepherd`, which take it: refuse a requeue or
+    and to `--approve` and `--babysit`, which take it: refuse a requeue or
     re-point without one, a note without any of the four, and a blank note
-    on an approval or a shepherd -- the default is what one with nothing
+    on an approval or a babysitter -- the default is what one with nothing
     to add says, and a blank row would say nothing."""
     if args.requeue is not None and not (args.note or "").strip():
         parser.error("--requeue records why the ticket goes back in the "
@@ -113,14 +113,14 @@ def _note_checks(parser, args):
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
-    optional = args.approve if args.approve is not None else args.shepherd
+    optional = args.approve if args.approve is not None else args.babysit
     if args.note is not None and args.requeue is None \
             and args.repoint is None and optional is None:
-        parser.error("--note is what --requeue, --approve, --shepherd and "
+        parser.error("--note is what --requeue, --approve, --babysit and "
                      "--repoint record; it has nothing to annotate by itself")
     if optional is not None and args.note is not None \
             and not args.note.strip():
-        parser.error("--note with --approve or --shepherd is the operator's "
+        parser.error("--note with --approve or --babysit is the operator's "
                      "own words; leave it off for the default rather than "
                      "blank")
 
@@ -178,15 +178,15 @@ def cli(argv=None):
              "without an implementer or a reviewer; refuses a ticket in any "
              "other state naming it, and writes nothing then")
     # The PR-mode twin of `--approve`: the same transaction with its own
-    # intervention action, so the loop's next claim shepherds the parked
+    # intervention action, so the loop's next claim babysits the parked
     # candidate's pull request again -- new threads, checks -- rather than
     # reading the release as the human's "merge".
     modes.add_argument(
-        "--shepherd", metavar="KO-n",
+        "--babysit", metavar="KO-n",
         help="send the ticket parked on its pull request ([merge] mode = "
-             "\"pr\") back to the shepherd: records a 'shepherd' "
+             "\"pr\") back to the babysitter: records a babysit "
              "intervention on its parked run carrying --note (default "
-             f"{SHEPHERD_DEFAULT_NOTE!r}), ends that run with its resume "
+             f"{BABYSIT_DEFAULT_NOTE!r}), ends that run with its resume "
              "point at the merge gate and walks the ticket to ready, in one "
              "transaction; the loop's next claim resumes the candidate on "
              "the PR and reads its threads and checks again, parking again "
@@ -260,7 +260,7 @@ def cli(argv=None):
         help="with --sweep: fail each tripped run and release its leases, "
              "leaving its branch and worktree for a human")
     # Required with `--requeue` and `--repoint`, optional with `--approve`
-    # and `--shepherd`, and meaningless without one of them: the
+    # and `--babysit`, and meaningless without one of them: the
     # intervention row is the point of all four modes, and a requeue or
     # re-point row with no reason is the unrecorded action the row exists
     # to replace, while an approval says "merge" by itself.
@@ -269,8 +269,8 @@ def cli(argv=None):
         help="with --requeue: why the ticket goes back in the queue; with "
              "--repoint: why the candidate moved to the new sha; with "
              "--approve: anything the approval should say beyond "
-             f"{APPROVE_DEFAULT_NOTE!r}; with --shepherd: anything beyond "
-             f"{SHEPHERD_DEFAULT_NOTE!r}; recorded on the intervention row's "
+             f"{APPROVE_DEFAULT_NOTE!r}; with --babysit: anything beyond "
+             f"{BABYSIT_DEFAULT_NOTE!r}; recorded on the intervention row's "
              "event")
     # Only the two states a filed ticket can start in: Todo is ready to
     # claim, Backlog waits on triage. Anything else is a state the loop
@@ -381,7 +381,7 @@ def cli(argv=None):
 def _store_verb(args, target, board):
     """Run the operator verb the command line names, if it is one of the
     four that write the store and exit -- `--requeue`, `--approve`,
-    `--shepherd`, `--repoint` -- and say whether one ran. Each returns
+    `--babysit`, `--repoint` -- and say whether one ran. Each returns
     nothing, so the bool is the whole of what `cli()` needs back. Every one
     writes only to the store and calls nobody, so no route has to resolve
     first."""
@@ -399,11 +399,11 @@ def _store_verb(args, target, board):
         approve(target, args.approve,
                 args.note if args.note is not None else APPROVE_DEFAULT_NOTE)
         return True
-    if args.shepherd is not None:
+    if args.babysit is not None:
         require_board(target, board)
-        shepherd_ticket(target, args.shepherd,
+        babysit_ticket(target, args.babysit,
                         args.note if args.note is not None
-                        else SHEPHERD_DEFAULT_NOTE)
+                        else BABYSIT_DEFAULT_NOTE)
         return True
     # Unlike the three above, hands nothing to a loop: the ticket stays
     # parked, so no board has to be there to mirror it.

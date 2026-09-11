@@ -29,7 +29,7 @@ from time import monotonic, sleep, time
 import review_runner
 import store
 import store.read
-from holophyte import pr, shepherd
+from holophyte import babysitter, pr
 from holophyte.agents import agent, agent_route, probe_implementer
 from holophyte.board import (
     MAX_FAILED_RUNS,
@@ -473,10 +473,10 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # reaching it together take turns and each merges the `main` the other
     # left (KO-342). Under `mode = "pr"` the candidate leaves the machine
     # instead of landing on main: pushed, opened as a pull request, and
-    # shepherded -- its threads answered, its checks awaited -- until it
+    # babysat -- its threads answered, its checks awaited -- until it
     # merges through the PR's own API or parks for the operator. `approve`
     # is read there: the PR is what the human's answer is about. The lock
-    # covers the push-and-open and not the shepherd, which waits on a
+    # covers the push-and-open and not the babysitter, which waits on a
     # remote for as long as it takes.
     with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
                     beat_s):
@@ -493,7 +493,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
         else:
             return _land(target, conn, run_id, provider, task_id, task,
                          branch, wt, sha, ok, started, budget_min, rnd)
-    merge_sha = _shepherd(target, conn, run_id, provider, task_id,
+    merge_sha = _babysit(target, conn, run_id, provider, task_id,
                           issue_id, task, branch, wt, sha, beat_s, url,
                           ticket, verify_cmd, contracts, budget_min,
                           criteria, reviewed=sha, verified=sha)
@@ -519,20 +519,20 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
 
     Under `[merge] mode = "pr"` nothing here lands on main either. A
     candidate the park already opened as a pull request (`carried.pr_url`)
-    goes back to the shepherd before the worktree is touched -- the PR is
+    goes back to the babysitter before the worktree is touched -- the PR is
     the thing the answer is about, and the candidate on it may have moved
     past the park's sha by fix rounds, so the local drift check below does
     not apply: the branch as it stands is what the PR holds. The release
     says what the answer was: `--approve` is the human's "merge", so a PR
     that is green and quiet merges through the API whatever `[merge]
-    approve` says; `--shepherd` is "look again", and such a PR parks for
+    approve` says; `--babysit` is "look again", and such a PR parks for
     the human under `approve = "human"` as it did before. A candidate
     parked with no PR (parked under `mode = "local"` before the mode
     changed) goes through the gate below and then leaves the machine as a
     fresh run's would, pushed and opened -- but only on an approval. The
     gate below merges, so a candidate carried here with `carried.approved`
-    False (a `shepherd` intervention as the newest on its run, which
-    `store.shepherd()` refuses to write on a PR-less run but a hand-written
+    False (the intervention `store.shepherd()` writes as the newest on its
+    run, which it refuses to write on a PR-less run but a hand-written
     store row could) is not taken through it: the run fails naming the
     release, the tree untouched, and a human answers with `--approve`.
 
@@ -565,12 +565,12 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     if not carried.approved:
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to merge the candidate for: {task}\nrun"
-               f" {carried.run_id} was released by --shepherd, which is not"
+               f" {carried.run_id} was released by --babysit, which is not"
                " an approval, and the candidate has no pull request to"
-               " shepherd; nothing was merged, committed or deleted."
+               " babysitter; nothing was merged, committed or deleted."
                " --approve KO-n is the release that merges it.", provider)
         raise RunFailure(f"run {carried.run_id}'s candidate on {branch} was"
-                         " released by --shepherd, not approved, and has no"
+                         " released by --babysit, not approved, and has no"
                          " pull request; not merging")
     why = _candidate_drift(wt, branch, carried.sha)
     if why is not None:
@@ -617,7 +617,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
         else:
             return _land(target, conn, run_id, provider, task_id, task,
                          branch, wt, sha, ok, started, budget_min, 0)
-    merge_sha = _shepherd(target, conn, run_id, provider, task_id,
+    merge_sha = _babysit(target, conn, run_id, provider, task_id,
                           issue_id, task, branch, wt, sha, beat_s, url,
                           f"{task}\n\n{body}" if body else task,
                           verify_cmd, contracts, budget_min, criteria,
@@ -629,23 +629,23 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
 def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
                   branch, wt, carried, started, verify_cmd, contracts,
                   budget_min, body, criteria=()):
-    """The resumed run of a candidate open as a pull request: the shepherd
+    """The resumed run of a candidate open as a pull request: the babysitter
     again, from the branch as it stands, with the release's answer
     (`carried.approved`) deciding what a green, quiet PR does.
 
-    What the shepherd may merge without another review is not the branch
+    What the babysitter may merge without another review is not the branch
     as it stands but the sha an independent judgement covered: the
     operator's `--approve` is of the sha the park recorded, and
-    `--shepherd` is no judgement at all, so it carries the park's
+    `--babysit` is no judgement at all, so it carries the park's
     `approvedSha` -- the reviewer's approval, or None when the park had
     none to record (a fix the reviewer rejected, a store older than the
     column). A branch at any other sha is reviewed again before the merge
-    API is called; that is `_shepherd()`'s `reviewed`.
+    API is called; that is `_babysit()`'s `reviewed`.
 
     Nothing here has verified the branch either: the park's verify was a
-    process ago, against the main of that day, and `--shepherd` or
+    process ago, against the main of that day, and `--babysit` or
     `--approve` vouches for a judgement, not for the tree. So the
-    shepherd is told no sha is verified (`verified=None`) and runs the
+    babysitter is told no sha is verified (`verified=None`) and runs the
     merge gate -- the ticket's verify commands, then the drift check --
     on the candidate before the merge API is called."""
     url = carried.pr_url
@@ -653,22 +653,22 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
     reviewed = carried.sha if carried.approved else carried.approved_sha
     if sh(["git", "status", "--porcelain"], cwd=wt):
         ledger(conn, run_id, task_id, "failure",
-               f"FAILED to shepherd {url} for: {task}\nthe worktree holds"
+               f"FAILED to babysit {url} for: {task}\nthe worktree holds"
                " uncommitted changes; nothing was committed or deleted, and"
                " a human reconciles it before this ticket is run again.",
                provider)
         raise RunFailure(f"worktree of {branch} holds uncommitted changes;"
-                         f" not shepherding {url}")
+                         f" not babysitting {url}")
     store.record_event(conn, run_id, "pull_request",
                        f"resuming run {carried.run_id}'s candidate {branch}"
                        f" at {sha[:12]} on {url}"
                        + (" after an approval" if carried.approved
-                          else " for another shepherd pass"))
+                          else " for another babysit pass"))
     print(f"[holo2] {task_id}: candidate {branch} is open as {url};"
-          " shepherding it")
+          " babysitting it")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    set_phase(conn, run_id, "merge_gate", f"shepherding {url}")
-    merge_sha = _shepherd(target, conn, run_id, provider, task_id, issue_id,
+    set_phase(conn, run_id, "merge_gate", f"babysitting {url}")
+    merge_sha = _babysit(target, conn, run_id, provider, task_id, issue_id,
                           task, branch, wt, sha, beat_s, url,
                           f"{task}\n\n{body}" if body else task, verify_cmd,
                           contracts, budget_min, criteria,
@@ -1365,7 +1365,7 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
     if style:
         parts.append(f"Style instructions from the target's configuration:"
                      f"\n{style}")
-    for name, text in shepherd.conventions(wt):
+    for name, text in babysitter.conventions(wt):
         parts.append(f"The repository's {name}:\n\n{text}")
     parts.append(f"The ticket:\n\n{body or task}")
     parts.append(f"The diff against main (`git diff main...HEAD`):\n\n"
@@ -1443,10 +1443,10 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     return url
 
 
-def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
+def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
               criteria=(), approved=False, reviewed=None, verified=None):
-    """Shepherd the pull request `url` until it merges or the run parks;
+    """Babysitter the pull request `url` until it merges or the run parks;
     return the merge commit's sha.
 
     Design note 7's second half, the `review -> eval -> fix -> reply ->
@@ -1468,7 +1468,7 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
     was of the sha it released, so a candidate moved since is a human's
     to release again). `reviewed` is that sha as the caller knows it: the
     candidate just approved and verified on a fresh run, the park's
-    `approvedSha` on a `--shepherd` resume, None when nothing on record
+    `approvedSha` on a `--babysit` resume, None when nothing on record
     covers the branch -- which reads as "moved" and gets the review. Every
     park records it, so the next resume starts from the same fact.
     `verified` is the sha the merge gate's verify covered in this process
@@ -1515,7 +1515,7 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
                         f"the pull request's head is {state.head_sha[:12]},"
                         f" not the candidate {sha[:12]} this run pushed;"
                         " someone else pushed to the branch, and the"
-                        " shepherd does not judge or merge their commit",
+                        " babysitter does not judge or merge their commit",
                         state.threads, reviewed=reviewed)
         rnd = len(store.read.rounds_of(conn, run_id)) + 1 if conn else pass_no
         if state.threads:
@@ -1524,13 +1524,13 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
                                   pass_no, model, ticket, verify_cmd,
                                   contracts, budget_min, reviewed=reviewed)
             continue
-        reply = shepherd.round_reply(pull, pass_no, (), {}, state.checks, sha)
+        reply = babysitter.round_reply(pull, pass_no, (), {}, state.checks, sha)
         record_round(target, conn, run_id, rnd, "review", reply, None, True,
                      "", started_at=int(time() * 1000),
-                     route=shepherd.route_of(()))
+                     route=babysitter.route_of(()))
         ledger(conn, run_id, task_id, "round",
-               f"Shepherd pass {pass_no}: no unresolved threads, checks"
-               f" {state.checks}", provider)
+               f"Babysit pass {pass_no} over {pull.url}: no unresolved"
+               f" threads, checks {state.checks}", provider)
         if state.checks != "success":
             _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                         f"checks {state.checks} on the head commit", (),
@@ -1566,7 +1566,7 @@ def _shepherd(target, conn, run_id, provider, task_id, issue_id, task, branch,
     state = _settled_state(target, conn, run_id, beat_s, pull)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
-                " shepherd stops here", state.threads, reviewed=reviewed)
+                " babysitter stops here", state.threads, reviewed=reviewed)
 
 
 def _moved(sha, reviewed):
@@ -1583,7 +1583,7 @@ def _moved(sha, reviewed):
 def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=()):
-    """The independent review of a candidate the shepherd's fix rounds
+    """The independent review of a candidate the babysitter's fix rounds
     moved from `reviewed` to `sha` (None: nothing on record covers it),
     before the merge API is called.
 
@@ -1598,7 +1598,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     does not hold is a `REQUEST_CHANGES` whatever its verdict line says.
     Anything but an approval parks the run on the PR with the findings in
     the ticket's question -- there is no further fix round here; the
-    operator reads the findings and answers with `--shepherd` or by
+    operator reads the findings and answers with `--babysit` or by
     hand."""
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
@@ -1734,19 +1734,19 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     if judged:
         with heartbeat_while(conn, run_id, beat_s):
             reply = agent(target, "adjudicate",
-                          shepherd.adjudication_brief(
+                          babysitter.adjudication_brief(
                               pull, judged, ticket, sha,
-                              shepherd.conventions(wt)),
+                              babysitter.conventions(wt)),
                           wt, base_sha=base_sha, candidate_sha=sha)
     verdicts = _verdicts_by_kind(
-        threads, judged, shepherd.parse_verdicts(reply, len(judged)))
+        threads, judged, babysitter.parse_verdicts(reply, len(judged)))
     record_round(target, conn, run_id, rnd, "review",
-                 shepherd.round_reply(pull, pass_no, threads, verdicts,
+                 babysitter.round_reply(pull, pass_no, threads, verdicts,
                                       state.checks, sha),
                  None, True, "", started_at=round_started,
-                 route=shepherd.route_of(threads))
+                 route=babysitter.route_of(threads))
     ledger(conn, run_id, task_id, "round",
-           f"Shepherd pass {pass_no} over {pull.url}: {len(threads)}"
+           f"Babysit pass {pass_no} over {pull.url}: {len(threads)}"
            f" unresolved thread(s), checks {state.checks}\n"
            + (f"{len(threads) - len(judged)} opened by a person, HUMAN"
               " before the adjudicator was asked\n" if not act else
@@ -1756,7 +1756,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
            + f"Adjudicator verdicts:\n{reply}", provider)
     by_verdict = {v: [(n, t, verdicts[n][1]) for n, t in
                       enumerate(threads, 1) if verdicts[n][0] == v]
-                  for v in shepherd.VERDICTS}
+                  for v in babysitter.VERDICTS}
     # A HUMAN verdict on a bot's thread ends the pass before anything is
     # posted, under either setting -- bot handling does not move. Only a
     # person's HUMAN under `act` waits: the bots' threads and the person's
@@ -1774,7 +1774,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                            model, ticket, verify_cmd, contracts, budget_min)
     for _, thread, reason in by_verdict["DECLINE"]:
         _post(target, conn, run_id, beat_s, pull, thread,
-              shepherd.declined_reply(model, reason), resolve=False)
+              babysitter.declined_reply(model, reason), resolve=False)
     left_open = tuple(t for _, t, _ in by_verdict["DECLINE"]) + tuple(
         t for _, t, _ in by_verdict["ADDRESS"] if t.author_kind != "bot")
     if by_verdict["HUMAN"]:
@@ -1798,7 +1798,7 @@ def _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
                 human, listed, reviewed):
     """Park the run on the threads the pass found `HUMAN`, each quoted in
     the ticket's question, with `listed` as the open threads."""
-    quoted = "\n\n".join(shepherd.quoted(t) for _, t, _ in human)
+    quoted = "\n\n".join(babysitter.quoted(t) for _, t, _ in human)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 "a thread needs a human's answer; nothing was posted on"
                 f" it:\n{quoted}", listed, reviewed=reviewed)
@@ -1834,7 +1834,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     on each and a resolve on each bot's; return the fixed candidate's
     sha."""
     fixes = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                   shepherd.fix_brief(pull, addressed, ticket))
+                   babysitter.fix_brief(pull, addressed, ticket))
     if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
         raise RunFailure(f"fix round for {pull.url} timed out or made no"
                          f" progress; branch {branch} preserved at"
@@ -1869,12 +1869,12 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     with heartbeat_while(conn, run_id, beat_s):
         pr.push_branch(target, branch)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
-    summaries = shepherd.parse_summaries(fixes)
+    summaries = babysitter.parse_summaries(fixes)
     # A person's thread is theirs to close: the reply names the fix and
     # the sha, and the thread is left unresolved for its author.
     for n, thread, reason in addressed:
         _post(target, conn, run_id, beat_s, pull, thread,
-              shepherd.addressed_reply(model, summaries.get(n, reason),
+              babysitter.addressed_reply(model, summaries.get(n, reason),
                                        fixed),
               resolve=thread.author_kind == "bot")
     return fixed
@@ -1889,7 +1889,7 @@ def _post(target, conn, run_id, beat_s, pull, thread, body, resolve):
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "pull_request",
                                f"replied on thread {thread.url}:"
-                               f" {shepherd.gist(body.splitlines()[-1])}")
+                               f" {babysitter.gist(body.splitlines()[-1])}")
         if resolve:
             pr.resolve_thread(target, pull, thread.id)
             if conn is not None and run_id is not None:
@@ -1948,7 +1948,7 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
     independent judgement covered, when there is one -- `runs.approvedSha`
     with the phase move, the ledger carries the same, and `MergeParked`
     unwinds the run with branch and worktree left standing. The operator's
-    ways on are `--approve KO-n` (merge it) and `--shepherd KO-n` (look
+    ways on are `--approve KO-n` (merge it) and `--babysit KO-n` (look
     again, which merges at `reviewed` alone and reviews anything else) --
     and, since KO-362, the loop's own tick: the park reads the pull
     request once more, *after* this pass's pushes and replies, and
@@ -1956,30 +1956,30 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
     (`runs.prSeenAt`, `runs.prSeenThreads`, with the checks rollup and
     review decision beside them, KO-368), so the reconcile that sees
     the pull request move past them is seeing a reviewer, not the
-    shepherd's own writes. A read that fails records nothing, and the
-    reconcile then records without shepherding."""
+    babysitter's own writes. A read that fails records nothing, and the
+    reconcile then records without babysitting."""
     short = sha[:12] if sha else "an unrecorded sha"
-    question = shepherd.open_threads_question(pull, why, threads)
+    question = babysitter.open_threads_question(pull, why, threads)
     if conn is not None and run_id is not None:
         ticket_id = store.read.run_snapshot(conn, run_id).ticketId
         if not block_ticket(conn, ticket_id, provider, question):
             print(f"[holo2] {task_id} could not be moved to"
                   " blocked_on_operator; parking the run anyway")
         store.park(conn, run_id, "awaiting_merge_approval",
-                   f"{shepherd.gist(why)}; {branch} at {short} is open as"
+                   f"{babysitter.gist(why)}; {branch} at {short} is open as"
                    f" {pull.url} ([merge] mode = \"pr\")",
                    candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed,
                    pr_seen=_pr_seen(target, pull))
-    print(f"[holo2] parked on {pull.url}: {shepherd.gist(why)}")
+    print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"
            " and not merged ([merge] mode = \"pr\"). The run waits in"
            " awaiting_merge_approval; --approve merges it once green and"
-           " quiet, --shepherd looks at the threads again."
+           " quiet, --babysit looks at the threads again."
            + ("\nOpen threads:\n" + "\n".join(
-               shepherd.thread_line(n, t) for n, t in enumerate(threads, 1))
+               babysitter.thread_line(n, t) for n, t in enumerate(threads, 1))
               if threads else ""), provider)
-    raise MergeParked(f"pull request open: {pull.url}; {shepherd.gist(why)};"
+    raise MergeParked(f"pull request open: {pull.url}; {babysitter.gist(why)};"
                       f" branch {branch} preserved at {short}")
 
 
@@ -2138,7 +2138,7 @@ def _serial(target, provider, knobs):
             # last pass ships its parked run here (KO-359). The first pass
             # asked at startup, before the mirror was repaired.
             if not first_pass:
-                # A ticket sent back to the shepherd for new review
+                # A ticket sent back to the babysitter for new review
                 # activity (KO-362) may be one this pass parked and put in
                 # `skip`; it is ready again, and this pass claims it.
                 skip -= _reconcile_pull_requests(target, conn, project,
@@ -2788,10 +2788,10 @@ def _reconcile_pull_requests(target, conn, project, provider):
 
     Since KO-362 the same read also carries the pull request's
     `updatedAt` and review-thread count, held against what the last
-    shepherd pass recorded on the run (`runs.prSeenAt`,
+    babysit pass recorded on the run (`runs.prSeenAt`,
     `runs.prSeenThreads`): an open pull request that moved past them has
-    review activity nobody has answered, and `_reshepherd()` sends the
-    run back to the shepherd exactly as `--shepherd KO-n` does, at most
+    review activity nobody has answered, and `_rebabysit()` sends the
+    run back to the babysitter exactly as `--babysit KO-n` does, at most
     once per `[merge] pr_poll_sec` per pull request. The read's
     `rateLimit` is remembered in `GITHUB_BUDGET`: under `RATE_FLOOR`
     points, the tick reads no pull request at all and prints one line
@@ -2821,9 +2821,9 @@ def _reconcile_pull_requests(target, conn, project, provider):
         elif status.closed:
             _note_closed_pr(conn, ticket, pull)
         elif not low:
-            # A shepherd round is many reads and writes: not on a budget
+            # A babysit round is many reads and writes: not on a budget
             # that is already low.
-            issue = _reshepherd(conn, ticket, pull, status, poll_ms)
+            issue = _rebabysit(conn, ticket, pull, status, poll_ms)
             if issue is not None:
                 sent.add(issue)
         if low:
@@ -2833,7 +2833,7 @@ def _reconcile_pull_requests(target, conn, project, provider):
 
 # The GraphQL budget below which the tick stops reading parked pull requests
 # until the reset GitHub named (KO-362). The budget is 5000 points an hour
-# per token and each read here is one point; the shepherd's own rounds are
+# per token and each read here is one point; the babysitter's own rounds are
 # the spend worth protecting, so the floor is well above one tick's reads.
 RATE_FLOOR = 500
 
@@ -2914,8 +2914,8 @@ def _seen(status):
     return (status.updated_at, status.threads, status.checks, status.review)
 
 
-def _reshepherd(conn, ticket, pull, status, poll_ms):
-    """Send the run parked on `pull` back to the shepherd when the pull
+def _rebabysit(conn, ticket, pull, status, poll_ms):
+    """Send the run parked on `pull` back to the babysitter when the pull
     request has review activity the last pass did not see; the ticket's
     Linear id when it was sent, None otherwise (KO-362).
 
@@ -2930,7 +2930,7 @@ def _reshepherd(conn, ticket, pull, status, poll_ms):
     item as soon as the next tick reads it. The interval is per
     pull request, measured from the park (`runs.lastHeartbeat`, the
     park's stamp): activity within `poll_ms` of it is named and waits.
-    Otherwise `store.shepherd()`'s one transaction -- the `shepherd`
+    Otherwise `store.shepherd()`'s one transaction -- its
     intervention row, source `supervisor` (the loop's own machinery, not
     a person), naming what moved, the run ended with its resume
     point at the merge gate, the ticket walked to `ready` -- with the
@@ -2963,7 +2963,7 @@ def _reshepherd(conn, ticket, pull, status, poll_ms):
         store.record_pr_seen(conn, run_id, mark, parked_only=True,
                              facts_only=True)
         print(f"[holo2] {identifier}: {pull.url} has new review activity;"
-              f" the next shepherd round waits"
+              f" the next babysit round waits"
               f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")
         return None
     threads = "?" if status.threads is None else status.threads
@@ -2981,7 +2981,7 @@ def _reshepherd(conn, ticket, pull, status, poll_ms):
         return None
     print(f"[holo2] {identifier}: {pull.url} has new review activity"
           f" (updated {status.updated_at}, {threads} review threads); run"
-          f" {run_id} sent back to the shepherd")
+          f" {run_id} sent back to the babysitter")
     return issue
 
 
@@ -3689,12 +3689,12 @@ def approve(target, identifier, note, out=None):
         conn.close()
 
 
-def shepherd_ticket(target, identifier, note, out=None):
+def babysit_ticket(target, identifier, note, out=None):
     """Send the ticket `identifier`, parked on its pull request, back to the
-    shepherd. Returns nothing.
+    babysitter. Returns nothing.
 
-    `--shepherd`'s whole body and `approve()`'s twin: `store.shepherd()`'s
-    one transaction -- the `shepherd` intervention row carrying `note`, the
+    `--babysit`'s whole body and `approve()`'s twin: `store.shepherd()`'s
+    one transaction -- its intervention row carrying `note`, the
     parked run ended with its resume point at the merge gate, the ticket
     walked to `ready` -- printed and done. The loop's next claim of the
     ticket resumes the candidate on its PR and makes another round of
@@ -3710,7 +3710,7 @@ def shepherd_ticket(target, identifier, note, out=None):
             run_id = store.shepherd(conn, ticket_id, note)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
-        print(f"[holo2] {identifier} sent back to the shepherd: run {run_id}"
+        print(f"[holo2] {identifier} sent back to the babysitter: run {run_id}"
               " released from awaiting_merge_approval and the ticket is"
               " ready; the loop's next claim resumes its candidate on the"
               " pull request", file=out)

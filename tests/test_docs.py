@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 import unittest
 import unittest.mock
@@ -176,6 +177,25 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(missing, [])
         for name in TOPIC_DOCS:
             self.assertIn(f"docs/{name}.md", text)
+
+
+class BabysitterTests(unittest.TestCase):
+    """KO-373: the pass over an open pull request is the babysitter wherever
+    the operator reads it. The store's action value and `store.shepherd()`
+    keep the old word until the migration ticket; nothing else does."""
+
+    def test_the_old_word_survives_only_as_the_store_call(self):
+        hits = subprocess.run(
+            ["git", "grep", "-in", "shepherd", "--", "docs", "README.md",
+             "holophyte"], cwd=ROOT, capture_output=True, text=True).stdout
+        stray = [line for line in hits.splitlines()
+                 if "store.shepherd(" not in line]
+        self.assertEqual(stray, [])
+
+    def test_the_cli_and_glossary_pages_name_the_babysitter(self):
+        self.assertIn("--babysit", (DOCS / "reference" / "cli.md").read_text())
+        self.assertRegex((DOCS / "reference" / "glossary.md").read_text(),
+                         r"\*\*Babysitter\.\*\*")
 
 
 if __name__ == "__main__":
