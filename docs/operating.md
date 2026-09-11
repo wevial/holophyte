@@ -69,10 +69,13 @@ pull request walks the ticket to `ready`) and no loop is live to claim it,
 the pass starts the loop the way the console's launch-loop action does,
 `systemctl --user start holophyte-loop@NAME` with `[serve] name`, and
 prints that it did. "No loop live" is no fresh heartbeat and nobody
-holding the target's `lease.lock` turn, and the start is recorded as a
-`launch_loop` intervention on the run sent back, so a loop still booting
-is not started twice; a `systemctl` that fails is printed, records
-nothing, and the next pass tries again while the ticket is still `ready`
+holding the target's `lease.lock` turn. The attempt is recorded on the
+run sent back (a `launch_loop_attempt` event) before `systemctl` is
+asked, and a start it took is recorded after as a `launch_loop`
+intervention, so a loop still booting is not started twice; a
+`systemctl` that fails is printed, records a `launch_loop_failed` event
+and no intervention, and the next pass tries again while the ticket is
+still `ready`
 and the loop still free, so on a host without the units the line repeats
 until the operator's launcher takes the ticket. The sweep also
 watches the loop's own restarts: a loop that merges a change to the

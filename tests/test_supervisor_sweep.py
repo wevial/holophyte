@@ -1991,6 +1991,64 @@ class ParkedPullRequestTests(SweepTestCase):
                               (self.ticket_of[run_id],)).fetchone(),
             ("ready",))
 
+    def events_of(self, run_id):
+        """The `(kind, summary)` rows of `run_id`'s event stream, in order."""
+        return self.conn.execute(
+            "SELECT kind, summary FROM runEvents WHERE runId = ?"
+            " ORDER BY seq", (run_id,)).fetchall()
+
+    def test_the_attempt_is_recorded_before_the_start_is_asked_for(self):
+        """Record before acting: the attempt row is committed before
+        `systemctl` is asked, so a supervisor that dies mid-start still
+        left the store saying it tried. The fake `systemctl` dumps the
+        run's event kinds as it is called, which is the only witness of
+        the order; the `launch_loop` intervention stays the success mark
+        and lands after."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+        seen = self.root / "events-at-call"
+        (self.root / "fake-bin" / "systemctl").write_text(
+            "#!/bin/sh\n"
+            f"{sys.executable} -c \"import sqlite3;"
+            f" c = sqlite3.connect('{self.db}');"
+            " print('\\n'.join(k for (k,) in c.execute("
+            "'SELECT kind FROM runEvents WHERE runId = ? ORDER BY seq',"
+            f" ({run_id},))))\" > '{seen}'\n")
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(calls(), [])  # the recorder was replaced above
+        at_call = seen.read_text().splitlines()
+        self.assertIn("launch_loop_attempt", at_call)
+        marks = [f"{k}: {s}" for k, s in self.events_of(run_id)
+                 if "launch_loop" in f"{k}: {s}"]
+        self.assertEqual(len(marks), 2, marks)
+        self.assertTrue(marks[0].startswith("launch_loop_attempt:"), marks)
+        self.assertTrue(marks[1].startswith("intervention: supervisor"
+                                            " launch_loop:"), marks)
+        # The success mark was not there when `systemctl` was asked: the
+        # dump holds one row fewer than the stream ends with.
+        self.assertEqual(len(at_call), len(self.events_of(run_id)) - 1)
+
+    def test_a_failed_start_leaves_the_attempt_and_its_refusal_on_record(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        self.fake_systemctl()
+        (self.root / "fake-bin" / "systemctl").write_text(
+            "#!/bin/sh\necho 'Failed to connect to bus' >&2\nexit 1\n")
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        marks = [f"{k}: {s}" for k, s in self.events_of(run_id)
+                 if "launch_loop" in f"{k}: {s}"]
+        self.assertEqual(len(marks), 2, marks)
+        self.assertTrue(marks[0].startswith("launch_loop_attempt:"), marks)
+        self.assertTrue(marks[1].startswith("launch_loop_failed:"), marks)
+        self.assertIn("Failed to connect to bus", marks[1])
+
     def test_a_sweep_that_sent_nothing_back_starts_nothing(self):
         """An open pull request with no activity past the mark sends
         nothing back, and a merged one lands the run rather than sending

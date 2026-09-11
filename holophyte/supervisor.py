@@ -45,7 +45,7 @@ import store.read
 from holophyte.board import close_out_failure, lease_turn_held
 from holophyte.config import serve_config, sweep_config
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
-from holophyte.reexec import reexec_self, start_loop
+from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
 from holophyte.report import REPORT_GAP, format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
 
@@ -1000,14 +1000,35 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
 
 def start_loop_for(target, conn, owed, now, out):
     """Start the target's loop unit for the `(ticket, run)` pairs `owed` a
-    loop, printing the unit started or why it was not. A start `systemctl`
-    took is recorded as a `launch_loop` intervention on each run, which is
-    what stops the next pass starting it again; a failed one records
-    nothing, so the next pass retries."""
-    unit, ok, detail = start_loop(serve_config(target).name)
+    loop, printing the unit started or why it was not.
+
+    Record before acting: a `launch_loop_attempt` event lands on each run
+    and is committed before `systemctl` is asked, so a supervisor that
+    dies between the ask and the answer still left the store saying it
+    tried. A start `systemctl` took is then recorded as a `launch_loop`
+    intervention on each run, the success mark that stops the next pass
+    starting it again; a refused one records its refusal as a
+    `launch_loop_failed` event and no intervention, so the next pass
+    retries. A pass that dies after a taken start and before its mark
+    retries too, which is one more `systemctl start` on a unit already
+    running: nothing.
+    """
+    unit = LOOP_UNIT + serve_config(target).name
     count = len(owed)
     noun = "ticket" if count == 1 else "tickets"
+    attempt = (f"the supervisor is starting {unit} for {count} {noun} sent"
+               " back to the shepherd while no loop is live")
+    with store.transaction(conn):
+        for _ticket, run_id in owed:
+            store.record_event(conn, run_id, "launch_loop_attempt", attempt,
+                               now=now)
+    unit, ok, detail = start_loop(serve_config(target).name)
     if not ok:
+        with store.transaction(conn):
+            for _ticket, run_id in owed:
+                store.record_event(conn, run_id, "launch_loop_failed",
+                                   f"{unit} could not be started ({detail});"
+                                   " the next pass tries again", now=now)
         print(f"[holo2] {count} {noun} sent back and no loop live, but"
               f" {unit} could not be started ({detail}); the next pass"
               " tries again", file=out)
