@@ -1,9 +1,9 @@
-import { afterEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Floor } from "../src/components/Floor";
 import { Now } from "../src/components/Now";
 import type { Attention, Run, Status } from "../src/lib/types";
-import { NO_ATTENTION, fixture, hostOf, settle } from "./harness";
+import { NO_ATTENTION, captureIntervals, fixture, hostOf, settle } from "./harness";
 
 const working = await fixture<Status>("working.json");
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
@@ -71,7 +71,7 @@ test("strike 2/3 is red, 1/3 amber, 0 absent", () => {
 
 test("a heartbeat past the threshold is red bold and the stale supervisor names itself in red", () => {
   render(<Floor daemons={on(allKinds.status)} project="all" expandedRun={null} onToggleRun={noop} />);
-  const heartbeat = within(rows()[0]!).getByText("hb 7m 1s");
+  const heartbeat = within(rows()[0]!).getByText("hb 7m 01s");
   expect(heartbeat.getAttribute("data-heartbeat")).toBe("stale");
   expect(heartbeat.className).toContain("text-bad");
   expect(heartbeat.className).toContain("font-semibold");
@@ -97,6 +97,61 @@ test("clicking the first row then the second leaves only the second expanded", (
   expect(document.querySelectorAll("[data-detail]").length).toBe(1);
   fireEvent.click(within(rows()[1]!).getByRole("button"));
   expect(toggles()).toEqual(["false", "false"]);
+});
+
+test("a row's heartbeat and elapsed keep counting between polls: 58s reads 1m 00s two seconds on", () => {
+  const timers = captureIntervals();
+  const t0 = working.now;
+  setSystemTime(t0);
+  try {
+    const run = { ...RUN_52, heartbeat_age_ms: 58_000 };
+    render(
+      <Floor
+        daemons={[{ base: BASE, status: { ...extended, runs: [run] }, seen_ms: t0 }]}
+        project="all"
+        expandedRun={null}
+        onToggleRun={noop}
+      />,
+    );
+    expect(within(rows()[0]!).getByText("hb 58s")).toBeTruthy();
+    expect(within(rows()[0]!).getByText("1m 12s / 25m")).toBeTruthy();
+    setSystemTime(t0 + 2_000);
+    act(() => timers.fire());
+    expect(within(rows()[0]!).getByText("hb 1m 00s")).toBeTruthy();
+    expect(within(rows()[0]!).getByText("1m 14s / 25m")).toBeTruthy();
+  } finally {
+    setSystemTime();
+    timers.restore();
+  }
+});
+
+test("a heartbeat crossing the stale threshold between polls turns red without a new answer", () => {
+  const timers = captureIntervals();
+  const t0 = working.now;
+  const threshold = extended.thresholds.heartbeat_stale_ms;
+  setSystemTime(t0);
+  try {
+    const run = { ...RUN_52, heartbeat_age_ms: threshold - 1_000 };
+    render(
+      <Floor
+        daemons={[{ base: BASE, status: { ...extended, runs: [run] }, seen_ms: t0 }]}
+        project="all"
+        expandedRun={null}
+        onToggleRun={noop}
+      />,
+    );
+    const heartbeat = () => within(rows()[0]!).getByText(/^hb /);
+    expect(heartbeat().textContent).toBe("hb 2m 59s");
+    expect(heartbeat().getAttribute("data-heartbeat")).toBe("live");
+    setSystemTime(t0 + 2_000);
+    act(() => timers.fire());
+    expect(heartbeat().textContent).toBe("hb 3m 01s");
+    expect(heartbeat().getAttribute("data-heartbeat")).toBe("stale");
+    expect(heartbeat().className).toContain("text-bad");
+  } finally {
+    setSystemTime();
+    timers.restore();
+  }
 });
 
 test("an empty floor says so, and another project's selection empties it", () => {
