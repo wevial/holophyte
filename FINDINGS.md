@@ -653,39 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[547 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T22:12:42Z — KO-351
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/board.py:98 [p1] **[P1] A late close-out can remove a fresh run’s lease.** [holophyte/board.py:98](/home/reviewer/candidate/holophyte/board.py:98) checks `activeRunId` separat…
-- /home/reviewer/candidate/holophyte/loop.py:3102 [p2] **[P2] A failed label request can leave a permanent board lease.** [holophyte/loop.py:3102](/home/reviewer/candidate/holophyte/loop.py:3102) assumes an except…
-
-## 2026-09-10T22:13:38Z — KO-356
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (4):
-- /home/reviewer/candidate/holophyte/config.py:162 [p2] **P1 — PUT accepts configuration startup rejects.** [config.py:162](/home/reviewer/candidate/holophyte/config.py:162) omits `carry_directories()` from validat…
-- /home/reviewer/candidate/holophyte/serve.py:1064 [p2] **P2 — Invalid table shapes terminate the request.** [serve.py:1064](/home/reviewer/candidate/holophyte/serve.py:1064) only catches `SystemExit`. Reproduced:…
-- /home/reviewer/candidate/tests/test_serve.py:2354 [p2] **P2 — Required valid-file GET witness is missing.** [test_serve.py:2354](/home/reviewer/candidate/tests/test_serve.py:2354) includes `[serve] token`, which s…
-- criteria:1 [p2] CRITERION 1: unwitnessed — No loader-valid GET test asserts the complete redacted text and preserved token_file paths; the nested and array-of-table rule is wit…
-
-## 2026-09-10T22:21:48Z — KO-351
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/board.py:116 [p2] **P1 — Close-out can expose an active ticket to another writer** at [holophyte/board.py:116](/home/reviewer/candidate/holophyte/board.py:116). After the initi…
-
-## 2026-09-10T22:24:04Z — KO-356
-Round 3: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (2):
-- /home/reviewer/candidate/holophyte/redact.py:308 [p1] [P1] Secret-valued tables can escape redaction. In [redact.py](/home/reviewer/candidate/holophyte/redact.py:308), dictionary values are traversed before check…
-- criteria:1 [p2] CRITERION 1: not met — Loader-valid secret-named tables expressed through headers or dotted keys expose their values unchanged. Given `config_edit = true` and t…
-
-## 2026-09-10T22:34:04Z — KO-356
-Round 4: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T22:35:49Z — KO-356
-MERGED to main as 8282372 (branch task/ko-356-the-daemon-serves-its-target-s deleted).
-actual: 40.3 min · estimate: 30 min · rounds: 4
+[553 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T22:36:27Z — KO-351
 Round 4: pass · reviewer codex-astra-medium · verify passed
@@ -769,3 +737,29 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T23:27:08Z — KO-362
 MERGED to main as 53eae58 (branch task/ko-362-a-parked-pull-request-is-sheph deleted).
 actual: 26.5 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T23:27:10Z — KO-363
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T23:27:12Z — KO-363
+FAILED: merging main into task/ko-363-findings-md-is-off-by-default conflicted on: FINDINGS.md; branch preserved at 99bc0a032742
+actual: 18.6 min · estimate: 30 min · rounds: 1
+
+## 2026-09-10T23:38:57Z — KO-364
+Round 1: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (1):
+- /home/reviewer/candidate/holophyte/serve.py:1228 [p2] [P2] [holophyte/serve.py:1228](/home/reviewer/candidate/holophyte/serve.py:1228): Shortening an array deletes comments attached to removed entries. Reproduced…
+
+## 2026-09-10T23:46:07Z — KO-364
+Round 2: changes_requested · reviewer codex-astra-medium · verify passed
+Findings (3):
+- (unparsed):106ef89e33b6 [p2] Blocker: the reviewer environment lacks `tomlkit`. Patch tests fail with `RemoteDisconnected`, and the full suite stalls during daemon startup. Install the pinn…
+- criteria:1 [p2] CRITERION 1: unwitnessed — tests/test_serve.py::ConfigPatchTests::test_a_patch_changes_only_its_values_and_keeps_every_comment errors because tomlkit is unavail…
+- criteria:2 [p2] CRITERION 2: unwitnessed — tests/test_serve.py::ConfigPatchTests::test_a_patch_the_loader_refuses_is_400_naming_the_key errors because tomlkit is unavailable. G…
+
+## 2026-09-10T23:54:55Z — KO-364
+Round 3: changes_requested · reviewer codex-astra-medium · verify passed
+
+## 2026-09-10T23:54:55Z — KO-364
+FAILED: terminal adjudication: FAIL; branch task/ko-364-the-daemon-serves-its-configur preserved at bef27349cf4b
+actual: 36.5 min · estimate: 30 min · rounds: 3
