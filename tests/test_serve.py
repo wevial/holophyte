@@ -2924,13 +2924,13 @@ class ConfigPatchTests(ServeTestCase):
                 self.assertEqual(self.on_disk(), before)
         code, _, body = self.request(
             "PUT", "/config", self.BEARER,
-            body={"patch": {"report.findings": "off"}})
+            body={"patch": {"report.findings": "none"}})
         self.assertEqual(code, 200, body)
         after = self.on_disk()
         self.assertEqual(self.changed_lines(before, after),
-                         ["+", "+[report]", '+findings = "off"'])
+                         ["+", "+[report]", '+findings = "none"'])
         tgt = holophyte.target.Target.locate(self.target)
-        self.assertEqual(holophyte.config.report_config(tgt).findings, "off")
+        self.assertEqual(holophyte.config.report_config(tgt).findings, "none")
 
     def test_get_values_reads_a_triple_quoted_string_and_a_quoted_table(self):
         self.seed()
