@@ -133,6 +133,65 @@ test("a DECLINE or FOLLOW_UP line in the round's ledger row sets the fate and be
   expect(byPath.get("holophyte/loop.py")!.sentence).toBeNull();
 });
 
+test("a bulleted DECLINE or FOLLOW_UP line still sets the fate and sentence", () => {
+  const ledger: LedgerRow[] = [
+    {
+      at: T + 90_000,
+      run: 228,
+      ticket: "KO-372",
+      kind: "round",
+      source: "loop",
+      text:
+        "Round 1: REQUEST_CHANGES -> fix round\n" +
+        "Reviewer findings:\nthe verdict text\n\n" +
+        "Implementer response:\n" +
+        "- DECLINE holophyte/serve.py — the comma is house style\n" +
+        "2. FOLLOW_UP Ledger write is not transactional — filed KO-441",
+    },
+  ];
+  const history = findingsHistory(ROUNDS, ledger);
+  const byPath = new Map(history[2]!.findings.map((entry) => [entry.finding.path, entry]));
+  expect(byPath.get("holophyte/serve.py")!.fate).toBe("declined");
+  expect(byPath.get("holophyte/serve.py")!.sentence).toBe(
+    "- DECLINE holophyte/serve.py — the comma is house style",
+  );
+  expect(byPath.get("store/__init__.py")!.fate).toBe("follow_up");
+  expect(byPath.get("store/__init__.py")!.sentence).toBe(
+    "2. FOLLOW_UP Ledger write is not transactional — filed KO-441",
+  );
+});
+
+test("a DECLINE citing path:line names only that line's finding, not the same path's others", () => {
+  const c1 = finding({ path: "criteria.md", line: 1, message: "First criterion is vague" });
+  const c10 = finding({ path: "criteria.md", line: 10, message: "Tenth criterion is out of scope" });
+  const rounds: Round[] = [
+    { round: 1, started_ms: T, ended_ms: T + 60_000, verdict: "changes_requested", findings: [c1, c10] },
+    { round: 2, started_ms: T + 120_000, ended_ms: T + 180_000, verdict: "pass", findings: [] },
+  ];
+  const ledger: LedgerRow[] = [
+    {
+      at: T + 90_000,
+      run: 228,
+      ticket: "KO-372",
+      kind: "round",
+      source: "loop",
+      text:
+        "Round 1: REQUEST_CHANGES -> fix round\n" +
+        "Reviewer findings:\nthe verdict text\n\n" +
+        "Implementer response:\n" +
+        "DECLINE criteria.md:10 — outside the ticket",
+    },
+  ];
+  const history = findingsHistory(rounds, ledger);
+  const byLine = new Map(history[1]!.findings.map((entry) => [entry.finding.line, entry]));
+  expect(byLine.get(10)!.fate).toBe("declined");
+  expect(byLine.get(10)!.sentence).toBe("DECLINE criteria.md:10 — outside the ticket");
+  // Round 2 approved without it, so the line-1 finding is fixed — the
+  // citation's prefix did not mark it declined.
+  expect(byLine.get(1)!.fate).toBe("fixed");
+  expect(byLine.get(1)!.sentence).toBeNull();
+});
+
 test("a finding in the last round of a run that ended unmerged is open", () => {
   const failed: Round[] = [
     ROUNDS[0]!,

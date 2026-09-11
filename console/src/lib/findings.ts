@@ -20,10 +20,14 @@ export function severityOf(finding: Finding): Severity {
 // stripped the second still carry it on `path`.
 const CONTAINER_PREFIXES = ["/workspace/", "/home/reviewer/candidate/"];
 
+function relativePath(path: string): string {
+  const prefix = CONTAINER_PREFIXES.find((prefix) => path.startsWith(prefix));
+  return prefix ? path.slice(prefix.length) : path;
+}
+
 /** The finding's path made repository-relative. */
 export function findingPath(finding: Finding): string {
-  const prefix = CONTAINER_PREFIXES.find((prefix) => finding.path.startsWith(prefix));
-  return prefix ? finding.path.slice(prefix.length) : finding.path;
+  return relativePath(finding.path);
 }
 
 /** A finding's message split for the card. */
@@ -132,7 +136,11 @@ function findingKey(finding: Finding): string {
 // "Implementer response:" and the fix round's reply, whose ADDRESS /
 // FOLLOW_UP / DECLINE lines are the implementer's adjudications.
 const RESPONSE_MARK = "Implementer response:";
-const ADJUDICATION_RE = /^\s*(?:[-*+]|\d+[.)]\s+)?(DECLINE|FOLLOW[ _-]?UP)\b/i;
+// An optional Markdown bullet — `-`, `*` or `1.` — then its space, then
+// the verdict word.
+const ADJUDICATION_RE = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(DECLINE|FOLLOW[ _-]?UP)\b/i;
+// A `path:line` citation in an adjudication line, e.g. `notes.md:10`.
+const CITATION_RE = /[\w./-]+:\d+/g;
 
 /** The implementer-response lines of `round`'s ledger row: the last
  *  `Round N:` row carrying the mark, else none. */
@@ -154,11 +162,24 @@ function wordStream(text: string): string {
 }
 
 /** True when an adjudication `line` names the finding: by its path under
- *  either spelling, its title, or its first words. */
+ *  either spelling, its title, or its first words — always on whole
+ *  words, so `criteria:10` never names `criteria:1`. An explicit
+ *  `path:line` citation is the strongest signal: when one spells out the
+ *  finding's path, only the cited line's finding is named. */
 function namesFinding(line: string, finding: Finding): boolean {
-  const stream = wordStream(line);
   const parts = findingParts(finding.message);
-  const needles = [wordStream(findingPath(finding)), wordStream(finding.path)];
+  const paths = new Set([findingPath(finding), finding.path]);
+  const cited = (line.match(CITATION_RE) ?? []).filter((token) => {
+    const path = token.slice(0, token.lastIndexOf(":"));
+    return paths.has(path) || paths.has(relativePath(path));
+  });
+  if (cited.length > 0) {
+    return cited.some(
+      (token) => finding.line == null || Number(token.slice(token.lastIndexOf(":") + 1)) === finding.line,
+    );
+  }
+  const stream = ` ${wordStream(line)} `;
+  const needles = [...paths].map(wordStream);
   if (parts.title != null) {
     needles.push(wordStream(parts.title));
     const criterion = /^criterion\s+(\d+)/i.exec(parts.title);
@@ -167,7 +188,7 @@ function namesFinding(line: string, finding: Finding): boolean {
   const basis = parts.title ?? (parts.body !== "" ? parts.body : finding.message);
   const first = wordStream(basis).split(" ").filter(Boolean).slice(0, 5).join(" ");
   needles.push(first);
-  return needles.some((needle) => needle.length >= 3 && stream.includes(needle));
+  return needles.some((needle) => needle.length >= 3 && stream.includes(` ${needle} `));
 }
 
 /** The adjudication `lines` pass on `finding`: the first DECLINE or
