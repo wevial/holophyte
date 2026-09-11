@@ -1884,6 +1884,98 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertIn(f"{self.URL} was merged on GitHub by coworker", out)
         self.assertIn(f"run {run_id} closed out as merged", out)
 
+    # KO-376: a sweep that sent a run back to the shepherd walked its
+    # ticket to `ready` on a board whose loop has exited, so it starts the
+    # loop as the console's launch-loop action does, through a `systemctl`
+    # a fake on PATH records.
+    ACTIVE_PULL = {"state": "OPEN", "merged": False,
+                   "updatedAt": "2026-09-02T10:00:00Z",
+                   "reviewThreads": {"totalCount": 2}}
+
+    def fake_systemctl(self):
+        """A `systemctl` first on PATH that records each call's arguments,
+        one line per call, and exits 0; the lines so far."""
+        bin_dir = self.root / "fake-bin"
+        bin_dir.mkdir(exist_ok=True)
+        record = self.root / "systemctl.calls"
+        script = bin_dir / "systemctl"
+        script.write_text(f"#!/bin/sh\necho \"$@\" >> '{record}'\n")
+        script.chmod(0o755)
+        patcher = patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return lambda: (record.read_text().splitlines()
+                        if record.exists() else [])
+
+    def seen_before_activity(self, run_id):
+        """The mark the shepherd's park left: a read older than
+        `ACTIVE_PULL`'s activity, so the next read is new activity."""
+        store.record_pr_seen(self.conn, run_id,
+                             ("2026-09-01T10:00:00Z", 1, None, None))
+
+    def test_a_sweep_that_sent_a_ticket_back_starts_the_loop_unit(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM tickets WHERE id = ?",
+                              (self.ticket_of[run_id],)).fetchone(),
+            ("ready",))
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertIn("started holophyte-loop@repo", out)
+
+    def test_a_sweep_under_a_live_loop_starts_nothing(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+        self.a_run(claimed_at=T0 + 19 * MINUTE)
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_sweep_that_sent_nothing_back_starts_nothing(self):
+        """An open pull request with no activity past the mark sends
+        nothing back, and a merged one lands the run rather than sending
+        it back: neither is a ticket waiting for a loop."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        calls = self.fake_systemctl()
+        quiet = dict(self.ACTIVE_PULL, updatedAt="2026-09-01T10:00:00Z",
+                     reviewThreads={"totalCount": 1})
+        self.fake_github(quiet)
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertNotIn("sent back", out)
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_failed_systemctl_is_printed_and_the_pass_ends_normally(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        self.fake_systemctl()
+        (self.root / "fake-bin" / "systemctl").write_text(
+            "#!/bin/sh\necho 'Unit holophyte-loop@repo.service not found.'"
+            " >&2\nexit 5\n")
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertIn("holophyte-loop@repo could not be started"
+                      " (Unit holophyte-loop@repo.service not found.)", out)
+        self.assertEqual(
+            self.conn.execute("SELECT lastBeat FROM supervisorHeartbeats")
+            .fetchone(), (T0 + 20 * MINUTE,))
+
     def test_a_live_loop_heartbeat_leaves_the_reconcile_to_the_loop(self):
         """The loop's own tick covers a parked pull request while the loop
         is live, so the supervisor does not ask GitHub twice a minute

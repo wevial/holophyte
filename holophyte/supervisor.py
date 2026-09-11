@@ -43,9 +43,9 @@ import review_runner
 import store
 import store.read
 from holophyte.board import close_out_failure
-from holophyte.config import sweep_config
+from holophyte.config import serve_config, sweep_config
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
-from holophyte.reexec import reexec_self
+from holophyte.reexec import reexec_self, start_loop
 from holophyte.report import REPORT_GAP, format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
 
@@ -950,6 +950,19 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     to its heartbeat, so nothing about GitHub ever counts as a strike or
     ends a pass.
 
+    When the reconcile sent a ticket back -- new review activity on its
+    pull request, the run ended and the ticket walked to `ready` -- and
+    no loop was live to claim it, the pass starts the target's loop unit
+    through `start_loop()`, the call the daemon's `launch-loop` action
+    makes, and prints that it did (KO-376): the loop exited on a board
+    with no ready ticket, so without this the ticket waits in the store
+    for a hand on the launcher. Once per pass, however many were sent
+    back. A `systemctl` that fails is one printed line and the pass goes
+    on; the next pass, finding the ticket still ready and no loop live,
+    sends nothing back again and does not retry -- the operator's
+    launcher does, as before this ticket. A sweep that sent nothing back
+    starts nothing.
+
     Returns the project ids reconciled.
     """
     # In the function, not at the top: `holophyte.loop` imports this module.
@@ -958,18 +971,36 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     out = out or sys.stdout
     knobs = sweep_config(target) if knobs is None else knobs
     asked = []
+    sent = set()
     for (project,) in conn.execute("SELECT id FROM projects ORDER BY id"):
         if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
             continue
         try:
             with contextlib.redirect_stdout(out):
-                _reconcile_pull_requests(target, conn, project, provider)
+                sent |= _reconcile_pull_requests(target, conn, project,
+                                                 provider)
         except Exception as e:  # noqa: BLE001 - never a strike, never the pass
             print(f"[holo2] parked pull requests could not be reconciled"
                   f" ({e}); the next pass asks again", file=out)
             continue
         asked.append(project)
+    if sent:
+        start_loop_for(target, len(sent), out)
     return asked
+
+
+def start_loop_for(target, count, out):
+    """Start the target's loop unit for the `count` tickets the sweep just
+    sent back, printing the unit started or why it was not."""
+    unit, ok, detail = start_loop(serve_config(target).name)
+    noun = "ticket" if count == 1 else "tickets"
+    if ok:
+        print(f"[holo2] {count} {noun} sent back and no loop live; started"
+              f" {unit}", file=out)
+    else:
+        print(f"[holo2] {count} {noun} sent back and no loop live, but"
+              f" {unit} could not be started ({detail}); launch the loop"
+              " by hand", file=out)
 
 
 def factory_revision():
