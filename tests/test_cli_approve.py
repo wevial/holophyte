@@ -118,15 +118,15 @@ class ApproveCliTests(unittest.TestCase):
         # is what takes the candidate to the gate.
         self.assertTrue(store.pickable(self.conn, self.ticket))
 
-    def test_shepherd_releases_the_parked_run_without_approving(self):
-        """`--shepherd KO-n` is `--approve`'s twin with its own action: the
+    def test_babysit_releases_the_parked_run_without_approving(self):
+        """`--babysit KO-n` is `--approve`'s twin with its own action: the
         same release and resume point, a `shepherd` intervention row, and
         the candidate the next claim carries is not marked approved."""
         self.park(pr_url="https://example.test/pull/7")
 
-        out, _ = self.cli("--shepherd", "KO-1", "--note", "bots are done")
+        out, _ = self.cli("--babysit", "KO-1", "--note", "bots are done")
 
-        self.assertIn(f"KO-1 sent back to the shepherd: run {self.run}", out)
+        self.assertIn(f"KO-1 sent back to the babysitter: run {self.run}", out)
         self.assertEqual(self.interventions(), [(self.run, "shepherd")])
         (summary,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
@@ -141,15 +141,15 @@ class ApproveCliTests(unittest.TestCase):
         self.assertEqual((carried.run_id, carried.approved),
                          (self.run, False))
 
-    def test_a_shepherd_of_a_run_parked_with_no_pull_request_is_refused(self):
+    def test_a_babysitter_of_a_run_parked_with_no_pull_request_is_refused(self):
         """A run parked under `[merge] mode = "local"` has no threads to look
         at again, and releasing it would take the candidate through the
-        local gate, which merges: `--shepherd` exits naming the missing PR
+        local gate, which merges: `--babysit` exits naming the missing PR
         with nothing written, and the ticket stays parked for `--approve`."""
         self.park()
 
         with self.assertRaises(SystemExit) as raised:
-            self.cli("--shepherd", "KO-1", "--note", "bots are done")
+            self.cli("--babysit", "KO-1", "--note", "bots are done")
 
         self.assertIn("no pull request", str(raised.exception))
         self.assertIn("--approve", str(raised.exception))
@@ -164,13 +164,19 @@ class ApproveCliTests(unittest.TestCase):
         self.cli("--approve", "KO-1", "--note", "ok")
         self.assertEqual(self.interventions(), [(self.run, "approve")])
 
-    def test_a_bare_shepherd_records_the_default_note_and_refuses_ready(self):
+    def test_a_bare_babysitter_records_the_default_note_and_refuses_ready(self):
         self.park(pr_url="https://example.test/pull/7")
-        self.cli("--shepherd", "KO-1")
+        self.cli("--babysit", "KO-1")
         self.assertEqual(self.interventions(), [(self.run, "shepherd")])
+        # The persisted note is the literal the ticket names, not whatever
+        # the module's default happens to be.
+        (summary,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+            " 'intervention'", (self.run,)).fetchone()
+        self.assertEqual(summary, "human shepherd: sent back to the babysitter")
 
         with self.assertRaises(SystemExit) as raised:
-            self.cli("--shepherd", "KO-1")
+            self.cli("--babysit", "KO-1")
 
         self.assertIn("KO-1 is ready", str(raised.exception))
         self.assertEqual(len(self.interventions()), 1)

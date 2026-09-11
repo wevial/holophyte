@@ -48,7 +48,8 @@ machines.
 
 **Intervention.** A row recording an operator or supervisor decision on a
 run: `redirect`, `kill`, `extend_time_box`, `resume`, `close_out`,
-`requeue`, `approve`, `repoint`, `shepherd`. Written before the change it
+`requeue`, `approve`, `repoint` and the babysit action `store.shepherd()`
+writes. Written before the change it
 describes.
 
 **Lease.** `projects.activeRunId`: the one run a project may have in
@@ -61,11 +62,11 @@ on the Linear ticket is its projection.
 **Park.** A clean merge gate that stops short of merging: the run enters
 `awaiting_merge_approval` with branch, worktree and candidate sha kept and
 the lease released, and the ticket asks the operator `merge?` or `PR open:
-URL`. Answered by `--approve KO-n` or `--shepherd KO-n`.
+URL`. Answered by `--approve KO-n` or `--babysit KO-n`.
 
 **PR mode.** `[merge] mode = "pr"`: the clean gate pushes the branch and
 opens a pull request against `main` instead of merging locally, then the
-shepherd takes over.
+babysitter takes over.
 
 **Preserved branch.** A failed run's branch and worktree, left for a
 human; reused by the next run of the same ticket. Named
@@ -91,10 +92,10 @@ re-execs from the new `main`; the supervisor follows on its next pass.
 beyond loopback demands on every request except the console's files and
 `/peers`. A `chmod 600` file, never printed or logged.
 
-**Shepherd.** The loop's passes over an open pull request, up to `[merge]
+**Babysitter.** The loop's passes over an open pull request, up to `[merge]
 pr_rounds`: each reads the unresolved threads and the checks, adjudicates
 every thread `ADDRESS`, `DECLINE` or `HUMAN`, fixes and pushes, and merges
-through the API when green and quiet or parks. `--shepherd KO-n` asks for
+through the API when green and quiet or parks. `--babysit KO-n` asks for
 another pass.
 
 **Slug.** A target's basename plus eight hex digits of its path's SHA-1;

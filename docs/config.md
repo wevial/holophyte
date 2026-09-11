@@ -485,13 +485,13 @@ approve = "auto"   # "human": park the approved run for an operator to release
 # Where an approved, verified candidate goes. Optional; the value shown is
 # the default.
 mode = "local"     # "pr": push the branch to origin and open a pull request
-# How many shepherd passes over an open pull request before the run parks
+# How many babysit passes over an open pull request before the run parks
 # for the operator. Optional; the value shown is the default.
 pr_rounds = 5
-# How the shepherd merges a green, quiet pull request: "merge", "squash" or
+# How the babysitter merges a green, quiet pull request: "merge", "squash" or
 # "rebase". Optional; the value shown is the default.
 pr_merge_method = "merge"
-# The least seconds between two shepherd rounds the loop itself starts on
+# The least seconds between two babysit rounds the loop itself starts on
 # one parked pull request when it sees new review activity. Optional; the
 # value shown is the default.
 pr_poll_sec = 180
@@ -533,7 +533,7 @@ With `mode = "local"` a clean merge gate lands the candidate on `main` with a
 branch to `origin` instead and opens a pull request against `main` titled
 `KO-n: TITLE`, whose body is the ticket body followed by the run's FINDINGS
 entry, so the repository's own review bots and CI see the change before it
-lands (design note 7). The loop then shepherds the pull request -- reads its
+lands (design note 7). The loop then babysits the pull request -- reads its
 unresolved review threads and its checks, verdicts each thread, fixes and
 replies, waits for CI -- for at most `pr_rounds` passes; see
 [PR rounds](reviewing.md#pr-rounds) for the pass. A pull request that comes
@@ -543,15 +543,15 @@ exactly as above -- phase `awaiting_merge_approval`, ticket
 `blocked_on_operator`, branch and worktree preserved, lease released -- with
 the PR's URL recorded on the run (`runs.prUrl`), in the ticket's question
 (`PR open: URL`, with the open threads listed) and in the ledger comment,
-until `--approve KO-n` releases it: the resumed claim shepherds the PR once
+until `--approve KO-n` releases it: the resumed claim babysits the PR once
 more and merges it through the API when it is green and quiet. A declined
 thread, a thread only a person can answer, red checks, or the cap park the
-run the same way; `--shepherd KO-n` sends such a run back for another round
+run the same way; `--babysit KO-n` sends such a run back for another round
 of passes without saying "merge". The factory never moves local `main` under
 this mode: the merge is GitHub's, and the writer host's checkout tracks
 `origin` by the operator's hand. The pull request is opened through `gh`
 when it is on PATH, and otherwise through the GitHub API with a token read
-from `GH_TOKEN` or `GITHUB_TOKEN` in the environment; the shepherd's calls
+from `GH_TOKEN` or `GITHUB_TOKEN` in the environment; the babysitter's calls
 (`gh api`, GraphQL for the threads) take the same route, and the token is
 never written to the config, the store or a log. Startup checks the route
 before anything is claimed: a target with no `origin` remote, a `gh` whose
@@ -563,7 +563,7 @@ request recorded that was not opened. The value must be `"local"` or `"pr"`;
 anything else is a startup error naming the key. "The factory never pushes"
 is, under this mode, "the factory never pushes `main`".
 
-`pr_rounds` is an integer of at least 1 (default 5): the number of shepherd
+`pr_rounds` is an integer of at least 1 (default 5): the number of babysitter
 passes the loop makes over one pull request in one run before it parks the
 run for the operator naming the cap, with the threads still open listed --
 the cap that keeps the loop from arguing with a review bot forever. Every
@@ -571,7 +571,7 @@ pass is a `reviewRounds` row with route `github:LOGIN`, so the count is
 visible in FINDINGS. Anything that is not such an integer (`0`, `true`,
 `"5"`) is a startup error naming the key.
 
-`pr_merge_method` is the `merge_method` the shepherd sends GitHub's merge API
+`pr_merge_method` is the `merge_method` the babysitter sends GitHub's merge API
 when it lands a green, quiet pull request under `mode = "pr"`: `"merge"` (the
 default) asks for a merge commit, like the local `--no-ff` merge; `"squash"`
 and `"rebase"` are for a repository whose branch ruleset allows squash merges
@@ -582,12 +582,12 @@ GitHub answers, which for `"squash"` and `"rebase"` is the new commit on
 strings is a startup error naming the key. The local mode's `--no-ff` merge
 is unaffected.
 
-`pr_poll_sec` is the least time, in seconds, between two shepherd rounds the
+`pr_poll_sec` is the least time, in seconds, between two babysit rounds the
 loop itself starts on one parked pull request (KO-362). Every tick already
 reads each parked pull request once to notice a merge; the same read carries
 GitHub's `updatedAt` and the review-thread count, and a pull request that
-has moved past what the last shepherd pass recorded on the run is sent back
-to the shepherd as `--shepherd KO-n` would send it (see [Loop](loop.md)) --
+has moved past what the last babysit pass recorded on the run is sent back
+to the babysitter as `--babysit KO-n` would send it (see [Loop](loop.md)) --
 no more often than this per pull request, measured from the park, so a
 reviewer typing three comments in a minute gets one round rather than
 three. The default is 180; an integer of at least 10, and anything else
@@ -609,7 +609,7 @@ and the branch keeps its identifier. A reply with no `TITLE:` line, an empty
 title or a title over 120 characters, or a turn that runs out of its budget
 (a few minutes of the run's remaining box), falls back to the ticket form for
 that pull request and prints one line saying so, so a pull request is always
-opened. The text is written once, when the pull request opens; later shepherd
+opened. The text is written once, when the pull request opens; later babysitter
 passes leave it alone. The value must be `"ticket"` or `"written"`; anything
 else is a startup error naming the key.
 

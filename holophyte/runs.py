@@ -255,7 +255,7 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     not found is one more such finding.
 
     `route` names what issued the round when it was not the role's agent
-    route: a shepherd pass over a pull request is stamped `github:LOGIN`,
+    route: a babysit pass over a pull request is stamped `github:LOGIN`,
     the reviewer whose threads the pass answered, so FINDINGS shows it
     beside the Codex rounds as what it was. None is `agent_route()`'s
     answer for `role`, as before.

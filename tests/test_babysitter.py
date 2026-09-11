@@ -1,4 +1,4 @@
-"""`holophyte.shepherd`: the pass's texts, read and written without GitHub.
+"""`holophyte.babysitter`: the pass's texts, read and written without GitHub.
 
 The verdict parser is what decides which thread gets fixed, which gets a
 decline, and which parks the run for a person; the acceptance tests in
@@ -7,14 +7,14 @@ parser's edges: a thread with no line is `HUMAN`, a verdict is read whatever
 separator the model reached for, and a number outside the listing is
 ignored rather than filed against a thread that does not exist.
 
-Run: python3 -m unittest discover -s tests -p 'test_shepherd*' -v
+Run: python3 -m unittest discover -s tests -p 'test_babysit*' -v
 """
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from holophyte import pr, shepherd
+from holophyte import babysitter, pr
 from holophyte.pr import PullRequest, Thread
 
 PULL = PullRequest(host="github.com", owner="o", name="r", number=3,
@@ -67,7 +67,7 @@ class FoldChecksTests(unittest.TestCase):
         # Red still wins: the rollup is the cheapest red signal.
         self.assertEqual(pr.fold_checks("FAILURE", None, None), "failure")
 
-    def test_check_data_the_shepherd_cannot_read_is_pending_never_green(self):
+    def test_check_data_the_babysitter_cannot_read_is_pending_never_green(self):
         # Review finding: a `check_runs` that is not a list, or an entry
         # that is not a run, was skipped and the rest read as green.
         self.assertEqual(pr.fold_checks("SUCCESS", "unreadable", []),
@@ -85,9 +85,9 @@ class AdjudicationBriefTests(unittest.TestCase):
     THREAD = thread(1, "This duplicates `getTxSide` in lib/tx.py; reuse it.")
 
     def brief(self, wt):
-        return shepherd.adjudication_brief(
+        return babysitter.adjudication_brief(
             PULL, (self.THREAD,), "the ticket", "c" * 40,
-            shepherd.conventions(wt))
+            babysitter.conventions(wt))
 
     def test_the_rule_and_the_conventions_excerpt_with_an_agents_md(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -108,7 +108,7 @@ class AdjudicationBriefTests(unittest.TestCase):
 
     def test_the_rule_and_no_excerpt_without_a_conventions_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(shepherd.conventions(Path(tmp)), ())
+            self.assertEqual(babysitter.conventions(Path(tmp)), ())
             text = self.brief(Path(tmp))
 
         self.assertIn("which the diff duplicates is a concrete change "
@@ -124,7 +124,7 @@ class VerdictTests(unittest.TestCase):
                  "THREAD 3: DECLINE: out of scope\n"
                  "THREAD 9: ADDRESS -- no such thread\n")
 
-        verdicts = shepherd.parse_verdicts(reply, 3)
+        verdicts = babysitter.parse_verdicts(reply, 3)
 
         self.assertEqual(verdicts[1], ("ADDRESS", "the null check is missing"))
         self.assertEqual(verdicts[2][0], "HUMAN")
@@ -136,28 +136,29 @@ class VerdictTests(unittest.TestCase):
                                                        author="style"))
         verdicts = {1: ("ADDRESS", "real"), 2: ("DECLINE", "taste")}
 
-        text = shepherd.round_reply(PULL, 1, threads, verdicts, "success",
+        text = babysitter.round_reply(PULL, 1, threads, verdicts, "success",
                                     "a" * 40)
 
+        self.assertTrue(text.startswith("Babysit pass 1 over " + PULL.url))
         self.assertTrue(text.endswith("VERDICT: REQUEST_CHANGES"))
         self.assertIn("- a.py:1 @bot: crash on None -- ADDRESS: real", text)
-        self.assertEqual(shepherd.route_of(threads), "github:bot+style")
-        self.assertTrue(shepherd.round_reply(PULL, 2, (), {}, "success",
+        self.assertEqual(babysitter.route_of(threads), "github:bot+style")
+        self.assertTrue(babysitter.round_reply(PULL, 2, (), {}, "success",
                                              "a" * 40)
                         .endswith("VERDICT: APPROVE"))
-        self.assertEqual(shepherd.route_of(()), "github:ci")
+        self.assertEqual(babysitter.route_of(()), "github:ci")
 
     def test_replies_open_with_the_model_header(self):
-        addressed = shepherd.addressed_reply("codex-sol-medium", "added the"
+        addressed = babysitter.addressed_reply("codex-sol-medium", "added the"
                                              " check", "b" * 40)
-        declined = shepherd.declined_reply("codex-sol-medium", "taste")
+        declined = babysitter.declined_reply("codex-sol-medium", "taste")
 
         for text in (addressed, declined):
             self.assertTrue(text.startswith(
                 "---- Comment by codex-sol-medium ----\n"), text)
         self.assertIn(f"Addressed in {'b' * 40}: added the check", addressed)
         self.assertIn("Declined: taste", declined)
-        self.assertEqual(shepherd.parse_summaries(
+        self.assertEqual(babysitter.parse_summaries(
             "did things\nTHREAD 2: guarded the load\nTHREAD 1: renamed"),
             {2: "guarded the load", 1: "renamed"})
 

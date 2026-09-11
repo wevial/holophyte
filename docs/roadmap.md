@@ -78,7 +78,7 @@ Give configurable behavior an address before building on top of it.
   human PR comments become inputs to the loop: each comment gets
   evaluated and dispositioned (address fully / partially / reject, with
   reasons) rather than ignored. Shipped as `[merge] mode = "pr"`: the loop
-  pushes the task branch, opens a pull request and shepherds the review
+  pushes the task branch, opens a pull request and babysits the review
   comments through fix rounds ([design note 7](design/0007-merge-modes.md)).
 - **North star restated**: software factories are usually hard to adopt;
   Holophyte should be the one that mostly works out of the box — simple
