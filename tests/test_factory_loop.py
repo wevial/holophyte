@@ -4771,16 +4771,21 @@ class GateConflictImplementerTests(LoopFixture):
             self):
         provider = StubProvider(a_task())
         conn, run_id, branch, wt, sha = self.conflicted()
+        # The verify writes the sha it ran on, outside the worktree: the
+        # gate's own word for which commit the check saw.
+        seen = self.target.parent / "verify-ran-on.txt"
         fake = FakeAgent(Commit("merge main into the branch",
                                 path="README.md", body="merged\n"))
         with patch.object(holophyte.loop, "agent", fake):
             ok, merged = holophyte.loop._merge_gate(
                 self.tgt, conn, run_id, provider, "KO-131", "iss-131",
-                branch, wt, 60, sha, "echo ok", [], "add a thing", 5)
+                branch, wt, 60, sha,
+                f"git rev-parse HEAD > '{seen}'", [], "add a thing", 5)
 
         # The verify passed on the sha the implementer's merge commit left.
         self.assertTrue(ok)
         self.assertNotEqual(merged, sha)
+        self.assertEqual(seen.read_text().strip(), merged)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(),
                          merged)
         parents = self.git("rev-list", "--parents", "-n", "1", merged,
@@ -4802,7 +4807,24 @@ class GateConflictImplementerTests(LoopFixture):
     def test_an_unresolved_gate_conflict_fails_and_parks_as_before(self):
         provider = StubProvider(a_task())
         conn, run_id, branch, wt, sha = self.conflicted()
-        with patch.object(holophyte.loop, "agent", FakeAgent(Idle())):
+
+        class StageThenReEdit:
+            """A resolution turn that stages its fix, then edits the file
+            again without committing -- the staged half is one `git merge
+            --abort` will not drop, so the unwind has to go past it."""
+
+            role = "implement"
+
+            @staticmethod
+            def play(cwd, turn):
+                (cwd / "README.md").write_text("resolved\n")
+                subprocess.run(["git", "add", "README.md"], cwd=cwd,
+                               check=True, capture_output=True)
+                (cwd / "README.md").write_text("edited again\n")
+                return "staged the resolution, then kept editing it"
+
+        with patch.object(holophyte.loop, "agent",
+                          FakeAgent(StageThenReEdit())):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
                 holophyte.loop._sync_main_into_branch(
                     self.tgt, conn, run_id, provider, "KO-131", branch,
@@ -4813,13 +4835,54 @@ class GateConflictImplementerTests(LoopFixture):
             f"merging main into {branch} conflicted on: README.md;"
             f" branch preserved at {sha[:12]}")
         # The branch sits at its pre-merge sha and the worktree holds no
-        # merge in progress.
+        # merge in progress -- the abort's refusal did not leave one.
         self.assertEqual(self.git("rev-parse", branch).strip(), sha)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(), sha)
         self.assertNotEqual(
             subprocess.run(["git", "rev-parse", "-q", "--verify",
                             "MERGE_HEAD"], cwd=wt,
                            capture_output=True).returncode, 0)
         self.assertEqual(holophyte.loop.merge_conflicts(wt), [])
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"),
+            [("blocked_on_operator",)])
+
+    def test_a_merge_committed_over_uncommitted_edits_is_rejected(self):
+        """The turn commits the merge but leaves edits behind: the sha is
+        a merge, yet the tree the gate's verify would read is not the one
+        the sha holds, so it does not count and the run parks as before."""
+        provider = StubProvider(a_task())
+        conn, run_id, branch, wt, sha = self.conflicted()
+
+        class CommitMergeLeavingEdits(Commit):
+            def play(self, cwd, turn):
+                out = super().play(cwd, turn)
+                (cwd / self.path).write_text("edited after the merge\n")
+                return out
+
+        fake = FakeAgent(CommitMergeLeavingEdits(
+            "merge main into the branch", path="README.md",
+            body="merged\n"))
+        with patch.object(holophyte.loop, "agent", fake):
+            with self.assertRaises(holophyte.gates.RunFailure) as failed:
+                holophyte.loop._sync_main_into_branch(
+                    self.tgt, conn, run_id, provider, "KO-131", branch,
+                    wt, sha, 60, "add a thing", 5)
+
+        self.assertEqual(
+            str(failed.exception),
+            f"merging main into {branch} conflicted on: README.md;"
+            f" branch preserved at {sha[:12]}")
+        # The turn's merge commit is unwound with the merge: HEAD and the
+        # branch are back at the pre-merge sha and the tree is clean.
+        self.assertEqual(self.git("rev-parse", branch).strip(), sha)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(), sha)
+        self.assertNotEqual(
+            subprocess.run(["git", "rev-parse", "-q", "--verify",
+                            "MERGE_HEAD"], cwd=wt,
+                           capture_output=True).returncode, 0)
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
         self.assertEqual(
             self.read("SELECT status FROM tickets"),
             [("blocked_on_operator",)])

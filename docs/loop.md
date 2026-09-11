@@ -103,9 +103,13 @@ machines it walks. Back to the [README](index.md).
    displaced). Under the lock, `main`
    is merged into the branch when it has moved past it -- a conflict
    goes to the implementer first, the same resolution turn the claim path
-   runs on a leftover mid-merge worktree, and only a merge it leaves
-   unresolved is aborted, leaves the branch at its sha and parks the
-   ticket `blocked_on_operator` with the conflicting paths in the
+   runs on a leftover mid-merge worktree, and only a turn that leaves the
+   merge committed over a clean tree counts as a resolution; anything
+   less (a merge still open, or uncommitted edits the verify would read
+   but the merged sha cannot hold) is undone -- `merge --abort`, or a
+   reset to the pre-merge sha when the turn's staged leftovers refuse the
+   abort -- the branch left at its sha and the ticket parked
+   `blocked_on_operator` with the conflicting paths in the
    question -- then
    the verify command passes again on the result, and the ticket is re-read
    from Linear and held against the snapshot the claim froze (title,

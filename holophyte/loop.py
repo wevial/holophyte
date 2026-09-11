@@ -317,15 +317,17 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, conflicts,
     """The conflict-resolution turn `reuse_leftover()` hands the
     implementer at claim time, run from the merge gate's mid-merge
     worktree `wt` (KO-404); the merged sha when the turn leaves the merge
-    committed, None when not.
+    committed over a clean tree, None when not.
 
     The conflict is the same wherever it is met, so the hand-off is the
     same one: the worktree sits mid-merge, the paths are named, and the
     ticket goes along for context -- the branch already holds its work,
     so resolving the merge and committing it is the whole task. The turn
     counts against the run's budget as a fix round does. A timeout, a
-    tree still mid-merge, or one `main` never landed in resolves
-    nothing, and the caller aborts and fails the run as it did before
+    tree still mid-merge, one `main` never landed in, or uncommitted
+    edits on top of the merge commit all resolve nothing -- the gate's
+    verify reads the worktree, so the sha it goes on to must be the tree
+    it reads -- and the caller aborts and fails the run as it did before
     this hand-off existed.
     """
     paths = ", ".join(conflicts)
@@ -347,6 +349,11 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, conflicts,
     if subprocess.run(["git", "merge-base", "--is-ancestor", "main", "HEAD"],
                       cwd=wt, capture_output=True).returncode != 0:
         # The turn ended the merge itself rather than resolving it.
+        return None
+    if sh(["git", "status", "--porcelain"], cwd=wt):
+        # The merge commit landed but the turn left uncommitted edits;
+        # the verify would read them and the merged sha does not hold
+        # them.
         return None
     return sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
@@ -1344,6 +1351,27 @@ def _park_at_gate(conn, run_id, provider, task_id, branch, sha, question,
            f"{ledger_text} Branch {branch} preserved at {sha}.", provider)
 
 
+def _unwind_merge(wt, sha):
+    """Take `wt` back to `sha` with no merge in progress after the gate's
+    resolution turn failed to leave a committed, clean merge.
+
+    `git merge --abort` is the first try; it refuses when the turn left a
+    staged resolution it would have to drop, and it has nothing to abort
+    when the turn committed the merge itself. Either way the owed state
+    is the same -- the branch at its pre-merge sha, merge state gone --
+    and a hard reset to `sha` is that directly: what is preserved is the
+    branch's committed work, never the tree the turn left behind.
+    """
+    subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                   capture_output=True, text=True)
+    if (subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                       cwd=wt, capture_output=True).returncode == 0
+            or sh(["git", "rev-parse", "HEAD"], cwd=wt) != sha):
+        sh(["git", "reset", "--hard", sha], cwd=wt)
+        print(f"[holo2] merge --abort could not unwind the failed"
+              f" resolution; reset to {sha[:12]}")
+
+
 def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, ticket, budget_min):
     """Merge `main` into the branch in its worktree, so the gate verifies
@@ -1353,10 +1381,12 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
     A conflict goes to the implementer first (KO-404): the same
     resolution turn the claim path runs on a leftover mid-merge worktree
     (KO-355), in this worktree, against the run's budget like a fix
-    round. When the turn leaves the merge committed the gate's verify
-    runs on the merged sha; when it does not the merge is aborted, the
-    branch left at `sha`, and the run parks with the conflicting paths in
-    the question as before. (The `--no-ff` merge's own FINDINGS.md
+    round. When the turn leaves the merge committed over a clean tree the
+    gate's verify runs on the merged sha; when it does not the merge is
+    undone (`_unwind_merge()`: `merge --abort`, or a reset to `sha` when
+    the turn's leftovers refuse it), the branch left at `sha`, and the
+    run parks with the conflicting paths in the question as before. (The
+    `--no-ff` merge's own FINDINGS.md
     self-resolution is not repeated here: nothing on the branch writes
     FINDINGS.md any more, so a conflict there is a real one.)
     """
@@ -1385,8 +1415,7 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
                        f"MERGE GATE: {note}.", provider)
                 print(f"[holo2] {note}")
                 return merged
-        subprocess.run(["git", "merge", "--abort"], cwd=wt,
-                       capture_output=True, text=True)
+        _unwind_merge(wt, sha)
         paths = ", ".join(conflicted) or "(no unmerged paths reported)"
         why = (f"{store.GATE_CONFLICT_REASON}{branch} conflicted on:"
                f" {paths}; branch preserved at {sha[:12]}")
