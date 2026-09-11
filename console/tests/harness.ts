@@ -101,3 +101,31 @@ export function fakeDeps(fetchImpl: Fetch) {
 
 /** Let the in-flight fetches and their state updates settle. */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** Stub `setInterval`/`clearInterval` so a test fires each registered
+ *  callback by hand and sees every clear; `restore` puts the real timers
+ *  back. Pair with `setSystemTime` to walk the local clock. */
+export function captureIntervals() {
+  const realSet = globalThis.setInterval;
+  const realClear = globalThis.clearInterval;
+  const pending = new Map<number, () => void>();
+  const cleared: number[] = [];
+  let next = 1;
+  globalThis.setInterval = ((fn: () => void) => {
+    const id = next++;
+    pending.set(id, fn);
+    return id;
+  }) as unknown as typeof setInterval;
+  globalThis.clearInterval = ((id: number) => {
+    cleared.push(id);
+    pending.delete(id);
+  }) as unknown as typeof clearInterval;
+  const fire = () => {
+    for (const fn of [...pending.values()]) fn();
+  };
+  const restore = () => {
+    globalThis.setInterval = realSet;
+    globalThis.clearInterval = realClear;
+  };
+  return { pending, cleared, fire, restore };
+}

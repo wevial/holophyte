@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import { useTick } from "../hooks/useTick";
 import type { ProjectChoice } from "../lib/attention";
-import { defaultPollDeps, type Fetch } from "../lib/poll";
+import { sinceSeen } from "../lib/hosts";
+import { defaultPollDeps, TICK_MS, type Fetch } from "../lib/poll";
 import { groupByProject, type DaemonStatus, type ProjectGroup } from "../lib/runs";
 import type { Run } from "../lib/types";
 import { ProjectBlock } from "./ProjectBlock";
@@ -25,6 +27,7 @@ export function Floor({
   renderDetail?: (run: Run, group: ProjectGroup) => ReactNode;
   deps?: { fetch: Fetch };
 }) {
+  const localNow = useTick(TICK_MS);
   const groups = groupByProject(daemons).filter((group) => project === "all" || group.path === project);
   const runs = groups.reduce((total, group) => total + group.runs.length, 0);
   const projects = new Set(groups.map((group) => group.path)).size;
@@ -50,6 +53,7 @@ export function Floor({
                 onToggleRun={onToggleRun}
                 renderDetail={renderDetail}
                 deps={deps}
+                sinceMs={sinceSeen(group.seen_ms, localNow)}
               />
             ))}
         </div>

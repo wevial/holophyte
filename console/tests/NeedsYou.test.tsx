@@ -1,10 +1,10 @@
-import { afterEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { NeedsYou } from "../src/components/NeedsYou";
 import { ACTIONS_OFF, NOT_WIRED, ROUTES } from "../src/lib/actions";
 import type { Ledgers } from "../src/hooks/useLedger";
 import type { Attention, AttentionItem, Status } from "../src/lib/types";
-import { fixture, hostOf } from "./harness";
+import { captureIntervals, fixture, hostOf } from "./harness";
 
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
 
@@ -265,6 +265,38 @@ test("four failed items, three of one ticket and one of another: two failed rows
   expect(single!.querySelector("[data-attempts]")).toBeNull();
   expect(within(grouped!).getByText("KO-343")).toBeTruthy();
   expect(grouped!.querySelector("[data-attempts]")!.textContent).toBe("×3");
+});
+
+test("a band row's age keeps counting between polls and realigns when the next answer lands", () => {
+  const timers = captureIntervals();
+  const t0 = allKinds.status.now;
+  const item: AttentionItem = {
+    kind: "stale_run",
+    level: "attention",
+    run: 91,
+    ticket: "KO-232",
+    phase: "reviewing",
+    heartbeat_age_ms: 7_200_000,
+  };
+  const attention: Attention = { level: "attention", now: t0, items: [item] };
+  setSystemTime(t0);
+  try {
+    const view = render(
+      <NeedsYou hosts={[hostOf(allKinds.status, attention, "http://writer:7710", t0)]} project="all" now={t0} />,
+    );
+    expect(screen.getByText("No heartbeat for 2h 00m while reviewing")).toBeTruthy();
+    setSystemTime(t0 + 60_000);
+    act(() => timers.fire());
+    expect(screen.getByText("No heartbeat for 2h 01m while reviewing")).toBeTruthy();
+    // The next poll lands with a fresh 2h age: the row reads it as sent.
+    view.rerender(
+      <NeedsYou hosts={[hostOf(allKinds.status, attention, "http://writer:7710", t0 + 60_000)]} project="all" now={t0 + 60_000} />,
+    );
+    expect(screen.getByText("No heartbeat for 2h 00m while reviewing")).toBeTruthy();
+  } finally {
+    setSystemTime();
+    timers.restore();
+  }
 });
 
 test("an open attempts card closes when a question row opens its thread: one card at a time", () => {

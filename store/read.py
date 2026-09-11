@@ -704,13 +704,20 @@ class NarrativeEvent:
     summary: str
 
 
-def narrative_events(conn, run_id):
+def narrative_events(conn, run_id, detail_kinds=()):
     """The `narrative` events of `run_id` in `seq` order, oldest first; the
-    `detail` rows and their payloads are left out."""
+    `detail` rows and their payloads are left out, except that a `detail`
+    row whose kind is in `detail_kinds` is answered by its summary, in its
+    place in the stream: a kind the store keeps at `detail` for its payload
+    but whose summary is part of the run's story (KO-375's
+    `implementer_output`)."""
+    marks = ", ".join("?" for _ in detail_kinds)
     rows = conn.execute(
         "SELECT at, kind, summary FROM runEvents"
-        " WHERE runId = ? AND level = 'narrative' ORDER BY seq",
-        (run_id,)).fetchall()
+        " WHERE runId = ? AND (level = 'narrative'"
+        + (f" OR kind IN ({marks})" if detail_kinds else "")
+        + ") ORDER BY seq",
+        (run_id, *detail_kinds)).fetchall()
     return [NarrativeEvent(at=row[0], kind=row[1], summary=row[2])
             for row in rows]
 

@@ -28,6 +28,8 @@ than served.
 
 from __future__ import annotations
 
+import os
+import re
 import tomllib
 
 REDACTED = "[redacted]"
@@ -35,6 +37,9 @@ REDACTED = "[redacted]"
 # last segment (`linear.api_key` is `api_key`), so a path like
 # `token_file` is not one.
 SECRET_SUFFIXES = ("token", "key")
+# The environment variables a credential reaches the process by:
+# `linear_provider`'s board key and `holophyte.pr`'s forge tokens.
+ENV_SECRETS = ("LINEAR_API_KEY", "GH_TOKEN", "GITHUB_TOKEN")
 BARE_KEY = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
                      "0123456789_-")
 WHITESPACE = " \t"
@@ -411,3 +416,37 @@ def restore(text, current):
             f"{', '.join(missing)}: {REDACTED} stands for a value the current"
             " file does not hold; write the value")
     return _rewrite(text, replacements)
+
+
+# Text that is not a document: the implementer's last words (KO-375). A
+# `name = value` pair whose name ends in a secret suffix, however the line
+# around it reads -- `key=`, `token:`, `"api_key" =`, `TOKEN=` -- is the
+# shape a credential echoed into prose takes; the value runs to the end of
+# the line, quotes included, so a string with a space inside is gone whole.
+PROSE_PAIR = re.compile(
+    r"""(?im)(["']?[\w.-]*(?:token|key)["']?\s*[=:]\s*)(?!\s*$)[^\r\n]+""")
+
+
+def known_secrets(document, environ=None):
+    """The secret values the process itself holds: every `secret_leaves()`
+    value of the parsed config `document`, and the tokens `environ` carries
+    for the board and the forge. What the implementer can have echoed is
+    what it could read, and these are the only credentials the loop hands
+    it or sits beside."""
+    environ = os.environ if environ is None else environ
+    values = [str(v) for v in secret_leaves(document or {}).values()]
+    values += [environ.get(name, "") for name in ENV_SECRETS]
+    return frozenset(v for v in values if v.strip())
+
+
+def redact_prose(text, secrets=()):
+    """`text` -- prose, not TOML -- with every `secrets` value replaced by
+    `REDACTED`, and every `name = value` pair whose name `is_secret()`
+    replaced by `name = REDACTED`, whatever the line around it says.
+    `redact()`'s scanner stops at the first word that is not a key, so an
+    `api_key = "..."` after a sentence would pass it untouched; this is the
+    rule for text with no document to check against, and it errs toward
+    hiding: a `key:` label in a pasted log is redacted with the rest."""
+    for value in sorted(secrets, key=len, reverse=True):
+        text = text.replace(value, REDACTED)
+    return PROSE_PAIR.sub(lambda m: m.group(1) + REDACTED, text)

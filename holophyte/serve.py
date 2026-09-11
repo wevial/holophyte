@@ -757,7 +757,10 @@ def run_detail(target, run_id, now=None):
     of 3" without knowing the constant, and `commit_url` and `pr_url` as
     `/shipped` carries them. `rounds` is oldest first, each with
     its findings decoded once here into objects; `events` is the narrative
-    level of the stream, oldest first, without the detail rows. `run_id`
+    level of the stream, oldest first, without the detail rows -- except
+    the `implementer_output` row a no-commit turn leaves (KO-375), whose
+    summary is the implementer's first line and is what tells a refusal
+    from a crash; its payload stays in the store. `run_id`
     that is not an integer is 400; an integer with no run is 404 carrying
     `run` (`locate_run()`).
     """
@@ -768,7 +771,8 @@ def run_detail(target, run_id, now=None):
     conn = store.read.open_readonly(target.store_path)
     try:
         rounds = store.read.rounds_of(conn, run.id)
-        events = store.read.narrative_events(conn, run.id)
+        events = store.read.narrative_events(
+            conn, run.id, detail_kinds=("implementer_output",))
     finally:
         conn.close()
     live = run.endedAt is None

@@ -76,6 +76,7 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
+from holophyte.redact import known_secrets, redact_prose
 from holophyte.reexec import reexec_command, reexec_self
 from holophyte.report import report_lines
 from holophyte.review import criteria_brief, criteria_findings
@@ -985,8 +986,14 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
 
 
 def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
-    """Run one implementer turn with the budget as its wall-clock cap; None on
-    timeout.
+    """Run one implementer turn with the budget as its wall-clock cap.
+
+    Returns `(output, timed_out)`: what the turn printed ("" when it
+    printed nothing) and whether the cap ended it rather than the turn
+    itself. The pair rather than a `None` sentinel because a timed-out
+    turn still has last words -- the no-commit gate records them on the
+    run before the worktree goes (KO-375) -- so the cap's partial capture
+    is handed back untrimmed, not dropped with the `TimeoutExpired`.
 
     The budget is the dispatch's own timeout, not an alarm around it: an
     alarm interrupted the wait but left the implementer and its children
@@ -1000,17 +1007,43 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
     kill = GroupKill()
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            return agent(target, "implement", goal, wt,
-                         timeout=budget_min * 60, on_start=kill.arm)
+            return (agent(target, "implement", goal, wt,
+                          timeout=budget_min * 60, on_start=kill.arm),
+                    False)
     except subprocess.TimeoutExpired as expired:
         print(f"[holo2] task exceeded {budget_min} min budget")
         partial = expired.output or ""
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", "replace")
-        partial = partial.strip()[-2000:]
+        partial = partial.strip()
         print("[holo2] implementer output before the budget fired:\n"
-              + (partial or "(no output before the budget fired)"))
-        return None
+              + (partial[-2000:] or "(no output before the budget fired)"))
+        return partial, True
+
+
+# How much of the implementer's final output a no-commit turn keeps on the
+# run (KO-375): the last characters, where a refusal or a "this contract
+# cannot be met" explanation ends up.
+OUTPUT_TAIL = 4000
+
+
+def _record_implementer_output(conn, run_id, out, secrets=()):
+    """Keep the tail of a no-commit turn's output as an `implementer_output`
+    event, before the worktree it may have explained itself in is gone.
+
+    A `detail` row, like `crash`: the summary is the message's first line and
+    the payload its last `OUTPUT_TAIL` characters. The output is prose, not
+    a document, so it goes through `redact_prose()`: every value in
+    `secrets` -- the config's and the environment's credentials,
+    `known_secrets()` -- and every `name = value` pair with a secret's name
+    are replaced before the store sees the text, so a secret the
+    implementer echoed never reaches it."""
+    if conn is None or run_id is None:
+        return
+    text = redact_prose((out or "").strip(), secrets)
+    summary = text.splitlines()[0] if text else "(implementer printed nothing)"
+    store.record_event(conn, run_id, "implementer_output", summary,
+                       level="detail", payload=text[-OUTPUT_TAIL:])
 
 
 def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
@@ -1020,13 +1053,14 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
     left mid-merge; they open the brief (`conflict_brief()`)."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
-    out = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                 conflict_brief(branch, conflicts)
-                 + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
-                 "The ticket above is the contract, acceptance criteria "
-                 "included; the task is done only when they hold. Commit your "
-                 "work with a clear message. Stay strictly on-scope; do not "
-                 "expand the task.")
+    out, timed_out = _timed(
+        target, conn, run_id, beat_s, wt, budget_min,
+        conflict_brief(branch, conflicts)
+        + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+        "The ticket above is the contract, acceptance criteria "
+        "included; the task is done only when they hold. Commit your "
+        "work with a clear message. Stay strictly on-scope; do not "
+        "expand the task.")
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work
@@ -1039,6 +1073,10 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
                        cwd=wt, capture_output=True).returncode)
     if head == start_sha and not carried:
         print(f"[holo2] implementer made no commits for: {task}")
+        # What the turn said is the only evidence left once the worktree
+        # goes; it is on the run before the discard, whatever the exit code.
+        _record_implementer_output(conn, run_id, out,
+                                   known_secrets(target.config()))
         if fresh:
             sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
             sh(["git", "branch", "-D", branch], target.path)
@@ -1054,7 +1092,7 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
         print(f"[holo2] {note}")
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "carried_candidate", note)
-    if out is None:
+    if timed_out:
         # The budget alarm fired *after* real commits landed. A timeout is
         # not "no work": destroying the commits here would repeat the
         # incident this path exists to prevent.
@@ -1180,20 +1218,21 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
 
         # 3. implementer addresses findings (same branch, new commit)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        fixes = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                       "A reviewer left findings on your work. The ticket you "
-                       "are held to, acceptance criteria included:\n\n"
-                       f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
-                       "For EACH finding, adjudicate it first: ADDRESS (concrete "
-                       "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
-                       "it in the commit message), or DECLINE (invalid/out-of-scope — "
-                       "state the rationale in the commit message). Then fix only the "
-                       "ADDRESS items and commit.")
+        fixes, timed_out = _timed(
+            target, conn, run_id, beat_s, wt, budget_min,
+            "A reviewer left findings on your work. The ticket you "
+            "are held to, acceptance criteria included:\n\n"
+            f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
+            "For EACH finding, adjudicate it first: ADDRESS (concrete "
+            "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
+            "it in the commit message), or DECLINE (invalid/out-of-scope — "
+            "state the rationale in the commit message). Then fix only the "
+            "ADDRESS items and commit.")
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                f"Reviewer findings:\n{verdict}\n\n"
                f"Implementer response:\n{fixes}", provider)
-        if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
+        if timed_out or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
             raise RunFailure(f"fix round {rnd} timed out or made no progress;"
@@ -1596,10 +1635,11 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         store.record_event(conn, run_id, "pull_request",
                            f"writing the pull request text for {branch}"
                            " from the diff")
-    reply = _timed(target, conn, run_id, beat_s, wt, minutes, goal)
-    parsed = pr.parse_pr_text(reply) if reply is not None else None
+    reply, timed_out = _timed(target, conn, run_id, beat_s, wt, minutes,
+                              goal)
+    parsed = None if timed_out else pr.parse_pr_text(reply)
     if parsed is None:
-        why = ("the turn ran out of time" if reply is None
+        why = ("the turn ran out of time" if timed_out
                else "the reply has no `TITLE:` line, an empty title, or a"
                f" title over {pr.PR_TITLE_MAX} characters")
         print(f"[holo2] written PR text refused for {task_id}: {why};"
@@ -2082,9 +2122,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     """The fix round for the addressed threads, then the push, then a reply
     on each and a resolve on each bot's; return the fixed candidate's
     sha."""
-    fixes = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                   babysitter.fix_brief(pull, addressed, ticket))
-    if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
+    fixes, timed_out = _timed(target, conn, run_id, beat_s, wt, budget_min,
+                              babysitter.fix_brief(pull, addressed, ticket))
+    if timed_out or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
         raise RunFailure(f"fix round for {pull.url} timed out or made no"
                          f" progress; branch {branch} preserved at"
                          f" {sha[:12]}")

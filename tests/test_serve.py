@@ -1444,6 +1444,35 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(len(self.stored_events("detail")), 1)
         self.assertNotIn("ran ruff", [s for _at, _k, s in got])
 
+    def test_a_no_commit_turns_output_is_among_the_events(self):
+        """KO-375: the `implementer_output` row is `detail` for its payload,
+        but its summary is the run's story -- the one detail kind the
+        route answers, in its place, without the payload."""
+        self.seed_reviewed()
+        conn = store.open(str(self.db))
+        try:
+            store.record_event(
+                conn, self.run, "implementer_output",
+                "This contract cannot be met.", level="detail",
+                payload="This contract cannot be met.\nno file is named",
+                now=self.now - 25 * MIN)
+        finally:
+            conn.close()
+        self.start()
+
+        code, _headers, body = self.request("GET", f"/runs/{self.run}")
+
+        self.assertEqual(code, 200)
+        (shown,) = [e for e in body["events"]
+                    if e["kind"] == "implementer_output"]
+        self.assertEqual(shown["summary"], "This contract cannot be met.")
+        self.assertNotIn("payload", shown)
+        self.assertNotIn("no file is named", self.raw_body)
+        # In its place in the stream: the row was appended last, so the
+        # route's `seq` order puts it last.
+        self.assertEqual(body["events"][-1]["kind"], "implementer_output")
+        self.assertNotIn("ran ruff", [e["summary"] for e in body["events"]])
+
     def test_the_run_is_the_row_joined_to_its_ticket(self):
         self.seed_reviewed()
         self.start()
