@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Now } from "../src/components/Now";
 import { RunDetail } from "../src/components/RunDetail";
+import { labelFits } from "../src/components/RoundTimeline";
 import { formatClock } from "../src/lib/format";
 import type { Fetch } from "../src/lib/poll";
 import type { Run, RunDetailBody, RunFilesBody, Status } from "../src/lib/types";
@@ -92,8 +93,8 @@ const answering =
 
 afterEach(cleanup);
 
-async function mount(body: RunDetailBody, now: number, files?: () => Response) {
-  render(<RunDetail base={BASE} id={91} now={now} polls={1} deps={{ fetch: answering(body, files) }} />);
+async function mount(body: RunDetailBody, now: number, files?: () => Response, barPx?: number) {
+  render(<RunDetail base={BASE} id={91} now={now} polls={1} deps={{ fetch: answering(body, files), barPx }} />);
   await settle();
 }
 
@@ -231,6 +232,73 @@ test("past the box the header reads 10m 00s over the box in the bad tone and the
   expect(parts.reduce((sum, part) => sum + part.percent, 0)).toBeCloseTo(100, 6);
   expect(parts.reduce((sum, part) => sum + part.px, 0)).toBeCloseTo(3 * (items.length - 1), 6);
   expect(timeline.style.gap).toBe("3px");
+});
+
+/** A finished run whose phase changes leave the bar three segments of
+ *  shares 0.5, 0.05 and 0.45: implement 20m, review 2m, verify 18m of a
+ *  40m run past its 30m box. */
+const SHARES: RunDetailBody = {
+  ...DETAIL,
+  run: { ...DETAIL.run, phase: "done", ended_ms: T + 40 * MINUTE, outcome: "merged" },
+  rounds: [],
+  events: [
+    { at: T, kind: "phase_change", summary: "claimed -> working: KO-232" },
+    { at: T + 20 * MINUTE, kind: "phase_change", summary: "working -> reviewing: round 1 review" },
+    { at: T + 22 * MINUTE, kind: "phase_change", summary: "reviewing -> verifying: approved" },
+    { at: T + 40 * MINUTE, kind: "phase_change", summary: "verifying -> done: merged" },
+  ],
+};
+
+test("each label sits under its segment's left edge, and a segment too narrow for one shows none", async () => {
+  await mount(SHARES, T + 40 * MINUTE, undefined, 600);
+  const bar = screen.getByRole("list", { name: "Round timeline" });
+  expect(Array.from(bar.children).map((item) => item.getAttribute("data-segment"))).toEqual([
+    "implement",
+    "review",
+    "verify",
+  ]);
+  // 600 px bar: implement is 300 px and verify 270 px, so both are
+  // labelled at their start shares; the 30 px review shows no label.
+  const cells = Array.from(document.querySelectorAll("[data-segment-label]")) as HTMLElement[];
+  expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["implement", "verify"]);
+  expect(cells[0]!.className).toContain("absolute");
+  expect(parseFloat(cells[0]!.style.left)).toBe(0);
+  expect(parseFloat(cells[1]!.style.left)).toBeCloseTo(55, 6);
+});
+
+test("at a narrower bar only labels whose segment reaches LABEL_MIN_PX remain", async () => {
+  expect(labelFits(0.5, 200)).toBe(true);
+  expect(labelFits(0.05, 200)).toBe(false);
+  expect(labelFits(0.45, 200)).toBe(true);
+  await mount(SHARES, T + 40 * MINUTE, undefined, 200);
+  expect(document.querySelectorAll("[data-segment-label]").length).toBe(2);
+  cleanup();
+  // At 150 px only implement's 75 px is still wide enough.
+  await mount(SHARES, T + 40 * MINUTE, undefined, 150);
+  const cells = Array.from(document.querySelectorAll("[data-segment-label]")) as HTMLElement[];
+  expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["implement"]);
+});
+
+test("a live run's remaining track gets no label and the running segment's label carries its live duration", async () => {
+  const live: RunDetailBody = {
+    ...DETAIL,
+    run: { ...DETAIL.run, phase: "verifying" },
+    rounds: [],
+    events: [
+      { at: T, kind: "phase_change", summary: "claimed -> working: KO-232" },
+      { at: T + 12 * MINUTE, kind: "phase_change", summary: "working -> verifying: round 1: verify before review" },
+    ],
+  };
+  await mount(live, T + 20 * MINUTE, undefined, 600);
+  const bar = screen.getByRole("list", { name: "Round timeline" });
+  expect(Array.from(bar.children).map((item) => item.getAttribute("data-segment"))).toEqual([
+    "implement",
+    "verify",
+    "remaining",
+  ]);
+  const cells = Array.from(document.querySelectorAll("[data-segment-label]")) as HTMLElement[];
+  expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["implement", "verify"]);
+  expect(cells[1]!.textContent).toBe("verify8m 00s");
 });
 
 test("a newest round that passed shows no open findings and zero counts", async () => {

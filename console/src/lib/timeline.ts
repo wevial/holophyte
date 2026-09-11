@@ -81,8 +81,18 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
   const out: Segment[] = [];
   let open: { kind: SegmentKind; label: string; from: number } | null = null;
   let reviews = 0;
+  /** A segment that picks up where an identical one ended merges into it
+   *  (a `working -> working` setup event is one implement phase, not
+   *  two): the `to` extends and `running` follows the newer segment. */
+  const push = (segment: Segment) => {
+    const last = out[out.length - 1];
+    if (last && last.to === segment.from && last.kind === segment.kind && last.label === segment.label) {
+      last.to = segment.to;
+      last.running = segment.running;
+    } else out.push(segment);
+  };
   const close = (at: number) => {
-    if (open && at > open.from) out.push({ ...open, to: at, running: false, width: 0 });
+    if (open && at > open.from) push({ ...open, to: at, running: false, width: 0 });
     open = null;
   };
   for (const change of changes) {
@@ -97,7 +107,7 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
   }
   if (open) {
     const last: Segment = { ...open, to: Math.max(open.from, end), running: live, width: 0 };
-    if (live || last.to > last.from) out.push(last);
+    if (live || last.to > last.from) push(last);
   }
   const reach = Math.max(end, out.length ? out[out.length - 1]!.to : end);
   return size(out, run, reach);
