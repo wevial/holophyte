@@ -55,6 +55,21 @@ test("an implementer that exited without committing reads as such, on a fresh or
   });
 });
 
+test("an implementer that died reads as the crash, named by the exception's type", () => {
+  // `crash_reason()`'s line for run 103 (KO-273): the type, the message, the factory frame.
+  expect(plainReason("OperationalError: database is locked (at holophyte/runs.py:record_round:212)")).toEqual({
+    sentence: "Run crashed with OperationalError",
+    branch: null,
+    sha: null,
+  });
+  // `sh()` failing under the implementer turn, whitespace collapsed to one line.
+  expect(
+    plainReason("RuntimeError: `['git', 'rev-parse', 'HEAD']` failed: fatal: not a git repository (at holophyte/loop.py:_implement:913)").sentence,
+  ).toBe("Run crashed with RuntimeError");
+  // No factory frame on the traceback: the bare `TYPE: message` form.
+  expect(plainReason("KeyError: 'branch'").sentence).toBe("Run crashed with KeyError");
+});
+
 test("a reason from no known family shows its first line up to the first semicolon", () => {
   const raw = "merge of task/ko-260-x into main conflicted on: holophyte/loop.py; branch and worktree preserved\nsecond line";
   expect(plainReason(raw)).toEqual({
@@ -62,5 +77,7 @@ test("a reason from no known family shows its first line up to the first semicol
     branch: null,
     sha: null,
   });
-  expect(plainReason("KeyError: 'branch' (at holophyte/loop.py:1201)").sentence).toBe("KeyError: 'branch' (at holophyte/loop.py:1201)");
+  expect(plainReason("[merge] after command failed with exit 2: bun run build; branch task/ko-260-x preserved at 1234567abcdef").sentence).toBe(
+    "[merge] after command failed with exit 2: bun run build",
+  );
 });

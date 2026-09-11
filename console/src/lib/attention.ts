@@ -135,6 +135,11 @@ const FAMILIES: { match: RegExp; sentence: (m: RegExpMatchArray) => string }[] =
   { match: /^implementer exceeded the (\d+) min budget/, sentence: (m) => `Ran past its ${m[1]} min budget` },
   // `_implement()`: "implementer made no commits; ..." / "implementer made no new commits; preserved work kept on B at SHA"
   { match: /^implementer made no (?:new )?commits\b/, sentence: () => "Implementer exited without committing" },
+  // `crash_reason()`: an exception that escaped `run_task()` -- the implementer
+  // turn or a step around it died -- written as "TYPE: message (at path:function:line)".
+  // Every `RunFailure` message above opens lowercase; only a crash opens with
+  // the exception's class name.
+  { match: /^([A-Z][A-Za-z0-9_]*): /, sentence: (m) => `Run crashed with ${m[1]}` },
 ];
 
 const PRESERVED = /\b(?:branch (\S+) preserved at|(?:work )?kept on (\S+) at) ([0-9a-f]{7,40})\b/;
