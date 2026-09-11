@@ -208,6 +208,34 @@ test("three failed attempts of one ticket are one row with a ×3 badge, counted 
   expect(rows().map((row) => within(row).getByText(/^KO-/).textContent)).toEqual(["KO-343×3", "KO-229"]);
 });
 
+test("four failed items, three of one ticket and one of another: two failed rows, the count line and the Failed chip say 2, the first row wears ×3", () => {
+  const strike = (ticket: string, run: number, reason: string): AttentionItem => ({
+    kind: "failed",
+    level: "attention",
+    ticket,
+    run,
+    reason,
+    attempt: 1,
+    ended_ms: allKinds.status.now - (200 - run) * 60000,
+  });
+  const items: AttentionItem[] = [
+    strike("KO-343", 172, "verify failed: a"),
+    strike("KO-343", 174, "implementer made no commits; nothing to review"),
+    strike("KO-229", 88, "verify failed: nope"),
+    strike("KO-343", 176, "terminal adjudication: FAIL; branch task/ko-343-the-loop-runs-a-pool-of-worker preserved at 046d7d70f5e1"),
+  ];
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { level: "attention", now: allKinds.status.now, items })]} project="all" now={allKinds.status.now} />);
+  expect(screen.getByText("2").hasAttribute("data-count")).toBe(true);
+  expect(screen.getByText("things need you")).toBeTruthy();
+  expect(chips()).toEqual(["All 2", "Failed 2"]);
+  expect(rows().map((row) => row.getAttribute("data-kind"))).toEqual(["failed", "failed"]);
+  const [grouped, single] = rows();
+  expect(within(grouped!).getByText("KO-343")).toBeTruthy();
+  expect(grouped!.querySelector("[data-attempts]")!.textContent).toBe("×3");
+  expect(within(single!).getByText("KO-229")).toBeTruthy();
+  expect(single!.querySelector("[data-attempts]")).toBeNull();
+});
+
 test("an open attempts card closes when a question row opens its thread: one card at a time", () => {
   const ledgers: Ledgers = {
     "writer:7710": {
