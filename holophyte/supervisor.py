@@ -908,10 +908,68 @@ def supervise_pass(target, pid, started_at, now=None, provider=None, out=None):
         seen = sweep(target, conn, now, act=True, provider=provider)
         if seen.trips or seen.watched or seen.restarts:
             print("\n".join(sweep_lines(seen, target)), file=out)
+        reconcile_parked_pull_requests(target, conn, now, provider, out)
         store.record_supervisor_heartbeat(conn, pid, started_at, now)
     finally:
         conn.close()
     return seen
+
+
+def loop_is_live(conn, project, now, stale_ms):
+    """Whether a loop is working `project` right now: a run of the project
+    in a work phase whose heartbeat is younger than the stale threshold.
+    The loop beats through every stage of a run and holds the project's
+    lease for as long as one is live, so a fresh beat is the loop; a run
+    with no fresh beat is the sweep's business, not evidence of one."""
+    phases = ", ".join("?" * len(SWEEPABLE_PHASES))
+    return conn.execute(
+        f"SELECT 1 FROM runs WHERE projectId = ? AND endedAt IS NULL"
+        f" AND phase IN ({phases}) AND lastHeartbeat > ? LIMIT 1",
+        (project, *SWEEPABLE_PHASES, now - stale_ms)).fetchone() is not None
+
+
+def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
+                                   knobs=None):
+    """Land the pull requests a person merged while no loop was running
+    (KO-372): the loop's own `_reconcile_pull_requests()`, called from the
+    supervisor's pass for every project of the store no live loop is
+    working.
+
+    A run parked on its pull request is closed out when the pull request
+    is merged on GitHub, but the loop only asks at its startup and once a
+    tick, and a pull-request target's loop exits as soon as the board has
+    no ready ticket: a merge after that sat in the store, the ticket
+    `blocked_on_operator` and the console saying so, until somebody
+    relaunched by hand. The supervisor is always up, so its pass asks
+    instead -- the same function, one call site, printing the same lines
+    to the supervisor's `out` -- and skips a project whose loop is live
+    (`loop_is_live()`), because that loop's tick is already asking. The
+    reconcile's own rate budget and poll interval bound the cost exactly
+    as in the loop. A GitHub error is the reconcile's one printed line per
+    ticket; anything else it raises is printed here and the pass goes on
+    to its heartbeat, so nothing about GitHub ever counts as a strike or
+    ends a pass.
+
+    Returns the project ids reconciled.
+    """
+    # In the function, not at the top: `holophyte.loop` imports this module.
+    from holophyte.loop import _reconcile_pull_requests
+
+    out = out or sys.stdout
+    knobs = sweep_config(target) if knobs is None else knobs
+    asked = []
+    for (project,) in conn.execute("SELECT id FROM projects ORDER BY id"):
+        if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
+            continue
+        try:
+            with contextlib.redirect_stdout(out):
+                _reconcile_pull_requests(target, conn, project, provider)
+        except Exception as e:  # noqa: BLE001 - never a strike, never the pass
+            print(f"[holo2] parked pull requests could not be reconciled"
+                  f" ({e}); the next pass asks again", file=out)
+            continue
+        asked.append(project)
+    return asked
 
 
 def factory_revision():
