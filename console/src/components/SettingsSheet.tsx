@@ -72,8 +72,9 @@ type Verdict = { ok: true; detail: string } | { ok: false; error: string; at: st
  * instead: the two drafts are exclusive, an edit in one tab discarding
  * the other's. An accepted save re-reads `GET /config`, so the fields
  * show the file as the daemon wrote it. The daemon's verdict shows
- * inline, a refusal under the field it names (the Fields tab selected)
- * or under the raw tab. A daemon whose `/status` lacks `config_edit`
+ * inline: a refused patch under the field it names (the Fields tab
+ * selected) or under the raw tab; a refused raw draft always under the
+ * raw tab, the draft kept for correction. A daemon whose `/status` lacks `config_edit`
  * draws every field read-only under a line naming the key. Escape, the
  * backdrop or the close button calls `onClose`; focus moves to the panel
  * on open.
@@ -163,11 +164,14 @@ export function SettingsSheet({
       setVerdict({ ok: true, detail: `Saved; applies at the ${result.applies}${result.backup ? `; previous text in ${result.backup}` : ""}` });
       return;
     }
-    const at = result.refused ? namedKey(result.error) : null;
+    // A refused raw draft is corrected in the raw tab, whatever key the
+    // daemon names: the fields show the file, not the draft, and a field
+    // edit would discard the draft's other changes. A refused patch lands
+    // under the field it names, or under the raw tab when it names none,
+    // so the sentence is never rendered unseen.
+    const at = result.refused && !rawDirty ? namedKey(result.error) : null;
     const field = at != null && FIELDS.some((candidate) => fieldId(candidate) === at) ? at : null;
     setVerdict({ ok: false, error: result.error, at: field });
-    // The refusal lands in whichever panel holds its field, so a save from
-    // the raw tab that the daemon refuses by name is never rendered unseen.
     setTab(field == null ? "raw" : "fields");
   };
 

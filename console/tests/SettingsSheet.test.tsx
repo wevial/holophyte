@@ -169,7 +169,7 @@ test("a 400 naming [loop] workers shows the daemon's sentence under the workers 
   expect(dialog.querySelector("[data-field-error]")).toBeNull();
 });
 
-test("a refusal naming a dotted patch key, or [loop] workers after a save from the raw tab, selects the Fields tab so the sentence is on screen", async () => {
+test("a refusal naming a dotted patch key selects the Fields tab; a refused raw save stays in the raw tab with its draft intact, so the correction keeps every raw edit", async () => {
   let error = "loop.workers: a patch value is a string, an integer, a boolean or a list of strings, not float";
   const { fetch, puts } = daemon(TEXT, VALUES, () => Response.json({ ok: false, error }, { status: 400 }));
   await open(editable, fetch);
@@ -180,17 +180,29 @@ test("a refusal naming a dotted patch key, or [loop] workers after a save from t
   expect(puts.length).toBe(1);
   expect(dialog.querySelector('[data-field-error="loop.workers"]')!.textContent).toBe(error);
 
+  // The raw draft changes two keys; the daemon refuses one of them by name.
   error = "[holo2] /srv/x/config.toml: [loop] workers must be an integer of at least 1, got 0";
+  const draft = TEXT.replace("workers = 1", "workers = 0").replace('implementer = "claude --model opus -p"', 'implementer = "claude --model opus -p"\nreview_model = "sonnet"');
   fireEvent.click(within(dialog).getByRole("tab", { name: "Raw TOML" }));
-  fireEvent.change(dialog.querySelector("[data-raw]")!, { target: { value: TEXT.replace("workers = 1", "workers = 0") } });
+  fireEvent.change(dialog.querySelector("[data-raw]")!, { target: { value: draft } });
   fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
   await act(settle);
 
   expect(puts.length).toBe(2);
-  expect(puts[1]).toHaveProperty("text");
-  expect(within(dialog).getByRole("tab", { name: "Fields" }).getAttribute("aria-selected")).toBe("true");
-  expect(within(dialog).getByRole("alert").textContent).toBe(error);
-  expect(dialog.querySelector('[data-field-error="loop.workers"]')!.textContent).toBe(error);
+  expect(puts[1]).toEqual({ text: draft });
+  expect(within(dialog).getByRole("tab", { name: "Raw TOML" }).getAttribute("aria-selected")).toBe("true");
+  expect(dialog.querySelector("[data-raw-error]")!.textContent).toBe(error);
+  expect(dialog.querySelector("[data-field-error]")).toBeNull();
+  expect((dialog.querySelector("[data-raw]") as HTMLTextAreaElement).value).toBe(draft);
+
+  // Correcting the named key in the draft and saving sends the whole draft, the other edit still in it.
+  const corrected = draft.replace("workers = 0", "workers = 2");
+  fireEvent.change(dialog.querySelector("[data-raw]")!, { target: { value: corrected } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await act(settle);
+  expect(puts.length).toBe(3);
+  expect(puts[2]).toEqual({ text: corrected });
+  expect(puts[2]).not.toHaveProperty("patch");
 });
 
 test("a daemon whose /status lacks config_edit opens the sheet read-only, every field inert and the enabling key named", async () => {
