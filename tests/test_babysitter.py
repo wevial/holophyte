@@ -9,13 +9,30 @@ ignored rather than filed against a thread that does not exist.
 
 Run: python3 -m unittest discover -s tests -p 'test_babysit*' -v
 """
+import io
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from holophyte import babysitter, pr
-from holophyte.pr import PullRequest, Thread
+HERE = Path(__file__).resolve().parent
+# The repo root for `holophyte`, and `tests/` itself for the loop harness
+# (`test_factory_loop`) and its scripted agent (`fake_agent`).
+sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(HERE))
+
+from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
+from test_factory_loop import (  # noqa: E402
+    BRANCH,
+    MergeModeFixture,
+)
+
+import holophyte.loop  # noqa: E402
+from holophyte import babysitter, pr  # noqa: E402
+from holophyte.pr import PullRequest, Thread  # noqa: E402
 
 PULL = PullRequest(host="github.com", owner="o", name="r", number=3,
                    url="https://github.com/o/r/pull/3")
@@ -261,6 +278,187 @@ class AuthorKindTests(unittest.TestCase):
                          ["bot", "user", "unknown"])
         self.assertEqual([c.author for c in comments],
                          ["devin-ai-integration", "wevial", "unknown"])
+
+
+class MergeableReadTests(unittest.TestCase):
+    """`pr.pr_state()` carries GitHub's `mergeable` answer through to the
+    babysit pass; a read whose page predates the field, and the `null`
+    GitHub answers while it computes mergeability lazily, both read
+    UNKNOWN -- never a conflict and never a clearance."""
+
+    def read(self, mergeable="absent"):
+        node = {"state": "OPEN", "merged": False, "headRefOid": "h",
+                "mergeCommit": None, "reviewThreads": {"nodes": []},
+                "commits": {"nodes": []}}
+        if mergeable != "absent":
+            node["mergeable"] = mergeable
+        with patch.object(
+                pr, "graphql",
+                return_value={"repository": {"pullRequest": node}}), \
+                patch.object(pr, "rest", return_value=[]):
+            return pr.pr_state(None, PULL)
+
+    def test_the_mergeable_answer_is_carried(self):
+        self.assertEqual(self.read("CONFLICTING").mergeable, "CONFLICTING")
+        self.assertEqual(self.read("MERGEABLE").mergeable, "MERGEABLE")
+
+    def test_an_absent_or_null_answer_reads_unknown(self):
+        self.assertEqual(self.read().mergeable, "UNKNOWN")
+        self.assertEqual(self.read(None).mergeable, "UNKNOWN")
+
+
+class ConflictingPullRequestTests(MergeModeFixture):
+    """A babysit pass over a pull request GitHub reports CONFLICTING
+    merges `origin/main` -- the remote's `main`, not the checkout's
+    possibly stale local one -- into the branch, pushes, and goes back
+    to waiting on checks; nothing is rebased or force-pushed, so review
+    threads keep their lines. A merge that stops in the tree is the
+    implementer's to resolve, and one left unresolved parks the run
+    naming the conflicting paths. MERGEABLE and UNKNOWN answers trigger
+    none of it (KO-377)."""
+
+    def parked_on_a_nit(self, work):
+        """A run parked on its pull request by a declined nit thread,
+        under `approve = "human"`; `work` is the implementer step that
+        made the candidate. Returns the approved candidate's sha."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state([self.NIT])])
+        self.loop(work, APPROVE,
+                  Reply("THREAD 1: DECLINE -- a naming preference"),
+                  provider=self.provider())
+        approved = self.git("rev-parse", BRANCH).strip()
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        return approved
+
+    def remote_main(self, path, body):
+        """A commit on top of `main` as the remote would hold it: built in
+        the target's object store without moving the checkout's `main`
+        (which stays behind, as a writer host's does while the remote
+        moved), then `refs/remotes/origin/main` pointed at it -- the
+        state the fake route's swallowed `git fetch origin` would leave.
+        Returns the new `main` sha."""
+        index = self.worktrees.parent / "remote-main-index"
+        env = dict(os.environ, GIT_INDEX_FILE=str(index))
+
+        def plumb(*args, **kw):
+            return subprocess.run(
+                ["git", *args], cwd=self.target, env=env, check=True,
+                capture_output=True, text=True, **kw).stdout.strip()
+
+        plumb("read-tree", "main")
+        blob = plumb("hash-object", "-w", "--stdin", input=body)
+        plumb("update-index", "--add", "--cacheinfo",
+              f"100644,{blob},{path}")
+        moved = self.git("commit-tree", plumb("write-tree"), "-p", "main",
+                         "-m", "main moved on").strip()
+        index.unlink(missing_ok=True)
+        self.git("update-ref", "refs/remotes/origin/main", moved)
+        return moved
+
+    def resume(self, *script):
+        """`--babysit` the parked run and drive it through the harness,
+        faked GitHub serving whatever `serve()` last laid down."""
+        holophyte.loop.babysit_ticket(self.tgt, "KO-131", "look again",
+                                      out=io.StringIO())
+        return self.loop(*script, provider=self.provider())
+
+    def test_a_conflicting_pull_request_merges_origin_main_in(self):
+        """KO-377: GitHub says CONFLICTING and `origin/main` merges
+        cleanly. The pass fetches `origin`, merges the remote's `main`
+        into the branch in the resumed worktree -- the merge commit's
+        second parent is the remote's `main`, not the checkout's local
+        `main`, which the test leaves behind -- pushes it, records the
+        merge in the ledger, and goes back to waiting on checks. No
+        agent turns and no history rewrite: the candidate stays the
+        merge's first parent and the checkout's `main` never moved."""
+        approved = self.parked_on_a_nit(
+            Commit("the scripted work", path="THING.md",
+                   body="the branch's line\n"))
+        moved = self.remote_main("MOVED.md", "main moved on\n")
+        self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
+
+        fake, _ = self.resume()
+
+        wt = self.worktrees / "ko-131-add-a-thing"
+        head = self.git("rev-parse", "HEAD", cwd=wt).strip()
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.git("rev-parse", "HEAD^1", cwd=wt).strip(),
+                         approved)
+        self.assertEqual(self.git("rev-parse", "HEAD^2", cwd=wt).strip(),
+                         moved)
+        self.assertNotEqual(self.git("rev-parse", "main").strip(), moved)
+        self.assertEqual([c for c in self.recorded()
+                          if c.startswith("git")],
+                         [f"git push origin {BRANCH}"] * 2)
+        # What the pushes delivered: the candidate at open, then the
+        # merge commit -- resolved at push time, so a push ordered
+        # before the merge would record the pre-merge tip here.
+        self.assertEqual(self.pushed(),
+                         [(BRANCH, approved), (BRANCH, head)])
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE kind = 'note' AND"
+                      " text LIKE 'Merged main into%'"),
+            [(f"Merged main into {BRANCH} at {head} (GitHub reported a"
+              " conflict)",)])
+        self.assertEqual(
+            self.read("SELECT phase, candidateSha FROM runs WHERE id = 2"),
+            [("awaiting_merge_approval", head)])
+        self.assertIn("a human says merge", self.question())
+
+    def test_a_tree_conflict_goes_to_the_implementer_then_parks(self):
+        """KO-377: `origin/main` conflicts with the branch in the tree.
+        The pass invokes one implementer turn with the conflicting paths
+        the way the local gate does (KO-355); a turn that leaves the
+        conflict unresolved parks the run, its question naming the paths,
+        and the aborted merge leaves the branch at the candidate."""
+        approved = self.parked_on_a_nit(
+            Commit("the scripted work", path="README.md",
+                   body="the branch's line\n"))
+        self.remote_main("README.md", "the remote's line\n")
+        self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
+
+        fake, _ = self.resume(Idle("I cannot reconcile these."))
+
+        self.assertEqual(fake.roles, ["implement"])
+        self.assertIn("README.md", fake.turns[0].goal)
+        question = self.question()
+        self.assertIn("README.md", question)
+        self.assertIn("conflict", question)
+        wt = self.worktrees / "ko-131-add-a-thing"
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(),
+                         approved)
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), approved)
+        self.assertEqual(
+            self.read("SELECT phase FROM runs WHERE id = 2"),
+            [("awaiting_merge_approval",)])
+        # The only push ever was the candidate's, at open; the aborted
+        # merge pushed nothing.
+        self.assertEqual(self.pushed(), [(BRANCH, approved)])
+
+    def test_mergeable_and_unknown_pull_requests_are_not_merged(self):
+        """KO-377: MERGEABLE is left alone -- a PR that is merely behind
+        is not merged into -- and UNKNOWN is treated as not conflicting:
+        GitHub computes it lazily and the next pass sees it. Neither
+        merges `main` in nor pushes."""
+        approved = self.parked_on_a_nit(Commit("the scripted work"))
+        self.remote_main("MOVED.md", "main moved on\n")
+        wt = self.worktrees / "ko-131-add-a-thing"
+
+        self.serve(self.pr_state(mergeable="MERGEABLE"))
+        self.resume()
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(),
+                         approved)
+        self.assertEqual(self.pushed(), [(BRANCH, approved)])
+
+        self.serve(self.pr_state(mergeable=None))
+        self.resume()
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(),
+                         approved)
+        self.assertEqual(self.pushed(), [(BRANCH, approved)])
+        self.assertEqual(
+            self.read("SELECT COUNT(*) FROM ledger WHERE kind = 'note'"
+                      " AND text LIKE 'Merged main into%'"), [(0,)])
 
 
 if __name__ == "__main__":

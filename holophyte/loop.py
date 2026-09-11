@@ -1342,11 +1342,46 @@ def _park_at_gate(conn, run_id, provider, task_id, branch, sha, question,
            f"{ledger_text} Branch {branch} preserved at {sha}.", provider)
 
 
+def _is_ancestor(cwd, a, b):
+    """Whether commit `a` is an ancestor of `b` in `cwd`'s repository."""
+    return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                          cwd=cwd, capture_output=True).returncode == 0
+
+
+def _merge_ref(wt, ref):
+    """`git merge --no-edit REF` into the branch `wt` has checked out;
+    `(status, detail)`.
+
+    `"ancestor"` -- `ref` is already merged in, nothing ran, detail is
+    HEAD's sha. `"merged"` -- the merge committed, detail is its sha.
+    `"conflicted"` -- the merge stopped: detail is the sorted unmerged
+    paths it stopped on, empty when git failed the merge without naming
+    any, and `wt` is left mid-merge for the caller -- aborted at the merge
+    gate (`_sync_main_into_branch()`), resolved by an implementer turn on
+    a conflicting pull request (`_merge_origin_main()`).
+    """
+    head = sh(["git", "rev-parse", "HEAD"], wt)
+    if _is_ancestor(wt, ref, "HEAD"):
+        return "ancestor", head
+    mr = subprocess.run(["git", "merge", "--no-edit", ref], cwd=wt,
+                        capture_output=True, text=True)
+    if mr.returncode == 0:
+        return "merged", sh(["git", "rev-parse", "HEAD"], wt)
+    conflicted = sorted(
+        p for p in subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt,
+            capture_output=True, text=True).stdout.splitlines() if p.strip())
+    return "conflicted", conflicted
+
+
 def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
-                           wt, sha):
-    """Merge `main` into the branch in its worktree, so the gate verifies
-    and merges the candidate as it will sit on today's `main`. Returns the
-    branch's sha afterwards: unchanged when `main` is already an ancestor.
+                           wt, sha, ref="main"):
+    """Merge `ref` into the branch in its worktree, so the gate verifies
+    and merges the candidate as it will sit on today's `main`. `ref` is
+    `main` at the local gate; the babysit pass's own call for a
+    conflicting pull request is `_merge_origin_main()`, which wants
+    `origin/main` and a different conflict disposition. Returns the
+    branch's sha afterwards: unchanged when `ref` is already an ancestor.
 
     A conflict is a person's to resolve, whatever the path: the merge is
     aborted, the branch left at `sha`, and the run parks with the
@@ -1356,37 +1391,106 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
     the branch writes FINDINGS.md any more, so a conflict there is a real
     one.)
     """
-    if subprocess.run(["git", "merge-base", "--is-ancestor", "main", "HEAD"],
-                      cwd=wt, capture_output=True).returncode == 0:
+    status, detail = _merge_ref(wt, ref)
+    if status == "ancestor":
         return sha
-    print(f"[holo2] main moved past {branch}; merging main into the branch"
-          " before the gate's verify")
-    mr = subprocess.run(["git", "merge", "--no-edit", "main"], cwd=wt,
-                        capture_output=True, text=True)
-    if mr.returncode != 0:
-        conflicted = sorted(
-            p for p in subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt,
-                capture_output=True, text=True).stdout.splitlines() if p.strip())
+    if status == "conflicted":
         subprocess.run(["git", "merge", "--abort"], cwd=wt,
                        capture_output=True, text=True)
-        paths = ", ".join(conflicted) or "(no unmerged paths reported)"
+        paths = ", ".join(detail) or "(no unmerged paths reported)"
         why = (f"{store.GATE_CONFLICT_REASON}{branch} conflicted on:"
                f" {paths}; branch preserved at {sha[:12]}")
         print(f"[holo2] {why}")
         _park_at_gate(conn, run_id, provider, task_id, branch, sha,
                       f"{GATE_CONFLICT_QUESTION}{paths}; resolve it"
                       f" on {branch} and --requeue, or merge by hand",
-                      f"MERGE GATE: main conflicts with {branch} on"
-                      f" {paths}; the merge of main into the branch was"
+                      f"MERGE GATE: {ref} conflicts with {branch} on"
+                      f" {paths}; the merge of {ref} into the branch was"
                       " aborted.")
         raise RunFailure(why)
-    merged = sh(["git", "rev-parse", "HEAD"], wt)
+    merged = detail
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "merge_gate",
-                           f"merged main into {branch}: {sha[:12]} ->"
+                           f"merged {ref} into {branch}: {sha[:12]} ->"
                            f" {merged[:12]}")
-    print(f"[holo2] main merged into {branch}: {sha[:12]} -> {merged[:12]}")
+    print(f"[holo2] {ref} merged into {branch}: {sha[:12]} -> {merged[:12]}")
+    return merged
+
+
+def merge_conflict_goal(branch, pull, conflicts):
+    """The implementer turn's goal for a pull request's merge that stopped
+    on `conflicts`: resolve and commit the in-progress merge, nothing
+    else. The hand-off KO-355 gave a preserved branch's mid-merge
+    worktree, run here on the PR GitHub reported conflicting."""
+    return (f"The worktree is mid-merge. Merging main into {branch} -- the"
+            f" branch pull request {pull.url} is open on, which GitHub"
+            f" reports conflicting -- stopped on conflicts in:"
+            f" {', '.join(conflicts)}. Resolve each one keeping both"
+            " sides' intent (the branch's work and main's new lines both"
+            " stay), then commit the merge with a message naming both"
+            " sides. That commit is the whole turn: no other work, no"
+            " rebase, no force-push.")
+
+
+def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
+                       sha, beat_s, pull, budget_min, reviewed=None):
+    """GitHub answered CONFLICTING: fetch `origin` and merge `origin/main`
+    into the branch in the worktree -- the remote's `main`, never the
+    checkout's possibly stale local one -- push, and hand the branch's sha
+    back so the pass goes on to waiting on the checks the push restarts.
+    A merge commit, never a rebase or a force-push: review threads keep
+    their lines.
+
+    A merge that stops on unmerged paths goes to one implementer turn,
+    which resolves and commits it (`merge_conflict_goal()`); a turn that
+    leaves the merge unresolved -- or that dropped it without merging --
+    has the merge aborted and the run parked with the conflicting paths
+    in the question, the branch left at `sha`. A fetch that cannot
+    deliver `origin/main` is the route's failure, not the ticket's.
+    """
+    with heartbeat_while(conn, run_id, beat_s):
+        fetched = subprocess.run(["git", "fetch", pr.REMOTE], cwd=wt,
+                                 capture_output=True, text=True)
+    ref = f"{pr.REMOTE}/{pr.BASE}"
+    if fetched.returncode != 0 or subprocess.run(
+            ["git", "rev-parse", "--verify", "-q", ref], cwd=wt,
+            capture_output=True).returncode != 0:
+        raise InfraFailure(f"git fetch {pr.REMOTE} did not deliver {ref}"
+                           f" for the conflicting {pull.url}:"
+                           f" {(fetched.stderr or fetched.stdout).strip()}"
+                           f"; branch {branch} preserved at {sha[:12]}")
+    status, detail = _merge_ref(wt, ref)
+    if status == "conflicted":
+        _timed(target, conn, run_id, beat_s, wt, budget_min,
+               merge_conflict_goal(branch, pull, detail))
+        still = merge_conflicts(wt)
+        if still or not _is_ancestor(wt, ref, "HEAD"):
+            if still:
+                subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                               capture_output=True, text=True)
+            _park_on_pr(
+                target, conn, run_id, provider, task_id, branch, sha, pull,
+                f"GitHub reported the pull request conflicting; merging"
+                f" {pr.BASE} into {branch} stopped on"
+                f" {', '.join(still or detail)} and the implementer turn"
+                " left it unresolved", (), reviewed=reviewed)
+        merged = sh(["git", "rev-parse", "HEAD"], wt)
+    elif status == "ancestor":
+        # `origin/main` is already in the branch: GitHub's answer was
+        # stale, or an earlier pass merged it. Push anyway so the remote
+        # head stands at the merged sha and GitHub recomputes.
+        merged = sha
+    else:
+        merged = detail
+    with heartbeat_while(conn, run_id, beat_s):
+        pr.push_branch(target, branch)
+    print(f"[holo2] pushed {branch} to {pr.REMOTE} at {merged[:12]}"
+          " after the conflict merge")
+    if merged != sha:
+        note = (f"Merged main into {branch} at {merged} (GitHub reported"
+                " a conflict)")
+        if conn is not None and run_id is not None:
+            store.record_ledger(conn, run_id, "note", note)
     return merged
 
 
@@ -1643,6 +1747,13 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     open threads listed, `runs.prUrl` and `runs.candidateSha` are written
     with the phase move, and `MergeParked` unwinds the run with the branch
     and worktree left standing. Nothing touches local main.
+
+    Before threads are judged, a `mergeable` answer of CONFLICTING sends
+    the pass through `_merge_origin_main()`: `origin/main` is merged into
+    the branch -- never rebased, so review threads keep their lines --
+    the branch is pushed, and the pass goes back to waiting on checks.
+    UNKNOWN is not a conflict: GitHub computes `mergeable` lazily and the
+    next pass sees the answer.
     """
     merge = merge_config(target)
     pull = pr.parse_pr_url(url)
@@ -1654,24 +1765,20 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     # approval or the operator's release. A fix round moves `sha` past it.
     for pass_no in range(1, merge.pr_rounds + 1):
         state = _settled_state(target, conn, run_id, beat_s, pull)
-        if state.merged:
-            print(f"[holo2] {pull.url} is already merged as"
-                  f" {(state.merge_sha or '?')[:12]}")
-            return state.merge_sha
-        if state.closed:
-            raise RunFailure(f"{pull.url} was closed without merging;"
-                             f" branch {branch} preserved at {sha[:12]}")
-        if state.head_sha and state.head_sha != sha:
-            # The PR's head is not the candidate this run pushed: someone
-            # else pushed to the branch. Its checks and threads are about
-            # their commit, not the one verified and reviewed here, so
-            # nothing is judged, fixed or merged on it -- the operator looks.
-            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                        f"the pull request's head is {state.head_sha[:12]},"
-                        f" not the candidate {sha[:12]} this run pushed;"
-                        " someone else pushed to the branch, and the"
-                        " babysitter does not judge or merge their commit",
-                        state.threads, reviewed=reviewed)
+        done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
+                            sha, pull, state, reviewed)
+        if done is not None:
+            return done
+        if state.mergeable == "CONFLICTING":
+            # GitHub found the pull request unmergeable: bring
+            # `origin/main` into the branch (fetch, merge, push) and let
+            # the next pass wait on the checks the push restarts, before
+            # any thread is judged. UNKNOWN is not a conflict -- GitHub
+            # computes `mergeable` lazily and a later pass sees it.
+            sha = _merge_origin_main(target, conn, run_id, provider,
+                                     task_id, branch, wt, sha, beat_s, pull,
+                                     budget_min, reviewed=reviewed)
+            continue
         rnd = len(store.read.rounds_of(conn, run_id)) + 1 if conn else pass_no
         if state.threads:
             sha = _answer_threads(target, conn, run_id, provider, task_id,
@@ -1722,6 +1829,33 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " babysitter stops here", state.threads, reviewed=reviewed)
+
+
+def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
+                 pull, state, reviewed):
+    """The answers on one `PrState` that end the pass before threads are
+    judged: the merge sha when the pull request is already merged, None
+    to go on. A closed-unmerged PR fails the run; a head that is not the
+    candidate this run pushed parks it -- someone else pushed to the
+    branch, and its checks and threads are about their commit, not the
+    one verified and reviewed here, so nothing is judged, fixed or
+    merged on it."""
+    if state.merged:
+        print(f"[holo2] {pull.url} is already merged as"
+              f" {(state.merge_sha or '?')[:12]}")
+        return state.merge_sha
+    if state.closed:
+        raise RunFailure(f"{pull.url} was closed without merging;"
+                         f" branch {branch} preserved at {sha[:12]}")
+    if state.head_sha and state.head_sha != sha:
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                    pull,
+                    f"the pull request's head is {state.head_sha[:12]},"
+                    f" not the candidate {sha[:12]} this run pushed;"
+                    " someone else pushed to the branch, and the"
+                    " babysitter does not judge or merge their commit",
+                    state.threads, reviewed=reviewed)
+    return None
 
 
 def _moved(sha, reviewed):
