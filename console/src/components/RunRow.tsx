@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { isStale } from "../lib/derive";
-import { formatDuration } from "../lib/format";
+import { formatSpan } from "../lib/format";
 import type { Run } from "../lib/types";
 import { PhasePill } from "./PhasePill";
 import { StrikePill } from "./StrikePill";
@@ -15,14 +15,19 @@ export function RunRow({
   expanded,
   onToggle,
   detail,
+  sinceMs = 0,
 }: {
   run: Run;
   thresholds: { heartbeat_stale_ms: number; strikes: number };
   expanded: boolean;
   onToggle: () => void;
   detail?: ReactNode;
+  /** Local milliseconds since the daemon computed the run's numbers; the
+   *  row adds it so they keep counting between polls. */
+  sinceMs?: number;
 }) {
-  const stale = isStale(run.heartbeat_age_ms, thresholds.heartbeat_stale_ms);
+  const heartbeatAge = run.heartbeat_age_ms + sinceMs;
+  const stale = isStale(heartbeatAge, thresholds.heartbeat_stale_ms);
   return (
     <li data-run={run.id} className="border-t border-line-faint">
       <button
@@ -43,12 +48,12 @@ export function RunRow({
         <span>
           <PhasePill phase={run.phase} />
         </span>
-        <TimeBoxBar elapsedMs={run.elapsed_ms} boxMs={run.time_box_ms} />
+        <TimeBoxBar elapsedMs={run.elapsed_ms + sinceMs} boxMs={run.time_box_ms} />
         <span
           data-heartbeat={stale ? "stale" : "live"}
           className={`font-mono text-[12px] ${stale ? "font-semibold text-bad" : "text-ok-text"}`}
         >
-          hb {formatDuration(run.heartbeat_age_ms)}
+          hb {formatSpan(heartbeatAge)}
         </span>
       </button>
       {expanded && (detail ?? <div data-detail className="border-t border-line-faint px-4 py-3" />)}

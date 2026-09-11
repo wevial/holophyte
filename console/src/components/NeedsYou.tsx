@@ -11,9 +11,10 @@ import {
   type KindFilter,
   type ProjectChoice,
 } from "../lib/attention";
+import { useTick } from "../hooks/useTick";
 import { projectName } from "../lib/derive";
-import { UNREACHABLE, hostItems, type HostRecord } from "../lib/hosts";
-import type { Fetch } from "../lib/poll";
+import { UNREACHABLE, hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
+import { TICK_MS, type Fetch } from "../lib/poll";
 import type { Ledgers } from "../hooks/useLedger";
 import { threadFor } from "../lib/threads";
 import type { AttentionItem } from "../lib/types";
@@ -58,17 +59,27 @@ export function NeedsYou({
   const [kind, setKind] = useState<KindFilter>("all");
   const [expanded, setExpanded] = useState(false);
   const [openRow, setOpenRow] = useState<string | null>(null);
+  const localNow = useTick(TICK_MS);
 
   const stamped: AttentionItem[] = hosts.flatMap((host) => hostItems(host, now));
 
   /** An item's row text against its own daemon's thresholds and clock; the
-   *  console's clock for the unreachable row, whose "last seen" is local. */
+   *  console's clock for the unreachable row, whose "last seen" is local.
+   *  The daemon's numbers are frozen at its answer, so each ages by the
+   *  local time since that answer arrived until the next poll realigns. */
   const describeRow = (item: AttentionItem) => {
-    const status = hosts.find((candidate) => candidate.address === item.daemon)?.status;
+    const host = hosts.find((candidate) => candidate.address === item.daemon);
+    const status = host?.status;
     if (item.kind === UNREACHABLE || !status) {
       return describe(item, { heartbeat_stale_ms: 0, strikes: 0 }, { now });
     }
-    return describe(item, status.thresholds, { now: status.now, runs: status.runs });
+    const sinceMs = sinceSeen(host?.seen_ms, localNow);
+    const aged =
+      sinceMs && typeof item.heartbeat_age_ms === "number"
+        ? { ...item, heartbeat_age_ms: item.heartbeat_age_ms + sinceMs }
+        : item;
+    const runs = sinceMs ? status.runs.map((run) => ({ ...run, elapsed_ms: run.elapsed_ms + sinceMs })) : status.runs;
+    return describe(aged, status.thresholds, { now: status.now + sinceMs, runs });
   };
 
   const entries = orderByAge(collapseFailed(filterItems(stamped, "all", project)), (entry) => describeRow(entry.item).ageMs);

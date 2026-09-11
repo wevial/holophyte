@@ -16,12 +16,15 @@ export function ProjectBlock({
   onToggleRun,
   renderDetail,
   deps = defaultPollDeps,
+  sinceMs = 0,
 }: {
   group: ProjectGroup;
   expandedRun: string | null;
   onToggleRun: (key: string) => void;
   renderDetail?: (run: Run, group: ProjectGroup) => ReactNode;
   deps?: { fetch: Fetch };
+  /** Local milliseconds since `group.status` arrived, handed to each row. */
+  sinceMs?: number;
 }) {
   const { status } = group;
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -73,6 +76,7 @@ export function ProjectBlock({
               expanded={expanded}
               onToggle={() => onToggleRun(key)}
               detail={expanded ? renderDetail?.(run, group) : undefined}
+              sinceMs={sinceMs}
             />
           );
         })}

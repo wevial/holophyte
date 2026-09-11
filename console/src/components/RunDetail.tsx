@@ -29,6 +29,7 @@ export function RunDetail({
   base,
   id,
   now,
+  sinceMs = 0,
   polls,
   deps,
 }: {
@@ -36,6 +37,8 @@ export function RunDetail({
   id: number;
   /** The daemon's clock at the last poll, so the timeline agrees with the row's time box. */
   now: number;
+  /** Local milliseconds since that poll; the run log's summary ages by it. */
+  sinceMs?: number;
   polls: number;
   deps?: { fetch: Fetch };
 }) {
@@ -49,12 +52,12 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && <Card body={detail} files={files} now={now} />}
+      {detail && <Card body={detail} files={files} now={now} sinceMs={sinceMs} />}
     </div>
   );
 }
 
-function Card({ body, files, now }: { body: RunDetailBody; files: RunFilesState; now: number }) {
+function Card({ body, files, now, sinceMs }: { body: RunDetailBody; files: RunFilesState; now: number; sinceMs: number }) {
   const { run, rounds } = body;
   const remaining = boxRemaining(run, now);
   const over = remaining < 0;
@@ -102,7 +105,7 @@ function Card({ body, files, now }: { body: RunDetailBody; files: RunFilesState;
         <ActionButton>Kill run</ActionButton>
         <ActionButton>Requeue ticket</ActionButton>
       </footer>
-      <RunLog events={body.events} rounds={rounds} now={now} />
+      <RunLog events={body.events} rounds={rounds} now={now + sinceMs} />
     </article>
   );
 }
