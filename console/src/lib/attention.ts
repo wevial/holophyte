@@ -109,6 +109,52 @@ export interface DescribeContext {
   runs?: Run[];
 }
 
+/** What `plainReason` read off a `runs.outcomeReason`: the one-sentence
+ *  summary a row shows, and the branch and whole sha the reason named
+ *  (`branch task/x preserved at SHA`, `work kept on task/x at SHA`). */
+export interface PlainReason {
+  sentence: string;
+  branch: string | null;
+  sha: string | null;
+}
+
+/** The reason families `holophyte/loop.py` writes as `outcomeReason`
+ *  (`RunFailure` messages), each as the prefix or pattern its writer
+ *  uses, in the order tried. The sentence is presentation: the daemon
+ *  stays a mirror of the store and the verbatim line stays in the run
+ *  detail. A family may read a detail off its match (the verdict, the
+ *  budget). */
+const FAMILIES: { match: RegExp; sentence: (m: RegExpMatchArray) => string }[] = [
+  // `_terminal_adjudication()`: "terminal adjudication: FAIL; branch B preserved at SHA"
+  { match: /^terminal adjudication: (\S+?);/, sentence: (m) => `Review adjudicated ${m[1]}` },
+  // `_review_rounds()`: "preserved commits on B conflict with a main that moved on ...; branch B preserved at SHA"
+  { match: /^preserved commits on \S+ conflict with a main/, sentence: () => "Preserved branch conflicts with the moved main" },
+  // `run_verify` callers: "verify failed before merge; branch B preserved at SHA", "verify failed: ..."
+  { match: /^verify failed\b/, sentence: () => "Verify command failed" },
+  // `_implement()`: "implementer exceeded the N min budget; work kept on B at SHA"
+  { match: /^implementer exceeded the (\d+) min budget/, sentence: (m) => `Ran past its ${m[1]} min budget` },
+  // `_implement()`: "implementer made no commits; ..." / "implementer made no new commits; preserved work kept on B at SHA"
+  { match: /^implementer made no (?:new )?commits\b/, sentence: () => "Implementer exited without committing" },
+];
+
+const PRESERVED = /\b(?:branch (\S+) preserved at|(?:work )?kept on (\S+) at) ([0-9a-f]{7,40})\b/;
+
+/** One plain sentence for a `runs.outcomeReason`, with the branch and sha
+ *  the line named when it named them. A reason from no known family
+ *  shows its first line up to the first semicolon, so an unknown shape
+ *  hides nothing. */
+export function plainReason(raw: string): PlainReason {
+  const preserved = raw.match(PRESERVED);
+  const branch = preserved ? (preserved[1] ?? preserved[2] ?? null) : null;
+  const sha = preserved ? (preserved[3] ?? null) : null;
+  for (const family of FAMILIES) {
+    const m = raw.match(family.match);
+    if (m) return { sentence: family.sentence(m), branch, sha };
+  }
+  const firstLine = raw.split("\n", 1)[0] ?? "";
+  return { sentence: firstLine.split(";", 1)[0]!.trim(), branch, sha };
+}
+
 function runLabel(item: AttentionItem): string | null {
   const run = num(item.run);
   return run == null ? null : `run #${run}`;
@@ -171,10 +217,15 @@ export function describe(
     }
     case "failed": {
       const attempt = num(item.attempt);
+      const plain = plainReason(str(item.reason) ?? "");
       return {
         ...base,
-        body: str(item.reason) ?? "",
-        meta: joinMeta(runLabel(item), attempt == null ? null : `strike ${attempt} of ${thresholds.strikes}`),
+        body: plain.sentence,
+        meta: joinMeta(
+          runLabel(item),
+          attempt == null ? null : `strike ${attempt} of ${thresholds.strikes}`,
+          plain.branch != null && plain.sha != null ? `${plain.branch} @ ${plain.sha.slice(0, 7)}` : null,
+        ),
       };
     }
     case "supervisor": {
