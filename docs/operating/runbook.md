@@ -83,7 +83,7 @@ python3 factory.py TARGET --babysit KO-n --note "new review thread; look at the 
 Under `[merge] mode = "pr"` a candidate that came up ready parks the same
 way, on its pull request, and `--approve` merges it as it stands.
 `--babysit` sends it back for another round instead: it writes the
-`interventions` row `store.shepherd()` writes (the note defaults to `sent
+`interventions` row `store.babysit()` writes (the note defaults to `sent
 back to the babysitter`), ends the parked run with its resume point at the
 merge gate and walks the ticket to `ready`; the loop's next claim resumes
 the candidate on its PR, verdicts and answers the new threads, waits on

@@ -531,7 +531,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     changed) goes through the gate below and then leaves the machine as a
     fresh run's would, pushed and opened -- but only on an approval. The
     gate below merges, so a candidate carried here with `carried.approved`
-    False (the intervention `store.shepherd()` writes as the newest on its
+    False (the intervention `store.babysit()` writes as the newest on its
     run, which it refuses to write on a PR-less run but a hand-written
     store row could) is not taken through it: the run fails naming the
     release, the tree untouched, and a human answers with `--approve`.
@@ -2930,7 +2930,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     item as soon as the next tick reads it. The interval is per
     pull request, measured from the park (`runs.lastHeartbeat`, the
     park's stamp): activity within `poll_ms` of it is named and waits.
-    Otherwise `store.shepherd()`'s one transaction -- its
+    Otherwise `store.babysit()`'s one transaction -- its
     intervention row, source `supervisor` (the loop's own machinery, not
     a person), naming what moved, the run ended with its resume
     point at the merge gate, the ticket walked to `ready` -- with the
@@ -2973,7 +2973,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)
-            store.shepherd(conn, ticket.id, note, source="supervisor")
+            store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
         print(f"[holo2] {identifier}: {pull.url} has new review activity but"
               f" the ticket moved while GitHub was asked ({refused}); left"
@@ -3693,7 +3693,7 @@ def babysit_ticket(target, identifier, note, out=None):
     """Send the ticket `identifier`, parked on its pull request, back to the
     babysitter. Returns nothing.
 
-    `--babysit`'s whole body and `approve()`'s twin: `store.shepherd()`'s
+    `--babysit`'s whole body and `approve()`'s twin: `store.babysit()`'s
     one transaction -- its intervention row carrying `note`, the
     parked run ended with its resume point at the merge gate, the ticket
     walked to `ready` -- printed and done. The loop's next claim of the
@@ -3707,7 +3707,7 @@ def babysit_ticket(target, identifier, note, out=None):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            run_id = store.shepherd(conn, ticket_id, note)
+            run_id = store.babysit(conn, ticket_id, note)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} sent back to the babysitter: run {run_id}"

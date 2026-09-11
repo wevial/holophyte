@@ -958,7 +958,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     board with no ready ticket, so without this the ticket waits in the
     store for a hand on the launcher. What is owed a loop is read from
     the store, not from this pass's reconcile
-    (`store.read.pending_loop_launches()`): the shepherd row the send-back
+    (`store.read.pending_loop_launches()`): the babysit row the send-back
     wrote, on a ticket still `ready`, with no `launch_loop` row since. A
     start `systemctl` took is recorded as that row, so a loop that is
     booting and has not claimed yet is not started again by the next pass;
@@ -1017,7 +1017,7 @@ def start_loop_for(target, conn, owed, now, out):
     count = len(owed)
     noun = "ticket" if count == 1 else "tickets"
     attempt = (f"the supervisor is starting {unit} for {count} {noun} sent"
-               " back to the shepherd while no loop is live")
+               " back to the babysitter while no loop is live")
     with store.transaction(conn):
         for _ticket, run_id in owed:
             store.record_event(conn, run_id, "launch_loop_attempt", attempt,
@@ -1034,7 +1034,7 @@ def start_loop_for(target, conn, owed, now, out):
               " tries again", file=out)
         return
     note = (f"the supervisor started {unit} for {count} {noun} sent back to"
-            " the shepherd while no loop was live")
+            " the babysitter while no loop was live")
     with store.transaction(conn):
         for _ticket, run_id in owed:
             store.record_intervention(conn, run_id, "launch_loop", note,

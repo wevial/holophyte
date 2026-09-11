@@ -164,7 +164,7 @@ machines it walks. Back to the [README](index.md).
    moved past that mark, or whose thread count has grown, is a reviewer's
    comment nobody has answered: the tick sends the run back to the
    babysitter exactly as `--babysit KO-n` does -- the intervention row
-   `store.shepherd()` writes, with source `supervisor`, the run ended with its resume point at the
+   `store.babysit()` writes, with source `supervisor`, the run ended with its resume point at the
    merge gate, the ticket `ready` -- and the next claim (the same pass, in
    the serial loop) resumes the candidate on its pull request for another
    round of passes. At most one such round per `[merge] pr_poll_sec`

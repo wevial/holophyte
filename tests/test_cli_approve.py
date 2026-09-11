@@ -120,18 +120,18 @@ class ApproveCliTests(unittest.TestCase):
 
     def test_babysit_releases_the_parked_run_without_approving(self):
         """`--babysit KO-n` is `--approve`'s twin with its own action: the
-        same release and resume point, a `shepherd` intervention row, and
+        same release and resume point, a `babysit` intervention row, and
         the candidate the next claim carries is not marked approved."""
         self.park(pr_url="https://example.test/pull/7")
 
         out, _ = self.cli("--babysit", "KO-1", "--note", "bots are done")
 
         self.assertIn(f"KO-1 sent back to the babysitter: run {self.run}", out)
-        self.assertEqual(self.interventions(), [(self.run, "shepherd")])
+        self.assertEqual(self.interventions(), [(self.run, "babysit")])
         (summary,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
             " 'intervention'", (self.run,)).fetchone()
-        self.assertEqual(summary, "human shepherd: bots are done")
+        self.assertEqual(summary, "human babysit: bots are done")
         phase, outcome, resume_phase, ended = self.run_row()
         self.assertEqual((outcome, resume_phase), ("abandoned", "merge_gate"))
         self.assertIsNotNone(ended)
@@ -167,13 +167,13 @@ class ApproveCliTests(unittest.TestCase):
     def test_a_bare_babysitter_records_the_default_note_and_refuses_ready(self):
         self.park(pr_url="https://example.test/pull/7")
         self.cli("--babysit", "KO-1")
-        self.assertEqual(self.interventions(), [(self.run, "shepherd")])
+        self.assertEqual(self.interventions(), [(self.run, "babysit")])
         # The persisted note is the literal the ticket names, not whatever
         # the module's default happens to be.
         (summary,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
             " 'intervention'", (self.run,)).fetchone()
-        self.assertEqual(summary, "human shepherd: sent back to the babysitter")
+        self.assertEqual(summary, "human babysit: sent back to the babysitter")
 
         with self.assertRaises(SystemExit) as raised:
             self.cli("--babysit", "KO-1")

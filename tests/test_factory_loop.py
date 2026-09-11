@@ -2244,10 +2244,10 @@ class MergeApprovalTests(LoopFixture):
             [(1, BRANCH, "abandoned"), (2, BRANCH, "merged")])
 
     def test_a_babysitter_release_of_a_local_park_does_not_merge(self):
-        """`--babysit` is not an approval. `store.shepherd()` refuses a run
+        """`--babysit` is not an approval. `store.babysit()` refuses a run
         parked with no pull request, but the resumed claim holds the line
         on its own: a parked local candidate whose newest intervention is
-        `shepherd` (written here through the store API, the way an operator
+        `babysit` (written here through the store API, the way an operator
         at the REPL rung could) is not taken through the gate -- the next
         run fails naming the release, main is untouched, the branch and
         worktree stay for `--approve`."""
@@ -2260,7 +2260,7 @@ class MergeApprovalTests(LoopFixture):
         self.assertIn("no pull request", str(refused.exception))
         conn = holophyte.runs.open_store(self.tgt)
         try:
-            store.record_intervention(conn, 1, "shepherd", "look again")
+            store.record_intervention(conn, 1, "babysit", "look again")
             store.release(conn, 1, "abandoned", "released by hand")
             conn.execute("UPDATE runs SET resumePhase = 'merge_gate'"
                          " WHERE id = 1")
@@ -3855,7 +3855,7 @@ class MergeModeTests(LoopFixture):
             [(1, "failed", "abandoned", self.URL),
              (2, "awaiting_merge_approval", None, self.URL)])
         self.assertEqual(
-            self.read('SELECT "action" FROM interventions'), [("shepherd",)])
+            self.read('SELECT "action" FROM interventions'), [("babysit",)])
 
 
     # What GitHub says about a parked pull request when the reconcile asks
@@ -4083,7 +4083,7 @@ class MergeModeTests(LoopFixture):
             self):
         """KO-362: the pull request's `updatedAt` moved past what the last
         pass recorded. The tick sends the run back to the babysitter as
-        `--babysit` would -- a `shepherd` intervention, the run ended
+        `--babysit` would -- a `babysit` intervention, the run ended
         with the ticket ready -- and the same pass claims it: the resumed
         run babysits the pull request and parks again, its park recording
         what it saw *after* its own writes (the third answer), so the tick
@@ -4110,11 +4110,11 @@ class MergeModeTests(LoopFixture):
               "approved")])
         self.assertEqual(
             self.read('SELECT "action", source FROM interventions'),
-            [("shepherd", "supervisor")])
+            [("babysit", "supervisor")])
         self.assertEqual(
             self.read("SELECT summary FROM runEvents"
                       " WHERE kind = 'intervention'"),
-            [(f"supervisor shepherd: new review activity on {self.URL}:"
+            [(f"supervisor babysit: new review activity on {self.URL}:"
               f" updated {self.T2} (last seen {self.T1}), 1 review threads"
               " (last seen 0)",)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
