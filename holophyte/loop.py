@@ -1529,8 +1529,8 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                      "", started_at=int(time() * 1000),
                      route=babysitter.route_of(()))
         ledger(conn, run_id, task_id, "round",
-               f"Babysit pass {pass_no}: no unresolved threads, checks"
-               f" {state.checks}", provider)
+               f"Babysit pass {pass_no} over {pull.url}: no unresolved"
+               f" threads, checks {state.checks}", provider)
         if state.checks != "success":
             _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                         f"checks {state.checks} on the head commit", (),

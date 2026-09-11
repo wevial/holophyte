@@ -2990,6 +2990,13 @@ class MergeModeTests(LoopFixture):
         (_, comment) = provider.comments[-1]
         self.assertIn(f"MERGED through {self.URL} as {self.MERGE_SHA}",
                       comment)
+        # The persisted ledger line for a pass with nothing to answer opens
+        # the way every pass does, so the console reads one shape (KO-373).
+        ((ledger,),) = self.read(
+            "SELECT text FROM ledger WHERE kind = 'round' AND text LIKE"
+            " 'Babysit pass%'")
+        self.assertTrue(ledger.startswith(f"Babysit pass 1 over {self.URL}"),
+                        ledger)
 
     def test_pending_checks_are_waited_for_before_the_verdict(self):
         """A pass with no thread and pending checks reads the PR again
