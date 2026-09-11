@@ -653,14 +653,7 @@ actual: 6.5 min · estimate: 25 min · rounds: 1
 
 <!-- store-rendered below -->
 
-[553 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T22:36:27Z — KO-351
-Round 4: pass · reviewer codex-astra-medium · verify passed
-
-## 2026-09-10T22:38:15Z — KO-351
-MERGED to main as 7cd1e9a (branch task/ko-351-a-claim-leases-the-ticket-in-l deleted).
-actual: 42.7 min · estimate: 30 min · rounds: 4
+[555 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T22:48:05Z — KO-361
 Round 1: pass · reviewer codex-astra-medium · verify passed
@@ -763,3 +756,10 @@ Round 3: changes_requested · reviewer codex-astra-medium · verify passed
 ## 2026-09-10T23:54:55Z — KO-364
 FAILED: terminal adjudication: FAIL; branch task/ko-364-the-daemon-serves-its-configur preserved at bef27349cf4b
 actual: 36.5 min · estimate: 30 min · rounds: 3
+
+## 2026-09-11T00:04:25Z — KO-363
+Round 1: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-11T00:06:14Z — KO-363
+MERGED to main as 956f6de (branch task/ko-363-findings-md-is-off-by-default deleted).
+actual: 11.2 min · estimate: 30 min · rounds: 1
