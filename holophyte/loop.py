@@ -777,6 +777,62 @@ def _run_after(target, conn, run_id, provider, task_id, merge_sha, commands):
                           f" {cmd}")
 
 
+def _refresh_main(target, run_id=None):
+    """Fetch `origin` and fast-forward the checkout's `main` when
+    `origin/main` is ahead, so every branch is cut from everything already
+    on `main` anywhere (KO-378). Three cases after the fetch: `origin/main`
+    already an ancestor of `main` (equal, or the local-mode checkout ahead
+    on unpushed merges) and nothing changes; `main` an ancestor of
+    `origin/main` and it is fast-forwarded -- never reset, origin is not the
+    source of truth for a local-mode target; neither, and the two diverged:
+    the refusal names both shas and the run fails before any cut. A target
+    with no `origin` skips the step. A fetch that fails is the network's
+    failure, not the ticket's, so it is `InfraFailure`; so is a divergence,
+    which a person untangles and which says nothing about the ticket.
+
+    Under the merge lock, as the gate's merge is, so a fast-forward and a
+    `--no-ff` merge into `main` never interleave.
+    """
+    if "origin" not in sh(["git", "remote"], target.path).splitlines():
+        return
+
+    def is_ancestor(a, b):
+        return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                              cwd=target.path, capture_output=True).returncode == 0
+
+    with merge_lock(target, run_id):
+        fr = subprocess.run(["git", "fetch", "origin"], cwd=target.path,
+                            capture_output=True, text=True)
+        if fr.returncode != 0:
+            raise InfraFailure("git fetch origin failed before the cut:"
+                               f" {fr.stderr.strip() or fr.stdout.strip()}")
+        if subprocess.run(["git", "rev-parse", "--verify", "-q", "origin/main"],
+                          cwd=target.path, capture_output=True).returncode != 0:
+            return  # a remote with no `main` yet: nothing to compare against
+        local = sh(["git", "rev-parse", "main"], target.path)
+        remote = sh(["git", "rev-parse", "origin/main"], target.path)
+        if is_ancestor("origin/main", "main"):
+            return
+        if is_ancestor("main", "origin/main"):
+            # `merge --ff-only` moves the checked-out branch; a checkout
+            # sitting elsewhere gets its `main` ref moved directly, the
+            # ancestry just proved it a fast-forward.
+            head = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], target.path)
+            if head == "main":
+                sh(["git", "merge", "--ff-only", "origin/main"], target.path)
+            else:
+                sh(["git", "update-ref", "refs/heads/main", remote, local],
+                   target.path)
+            print(f"[holo2] main fast-forwarded to origin/main:"
+                  f" {local[:12]} -> {remote[:12]}")
+            return
+    raise InfraFailure(f"main diverged from origin/main: main is at {local},"
+                       f" origin/main is at {remote}; neither contains the"
+                       " other, so no branch was cut -- a person reconciles"
+                       " the checkout with origin before this ticket is run"
+                       " again")
+
+
 def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
     """The worktree phase: cut `branch` at `wt`, or reuse the leftover there.
 
@@ -823,6 +879,7 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
                f"FAILED to cut a fresh worktree for: {task}\n"
                f"{why}\nNothing was deleted.", provider)
         raise RunFailure(f"cannot cut a fresh worktree: {why}")
+    _refresh_main(target, run_id)
     sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
     sh(["git", "checkout", "-b", branch], cwd=wt)
     return True
