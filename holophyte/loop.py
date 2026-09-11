@@ -1217,12 +1217,12 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
         subprocess.run(["git", "merge", "--abort"], cwd=wt,
                        capture_output=True, text=True)
         paths = ", ".join(conflicted) or "(no unmerged paths reported)"
-        why = (f"merging main into {branch} conflicted on: {paths};"
-               f" branch preserved at {sha[:12]}")
+        why = (f"{store.GATE_CONFLICT_REASON}{branch} conflicted on:"
+               f" {paths}; branch preserved at {sha[:12]}")
         print(f"[holo2] {why}")
         _park_at_gate(conn, run_id, provider, task_id, branch, sha,
-                      f"merge conflict with main on: {paths}; resolve it"
-                      f" on {branch} and --repoint, or merge by hand",
+                      f"{GATE_CONFLICT_QUESTION}{paths}; resolve it"
+                      f" on {branch} and --requeue, or merge by hand",
                       f"MERGE GATE: main conflicts with {branch} on"
                       f" {paths}; the merge of main into the branch was"
                       " aborted.")
@@ -2757,6 +2757,11 @@ def _reconcile_mirror(conn, project, provider):
 # this rather than the `--approve` that would merge nothing.
 PR_CLOSED_QUESTION = "PR closed without merge: "
 
+# The question the merge gate parks a ticket on when merging `main` into the
+# branch conflicts (KO-342); the skip line names the way back, `--requeue`
+# (KO-365), rather than reading the question out.
+GATE_CONFLICT_QUESTION = "merge conflict with main on: "
+
 
 def _reconcile_pull_requests(target, conn, project, provider):
     """Ask GitHub about every pull request this project's parked runs wait
@@ -3074,8 +3079,10 @@ def skip_line(identifier, strikes, pr_url, question):
     merges it are the whole story whatever failed before it -- unless the
     question says the pull request was closed without merging
     (`PR_CLOSED_QUESTION`), when there is nothing an `--approve` would
-    merge and the question is the line. Then the
-    question a module parked the ticket on -- a merge conflict, `merge?` --
+    merge and the question is the line. A merge-gate conflict
+    (`GATE_CONFLICT_QUESTION`) names its way back, `--requeue` once the
+    branch is resolved (KO-365). Then the
+    question a module parked the ticket on -- `merge?`, say --
     first line only, and *before* the strike count: the run that parked it
     may also have been the failure that reached `MAX_FAILED_RUNS`, and the
     conflict is what the operator has to resolve, not the count. The
@@ -3088,6 +3095,9 @@ def skip_line(identifier, strikes, pr_url, question):
     if pr_url and not closed:
         return (f"{identifier} is parked on PR {pr_url} awaiting"
                 f" --approve {identifier}; skipping it")
+    if (question or "").strip().startswith(GATE_CONFLICT_QUESTION):
+        return (f"{identifier} is parked on a merge-gate conflict; resolve"
+                f" the branch and --requeue {identifier}; skipping it")
     if question and question.strip() and not is_strike_question(question):
         first = question.strip().splitlines()[0]
         return (f"{identifier} is parked on a question: {first};"
@@ -3626,11 +3636,17 @@ def _requeue_candidate(conn, ticket_id):
     `store.requeue()` re-reaches the verdict inside its own transaction."""
     ticket = store.read.ticket_by_id(conn, ticket_id)
     if ticket is None or ticket.activeRunId is not None \
-            or ticket.status != "in_flight" or ticket.lastRunId is None:
+            or ticket.lastRunId is None:
         return None
-    row = conn.execute("SELECT outcome FROM runs WHERE id = ?",
+    row = conn.execute("SELECT outcome, outcomeReason FROM runs WHERE id = ?",
                        (ticket.lastRunId,)).fetchone()
-    return ticket.lastRunId if row and row[0] == "failed" else None
+    if not row or row[0] != "failed":
+        return None
+    if ticket.status == "in_flight" or (
+            ticket.status == "blocked_on_operator"
+            and store.is_gate_conflict(row[1])):
+        return ticket.lastRunId
+    return None
 
 def approve(target, identifier, note, out=None):
     """Release the ticket `identifier` parked for merge approval. Returns

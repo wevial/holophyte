@@ -912,14 +912,16 @@ class SkipLineTests(unittest.TestCase):
     def test_a_module_question_outranks_the_strike_count(self):
         """The run that parked the ticket on a merge conflict may also be
         the failure that reached the threshold. The conflict is what the
-        operator has to resolve, so it is the line; the escalation's own
+        operator has to resolve, so it is the line -- and since KO-365 the
+        line names the way back, `--requeue`; the escalation's own
         question is the one park the count speaks for."""
         conflicted = holophyte.loop.skip_line(
             "KO-131", 2, None,
             "merge conflict with main on: README.md; resolve it on the branch")
-        self.assertIn("a question: merge conflict with main on: README.md;",
-                      conflicted)
+        self.assertIn("parked on a merge-gate conflict; resolve the branch"
+                      " and --requeue KO-131", conflicted)
         self.assertNotIn("struck out", conflicted)
+        self.assertNotIn("a question", conflicted)
 
         struck = holophyte.loop.skip_line(
             "KO-131", 2, None, holophyte.board.strike_question(2))
@@ -1835,8 +1837,8 @@ class MergeConflictTests(LoopFixture):
         out = self.main_output(Commit("the other work"), APPROVE,
                                provider=StubProvider(parked, other))
 
-        self.assertIn("[holo2] KO-131 is parked on a question: merge conflict"
-                      " with main on: README.md;", out)
+        self.assertIn("[holo2] KO-131 is parked on a merge-gate conflict;"
+                      " resolve the branch and --requeue KO-131;", out)
         self.assertNotIn("struck out", out)
         self.assertIn("the other work", self.subjects())
         self.assertEqual(
@@ -4349,6 +4351,110 @@ class EndedRunTests(LoopFixture):
         # The reviewer never ran: the script's APPROVE is still unconsumed.
         self.assertEqual([turn.role for turn in self.last_fake.turns],
                          ["implement"])
+
+
+class GateConflictRequeueTests(LoopFixture):
+    """A candidate parked on a merge-gate conflict can be requeued once the
+    operator resolves the merge (KO-365).
+
+    The gate's merge of `main` into the branch conflicts: the run fails and
+    the ticket parks `blocked_on_operator` with the branch preserved. Before
+    this, the way back was the store: `--requeue` refused a ticket that was
+    not `in_flight` and `--repoint` a run that was not parked awaiting
+    approval. The park here is the loop's own, made by a real conflict.
+    """
+
+    def park_on_conflict(self, provider):
+        """KO-131 parked by `_sync_main_into_branch()` on a README conflict;
+        returns `(ticket_id, run_id)`."""
+        branch = "task/ko-131"
+        self.git("checkout", "-q", "-b", branch)
+        (self.target / "README.md").write_text("branch\n")
+        self.git("commit", "-qam", "branch side")
+        self.git("checkout", "-q", "main")
+        (self.target / "README.md").write_text("main\n")
+        self.git("commit", "-qam", "main side")
+        wt = self.worktrees / "ko-131"
+        self.git("worktree", "add", "-q", str(wt), branch)
+        sha = self.git("rev-parse", branch, cwd=wt).strip()
+        conn = store.open(str(self.db))
+        try:
+            project = store.ensure_project(conn, StubProvider.TEAM,
+                                           str(self.target))
+            ticket = holophyte.board.mirror_task(conn, project, a_task())
+            run_id = store.claim(conn, project, ticket)
+            store.transition(conn, ticket, "in_flight")
+            store.set_branch(conn, run_id, branch)
+            with self.assertRaises(holophyte.gates.RunFailure) as failed:
+                holophyte.loop._sync_main_into_branch(
+                    self.tgt, conn, run_id, provider, "KO-131", branch, wt,
+                    sha)
+            holophyte.board.close_out_failure(
+                self.tgt, conn, run_id, ticket, reason=str(failed.exception),
+                provider=provider, refresh=False)
+        finally:
+            conn.close()
+        return ticket, run_id
+
+    def test_a_gate_conflict_park_is_requeued_with_its_note(self):
+        provider = StubProvider(a_task())
+        ticket, run_id = self.park_on_conflict(provider)
+        self.assertEqual(
+            self.read("SELECT status, activeRunId FROM tickets"),
+            [("blocked_on_operator", None)])
+        self.assertIn("merge conflict with main on: README.md",
+                      self.read("SELECT blockedQuestion FROM tickets")[0][0])
+        self.assertIn("README.md", self.read(
+            "SELECT outcomeReason FROM runs WHERE outcome = 'failed'")[0][0])
+
+        out = io.StringIO()
+        holophyte.loop.requeue(self.tgt, "KO-131",
+                               "resolved README.md on the branch", out)
+
+        self.assertEqual(out.getvalue().strip(),
+                         f"[holo2] KO-131 requeued after run {run_id}")
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion, activeRunId"
+                      " FROM tickets"),
+            [("ready", None, None)])
+        self.assertEqual(
+            self.read("SELECT runId, action FROM interventions"),
+            [(run_id, "requeue")])
+        noted = self.read(
+            "SELECT summary FROM runEvents WHERE summary LIKE"
+            " '%resolved README.md on the branch%'")
+        self.assertEqual(len(noted), 1, noted)
+
+    def test_a_pull_request_park_is_still_refused(self):
+        provider = StubProvider(a_task())
+        url = "https://github.com/example/repo/pull/7"
+        conn = store.open(str(self.db))
+        try:
+            project = store.ensure_project(conn, StubProvider.TEAM,
+                                           str(self.target))
+            ticket = holophyte.board.mirror_task(conn, project, a_task())
+            run_id = store.claim(conn, project, ticket)
+            store.transition(conn, ticket, "in_flight")
+            store.park(conn, run_id, "awaiting_merge_approval",
+                       pr_url=url, candidate_sha="a" * 40)
+            self.assertTrue(holophyte.board.block_ticket(
+                conn, ticket, provider, f"PR open: {url}"))
+        finally:
+            conn.close()
+
+        with self.assertRaises(SystemExit) as refused:
+            holophyte.loop.requeue(self.tgt, "KO-131", "why not",
+                                   io.StringIO())
+
+        self.assertEqual(
+            str(refused.exception),
+            "[holo2] KO-131 is blocked_on_operator, not in_flight; nothing"
+            " to requeue")
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion FROM tickets"),
+            [("blocked_on_operator", f"PR open: {url}")])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
 
 
 class BoardLeaseLabelTests(LoopFixture):
