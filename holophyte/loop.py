@@ -649,7 +649,6 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
     merge gate -- the ticket's verify commands, then the drift check --
     on the candidate before the merge API is called."""
     url = carried.pr_url
-    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     reviewed = carried.sha if carried.approved else carried.approved_sha
     if sh(["git", "status", "--porcelain"], cwd=wt):
         ledger(conn, run_id, task_id, "failure",
@@ -659,6 +658,8 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
                provider)
         raise RunFailure(f"worktree of {branch} holds uncommitted changes;"
                          f" not babysitting {url}")
+    sha = _sync_branch_from_origin(target, conn, run_id, provider, task_id,
+                                   branch, wt, url, reviewed)
     store.record_event(conn, run_id, "pull_request",
                        f"resuming run {carried.run_id}'s candidate {branch}"
                        f" at {sha[:12]} on {url}"
@@ -676,6 +677,63 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
                           verified=None)
     return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                       merge_sha, started, budget_min, 0)
+
+
+def _sync_branch_from_origin(target, conn, run_id, provider, task_id,
+                             branch, wt, url, reviewed):
+    """Fast-forward the worktree and `branch` to what `origin` holds for
+    it, and return the branch's sha afterwards (KO-379).
+
+    A person pushing commits on top of a parked candidate is the normal way
+    a factory pull request is adjusted, and it leaves the local branch
+    behind the remote: judged from there, the pass would read the pull
+    request's head as "not the candidate this run pushed" and park again.
+    So the resume fetches the branch first and compares the two the way
+    `_sync_main_into_branch()` compares `main`: the remote an ancestor of
+    the local tip (or equal) means nothing to do; the local tip an ancestor
+    of the remote means a fast-forward, with a ledger note saying why the
+    reviewed delta grew -- the new commits are held to `reviewed` exactly as
+    a fix round's are; neither means the two diverged, and the run parks
+    naming both shas with the worktree untouched. A fetch that cannot
+    resolve (no remote, an unreachable one) is one printed line, and the
+    pass goes on from the local branch as before: the pull-request pass's
+    own "someone else pushed" park still covers a head it cannot see.
+    """
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    fetched = subprocess.run(["git", "fetch", "origin", branch], cwd=wt,
+                             capture_output=True, text=True)
+    if fetched.returncode != 0:
+        print(f"[holo2] could not fetch {branch} from origin; babysitting"
+              f" from the local branch at {sha[:12]}:"
+              f" {fetched.stderr.strip() or fetched.stdout.strip()}")
+        return sha
+    remote = sh(["git", "rev-parse", "FETCH_HEAD"], cwd=wt)
+
+    def is_ancestor(a, b):
+        return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                              cwd=wt, capture_output=True).returncode == 0
+
+    if remote == sha or is_ancestor(remote, sha):
+        return sha
+    if not is_ancestor(sha, remote):
+        pull = pr.parse_pr_url(url)
+        if pull is None:
+            raise RunFailure(f"cannot read a pull request off {url!r};"
+                             f" branch {branch} preserved at {sha[:12]}")
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+                    f"the local branch {branch} at {sha[:12]} and origin's at"
+                    f" {remote[:12]} diverged; neither fast-forwards to the"
+                    " other, so nothing was fetched into the worktree and"
+                    " a human reconciles them", (), reviewed=reviewed)
+    count = sh(["git", "rev-list", "--count", f"{sha}..{remote}"], cwd=wt)
+    sh(["git", "merge", "--ff-only", remote], cwd=wt)
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    note = (f"Fast-forwarded {branch} to {sha} from origin ({count}"
+            f" commit(s) pushed by someone else)")
+    print(f"[holo2] {note}")
+    if conn is not None and run_id is not None:
+        store.record_ledger(conn, run_id, "note", note)
+    return sha
 
 
 def _candidate_drift(wt, branch, approved):

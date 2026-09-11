@@ -13,7 +13,11 @@ was preserved -- comes back through `--requeue KO-n --note TEXT` once you
 have resolved the merge on the branch: the requeue is recorded, the block
 cleared and the ticket walked to `ready`, and the next claim resumes on the
 preserved branch as after any other failure. `--repoint` is for a candidate
-still parked `awaiting_merge_approval`, not for a failed run; every other
+still parked `awaiting_merge_approval` and rebuilt on a rewritten `main`,
+not for a failed run, and not for commits pushed on top of the candidate:
+those a `--babysit KO-n` resume fetches and fast-forwards to by itself
+(see [the loop](loop.md)), since `--repoint` moves `runs.candidateSha` and
+not the worktree; every other
 `blocked_on_operator` park (a pull request, `merge?`, a strike-out) keeps
 `--requeue`'s refusal.
 
@@ -64,7 +68,7 @@ sweep interval of a person merging it on GitHub, exactly as the loop's own
 pass would have done had it still been running; while a loop's heartbeat
 is fresh the loop's tick does that and the supervisor leaves it alone. A
 GitHub error there is one printed line and never a strike. When that
-reconcile sends a run back to the shepherd (new review activity on its
+reconcile sends a run back to the babysitter (new review activity on its
 pull request walks the ticket to `ready`) and no loop is live to claim it,
 the pass starts the loop the way the console's launch-loop action does,
 `systemctl --user start holophyte-loop@NAME` with `[serve] name`, and

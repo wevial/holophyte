@@ -1923,7 +1923,7 @@ class ParkedPullRequestTests(SweepTestCase):
 
         out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
 
-        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertIn(f"run {run_id} sent back to the babysitter", out)
         self.assertEqual(
             self.conn.execute("SELECT status FROM tickets WHERE id = ?",
                               (self.ticket_of[run_id],)).fetchone(),
@@ -1959,7 +1959,7 @@ class ParkedPullRequestTests(SweepTestCase):
 
         out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
 
-        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertIn(f"run {run_id} sent back to the babysitter", out)
         self.assertEqual(calls(), [])
         self.assertNotIn("holophyte-loop@", out)
 
@@ -2077,7 +2077,7 @@ class ParkedPullRequestTests(SweepTestCase):
 
         out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
 
-        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertIn(f"run {run_id} sent back to the babysitter", out)
         self.assertIn("holophyte-loop@repo could not be started"
                       " (Unit holophyte-loop@repo.service not found.)", out)
         self.assertEqual(

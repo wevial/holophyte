@@ -149,7 +149,21 @@ machines it walks. Back to the [README](index.md).
    (`runs.prUrl`), in the ticket's question (`PR open: URL`, the open
    threads listed) and in the ledger. `--approve KO-n` resumes the run on
    the PR and merges it when green and quiet; `--babysit KO-n` resumes it
-   for another round of passes. A pull request merged on GitHub by a person
+   for another round of passes.
+   A babysit resume fast-forwards to the remote branch first (KO-379):
+   the pass fetches the branch from `origin` and compares it to the local
+   branch the way the merge gate compares `main`. A remote ahead by a
+   fast-forward moves the worktree and the local branch to its head, with
+   a ledger note (`Fast-forwarded BRANCH to SHA from origin (N commit(s)
+   pushed by someone else)`) saying why the reviewed delta grew, and the
+   pass treats the new commits as a fix round: they are held to the sha
+   the last independent judgement covered, so a person's commits on top
+   of a candidate are reviewed before anything merges. Branches that
+   diverged park the run with a question naming both shas and nothing
+   fetched into the worktree; equal branches change nothing and write no
+   note. A fetch that cannot resolve leaves the pass judging from the
+   local branch as before, where a head it did not push still parks as
+   "someone else pushed". A pull request merged on GitHub by a person
    while the run waits is that approval: at startup and at the top of every
    pass -- each serial claim, each scheduler tick, the timer's included --
    the loop reads each parked pull request's state once, and one merged on
