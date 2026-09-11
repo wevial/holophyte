@@ -99,6 +99,25 @@ test("a merged four-round run's phase changes yield implement, 4× (verify, revi
   expect(sum(out.map((segment) => segment.width))).toBeCloseTo(1, 10);
 });
 
+test("a working -> working phase change is one implement segment spanning both", () => {
+  const run: TimelineRun = {
+    ...RUN,
+    phase: "verifying",
+    rounds: [],
+    events: events([
+      [0, "claimed -> working: KO-262"],
+      [3, "working -> working: worktree ready"],
+      [185, "working -> verifying: round 1: verify before review"],
+    ]),
+  };
+  const out = buildTimeline(run, T + 300_000);
+  expect(out.map((segment) => segment.label)).toEqual(["implement", "verify"]);
+  expect(out[0]!.from).toBe(T);
+  expect(out[0]!.to).toBe(T + 185_000);
+  expect(out[0]!.running).toBe(false);
+  expect(out[1]!.running).toBe(true);
+});
+
 test("a live run mid-review is implement, verify and a running review 1 of 200 s that pulses", () => {
   const run: TimelineRun = { ...RUN, rounds: [], events: events(CHANGES.slice(0, 3)) };
   const out = buildTimeline(run, T + 453_000);

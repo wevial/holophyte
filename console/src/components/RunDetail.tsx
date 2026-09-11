@@ -40,7 +40,7 @@ export function RunDetail({
   /** Local milliseconds since that poll; the run log's summary ages by it. */
   sinceMs?: number;
   polls: number;
-  deps?: { fetch: Fetch };
+  deps?: { fetch: Fetch; barPx?: number };
 }) {
   const { detail, error, loading } = useRunDetail(base, id, polls, deps);
   const files = useRunFiles(base, id, polls, deps);
@@ -52,12 +52,24 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && <Card body={detail} files={files} now={now} sinceMs={sinceMs} />}
+      {detail && <Card body={detail} files={files} now={now} sinceMs={sinceMs} barPx={deps?.barPx} />}
     </div>
   );
 }
 
-function Card({ body, files, now, sinceMs }: { body: RunDetailBody; files: RunFilesState; now: number; sinceMs: number }) {
+function Card({
+  body,
+  files,
+  now,
+  sinceMs,
+  barPx,
+}: {
+  body: RunDetailBody;
+  files: RunFilesState;
+  now: number;
+  sinceMs: number;
+  barPx?: number;
+}) {
   const { run, rounds } = body;
   const remaining = boxRemaining(run, now);
   const over = remaining < 0;
@@ -82,7 +94,7 @@ function Card({ body, files, now, sinceMs }: { body: RunDetailBody; files: RunFi
       </header>
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">
         <div className="min-w-0">
-          <RoundTimeline segments={buildTimeline({ ...run, rounds, events: body.events }, now)} />
+          <RoundTimeline segments={buildTimeline({ ...run, rounds, events: body.events }, now)} barPx={barPx} />
           <div className="mt-4 flex items-baseline gap-3">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Open findings</span>
             <span data-severity-counts className="font-mono text-[12px] text-muted">
