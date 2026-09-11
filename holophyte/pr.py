@@ -95,7 +95,7 @@ STATE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      state merged headRefOid mergeCommit { oid }
+      state merged headRefOid mergeable mergeCommit { oid }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       reviewThreads(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
@@ -142,7 +142,9 @@ mutation($thread: ID!) {
 # `runs.prSeenThreads`), and -- KO-368 -- the facts `/attention` shows
 # beside them: the head commit's checks rollup and the review decision
 # (`runs.prSeenChecks`, `runs.prSeenReview`). The thread bodies and the
-# per-run checks are still the babysitter's own read. `rateLimit` rides
+# per-run checks are still the babysitter's own read. `mergeable` rides
+# along too: GitHub's MERGEABLE / CONFLICTING / UNKNOWN, the answer a
+# resumed pass merges `origin/main` on. `rateLimit` rides
 # along at no cost: the remaining GraphQL budget on the token and when it
 # resets, so the reconcile backs off before the babysitter's reads run it
 # dry.
@@ -150,7 +152,7 @@ PULL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      state merged mergeCommit { oid } mergedBy { login }
+      state merged mergeable mergeCommit { oid } mergedBy { login }
       updatedAt reviewThreads { totalCount }
       reviewDecision
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -216,7 +218,10 @@ class Thread:
 
 @dataclass(frozen=True)
 class PrState:
-    """The pull request as one `pr_state()` read saw it."""
+    """The pull request as one `pr_state()` read saw it. `mergeable` is
+    GitHub's answer: MERGEABLE, CONFLICTING or UNKNOWN -- and UNKNOWN is
+    what a read that predates or omits the field is held to, never a
+    license to merge anything in."""
 
     threads: tuple  # unresolved `Thread`s, oldest first
     checks: str  # "success", "pending" or "failure"
@@ -224,6 +229,7 @@ class PrState:
     merged: bool = False
     merge_sha: str | None = None
     closed: bool = False
+    mergeable: str = "UNKNOWN"
 
 
 def origin_url(target):
@@ -489,7 +495,9 @@ class PullStatus:
     pull request with no checks -- or the answer had none) and GitHub's
     `reviewDecision` lower-cased as `review` ("approved",
     "changes_requested", "review_required", None when the repository
-    requires no review or the answer had none); and the token's remaining
+    requires no review or the answer had none); `mergeable` as GitHub
+    spells it ("MERGEABLE", "CONFLICTING", "UNKNOWN", None when the
+    answer had none); and the token's remaining
     GraphQL budget with the time it resets (`rate_remaining`,
     `rate_reset`), None when the answer carried no `rateLimit`."""
 
@@ -501,13 +509,15 @@ class PullStatus:
     threads: int | None = None
     checks: str | None = None
     review: str | None = None
+    mergeable: str | None = None
     rate_remaining: int | None = None
     rate_reset: str | None = None
 
 
 def pull_status(target, pull):
     """One GraphQL read of the pull request's `state`, `merged`,
-    `mergeCommit`, `mergedBy`, `updatedAt`, review-thread count,
+    `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, review-thread
+    count,
     `reviewDecision` and head checks rollup, with the token's `rateLimit`
     (`PULL_QUERY`): the loop's reconcile of a run parked on its PR asks
     this once per pass. GitHub answering without the pull request is
@@ -541,6 +551,9 @@ def pull_status(target, pull):
                       checks=_head_checks(node),
                       review=decision.lower() if isinstance(decision, str)
                       and decision else None,
+                      mergeable=node.get("mergeable")
+                      if isinstance(node.get("mergeable"), str)
+                      else None,
                       rate_remaining=_count(rate.get("remaining")
                                             if isinstance(rate, dict)
                                             else None),
@@ -588,7 +601,8 @@ def parse_pr_url(url):
 
 def pr_state(target, pull):
     """One read of the pull request: its unresolved review threads, the head
-    commit's check rollup, and whether it is already merged or closed.
+    commit's check rollup, its `mergeable` answer, and whether it is
+    already merged or closed.
 
     One GraphQL query per page of threads (`THREADS_PAGE`), walked to the
     last page before anything is decided: a PR whose first page is all
@@ -807,12 +821,16 @@ def _state_of(node, threads, runs, required):
                   .get("statusCheckRollup") or {}).get("state")
     checks = fold_checks(rollup, runs, required)
     merge = node.get("mergeCommit") or {}
+    mergeable = node.get("mergeable")
     return PrState(threads=tuple(threads), checks=checks,
                    head_sha=node.get("headRefOid"),
                    merged=bool(node.get("merged")),
                    merge_sha=merge.get("oid") if isinstance(merge, dict)
                    else None,
-                   closed=node.get("state") == "CLOSED")
+                   closed=node.get("state") == "CLOSED",
+                   mergeable=mergeable
+                   if isinstance(mergeable, str) and mergeable
+                   else "UNKNOWN")
 
 
 def reply_thread(target, pull, thread_id, body):

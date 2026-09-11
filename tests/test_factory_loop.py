@@ -2573,12 +2573,12 @@ class SelfHostingTests(LoopFixture):
 
 
 
-class MergeModeTests(LoopFixture):
-    """`[merge] mode = "pr"`: an approved, verified candidate is pushed and
-    opened as a pull request instead of merged, and the loop babysits the
-    PR -- threads verdicted, fixed and answered, checks awaited -- until it
-    merges through the PR's API or the run parks. `"local"`, or no key,
-    merges as it always has.
+class MergeModeFixture(LoopFixture):
+    """`[merge] mode = "pr"`'s fixture: an approved, verified candidate is
+    pushed and opened as a pull request instead of merged, and the loop
+    babysits the PR -- threads verdicted, fixed and answered, checks
+    awaited -- until it merges through the PR's API or the run parks.
+    `"local"`, or no key, merges as it always has.
 
     `git` and `gh` on PATH are fakes that record their argv: the fake `git`
     intercepts `push` alone and hands everything else to the real one, so
@@ -2587,7 +2587,11 @@ class MergeModeTests(LoopFixture):
     `gh` answers `pr create` with `URL` and `api` with what the test put in
     the state files: the PR's threads and checks for the state query, an
     empty success for the reply and resolve mutations, `MERGE_SHA` for the
-    merge."""
+    merge.
+
+    Split from the tests so a suite elsewhere -- the conflicting-PR tests
+    in `test_babysitter.py` -- drives the same fake GitHub without
+    re-running the tests that came with it."""
 
     URL = "https://github.com/example/repo/pull/7"
     # The `origin` the fixture target is given: the repository the push
@@ -2613,7 +2617,7 @@ class MergeModeTests(LoopFixture):
                        else (author, "Bot"))
         return {"author": {"login": login, "__typename": kind},
                 "body": body,
-                "url": f"{MergeModeTests.URL}#discussion_r{number}"}
+                "url": f"{MergeModeFixture.URL}#discussion_r{number}"}
 
     @classmethod
     def thread(cls, number, path, line, author, body, replies=(),
@@ -2648,17 +2652,19 @@ class MergeModeTests(LoopFixture):
     HEAD = "HEAD_SHA"
 
     def pr_state(self, threads=(), checks="SUCCESS", merged=False,
-                 head=HEAD, resolved=(), next_cursor=None):
+                 head=HEAD, resolved=(), next_cursor=None,
+                 mergeable="MERGEABLE"):
         """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
         tuple) open, `resolved` the same shape but resolved, the head's
-        check rollup, whether the PR is merged, and -- for a page that is
-        not the last -- the cursor of the next."""
+        check rollup, whether the PR is merged, GitHub's `mergeable`
+        answer (None for the lazy-computation `null`), and -- for a page
+        that is not the last -- the cursor of the next."""
         nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
         nodes += [self.thread(n, *t[:4], resolved=True)
                   for n, t in enumerate(resolved, len(nodes) + 1)]
         return {"data": {"repository": {"pullRequest": {
             "state": "MERGED" if merged else "OPEN", "merged": merged,
-            "headRefOid": head,
+            "headRefOid": head, "mergeable": mergeable,
             "mergeCommit": {"oid": self.MERGE_SHA} if merged else None,
             "commits": {"nodes": [{"commit": {"statusCheckRollup":
                                               {"state": checks}}}]},
@@ -2700,6 +2706,9 @@ class MergeModeTests(LoopFixture):
         for n, state in enumerate([self.pr_state()] if states is None
                                   else states, 1):
             (answers / f"{n:03d}.json").write_text(json.dumps(state))
+        # Kept on the fixture so `serve()` can hand a resumed run a fresh
+        # answer sequence mid-test without re-faking PATH.
+        self.answers = answers
         pages = bindir / "comments"
         pages.mkdir()
         for n, page in enumerate(comments, 1):
@@ -2767,6 +2776,17 @@ class MergeModeTests(LoopFixture):
         return (self.calls.read_text().splitlines()
                 if self.calls.exists() else [])
 
+    def serve(self, *states):
+        """Replace the state answers the fake `gh` still owes with `states`
+        -- served in order, the last one sticky -- so a run resumed
+        mid-test reads what GitHub now says. The calls log is untouched:
+        the pushes and requests already witnessed keep counting."""
+        n = max((int(p.stem) for p in self.answers.iterdir()), default=0)
+        for p in self.answers.iterdir():
+            p.unlink()
+        for k, state in enumerate(states or (self.pr_state(),), n + 1):
+            (self.answers / f"{k:03d}.json").write_text(json.dumps(state))
+
     def api_calls(self):
         """Every `gh api` body the babysitter made, in order, as `(kind,
         variables)`: the kind is `state`, `reply`, `resolve` or `merge`.
@@ -2795,6 +2815,13 @@ class MergeModeTests(LoopFixture):
             "SELECT status, blockedQuestion FROM tickets")
         self.assertEqual(status, "blocked_on_operator")
         return question
+
+
+class MergeModeTests(MergeModeFixture):
+    """The `[merge] mode = "pr"` tests: push and open, the passes over
+    threads and checks, the parks and resumes, the merge through the pull
+    request's API. The conflicting-PR merge-in has its own suite beside
+    the texts it shares a module with (`test_babysitter.py`)."""
 
     def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
         """Push, then create, in that order; the PR is titled `KO-n: TITLE`
@@ -4074,7 +4101,7 @@ class MergeModeTests(LoopFixture):
     # What GitHub says about a parked pull request when the reconcile asks
     # (`pr.PULL_QUERY`'s node): merged by a coworker, closed unmerged, open.
     MERGED_PULL = {"state": "MERGED", "merged": True,
-                   "mergeCommit": {"oid": MERGE_SHA},
+                   "mergeCommit": {"oid": MergeModeFixture.MERGE_SHA},
                    "mergedBy": {"login": "coworker"}}
     CLOSED_PULL = {"state": "CLOSED", "merged": False, "mergeCommit": None,
                    "mergedBy": None}
