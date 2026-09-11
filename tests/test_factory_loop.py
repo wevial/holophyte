@@ -4148,6 +4148,33 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
                          [(0,)])
 
+    def test_an_unchanged_pull_request_still_refreshes_its_facts(self):
+        """KO-368 review round 1: the run holds a mark from the last pass
+        and facts from the same read (checks pending, review required).
+        The pull request has not moved -- same `updatedAt`, same thread
+        count -- but its checks went green and a review landed. The tick
+        starts no round and leaves the mark alone, yet the facts on the
+        run are what the read saw, not what the last pass saw."""
+        self.parked_with_mark(self.T1, 0)
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("UPDATE runs SET prSeenChecks = 'pending',"
+                         " prSeenReview = 'review_required'")
+        conn.close()
+        self.fake_client(self.open_pull(self.T1, 0, checks="SUCCESS",
+                                        review="APPROVED"))
+
+        out = self.main_output(provider=StubProvider())
+
+        self.assertNotIn("review activity", out)
+        self.assertEqual(
+            self.read("SELECT phase, prSeenAt, prSeenThreads, prSeenChecks,"
+                      " prSeenReview FROM runs"),
+            [("awaiting_merge_approval", self.T1, 0, "success",
+              "approved")])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
+
     def test_activity_within_the_poll_interval_waits(self):
         """The pull request moved, but the run parked seconds ago: the tick
         names the activity and the wait rather than starting a round."""

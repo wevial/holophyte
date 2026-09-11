@@ -2923,7 +2923,11 @@ def _reshepherd(conn, ticket, pull, status, poll_ms):
     count above its `prSeenThreads`. A run with no `prSeenAt` -- parked
     by a module older than the column, or after a read that failed --
     has nothing to compare against: what the read saw is recorded and
-    the tick moves on, so the next one can tell. The interval is per
+    the tick moves on, so the next one can tell. A read that starts no
+    round still refreshes the checks rollup and review decision beside
+    the mark (`/attention`'s facts, KO-368) without moving the mark
+    itself, so a check turning green or a review landing shows on the
+    item as soon as the next tick reads it. The interval is per
     pull request, measured from the park (`runs.lastHeartbeat`, the
     park's stamp): activity within `poll_ms` of it is named and waits.
     Otherwise `store.shepherd()`'s one transaction -- the `shepherd`
@@ -2951,9 +2955,13 @@ def _reshepherd(conn, ticket, pull, status, poll_ms):
     grew = (status.threads is not None and seen_threads is not None
             and status.threads > seen_threads)
     if status.updated_at <= seen_at and not grew:
+        store.record_pr_seen(conn, run_id, mark, parked_only=True,
+                             facts_only=True)
         return None
     waited_ms = int(time() * 1000) - (parked_ms or 0)
     if waited_ms < poll_ms:
+        store.record_pr_seen(conn, run_id, mark, parked_only=True,
+                             facts_only=True)
         print(f"[holo2] {identifier}: {pull.url} has new review activity;"
               f" the next shepherd round waits"
               f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")

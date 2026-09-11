@@ -1405,7 +1405,7 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
         )
 
 
-def record_pr_seen(conn, run_id, seen, parked_only=False):
+def record_pr_seen(conn, run_id, seen, parked_only=False, facts_only=False):
     """Record what one read of the pull request run `run_id` is parked on
     saw: `seen` is `(updated_at, threads, checks, review)` -- GitHub's
     `updatedAt` string, the review-thread count, the head's checks rollup
@@ -1417,12 +1417,20 @@ def record_pr_seen(conn, run_id, seen, parked_only=False):
     review activity from its own (KO-362); `/attention`'s `pr_open` item
     carries the last three (KO-368). `parked_only` writes nothing to a
     run no longer in `awaiting_merge_approval`, for a caller that read
-    the run outside the transaction it writes in. Joins the caller's
-    transaction when one is open.
+    the run outside the transaction it writes in. `facts_only` writes the
+    checks rollup and review decision alone, leaving the activity mark
+    (`prSeenAt`, `prSeenThreads`) as the last pass recorded it: the
+    reconcile's read of an unchanged pull request refreshes the facts
+    without moving what it holds the next read against. Joins the
+    caller's transaction when one is open.
     """
     updated_at, threads, checks, review = seen
     guard = " AND phase = 'awaiting_merge_approval'" if parked_only else ""
     with _transaction(conn):
+        if facts_only:
+            conn.execute("UPDATE runs SET prSeenChecks = ?, prSeenReview = ?"
+                         f" WHERE id = ?{guard}", (checks, review, run_id))
+            return
         conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?,"
                      f" prSeenChecks = ?, prSeenReview = ? WHERE id = ?{guard}",
                      (updated_at, threads, checks, review, run_id))
