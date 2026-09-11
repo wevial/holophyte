@@ -1829,8 +1829,10 @@ class MainDiverges:
 
 class MergeConflictTests(LoopFixture):
     """The merge gate meeting a conflict: a `main` that conflicts with the
-    branch, on any path, aborts the merge of main into the branch, leaves
-    main clean and parks the run with the paths named."""
+    branch, on any path, goes to the implementer first (KO-404); a merge
+    it leaves unresolved is aborted, main left clean and the run parked
+    with the paths named. The `Idle()` step is that turn declining to
+    resolve."""
 
     def commit_on_main(self, path, body):
         """Land `body` at `path` on main — the divergence the merge meets."""
@@ -1856,7 +1858,8 @@ class MergeConflictTests(LoopFixture):
     def test_a_conflict_outside_findings_aborts_and_leaves_main_clean(self):
         self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
                   MainDiverges(lambda: self.commit_on_main("README.md",
-                                                           "main side\n")))
+                                                           "main side\n")),
+                  Idle())
 
         self.assertEqual(self.main_status(), "")
         self.assertFalse(self.mid_merge())
@@ -1869,9 +1872,9 @@ class MergeConflictTests(LoopFixture):
 
     def test_a_conflict_with_main_parks_the_ticket_and_moves_nothing(self):
         """KO-342: the gate merges main into the branch first, and a
-        conflict there is a person's: the ticket is blocked with the path in
-        its question, the branch sits at its pre-gate sha, main is where the
-        divergence left it."""
+        conflict the implementer leaves unresolved is a person's: the
+        ticket is blocked with the path in its question, the branch sits
+        at its pre-gate sha, main is where the divergence left it."""
         seen = {}
 
         def diverge():
@@ -1880,7 +1883,7 @@ class MergeConflictTests(LoopFixture):
             seen["branch"] = self.git("rev-parse", BRANCH).strip()
 
         self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
-                  MainDiverges(diverge))
+                  MainDiverges(diverge), Idle())
 
         ((status, question),) = self.read(
             "SELECT status, blockedQuestion FROM tickets")
@@ -1903,7 +1906,8 @@ class MergeConflictTests(LoopFixture):
         store.walk_ticket(conn, 1, "ready")
         self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
                   MainDiverges(lambda: self.commit_on_main("README.md",
-                                                           "main side\n")))
+                                                           "main side\n")),
+                  Idle())
         self.assertEqual(
             self.read("SELECT outcome FROM runs ORDER BY id"),
             [("failed",), ("failed",)])
@@ -1962,7 +1966,8 @@ class MergeConflictTests(LoopFixture):
         path = "docs/FINDINGS.md-notes.md"
         self.commit_on_main(path, "base\n")
         self.loop(Commit("branch edit", path=path, body="branch side\n"),
-                  MainDiverges(lambda: self.commit_on_main(path, "main side\n")))
+                  MainDiverges(lambda: self.commit_on_main(path, "main side\n")),
+                  Idle())
 
         self.assertEqual(self.main_status(), "")
         self.assertFalse(self.mid_merge())
@@ -1975,8 +1980,8 @@ class MergeConflictTests(LoopFixture):
     def test_a_conflict_only_in_findings_md_parks_like_any_other(self):
         """KO-342: the `--no-ff` merge used to take the branch side of a
         FINDINGS.md-only conflict, but the gate's merge of main into the
-        branch grants no such exception -- the contract is that a conflict
-        parks, with the path named, and moves nothing."""
+        branch grants no such exception -- a conflict the implementer
+        leaves unresolved parks, with the path named, and moves nothing."""
         self.configure('[report]\nfindings = "repo"\n')
         seen = {}
 
@@ -1987,7 +1992,7 @@ class MergeConflictTests(LoopFixture):
 
         self.loop(Commit("branch window", path="FINDINGS.md",
                          body="branch window\n"),
-                  MainDiverges(diverge))
+                  MainDiverges(diverge), Idle())
 
         ((status, question),) = self.read(
             "SELECT status, blockedQuestion FROM tickets")
@@ -4650,10 +4655,14 @@ class GateConflictRequeueTests(LoopFixture):
             run_id = store.claim(conn, project, ticket)
             store.transition(conn, ticket, "in_flight")
             store.set_branch(conn, run_id, branch)
-            with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.loop._sync_main_into_branch(
-                    self.tgt, conn, run_id, provider, "KO-131", branch, wt,
-                    sha)
+            # The conflict goes to the implementer first now (KO-404);
+            # this fake leaves it unresolved, so the park below is the
+            # same one it always was.
+            with patch.object(holophyte.loop, "agent", FakeAgent(Idle())):
+                with self.assertRaises(holophyte.gates.RunFailure) as failed:
+                    holophyte.loop._sync_main_into_branch(
+                        self.tgt, conn, run_id, provider, "KO-131", branch,
+                        wt, sha, 60, "add a thing", 5)
             holophyte.board.close_out_failure(
                 self.tgt, conn, run_id, ticket, reason=str(failed.exception),
                 provider=provider, refresh=False)
@@ -4720,6 +4729,133 @@ class GateConflictRequeueTests(LoopFixture):
             [("blocked_on_operator", f"PR open: {url}")])
         self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
                          [(0,)])
+
+
+class GateConflictImplementerTests(LoopFixture):
+    """A merge-gate conflict goes to the implementer before it fails the
+    run (KO-404).
+
+    The gate's merge of `main` into the branch conflicts: before the park
+    `GateConflictRequeueTests` covers, the gate runs the same
+    conflict-resolution turn the claim path runs on a leftover mid-merge
+    worktree (KO-355), in the same worktree. A turn that leaves the merge
+    committed sends the gate on to its verify on the merged sha; one that
+    does not leaves the run failing exactly as it did before.
+    """
+
+    def conflicted(self):
+        """KO-131's branch and a moved main both rewrote README.md; the
+        worktree is registered and the run claimed. Returns
+        `(conn, run_id, branch, wt, sha)`; `conn` closes at cleanup."""
+        branch = "task/ko-131"
+        self.git("checkout", "-q", "-b", branch)
+        (self.target / "README.md").write_text("branch\n")
+        self.git("commit", "-qam", "branch side")
+        self.git("checkout", "-q", "main")
+        (self.target / "README.md").write_text("main\n")
+        self.git("commit", "-qam", "main side")
+        wt = self.worktrees / "ko-131"
+        self.git("worktree", "add", "-q", str(wt), branch)
+        sha = self.git("rev-parse", branch, cwd=wt).strip()
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM,
+                                       str(self.target))
+        ticket = holophyte.board.mirror_task(conn, project, a_task())
+        run_id = store.claim(conn, project, ticket)
+        store.transition(conn, ticket, "in_flight")
+        store.set_branch(conn, run_id, branch)
+        return conn, run_id, branch, wt, sha
+
+    def test_a_resolved_gate_conflict_goes_on_to_verify_on_the_merged_sha(
+            self):
+        provider = StubProvider(a_task())
+        conn, run_id, branch, wt, sha = self.conflicted()
+        fake = FakeAgent(Commit("merge main into the branch",
+                                path="README.md", body="merged\n"))
+        with patch.object(holophyte.loop, "agent", fake):
+            ok, merged = holophyte.loop._merge_gate(
+                self.tgt, conn, run_id, provider, "KO-131", "iss-131",
+                branch, wt, 60, sha, "echo ok", [], "add a thing", 5)
+
+        # The verify passed on the sha the implementer's merge commit left.
+        self.assertTrue(ok)
+        self.assertNotEqual(merged, sha)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(),
+                         merged)
+        parents = self.git("rev-list", "--parents", "-n", "1", merged,
+                           cwd=wt).split()[1:]
+        self.assertEqual(len(parents), 2)
+        self.assertIn(self.git("rev-parse", "main").strip(), parents)
+        self.assertEqual(fake.roles, ["implement"])
+        self.assertIn("README.md", fake.turns[0].goal)
+        self.assertEqual(
+            self.read("SELECT summary FROM runEvents WHERE summary LIKE"
+                      " '%resolved by the implementer%'"),
+            [("gate conflict on README.md resolved by the implementer"
+              f" at {merged[:12]}",)])
+        self.assertTrue(
+            any("gate conflict on README.md resolved by the implementer"
+                in text
+                for (text,) in self.read("SELECT text FROM ledger")))
+
+    def test_an_unresolved_gate_conflict_fails_and_parks_as_before(self):
+        provider = StubProvider(a_task())
+        conn, run_id, branch, wt, sha = self.conflicted()
+        with patch.object(holophyte.loop, "agent", FakeAgent(Idle())):
+            with self.assertRaises(holophyte.gates.RunFailure) as failed:
+                holophyte.loop._sync_main_into_branch(
+                    self.tgt, conn, run_id, provider, "KO-131", branch,
+                    wt, sha, 60, "add a thing", 5)
+
+        self.assertEqual(
+            str(failed.exception),
+            f"merging main into {branch} conflicted on: README.md;"
+            f" branch preserved at {sha[:12]}")
+        # The branch sits at its pre-merge sha and the worktree holds no
+        # merge in progress.
+        self.assertEqual(self.git("rev-parse", branch).strip(), sha)
+        self.assertNotEqual(
+            subprocess.run(["git", "rev-parse", "-q", "--verify",
+                            "MERGE_HEAD"], cwd=wt,
+                           capture_output=True).returncode, 0)
+        self.assertEqual(holophyte.loop.merge_conflicts(wt), [])
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"),
+            [("blocked_on_operator",)])
+
+    def test_a_clean_gate_merge_never_calls_the_implementer(self):
+        # `main` moved past the branch but on another file, so the merge
+        # succeeds on its own and no agent turn is owed.
+        branch = "task/ko-131"
+        self.git("checkout", "-q", "-b", branch)
+        (self.target / "thing.py").write_text("x = 1\n")
+        self.git("add", "thing.py")
+        self.git("commit", "-qm", "branch side")
+        self.git("checkout", "-q", "main")
+        (self.target / "README.md").write_text("main\n")
+        self.git("commit", "-qam", "main side")
+        wt = self.worktrees / "ko-131"
+        self.git("worktree", "add", "-q", str(wt), branch)
+        sha = self.git("rev-parse", branch, cwd=wt).strip()
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, StubProvider.TEAM,
+                                       str(self.target))
+        ticket = holophyte.board.mirror_task(conn, project, a_task())
+        run_id = store.claim(conn, project, ticket)
+        store.transition(conn, ticket, "in_flight")
+        store.set_branch(conn, run_id, branch)
+        fake = FakeAgent()  # no steps: any turn asked for is a ScriptError
+        with patch.object(holophyte.loop, "agent", fake):
+            merged = holophyte.loop._sync_main_into_branch(
+                self.tgt, conn, run_id, StubProvider(a_task()), "KO-131",
+                branch, wt, sha, 60, "add a thing", 5)
+
+        self.assertNotEqual(merged, sha)
+        self.assertEqual(fake.turns, [])
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(),
+                         merged)
 
 
 class BoardLeaseLabelTests(LoopFixture):
