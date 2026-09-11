@@ -122,10 +122,13 @@ FINDING_PATH_RE = re.compile(
 # reviewer chose to show. Read the target, not the text: matched against the
 # whole block, `FINDING_PATH_RE` takes the text first and never reaches the
 # `:line` in the target, so every finding in one file keyed alike. The target
-# may carry the reviewer's mount as a prefix; `WORKSPACE_PREFIX` is stripped
-# so the path is the repository's own.
+# may carry the reviewer's mount as a prefix; `WORKSPACE_PREFIXES` are
+# stripped so the path is the repository's own.
 MD_LINK_TARGET_RE = re.compile(r"\[[^\]\n]*\]\(([^)\s]+)\)")
-WORKSPACE_PREFIX = "/workspace/"
+# The mounts a reviewer has cited the candidate under: the read-only
+# `/workspace/` bind, and the writable copy the agent has run on since
+# KO-366 moved it to `/home/reviewer/candidate`.
+WORKSPACE_PREFIXES = ("/workspace/", "/home/reviewer/candidate/")
 # An *explicit* severity marker, bracketed (`[P0]`, `(blocker)`) or opening the
 # line (`- BLOCKER: ...`). Only a marker moves a finding off the default: tone
 # is not severity, and a reviewer that sounds alarmed has not filed a p0.
@@ -265,8 +268,10 @@ def citation(block):
     if link is None:
         return block
     target = link.group(1)
-    if target.startswith(WORKSPACE_PREFIX):
-        target = target[len(WORKSPACE_PREFIX):]
+    for prefix in WORKSPACE_PREFIXES:
+        if target.startswith(prefix):
+            target = target[len(prefix):]
+            break
     return target
 
 
