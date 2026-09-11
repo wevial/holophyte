@@ -4,6 +4,7 @@ import { Now } from "../src/components/Now";
 import { RunDetail } from "../src/components/RunDetail";
 import { labelFits } from "../src/components/RoundTimeline";
 import { formatClock } from "../src/lib/format";
+import type { LedgerRow } from "../src/lib/ledger";
 import type { Fetch } from "../src/lib/poll";
 import type { Run, RunDetailBody, RunFilesBody, Status } from "../src/lib/types";
 import { NO_ATTENTION, fixture, hostOf, settle } from "./harness";
@@ -85,16 +86,25 @@ const FILES: RunFilesBody = {
 };
 
 const answering =
-  (body: RunDetailBody, files: Response | (() => Response) = () => Response.json(FILES)): Fetch =>
+  (
+    body: RunDetailBody,
+    files: Response | (() => Response) = () => Response.json(FILES),
+    entries: LedgerRow[] = [],
+  ): Fetch =>
   async (url) => {
     if (url.endsWith("/runs/91/files")) return typeof files === "function" ? files() : files;
+    if (url.endsWith("/runs/91/ledger")) return Response.json({ run_id: 91, ticket: "KO-232", entries });
     return url.endsWith("/runs/91") ? Response.json(body) : new Response("not found", { status: 404 });
   };
 
 afterEach(cleanup);
 
-async function mount(body: RunDetailBody, now: number, files?: () => Response, barPx?: number) {
-  render(<RunDetail base={BASE} id={91} now={now} polls={1} deps={{ fetch: answering(body, files), barPx }} />);
+async function mount(body: RunDetailBody, now: number, files?: () => Response, barPx?: number, entries?: LedgerRow[]) {
+  render(
+    <RunDetail base={BASE} id={91} now={now} polls={1} deps={{ fetch: answering(body, files, entries), barPx }} />,
+  );
+  await settle();
+  // A finished run's ledger fetch lands a cycle after the detail does.
   await settle();
 }
 
@@ -326,6 +336,80 @@ test("a files endpoint answering 409 leaves one line, its own message, and the r
   fireEvent.click(screen.getByRole("button", { name: /Run log/ }));
   expect(document.querySelectorAll("[data-log-row]").length).toBe(1);
   expect(document.querySelector("[data-detail-error]")).toBeNull();
+});
+
+/** DETAIL ended failed: round 2's findings were still standing when the
+ *  run stopped. */
+const FAILED: RunDetailBody = {
+  ...DETAIL,
+  run: { ...DETAIL.run, phase: "failed", ended_ms: T + 25 * MINUTE, outcome: "failed" },
+  rounds: [DETAIL.rounds[0]!, { ...DETAIL.rounds[1]!, ended_ms: T + 19 * MINUTE }],
+};
+
+test("a run that ended failed shows a Findings section whose last-round findings carry the open chip", async () => {
+  await mount(FAILED, T + 25 * MINUTE);
+  expect(screen.getByText("Findings")).toBeTruthy();
+  expect(screen.queryByText("Open findings")).toBeNull();
+  expect(document.querySelector("[data-findings-count]")!.textContent).toBe("5 over 2 rounds");
+  // The newest fold is open: round 2's four findings, each chipped open.
+  const open = Array.from(document.querySelectorAll('[data-fate="open"]'));
+  expect(open.length).toBe(4);
+  expect(document.querySelectorAll("[data-finding]").length).toBe(4);
+});
+
+test("only the newest round's fold is open and an older round's header opens it", async () => {
+  const entries: LedgerRow[] = [
+    {
+      at: T + 13 * MINUTE,
+      run: 91,
+      ticket: "KO-232",
+      kind: "round",
+      source: "loop",
+      text:
+        "Round 1: REQUEST_CHANGES -> fix round\n" +
+        "Reviewer findings:\n- [P1] old.py:1 needs a guard\n\n" +
+        "Implementer response:\nDECLINE old.py — superseded by the rewrite",
+    },
+  ];
+  await mount(FAILED, T + 25 * MINUTE, undefined, undefined, entries);
+  const folds = Array.from(document.querySelectorAll("[data-round-fold]")) as HTMLElement[];
+  // Newest first on the page: round 2, then round 1.
+  expect(folds.map((fold) => fold.getAttribute("data-round-fold"))).toEqual(["2", "1"]);
+  // The header button is the fold's own; an open card's criterion fold is
+  // a button too, nested deeper.
+  const buttons = folds.map((fold) => fold.querySelector(":scope > button") as HTMLButtonElement);
+  expect(buttons[0]!.getAttribute("aria-expanded")).toBe("true");
+  expect(buttons[0]!.textContent).toContain("Round 2 · 4 findings · open");
+  expect(buttons[1]!.getAttribute("aria-expanded")).toBe("false");
+  expect(buttons[1]!.textContent).toContain("Round 1 · 1 finding · declined");
+  // The closed fold holds no cards; opening it shows round 1's finding
+  // declined, with the implementer's line under the body.
+  expect(within(folds[1]!).queryAllByRole("listitem").length).toBe(0);
+  fireEvent.click(buttons[1]!);
+  expect(buttons[1]!.getAttribute("aria-expanded")).toBe("true");
+  const card = within(folds[1]!).getByRole("listitem");
+  expect(card.querySelector("[data-fate]")!.textContent).toBe("declined");
+  expect(card.querySelector("[data-fate-sentence]")!.textContent).toBe(
+    "DECLINE old.py — superseded by the rewrite",
+  );
+});
+
+test("a merged run's findings history lists every round, the approving one empty", async () => {
+  const merged: RunDetailBody = {
+    ...FAILED,
+    run: { ...FAILED.run, phase: "done", outcome: "merged" },
+    rounds: [
+      ...FAILED.rounds,
+      { round: 3, started_ms: T + 20 * MINUTE, ended_ms: T + 24 * MINUTE, verdict: "pass", findings: [] },
+    ],
+  };
+  await mount(merged, T + 25 * MINUTE);
+  expect(document.querySelector("[data-findings-count]")!.textContent).toBe("5 over 3 rounds");
+  const folds = Array.from(document.querySelectorAll("[data-round-fold]")) as HTMLElement[];
+  expect(folds.map((fold) => fold.getAttribute("data-round-fold"))).toEqual(["3", "2", "1"]);
+  const newest = within(folds[0]!).getByRole("button");
+  expect(newest.getAttribute("aria-expanded")).toBe("true");
+  expect(newest.textContent).toContain("Round 3 · 0 findings");
 });
 
 test("a 404 says the run is not in the store and the Floor row still collapses and re-expands", async () => {
