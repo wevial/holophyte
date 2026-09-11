@@ -1,16 +1,6 @@
 <!-- store-rendered below -->
 
-[558 earlier entries in holophyte.db — query runs/reviewRounds]
-
-## 2026-09-10T22:50:35Z — KO-357
-Round 1: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/holophyte/agents.py:116 [p2] [holophyte/agents.py:116](/home/reviewer/candidate/holophyte/agents.py:116): Catch process-launch errors and return a failed probe result. A nonexistent imple…
-
-## 2026-09-10T22:54:08Z — KO-358
-Round 2: changes_requested · reviewer codex-astra-medium · verify passed
-Findings (1):
-- /home/reviewer/candidate/console/src/lib/toml.ts:281 [p1] [P1] [toml.ts:281](/home/reviewer/candidate/console/src/lib/toml.ts:281): Multiline arrays containing multiple commands on one line are corrupted by field edi…
+[560 earlier entries in holophyte.db — query runs/reviewRounds]
 
 ## 2026-09-10T22:57:00Z — KO-358
 Round 3: changes_requested · reviewer codex-astra-medium · verify passed
@@ -107,3 +97,10 @@ Round 1: pass · reviewer codex-astra-medium · verify passed
 ## 2026-09-11T00:12:32Z — KO-365
 MERGED to main as 40045f2 (branch task/ko-365-a-candidate-parked-on-a-merge deleted).
 actual: 17.5 min · estimate: 30 min · rounds: 1
+
+## 2026-09-11T00:15:01Z — KO-364
+Round 2: pass · reviewer codex-astra-medium · verify passed
+
+## 2026-09-11T00:16:55Z — KO-364
+MERGED to main as cb14ebe (branch task/ko-364-the-daemon-serves-its-configur deleted).
+actual: 19.9 min · estimate: 30 min · rounds: 2
