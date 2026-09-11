@@ -2705,13 +2705,19 @@ class MergeModeTests(LoopFixture):
         for n, page in enumerate(comments, 1):
             (pages / f"{n:03d}.json").write_text(json.dumps(page))
         real_git = shutil.which("git")
-        # The fetch before every cut (KO-378) would ask the example remote
-        # for real; the fake route answers it as an origin with nothing
-        # new, unrecorded: `self.calls` witnesses what the loop sends out
-        # (pushes, pull requests), and a fetch sends nothing.
+        # The fetch before every cut (KO-378) is `git fetch origin` with
+        # no refspec and would ask the example remote for real; the fake
+        # route answers just that call as an origin with nothing new,
+        # unrecorded: `self.calls` witnesses what the loop sends out
+        # (pushes, pull requests), and a fetch sends nothing. A fetch
+        # with a refspec is a different caller — the babysit resume's
+        # `fetch origin BRANCH` and the fixture's fetches into a bare
+        # remote — and reaches the real git, which fails against the
+        # example remote or succeeds against a bare one as it would.
         (bindir / "git").write_text(
             "#!/bin/sh\n"
-            'if [ "$1" = fetch ]; then exit 0; fi\n'
+            'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
+            " then exit 0; fi\n"
             'if [ "$1" = push ]; then\n'
             f'  printf "git %s\\n" "$*" >> "{self.calls}"\n'
             f"{push_sh}\n"
