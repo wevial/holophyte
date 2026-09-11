@@ -139,16 +139,21 @@ mutation($thread: ID!) {
 # KO-362 -- whether anything happened on it since the shepherd last looked:
 # `updatedAt` and the count of its review threads, which the reconcile
 # holds against what the last shepherd pass recorded (`runs.prSeenAt`,
-# `runs.prSeenThreads`). The thread bodies and the checks are still the
-# shepherd's own read. `rateLimit` rides along at no cost: the remaining
-# GraphQL budget on the token and when it resets, so the reconcile backs
-# off before the shepherd's reads run it dry.
+# `runs.prSeenThreads`), and -- KO-368 -- the facts `/attention` shows
+# beside them: the head commit's checks rollup and the review decision
+# (`runs.prSeenChecks`, `runs.prSeenReview`). The thread bodies and the
+# per-run checks are still the shepherd's own read. `rateLimit` rides
+# along at no cost: the remaining GraphQL budget on the token and when it
+# resets, so the reconcile backs off before the shepherd's reads run it
+# dry.
 PULL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       state merged mergeCommit { oid } mergedBy { login }
       updatedAt reviewThreads { totalCount }
+      reviewDecision
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
     }
   }
   rateLimit { remaining resetAt }
@@ -479,9 +484,14 @@ class PullStatus:
     `merge_sha` by `merged_by`, or closed without merging; when it last
     changed (`updated_at`, GitHub's ISO 8601 timestamp) and how many
     review threads it carries (`threads`), None for either when GitHub
-    did not say; and the token's remaining GraphQL budget with the time
-    it resets (`rate_remaining`, `rate_reset`), None when the answer
-    carried no `rateLimit`."""
+    did not say; the head commit's checks rollup as `checks` ("success",
+    "pending" or "failure", None when the head carries no rollup -- a
+    pull request with no checks -- or the answer had none) and GitHub's
+    `reviewDecision` lower-cased as `review` ("approved",
+    "changes_requested", "review_required", None when the repository
+    requires no review or the answer had none); and the token's remaining
+    GraphQL budget with the time it resets (`rate_remaining`,
+    `rate_reset`), None when the answer carried no `rateLimit`."""
 
     merged: bool
     closed: bool
@@ -489,18 +499,21 @@ class PullStatus:
     merged_by: str | None = None
     updated_at: str | None = None
     threads: int | None = None
+    checks: str | None = None
+    review: str | None = None
     rate_remaining: int | None = None
     rate_reset: str | None = None
 
 
 def pull_status(target, pull):
     """One GraphQL read of the pull request's `state`, `merged`,
-    `mergeCommit`, `mergedBy`, `updatedAt` and review-thread count, with
-    the token's `rateLimit` (`PULL_QUERY`): the loop's reconcile of a run
-    parked on its PR asks this once per pass. GitHub answering without
-    the pull request is `InfraFailure`, as every read here is; an answer
-    without the activity or budget fields is one without them (None),
-    not an error."""
+    `mergeCommit`, `mergedBy`, `updatedAt`, review-thread count,
+    `reviewDecision` and head checks rollup, with the token's `rateLimit`
+    (`PULL_QUERY`): the loop's reconcile of a run parked on its PR asks
+    this once per pass. GitHub answering without the pull request is
+    `InfraFailure`, as every read here is; an answer without the
+    activity, fact or budget fields is one without them (None), not an
+    error."""
     data = graphql(target, pull, PULL_QUERY,
                    {"owner": pull.owner, "name": pull.name,
                     "number": pull.number})
@@ -514,6 +527,7 @@ def pull_status(target, pull):
     threads = node.get("reviewThreads") or {}
     rate = data.get("rateLimit") or {}
     updated = node.get("updatedAt")
+    decision = node.get("reviewDecision")
     return PullStatus(merged=bool(node.get("merged")),
                       closed=node.get("state") == "CLOSED",
                       merge_sha=merge.get("oid") if isinstance(merge, dict)
@@ -524,12 +538,34 @@ def pull_status(target, pull):
                       else None,
                       threads=_count(threads.get("totalCount")
                                      if isinstance(threads, dict) else None),
+                      checks=_head_checks(node),
+                      review=decision.lower() if isinstance(decision, str)
+                      and decision else None,
                       rate_remaining=_count(rate.get("remaining")
                                             if isinstance(rate, dict)
                                             else None),
                       rate_reset=rate.get("resetAt")
                       if isinstance(rate, dict)
                       and isinstance(rate.get("resetAt"), str) else None)
+
+
+def _head_checks(node):
+    """The pull request node's head `statusCheckRollup.state` as "success",
+    "pending" or "failure"; None when the head carries no rollup (a pull
+    request with no checks) or the answer did not include the commit.
+    Absent is absent here, not "pending": the shepherd's `fold_checks()`
+    reads a missing rollup as green only beside the check runs and the
+    required contexts, which this one-field read does not have."""
+    commits = node.get("commits")
+    nodes = commits.get("nodes") if isinstance(commits, dict) else None
+    head = nodes[0] if isinstance(nodes, list) and nodes else None
+    commit = head.get("commit") if isinstance(head, dict) else None
+    rollup = commit.get("statusCheckRollup") if isinstance(commit, dict) \
+        else None
+    state = rollup.get("state") if isinstance(rollup, dict) else None
+    if not isinstance(state, str):
+        return None
+    return CHECK_STATES.get(state, "failure")
 
 
 def _count(value):

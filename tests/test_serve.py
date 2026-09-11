@@ -811,13 +811,10 @@ class AttentionTests(ServeTestCase):
         for item in body["items"]:
             self.assertEqual(item["level"], "attention", item)
 
-    def test_a_park_on_a_pull_request_is_pr_open_and_a_question_stays_blocked(self):
-        """KO-8 is parked with a plain question and no PR; KO-10 is parked
-        the way `_park_on_pr()` parks: `runs.prUrl` set and the ticket
-        asking `PR open: URL` with the reason under it. Only KO-10 is
-        `pr_open`, its `reason` the question without that first line."""
-        self.seed_attention()
-        url = "https://github.com/example/repo/pull/2170"
+    def park_on_pr(self, url, pr_seen=None):
+        """KO-10 parked the way `_park_on_pr()` parks: `runs.prUrl` set,
+        the ticket asking `PR open: URL` with the reason under it, and
+        `pr_seen` recorded as what the park's read saw; the run id."""
         conn = store.open(str(self.db))
         try:
             project = store.ensure_project(conn, "team-1", self.target)
@@ -837,9 +834,20 @@ class AttentionTests(ServeTestCase):
             conn.commit()
             store.park(conn, run, "awaiting_merge_approval", "PR open",
                        candidate_sha="a" * 40, pr_url=url,
-                       now=self.now - 2 * MIN)
+                       now=self.now - 2 * MIN, pr_seen=pr_seen)
         finally:
             conn.close()
+        return run
+
+    def test_a_park_on_a_pull_request_is_pr_open_and_a_question_stays_blocked(self):
+        """KO-8 is parked with a plain question and no PR; KO-10 is parked
+        the way `_park_on_pr()` parks, by a read that never came back.
+        Only KO-10 is `pr_open`, its `reason` the question without that
+        first line, its `pr` the number from the URL with the three facts
+        null: never polled (KO-368)."""
+        self.seed_attention()
+        url = "https://github.com/example/repo/pull/2170"
+        run = self.park_on_pr(url)
         self.start()
 
         _, _, body = self.request("GET", "/attention")
@@ -853,8 +861,30 @@ class AttentionTests(ServeTestCase):
             "kind": "pr_open", "ticket": "KO-10", "run": run, "pr_url": url,
             "reason": "review requested from a coworker"
                       "\n1. src/x.py:3 by @coworker",
-            "asked_ms": self.now - 2 * MIN, "level": "attention"})
+            "asked_ms": self.now - 2 * MIN,
+            "pr": {"number": 2170, "checks": None, "review": None,
+                   "threads": None},
+            "level": "attention"})
         self.assertEqual(body["level"], "attention")
+
+    def test_a_pr_open_item_carries_what_the_reconcile_saw_on_the_pull_request(
+            self):
+        """KO-368: the run's park recorded the checks rollup, the review
+        decision and the thread count its read saw; the item's `pr`
+        carries them beside the number."""
+        self.seed_attention()
+        url = "https://github.com/example/repo/pull/2170"
+        self.park_on_pr(url, pr_seen=("2026-09-10T10:00:00Z", 3, "failure",
+                                      "changes_requested"))
+        self.start()
+
+        _, _, body = self.request("GET", "/attention")
+
+        item = next(item for item in body["items"]
+                    if item["kind"] == "pr_open")
+        self.assertEqual(item["pr"], {"number": 2170, "checks": "failure",
+                                      "review": "changes_requested",
+                                      "threads": 3})
 
     def test_the_body_names_the_target_as_status_does(self):
         self.seed_attention()
