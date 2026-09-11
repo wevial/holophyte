@@ -54,7 +54,7 @@ const round = (n: number, findings: number): Round => ({
   started_ms: T + (3 * n - 1) * MINUTE,
   ended_ms: T + 3 * n * MINUTE,
   verdict: n === 4 ? "pass" : "changes_requested",
-  findings: Array.from({ length: findings }, (_, i) => ({ path: `f${i}.py`, severity: "should", message: "…" })),
+  findings: Array.from({ length: findings }, (_, i) => ({ path: `f${i}.py`, severity: "p2", message: "…" })),
 });
 const ROUNDS: Round[] = [round(1, 2), round(2, 1), round(3, 3), round(4, 0)];
 

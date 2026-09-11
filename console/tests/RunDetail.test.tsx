@@ -38,7 +38,7 @@ const DETAIL: RunDetailBody = {
       started_ms: T + 8 * MINUTE,
       ended_ms: T + 12 * MINUTE,
       verdict: "changes_requested",
-      findings: [{ path: "old.py", line: 1, severity: "must", message: "addressed since" }],
+      findings: [{ path: "old.py", line: 1, severity: "p1", message: "addressed since" }],
     },
     {
       round: 2,
@@ -47,8 +47,30 @@ const DETAIL: RunDetailBody = {
       verdict: "changes_requested",
       findings: [
         { path: "holophyte/serve.py", line: 12, severity: "nit", message: "Trailing comma" },
-        { path: "holophyte/runs.py", line: 40, severity: "must", message: "Lease is never released" },
-        { path: "holophyte/review.py", severity: "should", message: "Name the round in the log" },
+        {
+          path: "/home/reviewer/candidate/holophyte/runs.py",
+          line: 40,
+          severity: "p1",
+          message:
+            "- [P1] **Lease is never released** — " +
+            "[holophyte/runs.py](/home/reviewer/candidate/holophyte/runs.py:40) " +
+            "returns before `release()` runs",
+        },
+        {
+          path: "criteria",
+          line: 2,
+          severity: "p2",
+          message:
+            "CRITERION 2: not met — no test exercises the conflict path\n" +
+            "Given a merge-gate conflict, when the gate runs, then the run " +
+            "goes back to the implementer (tests/test_gates.py witnesses it)",
+        },
+        {
+          path: "holophyte/loop.py",
+          line: 345,
+          severity: "p0",
+          message: "Merge gate conflict fails the run outright",
+        },
       ],
     },
   ],
@@ -76,25 +98,35 @@ async function mount(body: RunDetailBody, now: number, files?: () => Response, b
   await settle();
 }
 
-test("the newest round's findings are cards pilled must, should, nit with path:line and a 1 must · 1 should label", async () => {
+test("the newest round's findings are cards pilled must, must, should, nit with path:line and a 2 must · 1 should label", async () => {
   await mount(DETAIL, T + 20 * MINUTE);
   const cards = screen.getAllByRole("listitem").filter((item) => item.hasAttribute("data-finding"));
-  expect(cards.length).toBe(3);
-  expect(cards.map((card) => card.querySelector("[data-severity]")!.textContent)).toEqual(["must", "should", "nit"]);
+  expect(cards.length).toBe(4);
+  expect(cards.map((card) => card.querySelector("[data-severity]")!.textContent)).toEqual([
+    "must",
+    "must",
+    "should",
+    "nit",
+  ]);
   expect(cards.map((card) => card.querySelector("[data-severity]")!.getAttribute("data-severity"))).toEqual([
+    "must",
     "must",
     "should",
     "nit",
   ]);
   expect(cards[0]!.querySelector("[data-severity]")!.className).toContain("bg-bad-bg");
-  expect(cards[1]!.querySelector("[data-severity]")!.className).toContain("bg-warn-bg");
+  expect(cards[1]!.querySelector("[data-severity]")!.className).toContain("bg-bad-bg");
+  expect(cards[2]!.querySelector("[data-severity]")!.className).toContain("bg-warn-bg");
+  // The p1 card's stored path still carries the reviewer container's mount;
+  // the location shows the repository's own.
   expect(cards.map((card) => card.querySelector("[data-location]")!.textContent)).toEqual([
     "holophyte/runs.py:40",
-    "holophyte/review.py",
+    "holophyte/loop.py:345",
+    "criteria:2",
     "holophyte/serve.py:12",
   ]);
-  expect(within(cards[0]!).getByText("Lease is never released")).toBeTruthy();
-  expect(document.querySelector("[data-severity-counts]")!.textContent).toBe("1 must · 1 should");
+  expect(within(cards[1]!).getByText("Merge gate conflict fails the run outright")).toBeTruthy();
+  expect(document.querySelector("[data-severity-counts]")!.textContent).toBe("2 must · 1 should");
   expect(document.querySelector("[data-files-label]")!.textContent).toBe("1 · +12 −3");
   expect(document.querySelector("[data-file] [data-path]")!.textContent).toBe("holophyte/serve.py");
   expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();
@@ -114,6 +146,35 @@ test("the newest round's findings are cards pilled must, should, nit with path:l
     ["Kill run", true],
     ["Requeue ticket", true],
   ]);
+});
+
+test("a finding card reads as a title, a location and a body; a criterion finding folds its criterion", async () => {
+  await mount(DETAIL, T + 20 * MINUTE);
+  const cards = screen.getAllByRole("listitem").filter((item) => item.hasAttribute("data-finding"));
+
+  // The [P1] bullet: the bold lead is the title, the location link is out of
+  // the body, and the body's inline code renders as code.
+  const p1 = cards[0]!;
+  expect(p1.querySelector("[data-title]")!.textContent).toBe("Lease is never released");
+  const body = p1.querySelector("[data-body]")!;
+  expect(body.textContent).toBe("returns before release() runs");
+  expect(body.querySelector("code")!.textContent).toBe("release()");
+  expect(body.querySelector("a")).toBeNull();
+
+  // The criterion finding: the title names the check and its status, the
+  // reason is the body, and the criterion's own text sits inside a closed
+  // disclosure that opens on click.
+  const criterion = cards[2]!;
+  expect(criterion.querySelector("[data-title]")!.textContent).toBe("Criterion 2 · not met");
+  expect(criterion.querySelector("[data-body]")!.textContent).toBe("no test exercises the conflict path");
+  const toggle = within(criterion).getByRole("button", { name: /criterion/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  const folded = criterion.querySelector("[data-criterion]")!;
+  expect(folded.hasAttribute("hidden")).toBe(true);
+  expect(folded.textContent).toContain("Given a merge-gate conflict");
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(folded.hasAttribute("hidden")).toBe(false);
 });
 
 test("the header shows no sha for an unmerged run, the plain short sha when merged, and an anchor when commit_url is set", async () => {
@@ -259,7 +320,7 @@ test("a files endpoint answering 409 leaves one line, its own message, and the r
   expect(column.querySelector("[data-file]")).toBeNull();
   expect(column.querySelector("[data-files-label]")).toBeNull();
   expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();
-  expect(document.querySelectorAll("[data-finding]").length).toBe(3);
+  expect(document.querySelectorAll("[data-finding]").length).toBe(4);
   expect(document.querySelector("[data-log-summary]")!.textContent).toBe("1 event · last: claimed KO-232 20m ago");
   expect(document.querySelector("[data-log-rows]")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /Run log/ }));

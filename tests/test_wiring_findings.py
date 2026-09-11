@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -73,6 +74,22 @@ class StubProvider:
 
     def comment(self, task_id, body):
         self.comments.append((task_id, body))
+
+
+class CitationMountTests(unittest.TestCase):
+    """A link target under either mount the reviewer container has used
+    parses to the repository's own path."""
+
+    def test_workspace_and_candidate_prefixes_both_strip(self):
+        """`/workspace/` was the read-only mount; since KO-366 the agent runs
+        on the writable copy at `/home/reviewer/candidate`, and a citation to
+        either is the same repository file."""
+        findings = holophyte.review.parse_findings(
+            "- [loop.py](/workspace/holophyte/loop.py:345) one\n"
+            "- [loop.py](/home/reviewer/candidate/holophyte/loop.py:400) two\n")
+        self.assertEqual(
+            [(finding["path"], finding["line"]) for finding in findings],
+            [("holophyte/loop.py", 345), ("holophyte/loop.py", 400)])
 
 
 class RenderedWindowTests(unittest.TestCase):
