@@ -98,6 +98,25 @@ def lease_turn(target):
         os.close(fd)  # drops the flock
 
 
+def lease_turn_held(target):
+    """Whether somebody holds `target`'s lease turn right now: a claim or
+    a close-out of this store is between its look and its write, which is
+    a loop (or a close-out) live on the store whatever its heartbeats say.
+    A non-blocking try at the same flock, given straight back; a missing
+    file is nobody's turn, and is not created here."""
+    path = lease_turn_path(target)
+    if not path.exists():
+        return False
+    fd = os.open(path, os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    finally:
+        os.close(fd)  # drops the flock, when it was taken
+    return False
+
+
 def lease_holders(labels):
     """The hosts whose `holo:` labels are in `labels`, in board order; []
     without one (a board that does not label, or a task dict older than

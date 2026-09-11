@@ -129,6 +129,8 @@ EXPECTED_READ = [
     # KO-280: the `serve` daemon's `/board` read of the open tickets.
     "open_tickets",
     "open_readonly",
+    # KO-376: the supervisor's read of the tickets its send-back owes a loop.
+    "pending_loop_launches",
     "recent_failed_runs",
     "review_rounds",
     "rounds_of",

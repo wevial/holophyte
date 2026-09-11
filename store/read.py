@@ -888,3 +888,32 @@ def supervisor_beat(conn):
         return None
     return SupervisorBeat(pid=row[0], startedAt=row[1], lastBeat=row[2],
                           passes=row[3], host=row[4])
+
+
+def pending_loop_launches(conn, project_id):
+    """The `(ticket id, run id)` pairs of `project_id` a loop is owed for:
+    a ticket `ready` with no live run whose newest run the supervisor's
+    reconcile sent back to the shepherd (an interventions row `shepherd`
+    from source `supervisor`) and no `launch_loop` row on that run since
+    (later by row id: the two rows are stamped by different clocks).
+
+    The supervisor's sweep reads this after its reconcile (KO-376): the
+    ticket walked to `ready` on a board whose loop has exited, so a loop
+    has to be started for it, and the `launch_loop` row the sweep records
+    once `systemctl` took the start is what says one was. A start that
+    failed left no row, so the ticket is still owed on the next pass; a
+    ticket a loop claimed is `in_flight` and owed nothing. A ticket that
+    became ready through Linear itself never had a shepherd row and is
+    not here: that loop is the operator's or the tick's to start.
+    """
+    return conn.execute(
+        "SELECT t.id, t.lastRunId FROM tickets t"
+        " WHERE t.projectId = ? AND t.status = 'ready'"
+        " AND t.activeRunId IS NULL AND t.lastRunId IS NOT NULL"
+        " AND EXISTS (SELECT 1 FROM interventions s"
+        "   WHERE s.runId = t.lastRunId AND s.\"action\" = 'shepherd'"
+        "   AND s.source = 'supervisor'"
+        "   AND NOT EXISTS (SELECT 1 FROM interventions l"
+        "     WHERE l.runId = s.runId AND l.\"action\" = 'launch_loop'"
+        "     AND l.source = 'supervisor' AND l.id > s.id))"
+        " ORDER BY t.id", (project_id,)).fetchall()
