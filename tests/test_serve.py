@@ -1600,7 +1600,7 @@ class PrUrlTests(ServeTestCase):
             conn.close()
 
     def merge_parked(self):
-        """Both parked runs end `merged`, as the shepherd ends one whose PR
+        """Both parked runs end `merged`, as the babysitter ends one whose PR
         landed."""
         conn = store.open(str(self.db))
         try:

@@ -38,8 +38,8 @@ flowchart TB
   loop --> findings
   loop --> reexec
   loop --> pr
-  loop --> shepherd
-  shepherd --> pr
+  loop --> babysitter
+  babysitter --> pr
   pr --> findings
   pr --> gates
   pr --> read
@@ -72,7 +72,7 @@ flowchart TB
 
 Arrows point at what a module imports. The three modules the PR merge mode
 and the console brought: `pr.py` (the push, the pull request and its merge
-API; imports `store.read`, `findings` and `gates`), `shepherd.py` (the
+API; imports `store.read`, `findings` and `gates`), `babysitter.py` (the
 thread verdicts of a PR pass; imports `pr.py`) and `files.py` (touched-file
 counts read from git for the daemon; imports `gates`, and is imported by
 `serve`). `config` imports `pr.py` lazily, at the startup route check only.
@@ -93,7 +93,7 @@ the target, read at startup and refused if unknown:
 | `[loop]` | stop on failure; claim order by identifier or priority; `spawn_supervisor`; the review-round cap from `review_rounds`, `review_rounds_per_lines` and `review_rounds_max`; `workers`, the pool's ceiling |
 | `[board]` | the Linear project and team this target claims from |
 | `[report]` | the host label rendered instead of the machine name |
-| `[merge]` | `approve` (auto or human), `mode` (local or pr) and `pr_rounds`, the shepherd-pass cap |
+| `[merge]` | `approve` (auto or human), `mode` (local or pr) and `pr_rounds`, the babysitter-pass cap |
 | `[console]` | `daemons`, the `HOST:PORT` peers the console page fans out to |
 | `[serve]` | `token_file`, the bearer token the daemon reads for a non-loopback bind |
 

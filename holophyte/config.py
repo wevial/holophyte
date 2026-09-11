@@ -868,26 +868,26 @@ def board_config(target):
 # does, with the PR's URL on the run and in the question the ticket asks.
 # "The factory never pushes" becomes "the factory never pushes `main`".
 #
-# `pr_rounds` caps the shepherd passes the loop makes over an open pull
+# `pr_rounds` caps the babysit passes the loop makes over an open pull
 # request -- threads read, verdicted, fixed and answered, checks awaited --
 # before it parks the run for the operator with the open threads listed: the
 # cap that keeps the loop from arguing with a review bot forever (design
 # note 7). An integer of at least 1; `pr_rounds = 1` is one pass and then
 # the park.
 #
-# `pr_merge_method` is the `merge_method` the shepherd sends GitHub's merge
+# `pr_merge_method` is the `merge_method` the babysitter sends GitHub's merge
 # API when it lands a green, quiet pull request under `mode = "pr"`:
 # `"merge"` (a merge commit, like the local `--no-ff` merge), `"squash"` or
 # `"rebase"`. A repository whose ruleset allows squash only, or requires
 # linear history, refuses a merge commit after every gate has passed; this
 # names the method it will take. Validated whatever the mode, like the rest.
 #
-# `pr_poll_sec` is the least time, in seconds, between two shepherd rounds
+# `pr_poll_sec` is the least time, in seconds, between two babysit rounds
 # the loop itself starts on one parked pull request (KO-362). Every tick
 # reads each parked pull request once anyway, to notice a merge; the same
 # read now carries GitHub's `updatedAt` and the thread count, and a pull
-# request that moved past what the last shepherd pass recorded is sent
-# back to the shepherd as `--shepherd KO-n` would send it -- but no more
+# request that moved past what the last babysit pass recorded is sent
+# back to the babysitter as `--babysit KO-n` would send it -- but no more
 # often than this, per pull request, so a reviewer typing three comments
 # in a minute gets one round rather than three. An integer of at least
 # 10; the default is 180.
@@ -902,7 +902,7 @@ def board_config(target):
 # in the operator's words. A reply the loop cannot read falls back to the
 # ticket form for that PR, so a PR is always opened.
 #
-# `human_threads` is what the shepherd does with a review thread a person
+# `human_threads` is what the babysitter does with a review thread a person
 # opened: `"park"` (the default, KO-327) is HUMAN before the adjudicator is
 # asked -- no reply, the run parks; `"act"` (KO-337) judges it beside the
 # bots' threads, fixes and answers an ADDRESS with the sha, and hands
@@ -957,13 +957,13 @@ def merge_config(target):
     the default would merge work the operator asked to sign off on, or land
     locally what they asked to see as a pull request. `pr_rounds` is held to an integer
     of at least 1 -- a `true`, a `"5"` or a `0` names no number of passes
-    a shepherd can make. `pr_poll_sec` is an integer of at least
+    a babysitter can make. `pr_poll_sec` is an integer of at least
     `PR_POLL_FLOOR` -- `"180"` is a string and `5` a poll of GitHub, not an
-    interval between shepherd rounds. `pr_text` is `"ticket"` or `"written"`, and
+    interval between babysit rounds. `pr_text` is `"ticket"` or `"written"`, and
     `pr_style` is a string (default empty): instructions, not a switch, so
     any text is taken and anything else is refused. `human_threads` is
     `"park"` or `"act"`: a `"reply"` names no rule for a person's thread
-    the shepherd has. `after` is a list of strings (default empty), each a
+    the babysitter has. `after` is a list of strings (default empty), each a
     shell command; a bare string is refused rather than split, so a target
     cannot pass one command where a list of them is read. The refusal names the
     table, the key and the constraint, like a bad `[loop]` value. Keys this

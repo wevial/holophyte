@@ -2,7 +2,7 @@
 
 Supervising a target and serving its state read-only. The operator
 commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
-[--update KO-n]`, `--approve KO-n`, `--shepherd KO-n` and
+[--update KO-n]`, `--approve KO-n`, `--babysit KO-n` and
 `--repoint KO-n SHA`) are described by `factory.py --help`, and the
 escalation ladder they sit on in the [runbook](operating/runbook.md). Back
 to the [README](index.md).

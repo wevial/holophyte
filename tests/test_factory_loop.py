@@ -2243,8 +2243,8 @@ class MergeApprovalTests(LoopFixture):
             self.read("SELECT id, branch, outcome FROM runs ORDER BY id"),
             [(1, BRANCH, "abandoned"), (2, BRANCH, "merged")])
 
-    def test_a_shepherd_release_of_a_local_park_does_not_merge(self):
-        """`--shepherd` is not an approval. `store.shepherd()` refuses a run
+    def test_a_babysitter_release_of_a_local_park_does_not_merge(self):
+        """`--babysit` is not an approval. `store.shepherd()` refuses a run
         parked with no pull request, but the resumed claim holds the line
         on its own: a parked local candidate whose newest intervention is
         `shepherd` (written here through the store API, the way an operator
@@ -2255,7 +2255,7 @@ class MergeApprovalTests(LoopFixture):
         self.loop(Commit("the scripted work"), APPROVE,
                   provider=StubProvider(a_task()))
         with self.assertRaises(SystemExit) as refused:
-            holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "look again",
+            holophyte.loop.babysit_ticket(self.tgt, "KO-131", "look again",
                                            out=io.StringIO())
         self.assertIn("no pull request", str(refused.exception))
         conn = holophyte.runs.open_store(self.tgt)
@@ -2279,7 +2279,7 @@ class MergeApprovalTests(LoopFixture):
                          " ORDER BY id")
         self.assertEqual([row[:3] for row in rows],
                          [(1, "failed", "abandoned"), (2, "failed", "failed")])
-        self.assertIn("released by --shepherd", rows[1][3])
+        self.assertIn("released by --babysit", rows[1][3])
         self.assertNotIn("merged", [s for (s,) in
                                     self.read("SELECT status FROM tickets")])
 
@@ -2500,7 +2500,7 @@ class SelfHostingTests(LoopFixture):
 
 class MergeModeTests(LoopFixture):
     """`[merge] mode = "pr"`: an approved, verified candidate is pushed and
-    opened as a pull request instead of merged, and the loop shepherds the
+    opened as a pull request instead of merged, and the loop babysits the
     PR -- threads verdicted, fixed and answered, checks awaited -- until it
     merges through the PR's API or the run parks. `"local"`, or no key,
     merges as it always has.
@@ -2532,7 +2532,7 @@ class MergeModeTests(LoopFixture):
     @staticmethod
     def comment(number, author, body):
         """One comment as the GraphQL answer carries it. `author` is a
-        login -- a review bot's, `__typename` `Bot`, the kind the shepherd
+        login -- a review bot's, `__typename` `Bot`, the kind the babysitter
         answers -- or a `(login, typename)` pair for a person (`User`)."""
         login, kind = (author if isinstance(author, tuple)
                        else (author, "Bot"))
@@ -2546,7 +2546,7 @@ class MergeModeTests(LoopFixture):
         """One review thread as the GraphQL answer carries it: the opening
         comment, then `replies` (each `(author, body)`) as the follow-ups
         on its first page of comments; `next_cursor` names a further page
-        the shepherd must fetch."""
+        the babysitter must fetch."""
         nodes = [cls.comment(number, author, body)]
         nodes += [cls.comment(f"{number}_{n}", who, text)
                   for n, (who, text) in enumerate(replies, 1)]
@@ -2682,7 +2682,7 @@ class MergeModeTests(LoopFixture):
                 if self.calls.exists() else [])
 
     def api_calls(self):
-        """Every `gh api` body the shepherd made, in order, as `(kind,
+        """Every `gh api` body the babysitter made, in order, as `(kind,
         variables)`: the kind is `state`, `reply`, `resolve` or `merge`.
         The loop's per-pass pull-status read of a parked run (KO-359) is
         left out: it is the reconcile's, tested on its own below, and
@@ -2713,7 +2713,7 @@ class MergeModeTests(LoopFixture):
     def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
         """Push, then create, in that order; the PR is titled `KO-n: TITLE`
         and its body is the ticket body followed by the run's FINDINGS
-        entry; the shepherd's one pass finds no thread and green checks,
+        entry; the babysitter's one pass finds no thread and green checks,
         and under `approve = "human"` the run parks "ready to merge": the
         URL `gh` printed is the run's `prUrl` and heads the ticket's
         question; main is untouched, the branch and worktree stay, and the
@@ -3009,7 +3009,7 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
-    def test_a_check_runs_read_the_shepherd_cannot_make_is_pending(self):
+    def test_a_check_runs_read_the_babysitter_cannot_make_is_pending(self):
         """`pr_state()` reads the head's check runs beside the rollup; a
         read that raises leaves `checks` pending -- never green on a
         rollup alone -- and the exception does not escape the read."""
@@ -3037,7 +3037,7 @@ class MergeModeTests(LoopFixture):
         """Review finding: only the first page of check runs was read and
         `total_count` ignored, so a head with more runs than one page
         holds read as green whatever the runs past the page said. Now the
-        pages are walked; a page the shepherd asked for and did not get
+        pages are walked; a page the babysitter asked for and did not get
         leaves the read incomplete, which is pending."""
         def success(name):
             return {"name": name, "status": "completed",
@@ -3067,17 +3067,17 @@ class MergeModeTests(LoopFixture):
         del pages[2]  # 101 promised, 100 delivered: incomplete, pending.
         self.assertEqual(self._state_with_rest(paged_rest).checks, "pending")
 
-    def test_a_check_runs_answer_the_shepherd_cannot_read_is_pending(self):
+    def test_a_check_runs_answer_the_babysitter_cannot_read_is_pending(self):
         """Review finding: `{"check_runs": "unreadable"}` read as green."""
         def odd_rest(target, pull, method, path, payload=None):
             return {"check_runs": "unreadable"} if "check-runs" in path else []
         self.assertEqual(self._state_with_rest(odd_rest).checks, "pending")
 
-    def test_a_rules_answer_the_shepherd_cannot_read_is_pending(self):
+    def test_a_rules_answer_the_babysitter_cannot_read_is_pending(self):
         """Review finding: a `required_status_checks` rule whose checks were
         not a list of contexts was silently dropped (green), and one whose
         `parameters` was not an object raised out of `pr_state`. Rules
-        the shepherd cannot read are pending, like check runs it cannot
+        the babysitter cannot read are pending, like check runs it cannot
         read."""
         def runs_then(rules):
             def odd_rest(target, pull, method, path, payload=None):
@@ -3101,7 +3101,7 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(self._state_with_rest(rest).checks, "success")
 
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
-        """Regression: the shepherd's fix commit is the implementer's work,
+        """Regression: the babysitter's fix commit is the implementer's work,
         and the pass after it -- green, quiet -- merged it with no
         independent look at that commit: both the review and the
         adjudication came before the fix. Now a candidate that moved
@@ -3209,13 +3209,13 @@ class MergeModeTests(LoopFixture):
         self.assertIn(fixed[:12], question)
         self.assertIn("scripted change is incomplete", question)
 
-    def test_a_rejected_fix_is_reviewed_again_on_shepherd_re_entry(self):
-        """Regression: `--shepherd` on a run parked because the review of
+    def test_a_rejected_fix_is_reviewed_again_on_babysitter_re_entry(self):
+        """Regression: `--babysit` on a run parked because the review of
         the fix asked for changes resumed with the branch's HEAD taken as
         reviewed, so a green, quiet PR under `approve = "auto"` merged the
         rejected fix, unchanged, with no reviewer turn. The park now
         records the sha the last approval covered (none, here), and the
-        resumed shepherd reviews the candidate again before any merge:
+        resumed babysitter reviews the candidate again before any merge:
         another `REQUEST_CHANGES` parks it, unmerged, once more."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
@@ -3229,7 +3229,7 @@ class MergeModeTests(LoopFixture):
                          [(None,)])
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "look again",
+        holophyte.loop.babysit_ticket(self.tgt, "KO-131", "look again",
                                        out=io.StringIO())
 
         fake, _ = self.loop(REQUEST_CHANGES, provider=self.provider())
@@ -3244,10 +3244,10 @@ class MergeModeTests(LoopFixture):
              (2, "awaiting_merge_approval", None, fixed, None, None)])
         self.assertIn("scripted change is incomplete", self.question())
 
-    def test_shepherd_re_entry_merges_the_approved_sha_without_a_review(self):
+    def test_babysit_re_entry_merges_the_approved_sha_without_a_review(self):
         """The counterpart: a run parked on a declined nit with its
         candidate still at the sha the reviewer approved carries that sha
-        through `--shepherd`, so the resumed pass, green and quiet once the
+        through `--babysit`, so the resumed pass, green and quiet once the
         nit's author closed it, merges under `approve = "auto"` with no
         second review."""
         self.configure('[merge]\nmode = "pr"\n')
@@ -3260,7 +3260,7 @@ class MergeModeTests(LoopFixture):
                                    " runs"), [(approved, approved)])
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "nit closed",
+        holophyte.loop.babysit_ticket(self.tgt, "KO-131", "nit closed",
                                        out=io.StringIO())
 
         fake, _ = self.loop(provider=self.provider())
@@ -3272,10 +3272,10 @@ class MergeModeTests(LoopFixture):
                                    " WHERE id = 2"),
                          [("merged", self.MERGE_SHA)])
 
-    def test_shepherd_re_entry_runs_the_merge_gate_before_the_api_merge(self):
+    def test_babysit_re_entry_runs_the_merge_gate_before_the_api_merge(self):
         """Regression: a resumed, approved PR reached the merge API with
         no verify at all -- the park's verify was a process old, and
-        `--approve` or `--shepherd` vouches for a judgement, not for the
+        `--approve` or `--babysit` vouches for a judgement, not for the
         tree. The ticket's verify command here passes on the first run
         and is made to fail before the resume: the resumed run stops at
         the merge gate, nothing is merged, and the branch stands."""
@@ -3289,7 +3289,7 @@ class MergeModeTests(LoopFixture):
         approved = self.git("rev-parse", BRANCH).strip()
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "nit closed",
+        holophyte.loop.babysit_ticket(self.tgt, "KO-131", "nit closed",
                                        out=io.StringIO())
         marker.write_text("")
 
@@ -3306,7 +3306,7 @@ class MergeModeTests(LoopFixture):
         self.assertIn("FAILED verify before merge", comment)
 
     def test_the_review_of_a_fix_is_held_to_the_criteria(self):
-        """Regression: the review of the shepherd's fix commit read only
+        """Regression: the review of the babysitter's fix commit read only
         its verdict line, so an approval that left a criterion
         unwitnessed merged the fix under `approve = "auto"`. It is now
         the gate a review round is: the criterion's finding turns the
@@ -3469,7 +3469,7 @@ class MergeModeTests(LoopFixture):
         self.assertIn("@ko", question)
 
     def test_a_thread_with_a_second_page_of_comments_is_read_to_the_end(self):
-        """A thread with more comments than one page holds: the shepherd
+        """A thread with more comments than one page holds: the babysitter
         fetches the next page of that thread's comments (`after` its
         cursor) before the adjudicator judges it, so the latest word in
         the thread is in the brief."""
@@ -3578,7 +3578,7 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(route, "github:review-bot+wevial")
         ((ledger,),) = self.read(
             "SELECT text FROM ledger WHERE kind = 'round' AND text LIKE"
-            " 'Shepherd pass%'")
+            " 'Babysit pass%'")
         self.assertIn("1 opened by a person, HUMAN before the adjudicator",
                       ledger)
         self.assertEqual(
@@ -3746,7 +3746,7 @@ class MergeModeTests(LoopFixture):
 
     def test_threads_past_the_first_page_keep_the_pr_from_reading_quiet(self):
         """Regression: a PR whose first page of threads is all resolved and
-        whose open thread is on the second page is not quiet. The shepherd
+        whose open thread is on the second page is not quiet. The babysitter
         walks the pages (`after` the first's cursor) before deciding, finds
         the thread and parks on it -- no merge, under `approve = "auto"`."""
         self.configure('[merge]\nmode = "pr"\n')
@@ -3793,7 +3793,7 @@ class MergeModeTests(LoopFixture):
     def test_an_approval_of_an_open_pull_request_merges_it_through_the_api(
             self):
         """`--approve KO-n` on a run parked with a PR open is the human's
-        "merge": the resumed run shepherds the PR once more and, green and
+        "merge": the resumed run babysits the PR once more and, green and
         quiet, merges it through the API -- no implementer, no reviewer,
         no push, no local merge, main untouched."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
@@ -3826,15 +3826,15 @@ class MergeModeTests(LoopFixture):
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("merged",)])
 
-    def test_a_shepherd_release_parks_again_rather_than_merging(self):
-        """`--shepherd KO-n` is "look again", not "merge": the resumed run
-        shepherds the PR and, green and quiet under `approve = "human"`,
+    def test_a_babysitter_release_parks_again_rather_than_merging(self):
+        """`--babysit KO-n` is "look again", not "merge": the resumed run
+        babysits the PR and, green and quiet under `approve = "human"`,
         parks again on the same URL."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
         self.loop(Commit("the scripted work"), APPROVE,
                   provider=self.provider())
-        holophyte.loop.shepherd_ticket(self.tgt, "KO-131", "bots are done",
+        holophyte.loop.babysit_ticket(self.tgt, "KO-131", "bots are done",
                                        out=io.StringIO())
 
         fake, _ = self.loop(provider=self.provider())
@@ -3867,7 +3867,7 @@ class MergeModeTests(LoopFixture):
         records the pull request and variables it was asked about. An
         answer that is an exception is raised instead: GitHub down.
         `rate` is the `rateLimit` node every answer carries, when one
-        does. Only the pull-status read is faked here: the shepherd's own
+        does. Only the pull-status read is faked here: the babysitter's own
         reads and writes still go to the scripted `gh`."""
         asked = []
         real = holophyte.pr.graphql
@@ -4072,13 +4072,13 @@ class MergeModeTests(LoopFixture):
                          (at, threads))
         conn.close()
 
-    def test_new_review_activity_sends_the_parked_run_to_the_shepherd(
+    def test_new_review_activity_sends_the_parked_run_to_the_babysit(
             self):
         """KO-362: the pull request's `updatedAt` moved past what the last
-        pass recorded. The tick sends the run back to the shepherd as
-        `--shepherd` would -- a `shepherd` intervention, the run ended
+        pass recorded. The tick sends the run back to the babysitter as
+        `--babysit` would -- a `shepherd` intervention, the run ended
         with the ticket ready -- and the same pass claims it: the resumed
-        run shepherds the pull request and parks again, its park recording
+        run babysits the pull request and parks again, its park recording
         what it saw *after* its own writes (the third answer), so the tick
         after that, reading the same, sends nothing."""
         self.parked_with_mark(self.T1, 0)
@@ -4091,7 +4091,7 @@ class MergeModeTests(LoopFixture):
 
         self.assertIn(f"KO-131: {self.URL} has new review activity (updated"
                       f" {self.T2}, 1 review threads); run 1 sent back to"
-                      " the shepherd", out)
+                      " the babysitter", out)
         # Each write records the checks rollup and review decision the
         # same read saw beside the mark (KO-368).
         self.assertEqual(
@@ -4127,10 +4127,10 @@ class MergeModeTests(LoopFixture):
                                    " WHERE id = 2"),
                          [("awaiting_merge_approval", self.T3)])
 
-    def test_an_unchanged_pull_request_is_not_shepherded_again(self):
+    def test_an_unchanged_pull_request_is_not_babysat_again(self):
         """Two ticks over the same pull request: the first finds no mark
         on the run (parked by a module older than the columns) and records
-        what it saw without shepherding; the second finds the same and
+        what it saw without babysitting; the second finds the same and
         does nothing. No round, no intervention, the run still parked."""
         self.parked_on_pr()
         asked = self.fake_client(self.open_pull(self.T1, 0, checks="SUCCESS"))
@@ -4189,7 +4189,7 @@ class MergeModeTests(LoopFixture):
         out = self.main_output(provider=StubProvider())
 
         self.assertIn(f"KO-131: {self.URL} has new review activity; the next"
-                      " shepherd round waits", out)
+                      " babysit round waits", out)
         self.assertIn("([merge] pr_poll_sec)", out)
         self.assertEqual(self.read("SELECT phase, prSeenAt FROM runs"),
                          [("awaiting_merge_approval", self.T1)])
@@ -4214,7 +4214,7 @@ class MergeModeTests(LoopFixture):
                 f" parked pull request is read until it resets at {reset}")
         self.assertIn(line, first)
         self.assertIn(line, second)
-        self.assertNotIn("sent back to the shepherd", first + second)
+        self.assertNotIn("sent back to the babysitter", first + second)
         self.assertEqual(self.read("SELECT phase, prSeenAt FROM runs"),
                          [("awaiting_merge_approval", self.T1)])
         self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
