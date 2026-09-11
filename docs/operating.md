@@ -64,7 +64,7 @@ sweep interval of a person merging it on GitHub, exactly as the loop's own
 pass would have done had it still been running; while a loop's heartbeat
 is fresh the loop's tick does that and the supervisor leaves it alone. A
 GitHub error there is one printed line and never a strike. When that
-reconcile sends a run back to the shepherd (new review activity on its
+reconcile sends a run back to the babysitter (new review activity on its
 pull request walks the ticket to `ready`) and no loop is live to claim it,
 the pass starts the loop the way the console's launch-loop action does,
 `systemctl --user start holophyte-loop@NAME` with `[serve] name`, and
