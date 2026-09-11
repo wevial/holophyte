@@ -142,19 +142,18 @@ export function ageOf(item: AttentionItem, now: number): number | null {
   return num(item.heartbeat_age_ms);
 }
 
-/** The item that has waited longest, with its age; null when no item
- *  carries an age. `at` is the clock every item is aged against, or a
- *  function answering each item's own age (a `describe` per host). */
-export function oldest(
-  items: AttentionItem[],
-  at: number | ((item: AttentionItem) => { ageMs: number | null }),
-): { ageMs: number; ticket: string | null } | null {
-  let best: { ageMs: number; ticket: string | null } | null = null;
-  for (const item of items) {
-    const ageMs = typeof at === "number" ? ageOf(item, at) : at(item).ageMs;
-    if (ageMs != null && (best == null || ageMs > best.ageMs)) best = { ageMs, ticket: str(item.ticket) };
-  }
-  return best;
+/** `items` longest-waited first: a stable sort, so equal ages keep the
+ *  order they came in (the daemons') and items `ageOf` answers null for
+ *  go last in that same order. `ageOf` is each item's own `describe`. */
+export function orderByAge<T>(items: T[], ageOf: (item: T) => number | null): T[] {
+  return items
+    .map((item, index) => ({ item, index, age: ageOf(item) }))
+    .sort((a, b) => {
+      if (a.age == null) return b.age == null ? a.index - b.index : 1;
+      if (b.age == null) return -1;
+      return b.age - a.age || a.index - b.index;
+    })
+    .map((entry) => entry.item);
 }
 
 /** A fact chip's wash: `ok`, `warn` and `bad` on the theme's washes,
