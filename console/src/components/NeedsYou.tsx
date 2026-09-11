@@ -2,10 +2,12 @@ import { useState } from "react";
 import {
   CHIP_LABELS,
   KINDS,
+  collapseFailed,
   countsByKind,
   describe,
   filterItems,
   oldest,
+  type BandEntry,
   type KindFilter,
   type ProjectChoice,
 } from "../lib/attention";
@@ -32,9 +34,11 @@ function bandLevel(hosts: HostRecord[]): string {
   }, "none");
 }
 
-/** The key one question row toggles its thread by. */
-function rowKey(item: AttentionItem, index: number): string {
-  return `${String(item.daemon ?? "")}-${item.kind}-${String(item.run ?? item.ticket ?? index)}`;
+/** The key one row toggles its card by: its run for a question, its
+ *  ticket for a failed ticket's attempts. */
+function rowKey({ item, attempts }: BandEntry, index: number): string {
+  const tail = attempts ? item.ticket : (item.run ?? item.ticket);
+  return `${String(item.daemon ?? "")}-${item.kind}-${String(tail ?? index)}`;
 }
 
 /** The band that opens the Now view: what needs a human across every host
@@ -42,7 +46,10 @@ function rowKey(item: AttentionItem, index: number): string {
  *  row per daemon that stopped answering. `now` is the console's clock.
  *  `ledgers` is each daemon's `/ledger` answer by address, its threads
  *  keyed by ticket; a question row whose daemon has one opens its thread,
- *  one thread at a time, and a band without any renders as before. */
+ *  one thread at a time, and a band without any renders as before. The
+ *  `failed` items of one ticket are one row wearing an attempts badge; it
+ *  opens the attempts card the way a question opens its thread, and the
+ *  band counts the ticket once. */
 export function NeedsYou({
   hosts,
   project,
@@ -59,12 +66,13 @@ export function NeedsYou({
 }) {
   const [kind, setKind] = useState<KindFilter>("all");
   const [expanded, setExpanded] = useState(false);
-  const [openQuestion, setOpenQuestion] = useState<string | null>(null);
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   const stamped: AttentionItem[] = hosts.flatMap((host) => hostItems(host, now));
-  const mine = filterItems(stamped, "all", project);
+  const entries = collapseFailed(filterItems(stamped, "all", project));
+  const mine = entries.map((entry) => entry.item);
   const counts = countsByKind(mine);
-  const shown = filterItems(mine, kind, project);
+  const shown = entries.filter((entry) => filterItems([entry.item], kind, project).length > 0);
   const rows = expanded ? shown : shown.slice(0, ROW_CAP);
   const chooseKind = (next: KindFilter) => {
     setKind(next);
@@ -99,8 +107,19 @@ export function NeedsYou({
     if (!ledger || ledger.absent) return undefined;
     return {
       rows: threadFor(ledger.threads[String(item.ticket ?? "")] ?? [], item),
-      open: openQuestion === key,
-      onToggle: () => setOpenQuestion((previous) => (previous === key ? null : key)),
+      open: openRow === key,
+      onToggle: () => setOpenRow((previous) => (previous === key ? null : key)),
+    };
+  };
+
+  /** A failed ticket's attempts card, when it failed more than once;
+   *  it shares the one open slot with the question threads. */
+  const attemptsOf = (entry: BandEntry, key: string) => {
+    if (!entry.attempts) return undefined;
+    return {
+      runs: entry.attempts,
+      open: openRow === key,
+      onToggle: () => setOpenRow((previous) => (previous === key ? null : key)),
     };
   };
 
@@ -144,8 +163,9 @@ export function NeedsYou({
               ))}
           </div>
           <ul className="mt-3">
-            {rows.map((item, index) => {
-              const key = rowKey(item, index);
+            {rows.map((entry, index) => {
+              const { item } = entry;
+              const key = rowKey(entry, index);
               return (
                 <AttentionRow
                   key={key}
@@ -153,6 +173,7 @@ export function NeedsYou({
                   project={projectName(String(item.project))}
                   description={describeRow(item)}
                   thread={threadOf(item, key)}
+                  attempts={attemptsOf(entry, key)}
                   prUrl={item.pr_url}
                   daemon={daemonOf(item)}
                 />

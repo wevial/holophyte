@@ -63,7 +63,16 @@ machines it walks. Back to the [README](index.md).
    to `merged` or `abandoned`, with a `reconcile` intervention row on its
    most recent run and one printed line naming the move; a board that
    cannot be asked skips the reconcile in one line and the loop goes on.
-2. Cut a per-task branch in a sibling worktree (`<repo>.worktrees/`), so
+2. Every target refreshes `main` from origin before every cut: `git fetch
+   origin` in the checkout, under the merge lock of step 6, then a
+   fast-forward of local `main` when `origin/main` is ahead. Local ahead
+   or equal (a local-mode checkout's unpushed merges) changes nothing --
+   behind is fast-forwarded, never reset. Diverged -- neither `main` nor
+   `origin/main` contains the other -- refuses the cut with an infra
+   failure naming both shas, for a person to reconcile; a target with no
+   `origin` skips the step, and a failed fetch is the network's failure,
+   not the ticket's strike. Then cut a per-task branch in a sibling
+   worktree (`<repo>.worktrees/`), so
    the main checkout stays untouched, and run the target's configured
    `[worktree] setup` commands there — a worktree that borrows the main
    checkout's environment tests something other than the branch it is on.

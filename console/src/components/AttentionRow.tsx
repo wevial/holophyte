@@ -4,7 +4,9 @@ import { OPEN_PR, type Description, type Tone } from "../lib/attention";
 import { formatAge } from "../lib/format";
 import type { Fetch } from "../lib/poll";
 import type { ThreadRow } from "../lib/threads";
+import type { AttentionItem } from "../lib/types";
 import { ActionButton } from "./ActionButton";
+import { AttemptsCard } from "./AttemptsCard";
 import { KindPill } from "./KindPill";
 import { QuestionThread } from "./QuestionThread";
 import { PrLink } from "./ShippedTable";
@@ -13,6 +15,14 @@ import { PrLink } from "./ShippedTable";
  *  whether it is the one open thread, and the toggle. */
 export interface ThreadProps {
   rows: ThreadRow[];
+  open: boolean;
+  onToggle: () => void;
+}
+
+/** A failed ticket's attempts, when it failed more than once: the runs
+ *  oldest first, whether it is the one open card, and the toggle. */
+export interface AttemptsProps {
+  runs: AttentionItem[];
   open: boolean;
   onToggle: () => void;
 }
@@ -48,9 +58,11 @@ function bodyFor(label: string, ticket: string | null): Record<string, unknown> 
 }
 
 /** One item: pill, ticket over project, body over meta, age, actions. A
- *  row given `thread` toggles its thread card on click; one given `prUrl`
- *  opens its body line with a "PR #N" link that follows without toggling,
- *  and one whose description carries `facts` draws them as chips under it.
+ *  row given `thread` toggles its thread card on click; one given
+ *  `attempts` wears a "×N" badge by its ticket and toggles its attempts
+ *  card the same way; one given `prUrl` opens its body line with a
+ *  "PR #N" link that follows without toggling, and one whose description
+ *  carries `facts` draws them as chips under it.
  *  A row given `daemon` posts each wired label (`lib/actions.ts` ROUTES)
  *  to it on click and shows the reply's `detail` under the buttons; the
  *  next poll redraws the row. Labels without a route, and every label of
@@ -62,6 +74,7 @@ export function AttentionRow({
   project,
   description,
   thread,
+  attempts,
   prUrl,
   daemon,
 }: {
@@ -69,11 +82,13 @@ export function AttentionRow({
   project: string;
   description: Description;
   thread?: ThreadProps;
+  attempts?: AttemptsProps;
   prUrl?: string | null;
   daemon?: RowDaemon;
 }) {
   const { pill, ticket, body, meta, ageMs, actions, facts } = description;
-  const toggle = thread?.onToggle;
+  const card = thread ?? attempts;
+  const toggle = card?.onToggle;
   const [detail, setDetail] = useState<{ text: string; ok: boolean } | null>(null);
   const act = (label: string) => {
     if (label === OPEN_PR) {
@@ -102,11 +117,11 @@ export function AttentionRow({
   return (
     <li data-kind={kind} className="border-t border-needs-you-rule">
       <div
-        {...(thread
+        {...(card
           ? {
               role: "button",
               tabIndex: 0,
-              "aria-expanded": thread.open,
+              "aria-expanded": card.open,
               onClick: toggle,
               onKeyDown: (event: KeyboardEvent) => {
                 if (event.target !== event.currentTarget) return;
@@ -117,13 +132,20 @@ export function AttentionRow({
               },
             }
           : {})}
-        className={`grid grid-cols-[96px_84px_1fr_60px_auto] items-start gap-[14px] py-3 ${thread ? "cursor-pointer" : ""}`}
+        className={`grid grid-cols-[96px_84px_1fr_60px_auto] items-start gap-[14px] py-3 ${card ? "cursor-pointer" : ""}`}
       >
         <div>
           <KindPill kind={kind}>{pill}</KindPill>
         </div>
         <div className="min-w-0">
-          <div className="truncate font-mono text-[13px] font-semibold text-ink">{ticket ?? "—"}</div>
+          <div className="truncate font-mono text-[13px] font-semibold text-ink">
+            {ticket ?? "—"}
+            {attempts && (
+              <span data-attempts className="ml-1.5 rounded-[6px] bg-bad-bg px-1.5 text-[11px] font-semibold text-bad-text">
+                ×{attempts.runs.length}
+              </span>
+            )}
+          </div>
           <div className="truncate text-[11px] text-faint">{project}</div>
         </div>
         <div className="min-w-0">
@@ -160,6 +182,11 @@ export function AttentionRow({
               {thread.open ? "hide thread ▴" : "thread ▾"}
             </p>
           )}
+          {attempts && (
+            <p data-attempts-hint className="text-[12px] font-semibold text-needs-you-link">
+              {attempts.open ? "hide attempts ▴" : "attempts ▾"}
+            </p>
+          )}
         </div>
         <div className="text-right font-mono text-[12px] text-muted">{ageMs == null ? "" : formatAge(ageMs)}</div>
         <div className="flex flex-col items-end gap-1.5">
@@ -183,6 +210,7 @@ export function AttentionRow({
         </div>
       </div>
       {thread?.open && <QuestionThread rows={thread.rows} />}
+      {attempts?.open && <AttemptsCard runs={attempts.runs} />}
     </li>
   );
 }
