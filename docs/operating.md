@@ -57,8 +57,15 @@ which file to look at.
 
 Each pass bumps the process's row in the store's `supervisorHeartbeats`
 table, so whether the watcher is still watching is a query rather than a
-`ps`. The sweep also watches the loop's own restarts: a loop that merges a
-change to the factory itself writes a `loopRestarts` row and re-executes,
+`ps`. Each pass also reconciles parked pull requests whenever no loop is
+live on the target: a run parked on its pull request (`[merge] mode =
+"pr"`) is closed out as merged, with the merge commit's sha, within one
+sweep interval of a person merging it on GitHub, exactly as the loop's own
+pass would have done had it still been running; while a loop's heartbeat
+is fresh the loop's tick does that and the supervisor leaves it alone. A
+GitHub error there is one printed line and never a strike. The sweep also
+watches the loop's own restarts: a loop that merges a change to the
+factory itself writes a `loopRestarts` row and re-executes,
 and if no claim, heartbeat or "no ready tickets" exit follows within
 `restart_grace_sec` the next sweep prints `loop did not return after re-exec
 from <sha>` and records it, once per restart. The supervisor also watches

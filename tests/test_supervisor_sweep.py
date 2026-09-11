@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
@@ -1794,3 +1795,124 @@ class ReviewContainerSweepTests(SweepTestCase):
         self.assertIn("skipped", section)
         self.assertIn("docker", section)
         self.assertFalse(self.log.exists())
+
+
+class ParkedPullRequestTests(SweepTestCase):
+    """KO-372: the supervisor closes out a run parked on its pull request
+    when GitHub says the pull request was merged, while no loop is live.
+
+    The loop's reconcile (KO-359) only runs inside a loop pass, and a
+    pull-request target's loop exits once Linear has no ready tickets; a
+    merge after that sat in the store until someone relaunched. The
+    supervisor is always up, so its sweep pass runs the same reconcile --
+    the loop's function, not a copy -- with GitHub faked at the one
+    GraphQL read it makes.
+    """
+
+    URL = "https://github.com/example/repo/pull/7"
+    MERGE_SHA = "9f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"
+    MERGED_PULL = {"state": "MERGED", "merged": True,
+                   "mergeCommit": {"oid": MERGE_SHA},
+                   "mergedBy": {"login": "coworker"}}
+
+    def setUp(self):
+        super().setUp()
+        (self.db.parent / "config.toml").write_text(
+            '[board]\nproject_id = "p-1"\nteam = "T"\n'
+            '[merge]\nmode = "pr"\napprove = "human"\n')
+        self.tgt = holophyte.target.Target.locate(self.target)
+
+    def parked_on_pr(self):
+        """A run parked on its pull request the way `_park_on_pr()` leaves
+        it: the ticket `blocked_on_operator` asking about the URL, the run
+        in `awaiting_merge_approval` with `prUrl` set and its lease given
+        back."""
+        run_id = self.a_run()
+        ticket = self.ticket_of[run_id]
+        store.transition(self.conn, ticket, "blocked_on_operator")
+        self.conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                          (f"PR open: {self.URL}", ticket))
+        self.conn.commit()
+        store.park(self.conn, run_id, "awaiting_merge_approval",
+                   pr_url=self.URL, now=T0)
+        return run_id
+
+    def fake_github(self, answer):
+        """`holophyte.pr.graphql` faked at the pull-status read: answers
+        `answer` (raised when it is an exception) and records each ask."""
+        asked = []
+
+        def graphql(target, pull, query, variables):
+            asked.append((pull.url, variables["number"]))
+            if isinstance(answer, Exception):
+                raise answer
+            return {"repository": {"pullRequest": answer}}
+
+        patcher = patch.object(holophyte.pr, "graphql", graphql)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return asked
+
+    def one_pass(self, at, provider=None):
+        out = io.StringIO()
+        with no_network():
+            holophyte.supervisor.supervise_pass(
+                self.tgt, os.getpid(), T0, now=at, provider=provider, out=out)
+        return out.getvalue()
+
+    def run_row(self, run_id):
+        return self.conn.execute(
+            "SELECT phase, outcome, mergeSha FROM runs WHERE id = ?",
+            (run_id,)).fetchone()
+
+    def test_one_sweep_with_no_loop_ships_a_merged_pull_request(self):
+        run_id = self.parked_on_pr()
+        asked = self.fake_github(self.MERGED_PULL)
+        provider = StubProvider()
+
+        out = self.one_pass(T0 + 20 * MINUTE, provider)
+
+        self.assertEqual(asked, [(self.URL, 7)])
+        self.assertEqual(self.run_row(run_id),
+                         ("done", "merged", self.MERGE_SHA))
+        self.assertEqual(
+            self.conn.execute("SELECT status, blockedQuestion FROM tickets"
+                              " WHERE id = ?",
+                              (self.ticket_of[run_id],)).fetchone(),
+            ("merged", None))
+        self.assertEqual(provider.states, [("issue-1", "Done")])
+        self.assertIn(f"{self.URL} was merged on GitHub by coworker", out)
+        self.assertIn(f"run {run_id} closed out as merged", out)
+
+    def test_a_live_loop_heartbeat_leaves_the_reconcile_to_the_loop(self):
+        """The loop's own tick covers a parked pull request while the loop
+        is live, so the supervisor does not ask GitHub twice a minute
+        about the same one: a run heartbeating within the stale threshold
+        is that liveness."""
+        run_id = self.parked_on_pr()
+        asked = self.fake_github(self.MERGED_PULL)
+        self.a_run(claimed_at=T0 + 19 * MINUTE)
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(asked, [])
+        self.assertEqual(self.run_row(run_id),
+                         ("awaiting_merge_approval", None, None))
+
+    def test_a_github_error_is_printed_and_the_pass_completes(self):
+        run_id = self.parked_on_pr()
+        asked = self.fake_github(RuntimeError("GitHub is down"))
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(len(asked), 1)
+        self.assertIn("GitHub is down", out)
+        self.assertIn("stays parked", out)
+        self.assertEqual(self.run_row(run_id),
+                         ("awaiting_merge_approval", None, None))
+        self.assertEqual(
+            self.conn.execute("SELECT count(*) FROM sweepStrikes").fetchone(),
+            (0,))
+        (beat,) = self.conn.execute(
+            "SELECT passes FROM supervisorHeartbeats").fetchall()
+        self.assertEqual(beat, (1,))
