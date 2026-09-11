@@ -912,14 +912,16 @@ class SkipLineTests(unittest.TestCase):
     def test_a_module_question_outranks_the_strike_count(self):
         """The run that parked the ticket on a merge conflict may also be
         the failure that reached the threshold. The conflict is what the
-        operator has to resolve, so it is the line; the escalation's own
+        operator has to resolve, so it is the line -- and since KO-365 the
+        line names the way back, `--requeue`; the escalation's own
         question is the one park the count speaks for."""
         conflicted = holophyte.loop.skip_line(
             "KO-131", 2, None,
             "merge conflict with main on: README.md; resolve it on the branch")
-        self.assertIn("a question: merge conflict with main on: README.md;",
-                      conflicted)
+        self.assertIn("parked on a merge-gate conflict; resolve the branch"
+                      " and --requeue KO-131", conflicted)
         self.assertNotIn("struck out", conflicted)
+        self.assertNotIn("a question", conflicted)
 
         struck = holophyte.loop.skip_line(
             "KO-131", 2, None, holophyte.board.strike_question(2))
@@ -1835,8 +1837,8 @@ class MergeConflictTests(LoopFixture):
         out = self.main_output(Commit("the other work"), APPROVE,
                                provider=StubProvider(parked, other))
 
-        self.assertIn("[holo2] KO-131 is parked on a question: merge conflict"
-                      " with main on: README.md;", out)
+        self.assertIn("[holo2] KO-131 is parked on a merge-gate conflict;"
+                      " resolve the branch and --requeue KO-131;", out)
         self.assertNotIn("struck out", out)
         self.assertIn("the other work", self.subjects())
         self.assertEqual(
@@ -1900,6 +1902,7 @@ class MergeConflictTests(LoopFixture):
         FINDINGS.md-only conflict, but the gate's merge of main into the
         branch grants no such exception -- the contract is that a conflict
         parks, with the path named, and moves nothing."""
+        self.configure('[report]\nfindings = "repo"\n')
         seen = {}
 
         def diverge():
@@ -2974,10 +2977,9 @@ class MergeModeTests(LoopFixture):
                       self.recorded())
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"])
-        # Local main got the close-out's FINDINGS commit, as after a local
-        # merge, and nothing else: the candidate landed on GitHub's main.
-        self.assertEqual(self.subjects(),
-                         ["Complete task KO-131: add a thing", "base"])
+        # Local main is untouched: the candidate landed on GitHub's main,
+        # and the close-out renders no FINDINGS.md by default (KO-363).
+        self.assertEqual(self.subjects(), ["base"])
         self.assertNotIn(BRANCH, self.branches())
         self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
         self.assertEqual(
@@ -3813,8 +3815,7 @@ class MergeModeTests(LoopFixture):
                          ["state", "merge"])
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [])
-        self.assertEqual(self.subjects(),
-                         ["Complete task KO-131: add a thing", "base"])
+        self.assertEqual(self.subjects(), ["base"])  # local main untouched
         self.assertNotIn(BRANCH, self.branches())
         self.assertEqual(
             self.read("SELECT id, phase, outcome, resumePhase, prUrl,"
@@ -3888,10 +3889,11 @@ class MergeModeTests(LoopFixture):
         self.addCleanup(patcher.stop)
         return asked
 
-    def parked_on_pr(self):
+    def parked_on_pr(self, extra=""):
         """A run parked on its pull request under `approve = "human"`, the
-        state every reconcile test starts from."""
-        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        state every reconcile test starts from; `extra` is further config
+        text appended after the `[merge]` table."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + extra)
         self.fake_route()
         self.loop(Commit("the scripted work"), APPROVE,
                   provider=self.provider())
@@ -3904,8 +3906,9 @@ class MergeModeTests(LoopFixture):
         is the approval: the parked run ends `merged` with the pull
         request's merge commit as its `mergeSha`, the ticket is `merged`
         and the board saw Done, the ledger names who merged it, the local
-        branch is gone and the findings window shows the run."""
-        self.parked_on_pr()
+        branch is gone and the findings window, where a target renders
+        one, shows the run."""
+        self.parked_on_pr('[report]\nfindings = "repo"\n')
         asked = self.fake_client(self.MERGED_PULL)
         provider = StubProvider()
 
@@ -4349,6 +4352,110 @@ class EndedRunTests(LoopFixture):
         # The reviewer never ran: the script's APPROVE is still unconsumed.
         self.assertEqual([turn.role for turn in self.last_fake.turns],
                          ["implement"])
+
+
+class GateConflictRequeueTests(LoopFixture):
+    """A candidate parked on a merge-gate conflict can be requeued once the
+    operator resolves the merge (KO-365).
+
+    The gate's merge of `main` into the branch conflicts: the run fails and
+    the ticket parks `blocked_on_operator` with the branch preserved. Before
+    this, the way back was the store: `--requeue` refused a ticket that was
+    not `in_flight` and `--repoint` a run that was not parked awaiting
+    approval. The park here is the loop's own, made by a real conflict.
+    """
+
+    def park_on_conflict(self, provider):
+        """KO-131 parked by `_sync_main_into_branch()` on a README conflict;
+        returns `(ticket_id, run_id)`."""
+        branch = "task/ko-131"
+        self.git("checkout", "-q", "-b", branch)
+        (self.target / "README.md").write_text("branch\n")
+        self.git("commit", "-qam", "branch side")
+        self.git("checkout", "-q", "main")
+        (self.target / "README.md").write_text("main\n")
+        self.git("commit", "-qam", "main side")
+        wt = self.worktrees / "ko-131"
+        self.git("worktree", "add", "-q", str(wt), branch)
+        sha = self.git("rev-parse", branch, cwd=wt).strip()
+        conn = store.open(str(self.db))
+        try:
+            project = store.ensure_project(conn, StubProvider.TEAM,
+                                           str(self.target))
+            ticket = holophyte.board.mirror_task(conn, project, a_task())
+            run_id = store.claim(conn, project, ticket)
+            store.transition(conn, ticket, "in_flight")
+            store.set_branch(conn, run_id, branch)
+            with self.assertRaises(holophyte.gates.RunFailure) as failed:
+                holophyte.loop._sync_main_into_branch(
+                    self.tgt, conn, run_id, provider, "KO-131", branch, wt,
+                    sha)
+            holophyte.board.close_out_failure(
+                self.tgt, conn, run_id, ticket, reason=str(failed.exception),
+                provider=provider, refresh=False)
+        finally:
+            conn.close()
+        return ticket, run_id
+
+    def test_a_gate_conflict_park_is_requeued_with_its_note(self):
+        provider = StubProvider(a_task())
+        ticket, run_id = self.park_on_conflict(provider)
+        self.assertEqual(
+            self.read("SELECT status, activeRunId FROM tickets"),
+            [("blocked_on_operator", None)])
+        self.assertIn("merge conflict with main on: README.md",
+                      self.read("SELECT blockedQuestion FROM tickets")[0][0])
+        self.assertIn("README.md", self.read(
+            "SELECT outcomeReason FROM runs WHERE outcome = 'failed'")[0][0])
+
+        out = io.StringIO()
+        holophyte.loop.requeue(self.tgt, "KO-131",
+                               "resolved README.md on the branch", out)
+
+        self.assertEqual(out.getvalue().strip(),
+                         f"[holo2] KO-131 requeued after run {run_id}")
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion, activeRunId"
+                      " FROM tickets"),
+            [("ready", None, None)])
+        self.assertEqual(
+            self.read("SELECT runId, action FROM interventions"),
+            [(run_id, "requeue")])
+        noted = self.read(
+            "SELECT summary FROM runEvents WHERE summary LIKE"
+            " '%resolved README.md on the branch%'")
+        self.assertEqual(len(noted), 1, noted)
+
+    def test_a_pull_request_park_is_still_refused(self):
+        provider = StubProvider(a_task())
+        url = "https://github.com/example/repo/pull/7"
+        conn = store.open(str(self.db))
+        try:
+            project = store.ensure_project(conn, StubProvider.TEAM,
+                                           str(self.target))
+            ticket = holophyte.board.mirror_task(conn, project, a_task())
+            run_id = store.claim(conn, project, ticket)
+            store.transition(conn, ticket, "in_flight")
+            store.park(conn, run_id, "awaiting_merge_approval",
+                       pr_url=url, candidate_sha="a" * 40)
+            self.assertTrue(holophyte.board.block_ticket(
+                conn, ticket, provider, f"PR open: {url}"))
+        finally:
+            conn.close()
+
+        with self.assertRaises(SystemExit) as refused:
+            holophyte.loop.requeue(self.tgt, "KO-131", "why not",
+                                   io.StringIO())
+
+        self.assertEqual(
+            str(refused.exception),
+            "[holo2] KO-131 is blocked_on_operator, not in_flight; nothing"
+            " to requeue")
+        self.assertEqual(
+            self.read("SELECT status, blockedQuestion FROM tickets"),
+            [("blocked_on_operator", f"PR open: {url}")])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+                         [(0,)])
 
 
 class BoardLeaseLabelTests(LoopFixture):
@@ -5168,7 +5275,8 @@ class WorkerTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         # The second ticket is left for another worker.
         self.assertEqual([t["id"] for t in provider.queue], ["KO-132"])
-        self.assertIn("Complete task KO-131: add a thing", self.subjects())
+        self.assertIn("Merge task/ko-131-add-a-thing: add a thing",
+                      self.subjects())
         # Its lines carry the slot, in place of the bare tag.
         self.assertIn("[holo2 w2] ", out)
         self.assertNotIn("\n[holo2] ", "\n" + out)
@@ -5215,6 +5323,7 @@ class WorkerTests(LoopFixture):
         """The FINDINGS.md regeneration and commit run while this worker
         holds the merge lock, so no sibling is merging in the checkout while
         the file is written and `git commit` runs."""
+        self.configure('[report]\nfindings = "repo"\n')
         provider = StubProvider(a_task(1))
         lock = holophyte.gates.merge_lock_path(self.tgt)
         held = []
@@ -5239,6 +5348,7 @@ class WorkerTests(LoopFixture):
         """A failed run's close-out regenerates FINDINGS.md too, and a
         worker's does so under the merge lock: a sibling may be merging in
         the checkout at that moment (the review of KO-343)."""
+        self.configure('[report]\nfindings = "repo"\n')
         provider = StubProvider(a_task(1))
         lock = holophyte.gates.merge_lock_path(self.tgt)
         held = []
@@ -5264,6 +5374,53 @@ class WorkerTests(LoopFixture):
 
         self.assertEqual(rc, holophyte.loop.WORKER_IDLE)
         self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])
+
+
+class FindingsModeTests(LoopFixture):
+    """KO-363: `[report] findings` decides whether a close-out renders
+    FINDINGS.md into the target at all. The store is the record; the file
+    is a projection a target opts into with `"repo"`.
+    """
+
+    def findings_commits(self):
+        """Subjects of the commits on main that touched FINDINGS.md."""
+        return self.git("log", "main", "--format=%s", "--",
+                        "FINDINGS.md").splitlines()
+
+    def dirt(self):
+        """What `git status` sees in the target checkout after the run."""
+        return self.git("status", "--porcelain").strip()
+
+    def test_a_target_with_no_findings_key_merges_without_the_file(self):
+        """The default: the run merges, main holds the `--no-ff` merge
+        commit and nothing above it, the checkout has no FINDINGS.md and
+        no commit ever touched one."""
+        self.loop(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.subjects()[0],
+                         "Merge task/ko-131-add-a-thing: add a thing")
+        self.assertFalse((self.target / "FINDINGS.md").exists())
+        self.assertEqual(self.findings_commits(), [])
+        self.assertEqual(self.dirt(), "")
+
+    def test_a_target_that_opts_in_has_the_window_rendered_and_committed(self):
+        """`findings = "repo"`: the close-out renders the window over the
+        store's rows and commits it on main above the merge, as before."""
+        self.configure('[report]\nfindings = "repo"\n')
+
+        self.loop(Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        rendered = (self.target / "FINDINGS.md").read_text()
+        self.assertIn(holophyte.findings.FINDINGS_MARKER, rendered)
+        self.assertIn("KO-131", rendered)
+        self.assertEqual(self.findings_commits(),
+                         ["Complete task KO-131: add a thing"])
+        self.assertEqual(self.subjects()[:2],
+                         ["Complete task KO-131: add a thing",
+                          "Merge task/ko-131-add-a-thing: add a thing"])
+        self.assertEqual(self.dirt(), "")
 
 
 class SweptHeartbeatTests(unittest.TestCase):

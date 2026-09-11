@@ -91,9 +91,10 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 - **Linear state** is pushed from the store, one way, last write wins,
   never read back for status. The ticket body is read back, once, at
   claim and again at merge.
-- **`FINDINGS.md`** is the newest twenty-five entries below a marker,
-  regenerated from `runs` and `reviewRounds` at every close-out. Nobody
-  edits it.
+- **`FINDINGS.md`**, in a target that opts in with `[report] findings =
+  "repo"`, is the newest twenty-five entries below a marker, regenerated
+  from `runs` and `reviewRounds` at every close-out. Nobody edits it. By
+  default (`"none"`) it is not rendered: the store is the record.
 - **The ten JSON routes** in [HTTP endpoints](../reference/http.md)
   (`/status`, `/runs`, `/ledger`, `/attention` and the rest) are the store
   as JSON, one read-only connection per request.

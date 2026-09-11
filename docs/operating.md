@@ -7,6 +7,16 @@ commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
 escalation ladder they sit on in the [runbook](operating/runbook.md). Back
 to the [README](index.md).
 
+A ticket parked `blocked_on_operator` by a merge gate conflict -- the gate's
+merge of `main` into the branch conflicted, the run failed and the branch
+was preserved -- comes back through `--requeue KO-n --note TEXT` once you
+have resolved the merge on the branch: the requeue is recorded, the block
+cleared and the ticket walked to `ready`, and the next claim resumes on the
+preserved branch as after any other failure. `--repoint` is for a candidate
+still parked `awaiting_merge_approval`, not for a failed run; every other
+`blocked_on_operator` park (a pull request, `merge?`, a strike-out) keeps
+`--requeue`'s refusal.
+
 ## Supervising
 
 The loop watches itself only while it is alive. A crashed or hung run leaves
@@ -89,6 +99,10 @@ JSON.
 
 Every `host` passes through `[report] host_label`, so a configured label is
 what the network sees rather than the machine name.
+
+The run record is the store, read through the console or `--report`; no
+target renders it into a `FINDINGS.md` unless its config says
+`[report] findings = "repo"` ([Configuration](config.md)).
 
 On loopback the boundary is the bind address and nothing else: the
 daemon binds the one address the command line names (loopback when it names

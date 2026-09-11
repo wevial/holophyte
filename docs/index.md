@@ -72,7 +72,7 @@ tickets run against, and it re-executes itself after merging its own code.
 | The board | a Linear project, one-way mirror of the store | [Tickets as contracts](operating/tickets.md) |
 | The review boundary | a read-only Docker container running Codex | [Reviewing](reviewing.md) |
 | Machines | one, by default; a second for the drawer or the operator is a page of its own | [Across machines](operating/hosts.md) |
-| Evidence | `FINDINGS.md`, rendered from the store at every close-out | [Store and state](architecture/data.md#findings) |
+| Evidence | the store's `runs`/`reviewRounds`, read through the console or `--report`; a target may opt into a rendered `FINDINGS.md` | [Store and state](architecture/data.md#findings) |
 
 ## Install and run
 

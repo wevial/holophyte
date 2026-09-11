@@ -252,7 +252,8 @@ By default one failed run ends the process after its close-out, with a nonzero
 exit, and an operator relaunches the loop — the right call while the loop is
 still being watched. With `stop_on_failure = false` the run is closed out
 exactly as before (released, escalated if it was one failure too many, the
-`FINDINGS.md` window regenerated) and the loop goes on to the next ready ticket
+`FINDINGS.md` window regenerated under `[report] findings = "repo"`) and the
+loop goes on to the next ready ticket
 in the same process, for an unattended night. Escalation is untouched: a ticket
 that fails twice still parks itself for a human; the knob only decides whether
 one failure stops the whole queue. The exit status is still nonzero once the
@@ -343,19 +344,25 @@ table.
 # What the factory prints where it would print the machine's hostname.
 # Optional; absent, the hostname is printed as recorded.
 host_label = "writer-1"
-# Whether the loop keeps FINDINGS.md: `window` renders and commits the
-# bounded window at every close-out, `off` neither writes nor commits the
-# file. Optional; the default is `window`.
-findings = "window"
+# Whether the loop renders FINDINGS.md into the target: `none` renders and
+# commits nothing, `repo` renders and commits the bounded window at every
+# close-out. Optional; the default is `none`.
+findings = "none"
 ```
 
 Accepted keys: `host_label`, `findings`.
 
-`findings = "off"` is for a target that does not want the rendered file:
-the run's ledger lives in the store either way and the daemon serves it
-from `/runs/N/ledger`, so nothing is lost but the projection. A
-`FINDINGS.md` already in the repository is left exactly as it is, not
-deleted. `--report` prints the mode in effect below the table.
+The store is the run record, read through the console or `--report`;
+`FINDINGS.md` is a second copy of it that can drift, so by default
+(`findings = "none"`) no close-out writes or commits the file, the merge
+path makes no findings commit, and a pull request target's checkout gains
+no untracked file. `findings = "repo"` is for a target that wants the
+evidence beside its code: the bounded window is rendered and committed at
+every close-out, one commit per merge. Any other value fails startup naming
+`[report] findings`. Switching a target from `repo` to `none` leaves the
+`FINDINGS.md` already in its repository exactly as it is, not deleted; the
+operator removes it by hand. `--report` prints the mode in effect below the
+table.
 
 `host_label` also names this writer's board lease: the claim labels the
 Linear issue `holo:` plus the label (`holo:writer-1` above) for as long as

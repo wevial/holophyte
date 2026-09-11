@@ -81,7 +81,8 @@ At the root:
   declares `relative/path: exact literal` lines the gate asserts verbatim, so
   a required value (a port, a URL) cannot drift while the commands still pass.
 - `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
-- `FINDINGS.md` (generated) — a rendered window over the store, not a log:
+- `FINDINGS.md` (generated, not kept in this repository) — in a target with
+  `[report] findings = "repo"`, a rendered window over the store, not a log:
   the factory regenerates it at each close-out from `runs`/`reviewRounds` as
   the newest 25 entries below a `<!-- store-rendered below -->` marker, with
   everything older counted in one archive line and kept in the store.

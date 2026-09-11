@@ -33,9 +33,10 @@ operator's error, fixed by revising the ticket and requeueing.
 **Drawer.** The menu-bar menu on the operator's Mac, a SwiftBar plugin
 over the serve daemons.
 
-**FINDINGS.md.** The rendered window over the store in each target
-repository: newest twenty-five entries, regenerated at every close-out,
-never hand-edited.
+**FINDINGS.md.** The rendered window over the store in a target repository
+that opts in with `[report] findings = "repo"`: newest twenty-five entries,
+regenerated at every close-out, never hand-edited. Off by default; the
+store is the record.
 
 **Finding.** One structured complaint from a reviewer: path, line,
 severity, message. Keyed by `(path, line, severity)` for comparison
