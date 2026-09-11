@@ -76,6 +76,7 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
+from holophyte.redact import known_secrets, redact_prose
 from holophyte.reexec import reexec_command, reexec_self
 from holophyte.report import report_lines
 from holophyte.review import criteria_brief, criteria_findings
@@ -578,7 +579,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     changed) goes through the gate below and then leaves the machine as a
     fresh run's would, pushed and opened -- but only on an approval. The
     gate below merges, so a candidate carried here with `carried.approved`
-    False (the intervention `store.shepherd()` writes as the newest on its
+    False (the intervention `store.babysit()` writes as the newest on its
     run, which it refuses to write on a PR-less run but a hand-written
     store row could) is not taken through it: the run fails naming the
     release, the tree untouched, and a human answers with `--approve`.
@@ -1033,8 +1034,14 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
 
 
 def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
-    """Run one implementer turn with the budget as its wall-clock cap; None on
-    timeout.
+    """Run one implementer turn with the budget as its wall-clock cap.
+
+    Returns `(output, timed_out)`: what the turn printed ("" when it
+    printed nothing) and whether the cap ended it rather than the turn
+    itself. The pair rather than a `None` sentinel because a timed-out
+    turn still has last words -- the no-commit gate records them on the
+    run before the worktree goes (KO-375) -- so the cap's partial capture
+    is handed back untrimmed, not dropped with the `TimeoutExpired`.
 
     The budget is the dispatch's own timeout, not an alarm around it: an
     alarm interrupted the wait but left the implementer and its children
@@ -1048,17 +1055,43 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
     kill = GroupKill()
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            return agent(target, "implement", goal, wt,
-                         timeout=budget_min * 60, on_start=kill.arm)
+            return (agent(target, "implement", goal, wt,
+                          timeout=budget_min * 60, on_start=kill.arm),
+                    False)
     except subprocess.TimeoutExpired as expired:
         print(f"[holo2] task exceeded {budget_min} min budget")
         partial = expired.output or ""
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", "replace")
-        partial = partial.strip()[-2000:]
+        partial = partial.strip()
         print("[holo2] implementer output before the budget fired:\n"
-              + (partial or "(no output before the budget fired)"))
-        return None
+              + (partial[-2000:] or "(no output before the budget fired)"))
+        return partial, True
+
+
+# How much of the implementer's final output a no-commit turn keeps on the
+# run (KO-375): the last characters, where a refusal or a "this contract
+# cannot be met" explanation ends up.
+OUTPUT_TAIL = 4000
+
+
+def _record_implementer_output(conn, run_id, out, secrets=()):
+    """Keep the tail of a no-commit turn's output as an `implementer_output`
+    event, before the worktree it may have explained itself in is gone.
+
+    A `detail` row, like `crash`: the summary is the message's first line and
+    the payload its last `OUTPUT_TAIL` characters. The output is prose, not
+    a document, so it goes through `redact_prose()`: every value in
+    `secrets` -- the config's and the environment's credentials,
+    `known_secrets()` -- and every `name = value` pair with a secret's name
+    are replaced before the store sees the text, so a secret the
+    implementer echoed never reaches it."""
+    if conn is None or run_id is None:
+        return
+    text = redact_prose((out or "").strip(), secrets)
+    summary = text.splitlines()[0] if text else "(implementer printed nothing)"
+    store.record_event(conn, run_id, "implementer_output", summary,
+                       level="detail", payload=text[-OUTPUT_TAIL:])
 
 
 def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
@@ -1068,13 +1101,14 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
     left mid-merge; they open the brief (`conflict_brief()`)."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
-    out = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                 conflict_brief(branch, conflicts)
-                 + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
-                 "The ticket above is the contract, acceptance criteria "
-                 "included; the task is done only when they hold. Commit your "
-                 "work with a clear message. Stay strictly on-scope; do not "
-                 "expand the task.")
+    out, timed_out = _timed(
+        target, conn, run_id, beat_s, wt, budget_min,
+        conflict_brief(branch, conflicts)
+        + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+        "The ticket above is the contract, acceptance criteria "
+        "included; the task is done only when they hold. Commit your "
+        "work with a clear message. Stay strictly on-scope; do not "
+        "expand the task.")
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work
@@ -1087,6 +1121,10 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
                        cwd=wt, capture_output=True).returncode)
     if head == start_sha and not carried:
         print(f"[holo2] implementer made no commits for: {task}")
+        # What the turn said is the only evidence left once the worktree
+        # goes; it is on the run before the discard, whatever the exit code.
+        _record_implementer_output(conn, run_id, out,
+                                   known_secrets(target.config()))
         if fresh:
             sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
             sh(["git", "branch", "-D", branch], target.path)
@@ -1102,7 +1140,7 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
         print(f"[holo2] {note}")
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "carried_candidate", note)
-    if out is None:
+    if timed_out:
         # The budget alarm fired *after* real commits landed. A timeout is
         # not "no work": destroying the commits here would repeat the
         # incident this path exists to prevent.
@@ -1228,20 +1266,21 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
 
         # 3. implementer addresses findings (same branch, new commit)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        fixes = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                       "A reviewer left findings on your work. The ticket you "
-                       "are held to, acceptance criteria included:\n\n"
-                       f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
-                       "For EACH finding, adjudicate it first: ADDRESS (concrete "
-                       "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
-                       "it in the commit message), or DECLINE (invalid/out-of-scope — "
-                       "state the rationale in the commit message). Then fix only the "
-                       "ADDRESS items and commit.")
+        fixes, timed_out = _timed(
+            target, conn, run_id, beat_s, wt, budget_min,
+            "A reviewer left findings on your work. The ticket you "
+            "are held to, acceptance criteria included:\n\n"
+            f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
+            "For EACH finding, adjudicate it first: ADDRESS (concrete "
+            "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
+            "it in the commit message), or DECLINE (invalid/out-of-scope — "
+            "state the rationale in the commit message). Then fix only the "
+            "ADDRESS items and commit.")
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                f"Reviewer findings:\n{verdict}\n\n"
                f"Implementer response:\n{fixes}", provider)
-        if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
+        if timed_out or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
             raise RunFailure(f"fix round {rnd} timed out or made no progress;"
@@ -1372,11 +1411,47 @@ def _unwind_merge(wt, sha):
               f" resolution; reset to {sha[:12]}")
 
 
+def _is_ancestor(cwd, a, b):
+    """Whether commit `a` is an ancestor of `b` in `cwd`'s repository."""
+    return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                          cwd=cwd, capture_output=True).returncode == 0
+
+
+def _merge_ref(wt, ref):
+    """`git merge --no-edit REF` into the branch `wt` has checked out;
+    `(status, detail)`.
+
+    `"ancestor"` -- `ref` is already merged in, nothing ran, detail is
+    HEAD's sha. `"merged"` -- the merge committed, detail is its sha.
+    `"conflicted"` -- the merge stopped: detail is the sorted unmerged
+    paths it stopped on, empty when git failed the merge without naming
+    any, and `wt` is left mid-merge for the caller -- handed to the
+    implementer first at the merge gate (`_sync_main_into_branch()`),
+    resolved by an implementer turn on a conflicting pull request
+    (`_merge_origin_main()`).
+    """
+    head = sh(["git", "rev-parse", "HEAD"], wt)
+    if _is_ancestor(wt, ref, "HEAD"):
+        return "ancestor", head
+    mr = subprocess.run(["git", "merge", "--no-edit", ref], cwd=wt,
+                        capture_output=True, text=True)
+    if mr.returncode == 0:
+        return "merged", sh(["git", "rev-parse", "HEAD"], wt)
+    conflicted = sorted(
+        p for p in subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt,
+            capture_output=True, text=True).stdout.splitlines() if p.strip())
+    return "conflicted", conflicted
+
+
 def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
-                           wt, sha, beat_s, ticket, budget_min):
-    """Merge `main` into the branch in its worktree, so the gate verifies
-    and merges the candidate as it will sit on today's `main`. Returns the
-    branch's sha afterwards: unchanged when `main` is already an ancestor.
+                           wt, sha, beat_s, ticket, budget_min, ref="main"):
+    """Merge `ref` into the branch in its worktree, so the gate verifies
+    and merges the candidate as it will sit on today's `main`. `ref` is
+    `main` at the local gate; the babysit pass's own call for a
+    conflicting pull request is `_merge_origin_main()`, which wants
+    `origin/main` and a different conflict disposition. Returns the
+    branch's sha afterwards: unchanged when `ref` is already an ancestor.
 
     A conflict goes to the implementer first (KO-404): the same
     resolution turn the claim path runs on a leftover mid-merge worktree
@@ -1390,24 +1465,18 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
     self-resolution is not repeated here: nothing on the branch writes
     FINDINGS.md any more, so a conflict there is a real one.)
     """
-    if subprocess.run(["git", "merge-base", "--is-ancestor", "main", "HEAD"],
-                      cwd=wt, capture_output=True).returncode == 0:
+    status, detail = _merge_ref(wt, ref)
+    if status == "ancestor":
         return sha
-    print(f"[holo2] main moved past {branch}; merging main into the branch"
-          " before the gate's verify")
-    mr = subprocess.run(["git", "merge", "--no-edit", "main"], cwd=wt,
-                        capture_output=True, text=True)
-    if mr.returncode != 0:
-        conflicted = sorted(
-            p for p in subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt,
-                capture_output=True, text=True).stdout.splitlines() if p.strip())
-        if conflicted:
+    print(f"[holo2] {ref} moved past {branch}; merging {ref} into the"
+          " branch before the gate's verify")
+    if status == "conflicted":
+        if detail:
             merged = _resolve_merge_conflict(
-                target, conn, run_id, branch, wt, conflicted, ticket,
+                target, conn, run_id, branch, wt, detail, ticket,
                 beat_s, budget_min)
             if merged is not None:
-                note = (f"gate conflict on {', '.join(conflicted)}"
+                note = (f"gate conflict on {', '.join(detail)}"
                         f" resolved by the implementer at {merged[:12]}")
                 if conn is not None and run_id is not None:
                     store.record_event(conn, run_id, "merge_gate", note)
@@ -1416,23 +1485,100 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
                 print(f"[holo2] {note}")
                 return merged
         _unwind_merge(wt, sha)
-        paths = ", ".join(conflicted) or "(no unmerged paths reported)"
+        paths = ", ".join(detail) or "(no unmerged paths reported)"
         why = (f"{store.GATE_CONFLICT_REASON}{branch} conflicted on:"
                f" {paths}; branch preserved at {sha[:12]}")
         print(f"[holo2] {why}")
         _park_at_gate(conn, run_id, provider, task_id, branch, sha,
                       f"{GATE_CONFLICT_QUESTION}{paths}; resolve it"
                       f" on {branch} and --requeue, or merge by hand",
-                      f"MERGE GATE: main conflicts with {branch} on"
-                      f" {paths}; the merge of main into the branch was"
+                      f"MERGE GATE: {ref} conflicts with {branch} on"
+                      f" {paths}; the merge of {ref} into the branch was"
                       " aborted.")
         raise RunFailure(why)
-    merged = sh(["git", "rev-parse", "HEAD"], wt)
+    merged = detail
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "merge_gate",
-                           f"merged main into {branch}: {sha[:12]} ->"
+                           f"merged {ref} into {branch}: {sha[:12]} ->"
                            f" {merged[:12]}")
-    print(f"[holo2] main merged into {branch}: {sha[:12]} -> {merged[:12]}")
+    print(f"[holo2] {ref} merged into {branch}: {sha[:12]} -> {merged[:12]}")
+    return merged
+
+
+def merge_conflict_goal(branch, pull, conflicts):
+    """The implementer turn's goal for a pull request's merge that stopped
+    on `conflicts`: resolve and commit the in-progress merge, nothing
+    else. The hand-off KO-355 gave a preserved branch's mid-merge
+    worktree, run here on the PR GitHub reported conflicting."""
+    return (f"The worktree is mid-merge. Merging main into {branch} -- the"
+            f" branch pull request {pull.url} is open on, which GitHub"
+            f" reports conflicting -- stopped on conflicts in:"
+            f" {', '.join(conflicts)}. Resolve each one keeping both"
+            " sides' intent (the branch's work and main's new lines both"
+            " stay), then commit the merge with a message naming both"
+            " sides. That commit is the whole turn: no other work, no"
+            " rebase, no force-push.")
+
+
+def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
+                       sha, beat_s, pull, budget_min, reviewed=None):
+    """GitHub answered CONFLICTING: fetch `origin` and merge `origin/main`
+    into the branch in the worktree -- the remote's `main`, never the
+    checkout's possibly stale local one -- push, and hand the branch's sha
+    back so the pass goes on to waiting on the checks the push restarts.
+    A merge commit, never a rebase or a force-push: review threads keep
+    their lines.
+
+    A merge that stops on unmerged paths goes to one implementer turn,
+    which resolves and commits it (`merge_conflict_goal()`); a turn that
+    leaves the merge unresolved -- or that dropped it without merging --
+    has the merge aborted and the run parked with the conflicting paths
+    in the question, the branch left at `sha`. A fetch that cannot
+    deliver `origin/main` is the route's failure, not the ticket's.
+    """
+    with heartbeat_while(conn, run_id, beat_s):
+        fetched = subprocess.run(["git", "fetch", pr.REMOTE], cwd=wt,
+                                 capture_output=True, text=True)
+    ref = f"{pr.REMOTE}/{pr.BASE}"
+    if fetched.returncode != 0 or subprocess.run(
+            ["git", "rev-parse", "--verify", "-q", ref], cwd=wt,
+            capture_output=True).returncode != 0:
+        raise InfraFailure(f"git fetch {pr.REMOTE} did not deliver {ref}"
+                           f" for the conflicting {pull.url}:"
+                           f" {(fetched.stderr or fetched.stdout).strip()}"
+                           f"; branch {branch} preserved at {sha[:12]}")
+    status, detail = _merge_ref(wt, ref)
+    if status == "conflicted":
+        _timed(target, conn, run_id, beat_s, wt, budget_min,
+               merge_conflict_goal(branch, pull, detail))
+        still = merge_conflicts(wt)
+        if still or not _is_ancestor(wt, ref, "HEAD"):
+            if still:
+                subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                               capture_output=True, text=True)
+            _park_on_pr(
+                target, conn, run_id, provider, task_id, branch, sha, pull,
+                f"GitHub reported the pull request conflicting; merging"
+                f" {pr.BASE} into {branch} stopped on"
+                f" {', '.join(still or detail)} and the implementer turn"
+                " left it unresolved", (), reviewed=reviewed)
+        merged = sh(["git", "rev-parse", "HEAD"], wt)
+    elif status == "ancestor":
+        # `origin/main` is already in the branch: GitHub's answer was
+        # stale, or an earlier pass merged it. Push anyway so the remote
+        # head stands at the merged sha and GitHub recomputes.
+        merged = sha
+    else:
+        merged = detail
+    with heartbeat_while(conn, run_id, beat_s):
+        pr.push_branch(target, branch)
+    print(f"[holo2] pushed {branch} to {pr.REMOTE} at {merged[:12]}"
+          " after the conflict merge")
+    if merged != sha:
+        note = (f"Merged main into {branch} at {merged} (GitHub reported"
+                " a conflict)")
+        if conn is not None and run_id is not None:
+            store.record_ledger(conn, run_id, "note", note)
     return merged
 
 
@@ -1579,10 +1725,11 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         store.record_event(conn, run_id, "pull_request",
                            f"writing the pull request text for {branch}"
                            " from the diff")
-    reply = _timed(target, conn, run_id, beat_s, wt, minutes, goal)
-    parsed = pr.parse_pr_text(reply) if reply is not None else None
+    reply, timed_out = _timed(target, conn, run_id, beat_s, wt, minutes,
+                              goal)
+    parsed = None if timed_out else pr.parse_pr_text(reply)
     if parsed is None:
-        why = ("the turn ran out of time" if reply is None
+        why = ("the turn ran out of time" if timed_out
                else "the reply has no `TITLE:` line, an empty title, or a"
                f" title over {pr.PR_TITLE_MAX} characters")
         print(f"[holo2] written PR text refused for {task_id}: {why};"
@@ -1690,6 +1837,13 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     open threads listed, `runs.prUrl` and `runs.candidateSha` are written
     with the phase move, and `MergeParked` unwinds the run with the branch
     and worktree left standing. Nothing touches local main.
+
+    Before threads are judged, a `mergeable` answer of CONFLICTING sends
+    the pass through `_merge_origin_main()`: `origin/main` is merged into
+    the branch -- never rebased, so review threads keep their lines --
+    the branch is pushed, and the pass goes back to waiting on checks.
+    UNKNOWN is not a conflict: GitHub computes `mergeable` lazily and the
+    next pass sees the answer.
     """
     merge = merge_config(target)
     pull = pr.parse_pr_url(url)
@@ -1701,24 +1855,20 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     # approval or the operator's release. A fix round moves `sha` past it.
     for pass_no in range(1, merge.pr_rounds + 1):
         state = _settled_state(target, conn, run_id, beat_s, pull)
-        if state.merged:
-            print(f"[holo2] {pull.url} is already merged as"
-                  f" {(state.merge_sha or '?')[:12]}")
-            return state.merge_sha
-        if state.closed:
-            raise RunFailure(f"{pull.url} was closed without merging;"
-                             f" branch {branch} preserved at {sha[:12]}")
-        if state.head_sha and state.head_sha != sha:
-            # The PR's head is not the candidate this run pushed: someone
-            # else pushed to the branch. Its checks and threads are about
-            # their commit, not the one verified and reviewed here, so
-            # nothing is judged, fixed or merged on it -- the operator looks.
-            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                        f"the pull request's head is {state.head_sha[:12]},"
-                        f" not the candidate {sha[:12]} this run pushed;"
-                        " someone else pushed to the branch, and the"
-                        " babysitter does not judge or merge their commit",
-                        state.threads, reviewed=reviewed)
+        done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
+                            sha, pull, state, reviewed)
+        if done is not None:
+            return done
+        if state.mergeable == "CONFLICTING":
+            # GitHub found the pull request unmergeable: bring
+            # `origin/main` into the branch (fetch, merge, push) and let
+            # the next pass wait on the checks the push restarts, before
+            # any thread is judged. UNKNOWN is not a conflict -- GitHub
+            # computes `mergeable` lazily and a later pass sees it.
+            sha = _merge_origin_main(target, conn, run_id, provider,
+                                     task_id, branch, wt, sha, beat_s, pull,
+                                     budget_min, reviewed=reviewed)
+            continue
         rnd = len(store.read.rounds_of(conn, run_id)) + 1 if conn else pass_no
         if state.threads:
             sha = _answer_threads(target, conn, run_id, provider, task_id,
@@ -1769,6 +1919,33 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " babysitter stops here", state.threads, reviewed=reviewed)
+
+
+def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
+                 pull, state, reviewed):
+    """The answers on one `PrState` that end the pass before threads are
+    judged: the merge sha when the pull request is already merged, None
+    to go on. A closed-unmerged PR fails the run; a head that is not the
+    candidate this run pushed parks it -- someone else pushed to the
+    branch, and its checks and threads are about their commit, not the
+    one verified and reviewed here, so nothing is judged, fixed or
+    merged on it."""
+    if state.merged:
+        print(f"[holo2] {pull.url} is already merged as"
+              f" {(state.merge_sha or '?')[:12]}")
+        return state.merge_sha
+    if state.closed:
+        raise RunFailure(f"{pull.url} was closed without merging;"
+                         f" branch {branch} preserved at {sha[:12]}")
+    if state.head_sha and state.head_sha != sha:
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                    pull,
+                    f"the pull request's head is {state.head_sha[:12]},"
+                    f" not the candidate {sha[:12]} this run pushed;"
+                    " someone else pushed to the branch, and the"
+                    " babysitter does not judge or merge their commit",
+                    state.threads, reviewed=reviewed)
+    return None
 
 
 def _moved(sha, reviewed):
@@ -2035,9 +2212,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     """The fix round for the addressed threads, then the push, then a reply
     on each and a resolve on each bot's; return the fixed candidate's
     sha."""
-    fixes = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                   babysitter.fix_brief(pull, addressed, ticket))
-    if fixes is None or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
+    fixes, timed_out = _timed(target, conn, run_id, beat_s, wt, budget_min,
+                              babysitter.fix_brief(pull, addressed, ticket))
+    if timed_out or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
         raise RunFailure(f"fix round for {pull.url} timed out or made no"
                          f" progress; branch {branch} preserved at"
                          f" {sha[:12]}")
@@ -3132,7 +3309,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     item as soon as the next tick reads it. The interval is per
     pull request, measured from the park (`runs.lastHeartbeat`, the
     park's stamp): activity within `poll_ms` of it is named and waits.
-    Otherwise `store.shepherd()`'s one transaction -- its
+    Otherwise `store.babysit()`'s one transaction -- its
     intervention row, source `supervisor` (the loop's own machinery, not
     a person), naming what moved, the run ended with its resume
     point at the merge gate, the ticket walked to `ready` -- with the
@@ -3175,7 +3352,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)
-            store.shepherd(conn, ticket.id, note, source="supervisor")
+            store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
         print(f"[holo2] {identifier}: {pull.url} has new review activity but"
               f" the ticket moved while GitHub was asked ({refused}); left"
@@ -3895,7 +4072,7 @@ def babysit_ticket(target, identifier, note, out=None):
     """Send the ticket `identifier`, parked on its pull request, back to the
     babysitter. Returns nothing.
 
-    `--babysit`'s whole body and `approve()`'s twin: `store.shepherd()`'s
+    `--babysit`'s whole body and `approve()`'s twin: `store.babysit()`'s
     one transaction -- its intervention row carrying `note`, the
     parked run ended with its resume point at the merge gate, the ticket
     walked to `ready` -- printed and done. The loop's next claim of the
@@ -3909,7 +4086,7 @@ def babysit_ticket(target, identifier, note, out=None):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            run_id = store.shepherd(conn, ticket_id, note)
+            run_id = store.babysit(conn, ticket_id, note)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} sent back to the babysitter: run {run_id}"

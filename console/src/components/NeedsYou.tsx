@@ -6,15 +6,15 @@ import {
   countsByKind,
   describe,
   filterItems,
-  oldest,
+  orderByAge,
   type BandEntry,
   type KindFilter,
   type ProjectChoice,
 } from "../lib/attention";
+import { useTick } from "../hooks/useTick";
 import { projectName } from "../lib/derive";
-import { formatAge } from "../lib/format";
-import { UNREACHABLE, hostItems, type HostRecord } from "../lib/hosts";
-import type { Fetch } from "../lib/poll";
+import { UNREACHABLE, hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
+import { TICK_MS, type Fetch } from "../lib/poll";
 import type { Ledgers } from "../hooks/useLedger";
 import { threadFor } from "../lib/threads";
 import type { AttentionItem } from "../lib/types";
@@ -23,16 +23,6 @@ import { Chip } from "./Chip";
 
 /** Rows shown before "Show all N". */
 export const ROW_CAP = 4;
-
-/** The level the band names when nothing needs a human: the worst any
- *  host reports, "none" with no answer yet. */
-function bandLevel(hosts: HostRecord[]): string {
-  const order = ["none", "working", "attention", "critical"];
-  return hosts.reduce((worst, host) => {
-    const level = host.attention?.level ?? "none";
-    return order.indexOf(level) > order.indexOf(worst) ? level : worst;
-  }, "none");
-}
 
 /** The key one row toggles its card by: its run for a question, its
  *  ticket for a failed ticket's attempts. */
@@ -49,7 +39,9 @@ function rowKey({ item, attempts }: BandEntry, index: number): string {
  *  one thread at a time, and a band without any renders as before. The
  *  `failed` items of one ticket are one row wearing an attempts badge; it
  *  opens the attempts card the way a question opens its thread, and the
- *  band counts the ticket once. */
+ *  band counts the ticket once. Rows read longest-waited first across
+ *  every host, each aged against its own daemon's clock; with nothing to
+ *  show the band is one quiet line, "Nothing needs you". */
 export function NeedsYou({
   hosts,
   project,
@@ -67,9 +59,30 @@ export function NeedsYou({
   const [kind, setKind] = useState<KindFilter>("all");
   const [expanded, setExpanded] = useState(false);
   const [openRow, setOpenRow] = useState<string | null>(null);
+  const localNow = useTick(TICK_MS);
 
   const stamped: AttentionItem[] = hosts.flatMap((host) => hostItems(host, now));
-  const entries = collapseFailed(filterItems(stamped, "all", project));
+
+  /** An item's row text against its own daemon's thresholds and clock; the
+   *  console's clock for the unreachable row, whose "last seen" is local.
+   *  The daemon's numbers are frozen at its answer, so each ages by the
+   *  local time since that answer arrived until the next poll realigns. */
+  const describeRow = (item: AttentionItem) => {
+    const host = hosts.find((candidate) => candidate.address === item.daemon);
+    const status = host?.status;
+    if (item.kind === UNREACHABLE || !status) {
+      return describe(item, { heartbeat_stale_ms: 0, strikes: 0 }, { now });
+    }
+    const sinceMs = sinceSeen(host?.seen_ms, localNow);
+    const aged =
+      sinceMs && typeof item.heartbeat_age_ms === "number"
+        ? { ...item, heartbeat_age_ms: item.heartbeat_age_ms + sinceMs }
+        : item;
+    const runs = sinceMs ? status.runs.map((run) => ({ ...run, elapsed_ms: run.elapsed_ms + sinceMs })) : status.runs;
+    return describe(aged, status.thresholds, { now: status.now + sinceMs, runs });
+  };
+
+  const entries = orderByAge(collapseFailed(filterItems(stamped, "all", project)), (entry) => describeRow(entry.item).ageMs);
   const mine = entries.map((entry) => entry.item);
   const counts = countsByKind(mine);
   const shown = entries.filter((entry) => filterItems([entry.item], kind, project).length > 0);
@@ -78,17 +91,6 @@ export function NeedsYou({
     setKind(next);
     setExpanded(false);
   };
-
-  /** An item's row text against its own daemon's thresholds and clock; the
-   *  console's clock for the unreachable row, whose "last seen" is local. */
-  const describeRow = (item: AttentionItem) => {
-    const status = hosts.find((candidate) => candidate.address === item.daemon)?.status;
-    if (item.kind === UNREACHABLE || !status) {
-      return describe(item, { heartbeat_stale_ms: 0, strikes: 0 }, { now });
-    }
-    return describe(item, status.thresholds, { now: status.now, runs: status.runs });
-  };
-  const eldest = oldest(mine, describeRow);
 
   /** The daemon a row's buttons post to: the host that served the item,
    *  with whether its `/status` advertised `actions`; undefined for the
@@ -123,75 +125,68 @@ export function NeedsYou({
     };
   };
 
+  if (mine.length === 0) {
+    return (
+      <p aria-label="Needs you" className="px-6 py-4 text-[13px] text-muted">
+        Nothing needs you
+      </p>
+    );
+  }
+
   return (
     <section
       aria-label="Needs you"
       className="border-b border-needs-you-border bg-needs-you-bg px-6 pt-[18px]"
     >
-      {mine.length === 0 ? (
-        <div className="pb-[18px]">
-          <p className="text-[20px] font-semibold text-ink">Nothing needs you</p>
-          <p className="font-mono text-[13px] text-muted">{bandLevel(hosts)}</p>
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span data-count className="font-mono text-[34px] font-bold leading-none text-ink">
-              {mine.length}
-            </span>
-            <span className="text-[20px] font-semibold text-ink">
-              {mine.length === 1 ? "thing needs you" : "things need you"}
-            </span>
-            {eldest && (
-              <span className="text-[13px] text-muted">
-                oldest {formatAge(eldest.ageMs)}
-                {eldest.ticket ? ` · ${eldest.ticket}` : ""}
-              </span>
-            )}
-          </div>
-          <div role="group" aria-label="Kinds" className="mt-3 flex flex-wrap gap-2">
-            {(["all", ...KINDS] as KindFilter[])
-              .filter((candidate) => candidate === "all" || counts[candidate] > 0)
-              .map((candidate) => (
-                <Chip
-                  key={candidate}
-                  label={CHIP_LABELS[candidate]}
-                  count={counts[candidate]}
-                  selected={kind === candidate}
-                  onClick={() => chooseKind(candidate)}
-                />
-              ))}
-          </div>
-          <ul className="mt-3">
-            {rows.map((entry, index) => {
-              const { item } = entry;
-              const key = rowKey(entry, index);
-              return (
-                <AttentionRow
-                  key={key}
-                  kind={item.kind}
-                  project={projectName(String(item.project))}
-                  description={describeRow(item)}
-                  thread={threadOf(item, key)}
-                  attempts={attemptsOf(entry, key)}
-                  prUrl={item.pr_url}
-                  daemon={daemonOf(item)}
-                />
-              );
-            })}
-          </ul>
-          {shown.length > ROW_CAP && (
-            <button
-              type="button"
-              onClick={() => setExpanded((previous) => !previous)}
-              className="mb-[18px] mt-1 text-[13px] font-semibold text-needs-you-link"
-            >
-              {expanded ? "Show fewer" : `Show all ${shown.length}`}
-            </button>
-          )}
-          {shown.length <= ROW_CAP && <div className="pb-[18px]" />}
-        </>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span data-count className="font-mono text-[34px] font-bold leading-none text-ink">
+          {mine.length}
+        </span>
+        <span className="text-[20px] font-semibold text-ink">
+          {mine.length === 1 ? "thing needs you" : "things need you"}
+        </span>
+      </div>
+      <div role="group" aria-label="Kinds" className="mt-3 flex flex-wrap gap-2">
+        {(["all", ...KINDS] as KindFilter[])
+          .filter((candidate) => candidate === "all" || counts[candidate] > 0)
+          .map((candidate) => (
+            <Chip
+              key={candidate}
+              label={CHIP_LABELS[candidate]}
+              count={counts[candidate]}
+              selected={kind === candidate}
+              onClick={() => chooseKind(candidate)}
+            />
+          ))}
+      </div>
+      <ul className="mt-3">
+        {rows.map((entry, index) => {
+          const { item } = entry;
+          const key = rowKey(entry, index);
+          return (
+            <AttentionRow
+              key={key}
+              kind={item.kind}
+              project={projectName(String(item.project))}
+              description={describeRow(item)}
+              thread={threadOf(item, key)}
+              attempts={attemptsOf(entry, key)}
+              prUrl={item.pr_url}
+              daemon={daemonOf(item)}
+            />
+          );
+        })}
+      </ul>
+      {shown.length > ROW_CAP && (
+        <button
+          type="button"
+          onClick={() => setExpanded((previous) => !previous)}
+          className="mb-[18px] mt-1 text-[13px] font-semibold text-needs-you-link"
+        >
+          {expanded ? "Show fewer" : `Show all ${shown.length}`}
+        </button>
       )}
+      {shown.length <= ROW_CAP && <div className="pb-[18px]" />}
     </section>
   );
 }

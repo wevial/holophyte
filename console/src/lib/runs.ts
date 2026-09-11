@@ -50,10 +50,13 @@ export function strikeTone(strikes: number, max: number): StrikeTone | null {
   return strikes >= max - 1 ? "red" : "amber";
 }
 
-/** One `/status` body and the base URL of the daemon that answered it. */
+/** One `/status` body and the base URL of the daemon that answered it.
+ *  `seen_ms` is the console's clock when the body last arrived, the
+ *  reference a drawing site ages the body's frozen numbers from. */
 export interface DaemonStatus {
   base: string;
   status: Status;
+  seen_ms?: number | null;
 }
 
 /** One project's block on the Floor: the daemon that serves it and its
@@ -66,6 +69,9 @@ export interface ProjectGroup {
   /** The daemon's base URL: where the block's run details are read. */
   base: string;
   status: Status;
+  /** The console's clock when `status` last arrived; ages drawn from it
+   *  keep counting against the local clock between polls. */
+  seen_ms?: number | null;
   runs: Run[];
 }
 
@@ -74,11 +80,11 @@ export interface ProjectGroup {
  *  under the first. */
 export function groupByProject(daemons: DaemonStatus[]): ProjectGroup[] {
   const groups: ProjectGroup[] = [];
-  for (const { base, status } of daemons) {
+  for (const { base, status, seen_ms } of daemons) {
     const path = status.project ?? status.target;
     const existing = groups.find((group) => group.path === path && group.base === base);
     if (existing) existing.runs.push(...status.runs);
-    else groups.push({ path, name: projectName(path), base, status, runs: [...status.runs] });
+    else groups.push({ path, name: projectName(path), base, status, seen_ms, runs: [...status.runs] });
   }
   return groups;
 }

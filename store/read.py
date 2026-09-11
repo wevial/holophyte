@@ -310,7 +310,7 @@ class ApprovedCandidate:
     sha: str | None
     pr_url: str | None = None
     # Whether the release was an approval -- the human's "merge" -- rather
-    # than `--shepherd`'s "look at the pull request again". Only the PR
+    # than `--babysit`'s "look at the pull request again". Only the PR
     # path reads it: a local candidate the operator released is merged.
     approved: bool = True
     # The sha the last independent judgement covered when the run parked:
@@ -331,7 +331,7 @@ def approved_candidate(conn, ticket_id, run_id):
     `[merge] mode = "pr"` opened a pull request for it, or None when the
     newest prior run is anything else: the claim then starts the ticket
     over, as it would after a failed run. `approved` is False when the
-    newest intervention on that run is `shepherd` rather than `approve`;
+    newest intervention on that run is `babysit` rather than `approve`;
     `approved_sha` is the `approvedSha` the park recorded.
     """
     row = conn.execute(
@@ -344,7 +344,7 @@ def approved_candidate(conn, ticket_id, run_id):
         'SELECT "action" FROM interventions WHERE runId = ?'
         " ORDER BY id DESC LIMIT 1", (row[0],)).fetchone()
     return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
-                             approved=last is None or last[0] != "shepherd",
+                             approved=last is None or last[0] != "babysit",
                              approved_sha=row[4])
 
 
@@ -704,13 +704,20 @@ class NarrativeEvent:
     summary: str
 
 
-def narrative_events(conn, run_id):
+def narrative_events(conn, run_id, detail_kinds=()):
     """The `narrative` events of `run_id` in `seq` order, oldest first; the
-    `detail` rows and their payloads are left out."""
+    `detail` rows and their payloads are left out, except that a `detail`
+    row whose kind is in `detail_kinds` is answered by its summary, in its
+    place in the stream: a kind the store keeps at `detail` for its payload
+    but whose summary is part of the run's story (KO-375's
+    `implementer_output`)."""
+    marks = ", ".join("?" for _ in detail_kinds)
     rows = conn.execute(
         "SELECT at, kind, summary FROM runEvents"
-        " WHERE runId = ? AND level = 'narrative' ORDER BY seq",
-        (run_id,)).fetchall()
+        " WHERE runId = ? AND (level = 'narrative'"
+        + (f" OR kind IN ({marks})" if detail_kinds else "")
+        + ") ORDER BY seq",
+        (run_id, *detail_kinds)).fetchall()
     return [NarrativeEvent(at=row[0], kind=row[1], summary=row[2])
             for row in rows]
 
@@ -893,7 +900,7 @@ def supervisor_beat(conn):
 def pending_loop_launches(conn, project_id):
     """The `(ticket id, run id)` pairs of `project_id` a loop is owed for:
     a ticket `ready` with no live run whose newest run the supervisor's
-    reconcile sent back to the shepherd (an interventions row `shepherd`
+    reconcile sent back to the babysitter (an interventions row `babysit`
     from source `supervisor`) and no `launch_loop` row on that run since
     (later by row id: the two rows are stamped by different clocks).
 
@@ -903,7 +910,7 @@ def pending_loop_launches(conn, project_id):
     once `systemctl` took the start is what says one was. A start that
     failed left no row, so the ticket is still owed on the next pass; a
     ticket a loop claimed is `in_flight` and owed nothing. A ticket that
-    became ready through Linear itself never had a shepherd row and is
+    became ready through Linear itself never had a babysit row and is
     not here: that loop is the operator's or the tick's to start.
     """
     return conn.execute(
@@ -911,7 +918,7 @@ def pending_loop_launches(conn, project_id):
         " WHERE t.projectId = ? AND t.status = 'ready'"
         " AND t.activeRunId IS NULL AND t.lastRunId IS NOT NULL"
         " AND EXISTS (SELECT 1 FROM interventions s"
-        "   WHERE s.runId = t.lastRunId AND s.\"action\" = 'shepherd'"
+        "   WHERE s.runId = t.lastRunId AND s.\"action\" = 'babysit'"
         "   AND s.source = 'supervisor'"
         "   AND NOT EXISTS (SELECT 1 FROM interventions l"
         "     WHERE l.runId = s.runId AND l.\"action\" = 'launch_loop'"

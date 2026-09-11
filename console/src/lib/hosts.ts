@@ -214,3 +214,10 @@ export function oldestPoll(hosts: HostRecord[]): number | null {
   if (hosts.length === 0) return null;
   return hosts.reduce((least, host) => Math.min(least, host.polled_ms), Number.POSITIVE_INFINITY);
 }
+
+/** Local milliseconds since a daemon's answer last arrived (`seen_ms`);
+ *  the ages it computed then plus this read as their ages right now.
+ *  0 for a record that never said when it was seen. */
+export function sinceSeen(seenMs: number | null | undefined, now: number): number {
+  return seenMs ? Math.max(0, now - seenMs) : 0;
+}

@@ -959,7 +959,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     store for a hand on the launcher. What is owed a loop is read from
     the store, not from this pass's reconcile
     (`store.read.pending_loop_launches()`): the babysitter row
-    `store.shepherd()` wrote for the send-back, on a ticket still
+    `store.babysit()` wrote for the send-back, on a ticket still
     `ready`, with no `launch_loop` row since. A
     start `systemctl` took is recorded as that row, so a loop that is
     booting and has not claimed yet is not started again by the next pass;

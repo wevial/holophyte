@@ -1771,6 +1771,15 @@ class CommitThenTimeout(Commit):
                                         output="partial progress before cap")
 
 
+class IdleThenTimeout(Idle):
+    """`CommitThenTimeout`'s empty-branch counterpart: the turn said its
+    piece and committed nothing before the cap killed it, so its words exist
+    only in the `TimeoutExpired`'s captured output."""
+
+    def play(self, cwd, turn):
+        raise subprocess.TimeoutExpired("claude", 300, output=self.reply)
+
+
 class Boom:
     """An implementer turn that dies the way a failed `sh()` does."""
 
@@ -2324,10 +2333,10 @@ class MergeApprovalTests(LoopFixture):
             [(1, BRANCH, "abandoned"), (2, BRANCH, "merged")])
 
     def test_a_babysitter_release_of_a_local_park_does_not_merge(self):
-        """`--babysit` is not an approval. `store.shepherd()` refuses a run
+        """`--babysit` is not an approval. `store.babysit()` refuses a run
         parked with no pull request, but the resumed claim holds the line
         on its own: a parked local candidate whose newest intervention is
-        `shepherd` (written here through the store API, the way an operator
+        `babysit` (written here through the store API, the way an operator
         at the REPL rung could) is not taken through the gate -- the next
         run fails naming the release, main is untouched, the branch and
         worktree stay for `--approve`."""
@@ -2340,7 +2349,7 @@ class MergeApprovalTests(LoopFixture):
         self.assertIn("no pull request", str(refused.exception))
         conn = holophyte.runs.open_store(self.tgt)
         try:
-            store.record_intervention(conn, 1, "shepherd", "look again")
+            store.record_intervention(conn, 1, "babysit", "look again")
             store.release(conn, 1, "abandoned", "released by hand")
             conn.execute("UPDATE runs SET resumePhase = 'merge_gate'"
                          " WHERE id = 1")
@@ -2578,12 +2587,12 @@ class SelfHostingTests(LoopFixture):
 
 
 
-class MergeModeTests(LoopFixture):
-    """`[merge] mode = "pr"`: an approved, verified candidate is pushed and
-    opened as a pull request instead of merged, and the loop babysits the
-    PR -- threads verdicted, fixed and answered, checks awaited -- until it
-    merges through the PR's API or the run parks. `"local"`, or no key,
-    merges as it always has.
+class MergeModeFixture(LoopFixture):
+    """`[merge] mode = "pr"`'s fixture: an approved, verified candidate is
+    pushed and opened as a pull request instead of merged, and the loop
+    babysits the PR -- threads verdicted, fixed and answered, checks
+    awaited -- until it merges through the PR's API or the run parks.
+    `"local"`, or no key, merges as it always has.
 
     `git` and `gh` on PATH are fakes that record their argv: the fake `git`
     intercepts `push` alone and hands everything else to the real one, so
@@ -2592,7 +2601,11 @@ class MergeModeTests(LoopFixture):
     `gh` answers `pr create` with `URL` and `api` with what the test put in
     the state files: the PR's threads and checks for the state query, an
     empty success for the reply and resolve mutations, `MERGE_SHA` for the
-    merge."""
+    merge.
+
+    Split from the tests so a suite elsewhere -- the conflicting-PR tests
+    in `test_babysitter.py` -- drives the same fake GitHub without
+    re-running the tests that came with it."""
 
     URL = "https://github.com/example/repo/pull/7"
     # The `origin` the fixture target is given: the repository the push
@@ -2618,7 +2631,7 @@ class MergeModeTests(LoopFixture):
                        else (author, "Bot"))
         return {"author": {"login": login, "__typename": kind},
                 "body": body,
-                "url": f"{MergeModeTests.URL}#discussion_r{number}"}
+                "url": f"{MergeModeFixture.URL}#discussion_r{number}"}
 
     @classmethod
     def thread(cls, number, path, line, author, body, replies=(),
@@ -2653,17 +2666,19 @@ class MergeModeTests(LoopFixture):
     HEAD = "HEAD_SHA"
 
     def pr_state(self, threads=(), checks="SUCCESS", merged=False,
-                 head=HEAD, resolved=(), next_cursor=None):
+                 head=HEAD, resolved=(), next_cursor=None,
+                 mergeable="MERGEABLE"):
         """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
         tuple) open, `resolved` the same shape but resolved, the head's
-        check rollup, whether the PR is merged, and -- for a page that is
-        not the last -- the cursor of the next."""
+        check rollup, whether the PR is merged, GitHub's `mergeable`
+        answer (None for the lazy-computation `null`), and -- for a page
+        that is not the last -- the cursor of the next."""
         nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
         nodes += [self.thread(n, *t[:4], resolved=True)
                   for n, t in enumerate(resolved, len(nodes) + 1)]
         return {"data": {"repository": {"pullRequest": {
             "state": "MERGED" if merged else "OPEN", "merged": merged,
-            "headRefOid": head,
+            "headRefOid": head, "mergeable": mergeable,
             "mergeCommit": {"oid": self.MERGE_SHA} if merged else None,
             "commits": {"nodes": [{"commit": {"statusCheckRollup":
                                               {"state": checks}}}]},
@@ -2690,7 +2705,11 @@ class MergeModeTests(LoopFixture):
         alone decides the checks. `push_exit` is what `git
         push` answers with --
         non-zero is a remote refusing -- and `push_sh` is shell the fake
-        push runs first, for a push that takes its time.
+        push runs first, for a push that takes its time. A push the fake
+        answers successfully also appends `REF SHA` to `self.push_log`:
+        the refspec's source resolved in the pushing checkout at push
+        time, which is the tip a real remote's branch would have
+        received (`pushed()` reads it back).
         """
         self.git("remote", "add", "origin", self.ORIGIN)
         tmp = tempfile.TemporaryDirectory()
@@ -2698,6 +2717,7 @@ class MergeModeTests(LoopFixture):
         bindir = Path(tmp.name)
         self.calls = bindir / "calls.log"
         self.pr_body = bindir / "pr_body.md"
+        self.push_log = bindir / "pushes.log"
         self.api_dir = bindir / "api"
         self.api_dir.mkdir()
         answers = bindir / "states"
@@ -2705,6 +2725,9 @@ class MergeModeTests(LoopFixture):
         for n, state in enumerate([self.pr_state()] if states is None
                                   else states, 1):
             (answers / f"{n:03d}.json").write_text(json.dumps(state))
+        # Kept on the fixture so `serve()` can hand a resumed run a fresh
+        # answer sequence mid-test without re-faking PATH.
+        self.answers = answers
         pages = bindir / "comments"
         pages.mkdir()
         for n, page in enumerate(comments, 1):
@@ -2726,8 +2749,18 @@ class MergeModeTests(LoopFixture):
             'if [ "$1" = push ]; then\n'
             f'  printf "git %s\\n" "$*" >> "{self.calls}"\n'
             f"{push_sh}\n"
-            f'  [ {push_exit} -eq 0 ] || echo "remote: refused" >&2\n'
-            f"  exit {push_exit}\n"
+            f'  if [ {push_exit} -ne 0 ]; then\n'
+            '    echo "remote: refused" >&2\n'
+            f"    exit {push_exit}\n"
+            "  fi\n"
+            # The push is witnessed, not made; what a real remote's
+            # branch would have received is the refspec's source
+            # resolved now, in the pushing checkout.
+            '  for src in "$@"; do :; done\n'
+            '  src="${src%%:*}"; src="${src#+}"\n'
+            f'  printf "%s %s\\n" "$src" "$("{real_git}" rev-parse'
+            f' "$src" 2>/dev/null || echo MISSING)" >> "{self.push_log}"\n'
+            "  exit 0\n"
             "fi\n"
             f'exec "{real_git}" "$@"\n')
         (bindir / "gh").write_text(
@@ -2772,6 +2805,26 @@ class MergeModeTests(LoopFixture):
         return (self.calls.read_text().splitlines()
                 if self.calls.exists() else [])
 
+    def pushed(self):
+        """Every `git push` the fake answered, as `(ref, sha)`: the
+        refspec's source resolved in the pushing checkout at push time --
+        the tip a real remote's branch would have received, which is the
+        witness a bare argv count cannot give."""
+        return [tuple(line.split())
+                for line in (self.push_log.read_text().splitlines()
+                             if self.push_log.exists() else [])]
+
+    def serve(self, *states):
+        """Replace the state answers the fake `gh` still owes with `states`
+        -- served in order, the last one sticky -- so a run resumed
+        mid-test reads what GitHub now says. The calls log is untouched:
+        the pushes and requests already witnessed keep counting."""
+        n = max((int(p.stem) for p in self.answers.iterdir()), default=0)
+        for p in self.answers.iterdir():
+            p.unlink()
+        for k, state in enumerate(states or (self.pr_state(),), n + 1):
+            (self.answers / f"{k:03d}.json").write_text(json.dumps(state))
+
     def api_calls(self):
         """Every `gh api` body the babysitter made, in order, as `(kind,
         variables)`: the kind is `state`, `reply`, `resolve` or `merge`.
@@ -2800,6 +2853,13 @@ class MergeModeTests(LoopFixture):
             "SELECT status, blockedQuestion FROM tickets")
         self.assertEqual(status, "blocked_on_operator")
         return question
+
+
+class MergeModeTests(MergeModeFixture):
+    """The `[merge] mode = "pr"` tests: push and open, the passes over
+    threads and checks, the parks and resumes, the merge through the pull
+    request's API. The conflicting-PR merge-in has its own suite beside
+    the texts it shares a module with (`test_babysitter.py`)."""
 
     def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
         """Push, then create, in that order; the PR is titled `KO-n: TITLE`
@@ -4073,13 +4133,13 @@ class MergeModeTests(LoopFixture):
             [(1, "failed", "abandoned", self.URL),
              (2, "awaiting_merge_approval", None, self.URL)])
         self.assertEqual(
-            self.read('SELECT "action" FROM interventions'), [("shepherd",)])
+            self.read('SELECT "action" FROM interventions'), [("babysit",)])
 
 
     # What GitHub says about a parked pull request when the reconcile asks
     # (`pr.PULL_QUERY`'s node): merged by a coworker, closed unmerged, open.
     MERGED_PULL = {"state": "MERGED", "merged": True,
-                   "mergeCommit": {"oid": MERGE_SHA},
+                   "mergeCommit": {"oid": MergeModeFixture.MERGE_SHA},
                    "mergedBy": {"login": "coworker"}}
     CLOSED_PULL = {"state": "CLOSED", "merged": False, "mergeCommit": None,
                    "mergedBy": None}
@@ -4301,7 +4361,7 @@ class MergeModeTests(LoopFixture):
             self):
         """KO-362: the pull request's `updatedAt` moved past what the last
         pass recorded. The tick sends the run back to the babysitter as
-        `--babysit` would -- a `shepherd` intervention, the run ended
+        `--babysit` would -- a `babysit` intervention, the run ended
         with the ticket ready -- and the same pass claims it: the resumed
         run babysits the pull request and parks again, its park recording
         what it saw *after* its own writes (the third answer), so the tick
@@ -4328,11 +4388,11 @@ class MergeModeTests(LoopFixture):
               "approved")])
         self.assertEqual(
             self.read('SELECT "action", source FROM interventions'),
-            [("shepherd", "supervisor")])
+            [("babysit", "supervisor")])
         self.assertEqual(
             self.read("SELECT summary FROM runEvents"
                       " WHERE kind = 'intervention'"),
-            [(f"supervisor shepherd: new review activity on {self.URL}:"
+            [(f"supervisor babysit: new review activity on {self.URL}:"
               f" updated {self.T2} (last seen {self.T1}), 1 review threads"
               " (last seen 0)",)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
@@ -6057,6 +6117,117 @@ class SweptTurnTests(LoopFixture):
                          [(1, "failed"), (2, "merged")])
         self.assertIn("the next work", self.subjects())
         self.assertIsNone(self.rc)
+
+
+class NoCommitOutputTests(LoopFixture):
+    """A turn that ends without a commit keeps what the implementer said on
+    the run (KO-375): the worktree it may have explained itself in is
+    discarded, so the event is the operator's only evidence."""
+
+    def events(self):
+        return self.read("SELECT summary, payload FROM runEvents"
+                         " WHERE kind = 'implementer_output'")
+
+    def removals_seen(self):
+        """Wrap the loop's `sh` so the moment the worktree is removed, the
+        store is read for the event: the order witness."""
+        seen = []
+        real = holophyte.loop.sh
+
+        def sh(args, cwd=None):
+            if args[:3] == ["git", "worktree", "remove"]:
+                seen.append(self.events())
+            return real(args, cwd)
+        patcher = patch.object(holophyte.loop, "sh", sh)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return seen
+
+    def test_a_no_commit_turn_keeps_the_message_before_the_discard(self):
+        seen = self.removals_seen()
+        message = "This contract cannot be met.\nThe verify line names no file."
+
+        self.loop(Idle(message))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(self.events(),
+                         [("This contract cannot be met.", message)])
+        # Recorded before the removal, not after: the event was already in
+        # the store when the worktree went.
+        self.assertEqual(seen, [[("This contract cannot be met.", message)]])
+
+    def test_a_timed_out_turn_without_commits_keeps_its_output(self):
+        """The cap can fire after the implementer has explained itself but
+        before it commits: what `agent()` captured before the kill is the
+        run's evidence, not an empty payload saying it printed nothing."""
+        message = "This contract cannot be met.\nThe verify line names no file."
+        seen = self.removals_seen()
+
+        self.loop(IdleThenTimeout(message))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        self.assertEqual(self.events(),
+                         [("This contract cannot be met.", message)])
+        self.assertEqual(seen, [[("This contract cannot be met.", message)]])
+
+    def test_a_nonzero_exit_without_commits_keeps_its_output_too(self):
+        """A real route, not the fake: the turn's exit code is the process's,
+        so this is the loop reading a failed harness's last words."""
+        path = self.db.parent / "implementer.sh"
+        path.write_text(
+            "#!/bin/sh\n"
+            'case "$1" in *ready*) echo ready; exit 0;; esac\n'
+            "echo refusing this ticket\necho a second line\nexit 3\n")
+        path.chmod(0o755)
+        self.configure(f'[agents]\nimplementer = "{path}"\n')
+        provider = StubProvider(a_task())
+        with no_agent_processes():
+            with patch.dict(sys.modules, {"linear_provider": provider}):
+                holophyte.loop.main(self.tgt, provider)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.events(), [("refusing this ticket",
+                                          "refusing this ticket\na second line")])
+
+    def test_a_secret_in_prose_output_never_reaches_the_store(self):
+        """The review's repro: `redact()` walks TOML and stops at the first
+        word of prose, so a credential echoed after a sentence went into
+        the store readable. The config's own secret, the board key the
+        environment holds, and a pair the loop has no other knowledge of
+        are all hidden; the sentence around them stays."""
+        self.configure('[agents]\n[linear]\napi_key = "cfg-secret-value"\n')
+        message = ("Cannot continue.\n"
+                   'api_key = "example-secret-value"\n'
+                   "the board answered 401 for cfg-secret-value\n"
+                   "and env-secret-value was refused too\n"
+                   "GH_TOKEN: ghp_pasted\n"
+                   "the token_file path is /run/secrets/x")
+
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "env-secret-value"}):
+            self.loop(Idle(message))
+
+        ((summary, payload),) = self.events()
+        self.assertEqual(summary, "Cannot continue.")
+        for secret in ("example-secret-value", "cfg-secret-value",
+                       "env-secret-value", "ghp_pasted"):
+            self.assertNotIn(secret, payload)
+        self.assertIn("the board answered 401 for [redacted]", payload)
+        self.assertIn("api_key = [redacted]", payload)
+        self.assertIn("the token_file path is /run/secrets/x", payload)
+
+    def test_the_payload_keeps_only_the_last_characters_up_to_the_constant(self):
+        cap = holophyte.loop.OUTPUT_TAIL
+        head = "first line\n"
+        message = head + "x" * cap
+
+        self.loop(Idle(message))
+
+        ((summary, payload),) = self.events()
+        self.assertEqual(summary, "first line")
+        self.assertEqual(len(payload), cap)
+        self.assertEqual(payload, message[-cap:])
 
 
 class ImplementerProbeTests(LoopFixture):

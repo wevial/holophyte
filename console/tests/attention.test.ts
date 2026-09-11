@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { countsByKind, describe, oldest } from "../src/lib/attention";
+import { countsByKind, describe } from "../src/lib/attention";
 import type { Attention, Status } from "../src/lib/types";
 import { fixture } from "./harness";
 
@@ -42,9 +42,6 @@ test("newer-daemon fields show only when present", () => {
   expect(failed.meta).toBe("run #88 · strike 2 of 3");
 });
 
-test("the fixture's oldest item is the failure that ended two hours ago, and counts are one per kind", () => {
-  const { items, now } = allKinds.attention;
-  expect(oldest(items, now)).toEqual({ ageMs: 7200000, ticket: "KO-229" });
-  expect(countsByKind(items)).toEqual({ all: 4, blocked: 1, pr_open: 0, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
-  expect(oldest([{ kind: "blocked", level: "attention", ticket: "KO-1", question: "?" }], now)).toBeNull();
+test("the fixture's counts are one per kind", () => {
+  expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
 });

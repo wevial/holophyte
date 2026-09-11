@@ -148,7 +148,19 @@ machines it walks. Back to the [README](index.md).
    a change request, not a preference: `ADDRESS`, the fix being reuse; the
    repository's `AGENTS.md` or `CLAUDE.md` is quoted in the brief as the
    reviewer's standard, and `DECLINE` is for a thread that asks for
-   nothing specific or for what the ticket puts out of scope. Every pass is
+   nothing specific or for what the ticket puts out of scope. Before the
+   threads are judged, GitHub's `mergeable` answer is read: a pull
+   request reported CONFLICTING gets `main` merged in the way the gate
+   does it -- `git fetch origin`, then `origin/main` (the remote's
+   `main`, never the checkout's possibly stale local one) merged into
+   the branch in the resumed worktree, a push, a ledger note naming the
+   merge sha -- and the pass returns to waiting on checks. A merge that
+   stops in the tree is handed to the implementer the way a gate
+   conflict is; one left unresolved parks the run with the conflicting
+   paths in the question. The branch is never rebased and never
+   force-pushed, so review threads keep their lines; a pull request that
+   is merely behind but mergeable, and one GitHub has not judged yet
+   (UNKNOWN), are left alone. Every pass is
    a `reviewRounds` row with route `github:LOGIN`. Green checks and no
    open thread merge the PR through its merge API under `approve = "auto"`;
    under `approve = "human"`, a decline, a `HUMAN` thread, red checks or
@@ -194,7 +206,7 @@ machines it walks. Back to the [README](index.md).
    moved past that mark, or whose thread count has grown, is a reviewer's
    comment nobody has answered: the tick sends the run back to the
    babysitter exactly as `--babysit KO-n` does -- the intervention row
-   `store.shepherd()` writes, with source `supervisor`, the run ended with its resume point at the
+   `store.babysit()` writes, with source `supervisor`, the run ended with its resume point at the
    merge gate, the ticket `ready` -- and the next claim (the same pass, in
    the serial loop) resumes the candidate on its pull request for another
    round of passes. At most one such round per `[merge] pr_poll_sec`

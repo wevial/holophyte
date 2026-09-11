@@ -1,10 +1,10 @@
-import { afterEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { NeedsYou } from "../src/components/NeedsYou";
 import { ACTIONS_OFF, NOT_WIRED, ROUTES } from "../src/lib/actions";
 import type { Ledgers } from "../src/hooks/useLedger";
 import type { Attention, AttentionItem, Status } from "../src/lib/types";
-import { fixture, hostOf } from "./harness";
+import { captureIntervals, fixture, hostOf } from "./harness";
 
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
 
@@ -17,17 +17,40 @@ const chips = () =>
     .getAllByRole("button")
     .map((chip) => chip.textContent);
 
-test("the fixture renders four things, one chip per kind with counts, rows in daemon order", () => {
+test("the fixture renders four things, one chip per kind with counts, rows longest-waited first and no oldest note", () => {
   render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
   expect(screen.getByText("4").hasAttribute("data-count")).toBe(true);
   expect(screen.getByText("things need you")).toBeTruthy();
-  expect(screen.getByText("oldest 2h · KO-229")).toBeTruthy();
+  expect(screen.queryByText(/^oldest/)).toBeNull();
   expect(chips()).toEqual(["All 4", "Questions 1", "Stale runs 1", "Failed 1", "Supervisor 1"]);
-  expect(pills()).toEqual(["question", "stale run", "failed", "supervisor"]);
-  expect(rows().map((row) => row.getAttribute("data-kind"))).toEqual(["blocked", "stale_run", "failed", "supervisor"]);
+  expect(pills()).toEqual(["failed", "supervisor", "stale run", "question"]);
+  expect(rows().map((row) => row.getAttribute("data-kind"))).toEqual(["failed", "supervisor", "stale_run", "blocked"]);
   expect(screen.getByText("No heartbeat for 7m 01s while reviewing")).toBeTruthy();
   expect(screen.getByText("Supervisor heartbeat is 20m 00s old (threshold 3m)")).toBeTruthy();
   expect(screen.getAllByText("writer").length).toBe(4);
+});
+
+test("rows from two hosts read longest-waited first, equal ages keep daemon order, an ageless item last", () => {
+  const now = allKinds.status.now;
+  const question = (ticket: string, minutesAgo: number | null): AttentionItem => ({
+    kind: "blocked",
+    level: "attention",
+    ticket,
+    question: `${ticket}?`,
+    ...(minutesAgo == null ? {} : { asked_ms: now - minutesAgo * 60000 }),
+  });
+  const first = hostOf(allKinds.status, {
+    level: "attention",
+    now,
+    items: [question("KO-1", 1), question("KO-4", 4)],
+  });
+  const second = hostOf(
+    allKinds.status,
+    { level: "attention", now, items: [question("KO-2", 4), question("KO-9", null)] },
+    "http://writer-2:7710",
+  );
+  render(<NeedsYou hosts={[first, second]} project="all" now={now} />);
+  expect(rows().map((row) => within(row).getByText(/^KO-\d+$/).textContent)).toEqual(["KO-4", "KO-2", "KO-1", "KO-9"]);
 });
 
 test("the Failed chip keeps only KO-229; All brings the four back", () => {
@@ -109,13 +132,13 @@ test("every action button of a daemon without actions is disabled: wired ones na
   render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
   const actions = rows().flatMap((row) => within(row).getAllByRole("button"));
   expect(actions.map((button) => button.textContent)).toEqual([
-    "Answer",
-    "Requeue",
-    "Kill run",
-    "Requeue",
     "Requeue",
     "Mark needs_spec",
     "Restart supervisor",
+    "Kill run",
+    "Requeue",
+    "Answer",
+    "Requeue",
   ]);
   for (const button of actions) {
     expect((button as HTMLButtonElement).disabled).toBe(true);
@@ -123,10 +146,18 @@ test("every action button of a daemon without actions is disabled: wired ones na
   }
 });
 
-test("another project's selection empties the band with the level word; one item reads singular", () => {
+test("another project's selection leaves one quiet muted line and no band; one item reads singular", () => {
   render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="/srv/dev/other" now={allKinds.status.now} />);
-  expect(screen.getByText("Nothing needs you")).toBeTruthy();
-  expect(screen.getByText("attention")).toBeTruthy();
+  const lines = screen.getAllByText("Nothing needs you");
+  expect(lines.length).toBe(1);
+  const [line] = lines;
+  expect(line!.tagName).toBe("P");
+  expect(line!.className).toContain("text-muted");
+  expect(line!.getAttribute("aria-label")).toBe("Needs you");
+  expect(line!.previousElementSibling).toBeNull();
+  expect(line!.nextElementSibling).toBeNull();
+  expect(screen.queryByText("attention")).toBeNull();
+  expect(screen.queryByRole("region", { name: "Needs you" })).toBeNull();
   cleanup();
   const one = { ...allKinds.attention, items: allKinds.attention.items.slice(0, 1) };
   render(<NeedsYou hosts={[hostOf(allKinds.status, one)]} project={allKinds.status.target} now={allKinds.status.now} />);
@@ -145,7 +176,7 @@ test("a pr_open item adds a PRs chip that filters to it, and the total counts it
   render(<NeedsYou hosts={[hostOf(allKinds.status, { level: "attention", now: allKinds.status.now, items })]} project="all" now={allKinds.status.now} />);
   expect(screen.getByText("5").hasAttribute("data-count")).toBe(true);
   expect(chips()).toEqual(["All 5", "Questions 1", "PRs 1", "Stale runs 1", "Failed 1", "Supervisor 1"]);
-  expect(pills()).toEqual(["question", "PR", "stale run", "failed"]);
+  expect(pills()).toEqual(["failed", "supervisor", "PR", "stale run"]);
   expect(screen.getByRole("button", { name: "Show all 5" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "PRs 1" }));
   expect(rows().length).toBe(1);
@@ -178,8 +209,8 @@ test("three failed attempts of one ticket are one row with a ×3 badge, counted 
   render(<NeedsYou hosts={[hostOf(allKinds.status, { level: "attention", now: allKinds.status.now, items })]} project="all" now={allKinds.status.now} />);
   expect(screen.getByText("3").hasAttribute("data-count")).toBe(true);
   expect(chips()).toEqual(["All 3", "Questions 1", "Failed 2"]);
-  expect(rows().map((row) => row.getAttribute("data-kind"))).toEqual(["failed", "blocked", "failed"]);
-  const [grouped, , single] = rows();
+  expect(rows().map((row) => row.getAttribute("data-kind"))).toEqual(["failed", "failed", "blocked"]);
+  const [grouped, single] = rows();
   expect(within(grouped!).getByText("Review adjudicated FAIL")).toBeTruthy();
   expect(within(grouped!).getByText("run #176 · strike 1 of 2 · task/ko-343-the-loop-runs-a-pool-of-worker @ 046d7d7")).toBeTruthy();
   expect(within(grouped!).getByText("24m")).toBeTruthy();
@@ -208,7 +239,7 @@ test("three failed attempts of one ticket are one row with a ×3 badge, counted 
   expect(rows().map((row) => within(row).getByText(/^KO-/).textContent)).toEqual(["KO-343×3", "KO-229"]);
 });
 
-test("four failed items, three of one ticket and one of another: two failed rows, the count line and the Failed chip say 2, the first row wears ×3", () => {
+test("four failed items, three of one ticket and one of another: two failed rows, the count line and the Failed chip say 2, the older single leads and the grouped row wears ×3", () => {
   const strike = (ticket: string, run: number, reason: string): AttentionItem => ({
     kind: "failed",
     level: "attention",
@@ -229,11 +260,43 @@ test("four failed items, three of one ticket and one of another: two failed rows
   expect(screen.getByText("things need you")).toBeTruthy();
   expect(chips()).toEqual(["All 2", "Failed 2"]);
   expect(rows().map((row) => row.getAttribute("data-kind"))).toEqual(["failed", "failed"]);
-  const [grouped, single] = rows();
-  expect(within(grouped!).getByText("KO-343")).toBeTruthy();
-  expect(grouped!.querySelector("[data-attempts]")!.textContent).toBe("×3");
+  const [single, grouped] = rows();
   expect(within(single!).getByText("KO-229")).toBeTruthy();
   expect(single!.querySelector("[data-attempts]")).toBeNull();
+  expect(within(grouped!).getByText("KO-343")).toBeTruthy();
+  expect(grouped!.querySelector("[data-attempts]")!.textContent).toBe("×3");
+});
+
+test("a band row's age keeps counting between polls and realigns when the next answer lands", () => {
+  const timers = captureIntervals();
+  const t0 = allKinds.status.now;
+  const item: AttentionItem = {
+    kind: "stale_run",
+    level: "attention",
+    run: 91,
+    ticket: "KO-232",
+    phase: "reviewing",
+    heartbeat_age_ms: 7_200_000,
+  };
+  const attention: Attention = { level: "attention", now: t0, items: [item] };
+  setSystemTime(t0);
+  try {
+    const view = render(
+      <NeedsYou hosts={[hostOf(allKinds.status, attention, "http://writer:7710", t0)]} project="all" now={t0} />,
+    );
+    expect(screen.getByText("No heartbeat for 2h 00m while reviewing")).toBeTruthy();
+    setSystemTime(t0 + 60_000);
+    act(() => timers.fire());
+    expect(screen.getByText("No heartbeat for 2h 01m while reviewing")).toBeTruthy();
+    // The next poll lands with a fresh 2h age: the row reads it as sent.
+    view.rerender(
+      <NeedsYou hosts={[hostOf(allKinds.status, attention, "http://writer:7710", t0 + 60_000)]} project="all" now={t0 + 60_000} />,
+    );
+    expect(screen.getByText("No heartbeat for 2h 00m while reviewing")).toBeTruthy();
+  } finally {
+    setSystemTime();
+    timers.restore();
+  }
 });
 
 test("an open attempts card closes when a question row opens its thread: one card at a time", () => {
