@@ -193,6 +193,8 @@ test("a files endpoint answering 409 leaves one line, its own message, and the r
   expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();
   expect(document.querySelectorAll("[data-finding]").length).toBe(3);
   expect(document.querySelector("[data-log-summary]")!.textContent).toBe("1 event · last: claimed KO-232 20m ago");
+  expect(document.querySelector("[data-log-rows]")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Run log/ }));
   expect(document.querySelectorAll("[data-log-row]").length).toBe(1);
   expect(document.querySelector("[data-detail-error]")).toBeNull();
 });

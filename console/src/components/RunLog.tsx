@@ -4,12 +4,12 @@ import { logSummary, orderEvents, summarize, timeRange } from "../lib/log";
 import type { Round, RunEvent } from "../lib/types";
 
 /** The card's footer: the run's narrative events from `/runs/N`, newest
- *  last, under a header that folds them away. Open by default; the fold
- *  lives with the mounted card, so a re-expanded row opens again. Each
- *  row is the event's short line (`summarize`), with `rounds` lending
- *  the finding counts to the review transitions. */
+ *  last, under a header that folds them away. Folded by default; the fold
+ *  lives with the mounted card, so a re-expanded row keeps the viewer's
+ *  choice. Each row is the event's short line (`summarize`), with
+ *  `rounds` lending the finding counts to the review transitions. */
 export function RunLog({ events, rounds = [], now }: { events: RunEvent[]; rounds?: Round[]; now: number }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const rows = orderEvents(events);
   return (
     <section data-run-log className="-mx-4 -mb-3 mt-3 rounded-b-[10px] bg-rail px-4 py-2 font-mono text-[12px]">
