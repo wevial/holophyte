@@ -21,6 +21,14 @@ export interface LedgerBody {
   limit: number;
 }
 
+/** The daemon's `/runs/N/ledger` body (holophyte/serve.py `run_ledger()`):
+ *  one run's entries, oldest first. */
+export interface RunLedgerBody {
+  run_id: number;
+  ticket: string;
+  entries: LedgerRow[];
+}
+
 /** The endpoint's cap; a day of interventions, or one ticket's rows,
  *  fits in one page, so the console never pages. */
 export const LEDGER_LIMIT = 1000;

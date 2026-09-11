@@ -1,3 +1,4 @@
+import type { LedgerRow } from "./ledger";
 import type { Finding, Round } from "./types";
 
 export type Severity = "must" | "should" | "nit";
@@ -88,4 +89,124 @@ export function severityCounts(findings: Finding[]): Record<Severity, number> {
   const counts: Record<Severity, number> = { must: 0, should: 0, nit: 0 };
   for (const finding of findings) counts[severityOf(finding)] += 1;
   return counts;
+}
+
+/** What became of a finding after its round: `fixed` when the next round
+ *  no longer raises it, `declined` or `follow_up` when the implementer's
+ *  ledger line adjudicated it that way, `open` when nothing after the
+ *  round closed it — including every finding still standing in the run's
+ *  last round. */
+export type Fate = "fixed" | "declined" | "follow_up" | "open";
+
+/** The chip's label for each fate. */
+export const FATE_LABEL: Record<Fate, string> = {
+  fixed: "fixed",
+  declined: "declined",
+  follow_up: "follow-up",
+  open: "open",
+};
+
+export interface HistoryFinding {
+  finding: Finding;
+  fate: Fate;
+  /** The implementer's DECLINE/FOLLOW_UP line when the ledger names one. */
+  sentence: string | null;
+}
+
+/** One review round's findings with their fates. */
+export interface RoundHistory {
+  round: number;
+  findings: HistoryFinding[];
+}
+
+// The key the store compares rounds by (store's `_finding_keys()`, §2's
+// `path:line:severity`): a missing line keys at -1, and the fields join on
+// the canonical form's unit separator so a path holding ":" cannot forge
+// another finding's key.
+function findingKey(finding: Finding): string {
+  return [finding.path, finding.line ?? -1, finding.severity].join("\x1f");
+}
+
+// The ledger row a changes-requested round leaves (holophyte/loop.py):
+// "Round N: REQUEST_CHANGES -> fix round", the reviewer's verdict, then
+// "Implementer response:" and the fix round's reply, whose ADDRESS /
+// FOLLOW_UP / DECLINE lines are the implementer's adjudications.
+const RESPONSE_MARK = "Implementer response:";
+const ADJUDICATION_RE = /^\s*(?:[-*+]|\d+[.)]\s+)?(DECLINE|FOLLOW[ _-]?UP)\b/i;
+
+/** The implementer-response lines of `round`'s ledger row: the last
+ *  `Round N:` row carrying the mark, else none. */
+function responseLines(ledger: LedgerRow[], round: number): string[] {
+  const head = `Round ${round}:`;
+  for (let index = ledger.length - 1; index >= 0; index -= 1) {
+    const row = ledger[index]!;
+    if (row.kind !== "round" || !row.text.startsWith(head)) continue;
+    const mark = row.text.indexOf(RESPONSE_MARK);
+    return mark < 0 ? [] : row.text.slice(mark + RESPONSE_MARK.length).split("\n");
+  }
+  return [];
+}
+
+/** `text` as a lowercase word stream: markup and punctuation gone, so a
+ *  path and its citation compare equal however either was written. */
+function wordStream(text: string): string {
+  return (text.toLowerCase().match(/[\w']+/g) ?? []).join(" ");
+}
+
+/** True when an adjudication `line` names the finding: by its path under
+ *  either spelling, its title, or its first words. */
+function namesFinding(line: string, finding: Finding): boolean {
+  const stream = wordStream(line);
+  const parts = findingParts(finding.message);
+  const needles = [wordStream(findingPath(finding)), wordStream(finding.path)];
+  if (parts.title != null) {
+    needles.push(wordStream(parts.title));
+    const criterion = /^criterion\s+(\d+)/i.exec(parts.title);
+    if (criterion) needles.push(`criterion ${criterion[1]}`);
+  }
+  const basis = parts.title ?? (parts.body !== "" ? parts.body : finding.message);
+  const first = wordStream(basis).split(" ").filter(Boolean).slice(0, 5).join(" ");
+  needles.push(first);
+  return needles.some((needle) => needle.length >= 3 && stream.includes(needle));
+}
+
+/** The adjudication `lines` pass on `finding`: the first DECLINE or
+ *  FOLLOW_UP line naming it, as its fate and the sentence itself. */
+function adjudicated(lines: string[], finding: Finding): { fate: Fate; sentence: string } | null {
+  for (const raw of lines) {
+    const verdict = ADJUDICATION_RE.exec(raw);
+    if (verdict == null || !namesFinding(raw, finding)) continue;
+    return {
+      fate: verdict[1]!.toLowerCase().startsWith("decline") ? "declined" : "follow_up",
+      sentence: raw.trim(),
+    };
+  }
+  return null;
+}
+
+/** Every round's findings with what became of each, newest round first.
+ *
+ *  The fate comes from what the store already holds: a DECLINE or
+ *  FOLLOW_UP line in the round's ledger row (the `Implementer response`
+ *  under `Round N: REQUEST_CHANGES -> fix round`) that names the finding
+ *  is the implementer adjudicating it; absent that, a key missing from
+ *  the next round means the fix round resolved it; anything left was
+ *  still open — in the last round, when the run ended. */
+export function findingsHistory(rounds: Round[], ledger: LedgerRow[]): RoundHistory[] {
+  const ordered = [...rounds].sort((a, b) => a.round - b.round);
+  const keys = ordered.map((round) => new Set(round.findings.map(findingKey)));
+  return ordered
+    .map((round, index) => {
+      const lines = responseLines(ledger, round.round);
+      const next = keys[index + 1];
+      const findings = round.findings
+        .map((finding): HistoryFinding => {
+          const judged = adjudicated(lines, finding);
+          if (judged != null) return { finding, fate: judged.fate, sentence: judged.sentence };
+          return { finding, fate: next != null && !next.has(findingKey(finding)) ? "fixed" : "open", sentence: null };
+        })
+        .sort((a, b) => RANK[severityOf(a.finding)] - RANK[severityOf(b.finding)]);
+      return { round: round.round, findings };
+    })
+    .reverse();
 }
