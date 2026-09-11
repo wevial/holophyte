@@ -201,6 +201,18 @@ CREATE TABLE IF NOT EXISTS runs (
     -- round timeline by the cap this run had rather than a constant
     -- (KO-321). NULL on every run recorded before the column existed.
     reviewRoundCap    INTEGER,
+    -- What the last shepherd pass saw of the pull request a run is parked
+    -- on, recorded after the pass's own pushes and replies (KO-362):
+    -- GitHub's `updatedAt` as the ISO 8601 string it answers, and the
+    -- count of review threads. The loop's per-tick reconcile holds the
+    -- pull request's current values against these, and a newer
+    -- `updatedAt` or a grown count is review activity the shepherd has
+    -- not answered. NULL on a run parked with no pull request, by a
+    -- module older than the columns, or when GitHub could not be asked
+    -- at the park, which the reconcile reads as "record, do not
+    -- shepherd".
+    prSeenAt          TEXT,
+    prSeenThreads     INTEGER,
     UNIQUE (ticketId, attempt)
 );
 
@@ -371,8 +383,11 @@ CREATE TABLE IF NOT EXISTS interventions (
 # behind `[serve] actions = true`, each recorded before its `systemctl`
 # runs (KO-348). Version 13 is the action CHECK admitting 'config_edit',
 # the daemon's `PUT /config` behind `[serve] config_edit = true`, recorded
-# before the file is replaced (KO-356).
-SCHEMA_VERSION = 13
+# before the file is replaced (KO-356). Version 14 is `runs.prSeenAt`
+# and `runs.prSeenThreads`, what the last shepherd pass saw of the
+# pull request its run parked on, so the loop's tick can tell new
+# review activity from its own (KO-362).
+SCHEMA_VERSION = 14
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -527,6 +542,16 @@ ADDED_COLUMNS = (
         "tickets",
         "body",
         "body TEXT NOT NULL DEFAULT ''",
+    ),
+    (
+        "runs",
+        "prSeenAt",
+        "prSeenAt TEXT",
+    ),
+    (
+        "runs",
+        "prSeenThreads",
+        "prSeenThreads INTEGER",
     ),
 )
 
@@ -1291,7 +1316,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
 
 
 def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
-         now=None, approved_sha=None):
+         now=None, approved_sha=None, pr_seen=None):
     """Park the live run `run_id` in `phase` and give its lease back.
 
     `[merge] approve = "human"`: the reviewer approved and the pre-merge
@@ -1322,6 +1347,13 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
     ways once a fix round moves the candidate: the resumed shepherd merges
     the candidate only at this sha, and reviews it again at any other.
 
+    `pr_seen` is `(updated_at, threads)` as the pull request read after
+    the pass's own writes -- GitHub's `updatedAt` string and its review
+    thread count -- stored as `runs.prSeenAt` and `runs.prSeenThreads`
+    in the same transaction (KO-362), so the loop's per-tick reconcile
+    knows what activity the pass has already answered. None records
+    nothing.
+
     `phase` must be one of `PARKED_PHASES`; the sweep leaves those alone, so
     a run parked here is not reported dead for having no heartbeat. Parking
     a run that has already ended raises `RunEnded`, and an unknown `run_id`
@@ -1349,6 +1381,9 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
         if approved_sha is not None:
             conn.execute("UPDATE runs SET approvedSha = ? WHERE id = ?",
                          (approved_sha, run_id))
+        if pr_seen is not None:
+            conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?"
+                         " WHERE id = ?", (*pr_seen, run_id))
         conn.execute(
             "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
             " WHERE id = ? AND activeRunId = ?",
@@ -1582,11 +1617,26 @@ def walk_ticket(conn, ticket_id, to_status):
 class RequeueRefused(Exception):
     """A requeue `requeue()` will not do; nothing was written.
 
-    The ticket does not exist, still has a live run, is not `in_flight`, or
-    its last run did not end `failed` -- each is the same answer to the
-    operator: this is not a failed ticket waiting to go back in the queue,
-    so the message names which and the command line exits on it.
+    The ticket does not exist, still has a live run, is neither `in_flight`
+    nor parked on a merge-gate conflict, or its last run did not end
+    `failed` -- each is the same answer to the operator: this is not a
+    failed ticket waiting to go back in the queue, so the message names
+    which and the command line exits on it.
     """
+
+
+# The outcome reason the merge gate fails a run with when merging `main`
+# into the branch conflicts (KO-342): `is_gate_conflict()` recognises it,
+# and `requeue()` admits a `blocked_on_operator` ticket on that ground
+# alone (KO-365). The loop composes the reason from this prefix so the two
+# cannot drift apart.
+GATE_CONFLICT_REASON = "merging main into "
+
+
+def is_gate_conflict(reason):
+    """Whether a run's `outcomeReason` is the merge gate's conflict park."""
+    return (reason or "").startswith(GATE_CONFLICT_REASON) \
+        and " conflicted on: " in reason
 
 
 def requeue(conn, ticket_id, note, now=None):
@@ -1601,11 +1651,19 @@ def requeue(conn, ticket_id, note, now=None):
     the operator's reason, rather than the mislabeled `close_out` those
     sessions wrote.
 
-    Refuses, with `RequeueRefused` and no write, anything that is not a
-    failed ticket with no live run: an unknown ticket, one with an active
-    run, one not `in_flight` (already `ready`, say), or one whose last run
-    ended some other way (merged) or never ended. Touches no board state:
-    the loop mirrors the Linear status when it claims.
+    One more admission (KO-365): a ticket parked `blocked_on_operator`
+    because the merge gate's merge of `main` into the branch conflicted
+    (`is_gate_conflict()` on the newest run's reason). The run failed and
+    the branch was preserved; the operator resolves the merge on the branch
+    and this is the way back -- `--repoint` refuses a failed run. The block
+    is cleared with the same row and walk. Any other `blocked_on_operator`
+    park (a pull request, `merge?`, a strike-out) keeps the refusal.
+
+    Refuses, with `RequeueRefused` and no write, anything else: an unknown
+    ticket, one with an active run, one not `in_flight` (already `ready`,
+    say), or one whose last run ended some other way (merged) or never
+    ended. Touches no board state: the loop mirrors the Linear status when
+    it claims.
     """
     with _transaction(conn):
         row = conn.execute(
@@ -1618,21 +1676,27 @@ def requeue(conn, ticket_id, note, now=None):
             raise RequeueRefused(
                 f"{identifier}: run {active_run_id} is still live;"
                 " a requeue is for a ticket whose run has ended")
-        if status != "in_flight":
+        run = (conn.execute("SELECT outcome, outcomeReason FROM runs"
+                            " WHERE id = ?", (last_run_id,)).fetchone()
+               if last_run_id is not None else None)
+        parked_on_conflict = status == "blocked_on_operator" \
+            and run is not None and run[0] == "failed" \
+            and is_gate_conflict(run[1])
+        if status != "in_flight" and not parked_on_conflict:
             raise RequeueRefused(
                 f"{identifier} is {status}, not in_flight; nothing to requeue")
-        run = (conn.execute("SELECT outcome FROM runs WHERE id = ?",
-                            (last_run_id,)).fetchone()
-               if last_run_id is not None else None)
         if run is None:
             raise RequeueRefused(
                 f"{identifier} has no ended run to requeue after")
-        (outcome,) = run
+        outcome = run[0]
         if outcome != "failed":
             raise RequeueRefused(
                 f"{identifier}: run {last_run_id} ended {outcome},"
                 " not failed; nothing to requeue")
         record_intervention(conn, last_run_id, "requeue", note, now=now)
+        if parked_on_conflict:
+            conn.execute("UPDATE tickets SET blockedQuestion = NULL"
+                         " WHERE id = ?", (ticket_id,))
         walk_ticket(conn, ticket_id, "ready")
     return last_run_id
 
@@ -1691,7 +1755,7 @@ def approve(conn, ticket_id, note, now=None):
         " at the merge gate", now)
 
 
-def shepherd(conn, ticket_id, note, now=None):
+def shepherd(conn, ticket_id, note, now=None, source="human"):
     """Send a ticket parked on its pull request back to the shepherd; return
     the parked run's id.
 
@@ -1709,16 +1773,19 @@ def shepherd(conn, ticket_id, note, now=None):
     under `[merge] mode = "local"`) has no threads to look at again, and
     releasing it would send the candidate down the local gate, where a
     release is a merge; that is `approve()`'s to do, so the shepherd
-    refuses it with nothing written.
+    refuses it with nothing written. `source` is who sent it back:
+    `"human"` for `--shepherd`, `"supervisor"` when the loop's own tick
+    saw new review activity on the pull request (KO-362), so the
+    intervention row and the ledger say which.
     """
     return _release_parked(
         conn, ticket_id, "shepherd", note,
         "sent back to the shepherd; the next claim resumes the candidate"
-        " on its pull request", now, require_pr=True)
+        " on its pull request", now, require_pr=True, source=source)
 
 
 def _release_parked(conn, ticket_id, action, note, reason, now,
-                    require_pr=False):
+                    require_pr=False, source="human"):
     """The transaction `approve()` and `shepherd()` share: the intervention
     row with `action`, the parked run ended `abandoned` for `reason` with
     its resume point at the merge gate, the ticket walked to `ready`.
@@ -1761,7 +1828,8 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
                 f" {last_run_id} was parked under [merge] mode = \"local\");"
                 " there are no threads to shepherd, and a release here would"
                 " merge the candidate -- that is --approve's to say")
-        record_intervention(conn, last_run_id, action, note, now=now)
+        record_intervention(conn, last_run_id, action, note, now=now,
+                            source=source)
         release(conn, last_run_id, "abandoned", reason, now=now)
         # `release()` records a resume point for failed runs only; this one
         # is the operator's, written once the ending is stamped.

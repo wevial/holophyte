@@ -44,6 +44,8 @@ DOCUMENTED_COLUMNS = {
         # Store-owned: the review-round cap the loop gave the run, so the
         # console sizes the round timeline by it rather than a constant.
         "reviewRoundCap",
+        "prSeenAt",
+        "prSeenThreads",
         # Store-owned, not a documented field: §5 requires a resume to
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.

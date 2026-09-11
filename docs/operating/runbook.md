@@ -191,5 +191,6 @@ coloured dot on the glyph means something in "needs you".
 ## Close the loop afterwards
 
 Reconcile every touched surface before ending an incident: store status,
-board status, `FINDINGS.md`, branches and stashes. File one ticket per gap
+board status, `FINDINGS.md` where a target renders one, branches and
+stashes. File one ticket per gap
 the incident revealed; every recipe above started as one.

@@ -44,7 +44,7 @@ sequenceDiagram
     Fac->>Store: park awaiting_merge_approval, release the lease
     Fac->>Lin: ticket blocked_on_operator asking merge?
   else mode = "local", approve = "auto"
-    Fac->>Fac: git merge --no-ff into main, regenerate FINDINGS.md
+    Fac->>Fac: git merge --no-ff into main (FINDINGS.md rendered only under findings = "repo")
     Fac->>Store: release run as merged, walk the ticket to merged
     Fac->>Lin: state Done, ledger comment
   end
@@ -159,8 +159,9 @@ board that cannot be read is recorded as "no evidence" and the merge
 proceeds on the frozen contract. Then, under the defaults (`[merge]
 approve = "auto"`, `mode = "local"`), `git merge --no-ff` into `main`, the
 worktree and branch are removed, `store.release()` ends the run as
-`merged` and walks the ticket to `merged`, `findings.render()` rewrites the
-`FINDINGS.md` window, and the provider pushes Done and a ledger comment.
+`merged` and walks the ticket to `merged`, the `FINDINGS.md` window is
+rewritten where `[report] findings = "repo"`, and the provider pushes Done
+and a ledger comment.
 Under `[merge] approve = "human"` in local mode the clean gate parks the run instead:
 phase `awaiting_merge_approval`, ticket `blocked_on_operator`, branch and
 worktree preserved, lease released, until `--approve KO-n` sends it back
@@ -171,7 +172,8 @@ PR mode is checked first, and `approve` is then read against the PR.
 Both paths are described in the [loop](../loop.md) page.
 
 Trace: `runs.outcome = merged`, `tickets.status = merged`, a merge commit
-whose message names the ticket, a fresh `FINDINGS.md`.
+whose message names the ticket, and a fresh `FINDINGS.md` in a target that
+opted in with `[report] findings = "repo"`.
 
 ### 8. After the merge
 

@@ -1868,19 +1868,23 @@ class ReportConfigTests(ConfigTestCase):
                 self.assertIn(key, message)
                 report.assert_not_called()
 
-    def test_findings_is_window_by_default_and_off_when_switched(self):
-        """`[report] findings`: `window` renders the file as always, `off`
-        switches it off; absent is `window`."""
+    def test_findings_is_none_by_default_and_repo_when_opted_in(self):
+        """KO-363: `[report] findings` is `none` when absent -- the store is
+        the record and nothing is rendered -- and `repo` for a target that
+        wants the rendered file beside its code."""
         self.locate()
         self.assertEqual(holophyte.config.report_config(self.tgt).findings,
-                         "window")
+                         "none")
 
-        self.locate('[report]\nfindings = "off"\n')
+        self.locate('[report]\nfindings = "repo"\n')
         self.assertEqual(holophyte.config.report_config(self.tgt).findings,
-                         "off")
+                         "repo")
 
     def test_a_findings_mode_nobody_defined_is_a_startup_error_naming_it(self):
-        for line in ('findings = "sometimes"', "findings = false"):
+        """`"yes"` is not an answer (KO-363), and neither are the modes the
+        key had before it: startup fails naming `[report] findings`."""
+        for line in ('findings = "yes"', 'findings = "window"',
+                     'findings = "off"', "findings = false"):
             with self.subTest(line=line):
                 target = self.locate(f"[report]\n{line}\n").path
 
@@ -1955,8 +1959,8 @@ class MergeConfigTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(holophyte.config.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", "ticket", "", "park",
-                          ()))
+                         ("auto", "local", 5, "merge", 180, "ticket", "",
+                          "park", ()))
 
     def test_after_is_read_as_a_list_of_commands(self):
         """`after` is the console build the daemon's bundle depends on, in
@@ -1992,6 +1996,32 @@ class MergeConfigTests(ConfigTestCase):
 
         self.assertEqual(
             holophyte.config.merge_config(self.tgt).pr_merge_method, "squash")
+
+    def test_pr_poll_sec_is_read(self):
+        """The least interval between two loop-started shepherd rounds on
+        one pull request; absent, three minutes (KO-362)."""
+        self.locate('[merge]\nmode = "pr"\npr_poll_sec = 60\n')
+
+        self.assertEqual(
+            holophyte.config.merge_config(self.tgt).pr_poll_sec, 60)
+
+    def test_pr_poll_sec_must_be_an_integer_of_at_least_ten(self):
+        """`"180"` is a string and `5` a poll of GitHub for a reviewer's
+        next keystroke: each is a startup error naming
+        `[merge] pr_poll_sec` (KO-362)."""
+        for line in ('pr_poll_sec = "180"', "pr_poll_sec = 5"):
+            with self.subTest(line=line):
+                target = self.locate(f"[merge]\nmode = \"pr\"\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[merge] pr_poll_sec", message)
+                self.assertIn("at least 10", message)
+                report.assert_not_called()
 
     def test_pr_rounds_is_read(self):
         self.locate('[merge]\nmode = "pr"\npr_rounds = 2\n')
