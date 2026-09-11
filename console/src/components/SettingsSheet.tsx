@@ -1,8 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ACTIONS_OFF, ROUTES, postAction } from "../lib/actions";
-import { fetchConfig, putConfig, type ConfigAnswer } from "../lib/config";
+import { fetchConfig, namedKey, putConfig, type ConfigAnswer, type ConfigValues, type ConfigWrite, type PatchValue } from "../lib/config";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
-import { deleteKey, findKey, namedKey, writeKey, type KeyRef } from "../lib/toml";
 import type { Status } from "../lib/types";
 import { ActionButton } from "./ActionButton";
 import { NEEDS_TOKEN } from "./TicketSheet";
@@ -13,15 +12,17 @@ export const CONFIG_EDIT_OFF = "Read-only: this daemon has not opted into config
 export const APPLIES_LINE = "A saved change applies at the loop's next start.";
 /** The action beside the banner, the same wired label the rows post. */
 export const RESTART_LABEL = "Restart supervisor";
-/** The note under a field whose key the text holds in a shape the line
- *  editor does not bind (a triple-quoted string, an inline table, a
- *  float): the field shows the value's source, read-only. */
+/** The note under a field whose key the file holds in another shape than
+ *  the field edits (a table where a string is expected, a list of numbers):
+ *  the field shows the value as the daemon parsed it, read-only. */
 export const UNBOUND_NOTE = "edit this one in the raw tab";
+/** The line over the fields when the daemon could not parse the file. */
+export const UNPARSED_LINE = "The file does not parse as TOML; the fields are empty until the raw tab fixes it.";
 
 type FieldKind = { kind: "text" } | { kind: "number" } | { kind: "lines" } | { kind: "select"; options: readonly string[] };
 
 /** One typed field: the `[table] key` it binds and how it is drawn. */
-export type Field = KeyRef & { label: string } & FieldKind;
+export type Field = { table: string; key: string; label: string } & FieldKind;
 
 /** The keys the sheet binds, in the order they are drawn; every other
  *  key stays editable in the raw tab. The option lists are the loader's
@@ -39,22 +40,43 @@ export const FIELDS: readonly Field[] = [
   { table: "merge", key: "after", label: "After merge", kind: "lines" },
 ];
 
-const fieldId = (field: KeyRef) => `${field.table}.${field.key}`;
-const sameKey = (a: KeyRef, b: KeyRef) => a.table === b.table && a.key === b.key;
+const fieldId = (field: Field) => `${field.table}.${field.key}`;
 
-type Verdict = { ok: true; detail: string } | { ok: false; error: string; at: KeyRef | null };
+/** What the daemon's `values` hold for a field: `absent` when the key is
+ *  not in the file, the typed value when it is in the field's shape, or
+ *  `unbound` with the value as parsed when it is in another shape. */
+type Bound = { state: "absent" } | { state: "bound"; value: PatchValue } | { state: "unbound"; value: unknown };
+
+const isLines = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
+
+function bind(field: Field, values: ConfigValues | null): Bound {
+  const table = values?.[field.table];
+  if (table == null || typeof table !== "object" || !(field.key in table)) return { state: "absent" };
+  const value: unknown = table[field.key];
+  const fits =
+    field.kind === "number" ? typeof value === "number" && Number.isInteger(value) : field.kind === "lines" ? isLines(value) : typeof value === "string";
+  return fits ? { state: "bound", value: value as PatchValue } : { state: "unbound", value };
+}
+
+const same = (a: PatchValue, b: PatchValue) => (Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((item, at) => item === b[at]) : a === b);
+
+type Verdict = { ok: true; detail: string } | { ok: false; error: string; at: string | null };
 
 /**
  * A project's settings, opened from its Floor block: the ticket sheet's
  * frame over the daemon's `GET /config`. The Fields tab binds `FIELDS`
- * to the text, each edit rewriting that key's line and nothing else
- * (`lib/toml.ts`); the Raw tab is the whole text, and the fields re-read
- * from it. Save is `PUT /config`; the daemon's verdict shows inline, a
- * refusal under the field it names (the Fields tab selected) or under
- * the raw tab. A daemon whose
- * `/status` lacks `config_edit` draws every field read-only under a line
- * naming the key. Escape, the backdrop or the close button calls
- * `onClose`; focus moves to the panel on open.
+ * to the daemon's parsed `values`; an edit is held as that key's new
+ * value and Save sends the changed keys alone as a `PUT /config`
+ * `patch` of dotted keys, so the console never parses or rewrites TOML.
+ * The Raw tab is the whole `text`, and a save from it sends `text`
+ * instead: the two drafts are exclusive, an edit in one tab discarding
+ * the other's. An accepted save re-reads `GET /config`, so the fields
+ * show the file as the daemon wrote it. The daemon's verdict shows
+ * inline, a refusal under the field it names (the Fields tab selected)
+ * or under the raw tab. A daemon whose `/status` lacks `config_edit`
+ * draws every field read-only under a line naming the key. Escape, the
+ * backdrop or the close button calls `onClose`; focus moves to the panel
+ * on open.
  */
 export function SettingsSheet({
   base,
@@ -76,8 +98,8 @@ export function SettingsSheet({
   const titleId = useId();
   const [answer, setAnswer] = useState<ConfigAnswer | null>(null);
   const [text, setText] = useState("");
-  const [original, setOriginal] = useState("");
   const [tab, setTab] = useState<"fields" | "raw">("fields");
+  const [edits, setEdits] = useState<Record<string, PatchValue>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [restart, setRestart] = useState<{ text: string; ok: boolean } | null>(null);
@@ -96,35 +118,53 @@ export function SettingsSheet({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const load = async () => {
+    const result = await fetchConfig(base, fetchRef.current);
+    setAnswer(result);
+    if (result.state === "ok") setText(result.config.text);
+    setEdits({});
+    setDrafts({});
+  };
+
   useEffect(() => {
     let alive = true;
     void fetchConfig(base, fetchRef.current).then((result) => {
       if (!alive) return;
       setAnswer(result);
-      if (result.state === "ok") {
-        setText(result.config.text);
-        setOriginal(result.config.text);
-      }
+      if (result.state === "ok") setText(result.config.text);
     });
     return () => {
       alive = false;
     };
   }, [base]);
 
-  const setKey = (field: KeyRef, value: string | number | string[] | null) => {
-    setText((current) => (value == null ? deleteKey(current, field) : writeKey(current, field, value)));
+  const loaded = answer?.state === "ok";
+  const config = answer?.state === "ok" ? answer.config : null;
+  const values = config?.values ?? null;
+  const rawDirty = config != null && text !== config.text;
+  const dirty = rawDirty || Object.keys(edits).length > 0;
+
+  /** Hold `value` as the field's edit, or drop the edit when it is the
+   *  file's own value again, so the patch carries changed keys alone. */
+  const edit = (field: Field, value: PatchValue | null) => {
+    if (config != null && rawDirty) setText(config.text);
+    const id = fieldId(field);
+    const bound = bind(field, values);
+    const unchanged = value == null ? bound.state === "absent" : bound.state === "bound" && same(bound.value, value);
+    setEdits(({ [id]: _dropped, ...rest }) => (unchanged || value == null ? rest : { ...rest, [id]: value }));
   };
 
   const save = async () => {
     setVerdict(null);
-    const result = await putConfig(base, text, fetchRef.current);
+    const write: ConfigWrite = rawDirty ? { text } : { patch: edits };
+    const result = await putConfig(base, write, fetchRef.current);
     if (result.ok) {
-      setOriginal(text);
+      await load();
       setVerdict({ ok: true, detail: `Saved; applies at the ${result.applies}${result.backup ? `; previous text in ${result.backup}` : ""}` });
       return;
     }
     const at = result.refused ? namedKey(result.error) : null;
-    const field = at == null ? null : (FIELDS.find((candidate) => sameKey(candidate, at)) ?? null);
+    const field = at != null && FIELDS.some((candidate) => fieldId(candidate) === at) ? at : null;
     setVerdict({ ok: false, error: result.error, at: field });
     // The refusal lands in whichever panel holds its field, so a save from
     // the raw tab that the daemon refuses by name is never rendered unseen.
@@ -141,16 +181,14 @@ export function SettingsSheet({
         }
       : undefined;
 
-  const errorFor = (field: KeyRef) => (verdict != null && !verdict.ok && verdict.at != null && sameKey(verdict.at, field) ? verdict.error : null);
+  const errorFor = (id: string) => (verdict != null && !verdict.ok && verdict.at === id ? verdict.error : null);
   const rawError = verdict != null && !verdict.ok && verdict.at == null ? verdict.error : null;
-  const dirty = text !== original;
-  const loaded = answer?.state === "ok";
+  const inert = !editable || !loaded || values == null;
 
   const control = (field: Field) => {
     const id = fieldId(field);
-    const error = errorFor(field);
-    const hit = findKey(text, field);
-    const value = hit?.value;
+    const error = errorFor(id);
+    const bound = bind(field, values);
     const common = {
       id,
       "data-field": id,
@@ -158,22 +196,22 @@ export function SettingsSheet({
       "aria-describedby": error != null ? `${id}-error` : undefined,
       className: "w-full rounded-button border border-chip-border bg-card px-2 py-1 font-mono text-[12px] text-ink disabled:opacity-60 read-only:opacity-60",
     };
-    if (hit != null && value === undefined) {
-      // Present, but in a shape the line editor does not bind: shown as
-      // its source on one line, read-only, so a typed edit never rewrites it.
+    if (bound.state === "unbound") {
+      // Present, but in another shape than the field edits: shown as the
+      // daemon parsed it, read-only, so a typed edit never overwrites it.
       return (
         <>
-          <input {...common} type="text" readOnly data-unbound aria-describedby={`${id}-unbound`} value={hit.raw.trim().replace(/\s*\n\s*/g, " ")} />
+          <input {...common} type="text" readOnly data-unbound aria-describedby={`${id}-unbound`} value={JSON.stringify(bound.value)} />
           <p id={`${id}-unbound`} data-unbound-note={id} className="font-mono text-[11px] text-muted">
             {UNBOUND_NOTE}
           </p>
         </>
       );
     }
+    const value: PatchValue | null = id in edits ? edits[id]! : bound.state === "bound" ? bound.value : null;
     if (field.kind === "select") {
-      const current = typeof value === "string" ? value : "";
       return (
-        <select {...common} disabled={!editable || !loaded} value={current} onChange={(event) => setKey(field, event.target.value === "" ? null : event.target.value)}>
+        <select {...common} disabled={inert} value={typeof value === "string" ? value : ""} onChange={(event) => edit(field, event.target.value === "" ? null : event.target.value)}>
           <option value="">(not set)</option>
           {field.options.map((option) => (
             <option key={option} value={option}>
@@ -184,17 +222,19 @@ export function SettingsSheet({
       );
     }
     if (field.kind === "lines") {
-      const lines = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+      const lines = isLines(value) ? value : [];
       return (
         <textarea
           {...common}
           rows={Math.max(2, lines.length + 1)}
-          readOnly={!editable || !loaded}
+          readOnly={inert}
           value={drafts[id] ?? lines.join("\n")}
           onChange={(event) => {
             setDrafts((current) => ({ ...current, [id]: event.target.value }));
-            const entries = event.target.value.split("\n").filter((line) => line.trim() !== "");
-            setKey(field, entries.length === 0 ? null : entries);
+            edit(
+              field,
+              event.target.value.split("\n").filter((line) => line.trim() !== ""),
+            );
           }}
           onBlur={() => setDrafts(({ [id]: _dropped, ...rest }) => rest)}
         />
@@ -207,24 +247,16 @@ export function SettingsSheet({
           type="number"
           min={1}
           step={1}
-          readOnly={!editable || !loaded}
+          readOnly={inert}
           value={typeof value === "number" ? value : ""}
           onChange={(event) => {
             const parsed = Number.parseInt(event.target.value, 10);
-            setKey(field, event.target.value === "" || Number.isNaN(parsed) ? null : parsed);
+            edit(field, event.target.value === "" || Number.isNaN(parsed) ? null : parsed);
           }}
         />
       );
     }
-    return (
-      <input
-        {...common}
-        type="text"
-        readOnly={!editable || !loaded}
-        value={typeof value === "string" ? value : ""}
-        onChange={(event) => setKey(field, event.target.value === "" ? null : event.target.value)}
-      />
-    );
+    return <input {...common} type="text" readOnly={inert} value={typeof value === "string" ? value : ""} onChange={(event) => edit(field, event.target.value === "" ? null : event.target.value)} />;
   };
 
   return (
@@ -241,7 +273,7 @@ export function SettingsSheet({
         <header className="flex flex-col gap-[6px] border-b border-line px-5 py-4">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[12px] font-semibold text-ink">Settings</span>
-            <span className="truncate font-mono text-[11px] text-faint">{answer?.state === "ok" ? answer.config.path : path}</span>
+            <span className="truncate font-mono text-[11px] text-faint">{config?.path || path}</span>
             <button
               type="button"
               aria-label="Close"
@@ -291,12 +323,16 @@ export function SettingsSheet({
             <p role="alert" className="font-mono text-[11px] text-bad-text">
               config failed: {answer.error}
             </p>
+          ) : answer.config.values == null ? (
+            <p data-unparsed className="mb-3 font-mono text-[11px] text-muted">
+              {UNPARSED_LINE}
+            </p>
           ) : null}
           {tab === "fields" ? (
             <div role="tabpanel" data-tab="fields" className="flex flex-col gap-3">
               {FIELDS.map((field) => {
                 const id = fieldId(field);
-                const error = errorFor(field);
+                const error = errorFor(id);
                 return (
                   <div key={id} className="flex flex-col gap-1">
                     <label htmlFor={id} className="text-[12px] font-semibold text-ink">
@@ -324,6 +360,7 @@ export function SettingsSheet({
                 value={text}
                 rows={Math.max(12, text.split("\n").length + 1)}
                 onChange={(event) => {
+                  setEdits({});
                   setDrafts({});
                   setText(event.target.value);
                 }}
