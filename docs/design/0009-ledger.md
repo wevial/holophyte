@@ -16,7 +16,7 @@ operator writes by hand.
 A `ledger` table the loop writes at each close-out from what it already
 knows: rounds, adjudications, operator steps. The Linear comment becomes a
 projection of that row, as ticket status already is. FINDINGS.md becomes
-`[report] findings = window | off`, kept on for public repositories. The
+`[report] findings = none | repo`, off by default and opted into per target. The
 daemon serves the ledger per run.
 
 ## Consequences

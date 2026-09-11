@@ -1028,16 +1028,18 @@ def merge_config(target):
 # supervisor compares against its own -- and the label stays out of the
 # store on purpose, so it can be renamed later without a migration.
 #
-# `findings` is whether the loop keeps FINDINGS.md at all: `window` renders
-# and commits the bounded window at every close-out, as it always has;
-# `off` skips both, leaving whatever file is there untouched. The ledger
-# lives in the store either way (design note 9) and the daemon serves it
-# from `/runs/N/ledger`; the file is a projection some repositories want
-# and others do not.
-FINDINGS_MODES = ("window", "off")
+# `findings` is whether the loop renders FINDINGS.md at all: `none`, the
+# default, renders and commits nothing -- the store is the record, read
+# through the console or `--report`; `repo` renders and commits the bounded
+# window at every close-out, for a target that wants the evidence beside
+# its code. The ledger lives in the store either way (design note 9) and
+# the daemon serves it from `/runs/N/ledger`; the file is a projection a
+# target opts into, and a copy that can drift from the store is worse than
+# none.
+FINDINGS_MODES = ("none", "repo")
 REPORT_KEYS = {
     "host_label": None,
-    "findings": "window",
+    "findings": "none",
 }
 KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
 ReportConfig = collections.namedtuple("ReportConfig",
@@ -1052,7 +1054,7 @@ def report_config(target):
     it always was -- and a present `host_label` has to be a string, and a
     non-empty one: `3` names no writer, and `""` would render every host as
     nothing, which is the invisible blank `host_name()`'s `?` exists to
-    avoid. `findings` is one of `FINDINGS_MODES`, `window` when absent. The
+    avoid. `findings` is one of `FINDINGS_MODES`, `none` when absent. The
     refusal names the table, the key and the constraint, like a bad
     `[loop]` value. Keys this version does not know are refused by
     `check_config_keys()`.

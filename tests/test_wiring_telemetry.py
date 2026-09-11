@@ -169,6 +169,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         file that says a run took two rounds while the row says four is the
         drift this ticket exists to remove.
         """
+        self.tgt.config_path.write_text('[report]\nfindings = "repo"\n')
         self.loop("- factory.py:1: name the estimate\nVERDICT: REQUEST_CHANGES",
                   "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "VERDICT: APPROVE")
@@ -347,7 +348,7 @@ class ReportTests(ReportStoreCase):
         # `[report] findings` mode -- the default, nothing configured -- and
         # the one line on the supervisor: none has ever beaten in this store.
         self.assertEqual(printed[:5], holophyte.report.report_lines(self.conn))
-        self.assertEqual(printed[5], "findings: window")
+        self.assertEqual(printed[5], "findings: none")
         self.assertEqual(printed[6], "supervisor: none recorded")
         self.assertEqual(len(printed), 7)
         # Nothing was claimed: three runs went in, three are there, all ended,

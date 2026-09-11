@@ -290,9 +290,10 @@ def write_findings(target, conn, path=None):
 
 
 def findings_off(target):
-    """Whether `[report] findings = "off"` has switched the file off for
-    `target`: the loop then neither writes nor commits FINDINGS.md."""
-    return report_config(target).findings == "off"
+    """Whether `target` has not opted into the rendered file: `[report]
+    findings` is `"none"` (the default) rather than `"repo"`, and the loop
+    neither writes nor commits FINDINGS.md."""
+    return report_config(target).findings != "repo"
 
 
 def commit_findings(target, message):
@@ -300,8 +301,8 @@ def commit_findings(target, message):
 
     Returns whether it committed. The guard is not an optimization: a
     regeneration that produced the same bytes has nothing to record, and
-    `git commit` on an unchanged tree fails. Under `[report] findings =
-    "off"` nothing is committed either: the file is not the loop's to
+    `git commit` on an unchanged tree fails. Without `[report] findings =
+    "repo"` nothing is committed either: the file is not the loop's to
     touch, whatever state a hand edit left it in.
     """
     if findings_off(target):
@@ -321,9 +322,9 @@ def refresh_findings(target, conn):
     A `conn` of None makes this a no-op, like `set_phase()` and
     `record_round()`: a storeless `run_task()` has no rows to render, and the
     file it would otherwise overwrite with an empty window is left alone. So
-    does `[report] findings = "off"`: the ledger is in the store and served
-    from `/runs/N/ledger`, and a target that has switched the file off keeps
-    whatever FINDINGS.md it has, or none.
+    does the default `[report] findings = "none"`: the ledger is in the store
+    and served from `/runs/N/ledger`, and a target that has not opted into
+    the file with `"repo"` keeps whatever FINDINGS.md it has, or none.
     """
     if conn is None or findings_off(target):
         return
