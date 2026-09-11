@@ -1953,7 +1953,8 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
     and, since KO-362, the loop's own tick: the park reads the pull
     request once more, *after* this pass's pushes and replies, and
     records its `updatedAt` and thread count on the run
-    (`runs.prSeenAt`, `runs.prSeenThreads`), so the reconcile that sees
+    (`runs.prSeenAt`, `runs.prSeenThreads`, with the checks rollup and
+    review decision beside them, KO-368), so the reconcile that sees
     the pull request move past them is seeing a reviewer, not the
     shepherd's own writes. A read that fails records nothing, and the
     reconcile then records without shepherding."""
@@ -2894,9 +2895,10 @@ def _budget_low():
 
 
 def _pr_seen(target, pull):
-    """`(updatedAt, thread count)` as the pull request reads now, for the
-    park to record after the pass's own writes; None when GitHub could not
-    be asked, which the park records as nothing seen."""
+    """`(updatedAt, thread count, checks, review)` as the pull request
+    reads now -- `store.record_pr_seen()`'s tuple -- for the park to
+    record after the pass's own writes; None when GitHub could not be
+    asked, which the park records as nothing seen."""
     try:
         status = pr.pull_status(target, pull)
     except Exception as e:  # noqa: BLE001 - any transport failure
@@ -2904,7 +2906,12 @@ def _pr_seen(target, pull):
               " the park records no activity mark")
         return None
     GITHUB_BUDGET.remember(status)
-    return (status.updated_at, status.threads)
+    return _seen(status)
+
+
+def _seen(status):
+    """`store.record_pr_seen()`'s tuple from one `PullStatus`."""
+    return (status.updated_at, status.threads, status.checks, status.review)
 
 
 def _reshepherd(conn, ticket, pull, status, poll_ms):
@@ -2916,7 +2923,11 @@ def _reshepherd(conn, ticket, pull, status, poll_ms):
     count above its `prSeenThreads`. A run with no `prSeenAt` -- parked
     by a module older than the column, or after a read that failed --
     has nothing to compare against: what the read saw is recorded and
-    the tick moves on, so the next one can tell. The interval is per
+    the tick moves on, so the next one can tell. A read that starts no
+    round still refreshes the checks rollup and review decision beside
+    the mark (`/attention`'s facts, KO-368) without moving the mark
+    itself, so a check turning green or a review landing shows on the
+    item as soon as the next tick reads it. The interval is per
     pull request, measured from the park (`runs.lastHeartbeat`, the
     park's stamp): activity within `poll_ms` of it is named and waits.
     Otherwise `store.shepherd()`'s one transaction -- the `shepherd`
@@ -2937,19 +2948,20 @@ def _reshepherd(conn, ticket, pull, status, poll_ms):
     if row is None or status.updated_at is None:
         return None
     seen_at, seen_threads, parked_ms, issue = row
-    mark = (status.updated_at, status.threads)
+    mark = _seen(status)
     if seen_at is None:
-        with store.transaction(conn):
-            conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?"
-                         " WHERE id = ? AND phase = 'awaiting_merge_approval'",
-                         (*mark, run_id))
+        store.record_pr_seen(conn, run_id, mark, parked_only=True)
         return None
     grew = (status.threads is not None and seen_threads is not None
             and status.threads > seen_threads)
     if status.updated_at <= seen_at and not grew:
+        store.record_pr_seen(conn, run_id, mark, parked_only=True,
+                             facts_only=True)
         return None
     waited_ms = int(time() * 1000) - (parked_ms or 0)
     if waited_ms < poll_ms:
+        store.record_pr_seen(conn, run_id, mark, parked_only=True,
+                             facts_only=True)
         print(f"[holo2] {identifier}: {pull.url} has new review activity;"
               f" the next shepherd round waits"
               f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")
@@ -2960,8 +2972,7 @@ def _reshepherd(conn, ticket, pull, status, poll_ms):
             f" threads (last seen {seen_threads})")
     try:
         with store.transaction(conn):
-            conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?"
-                         " WHERE id = ?", (*mark, run_id))
+            store.record_pr_seen(conn, run_id, mark)
             store.shepherd(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
         print(f"[holo2] {identifier}: {pull.url} has new review activity but"
