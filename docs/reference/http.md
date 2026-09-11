@@ -26,6 +26,7 @@ in [The daemon's actions](daemon.md). A target with no store answers 503.
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2},
   "actions": false,
+  "config_edit": false,
   "runs": [
     {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease", "phase": "working",
      "started_ms": 1788450461675, "heartbeat_age_ms": 71989, "elapsed_ms": 72816,
@@ -45,8 +46,10 @@ serving process: its pid and when it started. `project` is the same
 string as `target`, the console's word for it; both are carried for one
 release. `actions` is whether `[serve] actions = true` opened the
 `POST /actions/...` routes of [The daemon's actions](daemon.md); the
-console draws its action buttons disabled while it is `false`. Every
-`host` passes through `[report] host_label`.
+console draws its action buttons disabled while it is `false`.
+`config_edit` is whether `[serve] config_edit = true` opened `GET /config`
+and `PUT /config`; the console's settings sheet is read-only, naming the
+key, while it is `false`. Every `host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`
 

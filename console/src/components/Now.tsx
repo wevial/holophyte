@@ -51,6 +51,7 @@ export function Now({
         project={project}
         expandedRun={expandedRun}
         onToggleRun={toggleRun}
+        deps={deps}
         renderDetail={(run, group) => (
           <RunDetail base={group.base} id={run.id} now={group.status.now} polls={polls} deps={deps} />
         )}

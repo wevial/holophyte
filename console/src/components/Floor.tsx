@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ProjectChoice } from "../lib/attention";
+import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { groupByProject, type DaemonStatus, type ProjectGroup } from "../lib/runs";
 import type { Run } from "../lib/types";
 import { ProjectBlock } from "./ProjectBlock";
@@ -15,12 +16,14 @@ export function Floor({
   expandedRun,
   onToggleRun,
   renderDetail,
+  deps = defaultPollDeps,
 }: {
   daemons: DaemonStatus[];
   project: ProjectChoice;
   expandedRun: string | null;
   onToggleRun: (key: string) => void;
   renderDetail?: (run: Run, group: ProjectGroup) => ReactNode;
+  deps?: { fetch: Fetch };
 }) {
   const groups = groupByProject(daemons).filter((group) => project === "all" || group.path === project);
   const runs = groups.reduce((total, group) => total + group.runs.length, 0);
@@ -46,6 +49,7 @@ export function Floor({
                 expandedRun={expandedRun}
                 onToggleRun={onToggleRun}
                 renderDetail={renderDetail}
+                deps={deps}
               />
             ))}
         </div>
