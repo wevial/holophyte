@@ -313,6 +313,57 @@ def conflict_brief(branch, conflicts):
             " merge unresolved fails.\n\n")
 
 
+def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
+                            ticket, beat_s, budget_min):
+    """The conflict-resolution turn `reuse_leftover()` hands the
+    implementer at claim time, run from the merge gate's mid-merge
+    worktree `wt` (KO-404); the merged sha when the turn leaves the merge
+    committed over a clean tree, None when not.
+
+    The conflict is the same wherever it is met, so the hand-off is the
+    same one: the worktree sits mid-merge, the paths are named, and the
+    ticket goes along for context -- the branch already holds its work,
+    so resolving the merge and committing it is the whole task. The turn
+    counts against the run's budget as a fix round does. A timeout, a
+    tree still mid-merge, a HEAD that does not hold both `main` and the
+    candidate's pre-merge `sha`, or uncommitted edits on top of the merge
+    commit all resolve nothing -- the gate's verify reads the worktree,
+    so the sha it goes on to must be the tree it reads and must be the
+    merge of the candidate it claimed -- and the caller aborts and fails
+    the run as it did before this hand-off existed.
+    """
+    paths = ", ".join(conflicts)
+    set_phase(conn, run_id, "merge_gate",
+              f"implementer resolving the merge conflict on {paths}")
+    _, timed_out = _timed(target, conn, run_id, beat_s, wt, budget_min,
+                          f"The merge gate merged main into the candidate"
+                          f" branch {branch} and the merge stopped on"
+                          f" conflicts in: {paths}. The ticket's work is"
+                          " already committed on the branch, so resolving"
+                          " the merge is the whole task: resolve each"
+                          " conflict keeping both sides' intent (the"
+                          " branch's work and main's new lines both stay),"
+                          " then commit the merge with a message naming"
+                          " both sides. Make no other change; a gate that"
+                          " still finds the merge unresolved fails the"
+                          " run.\n\nThe ticket the branch"
+                          f" answers:\n\n{ticket}")
+    if timed_out or merge_conflicts(wt):
+        return None
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if not (_is_ancestor(wt, "main", head) and _is_ancestor(wt, sha, head)):
+        # The turn ended the merge itself rather than resolving it -- or
+        # reset the candidate's work away: a HEAD main alone reaches would
+        # send the gate's verify over main, not the merge.
+        return None
+    if sh(["git", "status", "--porcelain"], cwd=wt):
+        # The merge commit landed but the turn left uncommitted edits;
+        # the verify would read them and the merged sha does not hold
+        # them.
+        return None
+    return head
+
+
 def run_task(target, task, conn=None, run_id=None, provider=None):
     """Run `task` through `_run_stages()`, and stop if the store ended the run.
 
@@ -483,7 +534,8 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
                     beat_s):
         ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
-                              contracts, sync_main=merge.mode != "pr")
+                              contracts, ticket, budget_min,
+                              sync_main=merge.mode != "pr")
         if merge.mode == "pr":
             url = _open_pr(target, conn, run_id, task_id, task, branch, body,
                            beat_s, wt, started, budget_min, issue_url)
@@ -611,7 +663,8 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                     beat_s):
         ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
-                              contracts, sync_main=merge.mode != "pr")
+                              contracts, f"{task}\n\n{body}" if body else task,
+                              budget_min, sync_main=merge.mode != "pr")
         if merge.mode == "pr":
             url = _open_pr(target, conn, run_id, task_id, task, branch, body,
                            beat_s, wt, started, budget_min, issue_url)
@@ -1342,6 +1395,27 @@ def _park_at_gate(conn, run_id, provider, task_id, branch, sha, question,
            f"{ledger_text} Branch {branch} preserved at {sha}.", provider)
 
 
+def _unwind_merge(wt, sha):
+    """Take `wt` back to `sha` with no merge in progress after the gate's
+    resolution turn failed to leave a committed, clean merge.
+
+    `git merge --abort` is the first try; it refuses when the turn left a
+    staged resolution it would have to drop, and it has nothing to abort
+    when the turn committed the merge itself. Either way the owed state
+    is the same -- the branch at its pre-merge sha, merge state gone --
+    and a hard reset to `sha` is that directly: what is preserved is the
+    branch's committed work, never the tree the turn left behind.
+    """
+    subprocess.run(["git", "merge", "--abort"], cwd=wt,
+                   capture_output=True, text=True)
+    if (subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                       cwd=wt, capture_output=True).returncode == 0
+            or sh(["git", "rev-parse", "HEAD"], cwd=wt) != sha):
+        sh(["git", "reset", "--hard", sha], cwd=wt)
+        print(f"[holo2] merge --abort could not unwind the failed"
+              f" resolution; reset to {sha[:12]}")
+
+
 def _is_ancestor(cwd, a, b):
     """Whether commit `a` is an ancestor of `b` in `cwd`'s repository."""
     return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
@@ -1356,9 +1430,10 @@ def _merge_ref(wt, ref):
     HEAD's sha. `"merged"` -- the merge committed, detail is its sha.
     `"conflicted"` -- the merge stopped: detail is the sorted unmerged
     paths it stopped on, empty when git failed the merge without naming
-    any, and `wt` is left mid-merge for the caller -- aborted at the merge
-    gate (`_sync_main_into_branch()`), resolved by an implementer turn on
-    a conflicting pull request (`_merge_origin_main()`).
+    any, and `wt` is left mid-merge for the caller -- handed to the
+    implementer first at the merge gate (`_sync_main_into_branch()`),
+    resolved by an implementer turn on a conflicting pull request
+    (`_merge_origin_main()`).
     """
     head = sh(["git", "rev-parse", "HEAD"], wt)
     if _is_ancestor(wt, ref, "HEAD"):
@@ -1375,7 +1450,7 @@ def _merge_ref(wt, ref):
 
 
 def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
-                           wt, sha, ref="main"):
+                           wt, sha, beat_s, ticket, budget_min, ref="main"):
     """Merge `ref` into the branch in its worktree, so the gate verifies
     and merges the candidate as it will sit on today's `main`. `ref` is
     `main` at the local gate; the babysit pass's own call for a
@@ -1383,20 +1458,38 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
     `origin/main` and a different conflict disposition. Returns the
     branch's sha afterwards: unchanged when `ref` is already an ancestor.
 
-    A conflict is a person's to resolve, whatever the path: the merge is
-    aborted, the branch left at `sha`, and the run parks with the
-    conflicting paths in the question. (The `--no-ff` merge's own
-    FINDINGS.md self-resolution is not repeated here: the ticket's contract
-    is that a `main` that conflicts with the branch parks, and nothing on
-    the branch writes FINDINGS.md any more, so a conflict there is a real
-    one.)
+    A conflict goes to the implementer first (KO-404): the same
+    resolution turn the claim path runs on a leftover mid-merge worktree
+    (KO-355), in this worktree, against the run's budget like a fix
+    round. When the turn leaves the merge committed over a clean tree the
+    gate's verify runs on the merged sha; when it does not the merge is
+    undone (`_unwind_merge()`: `merge --abort`, or a reset to `sha` when
+    the turn's leftovers refuse it), the branch left at `sha`, and the
+    run parks with the conflicting paths in the question as before. (The
+    `--no-ff` merge's own FINDINGS.md
+    self-resolution is not repeated here: nothing on the branch writes
+    FINDINGS.md any more, so a conflict there is a real one.)
     """
     status, detail = _merge_ref(wt, ref)
     if status == "ancestor":
         return sha
+    print(f"[holo2] {ref} moved past {branch}; merging {ref} into the"
+          " branch before the gate's verify")
     if status == "conflicted":
-        subprocess.run(["git", "merge", "--abort"], cwd=wt,
-                       capture_output=True, text=True)
+        if detail:
+            merged = _resolve_merge_conflict(
+                target, conn, run_id, branch, wt, sha, detail, ticket,
+                beat_s, budget_min)
+            if merged is not None:
+                note = (f"gate conflict on {', '.join(detail)}"
+                        f" resolved by the implementer at {merged[:12]}")
+                if conn is not None and run_id is not None:
+                    store.record_event(conn, run_id, "merge_gate", note)
+                ledger(conn, run_id, task_id, "note",
+                       f"MERGE GATE: {note}.", provider)
+                print(f"[holo2] {note}")
+                return merged
+        _unwind_merge(wt, sha)
         paths = ", ".join(detail) or "(no unmerged paths reported)"
         why = (f"{store.GATE_CONFLICT_REASON}{branch} conflicted on:"
                f" {paths}; branch preserved at {sha[:12]}")
@@ -1495,7 +1588,8 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
 
 
 def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
-                beat_s, sha, verify_cmd, contracts, sync_main=True):
+                beat_s, sha, verify_cmd, contracts, ticket, budget_min,
+                sync_main=True):
     """The `merge_gate` phase: `main` merged into the branch (unless
     `sync_main` is off -- PR mode, where the merge is the remote's), the
     pre-merge verify on the result, then the drift check. Returns the
@@ -1504,7 +1598,8 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     if sync_main:
         sha = _sync_main_into_branch(target, conn, run_id, provider, task_id,
-                                     branch, wt, sha)
+                                     branch, wt, sha, beat_s, ticket,
+                                     budget_min)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts)
     if not ok:
@@ -1818,7 +1913,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             if sha != verified:
                 _merge_gate(target, conn, run_id, provider, task_id, issue_id,
                             branch, wt, beat_s, sha, verify_cmd, contracts,
-                            sync_main=False)
+                            ticket, budget_min, sync_main=False)
                 verified = sha
             return _merge_pr(target, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, reviewed=reviewed)
@@ -2290,7 +2385,7 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
                          f"Merge {branch}: {task}"], cwd=target.path,
                         capture_output=True, text=True)
     if mr.returncode != 0:
-        _resolve_merge_conflict(target, conn, run_id, provider, task_id,
+        _resolve_no_ff_conflict(target, conn, run_id, provider, task_id,
                                 branch, sha)
     # The merge has landed: main's HEAD is the merge commit, read now before
     # the cleanup below and before anything else moves main. The branch
@@ -2306,7 +2401,7 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     return merge_sha
 
 
-def _resolve_merge_conflict(target, conn, run_id, provider, task_id, branch,
+def _resolve_no_ff_conflict(target, conn, run_id, provider, task_id, branch,
                             sha):
     """A failed `--no-ff` merge: resolve it if FINDINGS.md alone conflicted,
     otherwise abort it and fail the run with main restored."""
