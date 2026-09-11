@@ -42,10 +42,10 @@ import holophyte
 import review_runner
 import store
 import store.read
-from holophyte.board import close_out_failure
-from holophyte.config import sweep_config
+from holophyte.board import close_out_failure, lease_turn_held
+from holophyte.config import serve_config, sweep_config
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
-from holophyte.reexec import reexec_self
+from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
 from holophyte.report import REPORT_GAP, format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
 
@@ -950,6 +950,28 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     to its heartbeat, so nothing about GitHub ever counts as a strike or
     ends a pass.
 
+    When the reconcile has sent a ticket back -- new review activity on
+    its pull request, the run ended and the ticket walked to `ready` --
+    and no loop is live to claim it, the pass starts the target's loop
+    unit through `start_loop()`, the call the daemon's `launch-loop`
+    action makes, and prints that it did (KO-376): the loop exited on a
+    board with no ready ticket, so without this the ticket waits in the
+    store for a hand on the launcher. What is owed a loop is read from
+    the store, not from this pass's reconcile
+    (`store.read.pending_loop_launches()`): the shepherd row the send-back
+    wrote, on a ticket still `ready`, with no `launch_loop` row since. A
+    start `systemctl` took is recorded as that row, so a loop that is
+    booting and has not claimed yet is not started again by the next pass;
+    a start that failed is one printed line and no row, so the next pass,
+    finding the ticket still owed and the loop still free, tries again.
+    Once per pass, however many tickets are owed: the unit is the
+    target's. "No loop live" is two looks: no fresh heartbeat on a run of
+    the project (`loop_is_live()`) and nobody holding the lease turn
+    (`lease_turn_held()`), the flock a claim or close-out of this store
+    holds between its look and its write -- a loop between its startup and
+    its first claim's heartbeat is visible only there. A sweep that has
+    nothing owed starts nothing.
+
     Returns the project ids reconciled.
     """
     # In the function, not at the top: `holophyte.loop` imports this module.
@@ -958,6 +980,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     out = out or sys.stdout
     knobs = sweep_config(target) if knobs is None else knobs
     asked = []
+    owed = []
     for (project,) in conn.execute("SELECT id FROM projects ORDER BY id"):
         if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
             continue
@@ -969,7 +992,56 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
                   f" ({e}); the next pass asks again", file=out)
             continue
         asked.append(project)
+        owed.extend(store.read.pending_loop_launches(conn, project))
+    if owed and not lease_turn_held(target):
+        start_loop_for(target, conn, owed, now, out)
     return asked
+
+
+def start_loop_for(target, conn, owed, now, out):
+    """Start the target's loop unit for the `(ticket, run)` pairs `owed` a
+    loop, printing the unit started or why it was not.
+
+    Record before acting: a `launch_loop_attempt` event lands on each run
+    and is committed before `systemctl` is asked, so a supervisor that
+    dies between the ask and the answer still left the store saying it
+    tried. A start `systemctl` took is then recorded as a `launch_loop`
+    intervention on each run, the success mark that stops the next pass
+    starting it again; a refused one records its refusal as a
+    `launch_loop_failed` event and no intervention, so the next pass
+    retries. A pass that dies after a taken start and before its mark
+    retries too, which is one more `systemctl start` on a unit already
+    running: nothing.
+    """
+    unit = LOOP_UNIT + serve_config(target).name
+    count = len(owed)
+    noun = "ticket" if count == 1 else "tickets"
+    attempt = (f"the supervisor is starting {unit} for {count} {noun} sent"
+               " back to the shepherd while no loop is live")
+    with store.transaction(conn):
+        for _ticket, run_id in owed:
+            store.record_event(conn, run_id, "launch_loop_attempt", attempt,
+                               now=now)
+    unit, ok, detail = start_loop(serve_config(target).name)
+    if not ok:
+        with store.transaction(conn):
+            for _ticket, run_id in owed:
+                store.record_event(conn, run_id, "launch_loop_failed",
+                                   f"{unit} could not be started ({detail});"
+                                   " the next pass tries again", now=now)
+        print(f"[holo2] {count} {noun} sent back and no loop live, but"
+              f" {unit} could not be started ({detail}); the next pass"
+              " tries again", file=out)
+        return
+    note = (f"the supervisor started {unit} for {count} {noun} sent back to"
+            " the shepherd while no loop was live")
+    with store.transaction(conn):
+        for _ticket, run_id in owed:
+            store.record_intervention(conn, run_id, "launch_loop", note,
+                                      source="supervisor", trigger="manual",
+                                      now=now)
+    print(f"[holo2] {count} {noun} sent back and no loop live; started"
+          f" {unit}", file=out)
 
 
 def factory_revision():

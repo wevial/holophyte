@@ -118,6 +118,7 @@ from holophyte.config import (
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.pr import PR_URL_RE
 from holophyte.redact import RedactionError, redact, restore
+from holophyte.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
 from holophyte.supervisor import SWEEPABLE_PHASES
@@ -139,16 +140,15 @@ OPEN_PATHS = frozenset({"/peers"})
 # The token-gated `POST` routes `[serve] actions = true` opens (KO-348),
 # each the operator-ladder step it maps to. The two unit actions name the
 # deploy templates with the `[serve] name` instance appended at request
-# time; `systemctl` gets `SYSTEMCTL_TIMEOUT` seconds to answer.
+# time, and `holophyte.reexec` runs `systemctl` -- `launch-loop` through
+# the `start_loop()` the supervisor's sweep also calls (KO-376).
 ACTIONS_PREFIX = "/actions/"
 # Route name -> (systemctl verb, unit template, interventions action).
 UNIT_ACTIONS = {
-    "restart-supervisor": ("restart", "holophyte-supervise@",
-                           "restart_supervisor"),
-    "launch-loop": ("start", "holophyte-loop@", "launch_loop")}
+    "restart-supervisor": ("restart", SUPERVISOR_UNIT, "restart_supervisor"),
+    "launch-loop": ("start", LOOP_UNIT, "launch_loop")}
 REQUEUE_ACTION = "requeue"
 ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION}
-SYSTEMCTL_TIMEOUT = 20
 # The note a requeue records when the request carries none: the store
 # refuses an empty one, and the CLI's `--note` is the operator's reason.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
@@ -946,13 +946,14 @@ def unit_action(target, action, unit_name):
     against and the step does not run: 200 with `ok: false` saying so,
     since an unrecorded hand on the units is what the ladder forbids.
     `systemctl` exiting non-zero, being absent or outliving
-    `SYSTEMCTL_TIMEOUT` is 200 with `ok: false` and the reason in
-    `detail`: the operator asked for a thing and is told what happened,
-    which is not a server error.
+    `holophyte.reexec.SYSTEMCTL_TIMEOUT` is 200 with `ok: false` and the
+    reason in `detail`: the operator asked for a thing and is told what
+    happened, which is not a server error. `launch-loop` starts the unit
+    through `start_loop()`, the call the supervisor's sweep makes when it
+    sent a ticket back and no loop is live (KO-376).
     """
     verb, template, intervention = UNIT_ACTIONS[action]
     unit = template + unit_name
-    argv = ["systemctl", "--user", verb, unit]
     note = f"operator asked the daemon to {verb} {unit} (POST /actions/{action})"
     recorded = record_action_intervention(target, intervention, note)
     if recorded is None:
@@ -960,21 +961,10 @@ def unit_action(target, action, unit_name):
                   " against; nothing run")
         return 200, {"action": action, "ok": False, "detail": detail,
                      "unit": unit, "recorded": None}
-    try:
-        done = subprocess.run(argv, capture_output=True, text=True,
-                              timeout=SYSTEMCTL_TIMEOUT)
-    except FileNotFoundError:
-        detail = "systemctl is not on this host"
-        return 200, {"action": action, "ok": False, "detail": detail,
-                     "unit": unit, "recorded": recorded}
-    except subprocess.TimeoutExpired:
-        detail = f"systemctl did not answer within {SYSTEMCTL_TIMEOUT}s"
-        return 200, {"action": action, "ok": False, "detail": detail,
-                     "unit": unit, "recorded": recorded}
-    ok = done.returncode == 0
-    detail = (f"{' '.join(argv)} exited 0" if ok
-              else (done.stderr or done.stdout or "").strip()
-              or f"{' '.join(argv)} exited {done.returncode}")
+    if action == "launch-loop":
+        _, ok, detail = start_loop(unit_name)
+    else:
+        ok, detail = systemctl_user(verb, unit)
     return 200, {"action": action, "ok": ok, "detail": detail,
                  "unit": unit, "recorded": recorded}
 

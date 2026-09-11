@@ -96,7 +96,7 @@ One pass:
    closed without merging fails the run, branch preserved.
    A head that is not the candidate this run pushed -- someone else pushed
    to the branch -- parks the run naming both shas: the checks and threads
-   are about their commit, and the shepherd judges and merges only its own.
+   are about their commit, and the babysitter judges and merges only its own.
 2. **Verdict.** A thread a person opened -- its opening author is a
    GitHub `User`, or an account GitHub no longer names -- is `HUMAN`,
    "opened by a person", before the adjudicator is asked: bots get
@@ -145,7 +145,7 @@ One pass:
    still running, or a required check not yet reported, is pending even
    when the rollup already says success -- seconds after a PR opens only
    the instant checks have reported -- and so is a read of the runs or
-   the rules the shepherd could not make. Red checks park the run, green
+   the rules the babysitter could not make. Red checks park the run, green
    ones are "ready to merge": the PR is merged through its merge API, pinned to the
    candidate's sha so a push that races the pass is refused rather than
    landed, under `[merge] approve = "auto"` or after the operator's
@@ -166,7 +166,7 @@ One pass:
    `--approve` was of the sha it released: a candidate moved since parks
    for the human again under `approve = "human"`. The sha the last
    approval covered survives the park as `runs.approvedSha`, so a
-   `--shepherd` re-entry merges the candidate only at that sha and
+   `--babysit` re-entry merges the candidate only at that sha and
    reviews it again at any other -- a fix the reviewer rejected has none
    on record, and is reviewed again before anything merges it.
 
@@ -177,7 +177,7 @@ Every park is the `awaiting_merge_approval` park of `approve = "human"`:
 the ticket asks `PR open: URL` with why and the open threads listed, the
 run keeps `runs.prUrl`, `runs.candidateSha` and `runs.approvedSha`, branch
 and worktree stay, the lease is released. `--approve KO-n` answers "merge": the resumed run
-shepherds once more and merges when green and quiet. `--shepherd KO-n`
+babysits once more and merges when green and quiet. `--babysit KO-n`
 answers "look again": the same resume, parking again rather than merging
 under `approve = "human"`. It is refused on a run parked with no pull
 request (parked under `mode = "local"`): there are no threads to look at,

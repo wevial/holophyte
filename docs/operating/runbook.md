@@ -8,7 +8,7 @@ timestamp, before the change; the operator commands write it for you.
 ## The escalation ladder
 
 1. **Relaunch or unblock through the factory's own paths.** Relaunch the
-   loop; `--requeue` a failed ticket; `--approve` or `--shepherd` a parked
+   loop; `--requeue` a failed ticket; `--approve` or `--babysit` a parked
    one; `--repoint` a rebuilt candidate; fix the ticket file and
    `--file-ticket --update`.
 2. **`--sweep`, then `--sweep --act`** once a trip is confirmed. A stuck or
@@ -76,15 +76,15 @@ through the store API.
 ### A run is parked on its pull request and the PR has moved
 
 ```
-python3 factory.py TARGET --shepherd KO-n --note "new review thread; look at the PR again"
+python3 factory.py TARGET --babysit KO-n --note "new review thread; look at the PR again"
 # then relaunch the loop
 ```
 
 Under `[merge] mode = "pr"` a candidate that came up ready parks the same
 way, on its pull request, and `--approve` merges it as it stands.
-`--shepherd` sends it back for another round instead: it writes an
-`interventions` row with action `shepherd` (the note defaults to `sent
-back to the shepherd`), ends the parked run with its resume point at the
+`--babysit` sends it back for another round instead: it writes the
+`interventions` row `store.shepherd()` writes (the note defaults to `sent
+back to the babysitter`), ends the parked run with its resume point at the
 merge gate and walks the ticket to `ready`; the loop's next claim resumes
 the candidate on its PR, verdicts and answers the new threads, waits on
 the checks, and a PR that comes up ready under `[merge] approve = "human"`

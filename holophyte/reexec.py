@@ -8,11 +8,24 @@ launched with -- never a module reloaded -- and both do it through a seam a
 test can patch, so `reexec_self()` takes the caller's `EXEC` rather than
 owning one: the loop's tests patch `holophyte.loop.EXEC`, the supervisor's
 `holophyte.supervisor.EXEC`, and neither ever execs the test runner.
-Standard library only.
+
+The other way a factory process is started: `start_loop()` asks the user
+service manager for the target's `holophyte-loop@` unit, the one call the
+daemon's `launch-loop` action and the supervisor's sweep share (KO-376), so
+a loop the supervisor starts for work its sweep made is started exactly as
+the operator's console click starts one. Standard library only.
 """
 import os
 import shutil
+import subprocess
 import sys
+
+# The deploy unit templates `systemctl --user` addresses, each with the
+# `[serve] name` instance appended; `systemctl` gets `SYSTEMCTL_TIMEOUT`
+# seconds to answer.
+LOOP_UNIT = "holophyte-loop@"
+SUPERVISOR_UNIT = "holophyte-supervise@"
+SYSTEMCTL_TIMEOUT = 20
 
 
 def reexec_command():
@@ -46,3 +59,36 @@ def reexec_self(reason, exec_, out=None):
     program, argv = reexec_command()
     print(f"[holo2] {reason}: {argv}", file=out or sys.stdout, flush=True)
     exec_(program, argv)
+
+
+def systemctl_user(verb, unit):
+    """`systemctl --user VERB UNIT`: `(ok, detail)`, where `detail` says
+    what happened in one line either way.
+
+    Never raises for what `systemctl` does: exiting non-zero is `ok`
+    False with its stderr (or stdout, or the exit status) as the detail,
+    being absent from this host or outliving `SYSTEMCTL_TIMEOUT` is the
+    same shape saying which. A caller that asked for a thing is told what
+    happened and decides what that means for it -- the daemon answers the
+    request with it, the supervisor prints it and sweeps on.
+    """
+    argv = ["systemctl", "--user", verb, unit]
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=SYSTEMCTL_TIMEOUT)
+    except FileNotFoundError:
+        return False, "systemctl is not on this host"
+    except subprocess.TimeoutExpired:
+        return False, f"systemctl did not answer within {SYSTEMCTL_TIMEOUT}s"
+    if done.returncode == 0:
+        return True, f"{' '.join(argv)} exited 0"
+    return False, ((done.stderr or done.stdout or "").strip()
+                   or f"{' '.join(argv)} exited {done.returncode}")
+
+
+def start_loop(unit_name):
+    """Start the loop unit of the target whose `[serve] name` is
+    `unit_name`: `(unit, ok, detail)` from `systemctl_user()`."""
+    unit = LOOP_UNIT + unit_name
+    ok, detail = systemctl_user("start", unit)
+    return unit, ok, detail

@@ -157,6 +157,56 @@ export function oldest(
   return best;
 }
 
+/** A fact chip's wash: `ok`, `warn` and `bad` on the theme's washes,
+ *  `neutral` for a fact the daemon has not polled yet. */
+export type Tone = "ok" | "warn" | "bad" | "neutral";
+
+/** One chip under a `pr_open` row's body. */
+export interface Fact {
+  label: string;
+  tone: Tone;
+}
+
+/** The `pr` a `pr_open` item carries (holophyte/serve.py `parked_item()`,
+ *  KO-368): the pull request's number and what the reconcile last saw on
+ *  it, each null for a run never polled. */
+export interface PrFacts {
+  number?: number | null;
+  checks?: string | null;
+  review?: string | null;
+  threads?: number | null;
+}
+
+const CHECKS: Record<string, Fact> = {
+  success: { label: "checks green", tone: "ok" },
+  pending: { label: "checks pending", tone: "warn" },
+  failure: { label: "checks failing", tone: "bad" },
+};
+
+const REVIEW: Record<string, Fact> = {
+  approved: { label: "approved", tone: "ok" },
+  changes_requested: { label: "changes requested", tone: "bad" },
+  review_required: { label: "review pending", tone: "warn" },
+};
+
+/** Whether a pull request can be merged, as three chips: its checks, its
+ *  review decision and its open threads, in that order. A fact the daemon
+ *  has not polled (null, or a value the console does not know) reads
+ *  "unknown" as a neutral chip rather than nothing, so a run polled never
+ *  is visible as such. */
+export function prFacts(pr: PrFacts): Fact[] {
+  const threads = num(pr.threads);
+  return [
+    (pr.checks != null ? CHECKS[pr.checks] : undefined) ?? { label: "checks unknown", tone: "neutral" },
+    (pr.review != null ? REVIEW[pr.review] : undefined) ?? { label: "review unknown", tone: "neutral" },
+    threads == null
+      ? { label: "threads unknown", tone: "neutral" }
+      : threads === 0
+        ? { label: "no open threads", tone: "ok" }
+        : { label: `${threads} ${threads === 1 ? "thread" : "threads"} open`, tone: "warn" },
+  ];
+}
+
 export interface Description {
   pill: string;
   ticket: string | null;
@@ -164,6 +214,8 @@ export interface Description {
   meta: string | null;
   ageMs: number | null;
   actions: string[];
+  /** A `pr_open` row's chips (`prFacts`), when its item carried `pr`. */
+  facts?: Fact[];
 }
 
 export interface DescribeContext {
@@ -269,10 +321,15 @@ export function describe(
     }
     case "pr_open": {
       const asked = num(item.asked_ms);
+      const reason = str(item.reason) ?? "";
+      const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PrFacts) : null;
       return {
         ...base,
-        body: str(item.reason) ?? "",
+        // With `pr` the chips carry the facts, so the body keeps to the
+        // reason's first line; without it (an older daemon) the prose stands.
+        body: pr ? (reason.split("\n", 1)[0] ?? "") : reason,
         meta: joinMeta(runLabel(item), asked == null ? null : `parked at ${formatClock(asked)}`),
+        ...(pr ? { facts: prFacts(pr) } : {}),
       };
     }
     case "stale_run": {

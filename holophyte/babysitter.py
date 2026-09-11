@@ -1,8 +1,8 @@
-"""The shepherd pass's texts: what the adjudicator is asked, how its answer
+"""The babysit pass's texts: what the adjudicator is asked, how its answer
 is read, what the replies and the round say.
 
 Design note 7's second half, the half that is prose rather than calls. The
-loop (`holophyte.loop._shepherd`) fetches a pull request's unresolved
+loop (`holophyte.loop._babysit`) fetches a pull request's unresolved
 threads and drives the turns; this module is what it hands them and what it
 reads back, with nothing in it that talks to GitHub, the store or an agent,
 so every shape here is testable on its own and the pass in the loop reads as
@@ -232,11 +232,11 @@ def declined_reply(model, reason):
 
 
 def round_reply(pull, pass_no, threads, verdicts, checks, sha):
-    """The text a shepherd pass is recorded as, in the shape
+    """The text a babysit pass is recorded as, in the shape
     `record_round()` reads: one bullet per thread citing its file, the
     verdict it got, and a closing `VERDICT:` line -- `APPROVE` for a pass
     that found no thread, `REQUEST_CHANGES` for one that did."""
-    lines = [f"Shepherd pass {pass_no} over {pull.url} at {sha[:12]}:"
+    lines = [f"Babysit pass {pass_no} over {pull.url} at {sha[:12]}:"
              f" {len(threads)} unresolved thread(s), checks {checks}."]
     for n, t in enumerate(threads, 1):
         verdict, reason = verdicts[n]

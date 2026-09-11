@@ -10,7 +10,7 @@ Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
-  `--requeue`, `--approve`, `--shepherd`, `--repoint`, `--file-ticket`,
+  `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
 - `holophyte/target.py` — where a target's state lives (`HOLOPHYTE_HOME`,
   the `<slug>` directory, legacy adoption) and the `Target` value.
@@ -46,9 +46,9 @@ Each module, one line:
   `main`, `report`, `requeue` and the self-merge re-exec.
 - `holophyte/pr.py` — `[merge] mode = "pr"`'s one GitHub surface: the
   startup route check, the push, the pull request and its body, and the
-  shepherd's calls -- review threads and checks, replies, resolves, the
+  babysitter's calls -- review threads and checks, replies, resolves, the
   merge through the PR API.
-- `holophyte/shepherd.py` — the shepherd pass's texts: the adjudicator's
+- `holophyte/babysitter.py` — the babysit pass's texts: the adjudicator's
   brief over a PR's threads, the `ADDRESS`/`DECLINE`/`HUMAN` verdict
   parser, the `---- Comment by MODEL ----` replies, the round text and the
   parked question. Pure; the loop drives the calls.

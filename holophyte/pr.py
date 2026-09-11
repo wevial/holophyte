@@ -4,7 +4,7 @@ Design note 7. Instead of the `--no-ff` merge into main, an approved,
 verified candidate is pushed to `origin` and opened as a pull request whose
 body is the ticket body plus the run's FINDINGS entry, so the repository's
 own review bots and CI see the change before it lands. The loop then
-shepherds the PR (`holophyte.loop`): `pr_state()` reads its unresolved
+babysits the PR (`holophyte.loop`): `pr_state()` reads its unresolved
 review threads and its checks, `reply_thread()` and `resolve_thread()`
 answer the threads the adjudicator verdicted, `merge_pull_request()` lands
 it through the merge API once it is green and quiet -- never a local push
@@ -13,7 +13,7 @@ of `main`.
 Everything that talks to GitHub is in this file, so the surface is one seam
 to port: `check_pr_route()` is the startup preflight, `push_branch()` and
 `create_pull_request()` the two calls the merge path makes, `pr_body()` the
-body they carry, and the shepherd's calls go through `graphql()` and
+body they carry, and the babysitter's calls go through `graphql()` and
 `rest()`. The route is `gh` on PATH, authenticated, or -- with no `gh` --
 the REST and GraphQL APIs with a token read from `TOKEN_VARS` in the
 environment. The token is read there and only there: never written to the
@@ -55,7 +55,7 @@ API = "https://api.github.com"
 # one API call that has not answered in this long is a route that is down, and
 # the run must end as an infra failure rather than hold its lease forever.
 PR_TIMEOUT = 120
-# How the shepherd waits for pending checks: one `pr_state()` read every
+# How the babysitter waits for pending checks: one `pr_state()` read every
 # `CHECK_POLL_S` seconds, for at most `CHECK_WAIT_S` before the run parks
 # with the checks still pending. `SLEEP` is the seam a test replaces.
 CHECK_POLL_S = 30
@@ -65,7 +65,7 @@ SLEEP = time.sleep
 # host is kept so an Enterprise PR is answered on its own API.
 PR_URL_RE = re.compile(r"^https://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)/?$")
 # What `statusCheckRollup.state` says, folded to the three answers the
-# shepherd acts on. A PR with no checks at all (`null`) has nothing to wait
+# babysitter acts on. A PR with no checks at all (`null`) has nothing to wait
 # for and reads as green -- as far as the rollup goes: `fold_checks()`
 # reads the head's check runs and the branch's required contexts beside
 # it, since seconds after a PR opens the rollup already says success while
@@ -77,14 +77,14 @@ CHECK_STATES = {None: "success", "SUCCESS": "success",
 RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
                    "startup_failure"}
 # The check-runs read's page size: past this many runs on one commit the
-# shepherd reads the first page only.
+# babysitter reads the first page only.
 CHECK_RUNS_PAGE = 100
-# The reviewer the shepherd stamps a pass with when no thread named one: the
+# The reviewer the babysitter stamps a pass with when no thread named one: the
 # pass judged the checks alone.
 NO_AUTHOR = "ci"
 
 # One page of threads per call; `$after` walks the rest, so a PR with more
-# than `THREADS_PAGE` threads is read to the end before the shepherd decides
+# than `THREADS_PAGE` threads is read to the end before the babysitter decides
 # it has nothing open.
 THREADS_PAGE = 100
 # One page of a thread's comments in the state query; a thread with more
@@ -136,15 +136,15 @@ mutation($thread: ID!) {
 
 # The one read the loop's pull-request reconcile makes of a parked PR: is it
 # still open, merged (as which commit, by whom) or closed unmerged, and --
-# KO-362 -- whether anything happened on it since the shepherd last looked:
+# KO-362 -- whether anything happened on it since the babysitter last looked:
 # `updatedAt` and the count of its review threads, which the reconcile
-# holds against what the last shepherd pass recorded (`runs.prSeenAt`,
+# holds against what the last babysit pass recorded (`runs.prSeenAt`,
 # `runs.prSeenThreads`), and -- KO-368 -- the facts `/attention` shows
 # beside them: the head commit's checks rollup and the review decision
 # (`runs.prSeenChecks`, `runs.prSeenReview`). The thread bodies and the
-# per-run checks are still the shepherd's own read. `rateLimit` rides
+# per-run checks are still the babysitter's own read. `rateLimit` rides
 # along at no cost: the remaining GraphQL budget on the token and when it
-# resets, so the reconcile backs off before the shepherd's reads run it
+# resets, so the reconcile backs off before the babysitter's reads run it
 # dry.
 PULL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
@@ -208,7 +208,7 @@ class Thread:
     url: str
     outdated: bool = False
     replies: tuple = ()  # `Comment`s after the opening one
-    # The opening comment's `Comment.author_kind`. The shepherd answers a
+    # The opening comment's `Comment.author_kind`. The babysitter answers a
     # bot's thread and leaves a person's to the operator; `"unknown"` --
     # the default, and a deleted account -- is treated as a person's.
     author_kind: str = "unknown"
@@ -553,7 +553,7 @@ def _head_checks(node):
     """The pull request node's head `statusCheckRollup.state` as "success",
     "pending" or "failure"; None when the head carries no rollup (a pull
     request with no checks) or the answer did not include the commit.
-    Absent is absent here, not "pending": the shepherd's `fold_checks()`
+    Absent is absent here, not "pending": the babysitter's `fold_checks()`
     reads a missing rollup as green only beside the check runs and the
     required contexts, which this one-field read does not have."""
     commits = node.get("commits")
@@ -577,7 +577,7 @@ def _count(value):
 
 def parse_pr_url(url):
     """The `PullRequest` a PR URL names, or None for a URL of another shape:
-    a parked run whose `prUrl` this cannot read has nothing to shepherd."""
+    a parked run whose `prUrl` this cannot read has nothing to babysit."""
     m = PR_URL_RE.match((url or "").strip())
     if m is None:
         return None
@@ -599,7 +599,7 @@ def pr_state(target, pull):
     the rest of the conversation, read to the last page of comments
     (`COMMENTS_PAGE` per read) so a long thread's latest word is not
     dropped; a thread with no comments (GitHub does not make one) is
-    skipped. Resolved threads are not returned: the shepherd answers what
+    skipped. Resolved threads are not returned: the babysitter answers what
     is open.
     """
     first_page = node = _pull_request_page(target, pull, None)
@@ -629,8 +629,8 @@ def pr_state(target, pull):
 
 def _check_reads(target, pull, sha):
     """The head's check runs and `main`'s required contexts, two REST reads;
-    either one the shepherd cannot make or cannot read is None, which
-    `fold_checks()` takes as pending: a check the shepherd cannot see is
+    either one the babysitter cannot make or cannot read is None, which
+    `fold_checks()` takes as pending: a check the babysitter cannot see is
     never a check that passed."""
     runs = required = None
     if sha:
@@ -650,7 +650,7 @@ def _check_reads(target, pull, sha):
 def _check_runs_of(target, pull, sha):
     """Every check run of commit `sha`, walked page by page (`CHECK_RUNS_PAGE`
     a page) until the answer's `total_count` is in hand, or None when the
-    answer is not readable as check runs or a page the shepherd asked for
+    answer is not readable as check runs or a page the babysitter asked for
     did not come back: a head with more runs than one page holds must not
     be read as green on the page alone."""
     base = (f"repos/{pull.owner}/{pull.name}/commits/{sha}"
@@ -679,7 +679,7 @@ def _check_runs_of(target, pull, sha):
 
 def _required_contexts(rules):
     """The contexts every `required_status_checks` rule names, or None for
-    an answer that is not the rules list or a rule the shepherd cannot
+    an answer that is not the rules list or a rule the babysitter cannot
     read as one: a required check it cannot make out is not one that
     reported, so None folds to pending, never green."""
     if not isinstance(rules, list):
@@ -709,7 +709,7 @@ def fold_checks(rollup, runs, required):
 
     `rollup` is `statusCheckRollup.state`; `runs` the head commit's check
     runs (each with `name`, `status` and `conclusion`) and `required` the
-    contexts `main`'s rules require -- either None when the shepherd could
+    contexts `main`'s rules require -- either None when the babysitter could
     not read it. Red first: a red rollup, or any completed run with a red
     conclusion. Then pending: a pending rollup, a run still queued or in
     progress, a required context with no completed run, a read that did
@@ -728,7 +728,7 @@ def fold_checks(rollup, runs, required):
     completed = set()
     for run in runs:
         if not isinstance(run, dict):
-            state = "pending"  # Not a run the shepherd can read: not green.
+            state = "pending"  # Not a run the babysitter can read: not green.
             continue
         if run.get("status") != "completed":
             state = "pending"
@@ -833,7 +833,7 @@ def merge_pull_request(target, pull, sha):
     as it was reviewed -- or `"squash"` or `"rebase"` where the
     repository's ruleset allows nothing else; for those the sha answered is
     the new commit on `main`, not a merge commit. `sha` is the candidate
-    whose checks and threads the shepherd judged: the API's `sha` field
+    whose checks and threads the babysitter judged: the API's `sha` field
     makes GitHub refuse (409) if the head has moved since, so a push that
     raced the pass never lands on its verdict.
     GitHub declining -- a protection rule, a conflict, a check that turned

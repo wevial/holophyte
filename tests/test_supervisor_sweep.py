@@ -17,6 +17,7 @@ Run: python3 -m unittest discover -s tests -p 'test_supervisor*' -v
 """
 from __future__ import annotations
 
+import fcntl
 import io
 import os
 import signal
@@ -33,6 +34,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
+import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
@@ -1883,6 +1885,204 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertEqual(provider.states, [("issue-1", "Done")])
         self.assertIn(f"{self.URL} was merged on GitHub by coworker", out)
         self.assertIn(f"run {run_id} closed out as merged", out)
+
+    # KO-376: a sweep that sent a run back to the shepherd walked its
+    # ticket to `ready` on a board whose loop has exited, so it starts the
+    # loop as the console's launch-loop action does, through a `systemctl`
+    # a fake on PATH records.
+    ACTIVE_PULL = {"state": "OPEN", "merged": False,
+                   "updatedAt": "2026-09-02T10:00:00Z",
+                   "reviewThreads": {"totalCount": 2}}
+
+    def fake_systemctl(self):
+        """A `systemctl` first on PATH that records each call's arguments,
+        one line per call, and exits 0; the lines so far."""
+        bin_dir = self.root / "fake-bin"
+        bin_dir.mkdir(exist_ok=True)
+        record = self.root / "systemctl.calls"
+        script = bin_dir / "systemctl"
+        script.write_text(f"#!/bin/sh\necho \"$@\" >> '{record}'\n")
+        script.chmod(0o755)
+        patcher = patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return lambda: (record.read_text().splitlines()
+                        if record.exists() else [])
+
+    def seen_before_activity(self, run_id):
+        """The mark the shepherd's park left: a read older than
+        `ACTIVE_PULL`'s activity, so the next read is new activity."""
+        store.record_pr_seen(self.conn, run_id,
+                             ("2026-09-01T10:00:00Z", 1, None, None))
+
+    def test_a_sweep_that_sent_a_ticket_back_starts_the_loop_unit(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM tickets WHERE id = ?",
+                              (self.ticket_of[run_id],)).fetchone(),
+            ("ready",))
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertIn("started holophyte-loop@repo", out)
+
+    def test_a_sweep_under_a_live_loop_starts_nothing(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+        self.a_run(claimed_at=T0 + 19 * MINUTE)
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_sweep_under_a_held_lease_turn_starts_nothing(self):
+        """A loop between its startup and its first claim's heartbeat is
+        visible only as the holder of the lease turn (`lease.lock`), so a
+        held turn is a live loop for the launch, whatever the runs say."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+        lock = holophyte.board.lease_turn_path(self.tgt)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_failed_start_is_retried_next_pass_and_a_taken_one_is_not(self):
+        """The ticket the send-back walked to `ready` is still owed a loop
+        after a start `systemctl` refused, so the next pass tries again;
+        once a start is taken the loop is booting, and the pass after that
+        leaves it alone rather than starting it a second time."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+        script = self.root / "fake-bin" / "systemctl"
+        good = script.read_text()
+        script.write_text("#!/bin/sh\necho 'Failed to connect to bus' >&2\n"
+                          "exit 1\n")
+
+        first = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+        script.write_text(good)
+        second = self.one_pass(T0 + 21 * MINUTE, StubProvider())
+        third = self.one_pass(T0 + 22 * MINUTE, StubProvider())
+
+        self.assertIn("could not be started (Failed to connect to bus)", first)
+        self.assertIn("started holophyte-loop@repo", second)
+        self.assertNotIn("holophyte-loop@", third)
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM tickets WHERE id = ?",
+                              (self.ticket_of[run_id],)).fetchone(),
+            ("ready",))
+
+    def events_of(self, run_id):
+        """The `(kind, summary)` rows of `run_id`'s event stream, in order."""
+        return self.conn.execute(
+            "SELECT kind, summary FROM runEvents WHERE runId = ?"
+            " ORDER BY seq", (run_id,)).fetchall()
+
+    def test_the_attempt_is_recorded_before_the_start_is_asked_for(self):
+        """Record before acting: the attempt row is committed before
+        `systemctl` is asked, so a supervisor that dies mid-start still
+        left the store saying it tried. The fake `systemctl` dumps the
+        run's event kinds as it is called, which is the only witness of
+        the order; the `launch_loop` intervention stays the success mark
+        and lands after."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        calls = self.fake_systemctl()
+        seen = self.root / "events-at-call"
+        (self.root / "fake-bin" / "systemctl").write_text(
+            "#!/bin/sh\n"
+            f"{sys.executable} -c \"import sqlite3;"
+            f" c = sqlite3.connect('{self.db}');"
+            " print('\\n'.join(k for (k,) in c.execute("
+            "'SELECT kind FROM runEvents WHERE runId = ? ORDER BY seq',"
+            f" ({run_id},))))\" > '{seen}'\n")
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(calls(), [])  # the recorder was replaced above
+        at_call = seen.read_text().splitlines()
+        self.assertIn("launch_loop_attempt", at_call)
+        marks = [f"{k}: {s}" for k, s in self.events_of(run_id)
+                 if "launch_loop" in f"{k}: {s}"]
+        self.assertEqual(len(marks), 2, marks)
+        self.assertTrue(marks[0].startswith("launch_loop_attempt:"), marks)
+        self.assertTrue(marks[1].startswith("intervention: supervisor"
+                                            " launch_loop:"), marks)
+        # The success mark was not there when `systemctl` was asked: the
+        # dump holds one row fewer than the stream ends with.
+        self.assertEqual(len(at_call), len(self.events_of(run_id)) - 1)
+
+    def test_a_failed_start_leaves_the_attempt_and_its_refusal_on_record(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        self.fake_systemctl()
+        (self.root / "fake-bin" / "systemctl").write_text(
+            "#!/bin/sh\necho 'Failed to connect to bus' >&2\nexit 1\n")
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        marks = [f"{k}: {s}" for k, s in self.events_of(run_id)
+                 if "launch_loop" in f"{k}: {s}"]
+        self.assertEqual(len(marks), 2, marks)
+        self.assertTrue(marks[0].startswith("launch_loop_attempt:"), marks)
+        self.assertTrue(marks[1].startswith("launch_loop_failed:"), marks)
+        self.assertIn("Failed to connect to bus", marks[1])
+
+    def test_a_sweep_that_sent_nothing_back_starts_nothing(self):
+        """An open pull request with no activity past the mark sends
+        nothing back, and a merged one lands the run rather than sending
+        it back: neither is a ticket waiting for a loop."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        calls = self.fake_systemctl()
+        quiet = dict(self.ACTIVE_PULL, updatedAt="2026-09-01T10:00:00Z",
+                     reviewThreads={"totalCount": 1})
+        self.fake_github(quiet)
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertNotIn("sent back", out)
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_failed_systemctl_is_printed_and_the_pass_ends_normally(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        self.fake_systemctl()
+        (self.root / "fake-bin" / "systemctl").write_text(
+            "#!/bin/sh\necho 'Unit holophyte-loop@repo.service not found.'"
+            " >&2\nexit 5\n")
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertIn(f"run {run_id} sent back to the shepherd", out)
+        self.assertIn("holophyte-loop@repo could not be started"
+                      " (Unit holophyte-loop@repo.service not found.)", out)
+        self.assertEqual(
+            self.conn.execute("SELECT lastBeat FROM supervisorHeartbeats")
+            .fetchone(), (T0 + 20 * MINUTE,))
 
     def test_a_live_loop_heartbeat_leaves_the_reconcile_to_the_loop(self):
         """The loop's own tick covers a parked pull request while the loop

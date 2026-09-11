@@ -1982,7 +1982,7 @@ class MergeConfigTests(ConfigTestCase):
         self.assertEqual(merge.pr_style, "Title starts with [Feature Name].")
 
     def test_human_threads_is_read(self):
-        """`human_threads = "act"` lets the shepherd act on a person's
+        """`human_threads = "act"` lets the babysitter act on a person's
         thread; absent, it is `"park"`, KO-327's rule."""
         self.locate('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
 
@@ -1991,14 +1991,14 @@ class MergeConfigTests(ConfigTestCase):
 
     def test_pr_merge_method_is_read(self):
         """A squash-only repository names its method; absent, it is
-        `"merge"`, the merge commit the shepherd has always asked for."""
+        `"merge"`, the merge commit the babysitter has always asked for."""
         self.locate('[merge]\nmode = "pr"\npr_merge_method = "squash"\n')
 
         self.assertEqual(
             holophyte.config.merge_config(self.tgt).pr_merge_method, "squash")
 
     def test_pr_poll_sec_is_read(self):
-        """The least interval between two loop-started shepherd rounds on
+        """The least interval between two loop-started babysit rounds on
         one pull request; absent, three minutes (KO-362)."""
         self.locate('[merge]\nmode = "pr"\npr_poll_sec = 60\n')
 
