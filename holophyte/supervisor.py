@@ -961,14 +961,16 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     filed while the loop was down and a `--file-ticket --update` that
     turned a spec into a contract are the others, and all are owed the
     same start. What is owed a loop is read from the store
-    (`store.read.ready_tickets()`): a ticket `ready` with no live run and
-    no `launch_loop` row on its newest run. A start `systemctl` took is
-    recorded as that row, so a loop that is booting and has not claimed
-    yet is not started again by the next pass; a start that failed is one
-    printed line and no row, so the next pass, finding the ticket still
-    owed and the loop still free, tries again. Once per pass, however
-    many tickets are owed: the unit is the target's. "No loop live" is
-    two looks: no fresh heartbeat on a run of the project
+    (`store.read.ready_tickets()`): a ticket `ready` with no live run,
+    whatever its newest run's history. A start `systemctl` took is
+    recorded as a `launch_loop` row on that run, and a start that failed
+    is one printed line and no row; neither mark decides the next pass,
+    which finds a ticket still `ready` with no loop live owed again --
+    a refused start raised no loop and a taken one raised a loop that
+    never claimed. Once per pass, however many tickets are owed: the
+    unit is the target's, and a `systemctl start` on a unit already
+    running is nothing. "No loop live" is two looks: no fresh heartbeat
+    on a run of the project
     (`loop_is_live()`) and nobody holding the lease turn
     (`lease_turn_held()`), the flock a claim or close-out of this store
     holds between its look and its write -- a loop between its startup
@@ -1013,12 +1015,12 @@ def start_loop_for(target, conn, owed, now, out):
     and is committed before `systemctl` is asked, so a supervisor that
     dies between the ask and the answer still left the store saying it
     tried. A start `systemctl` took is then recorded as a `launch_loop`
-    intervention on each run, the success mark that stops the next pass
-    starting it again; a refused one records its refusal as a
-    `launch_loop_failed` event and no intervention, so the next pass
-    retries. A pass that dies after a taken start and before its mark
-    retries too, which is one more `systemctl start` on a unit already
-    running: nothing.
+    intervention on each run; a refused one records its refusal as a
+    `launch_loop_failed` event and no intervention. Neither mark
+    discharges the owing: the next pass reads the ticket's `ready` and
+    the loop's liveness, not the record, so a start whose loop never
+    came live is tried again -- one more `systemctl start` on a unit
+    already running or dead, which is nothing.
 
     The run of a pair is the ticket's newest; a ticket no run has claimed
     yet (filed while the loop was down, say) carries None and gets no

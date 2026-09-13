@@ -899,9 +899,8 @@ def supervisor_beat(conn):
 
 def ready_tickets(conn, project_id=None):
     """The `(ticket id, run id)` pairs a loop is owed for: every ticket the
-    mirror holds `ready` with no live run, less the ones whose newest run
-    already carries the supervisor's `launch_loop` row recording a start
-    `systemctl` took. `project_id` narrows it to one project's tickets.
+    mirror holds `ready` with no live run. `project_id` narrows it to one
+    project's tickets.
 
     The supervisor's sweep reads this at the end of every pass (KO-409):
     `ready` is the one status the requeue, babysit and filing paths all
@@ -909,16 +908,15 @@ def ready_tickets(conn, project_id=None):
     send-back, an operator's `--requeue` or `--babysit`, a ticket filed
     while the loop was down. The run id is the ticket's newest
     (`tickets.lastRunId`), None for a ticket no run has claimed yet: the
-    start's record is written on it where there is one. A taken start's
-    `launch_loop` row on that run is what says one was started, so a loop
-    still booting is not started again by the next pass; a start that
-    failed left no row, so the ticket is still owed then; a ticket a loop
-    claimed is `in_flight` and owed nothing.
+    start's record is written on it where there is one. History subtracts
+    nothing -- a `launch_loop` row on the newest run records a start
+    `systemctl` took, and a ticket still `ready` with no loop live after
+    one means the loop it raised never claimed: owed again at the next
+    pass's one start. What keeps a running loop from a second start is
+    liveness -- the heartbeat and the lease turn the sweep reads -- not
+    the record; a ticket a loop claimed is `in_flight` and owed nothing.
     """
-    where = ("t.status = 'ready' AND t.activeRunId IS NULL"
-             " AND NOT EXISTS (SELECT 1 FROM interventions l"
-             "   WHERE l.runId = t.lastRunId AND l.\"action\" = 'launch_loop'"
-             "   AND l.source = 'supervisor')")
+    where = "t.status = 'ready' AND t.activeRunId IS NULL"
     params = ()
     if project_id is not None:
         where += " AND t.projectId = ?"

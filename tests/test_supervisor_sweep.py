@@ -1963,11 +1963,14 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertEqual(calls(), [])
         self.assertNotIn("holophyte-loop@", out)
 
-    def test_a_failed_start_is_retried_next_pass_and_a_taken_one_is_not(self):
+    def test_a_failed_start_is_retried_and_a_taken_one_that_raised_no_loop(
+            self):
         """The ticket the send-back walked to `ready` is still owed a loop
-        after a start `systemctl` refused, so the next pass tries again;
-        once a start is taken the loop is booting, and the pass after that
-        leaves it alone rather than starting it a second time."""
+        after a start `systemctl` refused, so the next pass tries again; a
+        taken start is owed again the same way while the ticket stays
+        `ready` and nothing came live -- the `launch_loop` row records the
+        start, it does not discharge it, so a loop that exited before
+        claiming is raised again one pass later."""
         run_id = self.parked_on_pr()
         self.seen_before_activity(run_id)
         self.fake_github(self.ACTIVE_PULL)
@@ -1984,8 +1987,9 @@ class ParkedPullRequestTests(SweepTestCase):
 
         self.assertIn("could not be started (Failed to connect to bus)", first)
         self.assertIn("started holophyte-loop@repo", second)
-        self.assertNotIn("holophyte-loop@", third)
-        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertIn("started holophyte-loop@repo", third)
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo",
+                                   "--user start holophyte-loop@repo"])
         self.assertEqual(
             self.conn.execute("SELECT status FROM tickets WHERE id = ?",
                               (self.ticket_of[run_id],)).fetchone(),
@@ -2130,6 +2134,34 @@ class ParkedPullRequestTests(SweepTestCase):
 
         self.assertEqual(calls(), [])
         self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_ready_ticket_whose_start_was_taken_is_owed_again(self):
+        """The reviewer's repro: an operator's requeue put the ticket back
+        `ready`, the supervisor's start was taken and recorded as a
+        `launch_loop` row on the run, and the loop it raised exited
+        before claiming. An hour on, the ticket is still `ready` with no
+        heartbeat and no held turn, so the pass owes it the one start a
+        pass allows -- the row is the record of the start, not a reason
+        never to start again."""
+        run_id = self.a_run(claimed_at=T0)
+        ticket = self.ticket_of[run_id]
+        store.release(self.conn, run_id, "failed", "the worker gave up",
+                      now=T0 + MINUTE)
+        store.requeue(self.conn, ticket, "another go", now=T0 + 2 * MINUTE)
+        store.record_intervention(
+            self.conn, run_id, "launch_loop",
+            "the supervisor started holophyte-loop@repo for 1 ticket ready"
+            " while no loop was live",
+            source="supervisor", trigger="manual", now=T0 + 3 * MINUTE)
+        calls = self.fake_systemctl()
+
+        out = self.one_pass(T0 + 60 * MINUTE, StubProvider())
+
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM tickets WHERE id = ?",
+                              (ticket,)).fetchone(), ("ready",))
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertIn("started holophyte-loop@repo", out)
 
     def test_a_live_loop_heartbeat_leaves_the_reconcile_to_the_loop(self):
         """The loop's own tick covers a parked pull request while the loop
