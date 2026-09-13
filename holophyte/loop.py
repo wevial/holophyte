@@ -170,7 +170,7 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
 
 
 def reuse_leftover(target, wt, branch, conn=None, run_id=None,
-                   provider=None, task_id=None):
+                   provider=None, task_id=None, sync_origin=True):
     """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
 
     The reuse rule, stated once: preserved work survives. An unregistered
@@ -192,13 +192,18 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
 
     Nor is the local copy of the branch the branch's truth (KO-410): a
     pull-request target shares it with origin and with the operator, so
-    before main is merged in — and before the emptiness test, whose reset
-    would leave a remote ahead unread — a target with an `origin` runs the
-    same fetch-and-compare the babysit resume does (KO-379). A remote ahead
+    under `sync_origin` — the claim's reclaim of a failed run's leftover —
+    a target with an `origin` runs the same fetch-and-compare the babysit
+    resume does (KO-379), before main is merged in and before the emptiness
+    test, whose reset would leave a remote ahead unread. A remote ahead
     fast-forwards the local branch and worktree first, with a ledger note
     naming the commit count; an equal or behind one changes nothing; a
     diverged one is refused naming both shas, so no work resumes on a base
-    the remote has moved past. A target without `origin` skips the step.
+    the remote has moved past. The approved candidate's resume passes
+    `sync_origin` False: its worktree is already held to the sha the park
+    recorded (`_candidate_drift()`), and a fast-forward there would move
+    the branch onto commits no review saw and the merge gate would land
+    them. A target without `origin` skips the step either way.
     """
     sh(["git", "worktree", "prune"], target.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
@@ -248,7 +253,8 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
            cwd=wt)
         print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
               f" on {branch}")
-    if "origin" in sh(["git", "remote"], target.path).splitlines():
+    if (sync_origin
+            and "origin" in sh(["git", "remote"], target.path).splitlines()):
         try:
             _sync_branch_from_origin(
                 target, conn, run_id, provider, task_id, branch, wt,
@@ -618,8 +624,11 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     implementer and reviewer both skipped; the run fails naming both shas,
     the tree untouched -- no WIP rescue commit, nothing deleted -- for a
     human to look at. Only then does `reuse_leftover()` ready the worktree
-    exactly as after a failed run -- main merged in when it moved on, so the
-    verify below is against current main. A candidate that turns out to
+    as after a failed run -- main merged in when it moved on, so the
+    verify below is against current main -- but without the origin sync:
+    the approval is of the recorded sha, and a fast-forward to a remote
+    ahead would put commits no review saw under the merge below. A
+    candidate that turns out to
     hold nothing beyond main is refused too: an approval is of commits, and
     a branch with none is not what the operator signed off on. The walk is
     `claimed -> merge_gate` directly, the one edge §4 draws for this path,
@@ -656,7 +665,8 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
         raise RunFailure(f"approved candidate on {branch} is not what was"
                          f" approved: {why}")
     ok, why = reuse_leftover(target, wt, branch, conn=conn, run_id=run_id,
-                             provider=provider, task_id=task_id)
+                             provider=provider, task_id=task_id,
+                             sync_origin=False)
     if not ok:
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to reuse the approved candidate's"

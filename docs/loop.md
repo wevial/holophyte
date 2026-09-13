@@ -234,7 +234,11 @@ machines it walks. Back to the [README](index.md).
    moves the local branch and worktree to its head (a ledger note names
    the commit count), an equal or behind one changes nothing, and a
    diverged one fails the run naming both shas. A target with no
-   `origin` skips the step.
+   `origin` skips the step. The one reuse that does not fetch is the
+   approved candidate's resume under `--approve KO-n` (item 6): the
+   approval is of the sha the park recorded, so that branch merges at
+   exactly that sha rather than being moved onto remote commits no
+   review saw.
 8. On the *second* failed run of the same ticket (`MAX_FAILED_RUNS`), the
    ticket is blocked instead of left open: its stored status becomes
    `blocked_on_operator` and one Linear comment lists what each failed run

@@ -2519,6 +2519,52 @@ class MergeApprovalTests(LoopFixture):
                 self.assertEqual((run_id, outcome), (2, "failed"))
                 self.assertIn(approved[:12], reason)
 
+    def test_a_remote_commit_past_the_approved_candidate_is_not_merged(self):
+        """The approved candidate's resume reuses the worktree too, and an
+        `origin` the branch is shared with can hold commits past the
+        approval. The reclaim's fetch-and-fast-forward (KO-410) must not run
+        on this path: the approval is of the sha the park recorded, so the
+        resume merges exactly that sha and the remote's commit stays on
+        origin — before the fix the fast-forward moved the branch onto it
+        and the gate merged it with no review."""
+        self.configure('[merge]\napprove = "human"\n')
+        self.loop(Commit("the scripted work"), APPROVE)
+        wt = self.worktrees / "ko-131-add-a-thing"
+        approved = self.git("rev-parse", "HEAD", cwd=wt).strip()
+        # The remote copy of the parked branch, moved one commit on by a
+        # person — published the way LeftoverWorktreeTests publishes.
+        bare = self.worktrees.parent / "origin.git"
+        self.git("init", "-q", "--bare", str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", str(self.target), f"{BRANCH}:{BRANCH}",
+                 cwd=bare)
+        clone = self.worktrees.parent / "person"
+        self.git("clone", "-q", "-b", BRANCH, str(bare), str(clone))
+        self.git("config", "user.email", "person@example.invalid", cwd=clone)
+        self.git("config", "user.name", "A Person", cwd=clone)
+        (clone / "person.txt").write_text("unreviewed\n")
+        self.git("add", "-A", cwd=clone)
+        self.git("commit", "-q", "-m", "person: pushed past the approval",
+                 cwd=clone)
+        theirs = self.git("rev-parse", "HEAD", cwd=clone).strip()
+        self.git("fetch", "-q", str(clone), f"{BRANCH}:{BRANCH}", cwd=bare)
+        holophyte.loop.approve(self.tgt, "KO-131", "ok", out=io.StringIO())
+
+        fake, _ = self.loop()
+
+        self.assertEqual(fake.roles, [])
+        # The merge's second parent is the approved sha, not the remote's:
+        # the person's commit is on `main` nowhere.
+        self.assertEqual(self.git("rev-parse", "main^2").strip(), approved)
+        self.assertNotIn(theirs, self.git("rev-list", "main").split())
+        self.assertIn("the scripted work", self.subjects())
+        self.assertEqual(
+            self.read("SELECT outcome FROM runs WHERE id = 2"),
+            [("merged",)])
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE text LIKE"
+                      " 'Fast-forwarded%'"), [])
+
     def test_auto_and_an_absent_table_merge_as_before(self):
         for toml in ('[merge]\napprove = "auto"\n', None):
             with self.subTest(config=toml):
