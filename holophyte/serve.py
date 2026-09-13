@@ -953,8 +953,8 @@ def unit_action(target, action, unit_name):
     `holophyte.reexec.SYSTEMCTL_TIMEOUT` is 200 with `ok: false` and the
     reason in `detail`: the operator asked for a thing and is told what
     happened, which is not a server error. `launch-loop` starts the unit
-    through `start_loop()`, the call the supervisor's sweep makes when it
-    sent a ticket back and no loop is live (KO-376).
+    through `start_loop()`, the call the supervisor's sweep makes when a
+    ticket is ready and no loop is live (KO-376, widened by KO-409).
     """
     verb, template, intervention = UNIT_ACTIONS[action]
     unit = template + unit_name

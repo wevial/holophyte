@@ -67,14 +67,17 @@ live on the target: a run parked on its pull request (`[merge] mode =
 sweep interval of a person merging it on GitHub, exactly as the loop's own
 pass would have done had it still been running; while a loop's heartbeat
 is fresh the loop's tick does that and the supervisor leaves it alone. A
-GitHub error there is one printed line and never a strike. When that
-reconcile sends a run back to the babysitter (new review activity on its
-pull request walks the ticket to `ready`) and no loop is live to claim it,
-the pass starts the loop the way the console's launch-loop action does,
+GitHub error there is one printed line and never a strike. Every pass
+ends by starting the loop whenever a ticket is ready and no loop is
+running, however the ticket got there -- that reconcile sending a run
+back to the babysitter, an operator's `--requeue` or `--babysit`, a
+ticket filed while the loop was down -- the way the console's
+launch-loop action does,
 `systemctl --user start holophyte-loop@NAME` with `[serve] name`, and
 prints that it did. "No loop live" is no fresh heartbeat and nobody
 holding the target's `lease.lock` turn. The attempt is recorded on the
-run sent back (a `launch_loop_attempt` event) before `systemctl` is
+ticket's newest run when it has one (a `launch_loop_attempt` event)
+before `systemctl` is
 asked, and a start it took is recorded after as a `launch_loop`
 intervention, so a loop still booting is not started twice; a
 `systemctl` that fails is printed, records a `launch_loop_failed` event

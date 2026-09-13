@@ -11,8 +11,8 @@ owning one: the loop's tests patch `holophyte.loop.EXEC`, the supervisor's
 
 The other way a factory process is started: `start_loop()` asks the user
 service manager for the target's `holophyte-loop@` unit, the one call the
-daemon's `launch-loop` action and the supervisor's sweep share (KO-376), so
-a loop the supervisor starts for work its sweep made is started exactly as
+daemon's `launch-loop` action and the supervisor's sweep share (KO-376),
+so a loop the supervisor starts for ready work is started exactly as
 the operator's console click starts one. Standard library only.
 """
 import os

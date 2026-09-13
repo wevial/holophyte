@@ -2084,6 +2084,53 @@ class ParkedPullRequestTests(SweepTestCase):
             self.conn.execute("SELECT lastBeat FROM supervisorHeartbeats")
             .fetchone(), (T0 + 20 * MINUTE,))
 
+    # KO-409: the send-back above is one case of the rule. A ticket ready
+    # for any other reason -- an operator's --requeue or --babysit, a
+    # filing while the loop was down -- is owed the same start.
+    def ready_ticket(self):
+        """A ticket `ready` the way `--file-ticket` leaves one: mirrored
+        with a contract and never run."""
+        self.tickets += 1
+        n = self.tickets
+        return store.mirror_ticket(
+            self.conn, self.project, linear_issue_id=f"issue-{n}",
+            linear_identifier=f"KO-{n}", title=f"ticket {n}",
+            acceptance_criteria=[f"Given ticket {n}, then it is worked"],
+            verification_commands=["echo ok"])
+
+    def test_a_ready_ticket_without_a_send_back_starts_the_loop_unit(self):
+        """A pass that sent nothing back but finds a ticket `ready`
+        starts the unit; a store holding nothing ready starts nothing."""
+        calls = self.fake_systemctl()
+
+        quiet = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", quiet)
+
+        self.ready_ticket()
+        out = self.one_pass(T0 + 21 * MINUTE, StubProvider())
+
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertIn("started holophyte-loop@repo", out)
+
+    def test_a_ready_ticket_under_a_held_lease_turn_starts_nothing(self):
+        """A loop between its startup and its first claim's heartbeat
+        holds `lease.lock`: a ready ticket under that held turn is the
+        booting loop's own, and the pass starts nothing."""
+        self.ready_ticket()
+        calls = self.fake_systemctl()
+        lock = holophyte.board.lease_turn_path(self.tgt)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+        out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", out)
+
     def test_a_live_loop_heartbeat_leaves_the_reconcile_to_the_loop(self):
         """The loop's own tick covers a parked pull request while the loop
         is live, so the supervisor does not ask GitHub twice a minute
