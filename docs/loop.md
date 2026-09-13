@@ -227,7 +227,14 @@ machines it walks. Back to the [README](index.md).
 7. On failure (budget blown, no commits, verify stuck, 2 failed rounds):
    the loop stops and leaves the branch + worktree behind for a human;
    the ticket stays In Progress. A no-commit task is discarded outright —
-   there is nothing to preserve.
+   there is nothing to preserve. A claim that reuses a preserved branch
+   does not work from the local copy alone: the reused branch is
+   fetched and fast-forwarded to what `origin` holds of it before
+   `main` is merged in and any implementer turn runs — a remote ahead
+   moves the local branch and worktree to its head (a ledger note names
+   the commit count), an equal or behind one changes nothing, and a
+   diverged one fails the run naming both shas. A target with no
+   `origin` skips the step.
 8. On the *second* failed run of the same ticket (`MAX_FAILED_RUNS`), the
    ticket is blocked instead of left open: its stored status becomes
    `blocked_on_operator` and one Linear comment lists what each failed run

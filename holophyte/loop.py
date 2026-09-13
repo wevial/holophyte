@@ -169,7 +169,8 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
     return True, ""
 
 
-def reuse_leftover(target, wt, branch):
+def reuse_leftover(target, wt, branch, conn=None, run_id=None,
+                   provider=None, task_id=None):
     """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
 
     The reuse rule, stated once: preserved work survives. An unregistered
@@ -188,6 +189,16 @@ def reuse_leftover(target, wt, branch):
     person's call. A worktree sitting off the branch while the branch holds
     commits of its own is a human's call and is refused with the state
     named. Nothing is ever deleted here.
+
+    Nor is the local copy of the branch the branch's truth (KO-410): a
+    pull-request target shares it with origin and with the operator, so
+    before main is merged in — and before the emptiness test, whose reset
+    would leave a remote ahead unread — a target with an `origin` runs the
+    same fetch-and-compare the babysit resume does (KO-379). A remote ahead
+    fast-forwards the local branch and worktree first, with a ledger note
+    naming the commit count; an equal or behind one changes nothing; a
+    diverged one is refused naming both shas, so no work resumes on a base
+    the remote has moved past. A target without `origin` skips the step.
     """
     sh(["git", "worktree", "prune"], target.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
@@ -221,14 +232,6 @@ def reuse_leftover(target, wt, branch):
         return False, (f"worktree {wt} is on {head_ref} while branch"
                        f" {branch} holds commits it does not; a human"
                        " reconciles them before this ticket is run again")
-    if (not dirty and is_ancestor("HEAD", "main")
-            and (not branch_held or is_ancestor(branch, "main"))):
-        # Verifiably empty: a clean tree, and neither tip holding anything
-        # main does not already have. The one case where resetting loses no
-        # work — and the reset is what keeps the branch from starting behind
-        # a main that moved on since the leftover was cut.
-        sh(["git", "checkout", "-B", branch, "main"], cwd=wt)
-        return True, ""
     # `-B` with no start point parks `branch` at the HEAD we are on without
     # touching the tree, so it cannot die on uncommitted files the way
     # `-B branch main` does.
@@ -245,6 +248,23 @@ def reuse_leftover(target, wt, branch):
            cwd=wt)
         print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
               f" on {branch}")
+    if "origin" in sh(["git", "remote"], target.path).splitlines():
+        try:
+            _sync_branch_from_origin(
+                target, conn, run_id, provider, task_id, branch, wt,
+                diverged=("branch {branch} diverged from origin: local"
+                          " {local}, remote {remote}; reconcile by hand"))
+        except RunFailure as e:
+            return False, str(e)
+    if not dirty and is_ancestor("HEAD", "main"):
+        # Verifiably empty: a clean tree, and the branch tip — parked at
+        # HEAD by the `-B` above — holding nothing main does not already
+        # have, on the remote's side of the fetch too or the fast-forward
+        # would have moved it. The one case where resetting loses no work
+        # — and the reset is what keeps the branch from starting behind a
+        # main that moved on since the leftover was cut.
+        sh(["git", "checkout", "-B", branch, "main"], cwd=wt)
+        return True, ""
     if not is_ancestor("main", "HEAD"):
         # Preserved commits under a main that moved on: the review routes
         # and the merge gate both require main to be an ancestor of the
@@ -635,7 +655,8 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                " again.", provider)
         raise RunFailure(f"approved candidate on {branch} is not what was"
                          f" approved: {why}")
-    ok, why = reuse_leftover(target, wt, branch)
+    ok, why = reuse_leftover(target, wt, branch, conn=conn, run_id=run_id,
+                             provider=provider, task_id=task_id)
     if not ok:
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to reuse the approved candidate's"
@@ -734,7 +755,8 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
 
 
 def _sync_branch_from_origin(target, conn, run_id, provider, task_id,
-                             branch, wt, url, reviewed):
+                             branch, wt, url=None, reviewed=None,
+                             diverged=None):
     """Fast-forward the worktree and `branch` to what `origin` holds for
     it, and return the branch's sha afterwards (KO-379).
 
@@ -752,13 +774,18 @@ def _sync_branch_from_origin(target, conn, run_id, provider, task_id,
     resolve (no remote, an unreachable one) is one printed line, and the
     pass goes on from the local branch as before: the pull-request pass's
     own "someone else pushed" park still covers a head it cannot see.
+
+    `diverged` is the failure text for the caller that cannot park on a
+    pull request -- the claim's reuse of a leftover branch (KO-410): a
+    divergence then fails the run with it instead, `{branch}`, `{local}`
+    and `{remote}` filled in.
     """
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     fetched = subprocess.run(["git", "fetch", "origin", branch], cwd=wt,
                              capture_output=True, text=True)
     if fetched.returncode != 0:
-        print(f"[holo2] could not fetch {branch} from origin; babysitting"
-              f" from the local branch at {sha[:12]}:"
+        print(f"[holo2] could not fetch {branch} from origin; working from"
+              f" the local branch at {sha[:12]}:"
               f" {fetched.stderr.strip() or fetched.stdout.strip()}")
         return sha
     remote = sh(["git", "rev-parse", "FETCH_HEAD"], cwd=wt)
@@ -770,6 +797,9 @@ def _sync_branch_from_origin(target, conn, run_id, provider, task_id,
     if remote == sha or is_ancestor(remote, sha):
         return sha
     if not is_ancestor(sha, remote):
+        if diverged is not None:
+            raise RunFailure(diverged.format(branch=branch, local=sha,
+                                             remote=remote))
         pull = pr.parse_pr_url(url)
         if pull is None:
             raise RunFailure(f"cannot read a pull request off {url!r};"
@@ -964,7 +994,9 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
     if wt.exists():
         # leftover from a previous failed run — reuse it so preserved work
         # survives; the branch check below still gates on commits.
-        ok, why = reuse_leftover(target, wt, branch)
+        ok, why = reuse_leftover(target, wt, branch, conn=conn,
+                                 run_id=run_id, provider=provider,
+                                 task_id=task_id)
         if not ok:
             ledger(conn, run_id, task_id, "failure",
                    f"FAILED to reuse leftover worktree for: {task}\n"

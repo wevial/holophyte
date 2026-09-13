@@ -1341,6 +1341,115 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn(BRANCH, self.branches())
 
+    # --- the reused branch is asked of origin first (KO-410) -------------
+
+    def published_leftover(self):
+        """A leftover worktree holding a preserved commit, published to a
+        bare `origin` a person can then move -- the remote a pull-request
+        target shares the branch with. Returns `(worktree, local sha, bare
+        path, clone path)`; the person's commits are made in the clone and
+        `publish()` moves the bare branch onto them."""
+        wt = self.leftover()
+        (wt / "work.txt").write_text("preserved\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=wt)
+        local = self.git("rev-parse", "HEAD", cwd=wt).strip()
+        bare = self.worktrees.parent / "origin.git"
+        self.git("init", "-q", "--bare", str(bare))
+        self.git("fetch", "-q", str(self.target), f"{BRANCH}:{BRANCH}",
+                 cwd=bare)
+        self.git("remote", "add", "origin", str(bare))
+        clone = self.worktrees.parent / "person"
+        self.git("clone", "-q", "-b", BRANCH, str(bare), str(clone))
+        self.git("config", "user.email", "person@example.invalid", cwd=clone)
+        self.git("config", "user.name", "A Person", cwd=clone)
+        return wt, local, bare, clone
+
+    def publish(self, clone, bare, force=False):
+        """The person's `clone` branch moved onto the bare remote -- by a
+        fetch into it, since the fixture's `git push` is the witnessed
+        fake (`force` for a rewritten history)."""
+        spec = f"{'+' if force else ''}{BRANCH}:{BRANCH}"
+        self.git("fetch", "-q", str(clone), spec, cwd=bare)
+        return self.git("rev-parse", BRANCH, cwd=bare).strip()
+
+    def head_seen(self):
+        """An implementer step that records the sha the turn stood on,
+        alongside the list it records into: `(seen, step)`."""
+        seen = []
+        git = self.git
+
+        class NoteHead(Idle):
+            def play(self, cwd, turn):
+                seen.append(git("rev-parse", "HEAD", cwd=cwd).strip())
+                return "noted the head"
+
+        return seen, NoteHead()
+
+    def test_a_reclaim_fast_forwards_the_preserved_branch_to_origin(self):
+        """The remote copy of the preserved branch is a commit ahead -- a
+        person pushed on top of the parked work. The reclaim fast-forwards
+        the worktree and the local branch to the remote's head before the
+        implementer runs, and the ledger note names the commit count."""
+        _wt, _local, bare, clone = self.published_leftover()
+        (clone / "README.md").write_text("a person's touch\n")
+        self.git("commit", "-q", "-am", "person: one commit on top",
+                 cwd=clone)
+        theirs = self.publish(clone, bare)
+
+        seen, note_head = self.head_seen()
+        fake, _ = self.loop(note_head, APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(seen, [theirs])
+        review = next(t for t in fake.turns if t.role == "review")
+        self.assertEqual(review.candidate_sha, theirs)
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE kind = 'note' AND text"
+                      " LIKE 'Fast-forwarded%'"),
+            [(f"Fast-forwarded {BRANCH} to {theirs} from origin (1 commit(s)"
+              " pushed by someone else)",)])
+        self.assertIn("person: one commit on top", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_reclaim_with_an_equal_remote_changes_nothing(self):
+        """The remote holds exactly the preserved tip: nothing is
+        fast-forwarded, no note is written, and the branch the implementer
+        stands on is the local one it left."""
+        _wt, local, _bare, _clone = self.published_leftover()
+
+        seen, note_head = self.head_seen()
+        fake, _ = self.loop(note_head, APPROVE)
+
+        self.assertEqual(seen, [local])
+        review = next(t for t in fake.turns if t.role == "review")
+        self.assertEqual(review.candidate_sha, local)
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE text LIKE"
+                      " 'Fast-forwarded%'"), [])
+
+    def test_a_reclaim_refuses_a_preserved_branch_diverged_from_origin(self):
+        """The remote copy was rewritten rather than built on: neither side
+        fast-forwards to the other. The run fails before any implementer
+        turn, naming both shas, and the branch stands at its local tip."""
+        wt, local, bare, clone = self.published_leftover()
+        self.git("reset", "-q", "--hard", "HEAD~1", cwd=clone)
+        (clone / "README.md").write_text("rewritten\n")
+        self.git("commit", "-q", "-am", "person: a rewrite", cwd=clone)
+        theirs = self.publish(clone, bare, force=True)
+
+        fake, _ = self.loop()  # an empty script: any agent turn would raise
+
+        self.assertEqual(fake.roles, [])
+        ((outcome, reason),) = self.read(
+            "SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("diverged", reason)
+        self.assertIn(local, reason)
+        self.assertIn(theirs, reason)
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), local)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(), local)
+
 
 class SweepDiagnosticsTests(LoopFixture):
     """A held ticket and the startup preamble surface the read-only sweep.
