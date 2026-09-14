@@ -80,7 +80,10 @@ The store is its own package:
 
 - `store/__init__.py` — the v2 durable state store, one WAL-mode SQLite
   file: claims and leases, run-phase transitions, review rounds and
-  interventions.
+  the ledger.
+- `store/operate.py` — the operator API: `release()`/`resume()`/
+  `requeue()`/`repoint()`/`approve()`/`babysit()`, `record_intervention()`
+  and the `runEvents` writers, re-exported from the package.
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3

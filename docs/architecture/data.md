@@ -29,7 +29,7 @@ the loop and its supervisor contend on one file without either dying.
 ## The two state machines
 
 Both live as data (`TICKET_TRANSITIONS` in `store/tickets.py`,
-`RUN_PHASE_TRANSITIONS` in `store/__init__.py`),
+`RUN_PHASE_TRANSITIONS` in `store/operate.py`),
 `store.tickets.transition()` refuses any edge not in them,
 and a test fails if the rendered diagram in [The loop](../loop.md) drifts
 from the tables.
