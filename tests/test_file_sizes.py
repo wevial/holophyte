@@ -48,6 +48,7 @@ PINNED = {
     "holophyte/babysitter.py": 841,
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 467,
+    "tests/test_holophyte_package.py": 298,
 }
 
 
