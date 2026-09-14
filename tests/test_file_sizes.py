@@ -30,13 +30,13 @@ CEILING = {"source": 1000, "test": 1500}
 # back under its ceiling leaves the table.
 OVER = {
     "holophyte/config.py": 1227,
-    "holophyte/loop.py": 1860,
+    "holophyte/loop.py": 1469,
     "holophyte/pr.py": 1033,
     "holophyte/serve.py": 1779,
     "holophyte/supervisor.py": 1250,
     "store/__init__.py": 2995,
-    "tests/test_factory_config.py": 2075,
-    "tests/test_factory_loop.py": 6648,
+    "tests/test_factory_config.py": 2076,
+    "tests/test_factory_loop.py": 6649,
     "tests/test_serve.py": 3134,
     "tests/test_supervisor_sweep.py": 2255,
 }
@@ -47,10 +47,11 @@ OVER = {
 PINNED = {
     "holophyte/babysitter.py": 841,
     "holophyte/claim.py": 822,
-    "holophyte/pool.py": 390,
+    "holophyte/operator.py": 430,
+    "holophyte/pool.py": 386,
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 467,
-    "tests/test_holophyte_package.py": 298,
+    "tests/test_holophyte_package.py": 305,
     "tests/test_worktree_reuse.py": 239,
 }
 

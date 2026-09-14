@@ -5,7 +5,7 @@
 `--file-ticket PATH [--state] [--priority]`,
 `--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT`, the internal
 `--worker` and the loop itself
-dispatch from here to `holophyte.loop`, `holophyte.board`,
+dispatch from here to `holophyte.operator`, `holophyte.board`,
 `holophyte.supervisor` and `holophyte.serve`; the `Target`
 is built once from the command line and handed down, and the board
 (`LinearProvider`) is built here and never reached for by name below.
@@ -30,7 +30,7 @@ from holophyte.config import (
     check_worktree_setup,
     loop_config,
 )
-from holophyte.loop import (
+from holophyte.operator import (
     approve,
     babysit_ticket,
     main,

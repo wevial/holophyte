@@ -173,7 +173,14 @@ DEFINED = {
         "sweep_lines",
         "sweep_report",
     ],
-    _module("loop"): ["main", "report", "run_task", "self_hosted"],
+    _module("loop"): ["run_task"],
+    # KO-390: the operator commands and the entry point, out of
+    # `holophyte.loop`.
+    _module("operator"): [
+        "_operator_store", "_reexec", "_requeue_candidate", "_serial",
+        "_ticket_by_identifier", "approve", "babysit_ticket", "main",
+        "report", "repoint", "requeue", "self_hosted",
+    ],
     # KO-389: the claim and the worktree cut, out of `holophyte.loop`.
     _module("claim"): [
         "_Held", "_admit_ticket", "_claim_next", "_claim_run",

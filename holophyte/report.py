@@ -7,7 +7,8 @@ report shares with the supervisor's liveness line and the sweep table --
 `host_label` for that column as a public rendering shows it.
 Read-only: `store.read` and the standard library, and nothing that writes,
 claims or calls Linear. Opening the store is `report()`'s job in
-`holophyte.loop` and `supervisor_liveness_line()`'s in `holophyte.supervisor`.
+`holophyte.operator` and `supervisor_liveness_line()`'s in
+`holophyte.supervisor`.
 
 Fourth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.

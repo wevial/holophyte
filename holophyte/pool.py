@@ -229,12 +229,8 @@ def scheduler(target, provider, knobs):
     and the next exit recounts. Exits 0 with the queue empty and the pool
     drained, nonzero when any worker failed or stopped for a human.
     """
-    from holophyte.loop import (
-        _mirror_queue,
-        _reexec,
-        _startup_sweep,
-        self_hosted,
-    )
+    from holophyte.loop import _mirror_queue, _startup_sweep
+    from holophyte.operator import _reexec, self_hosted
 
     conn = open_store(target)
     pool = {}  # pid -> (slot number, Popen), the live workers
