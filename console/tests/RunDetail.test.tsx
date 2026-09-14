@@ -223,6 +223,36 @@ test("the header shows a PR #N anchor when pr_url is set and none otherwise", as
   expect(pr.getAttribute("rel")).toBe("noopener noreferrer");
 });
 
+test("a finished run's box figure freezes at its end while a live run's keeps counting on the ticking clock", async () => {
+  // Ended 82 minutes after it started against a 30-minute box: the clock a
+  // day later still reads the run's own figure.
+  const finished: RunDetailBody = {
+    ...DETAIL,
+    run: { ...DETAIL.run, phase: "done", ended_ms: T + 82 * MINUTE, outcome: "merged" },
+    rounds: [DETAIL.rounds[0]!, { ...DETAIL.rounds[1]!, ended_ms: T + 30 * MINUTE }],
+  };
+  await mount(finished, T + 82 * MINUTE + 24 * 60 * MINUTE);
+  const box = document.querySelector("[data-box]")!;
+  expect(box.textContent).toBe("52m over the box");
+  expect(box.getAttribute("data-box")).toBe("over");
+  cleanup();
+
+  // A live run 40 minutes into the same box reads the card's clock: two
+  // seconds on the console's clock grows the figure by two seconds.
+  const liveRun: Run = { ...working.runs[0]!, id: 91, started_ms: T, elapsed_ms: 40 * MINUTE };
+  const status: Status = { ...working, now: T + 40 * MINUTE, runs: [liveRun] };
+  const seen = T + 40 * MINUTE;
+  const page = (now: number) => (
+    <Now hosts={[hostOf(status, NO_ATTENTION, BASE, seen)]} project="all" now={now} deps={{ fetch: answering(DETAIL) }} />
+  );
+  const view = render(page(seen));
+  fireEvent.click(within(screen.getByRole("listitem")).getByRole("button"));
+  await settle();
+  expect(document.querySelector("[data-box]")!.textContent).toBe("10m 00s over the box");
+  view.rerender(page(seen + 2_000));
+  expect(document.querySelector("[data-box]")!.textContent).toBe("10m 02s over the box");
+});
+
 test("past the box the header reads 10m 00s over the box in the bad tone and the segments fill the bar", async () => {
   await mount(DETAIL, T + 40 * MINUTE);
   const box = document.querySelector("[data-box]")!;
