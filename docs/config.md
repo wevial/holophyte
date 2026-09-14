@@ -214,12 +214,13 @@ from the name the new prefix gives it.
 heartbeat_stale_min      = 5    # a heartbeat older than this is a silent sighting
 stale_strikes            = 2    # consecutive silent sightings that trip a run
 budget_grace             = 1.5  # multiple of the ticket's estimate that blows the box
+run_cap                  = 3.0  # the run's hard ceiling, in boxes: the loop refuses a turn past it
 review_overlap_threshold = 0.5  # findings shared by two rounds that reads as stuck
 sweep_interval_sec       = 60   # sleep between two --supervise passes
 restart_grace_sec        = 120  # how long a self-merge re-exec may take to come back
 ```
 
-Accepted keys: the six above.
+Accepted keys: the seven above.
 
 The box is counted per turn: a run's allowance is the ticket's estimate once
 for its first implementer turn and once more for each review round it has
@@ -227,11 +228,20 @@ recorded, up to the run's review cap, all under `budget_grace` -- the same
 budget the loop gives each turn, so a fix round after a review is not swept as
 overtime. A run with no review round yet is judged against the single box.
 
+Whatever that allowance grows to, `run_cap` times the box is the ceiling: the
+loop refuses to arm a turn whose budget would carry the run past it -- the run
+fails there, candidate preserved, instead of the turn being killed mid-edit --
+and a run that slips past anyway is swept. The ceiling exists for the run that
+keeps earning turns by failing review, the case the per-turn budget cannot
+bound. `run_cap` is a number from 1.5 to 5.0; `/status` carries it in
+`thresholds` so the console's time-box bar can draw it.
+
 Different targets want different patience — a Go build's worktree setup is
 slower than stdlib Python's — and these are the knobs `--sweep` and
 `--supervise` read. Each value is checked at startup, for every mode: the
 thresholds and the interval must be positive numbers, `stale_strikes` a
-positive integer, and the overlap a fraction in (0, 1]. A value outside its
+positive integer, the overlap a fraction in (0, 1], and `run_cap` a number
+from 1.5 to 5.0. A value outside its
 constraint is an error naming the key and the constraint, like malformed TOML,
 rather than a default quietly used in its place. A key this version does not
 know is refused the same way. The config is read once at startup; a running

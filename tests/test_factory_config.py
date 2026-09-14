@@ -844,6 +844,51 @@ class BudgetScaleTests(ConfigTestCase):
         self.assertEqual(run.call_args.args[2], 45 * 60)
 
 
+class RunCapTests(ConfigTestCase):
+    """`[supervisor] run_cap`: the run's hard ceiling, in multiples of its
+    box -- 3.0 when absent, a number from 1.5 to 5.0 when set."""
+
+    def test_an_absent_key_is_the_default_ceiling(self):
+        self.locate()
+
+        self.assertEqual(holophyte.config.sweep_config(self.tgt).run_cap, 3.0)
+
+    def test_a_cap_inside_the_range_is_read(self):
+        self.locate("[supervisor]\nrun_cap = 2\n")
+
+        self.assertEqual(holophyte.config.sweep_config(self.tgt).run_cap, 2)
+
+    def test_a_cap_outside_the_range_is_a_startup_error(self):
+        """1 lets a run barely turn twice; 6 is no ceiling at all. Each is
+        refused at startup, for every mode, naming the key and the range --
+        before anything is claimed."""
+        for line in ("run_cap = 1", "run_cap = 6"):
+            with self.subTest(line=line):
+                target = self.locate(f"[supervisor]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[supervisor]", message)
+                self.assertIn("run_cap", message)
+                self.assertIn("1.5", message)
+                self.assertIn("5.0", message)
+                report.assert_not_called()
+
+    def test_the_key_is_a_known_supervisor_key(self):
+        """A set `run_cap` is not the unknown-key typo refusal: the config
+        loads and the value is what the reader hands back."""
+        target = self.locate("[supervisor]\nrun_cap = 2\n").path
+
+        with patch.object(holophyte.cli, "report") as report:
+            holophyte.cli.cli([str(target), "--report"])
+
+        report.assert_called_once_with(self.tgt)
+
+
 class StartupCheckTests(ConfigTestCase):
     """Configured routes resolve before a ticket is claimed, not mid-round.
 

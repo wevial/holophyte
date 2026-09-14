@@ -28,9 +28,17 @@ class TimeBoxAllowanceTests(unittest.TestCase):
 
     def test_the_box_is_counted_once_per_turn_up_to_the_cap(self):
         allowance = holophyte.supervisor.time_box_allowance
-        self.assertEqual(allowance(30, 0, 2, 1.5), 45)
-        self.assertEqual(allowance(30, 1, 2, 1.5), 90)
-        self.assertEqual(allowance(30, 3, 2, 1.5), 135)
+        # A run_cap high enough not to bind keeps the per-turn arithmetic.
+        self.assertEqual(allowance(30, 0, 2, 1.5, 5), 45)
+        self.assertEqual(allowance(30, 1, 2, 1.5, 5), 90)
+        self.assertEqual(allowance(30, 3, 2, 1.5, 5), 135)
+
+    def test_the_run_cap_bounds_the_allowance_whatever_the_rounds(self):
+        """KO-416: three rounds would earn 135 min at grace 1.5; the
+        default run cap of three boxes cuts the allowance to 90."""
+        allowance = holophyte.supervisor.time_box_allowance
+        self.assertEqual(allowance(30, 3, 2, 1.5, 3.0), 90)
+        self.assertEqual(allowance(30, 0, 2, 1.5, 3.0), 45)
 
 
 class TimeBoxPerTurnSweepTests(SweepTestCase):
