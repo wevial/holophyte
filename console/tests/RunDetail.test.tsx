@@ -360,6 +360,21 @@ test("a finished run's done figure is its whole span, not the stretch the segmen
   expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 10m 00s");
 });
 
+test("a run that ended before any segment opened still reads done with the run's span", async () => {
+  // claimed -> failed maps to no segment kind, so the bar is an empty
+  // track: the done line comes from the run, not the segments.
+  const failed: RunDetailBody = {
+    ...DETAIL,
+    run: { ...DETAIL.run, phase: "failed", ended_ms: T + MINUTE, outcome: "failed" },
+    rounds: [],
+    events: [{ at: T, kind: "phase_change", summary: "claimed -> failed: lease lost" }],
+  };
+  await mount(failed, T + MINUTE);
+  const bar = screen.getByRole("list", { name: "Round timeline" });
+  expect(Array.from(bar.children).map((item) => item.getAttribute("data-segment"))).toEqual(["remaining"]);
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 1m 00s");
+});
+
 test("a run parked on merge approval is live, not done: the status line names the waiting phase and the wait ticks", async () => {
   const parked: RunDetailBody = {
     ...DETAIL,

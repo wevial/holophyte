@@ -36,7 +36,8 @@ export function RoundTimeline({
   segments: Segment[];
   /** The run the segments came from: `ended_ms` decides "done" (a closed
    *  last segment alone is only a park) and the done figure is its whole
-   *  span, not the stretch the segments cover. */
+   *  span, not the stretch the segments cover — drawn even when the run's
+   *  events left no segment at all. */
   run: Pick<TimelineRun, "started_ms" | "ended_ms" | "phase">;
   /** The caller's clock; a parked phase's wait ages by it. */
   now: number;
@@ -54,10 +55,10 @@ export function RoundTimeline({
   }
   const last = segments[segments.length - 1];
   const status =
-    last == null
-      ? undefined
-      : run.ended_ms != null
-        ? { label: "done", ms: run.ended_ms - run.started_ms }
+    run.ended_ms != null
+      ? { label: "done", ms: run.ended_ms - run.started_ms }
+      : last == null
+        ? undefined
         : last.running
           ? { label: last.label, ms: last.to - last.from }
           : { label: phaseLabel(run.phase), ms: now - last.to };
