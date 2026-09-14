@@ -919,7 +919,6 @@ from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     RUN_PHASE_TRANSITIONS,
     TERMINAL_PHASES,
     ApproveRefused,
-    GuidanceNotAccepted,
     RepointRefused,
     RequeueRefused,
     ResumeRefused,
@@ -939,6 +938,18 @@ from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     resume,
     unreturned_loop_restarts,
 )
+
+
+class GuidanceNotAccepted(ResumeRefused):
+    """Human text was offered to a run that never asked for it.
+
+    §5's enforced invariant, and the reason this is a subclass rather than a
+    return value: guidance landing on a `working` run is the mid-run steering
+    injection the whole phase model exists to prevent, so it is a validation
+    error and the run is left exactly as it was.
+    """
+
+
 from .tickets import (  # noqa: E402,F401 - re-export after `_json_list`
     STATE_GRAPHS,
     TICKET_STATUSES,

@@ -6,12 +6,15 @@ escalation-ladder commands `requeue()`/`approve()`/`babysit()`/`repoint()`
 with their refusals and the `_release_parked()` transaction `approve()` and
 `babysit()` share, `GATE_CONFLICT_REASON`/`is_gate_conflict()` and
 `repoint()`'s `FULL_SHA`, the §5 resume machinery (`RESUMABLE_*`/
-`PARKED_PHASES`, the `RUN_PHASE_TRANSITIONS` graph, `ResumeRefused`/
-`GuidanceNotAccepted`, `resume()`) and `record_intervention()` with the
-`INTERVENTION_*` unions it validates against. The `runEvents` writers,
-`park()` and `record_pr_seen()` are run lifecycle, not operator API, and
-stay home; `PHASES`, `_append_event`, `set_phase()` and `record_ledger()`
-are shared with the run API and are imported back from the package, while
+`PARKED_PHASES`, the `RUN_PHASE_TRANSITIONS` graph, `ResumeRefused`,
+`resume()`) and `record_intervention()` with the `INTERVENTION_*` unions
+it validates against. The `runEvents` writers, `park()` and
+`record_pr_seen()` are run lifecycle, not operator API, and stay home;
+so does `GuidanceNotAccepted`, which the move list does not name -- the
+package defines it once this module has bound `ResumeRefused`, and
+`resume()` reaches it through a deferred `from . import`. `PHASES`,
+`_append_event`, `set_phase()` and `record_ledger()` are shared with the
+run API and are imported back from the package, while
 `walk_ticket` comes straight from `store.tickets` -- the package binds it
 only after this module is imported. The supervisor sweep's liveness
 bookkeeping followed in the same slice's review: `record_strike()`'s
@@ -584,16 +587,6 @@ class ResumeRefused(Exception):
     """
 
 
-class GuidanceNotAccepted(ResumeRefused):
-    """Human text was offered to a run that never asked for it.
-
-    §5's enforced invariant, and the reason this is a subclass rather than a
-    return value: guidance landing on a `working` run is the mid-run steering
-    injection the whole phase model exists to prevent, so it is a validation
-    error and the run is left exactly as it was.
-    """
-
-
 def resume(conn, run_id, guidance=None, source="human", now=None):
     """Resume `run_id`, optionally with `guidance`; return the phase re-entered.
 
@@ -660,6 +653,7 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
         # The guidance gate is asked first: on a `done` run offered guidance
         # both rules are broken, and the one worth naming is the injection.
         if guidance is not None and phase != "blocked_on_operator":
+            from . import GuidanceNotAccepted
             raise GuidanceNotAccepted(
                 f"run {run_id} is in phase {phase}, not blocked_on_operator:"
                 " guidance is only accepted by a run that asked for it"
