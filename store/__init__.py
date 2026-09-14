@@ -404,6 +404,172 @@ def run_phase(conn, run_id):
     return row[0]
 
 
+# §2's two log levels. `narrative` is the run's story and drives the live
+# view; `detail` is the volume underneath it, and is the only level §2 gives a
+# payload to.
+EVENT_LEVELS = ("narrative", "detail")
+
+
+def _append_event(conn, run_id, level, kind, summary, at, payload=None):
+    """Append one row to run `run_id`'s event stream; return its `seq`.
+
+    No transaction of its own, deliberately: an event describes a thing that
+    happened, so it belongs to the transaction of the write it describes —
+    `set_phase()` lands the phase, the heartbeat and this row together or not
+    at all. `seq` is `MAX(seq) + 1` read inside that transaction, so the
+    `UNIQUE (runId, seq)` index stands behind the per-run monotonicity rather
+    than a caller's counter.
+    """
+    (seq,) = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents WHERE runId = ?",
+        (run_id,),
+    ).fetchone()
+    conn.execute(
+        "INSERT INTO runEvents (runId, seq, level, kind, summary, payload, at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (run_id, seq, level, kind, summary, payload, at),
+    )
+    return seq
+
+
+def record_event(conn, run_id, kind, summary, level="narrative", now=None,
+                 payload=None):
+    """Append one event of `kind` to run `run_id`'s stream; return its `seq`.
+
+    `set_phase()` writes the stream's `phase_change` rows and is the only
+    writer of a run's phase; this is how the loop writes the rows that are not
+    transitions — a best-effort projection that failed, say. `kind` is free
+    text because §2's column is a label rather than an enum, `level` is one of
+    §2's two, and `payload` is the `detail`-row field: the text behind the
+    summary (a crash's traceback, say), refused on a `narrative` row so the
+    stream's two levels keep meaning what §2 says they mean.
+
+    An unknown `run_id` is a caller bug and raises `ValueError`, the way
+    `set_phase()` and `run_phase()` answer the same mistake — the foreign key
+    would refuse the row anyway, but as an `IntegrityError` naming a
+    constraint rather than the run that does not exist. `now` is epoch
+    milliseconds for `at`, defaulting to the clock.
+    """
+    if level not in EVENT_LEVELS:
+        raise ValueError(f"unknown event level {level!r}")
+    if payload is not None and level != "detail":
+        raise ValueError("payload is a detail-level field")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        if conn.execute("SELECT 1 FROM runs WHERE id = ?",
+                        (run_id,)).fetchone() is None:
+            raise ValueError(f"no run {run_id}")
+        return _append_event(conn, run_id, level, kind, summary, now,
+                             payload=payload)
+
+
+def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
+         now=None, approved_sha=None, pr_seen=None):
+    """Park the live run `run_id` in `phase` and give its lease back.
+
+    `[merge] approve = "human"`: the reviewer approved and the pre-merge
+    verify passed, and a person now has to say "merge". The run is not over
+    -- nothing failed and nothing merged, and the candidate it holds is the
+    one the answer is about -- so unlike `release()` this stamps no
+    `endedAt` and no outcome: `runs.phase` reads `awaiting_merge_approval`
+    for as long as the run waits, which is what the acceptance criterion and
+    `/attention` read. What it shares with `release()` is the lease half,
+    written the same way and in the same transaction as the phase move:
+    the ticket's pointer moves from `activeRunId` to `lastRunId`, so the
+    ticket is free to be claimed again and the parked run stays reachable
+    from it exactly as an ended one is.
+
+    `candidate_sha` is the full sha of the candidate the park is about --
+    the one the reviewer approved and the pre-merge verify passed -- stored
+    as `runs.candidateSha` so the resume that follows an approval can hold
+    the worktree to it rather than merge whatever it finds there.
+
+    `pr_url` is the pull request `[merge] mode = "pr"` opened for the
+    candidate before parking it, stored as `runs.prUrl` in the same
+    transaction as the phase move: the URL is what the park is waiting on,
+    so a reader never sees a run parked for a PR without knowing which.
+
+    `approved_sha` is the sha the last independent judgement covered -- the
+    reviewer's approval or the operator's release -- stored as
+    `runs.approvedSha`. Under `mode = "pr"` it and `candidate_sha` part
+    ways once a fix round moves the candidate: the resumed shepherd merges
+    the candidate only at this sha, and reviews it again at any other.
+
+    `pr_seen` is `(updated_at, threads, checks, review)` as the pull
+    request read after the pass's own writes -- GitHub's `updatedAt`
+    string, its review thread count, the head's checks rollup and the
+    review decision -- written by `record_pr_seen()` in the same
+    transaction (KO-362, KO-368), so the loop's per-tick reconcile knows
+    what activity the pass has already answered. None records nothing.
+
+    `phase` must be one of `PARKED_PHASES`; the sweep leaves those alone, so
+    a run parked here is not reported dead for having no heartbeat. Parking
+    a run that has already ended raises `RunEnded`, and an unknown `run_id`
+    raises `ValueError`, both before any write.
+    """
+    if phase not in PARKED_PHASES:
+        raise ValueError(f"{phase!r} is not a phase a run is parked in")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT ticketId FROM runs WHERE id = ?", (run_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        (ticket_id,) = row
+        # `set_phase()` is what refuses an ended run, with `RunEnded`.
+        set_phase(conn, run_id, phase, note=note, now=now)
+        if candidate_sha is not None:
+            conn.execute("UPDATE runs SET candidateSha = ? WHERE id = ?",
+                         (candidate_sha, run_id))
+        if pr_url is not None:
+            conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
+                         (pr_url, run_id))
+        if approved_sha is not None:
+            conn.execute("UPDATE runs SET approvedSha = ? WHERE id = ?",
+                         (approved_sha, run_id))
+        if pr_seen is not None:
+            record_pr_seen(conn, run_id, pr_seen)
+        conn.execute(
+            "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
+            " WHERE id = ? AND activeRunId = ?",
+            (run_id, ticket_id, run_id),
+        )
+
+
+def record_pr_seen(conn, run_id, seen, parked_only=False, facts_only=False):
+    """Record what one read of the pull request run `run_id` is parked on
+    saw: `seen` is `(updated_at, threads, checks, review)` -- GitHub's
+    `updatedAt` string, the review-thread count, the head's checks rollup
+    ("success", "pending", "failure") and the review decision
+    ("approved", "changes_requested", "review_required"), each None when
+    GitHub did not say -- written as `runs.prSeenAt`, `prSeenThreads`,
+    `prSeenChecks` and `prSeenReview` in one statement. The loop's
+    reconcile holds the first two against the next read to tell new
+    review activity from its own (KO-362); `/attention`'s `pr_open` item
+    carries the last three (KO-368). `parked_only` writes nothing to a
+    run no longer in `awaiting_merge_approval`, for a caller that read
+    the run outside the transaction it writes in. `facts_only` writes the
+    checks rollup and review decision alone, leaving the activity mark
+    (`prSeenAt`, `prSeenThreads`) as the last pass recorded it: the
+    reconcile's read of an unchanged pull request refreshes the facts
+    without moving what it holds the next read against. Joins the
+    caller's transaction when one is open.
+    """
+    updated_at, threads, checks, review = seen
+    guard = " AND phase = 'awaiting_merge_approval'" if parked_only else ""
+    with _transaction(conn):
+        if facts_only:
+            conn.execute("UPDATE runs SET prSeenChecks = ?, prSeenReview = ?"
+                         f" WHERE id = ?{guard}", (checks, review, run_id))
+            return
+        conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?,"
+                     f" prSeenChecks = ?, prSeenReview = ? WHERE id = ?{guard}",
+                     (updated_at, threads, checks, review, run_id))
+
+
 def _json_list(field, values):
     """Encode a contract `string[]` field as the JSON text the schema stores.
 
@@ -924,7 +1090,6 @@ def unreturned_loop_restarts(conn, grace_ms, now=None):
 from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     APPROVED_RESUME_PHASE,
     ENDED_PHASES,
-    EVENT_LEVELS,
     FULL_SHA,
     GATE_CONFLICT_REASON,
     INTERVENTION_ACTIONS,
@@ -941,15 +1106,11 @@ from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     RepointRefused,
     RequeueRefused,
     ResumeRefused,
-    _append_event,
     _release_parked,
     approve,
     babysit,
     is_gate_conflict,
-    park,
-    record_event,
     record_intervention,
-    record_pr_seen,
     release,
     repoint,
     requeue,
