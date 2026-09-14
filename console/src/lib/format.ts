@@ -43,6 +43,20 @@ export function formatSpan(ms: number): string {
 }
 
 /**
+ * A run's whole span in minutes and seconds, with no hour rollover:
+ * `45s`, `12m 34s`, `82m 14s`, `245m 03s`.
+ */
+export function formatTotal(ms: number): string {
+  const total = Math.max(0, Math.floor(ms));
+  if (total >= MINUTE) {
+    const minutes = Math.floor(total / MINUTE);
+    const seconds = Math.floor((total % MINUTE) / SECOND);
+    return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+  }
+  return `${Math.floor(total / SECOND)}s`;
+}
+
+/**
  * A settled duration: the run has ended, so the seconds stop mattering —
  * `45s`, `52m`, then `formatDuration`'s two units from an hour up:
  * `7h 38m`, `3d 4h`.
