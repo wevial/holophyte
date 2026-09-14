@@ -116,12 +116,13 @@ retires it.
 
 Module size is a ratchet on the same terms: no source module over
 1000 lines, no test module over 1500. `tests/test_file_sizes.py` holds a
-table of the modules over their ceiling, each entry the count at the
-commit that last tightened it, and walks every tracked Python file
-against it — a module that grows past its entry, a module with no entry
-that passes its ceiling, and an entry whose module is back under the
-ceiling all fail the suite. A slice that splits a module lowers its entry
-to the new count; a module back under its ceiling leaves the table, so
+table of the modules over their ceiling, each entry its module's count
+as `wc -l` measures it, and walks every tracked Python file against it —
+a module that grows past its entry, a module with no entry that passes
+its ceiling, and an entry whose module is back under the ceiling all
+fail the suite, and a second check holds every entry to `wc -l`'s exact
+count. A slice that changes a listed module's size rewrites its entry in
+the same commit; a module back under its ceiling leaves the table, so
 the numbers only move down.
 
 ruff is a developer tool, not a dependency: install it on the host with
