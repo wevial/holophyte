@@ -779,6 +779,71 @@ class AgentCommandTests(ConfigTestCase):
                 self.assertIn(expected, str(raised.exception))
 
 
+class BudgetScaleTests(ConfigTestCase):
+    """`[agents] budget_scale`: the implementer turn's wall-clock
+    multiplier -- 1.0 when absent, a number from 1.0 to 3.0 when set."""
+
+    def test_an_absent_key_is_the_unscaled_budget(self):
+        self.locate()
+
+        self.assertEqual(holophyte.config.budget_scale(self.tgt), 1.0)
+
+    def test_a_scale_inside_the_range_is_read(self):
+        for line in ("budget_scale = 1.5", "budget_scale = 2",
+                     "budget_scale = 1", "budget_scale = 3"):
+            with self.subTest(line=line):
+                self.locate(f"[agents]\n{line}\n")
+
+                self.assertEqual(holophyte.config.budget_scale(self.tgt),
+                                 float(line.split("= ")[1]))
+
+    def test_a_scale_outside_the_range_is_a_startup_error(self):
+        """0.5 shrinks a budget the cap exists to stop; 4 stops being a
+        cap. Each is refused at startup, for every mode, naming the key and
+        the range -- before anything is claimed."""
+        for line in ("budget_scale = 0.5", "budget_scale = 4",
+                     "budget_scale = true", 'budget_scale = "two"',
+                     "budget_scale = 0.999", "budget_scale = 3.5"):
+            with self.subTest(line=line):
+                target = self.locate(f"[agents]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[agents]", message)
+                self.assertIn("budget_scale", message)
+                self.assertIn("1.0", message)
+                self.assertIn("3.0", message)
+                report.assert_not_called()
+
+    def test_the_key_is_a_known_agents_key(self):
+        """A set `budget_scale` is not the unknown-key typo refusal: the
+        config loads and the value is what the reader hands back."""
+        target = self.locate("[agents]\nbudget_scale = 2\n").path
+
+        with patch.object(holophyte.cli, "report") as report:
+            holophyte.cli.cli([str(target), "--report"])
+
+        report.assert_called_once_with(self.tgt)
+
+    def test_the_scale_stretches_the_hard_cap_the_turn_is_held_under(self):
+        """`IMPL_TIMEOUT` becomes the scaled thirty minutes: a caller that
+        names no timeout gets the ceiling, and one that does is held under
+        the scaled one."""
+        self.locate("[agents]\nbudget_scale = 1.5\n")
+
+        worktree = Path("/tmp/holophyte-scale")
+        with patch.object(holophyte.agents, "run_capped") as run:
+            run.return_value = (0, "implemented")
+            holophyte.agents.agent(self.tgt, "implement", "make the change",
+                                   worktree, timeout=60 * 60)
+
+        self.assertEqual(run.call_args.args[2], 45 * 60)
+
+
 class StartupCheckTests(ConfigTestCase):
     """Configured routes resolve before a ticket is claimed, not mid-round.
 

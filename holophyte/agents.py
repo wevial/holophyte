@@ -25,6 +25,7 @@ from holophyte.config import (
     IMPL_MODEL,
     IMPL_TIMEOUT,
     agent_command,
+    budget_scale,
     carry_directories,
     review_profile,
     review_route,
@@ -193,7 +194,8 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     """Run one agent turn for a role. Returns combined output text.
 
     An `implement` turn runs in a process group of its own under `timeout`
-    seconds (`IMPL_TIMEOUT` when the caller names none, and never more): a
+    seconds (`IMPL_TIMEOUT` when the caller names none, and never more --
+    both multiplied by the target's `[agents] budget_scale`): a
     `claude -p` that reaches the cap is killed with every subagent and Bash
     child it started, and the turn raises `subprocess.TimeoutExpired` carrying
     what it printed first. Signalling only the CLI left its children
@@ -256,7 +258,12 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
                            timeout=1800)
         return (r.stdout + "\n" + r.stderr).strip()
-    cap = IMPL_TIMEOUT if timeout is None else min(timeout, IMPL_TIMEOUT)
+    # `IMPL_TIMEOUT` is the scaled thirty minutes on this target: the
+    # caller's `timeout` already carries `[agents] budget_scale`, and the
+    # ceiling it is held under stretches with it.
+    cap = IMPL_TIMEOUT * budget_scale(target)
+    if timeout is not None:
+        cap = min(timeout, cap)
     # The hook is passed only when there is one, so a turn without a
     # sweep-time kill runs exactly the call it always did.
     hook = {"on_start": on_start} if on_start is not None else {}

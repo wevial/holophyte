@@ -29,16 +29,16 @@ CEILING = {"source": 1000, "test": 1500}
 # a listed file's size rewrites its entry in the same commit; a file
 # back under its ceiling leaves the table.
 OVER = {
-    "holophyte/config.py": 1227,
-    "holophyte/loop.py": 1493,
+    "holophyte/config.py": 1266,
+    "holophyte/loop.py": 1510,
     "holophyte/pr.py": 1033,
-    "holophyte/serve.py": 1779,
-    "holophyte/supervisor.py": 1250,
+    "holophyte/serve.py": 1790,
+    "holophyte/supervisor.py": 1255,
     "store/__init__.py": 2995,
-    "tests/test_factory_config.py": 2076,
-    "tests/test_factory_loop.py": 6716,
-    "tests/test_serve.py": 3134,
-    "tests/test_supervisor_sweep.py": 2255,
+    "tests/test_factory_config.py": 2141,
+    "tests/test_factory_loop.py": 6759,
+    "tests/test_serve.py": 3150,
+    "tests/test_supervisor_sweep.py": 2286,
 }
 
 # Repo-relative path to the file's `wc -l` count, for a file a slice
