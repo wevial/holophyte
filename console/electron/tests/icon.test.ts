@@ -21,13 +21,51 @@ describe("renderIcon", () => {
   });
 });
 
+describe("quiet template", () => {
+  test("menubar-template.svg is the black leaf with its veins cut out by a mask, and its PNGs are 18 and 36 px wide", () => {
+    const svg = readFileSync(path.resolve(import.meta.dirname, "../../../assets/menubar-template.svg"), "utf8");
+    expect(svg).not.toContain("stroke");
+    expect(svg).not.toContain("fill-rule");
+    const paths = svg.match(/<path[^>]*>/g) ?? [];
+    expect(paths).toHaveLength(2);
+    const [veins, leaf] = paths;
+    const mask = svg.match(/<mask id="([^"]*)">(.*?)<\/mask>/);
+    expect(mask).toBeTruthy();
+    const [, maskId, maskBody] = mask ?? [];
+    expect(maskBody).toContain('<rect x="0" y="0" width="320" height="240" fill="#FFFFFF"/>');
+    expect(veins).toContain('fill="#000"');
+    expect(maskBody).toContain(veins);
+    expect(leaf).toContain('fill="#000"');
+    expect(leaf).toContain(`mask="url(#${maskId})"`);
+    const leafD = leaf.match(/d="([^"]*)"/)?.[1] ?? "";
+    const veinD = veins.match(/d="([^"]*)"/)?.[1] ?? "";
+    expect(leafD.match(/M/g)).toHaveLength(2);
+    expect(veinD.match(/M/g)).toHaveLength(8);
+    // The warn glyph carries the same ten subpaths, so joining the
+    // template's lobes and veins at the split reproduces the leaf the
+    // state glyphs already draw.
+    const warn = readFileSync(path.resolve(import.meta.dirname, "../../../assets/menubar-warn.svg"), "utf8");
+    const [warnVeins, warnLeaf] = warn.match(/<path[^>]*>/g) ?? [];
+    const warnD = [warnLeaf, warnVeins].map((p) => p?.match(/d="([^"]*)"/)?.[1] ?? "").join(" ");
+    expect(`${leafD} ${veinD}`).toBe(warnD);
+    for (const [file, width] of [["menubar-template@1x.png", 18], ["menubar-template@2x.png", 36]] as const) {
+      const png = readFileSync(path.resolve(import.meta.dirname, `../../../assets/${file}`));
+      expect(Array.from(png.subarray(0, 8))).toEqual(PNG_SIGNATURE);
+      const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+      expect(new TextDecoder().decode(png.subarray(12, 16))).toBe("IHDR");
+      expect(view.getUint32(16)).toBe(width);
+    }
+  });
+});
+
 describe("state glyphs", () => {
   const template = readFileSync(path.resolve(import.meta.dirname, "../../../assets/menubar-template.svg"), "utf8");
-  // The template path is ten subpaths split on "Z ": the two lobes first,
-  // then the eight veins. The state glyphs draw the lobes filled white and
-  // cut the veins back out through the mask, so the leaf and vein `d`s
-  // joined at that split reproduce the template `d` subpath for subpath.
-  const templateD = template.match(/d="([^"]*)"/)?.[1] ?? "";
+  // The template's path data is ten subpaths split on "Z ": the two lobes
+  // first, then the eight veins. The glyphs draw the lobes filled and cut
+  // the veins back out through the mask, so the leaf and vein `d`s joined
+  // at that split reproduce the template `d` subpath for subpath.
+  const [templateVeins, templateLeaf] = template.match(/<path[^>]*>/g) ?? [];
+  const templateD = [templateLeaf, templateVeins].map((p) => p?.match(/d="([^"]*)"/)?.[1] ?? "").join(" ");
 
   for (const [variant, colour] of Object.entries(STATE_COLOUR)) {
     test(`menubar-${variant}.svg is the white leaf with veins cut out by a mask and the state dot beside it`, () => {
