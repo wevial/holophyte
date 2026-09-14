@@ -43,7 +43,9 @@ Each module, one line:
   write, `text` and `{"patch": ...}` bodies alike.
 - `holophyte/serve_actions.py` — the daemon's `POST /actions/...` routes
   (KO-395): the body parser, the two unit actions, `requeue`, and the
-  interventions row each records before it acts.
+  interventions row each records before it acts. The `/runs`, `/shipped`
+  and `/ledger` read routes moved here under the same ticket's size gate
+  once the named region alone left `serve.py` over 1,000 lines.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
