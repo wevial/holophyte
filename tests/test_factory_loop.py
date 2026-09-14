@@ -60,6 +60,7 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
@@ -188,8 +189,8 @@ class LoopFixture(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         # The GitHub budget the reconcile remembers is the process's; a
         # test that ran it low must not back off the tests after it.
-        budget = patch.object(holophyte.loop, "GITHUB_BUDGET",
-                              holophyte.loop.GitHubBudget())
+        budget = patch.object(holophyte.reconcile, "GITHUB_BUDGET",
+                              holophyte.reconcile.GitHubBudget())
         budget.start()
         self.addCleanup(budget.stop)
         root = Path(tmp.name)

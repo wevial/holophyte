@@ -6,6 +6,7 @@ from holophyte import babysitter, pr
 from holophyte.board import block_ticket, ledger
 from holophyte.config import merge_config, sweep_config
 from holophyte.gates import MergeParked, RunFailure, sh
+from holophyte.reconcile import _pr_seen
 from holophyte.runs import heartbeat_while, set_phase
 
 
@@ -309,20 +310,3 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
               if threads else ""), provider)
     raise MergeParked(f"pull request open: {pull.url}; {babysitter.gist(why)};"
                       f" branch {branch} preserved at {short}")
-
-
-def _pr_seen(target, pull):
-    """`(updatedAt, thread count, checks, review)` as the pull request
-    reads now -- `store.record_pr_seen()`'s tuple -- for the park to
-    record after the pass's own writes; None when GitHub could not be
-    asked, which the park records as nothing seen."""
-    from holophyte.loop import GITHUB_BUDGET, _seen
-
-    try:
-        status = pr.pull_status(target, pull)
-    except Exception as e:  # noqa: BLE001 - any transport failure
-        print(f"[holo2] {pull.url} could not be read after the pass ({e});"
-              " the park records no activity mark")
-        return None
-    GITHUB_BUDGET.remember(status)
-    return _seen(status)

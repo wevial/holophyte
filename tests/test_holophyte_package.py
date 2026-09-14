@@ -28,6 +28,7 @@ import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
+import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
@@ -202,7 +203,6 @@ DEFINED = {
         "_open_pr",
         "_park_human",
         "_park_on_pr",
-        "_pr_seen",
         "_resume_on_pr",
         "_written_pr_text",
     ],
@@ -247,6 +247,23 @@ DEFINED = {
         "push_branch",
         "repo_of",
         "token_from_env",
+    ],
+    # KO-387: the startup reconciles and the GitHub budget, split out of
+    # `holophyte.loop` (`_pr_seen` out of `holophyte.pullrequest`).
+    holophyte.reconcile: [
+        "GitHubBudget",
+        "_budget_low",
+        "_iso_epoch",
+        "_land_github_merge",
+        "_note_closed_pr",
+        "_parked_phase",
+        "_parked_pull_request",
+        "_pr_seen",
+        "_rebabysit",
+        "_reconcile_at_startup",
+        "_reconcile_mirror",
+        "_reconcile_pull_requests",
+        "_seen",
     ],
 }
 
