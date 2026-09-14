@@ -21,6 +21,7 @@ import unittest
 from pathlib import Path
 
 import store
+import store.schema
 
 # The §3 drawing, read as (from, to) pairs, plus Holophyte's own escalation
 # edge `in_flight → blocked_on_operator` (KO-140): a ticket the loop keeps
@@ -283,7 +284,7 @@ class TicketStatusTests(unittest.TestCase):
         # starting clean — the retry would commit the state it was meant to
         # replace.
         with self.assertRaises(sqlite3.IntegrityError):
-            with store._transaction(self.conn):
+            with store.schema._transaction(self.conn):
                 self.conn.execute(
                     "INSERT INTO tickets"
                     " (projectId, linearIssueId, linearIdentifier, title,"

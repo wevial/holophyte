@@ -4,7 +4,7 @@ WAL admits one writer at a time, and the loop, its heartbeat thread and the
 supervisor's sweep are three writers on one file. Run 103 died at a phase
 change with `database is locked` because the sqlite3 default wait of five
 seconds was shorter than a sweep under load. `store.open()` waits
-`store.BUSY_TIMEOUT_S` instead; the tests hold a write lock on one
+`store.schema.BUSY_TIMEOUT_S` instead; the tests hold a write lock on one
 connection and show a second one waits it out, and that the wait is still a
 bound rather than a hang.
 
@@ -21,6 +21,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
+import store.schema
 
 
 def hold_write_lock(path, seconds, held):
@@ -74,7 +75,7 @@ class BusyTimeoutTests(unittest.TestCase):
 
     def test_wait_is_bounded(self):
         self.start_hold(2)
-        with patch.object(store, "BUSY_TIMEOUT_S", 0.2):
+        with patch.object(store.schema, "BUSY_TIMEOUT_S", 0.2):
             writer = store.open(self.path)
         self.addCleanup(writer.close)
         with self.assertRaises(sqlite3.OperationalError) as caught:
@@ -90,7 +91,7 @@ class BusyTimeoutTests(unittest.TestCase):
         self.addCleanup(conn.close)
         self.assertEqual(
             conn.execute("PRAGMA busy_timeout").fetchone(),
-            (store.BUSY_TIMEOUT_S * 1000,))
+            (store.schema.BUSY_TIMEOUT_S * 1000,))
 
 
 MINUTE = 60 * 1000
