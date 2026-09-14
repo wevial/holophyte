@@ -51,10 +51,10 @@ Each module, one line:
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.
-- `holophyte/babysitter.py` — the babysit pass's texts: the adjudicator's
-  brief over a PR's threads, the `ADDRESS`/`DECLINE`/`HUMAN` verdict
-  parser, the `---- Comment by MODEL ----` replies, the round text and the
-  parked question. Pure; the loop drives the calls.
+- `holophyte/babysitter.py` — the babysit pass over a pull request: the
+  adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
+  verdict parser, the `---- Comment by MODEL ----` replies, the round
+  text, the parked question, and the passes that drive them.
 - `holophyte/reexec.py` — `reexec_self`, the shared self re-exec the loop
   and the supervisor both restart themselves through.
 
