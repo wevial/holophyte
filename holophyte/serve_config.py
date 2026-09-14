@@ -296,7 +296,7 @@ def _write_config(target, text, now, current,
     note = (f"operator {how.format(path=path)};"
             f" applies at the {CONFIG_APPLIES}; previous text in "
             + (str(backup) if backup else "no backup: there was no file"))
-    from holophyte.serve import record_action_intervention
+    from holophyte.serve_actions import record_action_intervention
     recorded = record_action_intervention(target, CONFIG_ACTION, note)
     if recorded is None:
         return 503, {"ok": False, "error": "the store holds no run to record"

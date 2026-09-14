@@ -41,6 +41,12 @@ Each module, one line:
 - `holophyte/serve_config.py` — the daemon's `/config` routes (KO-394):
   `GET`'s redacted read and `PUT`'s validated, recorded and backed-up
   write, `text` and `{"patch": ...}` bodies alike.
+- `holophyte/serve_actions.py` — the daemon's `POST /actions/...` routes
+  (KO-395): the body parser, the two unit actions, `requeue`, and the
+  interventions row each records before it acts.
+- `holophyte/serve_runs.py` — the daemon's run and ledger read routes
+  (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
+  and `/runs/N/files`, their query parsers and the origin-link pair.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
