@@ -39,6 +39,7 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.files  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
+import holophyte.serve_config  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -2842,9 +2843,9 @@ class ConfigEditTests(ServeTestCase):
         when = datetime(2026, 9, 10, 12, 0, 0, tzinfo=timezone.utc)
         second = first.replace("workers = 2", "workers = 3")
         third = first.replace("workers = 2", "workers = 4")
-        code, one = holophyte.serve.write_config(tgt, {"text": second}, when)
+        code, one = holophyte.serve_config.write_config(tgt, {"text": second}, when)
         self.assertEqual(code, 200, one)
-        code, two = holophyte.serve.write_config(tgt, {"text": third}, when)
+        code, two = holophyte.serve_config.write_config(tgt, {"text": third}, when)
         self.assertEqual(code, 200, two)
         self.assertNotEqual(one["backup"], two["backup"])
         self.assertEqual(Path(one["backup"]).read_text(), first)

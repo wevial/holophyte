@@ -32,11 +32,11 @@ OVER = {
     "holophyte/config.py": 1280,
     "holophyte/loop.py": 1586,
     "holophyte/pr.py": 1033,
-    "holophyte/serve.py": 1792,
+    "holophyte/serve.py": 1487,
     "holophyte/supervisor.py": 1296,
     "tests/test_factory_config.py": 2186,
     "tests/test_factory_loop.py": 6907,
-    "tests/test_serve.py": 3152,
+    "tests/test_serve.py": 3153,
     "tests/test_supervisor_sweep.py": 2358,
 }
 
@@ -53,7 +53,7 @@ PINNED = {
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 468, "holophyte/reexec.py": 94,
     "holophyte/report.py": 160, "provider.py": 303,
-    "store/__init__.py": 975,
+    "holophyte/serve_config.py": 336, "store/__init__.py": 975,
     "store/operate.py": 939,
     "store/read.py": 930, "store/schema.py": 740,
     "store/tickets.py": 460,
