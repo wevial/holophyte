@@ -620,6 +620,14 @@ STALE_STRIKES = 2
 # guess, and the trip is meant to catch a run that is not going to finish
 # rather than one that is merely slower than the ticket hoped.
 BUDGET_GRACE = 1.5
+# A run's hard ceiling, in multiples of its box: whatever the per-turn
+# allowance grows to, a run stops here. The loop refuses to arm a turn whose
+# budget would carry the run past it -- refused rather than killed mid-edit
+# -- and the sweep trips a run that slips past anyway. Bounded on both
+# ends: under 1.5 the ceiling sits inside the grace a single turn already
+# gets, and past 5 the ceiling stops bounding the run at all.
+RUN_CAP = 3.0
+RUN_CAP_RANGE = (1.5, 5.0)
 # How much of their findings two consecutive review rounds may share before
 # the review is read as circling rather than converging: the Jaccard overlap
 # `store.findings_overlap()` measures, over the `(path, line, severity)` keys
@@ -646,7 +654,7 @@ SUPERVISE_INTERVAL_SEC = 60
 # exited in two minutes is not merely slow.
 RESTART_GRACE_SEC = 120
 
-# The six knobs above have an address: the optional `[supervisor]` table of
+# The seven knobs above have an address: the optional `[supervisor]` table of
 # `<repo>.holophyte.toml`. Different targets legitimately want different
 # patience -- a Go build's setup is slower than stdlib Python's -- and the
 # constants are the defaults, not the lookup sites: an absent table is
@@ -657,17 +665,18 @@ SUPERVISOR_KEYS = {
     "heartbeat_stale_min": HEARTBEAT_STALE_MS / 60000,
     "stale_strikes": STALE_STRIKES,
     "budget_grace": BUDGET_GRACE,
+    "run_cap": RUN_CAP,
     "review_overlap_threshold": REVIEW_OVERLAP_THRESHOLD,
     "sweep_interval_sec": SUPERVISE_INTERVAL_SEC,
     "restart_grace_sec": RESTART_GRACE_SEC,
 }
-# The knobs as the sweep reads them: the same six, with the heartbeat
+# The knobs as the sweep reads them: the same seven, with the heartbeat
 # threshold and the restart grace already in milliseconds, so the arithmetic
 # in `sweep()` is the arithmetic it always was.
 KNOWN_KEYS["supervisor"] = frozenset(SUPERVISOR_KEYS)
 SweepConfig = collections.namedtuple(
     "SweepConfig",
-    ("heartbeat_stale_ms", "stale_strikes", "budget_grace",
+    ("heartbeat_stale_ms", "stale_strikes", "budget_grace", "run_cap",
      "review_overlap_threshold", "sweep_interval_sec", "restart_grace_ms"))
 
 
@@ -706,6 +715,10 @@ def sweep_config(target):
                 isinstance(value, int) and value > 0)
         elif key == "review_overlap_threshold":
             constraint, ok = "a number in (0, 1]", number and 0 < value <= 1
+        elif key == "run_cap":
+            low, high = RUN_CAP_RANGE
+            constraint, ok = (f"a number from {low} to {high}",
+                              number and low <= value <= high)
         else:
             constraint, ok = "a finite positive number", number and value > 0
         if not ok:
@@ -717,6 +730,7 @@ def sweep_config(target):
         heartbeat_stale_ms=int(values["heartbeat_stale_min"] * 60000),
         stale_strikes=values["stale_strikes"],
         budget_grace=values["budget_grace"],
+        run_cap=values["run_cap"],
         review_overlap_threshold=values["review_overlap_threshold"],
         sweep_interval_sec=values["sweep_interval_sec"],
         restart_grace_ms=values["restart_grace_sec"] * 1000)

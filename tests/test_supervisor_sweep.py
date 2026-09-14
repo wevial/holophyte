@@ -348,6 +348,28 @@ class TimeBoxTests(SweepTestCase):
         self.assertEqual((trip.run_id, trip.condition), (run_id, "time_box"))
         self.assertIn("60 min box", trip.evidence)
 
+    def test_a_run_past_the_run_cap_trips_despite_earned_rounds(self):
+        """KO-388's gap, closed: two recorded rounds earn the run
+        30 x 3 x 1.5 = 135 min under the per-turn formula, but `run_cap`
+        3 cuts the allowance to 90 -- so a run 100 minutes in trips for
+        the box it blew where the per-turn formula alone would not."""
+        run_id = self.a_run(budget_min=30, phase="addressing")
+        for number in (1, 2):
+            store.record_review_round(
+                self.conn, run_id, number, "changes_requested", "reviewer",
+                findings=[{"path": "a.py", "line": number, "severity": "p1",
+                           "message": f"fix a.py ({number})"}],
+                started_at=T0 + number * MINUTE,
+                ended_at=T0 + number * MINUTE + 1)
+        at = T0 + 100 * MINUTE  # under 135 (rounds x grace); past 90 (run cap)
+        self.heartbeat_at(run_id, at)  # alive, so only the box could trip it
+
+        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, at).trips
+
+        self.assertEqual((trip.run_id, trip.condition), (run_id, "time_box"))
+        self.assertIn("100.0 min", trip.evidence)
+        self.assertIn("3.0x run cap", trip.evidence)
+
 
 def finding(path, severity="p1", line=1):
     return {"path": path, "line": line, "severity": severity,
@@ -1522,7 +1544,7 @@ class SupervisorConfigTests(SweepTestCase):
     def test_an_absent_table_is_the_documented_defaults(self):
 
         self.assertEqual(holophyte.config.sweep_config(self.tgt),
-                         (5 * MINUTE, 2, 1.5, 0.5, 60, 2 * MINUTE))
+                         (5 * MINUTE, 2, 1.5, 3.0, 0.5, 60, 2 * MINUTE))
 
     def test_heartbeat_stale_min_moves_the_silence_a_trip_needs(self):
         """A heartbeat two and three minutes old on two consecutive sweeps:

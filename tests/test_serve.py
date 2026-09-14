@@ -376,7 +376,8 @@ class StatusTests(ServeTestCase):
         knobs = holophyte.config.sweep_config(self.tgt)
         self.assertEqual(body["thresholds"],
                          {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
-                          "strikes": knobs.stale_strikes})
+                          "strikes": knobs.stale_strikes,
+                          "run_cap": knobs.run_cap})
         self.assertIs(body["actions"], False)
         self.assertIs(body["config_edit"], False)
 

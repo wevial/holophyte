@@ -306,7 +306,8 @@ def status(target, now=None, started_ms=None):
     knobs = sweep_config(target)
     # `time_box_ms` is the box the run is counted against -- the estimate
     # scaled by `[agents] budget_scale` -- so the console's time-box bar and
-    # the sweep agree with the cap the loop armed.
+    # the sweep agree with the cap the loop armed. `thresholds.run_cap` is
+    # the hard ceiling in multiples of that box, so the bar can draw it.
     scale = budget_scale(target)
     return 200, {
         "target": str(target.path),
@@ -316,7 +317,8 @@ def status(target, now=None, started_ms=None):
         "daemon": {"started_ms": started_ms, "pid": os.getpid()},
         "supervisor": supervisor_view(target, beat, now, knobs),
         "thresholds": {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
-                       "strikes": knobs.stale_strikes},
+                       "strikes": knobs.stale_strikes,
+                       "run_cap": knobs.run_cap},
         "actions": serve_config(target).actions,
         "config_edit": serve_config(target).config_edit,
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,

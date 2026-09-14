@@ -1,6 +1,8 @@
 /**
  * The app icon, rendered from the repository's own SVG so no image tool has
- * to exist on the machine, and the tray's warn and bad variants, rendered
+ * to exist on the machine: `assets/icon.svg` is the leaf on its own cream
+ * tile, full-bleed, because macOS 26 drops an icon without a background onto
+ * a grey tile, shrinks it and lays glass over it, which washed the leaf out; and the tray's warn and bad variants, rendered
  * from the drawer's SVGs at the template PNG's 1x and 2x sizes since
  * Electron loads no SVG into a tray. `renderIcon` is pure; the CLI entry
  * writes the PNGs into the build output directory for `electron-builder`
@@ -38,7 +40,7 @@ export function renderIcon(svgText: string, size: number = ICON_SIZE): Uint8Arra
 
 if (import.meta.main) {
   const here = import.meta.dirname;
-  const svgPath = path.resolve(here, "..", "..", "assets", "logo.svg");
+  const svgPath = path.resolve(here, "..", "..", "assets", "icon.svg");
   const outPath = path.join(here, "dist", "icon.png");
   mkdirSync(path.dirname(outPath), { recursive: true });
   writeFileSync(outPath, renderIcon(readFileSync(svgPath, "utf8")));
