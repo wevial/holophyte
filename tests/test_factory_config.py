@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest.mock import ANY, patch
 
 import holophyte.agents
+import holophyte.claim
 import holophyte.cli
 import holophyte.config
 import holophyte.gates
@@ -1420,7 +1421,7 @@ class WorktreeSetupTests(ConfigTestCase):
         with patch.object(holophyte.gates, "run_capped",
                           side_effect=AssertionError("ran a setup command")):
             self.assertEqual(
-                holophyte.loop.run_worktree_setup(self.tgt, self.worktree()),
+                holophyte.claim.run_worktree_setup(self.tgt, self.worktree()),
                              (True, ""))
         self.assertEqual(holophyte.config.setup_commands(self.tgt), [])
 
@@ -1429,7 +1430,7 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = ["pwd > where.txt", '
                       '"cp where.txt copied.txt"]\n')
 
-        ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+        ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
 
         self.assertTrue(ok)
         self.assertEqual(report, "")
@@ -1445,7 +1446,7 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = ["echo building; exit 3", '
                       '"touch never.txt"]\n')
 
-        ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+        ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("command 1 of 2", report)
@@ -1460,7 +1461,7 @@ class WorktreeSetupTests(ConfigTestCase):
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["echo first && false && echo third"]\n')
 
-        ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+        ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("clause 2 of 3", report)
@@ -1471,7 +1472,7 @@ class WorktreeSetupTests(ConfigTestCase):
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["exit 1"]\n')
 
-        ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+        ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("failed silently", report)
@@ -1488,7 +1489,7 @@ class WorktreeSetupTests(ConfigTestCase):
         # The cap fires inside `run_capped`, the gate's one subprocess call,
         # resolved in `holophyte.gates` where `run_verify` reads it.
         with patch.object(holophyte.gates, "run_capped", side_effect=expired):
-            ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+            ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("command 1 of 2", report)
@@ -1534,7 +1535,7 @@ class WorktreeSetupTests(ConfigTestCase):
         with patch.object(holophyte.config, "VERIFY_TIMEOUT", 1.0), \
                 KillWatch(escaped) as watch:
             began = time.monotonic()
-            ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+            ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
             elapsed = time.monotonic() - began
 
         self.assertFalse(ok)
@@ -1557,7 +1558,7 @@ class WorktreeSetupTests(ConfigTestCase):
                       'setup_timeout_sec = 1\n')
 
         start = time.monotonic()
-        ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+        ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertLess(time.monotonic() - start, 10)
@@ -1620,7 +1621,7 @@ class WorktreeSetupTests(ConfigTestCase):
 
         with patch.object(holophyte.gates, "run_capped", side_effect=
                           subprocess.TimeoutExpired("make deps", 300)):
-            ok, report = holophyte.loop.run_worktree_setup(self.tgt, wt)
+            ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
 
         self.assertFalse(ok)
         self.assertIn("no output before the timeout", report)
@@ -1631,7 +1632,7 @@ class WorktreeSetupTests(ConfigTestCase):
         conn = object()
 
         with patch.object(store, "set_phase") as set_phase:
-            holophyte.loop.run_worktree_setup(self.tgt, wt, conn, "run-1")
+            holophyte.claim.run_worktree_setup(self.tgt, wt, conn, "run-1")
 
         set_phase.assert_called_once()
         self.assertEqual(set_phase.call_args.args[2], "working")

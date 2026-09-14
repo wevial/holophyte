@@ -304,12 +304,12 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
     in the question, the branch left at `sha`. A fetch that cannot
     deliver `origin/main` is the route's failure, not the ticket's.
     """
+    from holophyte.claim import merge_conflicts
     from holophyte.loop import (
         _is_ancestor,
         _merge_ref,
         _timed,
         merge_conflict_goal,
-        merge_conflicts,
         sh,
     )
     from holophyte.pullrequest import _park_on_pr

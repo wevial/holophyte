@@ -105,7 +105,8 @@ def worker(target, provider):
     finishes on the code it started with) and no exit note. Returns one
     of the `WORKER_*` statuses; the scheduler reads it from the exit code.
     """
-    from holophyte.loop import PARKED, _claim_next, _dispatch
+    from holophyte.claim import _claim_next
+    from holophyte.loop import PARKED, _dispatch
 
     slot = os.environ.get(WORKER_SLOT_ENV)
     if slot:
