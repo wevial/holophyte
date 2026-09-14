@@ -81,7 +81,11 @@ function Card({
   barPx?: number;
 }) {
   const { run, rounds } = body;
-  const remaining = boxRemaining(run, now);
+  // The card's clock: the daemon's at the last poll plus the local drift
+  // since. A finished run's figures measure against its end instead, so a
+  // live run keeps counting between polls and a finished one stays put.
+  const tickingNow = now + sinceMs;
+  const remaining = boxRemaining(run, run.ended_ms ?? tickingNow);
   const over = remaining < 0;
   const finished = run.ended_ms != null;
   const findings = openFindings(rounds);
@@ -105,7 +109,7 @@ function Card({
       </header>
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">
         <div className="min-w-0">
-          <RoundTimeline segments={buildTimeline({ ...run, rounds, events: body.events }, now)} barPx={barPx} />
+          <RoundTimeline segments={buildTimeline({ ...run, rounds, events: body.events }, tickingNow)} barPx={barPx} />
           {finished ? (
             <FindingsSection rounds={rounds} ledger={ledger} />
           ) : (
@@ -136,7 +140,7 @@ function Card({
         <ActionButton>Kill run</ActionButton>
         <ActionButton>Requeue ticket</ActionButton>
       </footer>
-      <RunLog events={body.events} rounds={rounds} now={now + sinceMs} />
+      <RunLog events={body.events} rounds={rounds} now={tickingNow} />
     </article>
   );
 }
