@@ -343,6 +343,49 @@ test("a run done at 82m 14s reads done with the run's total span", async () => {
   expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 82m 14s");
 });
 
+test("a finished run's done figure is its whole span, not the stretch the segments cover", async () => {
+  // Claimed at T but working only from T+1m: the segments cover nine of
+  // the run's ten minutes.
+  const done: RunDetailBody = {
+    ...DETAIL,
+    run: { ...DETAIL.run, phase: "done", ended_ms: T + 10 * MINUTE, outcome: "merged" },
+    rounds: [],
+    events: [
+      { at: T + MINUTE, kind: "phase_change", summary: "claimed -> working: KO-232" },
+      { at: T + 9 * MINUTE, kind: "phase_change", summary: "working -> verifying: approved" },
+      { at: T + 10 * MINUTE, kind: "phase_change", summary: "verifying -> done: merged" },
+    ],
+  };
+  await mount(done, T + 10 * MINUTE);
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 10m 00s");
+});
+
+test("a run parked on merge approval is live, not done: the status line names the waiting phase and the wait ticks", async () => {
+  const parked: RunDetailBody = {
+    ...DETAIL,
+    run: { ...DETAIL.run, phase: "awaiting_merge_approval" },
+    rounds: [],
+    events: [
+      { at: T, kind: "phase_change", summary: "claimed -> working: KO-232" },
+      { at: T + 30 * MINUTE, kind: "phase_change", summary: "working -> merging: approved" },
+      { at: T + 32 * MINUTE, kind: "phase_change", summary: "merging -> awaiting_merge_approval: candidate parked" },
+    ],
+  };
+  const seen = T + 37 * MINUTE;
+  const page = (sinceMs: number) => (
+    <RunDetail base={BASE} id={91} now={seen} sinceMs={sinceMs} polls={1} deps={{ fetch: answering(parked) }} />
+  );
+  const view = render(page(0));
+  await settle();
+  const status = () => document.querySelector("[data-timeline-status]")!;
+  // The merge segment closed at T+32m but the run has no ended_ms: the
+  // line names the parking phase and how long it has waited, and keeps
+  // counting.
+  expect(status().textContent).toBe("awaiting_merge_approval · 5m 00s");
+  view.rerender(page(2_000));
+  expect(status().textContent).toBe("awaiting_merge_approval · 5m 02s");
+});
+
 test("a segment floats its long name and duration on hover and on focus, hides on leave and blur, and carries no title", async () => {
   await mount(SHARES, T + 40 * MINUTE);
   const bar = screen.getByRole("list", { name: "Round timeline" });

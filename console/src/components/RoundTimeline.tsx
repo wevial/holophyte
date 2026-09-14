@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { formatSpan, formatTotal } from "../lib/format";
-import { segmentName, type Segment, type SegmentKind } from "../lib/timeline";
+import { phaseLabel } from "../lib/runs";
+import { segmentName, type Segment, type SegmentKind, type TimelineRun } from "../lib/timeline";
 
 const FILLS: Record<SegmentKind, string> = {
   implement: "bg-accent",
@@ -23,9 +24,23 @@ const width = (share: number, gapsPx: number) =>
  *  the bar names the current phase and its live duration on a running
  *  run, or reads "done" with the run's whole span on a finished one —
  *  the live figure ticks because the caller rebuilds the segments each
- *  second. Hovering or focusing a segment floats one tooltip above the
- *  bar at the segment's centre, naming the phase and its duration. */
-export function RoundTimeline({ segments }: { segments: Segment[] }) {
+ *  second. A live run parked between segments (on the operator or on
+ *  merge approval) names its phase and how long it has waited. Hovering
+ *  or focusing a segment floats one tooltip above the bar at the
+ *  segment's centre, naming the phase and its duration. */
+export function RoundTimeline({
+  segments,
+  run,
+  now,
+}: {
+  segments: Segment[];
+  /** The run the segments came from: `ended_ms` decides "done" (a closed
+   *  last segment alone is only a park) and the done figure is its whole
+   *  span, not the stretch the segments cover. */
+  run: Pick<TimelineRun, "started_ms" | "ended_ms" | "phase">;
+  /** The caller's clock; a parked phase's wait ages by it. */
+  now: number;
+}) {
   const [active, setActive] = useState<number | null>(null);
   const spent = segments.reduce((sum, segment) => sum + segment.width, 0);
   const remainder = Math.max(0, 1 - spent);
@@ -38,6 +53,14 @@ export function RoundTimeline({ segments }: { segments: Segment[] }) {
     cursor += segment.width;
   }
   const last = segments[segments.length - 1];
+  const status =
+    last == null
+      ? undefined
+      : run.ended_ms != null
+        ? { label: "done", ms: run.ended_ms - run.started_ms }
+        : last.running
+          ? { label: last.label, ms: last.to - last.from }
+          : { label: phaseLabel(run.phase), ms: now - last.to };
   const hovered = active == null ? undefined : segments[active];
   return (
     <div data-timeline className="relative">
@@ -79,12 +102,10 @@ export function RoundTimeline({ segments }: { segments: Segment[] }) {
           {segmentName(hovered)} · {formatSpan(hovered.to - hovered.from)}
         </div>
       )}
-      {last && (
+      {status && (
         <p data-timeline-status className="mt-1.5 text-[12px]">
-          <span className="font-semibold text-ink">{last.running ? last.label : "done"}</span>
-          <span className="font-mono text-[11px] text-faint">
-            {` · ${formatTotal(last.running ? last.to - last.from : last.to - segments[0]!.from)}`}
-          </span>
+          <span className="font-semibold text-ink">{status.label}</span>
+          <span className="font-mono text-[11px] text-faint">{` · ${formatTotal(status.ms)}`}</span>
         </p>
       )}
     </div>

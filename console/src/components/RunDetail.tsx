@@ -107,7 +107,11 @@ function Card({
       </header>
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">
         <div className="min-w-0">
-          <RoundTimeline segments={buildTimeline({ ...run, rounds, events: body.events }, tickingNow)} />
+          <RoundTimeline
+            segments={buildTimeline({ ...run, rounds, events: body.events }, tickingNow)}
+            run={run}
+            now={tickingNow}
+          />
           {finished ? (
             <FindingsSection rounds={rounds} ledger={ledger} />
           ) : (
