@@ -22,19 +22,42 @@ describe("renderIcon", () => {
 });
 
 describe("state glyphs", () => {
+  const template = readFileSync(path.resolve(import.meta.dirname, "../../../assets/menubar-template.svg"), "utf8");
+  // The template path is ten subpaths split on "Z ": the two lobes first,
+  // then the eight veins. The state glyphs draw the lobes filled white and
+  // cut the veins back out through the mask, so the leaf and vein `d`s
+  // joined at that split reproduce the template `d` subpath for subpath.
+  const templateD = template.match(/d="([^"]*)"/)?.[1] ?? "";
+
   for (const [variant, colour] of Object.entries(STATE_COLOUR)) {
-    test(`menubar-${variant}.svg is the leaf silhouette in its state colour: no stroke, no vein cut-outs`, () => {
+    test(`menubar-${variant}.svg is the white leaf with veins cut out by a mask and the state dot beside it`, () => {
       const svg = readFileSync(path.resolve(import.meta.dirname, `../../../assets/menubar-${variant}.svg`), "utf8");
       expect(svg).not.toContain("stroke");
-      const leaf = svg.match(/<path[^>]*>/)?.[0] ?? "";
-      expect(leaf).toContain(`fill="${colour}"`);
-      // The two lobes are two subpaths; the vein cut-outs the glyph used to
-      // draw would each add another M command.
-      expect(leaf.match(/d="([^"]*)"/)?.[1].match(/M/g)).toHaveLength(2);
-      // The dot keeps the state colour over a bar-neutral ring so it
-      // separates from the leaf on either bar.
-      expect(svg).toContain('fill="#8E8E93"');
-      expect(svg.match(new RegExp(`fill="${colour}"`, "g"))).toHaveLength(2);
+      expect(svg).not.toContain("fill-rule");
+      const paths = svg.match(/<path[^>]*>/g) ?? [];
+      expect(paths).toHaveLength(3);
+      const [veins, leaf, disc] = paths;
+      const mask = svg.match(/<mask id="([^"]*)">(.*?)<\/mask>/);
+      expect(mask).toBeTruthy();
+      const [, maskId, maskBody] = mask ?? [];
+      // The mask is a white rect covering the viewBox minus the veins in
+      // black, so every vein subpath stays cut even where it overlaps the
+      // midrib.
+      expect(maskBody).toContain('<rect x="0" y="0" width="320" height="240" fill="#FFFFFF"/>');
+      expect(veins).toContain('fill="#000"');
+      expect(maskBody).toContain(veins);
+      expect(leaf).toContain('fill="#FFFFFF"');
+      expect(leaf).toContain(`mask="url(#${maskId})"`);
+      const leafD = leaf.match(/d="([^"]*)"/)?.[1] ?? "";
+      const veinD = veins.match(/d="([^"]*)"/)?.[1] ?? "";
+      expect(leafD.match(/M/g)).toHaveLength(2);
+      expect(veinD.match(/M/g)).toHaveLength(8);
+      expect(`${leafD} ${veinD}`).toBe(templateD);
+      // The last path is the disc in the state colour; the bar-neutral ring
+      // is gone.
+      expect(disc).toContain(`fill="${colour}"`);
+      expect(svg).not.toContain('fill="#8E8E93"');
+      expect(svg.match(new RegExp(`fill="${colour}"`, "g"))).toHaveLength(1);
       expect(Array.from(renderIcon(svg, 18).subarray(0, 8))).toEqual(PNG_SIGNATURE);
     });
   }
