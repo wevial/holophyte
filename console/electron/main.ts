@@ -34,7 +34,7 @@ function trayIconPath(): string {
 // falls back to the template glyph, as the drawer does. The glyphs carry
 // no dark strokes, so one file reads on a light bar or a dark one and the
 // pick never asks the appearance.
-function trayImage(level: Level): Electron.NativeImage {
+export function trayImage(level: Level): Electron.NativeImage {
   const file = trayImageFile(level);
   if (file !== null) {
     const png = path.join(app.getAppPath(), "dist", file);

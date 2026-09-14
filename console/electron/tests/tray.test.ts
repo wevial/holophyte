@@ -1,9 +1,14 @@
-import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { describe, expect, mock, test } from "bun:test";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import * as electronStub from "./electron-stub.ts";
 import { pollAll, readTokens } from "../poll.ts";
 import { type Attention, type FetchResult, type Status, buildSummary, summarizeAnswer, trayImageFile } from "../tray.ts";
+
+// The stub has to answer "electron" before main.ts links, so main.ts is
+// imported inside the test, after this registration.
+mock.module("electron", () => electronStub);
 
 // The wire shapes from docs/reference/http.md.
 const NOW = 1788450534491;
@@ -90,11 +95,23 @@ describe("trayImageFile", () => {
     expect(trayImageFile("working")).toBeNull();
   });
 
-  test("the pick is the same whether shouldUseDarkColors is true or false: nothing reads the appearance", () => {
-    // The state glyph carries no dark strokes, so there is no -dark file to
-    // choose and main.ts holds no appearance check.
-    for (const file of [trayImageFile("attention"), trayImageFile("bad")]) {
-      expect(file).not.toContain("-dark");
+  test("the pick loads the same file whether shouldUseDarkColors is true or false", async () => {
+    // The menu bar's darkness comes from the wallpaper behind it, not the
+    // appearance setting, so the pick must not read nativeTheme: drive
+    // trayImage under both values against a dist dir holding the rendered
+    // PNG and compare the file it loads.
+    const { trayImage } = await import("../main.ts");
+    const { appDir, imagePaths, nativeTheme } = electronStub;
+    mkdirSync(path.join(appDir, "dist"), { recursive: true });
+    for (const [level, variant] of [["attention", "warn"], ["bad", "bad"]] as const) {
+      const file = `menubar-${variant}@1x.png`;
+      writeFileSync(path.join(appDir, "dist", file), "png");
+      for (const dark of [true, false]) {
+        nativeTheme.shouldUseDarkColors = dark;
+        imagePaths.length = 0;
+        trayImage(level);
+        expect(imagePaths).toEqual([path.join(appDir, "dist", file)]);
+      }
     }
     const main = readFileSync(path.resolve(import.meta.dirname, "../main.ts"), "utf8");
     expect(main).not.toContain("nativeTheme");
