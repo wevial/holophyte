@@ -928,6 +928,32 @@ def loop_is_live(conn, project, now, stale_ms):
         (project, *SWEEPABLE_PHASES, now - stale_ms)).fetchone() is not None
 
 
+def board_ready(provider, out):
+    """How many tickets the board itself holds ready, or 0 when it cannot
+    be asked or has none: the KO-411 fall-through for a mirror that has no
+    row for the ticket at all.
+
+    The store mirrors a ticket only once a loop pass has seen it, so a
+    ticket that became ready while no loop ran -- one filed with
+    `--file-ticket`, one moved from Backlog to Todo -- has no row for
+    `ready_tickets()` to find. An empty mirror therefore asks the board
+    the same question the loop's claim asks, through the provider the
+    pass was handed; for the Linear board that call is
+    `linear_provider.ready_issues()` on the target's `[board]
+    project_id`. A board that cannot be asked is one printed line and a
+    "no", as the reconcile's GitHub errors are: the next pass asks again.
+    No provider is no board to ask, and asks nothing.
+    """
+    if provider is None:
+        return 0
+    try:
+        return len(provider.ready_issues())
+    except Exception as e:  # noqa: BLE001 - never a strike, never the pass
+        print(f"[holo2] the board could not be asked for its ready tickets"
+              f" ({e}); the next pass asks again", file=out)
+        return 0
+
+
 def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
                                    knobs=None):
     """Land the pull requests a person merged while no loop was running
@@ -962,7 +988,16 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     turned a spec into a contract are the others, and all are owed the
     same start. What is owed a loop is read from the store
     (`store.read.ready_tickets()`): a ticket `ready` with no live run,
-    whatever its newest run's history. A start `systemctl` took is
+    whatever its newest run's history. That answer is the mirror's, and
+    the mirror is a cache of the board: a ticket that became ready while
+    no loop ran has no row for it, so an empty answer falls through to
+    the board itself (`board_ready()`), the same `ready_issues()` read
+    the loop claims from, and a non-empty answer is owed the same start
+    (KO-411). The ask runs only on the miss and never while a loop is
+    live to ask on its own tick, so a busy target pays nothing and an
+    idle one one query a pass; a board that cannot be asked is one
+    printed line and a "no", as the reconcile's GitHub errors are. A
+    start `systemctl` took is
     recorded as a `launch_loop` row on that run, and a start that failed
     is one printed line and no row; neither mark decides the next pass,
     which finds a ticket still `ready` with no loop live owed again --
@@ -986,8 +1021,10 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     knobs = sweep_config(target) if knobs is None else knobs
     asked = []
     owed = []
+    live = False
     for (project,) in conn.execute("SELECT id FROM projects ORDER BY id"):
         if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
+            live = True
             continue
         try:
             with contextlib.redirect_stdout(out):
@@ -1002,6 +1039,13 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
         # loop was down -- and asked even when GitHub could not be: the
         # ready rows are the mirror's, not the reconcile's.
         owed.extend(store.read.ready_tickets(conn, project))
+    # The mirror is a cache of the board, and a ticket that became ready
+    # while no loop ran has no row in it: an empty mirror falls through
+    # to the board itself (KO-411). A live loop asks the board on its own
+    # tick, so the read is only for a target with no loop at all; the
+    # answer's issues carry no mirror row and no run, (None, None) apiece.
+    if not owed and not live:
+        owed = [(None, None)] * board_ready(provider, out)
     if owed and not lease_turn_held(target):
         start_loop_for(target, conn, owed, now, out)
     return asked
@@ -1025,7 +1069,10 @@ def start_loop_for(target, conn, owed, now, out):
     The run of a pair is the ticket's newest; a ticket no run has claimed
     yet (filed while the loop was down, say) carries None and gets no
     row -- record-before-acting has no run stream to write on -- but it
-    is counted and the unit is started for it all the same.
+    is counted and the unit is started for it all the same. A ticket the
+    board holds ready that the mirror has no row for at all (KO-411)
+    arrives as `(None, None)` -- no ticket to name, no run to write on --
+    and is likewise counted and started for.
     """
     unit = LOOP_UNIT + serve_config(target).name
     count = len(owed)

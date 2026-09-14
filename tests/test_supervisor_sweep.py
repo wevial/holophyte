@@ -655,11 +655,23 @@ class StubProvider:
     Only the escalating sweep needs one: a swept failure below the threshold
     pushes no status and comments on nothing, which is why the other acting
     tests can leave the provider as the tripwire it is in the mode tests.
+
+    `ready` is what `ready_issues()` answers the supervisor's empty-mirror
+    fall-through (KO-411): a list of issues, or an exception to raise; the
+    ask is counted in `ready_asked`.
     """
 
-    def __init__(self):
+    def __init__(self, ready=()):
         self.states = []
         self.comments = []
+        self.ready = ready
+        self.ready_asked = 0
+
+    def ready_issues(self):
+        self.ready_asked += 1
+        if isinstance(self.ready, BaseException):
+            raise self.ready
+        return list(self.ready)
 
     # The board lease label (KO-351): what the loop labelled and unlabelled,
     # per issue, so the stub answers the claim's and the close-out's calls.
@@ -2106,17 +2118,63 @@ class ParkedPullRequestTests(SweepTestCase):
         """A pass that sent nothing back but finds a ticket `ready`
         starts the unit; a store holding nothing ready starts nothing."""
         calls = self.fake_systemctl()
+        provider = StubProvider()
 
-        quiet = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+        quiet = self.one_pass(T0 + 20 * MINUTE, provider)
 
         self.assertEqual(calls(), [])
         self.assertNotIn("holophyte-loop@", quiet)
 
         self.ready_ticket()
-        out = self.one_pass(T0 + 21 * MINUTE, StubProvider())
+        asked = provider.ready_asked
+        out = self.one_pass(T0 + 21 * MINUTE, provider)
 
         self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
         self.assertIn("started holophyte-loop@repo", out)
+        # A mirror hit owes no board read: the ask is the empty-mirror
+        # fall-through's, and the pass that found the ticket `ready`
+        # never made it (KO-411).
+        self.assertEqual(provider.ready_asked, asked)
+
+    # KO-411: the mirror is a cache of the board. A ticket that became
+    # ready while no loop ran has no mirror row, so an empty answer falls
+    # through to the board's own `ready_issues()` before nothing is owed.
+    def test_a_ready_issue_the_mirror_never_saw_starts_the_loop_unit(self):
+        """`--file-ticket`'s case: the board holds a ready issue the
+        store has no row for, and the pass starts the unit for it."""
+        provider = StubProvider(ready=[{"id": "KO-9", "issue_id": "issue-9"}])
+        calls = self.fake_systemctl()
+
+        out = self.one_pass(T0 + 20 * MINUTE, provider)
+
+        self.assertEqual(provider.ready_asked, 1)
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertIn("started holophyte-loop@repo", out)
+
+    def test_a_board_with_nothing_ready_starts_nothing(self):
+        """The fall-through asks once and owes nothing when the board
+        agrees with the mirror's empty answer."""
+        provider = StubProvider()
+        calls = self.fake_systemctl()
+
+        out = self.one_pass(T0 + 20 * MINUTE, provider)
+
+        self.assertEqual(provider.ready_asked, 1)
+        self.assertEqual(calls(), [])
+        self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_board_that_cannot_be_asked_is_printed_and_starts_nothing(self):
+        """A failed board read is a "no", like the reconcile's GitHub
+        errors: one printed line, nothing started, the next pass asks
+        again."""
+        provider = StubProvider(ready=RuntimeError("Linear is down"))
+        calls = self.fake_systemctl()
+
+        out = self.one_pass(T0 + 20 * MINUTE, provider)
+
+        self.assertEqual(provider.ready_asked, 1)
+        self.assertIn("Linear is down", out)
+        self.assertEqual(calls(), [])
 
     def test_a_ready_ticket_under_a_held_lease_turn_starts_nothing(self):
         """A loop between its startup and its first claim's heartbeat
