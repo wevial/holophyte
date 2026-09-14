@@ -45,9 +45,6 @@ import re
 import socket
 import time
 
-# The schema, its migration ladder and the connection live in
-# `store/schema.py` (KO-391); the package re-exports the public names so
-# `store.open()` keeps working.
 from .schema import SCHEMA_VERSION, _transaction, init, open, transaction  # noqa: F401
 
 

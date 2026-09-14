@@ -34,7 +34,7 @@ OVER = {
     "holophyte/pr.py": 1033,
     "holophyte/serve.py": 1779,
     "holophyte/supervisor.py": 1250,
-    "store/__init__.py": 2271,
+    "store/__init__.py": 2268,
     "tests/test_factory_config.py": 2076,
     "tests/test_factory_loop.py": 6649,
     "tests/test_serve.py": 3134,
