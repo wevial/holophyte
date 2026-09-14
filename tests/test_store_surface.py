@@ -40,8 +40,10 @@ EXPECTED = [
     "findings_fingerprint",
     "findings_overlap",
     "heartbeat",
+    "init",
     "latest_supervisor_heartbeat",
     "mirror_ticket",
+    "open",
     # KO-256: `[merge] approve = "human"` parks a live run in
     # `awaiting_merge_approval` and frees its lease without ending it.
     "park",
@@ -82,6 +84,7 @@ EXPECTED = [
     # KO-321: the review-round cap the loop gave a run, written where the
     # loop computes it so `/runs/N` serves the cap this run had.
     "set_review_round_cap",
+    "transaction",
     "transition",
     "unreturned_loop_restarts",
     "walk_ticket",
@@ -160,11 +163,18 @@ AGENTS_MD = Path(__file__).resolve().parent.parent / "AGENTS.md"
 
 
 def public_functions(module=store):
-    """Names of the functions `module` itself defines without a leading `_`."""
+    """Public function names of `module` without a leading `_`.
+
+    The `store` package is checked by namespace — a name bound on `store`
+    counts, so the `open`/`init`/`transaction` re-exports from
+    `store.schema` stay surface. Any other module is checked by
+    `__module__`, so names it merely imports (`dataclass`, `Path`) do not.
+    """
     return sorted(
         name
         for name, obj in inspect.getmembers(module, inspect.isfunction)
-        if obj.__module__ == module.__name__ and not name.startswith("_")
+        if not name.startswith("_")
+        and (module is store or obj.__module__ == module.__name__)
     )
 
 
