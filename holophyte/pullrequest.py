@@ -31,7 +31,7 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
     babysitter is told no sha is verified (`verified=None`) and runs the
     merge gate -- the ticket's verify commands, then the drift check --
     on the candidate before the merge API is called."""
-    from holophyte.loop import _babysit, _sync_branch_from_origin
+    from holophyte.loop import _sync_branch_from_origin
 
     url = carried.pr_url
     reviewed = carried.sha if carried.approved else carried.approved_sha
@@ -54,12 +54,12 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
           " babysitting it")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
     set_phase(conn, run_id, "merge_gate", f"babysitting {url}")
-    merge_sha = _babysit(target, conn, run_id, provider, task_id, issue_id,
-                          task, branch, wt, sha, beat_s, url,
-                          f"{task}\n\n{body}" if body else task, verify_cmd,
-                          contracts, budget_min, criteria,
-                          approved=carried.approved, reviewed=reviewed,
-                          verified=None)
+    merge_sha = babysitter._babysit(target, conn, run_id, provider, task_id,
+                                    issue_id, task, branch, wt, sha, beat_s,
+                                    url, f"{task}\n\n{body}" if body else task,
+                                    verify_cmd, contracts, budget_min,
+                                    criteria, approved=carried.approved,
+                                    reviewed=reviewed, verified=None)
     return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                       merge_sha, started, budget_min, 0)
 

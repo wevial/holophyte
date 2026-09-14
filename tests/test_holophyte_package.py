@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.babysitter  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
@@ -204,6 +205,37 @@ DEFINED = {
         "_pr_seen",
         "_resume_on_pr",
         "_written_pr_text",
+    ],
+    # KO-386: the babysit pass joins the texts it drives.
+    holophyte.babysitter: [
+        "_answer_threads",
+        "_babysit",
+        "_fix_threads",
+        "_merge_origin_main",
+        "_moved",
+        "_next_round",
+        "_post",
+        "_pr_terminal",
+        "_review_fix",
+        "_settled_state",
+        "_verdicts_by_kind",
+        "addressed_reply",
+        "adjudication_brief",
+        "conversation",
+        "conventions",
+        "conventions_paragraph",
+        "declined_reply",
+        "fix_brief",
+        "gist",
+        "open_threads_question",
+        "parse_summaries",
+        "parse_verdicts",
+        "people_paragraph",
+        "quoted",
+        "round_reply",
+        "route_of",
+        "thread_line",
+        "where",
     ],
     # KO-259: the one GitHub surface, `[merge] mode = "pr"`'s push and PR.
     holophyte.pr: [
