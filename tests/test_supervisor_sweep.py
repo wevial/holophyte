@@ -143,6 +143,12 @@ class SweepTestCase(unittest.TestCase):
         store.set_phase(self.conn, run_id, store.run_phase(self.conn, run_id),
                         now=at)
 
+    def configure(self, toml):
+        """Give the target a config file and a `Target` that reads it, the
+        way `cli()`'s target does -- a `Target` parses its config once."""
+        (self.db.parent / "config.toml").write_text(toml)
+        self.tgt = holophyte.target.Target.locate(self.target)
+
     def run_sweep(self, at, *flags):
         """The mode end to end, with the provider and the network as tripwires.
 
@@ -315,6 +321,31 @@ class TimeBoxTests(SweepTestCase):
         self.heartbeat_at(run_id, at)
 
         self.assertEqual(holophyte.supervisor.sweep(self.tgt, self.conn, at).trips, [])
+
+    def test_a_scaled_run_inside_its_scaled_box_does_not_trip(self):
+        """`[agents] budget_scale` stretches the box the run is counted
+        against: past the bare estimate's grace but inside the scaled
+        box is a slower harness, not a blown budget."""
+        self.configure("[agents]\nbudget_scale = 2\n")
+        run_id = self.a_run(budget_min=30)
+        at = T0 + 50 * MINUTE  # past 30 min x 1.5 grace; inside 60 x 1.5
+        self.heartbeat_at(run_id, at)  # alive, so only the box could trip it
+
+        self.assertEqual(
+            holophyte.supervisor.sweep(self.tgt, self.conn, at).trips, [])
+
+    def test_a_scaled_run_past_its_scaled_box_still_trips(self):
+        """The scale is not an escape: past the scaled box's grace the
+        trip fires, and the evidence names the box it was counted on."""
+        self.configure("[agents]\nbudget_scale = 2\n")
+        run_id = self.a_run(budget_min=30)
+        at = T0 + 91 * MINUTE  # past the 60 min box at 1.5 grace
+        self.heartbeat_at(run_id, at)
+
+        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, at).trips
+
+        self.assertEqual((trip.run_id, trip.condition), (run_id, "time_box"))
+        self.assertIn("60 min box", trip.evidence)
 
 
 def finding(path, severity="p1", line=1):

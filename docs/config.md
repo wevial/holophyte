@@ -68,10 +68,27 @@ adjudicator = "my-reviewer --final"
 # defaults. The effort is one of low, medium, high, xhigh.
 review_model  = "gpt-5.6-sol"
 review_effort = "medium"
+# Multiplier on the implementer turn's wall-clock budget: the ticket's
+# estimate times this is the cap each implementer turn is armed with, the
+# box the sweep and /status count the run against, and the hard ceiling the
+# thirty-minute cap scales to. Optional; 1.0 when absent, a number from
+# 1.0 to 3.0 otherwise. Set it for a slower harness, not for a bigger task.
+budget_scale = 1.5
 ```
 
 Accepted keys: `implementer`, `reviewer`, `adjudicator`, `review_model`,
-`review_effort`.
+`review_effort`, `budget_scale`.
+
+`budget_scale` exists because the budget stops runaway turns, not because
+it selects a harness: an implementer that reads more and edits later can
+hit a thirty-minute cap on work it had nearly finished, and the answer is
+more wall clock, not a smaller ticket. The estimate, the ticket and the
+template's ceiling are untouched — the scale multiplies them only where the
+clock is armed, so a `budget_scale = 1.5` target arms a 45-minute turn for
+a 30-minute ticket, the timeout line names both figures, and the
+supervisor's time-box sweep allows for the scaled box. A value under 1.0
+or over 3.0 — or a non-number — is a startup error naming the key and the
+range.
 
 A configured `implementer` is probed before each pass claims a ticket: the
 loop runs the exact command a turn would, with the goal `Reply with the single

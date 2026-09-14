@@ -1131,6 +1131,49 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.last_fake.turns[0].timeout, 5 * 60)
         self.assertIn("partial progress before cap", printed)
 
+    def test_budget_scale_multiplies_the_cap_every_implementer_turn_gets(self):
+        """`[agents] budget_scale` is the harness's wall-clock multiplier:
+        a 30-minute ticket at scale 1.5 arms a 45-minute cap on the first
+        turn and the fix round alike — the estimate itself untouched."""
+        self.configure("[agents]\nbudget_scale = 1.5\n")
+        task = dict(a_task(), budget_min=30)
+
+        fake, _ = self.loop(Commit("work"), REQUEST_CHANGES,
+                            Commit("the fix"), APPROVE,
+                            provider=StubProvider(task))
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "implement", "review"])
+        self.assertEqual(fake.turns[0].timeout, 45 * 60)
+        self.assertEqual(fake.turns[2].timeout, 45 * 60)
+        # The ticket's estimate — the box the report compares against —
+        # is still the 30 minutes Linear said.
+        self.assertEqual(
+            self.read("SELECT timeBoxMs FROM runs"), [(30 * 60 * 1000,)])
+
+    def test_without_budget_scale_the_cap_is_the_estimate_as_today(self):
+        """No key: the turn is armed with the ticket's estimate, unchanged."""
+        task = dict(a_task(), budget_min=30)
+
+        fake, _ = self.loop(Commit("work"), APPROVE,
+                            provider=StubProvider(task))
+
+        self.assertEqual(fake.turns[0].timeout, 30 * 60)
+
+    def test_a_scaled_budget_timeout_names_both_figures(self):
+        """The cap that fired was the scaled one, and the line the run
+        row carries says so: the estimate and what it became."""
+        self.configure("[agents]\nbudget_scale = 1.5\n")
+        task = dict(a_task(), budget_min=30)
+
+        printed = self.main_output(CommitThenTimeout("late work"),
+                                   provider=StubProvider(task))
+
+        self.assertIn("task exceeded 30 min budget (45 min at scale 1.5)",
+                      printed)
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("30 min budget (45 min at scale 1.5)", reason)
+
     def test_the_refusal_reason_reaches_the_run_row(self):
         """The reuse refusal's whole product is an explanation for a human;
         it must land on the run row, not only in a Linear comment a provider
