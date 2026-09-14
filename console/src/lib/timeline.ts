@@ -10,6 +10,9 @@ export interface Segment {
   label: string;
   from: number;
   to: number;
+  /** The review or fix round the segment belongs to, when the timeline
+   *  numbers it; the tooltip's long name carries it. */
+  round?: number;
   /** The trailing segment of a live run: it ends at `now` and keeps growing. */
   running: boolean;
   /** Share of the bar, 0..1: the duration over the time box, or over the
@@ -36,6 +39,21 @@ const LABELS: Record<SegmentKind, string> = {
   verify: "verify",
   merge: "merge",
 };
+
+/** A segment kind's long name for the tooltip. */
+const NAMES: Record<SegmentKind, string> = {
+  implement: "Implementation",
+  review: "Review",
+  fix: "Fix",
+  verify: "Verify",
+  merge: "Merge",
+};
+
+/** The tooltip's name for a segment: the kind's long name, plus the round
+ *  a numbered review or fix belongs to ("Review 2", "Fix 1"). */
+export function segmentName(segment: Segment): string {
+  return segment.round == null ? NAMES[segment.kind] : `${NAMES[segment.kind]} ${segment.round}`;
+}
 
 /** Store phase → segment kind. Phases missing here (`claimed`, `done`,
  *  `failed`, …) close the open segment and draw none of their own. */
@@ -79,7 +97,7 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
   const end = run.ended_ms ?? now;
   const live = run.ended_ms == null;
   const out: Segment[] = [];
-  let open: { kind: SegmentKind; label: string; from: number } | null = null;
+  let open: { kind: SegmentKind; label: string; from: number; round?: number } | null = null;
   let reviews = 0;
   /** A segment that picks up where an identical one ended merges into it
    *  (a `working -> working` setup event is one implement phase, not
@@ -101,9 +119,13 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
     const kind = phase == null ? undefined : PHASE_KINDS[phase];
     if (!kind) continue;
     let label = LABELS[kind];
+    let round: number | undefined;
     if (kind === "review") reviews = roundNumber(change.summary) ?? reviews + 1;
-    if (kind === "review" || kind === "fix") label = `${label} ${roundNumber(change.summary) ?? reviews}`;
-    open = { kind, label, from: change.at };
+    if (kind === "review" || kind === "fix") {
+      round = roundNumber(change.summary) ?? reviews;
+      label = `${label} ${round}`;
+    }
+    open = { kind, label, from: change.at, round };
   }
   if (open) {
     const last: Segment = { ...open, to: Math.max(open.from, end), running: live, width: 0 };
@@ -130,26 +152,29 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
   const running = run.ended_ms == null;
   const rounds = [...run.rounds].sort((a, b) => a.started_ms - b.started_ms);
   const out: Segment[] = [];
-  const push = (kind: SegmentKind, from: number, to: number, label = LABELS[kind]) => {
-    if (to > from) out.push({ kind, label, from, to, running: false, width: 0 });
+  const push = (kind: SegmentKind, from: number, to: number, round?: number) => {
+    if (to > from) out.push({ kind, label: LABELS[kind], from, to, round, running: false, width: 0 });
   };
 
   let cursor = run.started_ms;
   let openRound = false;
+  let openIndex = -1;
   rounds.forEach((round, index) => {
-    push(index === 0 ? "implement" : "fix", cursor, round.started_ms);
+    push(index === 0 ? "implement" : "fix", cursor, round.started_ms, index === 0 ? undefined : index);
     if (round.ended_ms == null) {
       openRound = true;
+      openIndex = index;
       cursor = round.started_ms;
       return;
     }
-    push("review", round.started_ms, round.ended_ms);
+    push("review", round.started_ms, round.ended_ms, index + 1);
     cursor = round.ended_ms;
   });
 
   const kind = runningKind(run, openRound);
   const label = running ? phaseLabel(run.phase) : LABELS[kind];
-  out.push({ kind, label, from: cursor, to: Math.max(cursor, end), running, width: 0 });
+  const round = kind === "review" ? openIndex + 1 : kind === "fix" && rounds.length > 0 ? rounds.length : undefined;
+  out.push({ kind, label, from: cursor, to: Math.max(cursor, end), round, running, width: 0 });
   return size(out, run, Math.max(end, cursor));
 }
 
