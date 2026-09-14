@@ -43,7 +43,7 @@ export function RunDetail({
   /** Local milliseconds since that poll; the run log's summary ages by it. */
   sinceMs?: number;
   polls: number;
-  deps?: { fetch: Fetch; barPx?: number };
+  deps?: { fetch: Fetch };
 }) {
   const { detail, error, loading } = useRunDetail(base, id, polls, deps);
   const files = useRunFiles(base, id, polls, deps);
@@ -58,9 +58,7 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && (
-        <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs} barPx={deps?.barPx} />
-      )}
+      {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs} />}
     </div>
   );
 }
@@ -71,14 +69,12 @@ function Card({
   ledger,
   now,
   sinceMs,
-  barPx,
 }: {
   body: RunDetailBody;
   files: RunFilesState;
   ledger: LedgerRow[];
   now: number;
   sinceMs: number;
-  barPx?: number;
 }) {
   const { run, rounds } = body;
   // The card's clock: the daemon's at the last poll plus the local drift
@@ -111,7 +107,11 @@ function Card({
       </header>
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">
         <div className="min-w-0">
-          <RoundTimeline segments={buildTimeline({ ...run, rounds, events: body.events }, tickingNow)} barPx={barPx} />
+          <RoundTimeline
+            segments={buildTimeline({ ...run, rounds, events: body.events }, tickingNow)}
+            run={run}
+            now={tickingNow}
+          />
           {finished ? (
             <FindingsSection rounds={rounds} ledger={ledger} />
           ) : (
