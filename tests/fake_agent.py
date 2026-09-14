@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
 
+import holophyte.gates
+
 IMPLEMENT = "implement"
 REVIEW_ROLES = ("review", "adjudicate")
 
@@ -147,6 +149,22 @@ class Turn:
     # really starts a process hands it over, so the loop's sweep-time kill
     # reaches it the way it reaches a real implementer.
     on_start: object = None
+
+
+def block_until_killed(cwd, printed="", timeout=1):
+    """A real blocking process the cap really kills: print, then sleep.
+
+    `run_capped` is the dispatch `agent()` arms the budget on, so a step that
+    runs it takes the real timeout — the SIGKILL to the whole process group
+    and the `TimeoutExpired` carrying what the turn printed first — rather
+    than a scripted raise the harness invented. The cap is the step's own,
+    not the turn's `timeout` kwarg: the fake stands in for `agent()`, and
+    waiting out the ticket's budget would take the minutes the estimate
+    says.
+    """
+    holophyte.gates.run_capped(
+        ["sh", "-c", 'printf %s "$1"; sleep 600', "sh", printed],
+        cwd, timeout=timeout)
 
 
 class FakeAgent:
