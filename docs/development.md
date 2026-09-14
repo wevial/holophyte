@@ -114,6 +114,16 @@ Cyclomatic complexity above 12 is a lint failure (ruff `C901`); an exemption
 is a per-function `noqa: C901` that names its reason and the ticket that
 retires it.
 
+Module size is a ratchet on the same terms: no source module over
+1000 lines, no test module over 1500. `tests/test_file_sizes.py` holds a
+table of the modules over their ceiling, each entry the count at the
+commit that last tightened it, and walks every tracked Python file
+against it — a module that grows past its entry, a module with no entry
+that passes its ceiling, and an entry whose module is back under the
+ceiling all fail the suite. A slice that splits a module lowers its entry
+to the new count; a module back under its ceiling leaves the table, so
+the numbers only move down.
+
 ruff is a developer tool, not a dependency: install it on the host with
 `pip install --user ruff` (or `uv tool install ruff`). It is never vendored.
 
