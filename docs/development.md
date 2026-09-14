@@ -79,10 +79,14 @@ Each module, one line:
 The store is its own package:
 
 - `store/__init__.py` — the v2 durable state store, one WAL-mode SQLite
-  file: claims and leases, ticket and run-phase transitions, review
-  rounds, interventions, and the state-graph renderer.
+  file: claims and leases, run-phase transitions, review rounds and
+  interventions.
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.
+- `store/tickets.py` — the ticket state machine: `ensure_project`, the §3
+  `TICKET_TRANSITIONS` table and `transition()`/`walk_ticket()`,
+  `mirror_ticket`, §2's `pickable()`/`pickable_tickets()` and the Mermaid
+  state-graph renderer, re-exported from the package.
 - `store/read.py` — typed read views over the store: one query, one row
   type, no SQL elsewhere.
 

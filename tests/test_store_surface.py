@@ -2,12 +2,14 @@
 
 Every public function is porting work for the Rust replacement, so a new one
 has to be a deliberate addition and an orphan has to be a deliberate removal:
-both show up here as a failure naming the function. The writers and the state
-graph live in `store/__init__.py` (`EXPECTED`); the schema, its migration
-ladder and the connection live in `store/schema.py` (`EXPECTED_SCHEMA`);
-the typed read views live in `store/read.py` (`EXPECTED_READ`). The
-operator names in AGENTS.md are read from that file rather than retyped,
-so the protocol and the module cannot drift apart silently.
+both show up here as a failure naming the function. `EXPECTED` is the
+package namespace: the run, ledger and intervention writers live in
+`store/__init__.py` and the ticket state machine in `store/tickets.py`
+(KO-392); the schema, its migration ladder and the connection live in
+`store/schema.py` (`EXPECTED_SCHEMA`); the typed read views live in
+`store/read.py` (`EXPECTED_READ`). The operator names in AGENTS.md are
+read from that file rather than retyped, so the protocol and the module
+cannot drift apart silently.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
@@ -90,9 +92,10 @@ EXPECTED = [
     "walk_ticket",
 ]
 
-# Alphabetical, same rule, for the classes `store/__init__.py` defines: the
+# Alphabetical, same rule, for the classes the `store` package exposes: the
 # exceptions a caller matches on are surface too, and each is an error
-# variant the Rust port has to carry.
+# variant the Rust port has to carry. `IllegalTransition` and `Pickability`
+# are defined in `store/tickets.py` and re-exported.
 EXPECTED_CLASSES = [
     "ApproveRefused",
     "ClaimConflict",
@@ -179,11 +182,18 @@ def public_functions(module=store):
 
 
 def public_classes(module=store):
-    """Names of the classes `module` itself defines without a leading `_`."""
+    """Names of the classes `module` exposes without a leading `_`.
+
+    Same namespace rule as `public_functions()`: a class bound on `store`
+    counts wherever it was defined, so the `IllegalTransition`/`Pickability`
+    re-exports from `store.tickets` stay surface; any other module is
+    checked by `__module__`.
+    """
     return sorted(
         name
         for name, obj in inspect.getmembers(module, inspect.isclass)
-        if obj.__module__ == module.__name__ and not name.startswith("_")
+        if not name.startswith("_")
+        and (module is store or obj.__module__ == module.__name__)
     )
 
 
