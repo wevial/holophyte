@@ -56,6 +56,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
@@ -780,7 +781,7 @@ class LoopTests(LoopFixture):
         phase change lands, so a live run's files panel has a worktree to
         read from the moment the run starts implementing."""
         seen = []
-        real = holophyte.loop.set_phase
+        real = holophyte.claim.set_phase
 
         def watching(conn, run_id, phase, note=None):
             (branch,) = conn.execute(
@@ -788,7 +789,7 @@ class LoopTests(LoopFixture):
             seen.append((phase, branch))
             return real(conn, run_id, phase, note)
 
-        with patch.object(holophyte.loop, "set_phase", watching):
+        with patch.object(holophyte.claim, "set_phase", watching):
             self.loop(Commit("the scripted work"), APPROVE)
 
         first_working = next(entry for entry in seen if entry[0] == "working")
@@ -962,24 +963,24 @@ class SkipLineTests(unittest.TestCase):
     as "repeated failures" that never happened."""
 
     def test_the_three_parks_read_as_what_they_are(self):
-        struck = holophyte.loop.skip_line("KO-131", 2, None, None)
+        struck = holophyte.claim.skip_line("KO-131", 2, None, None)
         self.assertIn("2 failures", struck)
         self.assertIn("a human owns it now", struck)
 
         url = "https://github.com/example/repo/pull/7"
-        parked = holophyte.loop.skip_line("KO-131", 0, url,
+        parked = holophyte.claim.skip_line("KO-131", 0, url,
                                           f"PR open: {url}\nready to merge")
         self.assertIn(url, parked)
         self.assertIn("--approve KO-131", parked)
         self.assertNotIn("fail", parked)
 
-        asked = holophyte.loop.skip_line(
+        asked = holophyte.claim.skip_line(
             "KO-131", 0, None, "merge?\nthe branch is at abc123")
         self.assertIn("a question: merge?;", asked)
         self.assertNotIn("abc123", asked)
         self.assertNotIn("fail", asked)
 
-        closed = holophyte.loop.skip_line(
+        closed = holophyte.claim.skip_line(
             "KO-131", 0, url, f"PR closed without merge: {url}")
         self.assertIn(f"a question: PR closed without merge: {url};", closed)
         self.assertNotIn("--approve", closed)
@@ -990,7 +991,7 @@ class SkipLineTests(unittest.TestCase):
         operator has to resolve, so it is the line -- and since KO-365 the
         line names the way back, `--requeue`; the escalation's own
         question is the one park the count speaks for."""
-        conflicted = holophyte.loop.skip_line(
+        conflicted = holophyte.claim.skip_line(
             "KO-131", 2, None,
             "merge conflict with main on: README.md; resolve it on the branch")
         self.assertIn("parked on a merge-gate conflict; resolve the branch"
@@ -998,7 +999,7 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("struck out", conflicted)
         self.assertNotIn("a question", conflicted)
 
-        struck = holophyte.loop.skip_line(
+        struck = holophyte.claim.skip_line(
             "KO-131", 2, None, holophyte.board.strike_question(2))
         self.assertIn("struck out after 2 failures", struck)
         self.assertNotIn("a question", struck)
@@ -5175,7 +5176,7 @@ class GateConflictImplementerTests(LoopFixture):
             subprocess.run(["git", "rev-parse", "-q", "--verify",
                             "MERGE_HEAD"], cwd=wt,
                            capture_output=True).returncode, 0)
-        self.assertEqual(holophyte.loop.merge_conflicts(wt), [])
+        self.assertEqual(holophyte.claim.merge_conflicts(wt), [])
         self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
         self.assertEqual(
             self.read("SELECT status FROM tickets"),
@@ -5460,7 +5461,7 @@ class BoardLeaseLabelTests(LoopFixture):
                 (ticket_id,) = conn.execute(
                     "SELECT id FROM tickets WHERE linearIssueId = ?",
                     (issue_id,)).fetchone()
-                competitor.append(holophyte.loop._claim_run(
+                competitor.append(holophyte.claim._claim_run(
                     tgt, conn, project, provider, a_task(), ticket_id, seen))
             finally:
                 conn.close()
@@ -5484,7 +5485,7 @@ class BoardLeaseLabelTests(LoopFixture):
         threads[0].join(10)
 
         self.assertEqual(provider.assertion, (True, []))
-        self.assertEqual(competitor, [holophyte.loop.HELD])
+        self.assertEqual(competitor, [holophyte.claim.HELD])
         self.assertIn("lease already held by run 2; skipping it", out)
         self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
                          [(1, "failed"), (2, "merged")])
@@ -5548,7 +5549,7 @@ class BoardLeaseLabelTests(LoopFixture):
                 (ticket_id,) = conn.execute(
                     "SELECT id FROM tickets WHERE linearIssueId = ?",
                     (issue_id,)).fetchone()
-                claimed.append(holophyte.loop._claim_run(
+                claimed.append(holophyte.claim._claim_run(
                     tgt, conn, project, provider, a_task(), ticket_id, seen))
             finally:
                 conn.close()

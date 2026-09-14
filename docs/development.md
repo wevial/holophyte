@@ -42,8 +42,13 @@ Each module, one line:
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
   target's checkout under a timeout: what `/runs/N/files` answers.
-- `holophyte/loop.py` — the loop: worktree setup and reuse, `run_task`,
+- `holophyte/loop.py` — the loop: `run_task`'s stages, the merge gate,
   `main`, `report`, `requeue` and the self-merge re-exec.
+- `holophyte/claim.py` — claiming a ticket and cutting its worktree:
+  `_claim_next` over `_admit_ticket`'s questions and `_claim_run`'s lease
+  and board label, then `_cut_worktree`/`reuse_leftover`,
+  `run_worktree_setup` under `_setup_worktree`, and the mid-merge
+  hand-off (`merge_conflicts`, `conflict_brief`, `_resolve_merge_conflict`).
 - `holophyte/pr.py` — `[merge] mode = "pr"`'s one GitHub surface: the
   startup route check, the push, the pull request and its body, and the
   babysitter's calls -- review threads and checks, replies, resolves, the
