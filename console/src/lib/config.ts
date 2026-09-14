@@ -2,7 +2,7 @@ import type { Fetch } from "./poll";
 
 /** A value the daemon's `PUT /config` patch carries for one dotted key:
  *  a string, an integer, a boolean or a list of strings
- *  (`holophyte/serve.py` `check_patch_value()`). */
+ *  (`holophyte/serve_config.py` `check_patch_value()`). */
 export type PatchValue = string | number | boolean | string[];
 
 /** The parsed configuration the daemon serves beside the text: every
