@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { pollAll, readTokens } from "../poll.ts";
-import { type Attention, type FetchResult, type Status, buildSummary, summarizeAnswer } from "../tray.ts";
+import { type Attention, type FetchResult, type Status, buildSummary, summarizeAnswer, trayImageFile } from "../tray.ts";
 
 // The wire shapes from docs/reference/http.md.
 const NOW = 1788450534491;
@@ -77,6 +79,25 @@ describe("buildSummary", () => {
     expect(labels(items)).toContain("writer-2:7710 · unreachable");
     expect(labels(items)).toContain("1 host · 2 daemons");
     expect(level).toBe("bad");
+  });
+});
+
+describe("trayImageFile", () => {
+  test("warn and bad name their rendered PNG; idle and working keep the template glyph", () => {
+    expect(trayImageFile("attention")).toBe("menubar-warn@1x.png");
+    expect(trayImageFile("bad")).toBe("menubar-bad@1x.png");
+    expect(trayImageFile("idle")).toBeNull();
+    expect(trayImageFile("working")).toBeNull();
+  });
+
+  test("the pick is the same whether shouldUseDarkColors is true or false: nothing reads the appearance", () => {
+    // The state glyph carries no dark strokes, so there is no -dark file to
+    // choose and main.ts holds no appearance check.
+    for (const file of [trayImageFile("attention"), trayImageFile("bad")]) {
+      expect(file).not.toContain("-dark");
+    }
+    const main = readFileSync(path.resolve(import.meta.dirname, "../main.ts"), "utf8");
+    expect(main).not.toContain("nativeTheme");
   });
 });
 

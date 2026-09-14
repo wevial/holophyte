@@ -18,24 +18,30 @@ export const ICON_SIZE = 1024;
 export const TRAY_SIZE = 18;
 export const TRAY_VARIANTS = ["warn", "bad"] as const;
 
-/**
- * The warn and bad SVGs draw the glyph white with a dark stroke for a light
- * menu bar. They are colour images -- the state dot is the point -- so
- * macOS cannot recolour them the way it does the template glyph, and on a
- * dark menu bar the stroke reads as a black outline. This is the same
- * glyph for a dark bar: stroke light, fill dark, the dot untouched. Only
- * the first path is the glyph; the dot is the path after it.
- */
-export function darkGlyph(svgText: string): string {
-  const end = svgText.indexOf("/>");
-  if (end < 0) return svgText;
-  const glyph = svgText.slice(0, end).replace('fill="#FFFFFF"', 'fill="#1C1C1E"').replace('stroke="#1C1C1E"', 'stroke="#F5F5F7"');
-  return glyph + svgText.slice(end);
-}
-
 export function renderIcon(svgText: string, size: number = ICON_SIZE): Uint8Array {
   const resvg = new Resvg(svgText, { fitTo: { mode: "width", value: size } });
   return resvg.render().asPng();
+}
+
+/**
+ * The tray's warn and bad PNGs, one file per variant at 1x and 2x. They are
+ * colour images -- the state dot is the point -- so macOS cannot recolour
+ * them the way it does the template glyph, and they carry no dark strokes,
+ * so one file reads on a light bar or a dark one. Returns the file names
+ * written into `outDir`.
+ */
+export function renderTrayIcons(outDir: string): string[] {
+  const written: string[] = [];
+  mkdirSync(outDir, { recursive: true });
+  for (const variant of TRAY_VARIANTS) {
+    const svg = readFileSync(path.resolve(import.meta.dirname, "..", "..", "assets", `menubar-${variant}.svg`), "utf8");
+    for (const scale of [1, 2]) {
+      const file = `menubar-${variant}@${scale}x.png`;
+      writeFileSync(path.join(outDir, file), renderIcon(svg, TRAY_SIZE * scale));
+      written.push(file);
+    }
+  }
+  return written;
 }
 
 if (import.meta.main) {
@@ -45,14 +51,8 @@ if (import.meta.main) {
   mkdirSync(path.dirname(outPath), { recursive: true });
   writeFileSync(outPath, renderIcon(readFileSync(svgPath, "utf8")));
   console.log(`wrote ${path.relative(process.cwd(), outPath)} (${ICON_SIZE}x${ICON_SIZE})`);
-  for (const variant of TRAY_VARIANTS) {
-    const svg = readFileSync(path.resolve(here, "..", "..", "assets", `menubar-${variant}.svg`), "utf8");
-    for (const [suffix, text] of [["", svg], ["-dark", darkGlyph(svg)]] as const) {
-      for (const scale of [1, 2]) {
-        const file = path.join(here, "dist", `menubar-${variant}${suffix}@${scale}x.png`);
-        writeFileSync(file, renderIcon(text, TRAY_SIZE * scale));
-        console.log(`wrote ${path.relative(process.cwd(), file)}`);
-      }
-    }
+  const distDir = path.join(here, "dist");
+  for (const file of renderTrayIcons(distDir)) {
+    console.log(`wrote ${path.relative(process.cwd(), path.join(distDir, file))}`);
   }
 }
