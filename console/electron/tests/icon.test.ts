@@ -22,8 +22,9 @@ describe("renderIcon", () => {
 });
 
 describe("quiet template", () => {
-  test("menubar-template.svg is the black leaf with its veins cut out by a mask, and its PNGs are 18 and 36 px wide", () => {
+  test("menubar-template.svg is the black leaf with its veins cut out by a mask, and its PNGs are 20 and 40 px tall", () => {
     const svg = readFileSync(path.resolve(import.meta.dirname, "../../../assets/menubar-template.svg"), "utf8");
+    expect(svg).toContain('viewBox="36 24 248 182"');
     expect(svg).not.toContain("stroke");
     expect(svg).not.toContain("fill-rule");
     const paths = svg.match(/<path[^>]*>/g) ?? [];
@@ -48,12 +49,12 @@ describe("quiet template", () => {
     const [warnVeins, warnLeaf] = warn.match(/<path[^>]*>/g) ?? [];
     const warnD = [warnLeaf, warnVeins].map((p) => p?.match(/d="([^"]*)"/)?.[1] ?? "").join(" ");
     expect(`${leafD} ${veinD}`).toBe(warnD);
-    for (const [file, width] of [["menubar-template@1x.png", 18], ["menubar-template@2x.png", 36]] as const) {
+    for (const [file, height] of [["menubar-template@1x.png", 20], ["menubar-template@2x.png", 40]] as const) {
       const png = readFileSync(path.resolve(import.meta.dirname, `../../../assets/${file}`));
       expect(Array.from(png.subarray(0, 8))).toEqual(PNG_SIGNATURE);
       const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
       expect(new TextDecoder().decode(png.subarray(12, 16))).toBe("IHDR");
-      expect(view.getUint32(16)).toBe(width);
+      expect(view.getUint32(20)).toBe(height);
     }
   });
 });
@@ -70,6 +71,7 @@ describe("state glyphs", () => {
   for (const [variant, colour] of Object.entries(STATE_COLOUR)) {
     test(`menubar-${variant}.svg is the white leaf with veins cut out by a mask and the state dot beside it`, () => {
       const svg = readFileSync(path.resolve(import.meta.dirname, `../../../assets/menubar-${variant}.svg`), "utf8");
+      expect(svg).toContain('viewBox="36 24 248 182"');
       expect(svg).not.toContain("stroke");
       expect(svg).not.toContain("fill-rule");
       const paths = svg.match(/<path[^>]*>/g) ?? [];
@@ -105,11 +107,21 @@ describe("renderTrayIcons", () => {
   test("writes the warn and bad PNGs at 1x and 2x and no -dark files", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "tray-icons-"));
     const written = renderTrayIcons(dir);
-    const expected = ["menubar-bad@1x.png", "menubar-bad@2x.png", "menubar-warn@1x.png", "menubar-warn@2x.png"];
-    expect(written.sort()).toEqual(expected);
-    expect(readdirSync(dir).sort()).toEqual(expected);
-    for (const file of expected) {
-      expect(Array.from(readFileSync(path.join(dir, file)).subarray(0, 8))).toEqual(PNG_SIGNATURE);
+    const expected = [
+      ["menubar-bad@1x.png", 20],
+      ["menubar-bad@2x.png", 40],
+      ["menubar-warn@1x.png", 20],
+      ["menubar-warn@2x.png", 40],
+    ] as const;
+    const names = expected.map(([name]) => name);
+    expect(written.sort()).toEqual(names);
+    expect(readdirSync(dir).sort()).toEqual(names);
+    for (const [file, height] of expected) {
+      const png = readFileSync(path.join(dir, file));
+      expect(Array.from(png.subarray(0, 8))).toEqual(PNG_SIGNATURE);
+      const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+      expect(new TextDecoder().decode(png.subarray(12, 16))).toBe("IHDR");
+      expect(view.getUint32(20)).toBe(height);
     }
   });
 });

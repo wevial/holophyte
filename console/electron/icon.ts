@@ -14,12 +14,16 @@ import path from "node:path";
 import { Resvg } from "@resvg/resvg-js";
 
 export const ICON_SIZE = 1024;
-/** The template PNG is 18 px at 1x; the variants match it. */
-export const TRAY_SIZE = 18;
+/** The template PNG stands 20 px tall at 1x; the variants match it. */
+export const TRAY_HEIGHT = 20;
 export const TRAY_VARIANTS = ["warn", "bad"] as const;
 
-export function renderIcon(svgText: string, size: number = ICON_SIZE): Uint8Array {
-  const resvg = new Resvg(svgText, { fitTo: { mode: "width", value: size } });
+export function renderIcon(
+  svgText: string,
+  size: number = ICON_SIZE,
+  fit: { mode: "width" | "height"; value: number } = { mode: "width", value: size },
+): Uint8Array {
+  const resvg = new Resvg(svgText, { fitTo: fit });
   return resvg.render().asPng();
 }
 
@@ -37,7 +41,8 @@ export function renderTrayIcons(outDir: string): string[] {
     const svg = readFileSync(path.resolve(import.meta.dirname, "..", "..", "assets", `menubar-${variant}.svg`), "utf8");
     for (const scale of [1, 2]) {
       const file = `menubar-${variant}@${scale}x.png`;
-      writeFileSync(path.join(outDir, file), renderIcon(svg, TRAY_SIZE * scale));
+      const height = TRAY_HEIGHT * scale;
+      writeFileSync(path.join(outDir, file), renderIcon(svg, height, { mode: "height", value: height }));
       written.push(file);
     }
   }
