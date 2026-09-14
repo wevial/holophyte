@@ -300,7 +300,7 @@ spawned by the scheduler, never by a worker.
 ## State machines
 
 Both diagrams below are generated from the code, not drawn:
-`store/tickets.py`'s `TICKET_TRANSITIONS` and `store/__init__.py`'s
+`store/tickets.py`'s `TICKET_TRANSITIONS` and `store/operate.py`'s
 `RUN_PHASE_TRANSITIONS` are the only authority for
 which moves are legal, `store.tickets.render_state_graph()` renders them, and
 `tests/test_store_status_graph.py` fails whenever the text between the
