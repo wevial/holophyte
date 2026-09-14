@@ -233,7 +233,7 @@ test("a finished run's box figure freezes at its end while a live run's keeps co
   };
   await mount(finished, T + 82 * MINUTE + 24 * 60 * MINUTE);
   const box = document.querySelector("[data-box]")!;
-  expect(box.textContent).toBe("52m 00s over the box");
+  expect(box.textContent).toBe("52m over the box");
   expect(box.getAttribute("data-box")).toBe("over");
   cleanup();
 

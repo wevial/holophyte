@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatAge, formatDuration, formatSpan } from "../src/lib/format";
+import { formatAge, formatDuration, formatSettled, formatSpan } from "../src/lib/format";
 
 describe("formatDuration", () => {
   test("renders the ticket's reference durations", () => {
@@ -19,5 +19,14 @@ describe("formatSpan and formatAge", () => {
     expect(formatAge(7200000)).toBe("2h");
     expect(formatAge(59000)).toBe("59s");
     expect(formatAge(273600000)).toBe("3d");
+  });
+});
+
+describe("formatSettled", () => {
+  test("drops the seconds once a duration reaches a minute", () => {
+    expect(formatSettled(45000)).toBe("45s");
+    expect(formatSettled(3120000)).toBe("52m");
+    expect(formatSettled(27480000)).toBe("7h 38m");
+    expect(formatSettled(273600000)).toBe("3d 4h");
   });
 });

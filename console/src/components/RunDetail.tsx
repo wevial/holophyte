@@ -3,7 +3,7 @@ import { useRunDetail } from "../hooks/useRunDetail";
 import { useRunFiles, type RunFilesState } from "../hooks/useRunFiles";
 import { useRunLedger } from "../hooks/useRunLedger";
 import { FATE_LABEL, findingsHistory, openFindings, severityCounts, type Fate, type RoundHistory } from "../lib/findings";
-import { formatClock, formatSpan } from "../lib/format";
+import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel } from "../lib/runs";
@@ -83,11 +83,13 @@ function Card({
   const { run, rounds } = body;
   // The card's clock: the daemon's at the last poll plus the local drift
   // since. A finished run's figures measure against its end instead, so a
-  // live run keeps counting between polls and a finished one stays put.
+  // live run keeps counting between polls and a finished one stays put —
+  // and reads at settled granularity, its seconds done counting too.
   const tickingNow = now + sinceMs;
   const remaining = boxRemaining(run, run.ended_ms ?? tickingNow);
   const over = remaining < 0;
   const finished = run.ended_ms != null;
+  const boxFigure = finished ? formatSettled : formatSpan;
   const findings = openFindings(rounds);
   const counts = severityCounts(findings);
   return (
@@ -104,7 +106,7 @@ function Card({
           data-box={over ? "over" : "left"}
           className={`ml-auto font-mono text-[12px] ${over ? "font-semibold text-bad" : "text-muted"}`}
         >
-          {over ? `${formatSpan(-remaining)} over the box` : `${formatSpan(remaining)} left in box`}
+          {over ? `${boxFigure(-remaining)} over the box` : `${boxFigure(remaining)} left in box`}
         </span>
       </header>
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">

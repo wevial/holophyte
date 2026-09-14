@@ -42,6 +42,18 @@ export function formatSpan(ms: number): string {
   return `${Math.floor(total / SECOND)}s`;
 }
 
+/**
+ * A settled duration: the run has ended, so the seconds stop mattering —
+ * `45s`, `52m`, then `formatDuration`'s two units from an hour up:
+ * `7h 38m`, `3d 4h`.
+ */
+export function formatSettled(ms: number): string {
+  const total = Math.max(0, Math.floor(ms));
+  if (total >= HOUR) return formatDuration(total);
+  if (total >= MINUTE) return `${Math.floor(total / MINUTE)}m`;
+  return `${Math.floor(total / SECOND)}s`;
+}
+
 /** An age at a glance, one unit, rounded down: `45s`, `7m`, `2h`, `3d`. */
 export function formatAge(ms: number): string {
   const total = Math.max(0, Math.floor(ms));
