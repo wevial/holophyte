@@ -1015,7 +1015,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     Returns the project ids reconciled.
     """
     # In the function, not at the top: `holophyte.loop` imports this module.
-    from holophyte.loop import _reconcile_pull_requests
+    from holophyte.reconcile import _reconcile_pull_requests
 
     out = out or sys.stdout
     knobs = sweep_config(target) if knobs is None else knobs

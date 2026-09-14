@@ -188,8 +188,8 @@ class LoopFixture(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         # The GitHub budget the reconcile remembers is the process's; a
         # test that ran it low must not back off the tests after it.
-        budget = patch.object(holophyte.loop, "GITHUB_BUDGET",
-                              holophyte.loop.GitHubBudget())
+        budget = patch.object(holophyte.reconcile, "GITHUB_BUDGET",
+                              holophyte.reconcile.GitHubBudget())
         budget.start()
         self.addCleanup(budget.stop)
         root = Path(tmp.name)
