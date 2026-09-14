@@ -25,6 +25,21 @@ const DAEMON_LEVEL: Record<string, Level> = {
   critical: "bad",
 };
 
+/**
+ * The `dist/` PNG the tray draws for a level, or null for the levels that
+ * keep the template glyph. The warn and bad images are colour -- the state
+ * dot is the point -- so macOS cannot recolour them the way it does the
+ * template, and they carry no dark strokes, so one file reads on a light
+ * bar or a dark one and the pick never asks the appearance. The menu bar's
+ * darkness comes from the wallpaper behind it, not the appearance setting,
+ * and there is no API for it.
+ */
+export function trayImageFile(level: Level): string | null {
+  const variant: Partial<Record<Level, string>> = { attention: "warn", bad: "bad" };
+  const name = variant[level];
+  return name === undefined ? null : `menubar-${name}@1x.png`;
+}
+
 /** One poll's answer for one path on one daemon. A 401 is not a failure to
  *  reach the daemon: it is up and wants the token `console.json` does not
  *  carry for it. Any other non-2xx keeps its status (a 404 on `/attention`
