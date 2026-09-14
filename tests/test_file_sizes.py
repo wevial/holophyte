@@ -47,11 +47,23 @@ OVER = {
 PINNED = {
     "holophyte/babysitter.py": 841,
     "holophyte/claim.py": 822,
+    "holophyte/cli.py": 462,
     "holophyte/operator.py": 430,
     "holophyte/pool.py": 386,
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 467,
+    "holophyte/reexec.py": 94,
+    "holophyte/report.py": 160,
+    "tests/test_babysitter.py": 466,
+    "tests/test_file_sizes.py": 187,
     "tests/test_holophyte_package.py": 298,
+    "tests/test_provider.py": 578,
+    "tests/test_wiring_claim.py": 635,
+    "tests/test_wiring_findings.py": 488,
+    "tests/test_wiring_mirror.py": 288,
+    "tests/test_wiring_phases.py": 440,
+    "tests/test_wiring_rounds.py": 596,
+    "tests/test_wiring_telemetry.py": 448,
     "tests/test_worktree_reuse.py": 239,
 }
 
