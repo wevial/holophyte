@@ -30,7 +30,7 @@ CEILING = {"source": 1000, "test": 1500}
 # back under its ceiling leaves the table.
 OVER = {
     "holophyte/config.py": 1227,
-    "holophyte/loop.py": 2977,
+    "holophyte/loop.py": 2625,
     "holophyte/pr.py": 1033,
     "holophyte/serve.py": 1779,
     "holophyte/supervisor.py": 1250,
@@ -46,6 +46,7 @@ OVER = {
 # left it, so the table only moves down for that file too.
 PINNED = {
     "holophyte/babysitter.py": 841,
+    "holophyte/pool.py": 389,
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 467,
     "tests/test_holophyte_package.py": 298,

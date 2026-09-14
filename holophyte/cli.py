@@ -37,8 +37,8 @@ from holophyte.loop import (
     repoint,
     report,
     requeue,
-    worker,
 )
+from holophyte.pool import worker
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.supervisor import (
     SupervisorHeld,
