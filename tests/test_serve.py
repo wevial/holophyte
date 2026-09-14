@@ -39,8 +39,8 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.files  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
-import holophyte.serve_actions  # noqa: E402 - after the sys.path insert above
 import holophyte.serve_config  # noqa: E402 - after the sys.path insert above
+import holophyte.serve_runs  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -1513,7 +1513,7 @@ class RunDetailTests(ServeTestCase):
         # No cap stored: a run recorded before the store carried one
         # answers the loop's constant.
         self.assertEqual(run["max_rounds"],
-                         holophyte.serve_actions.MAX_ROUNDS)
+                         holophyte.serve_runs.MAX_ROUNDS)
         self.assertIsInstance(run["max_rounds"], int)
         self.assertIn("branch", run)
 
@@ -1528,7 +1528,7 @@ class RunDetailTests(ServeTestCase):
 
         self.assertEqual(body["run"]["max_rounds"], 4)
         self.assertNotEqual(body["run"]["max_rounds"],
-                            holophyte.serve_actions.MAX_ROUNDS)
+                            holophyte.serve_runs.MAX_ROUNDS)
 
     def test_a_live_run_has_a_heartbeat_age_and_an_ended_one_null(self):
         self.seed()  # KO-7, live in `working`, beating 30 s ago
