@@ -5,9 +5,11 @@ with the suite. `CEILING` sets the caps — 1000 lines a source module,
 1500 a test module — and `OVER` holds every tracked Python file over its
 cap. The walk fails the suite when a listed file grows past its entry,
 when an unlisted file passes its ceiling, and when a listed file is back
-under the ceiling — a stale entry. A second check holds the table to
-exactly what `wc -l` measures — membership and counts — so an entry is
-the file's current count and the table can only shrink.
+under the ceiling — a stale entry. `PINNED` holds a file a slice brought
+back under its ceiling at the tighter size the slice left it. A second
+check holds the table to exactly what `wc -l` measures — membership and
+counts — so an entry is the file's current count and the table can only
+shrink.
 
 Run: python3 -m unittest discover -s tests -p 'test_file_sizes*' -v
 """
@@ -28,7 +30,7 @@ CEILING = {"source": 1000, "test": 1500}
 # back under its ceiling leaves the table.
 OVER = {
     "holophyte/config.py": 1227,
-    "holophyte/loop.py": 4236,
+    "holophyte/loop.py": 3931,
     "holophyte/pr.py": 1033,
     "holophyte/serve.py": 1779,
     "holophyte/supervisor.py": 1250,
@@ -37,6 +39,13 @@ OVER = {
     "tests/test_factory_loop.py": 6647,
     "tests/test_serve.py": 3134,
     "tests/test_supervisor_sweep.py": 2255,
+}
+
+# Repo-relative path to the file's `wc -l` count, for a file a slice
+# brought back under its ceiling: the pin caps it at the size the slice
+# left it, so the table only moves down for that file too.
+PINNED = {
+    "holophyte/pullrequest.py": 328,
 }
 
 
@@ -77,10 +86,10 @@ def expected_over(counts, ceiling=CEILING):
     }
 
 
-def violations(counts, over=OVER, ceiling=CEILING):
-    """The ratchet's three rules as failure lines: a listed file over its
-    entry, an unlisted file over its ceiling, an entry whose file is not
-    over the ceiling — stale."""
+def violations(counts, over=OVER, ceiling=CEILING, pinned=PINNED):
+    """The ratchet's four rules as failure lines: a listed file over its
+    entry, an unlisted file over its ceiling, a pinned file over its pin,
+    an entry whose file is not over the ceiling — stale."""
     bad = []
     for name, lines in sorted(counts.items()):
         cap = ceiling["test" if name.startswith("tests/") else "source"]
@@ -94,7 +103,11 @@ def violations(counts, over=OVER, ceiling=CEILING):
         elif lines > cap:
             bad.append(f"{name}: {lines} lines is over the {cap}-line "
                        f"ceiling with no table entry")
-    for name in sorted(set(over) - set(counts)):
+        pin = pinned.get(name)
+        if pin is not None and lines > pin:
+            bad.append(f"{name}: {lines} lines is over its pinned entry "
+                       f"of {pin}")
+    for name in sorted((set(over) | set(pinned)) - set(counts)):
         bad.append(f"{name}: no longer a tracked file; the table entry "
                    f"is stale — delete it")
     return bad
@@ -109,7 +122,11 @@ class FileSizeRatchet(unittest.TestCase):
         """The acceptance witness: the table's membership and counts are
         `wc -l`'s, so an inflated or stale entry fails like a missing
         one."""
-        self.assertEqual(OVER, expected_over(wc_counts()))
+        counts = wc_counts()
+        self.assertEqual(OVER, expected_over(counts))
+        self.assertEqual(PINNED,
+                         {name: counts[name] for name in PINNED
+                          if name in counts})
 
 
 class RatchetSelfTests(unittest.TestCase):
@@ -121,7 +138,7 @@ class RatchetSelfTests(unittest.TestCase):
             path = Path(tmp) / "mod.py"
             path.write_text("\n" * 1002)
             bad = violations({"pkg/mod.py": line_count(path)},
-                             over={"pkg/mod.py": 1001})
+                             over={"pkg/mod.py": 1001}, pinned={})
         (msg,) = bad
         for needle in ("pkg/mod.py", "1002", "1001"):
             self.assertIn(needle, msg)
@@ -131,7 +148,7 @@ class RatchetSelfTests(unittest.TestCase):
             path = Path(tmp) / "test_new.py"
             path.write_text("\n" * 1501)
             bad = violations({"tests/test_new.py": line_count(path)},
-                             over={})
+                             over={}, pinned={})
         (msg,) = bad
         for needle in ("tests/test_new.py", "1501", "1500"):
             self.assertIn(needle, msg)
@@ -141,7 +158,7 @@ class RatchetSelfTests(unittest.TestCase):
             path = Path(tmp) / "mod.py"
             path.write_text("\n" * 10)
             bad = violations({"pkg/mod.py": line_count(path)},
-                             over={"pkg/mod.py": 1001})
+                             over={"pkg/mod.py": 1001}, pinned={})
         (msg,) = bad
         self.assertIn("pkg/mod.py", msg)
         self.assertIn("stale", msg)

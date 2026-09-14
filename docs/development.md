@@ -48,6 +48,9 @@ Each module, one line:
   startup route check, the push, the pull request and its body, and the
   babysitter's calls -- review threads and checks, replies, resolves, the
   merge through the PR API.
+- `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
+  open or adopt, every park on the PR, the merge through the PR API and
+  its ledger line, and the resume of a run parked on its PR.
 - `holophyte/babysitter.py` — the babysit pass's texts: the adjudicator's
   brief over a PR's threads, the `ADDRESS`/`DECLINE`/`HUMAN` verdict
   parser, the `---- Comment by MODEL ----` replies, the round text and the
