@@ -250,13 +250,16 @@ def ticket_by_identifier(conn, identifier):
 
 @dataclass(frozen=True)
 class RunSnapshot:
-    """Where one run stands right now: the columns the sweep re-checks."""
+    """Where one run stands right now: the columns the sweep re-checks,
+    plus the claim-time clock and box the loop's run-cap check reads."""
 
     id: int
     ticketId: int
     phase: str
     lastHeartbeat: int
     endedAt: int | None
+    startedAt: int
+    timeBoxMs: int | None
 
 
 def run_snapshot(conn, run_id):
@@ -267,12 +270,13 @@ def run_snapshot(conn, run_id):
     outcome names is the one the decision was made on.
     """
     row = conn.execute(
-        "SELECT id, ticketId, phase, lastHeartbeat, endedAt"
-        " FROM runs WHERE id = ?", (run_id,)).fetchone()
+        "SELECT id, ticketId, phase, lastHeartbeat, endedAt, startedAt,"
+        " timeBoxMs FROM runs WHERE id = ?", (run_id,)).fetchone()
     if row is None:
         return None
     return RunSnapshot(id=row[0], ticketId=row[1], phase=row[2],
-                       lastHeartbeat=row[3], endedAt=row[4])
+                       lastHeartbeat=row[3], endedAt=row[4], startedAt=row[5],
+                       timeBoxMs=row[6])
 
 
 @dataclass(frozen=True)
