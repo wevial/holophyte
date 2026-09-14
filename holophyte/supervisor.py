@@ -43,7 +43,7 @@ import review_runner
 import store
 import store.read
 from holophyte.board import close_out_failure, lease_turn_held
-from holophyte.config import serve_config, sweep_config
+from holophyte.config import budget_scale, serve_config, sweep_config
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
 from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
 from holophyte.report import REPORT_GAP, format_age, host_label
@@ -384,6 +384,10 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
     knobs = sweep_config(target) if knobs is None else knobs
     stale_ms, strikes_needed = knobs.heartbeat_stale_ms, knobs.stale_strikes
     grace, overlap_threshold = knobs.budget_grace, knobs.review_overlap_threshold
+    # The box a run is counted against is the one the loop armed:
+    # `budget_min` scaled by `[agents] budget_scale` (`loop._timed()`), so
+    # a slower harness's turn is not swept as over its box.
+    scale = budget_scale(target)
     trips, watched = [], []
     with store.transaction(conn):
         restarts = tuple(
@@ -394,7 +398,8 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
             run_id, ticket, phase, host = (run.id, run.linearIdentifier,
                                            run.phase, run.host)
             heartbeat, started, time_box = (run.lastHeartbeat, run.startedAt,
-                                            run.timeBoxMs)
+                                            run.timeBoxMs
+                                            and run.timeBoxMs * scale)
             silent = now - heartbeat
             stale = silent > stale_ms
             on_file = store.read.strike(conn, run_id)

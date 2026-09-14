@@ -51,6 +51,7 @@ from holophyte.claim import (
 )
 from holophyte.config import (
     branch_prefix,
+    budget_scale,
     loop_config,
     merge_config,
     sweep_config,
@@ -584,6 +585,17 @@ def _run_after(target, conn, run_id, provider, task_id, merge_sha, commands):
                           f" {cmd}")
 
 
+def _scale_note(target, budget_min):
+    """The ` (45 min at scale 1.5)` a budget line carries when the
+    target's `[agents] budget_scale` stretches the ticket's estimate for
+    the implementer harness -- nothing when the scale is 1, so the line
+    is byte-identical to the one it always was."""
+    scale = budget_scale(target)
+    if scale == 1:
+        return ""
+    return f" ({budget_min * scale:g} min at scale {scale:g})"
+
+
 def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
     """Run one implementer turn with the budget as its wall-clock cap.
 
@@ -598,7 +610,9 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
     alarm interrupted the wait but left the implementer and its children
     running, so a run recorded as over budget kept committing into the
     worktree. `agent()` kills the whole group before raising, and what
-    the turn printed before the kill is kept in the log.
+    the turn printed before the kill is kept in the log. The cap armed
+    here is `budget_min` times the target's `[agents] budget_scale` --
+    the estimate unchanged, the harness's pace priced in.
     """
     # The sweep's hook: a beat that finds the run ended kills the turn's
     # whole process group, the same kill the budget sends, and the block
@@ -607,10 +621,12 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
             return (agent(target, "implement", goal, wt,
-                          timeout=budget_min * 60, on_start=kill.arm),
+                          timeout=budget_min * budget_scale(target) * 60,
+                          on_start=kill.arm),
                     False)
     except subprocess.TimeoutExpired as expired:
-        print(f"[holo2] task exceeded {budget_min} min budget")
+        print(f"[holo2] task exceeded {budget_min} min budget"
+              f"{_scale_note(target, budget_min)}")
         partial = expired.output or ""
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", "replace")
@@ -695,8 +711,9 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
         # The budget alarm fired *after* real commits landed. A timeout is
         # not "no work": destroying the commits here would repeat the
         # incident this path exists to prevent.
-        raise RunFailure(f"implementer exceeded the {budget_min} min budget;"
-                         f" work kept on {branch} at {head[:12]}")
+        raise RunFailure(f"implementer exceeded the {budget_min} min budget"
+                         f"{_scale_note(target, budget_min)}; work kept on "
+                         f"{branch} at {head[:12]}")
     return sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
 

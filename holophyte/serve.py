@@ -109,6 +109,7 @@ import store.read
 from holophyte.agents import probe_implementer
 from holophyte.config import (
     KNOWN_KEYS,
+    budget_scale,
     check_document,
     console_config,
     serve_config,
@@ -303,6 +304,10 @@ def status(target, now=None, started_ms=None):
     finally:
         conn.close()
     knobs = sweep_config(target)
+    # `time_box_ms` is the box the run is counted against -- the estimate
+    # scaled by `[agents] budget_scale` -- so the console's time-box bar and
+    # the sweep agree with the cap the loop armed.
+    scale = budget_scale(target)
     return 200, {
         "target": str(target.path),
         "project": str(target.path),
@@ -320,7 +325,8 @@ def status(target, now=None, started_ms=None):
                   "started_ms": run.startedAt,
                   "heartbeat_age_ms": now - run.lastHeartbeat,
                   "elapsed_ms": now - run.startedAt,
-                  "time_box_ms": run.timeBoxMs,
+                  "time_box_ms": (int(run.timeBoxMs * scale)
+                                  if run.timeBoxMs else run.timeBoxMs),
                   "round": run.reviewRoundCount,
                   "strikes": (strikes[run.id].strikes
                               if strikes[run.id] is not None else 0),
@@ -776,12 +782,17 @@ def run_detail(target, run_id, now=None):
     finally:
         conn.close()
     live = run.endedAt is None
+    # `time_box_ms` is the box the run was counted against -- the estimate
+    # scaled by `[agents] budget_scale` -- matching the box `/status` serves.
+    scale = budget_scale(target)
     return 200, {
         "run": {"id": run.id, "ticket": run.linearIdentifier,
                 "title": run.title, "phase": run.phase,
                 "attempt": run.attempt, "started_ms": run.startedAt,
                 "ended_ms": run.endedAt, "outcome": run.outcome,
-                "time_box_ms": run.timeBoxMs, "branch": run.branch,
+                "time_box_ms": (int(run.timeBoxMs * scale)
+                                if run.timeBoxMs else run.timeBoxMs),
+                "branch": run.branch,
                 "host": json_host(target, run.host),
                 "heartbeat_age_ms": now - run.lastHeartbeat if live else None,
                 "merge_sha": run.mergeSha,
