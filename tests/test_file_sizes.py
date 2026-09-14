@@ -51,7 +51,7 @@ PINNED = {
     "holophyte/pool.py": 386,
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 467,
-    "tests/test_holophyte_package.py": 305,
+    "tests/test_holophyte_package.py": 298,
     "tests/test_worktree_reuse.py": 239,
 }
 
