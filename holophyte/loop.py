@@ -17,6 +17,7 @@ Seventh and last slice of the phase-2 module split; moved verbatim from
 `factory.py`, which is now the entry point that imports `holophyte.cli`.
 """
 import contextlib
+import json
 import re
 import subprocess
 import traceback
@@ -636,6 +637,61 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
         return partial, True
 
 
+def _open_findings(conn, run_id):
+    """The findings a refused turn leaves open, as one line for the run's
+    failure reason: the newest ended round's stored findings, joined. `none
+    on record` for a run with no round yet -- the first turn refused on a
+    reclaim -- or one whose latest round was clean.
+    """
+    rounds = store.read.newest_ended_rounds(conn, run_id)
+    findings = json.loads(rounds[0].findings) if rounds else []
+    items = []
+    for finding in findings:
+        message = " ".join(str(finding.get("message", "")).split())
+        where = str(finding.get("path") or "?")
+        if finding.get("line"):
+            where += f":{finding['line']}"
+        items.append(f"{where}: {message}" if message else where)
+    return "; ".join(items) if items else "none on record"
+
+
+def _check_run_cap(target, conn, run_id, budget_min, sha):
+    """Fail the run rather than arm a turn its ceiling cannot hold.
+
+    `[supervisor] run_cap` is the run's hard ceiling: `runs.timeBoxMs` --
+    scaled the way the sweep and `/status` count it -- times the cap. Each
+    turn's budget bounds one turn; this bounds the sum, for the run that
+    keeps earning turns by failing review. Before `_timed()` arms a turn,
+    the time spent since `runs.startedAt` plus the scaled budget the turn
+    would get is held against the ceiling; over it the turn is refused
+    rather than started and killed mid-edit: the run fails with a reason
+    naming the minutes, the box, the cap, the candidate's sha and the open
+    findings, and a `run_cap` event says the same in the run's own stream,
+    so a requeue can carry the candidate.
+
+    A storeless call has no `startedAt` to count from, and a run whose
+    ticket carried no estimate has no box for the ceiling to multiply; both
+    pass.
+    """
+    if conn is None or run_id is None:
+        return
+    run = store.read.run_snapshot(conn, run_id)
+    if run is None or not run.timeBoxMs or not budget_min:
+        return
+    scale = budget_scale(target)
+    cap = sweep_config(target).run_cap
+    box_ms = run.timeBoxMs * scale
+    spent_ms = int(time() * 1000) - run.startedAt
+    if spent_ms + budget_min * scale * 60000 <= box_ms * cap:
+        return
+    reason = (f"out of time: {spent_ms / 60000:.1f} min spent of a "
+              f"{box_ms / 60000:.0f} min box (cap {cap:g}x); candidate "
+              f"preserved at {sha[:12]}; open findings: "
+              f"{_open_findings(conn, run_id)}")
+    store.record_event(conn, run_id, "run_cap", reason)
+    raise RunFailure(reason)
+
+
 # How much of the implementer's final output a no-commit turn keeps on the
 # run (KO-375): the last characters, where a refusal or a "this contract
 # cannot be met" explanation ends up.
@@ -668,6 +724,10 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     left mid-merge; they open the brief (`conflict_brief()`)."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
+    # The run's ceiling before the first turn: a reclaim can arrive with
+    # the run already old, and a turn the cap has no room for is refused
+    # rather than started.
+    _check_run_cap(target, conn, run_id, budget_min, start_sha)
     out, timed_out = _timed(
         target, conn, run_id, beat_s, wt, budget_min,
         conflict_brief(branch, conflicts)
@@ -869,7 +929,10 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                    provider)
             return sha, rnd, True
 
-        # 3. implementer addresses findings (same branch, new commit)
+        # 3. implementer addresses findings (same branch, new commit) --
+        # unless the run's ceiling has no room left for the turn: refused
+        # here rather than started and killed mid-edit.
+        _check_run_cap(target, conn, run_id, budget_min, sha)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         fixes, timed_out = _timed(
             target, conn, run_id, beat_s, wt, budget_min,

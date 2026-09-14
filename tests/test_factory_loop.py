@@ -1584,6 +1584,86 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(), local)
 
 
+class RunCapTests(LoopFixture):
+    """`[supervisor] run_cap`: the run's hard ceiling, in boxes (KO-416).
+
+    A run that keeps earning turns by failing review is what the per-turn
+    budget cannot bound; the cap refuses the turn that would carry the run
+    past it -- before the turn starts, so nothing is killed mid-edit and
+    the candidate is preserved for the requeue.
+    """
+
+    def aged(self, minutes):
+        """Backdate the live run's `startedAt` when the first review starts.
+
+        Through the loop's own `set_phase` seam and `store.transaction()`,
+        so the row ages the way a real run does -- the clock the check reads
+        is the store's, not a simulated one. Once: later rounds' `reviewing`
+        transitions pass through untouched.
+        """
+        real = holophyte.loop.set_phase
+        done = []
+
+        def watching(conn, run_id, phase, note=None):
+            if phase == "reviewing" and not done:
+                done.append(True)
+                with store.transaction(conn):
+                    conn.execute(
+                        "UPDATE runs SET startedAt = startedAt - ?"
+                        " WHERE id = ?", (int(minutes * 60 * 1000), run_id))
+            return real(conn, run_id, phase, note)
+
+        return patch.object(holophyte.loop, "set_phase", watching)
+
+    def test_a_fix_turn_the_cap_has_no_room_for_is_refused(self):
+        """70 min into a 30 min box, the fix turn's 30 min would take the
+        run past 3 boxes: the turn is refused before it starts, the run
+        fails naming the minutes, the box, the cap and the preserved sha,
+        and the implementer is never invoked for it."""
+        self.configure("[supervisor]\nrun_cap = 3\n")
+        task = dict(a_task(), budget_min=30)
+
+        with self.aged(70):
+            fake, _ = self.loop(Commit("work"), REQUEST_CHANGES,
+                                provider=StubProvider(task))
+
+        # One implement turn and one review; the fix turn never ran.
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        candidate = self.git("rev-parse", BRANCH).strip()
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("out of time", reason)
+        self.assertIn("min spent of a 30 min box", reason)
+        self.assertIn("cap 3x", reason)
+        self.assertIn(candidate[:12], reason)
+        self.assertIn("open findings", reason)
+        ((event,),) = self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'run_cap'")
+        self.assertIn(candidate[:12], event)
+        # The candidate stands for the requeue: branch and worktree kept.
+        self.assertIn(BRANCH, self.branches())
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
+
+    def test_a_fix_turn_the_cap_still_has_room_for_runs(self):
+        """Same run at cap 4: 70 + 30 fits in 120, so the turn starts. The
+        cap arithmetic is the only difference -- the fix lands, the next
+        review approves, the run merges."""
+        self.configure("[supervisor]\nrun_cap = 4\n")
+        task = dict(a_task(), budget_min=30)
+
+        with self.aged(70):
+            fake, _ = self.loop(Commit("work"), REQUEST_CHANGES,
+                                Commit("fix"), APPROVE,
+                                provider=StubProvider(task))
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "implement", "review"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"),
+                         [("merged",)])
+        self.assertEqual(
+            self.read("SELECT id FROM runEvents WHERE kind = 'run_cap'"), [])
+
+
 class SweepDiagnosticsTests(LoopFixture):
     """A held ticket and the startup preamble surface the read-only sweep.
 

@@ -29,15 +29,15 @@ CEILING = {"source": 1000, "test": 1500}
 # a listed file's size rewrites its entry in the same commit; a file
 # back under its ceiling leaves the table.
 OVER = {
-    "holophyte/config.py": 1266,
-    "holophyte/loop.py": 1523,
+    "holophyte/config.py": 1280,
+    "holophyte/loop.py": 1586,
     "holophyte/pr.py": 1033,
-    "holophyte/serve.py": 1790,
-    "holophyte/supervisor.py": 1255,
-    "tests/test_factory_config.py": 2141,
-    "tests/test_factory_loop.py": 6827,
-    "tests/test_serve.py": 3151,
-    "tests/test_supervisor_sweep.py": 2287,
+    "holophyte/serve.py": 1792,
+    "holophyte/supervisor.py": 1262,
+    "tests/test_factory_config.py": 2186,
+    "tests/test_factory_loop.py": 6907,
+    "tests/test_serve.py": 3152,
+    "tests/test_supervisor_sweep.py": 2309,
 }
 
 # Repo-relative path to the file's `wc -l` count, for a file a slice
@@ -54,7 +54,7 @@ PINNED = {
     "holophyte/reconcile.py": 468, "holophyte/reexec.py": 94,
     "holophyte/report.py": 160, "provider.py": 303,
     "store/__init__.py": 980, "store/operate.py": 921,
-    "store/read.py": 926, "store/schema.py": 740,
+    "store/read.py": 930, "store/schema.py": 740,
     "store/tickets.py": 460,
     "tests/test_babysitter.py": 466,
     "tests/test_cli.py": 114, "tests/test_cli_approve.py": 269,

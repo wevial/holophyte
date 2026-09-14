@@ -301,7 +301,7 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
     return Outcome(trip, acted, seen["phase"])
 
 
-def time_box_allowance(time_box, rounds, cap, grace):
+def time_box_allowance(time_box, rounds, cap, grace, run_cap):
     """The elapsed time a run may reach before its box is blown, in the
     box's unit.
 
@@ -313,9 +313,14 @@ def time_box_allowance(time_box, rounds, cap, grace):
     bounds the turns a run can earn: a round past the cap is not a turn the
     loop would give. A run with no round yet is judged exactly as before this
     was counted (KO-340: runs 160 and 161 swept mid-fix at the single box).
+
+    Bounded above by `run_cap` boxes (KO-416): the per-turn formula grows
+    with the rounds a run earns by failing review, which is exactly the run
+    that most needs a ceiling, so the allowance is the smaller of the two.
     Pure, so the arithmetic is witnessed without a store.
     """
-    return time_box * (1 + min(rounds, cap)) * grace
+    return min(time_box * (1 + min(rounds, cap)) * grace,
+               time_box * run_cap)
 
 
 def sweep(target, conn, now, act=False, provider=None, knobs=None):
@@ -384,6 +389,7 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
     knobs = sweep_config(target) if knobs is None else knobs
     stale_ms, strikes_needed = knobs.heartbeat_stale_ms, knobs.stale_strikes
     grace, overlap_threshold = knobs.budget_grace, knobs.review_overlap_threshold
+    run_cap = knobs.run_cap
     # The box a run is counted against is the one the loop armed:
     # `budget_min` scaled by `[agents] budget_scale` (`loop._timed()`), so
     # a slower harness's turn is not swept as over its box.
@@ -422,12 +428,13 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
                     f"silent for {silent / 60000:.1f} min"
                     f" over {strikes} consecutive sweeps", heartbeat, host))
             elif time_box and elapsed > time_box_allowance(
-                    time_box, rounds, cap, grace):
+                    time_box, rounds, cap, grace, run_cap):
                 trips.append(Trip(
                     run_id, ticket, phase, TIME_BOX,
                     f"{elapsed / 60000:.1f} min against a"
                     f" {time_box / 60000:.0f} min box × {turns}"
-                    f" {'turn' if turns == 1 else 'turns'} ({grace}x grace)",
+                    f" {'turn' if turns == 1 else 'turns'} ({grace}x grace,"
+                    f" {run_cap}x run cap)",
                     heartbeat, host))
             elif (phase in REVIEW_PHASES
                     and (overlap := review_overlap(conn, run_id)) is not None
