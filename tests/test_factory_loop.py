@@ -6203,11 +6203,10 @@ class WorkerTests(LoopFixture):
         provider = StubProvider(a_task(1))
         lock = holophyte.gates.merge_lock_path(self.tgt)
         held = []
-        real = holophyte.pool.commit_findings
 
         def commit_under_lock(target, message):
             held.append(lock.exists())
-            return real(target, message)
+            return holophyte.findings.commit_findings(target, message)
 
         with patch.object(holophyte.pool, "commit_findings", commit_under_lock), \
                 patch.object(holophyte.loop, "commit_findings", commit_under_lock):

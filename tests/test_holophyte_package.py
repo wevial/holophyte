@@ -18,22 +18,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
 
-import holophyte.agents  # noqa: E402 - after the sys.path insert above
-import holophyte.babysitter  # noqa: E402 - after the sys.path insert above
-import holophyte.board  # noqa: E402 - after the sys.path insert above
-import holophyte.cli  # noqa: E402 - after the sys.path insert above
-import holophyte.config  # noqa: E402 - after the sys.path insert above
-import holophyte.findings  # noqa: E402 - after the sys.path insert above
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.pr  # noqa: E402 - after the sys.path insert above
-import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
-import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
-import holophyte.report  # noqa: E402 - after the sys.path insert above
-import holophyte.review  # noqa: E402 - after the sys.path insert above
-import holophyte.runs  # noqa: E402 - after the sys.path insert above
-import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
+
+def _module(name):
+    """`holophyte.<name>`, imported where the registry names it."""
+    return importlib.import_module(f"holophyte.{name}")
+
 
 FACTORY = ROOT / "factory.py"
 
@@ -41,13 +30,13 @@ FACTORY = ROOT / "factory.py"
 # carry no `__module__`, so they are not listed. Edit these lists in the same
 # change that moves a name, and say why in the commit.
 DEFINED = {
-    holophyte.target: [
+    _module("target"): [
         "Target",
         "adopt_legacy_state",
         "legacy_state_layouts",
         "state_dir",
     ],
-    holophyte.config: [
+    _module("config"): [
         "LoopConfig",
         "ReportConfig",
         "SweepConfig",
@@ -66,7 +55,7 @@ DEFINED = {
         "setup_timeout",
         "sweep_config",
     ],
-    holophyte.gates: [
+    _module("gates"): [
         "InfraFailure",
         "RunFailure",
         "contract_report",
@@ -83,14 +72,14 @@ DEFINED = {
         "timeout_failure_report",
         "vacuous_green_report",
     ],
-    holophyte.agents: [
+    _module("agents"): [
         "ProbeResult",
         "agent",
         "agent_route",
         "probe_implementer",
         "publish_review_refs",
     ],
-    holophyte.findings: [
+    _module("findings"): [
         "_document",
         "_entry",
         "_gist",
@@ -108,7 +97,7 @@ DEFINED = {
         "run_entry",
         "write_findings",
     ],
-    holophyte.report: [
+    _module("report"): [
         "format_age",
         "host_label",
         "host_name",
@@ -116,7 +105,7 @@ DEFINED = {
         "report_rows",
         "report_summary",
     ],
-    holophyte.review: [
+    _module("review"): [
         "_trailing_verdict",
         "criteria_block",
         "criteria_brief",
@@ -132,7 +121,7 @@ DEFINED = {
         "test_references",
         "unparsed_path",
     ],
-    holophyte.runs: [
+    _module("runs"): [
         "heartbeat_while",
         "open_store",
         "record_round",
@@ -140,7 +129,7 @@ DEFINED = {
         "set_phase",
         "warn_on_run",
     ],
-    holophyte.board: [
+    _module("board"): [
         "body_problem",
         "close_out_failure",
         "escalate",
@@ -160,7 +149,7 @@ DEFINED = {
     ],
     # The three namedtuples are classes made in the module, so they carry a
     # `__module__` like any `class` statement and are listed with the rest.
-    holophyte.supervisor: [
+    _module("supervisor"): [
         "Outcome",
         "SupervisorHeld",
         "Sweep",
@@ -184,7 +173,7 @@ DEFINED = {
         "sweep_lines",
         "sweep_report",
     ],
-    holophyte.loop: [
+    _module("loop"): [
         "main",
         "report",
         "reuse_leftover",
@@ -193,11 +182,11 @@ DEFINED = {
         "self_hosted",
         "timeout_report",
     ],
-    holophyte.cli: [
+    _module("cli"): [
         "cli",
     ],
     # KO-385: the pull-request stage, split out of `holophyte.loop`.
-    holophyte.pullrequest: [
+    _module("pullrequest"): [
         "_landed_pr",
         "_merge_pr",
         "_open_pr",
@@ -207,7 +196,7 @@ DEFINED = {
         "_written_pr_text",
     ],
     # KO-386: the babysit pass joins the texts it drives.
-    holophyte.babysitter: [
+    _module("babysitter"): [
         "_answer_threads",
         "_babysit",
         "_fix_threads",
@@ -238,7 +227,7 @@ DEFINED = {
         "where",
     ],
     # KO-259: the one GitHub surface, `[merge] mode = "pr"`'s push and PR.
-    holophyte.pr: [
+    _module("pr"): [
         "check_pr_route",
         "create_pull_request",
         "origin_url",
@@ -248,9 +237,8 @@ DEFINED = {
         "repo_of",
         "token_from_env",
     ],
-    # KO-388: the worker pool and its scheduler, split out of
-    # `holophyte.loop`.
-    holophyte.pool: [
+    # KO-388: the worker pool and its scheduler, out of `holophyte.loop`.
+    _module("pool"): [
         "_PoolState",
         "_PrefixedOut",
         "_claimable",
@@ -262,7 +250,7 @@ DEFINED = {
     ],
     # KO-387: the startup reconciles and the GitHub budget, split out of
     # `holophyte.loop` (`_pr_seen` out of `holophyte.pullrequest`).
-    holophyte.reconcile: [
+    _module("reconcile"): [
         "GitHubBudget",
         "_budget_low",
         "_iso_epoch",
@@ -303,7 +291,7 @@ class MovedNamesTests(unittest.TestCase):
             and (inspect.isfunction(value) or inspect.isclass(value))
             and value.__module__ == entry.__name__)
         self.assertEqual(own, [])
-        self.assertIs(entry.cli, holophyte.cli.cli)
+        self.assertIs(entry.cli, _module("cli").cli)
 
 
 if __name__ == "__main__":
