@@ -36,7 +36,7 @@ OVER = {
     "holophyte/supervisor.py": 1250,
     "store/__init__.py": 2995,
     "tests/test_factory_config.py": 2074,
-    "tests/test_factory_loop.py": 6649,
+    "tests/test_factory_loop.py": 6648,
     "tests/test_serve.py": 3134,
     "tests/test_supervisor_sweep.py": 2255,
 }
@@ -49,7 +49,7 @@ PINNED = {
     "holophyte/pool.py": 389,
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 467,
-    "tests/test_holophyte_package.py": 311,
+    "tests/test_holophyte_package.py": 310,
 }
 
 
