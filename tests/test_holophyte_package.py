@@ -26,6 +26,7 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
 import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
@@ -247,6 +248,18 @@ DEFINED = {
         "push_branch",
         "repo_of",
         "token_from_env",
+    ],
+    # KO-388: the worker pool and its scheduler, split out of
+    # `holophyte.loop`.
+    holophyte.pool: [
+        "_PoolState",
+        "_PrefixedOut",
+        "_claimable",
+        "_render_findings_locked",
+        "_spawn_worker",
+        "_wait_any",
+        "scheduler",
+        "worker",
     ],
     # KO-387: the startup reconciles and the GitHub budget, split out of
     # `holophyte.loop` (`_pr_seen` out of `holophyte.pullrequest`).

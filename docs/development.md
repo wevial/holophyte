@@ -59,6 +59,10 @@ Each module, one line:
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
   the reads spend from.
+- `holophyte/pool.py` — the worker pool and its scheduler (KO-343):
+  `scheduler()` over `factory.py --worker` children under
+  `[loop] workers > 1`, `worker()` as one child, the spawn and wait
+  seams, the claimable count and the `[holo2 wN]` line prefixing.
 - `holophyte/reexec.py` — `reexec_self`, the shared self re-exec the loop
   and the supervisor both restart themselves through.
 
