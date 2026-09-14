@@ -93,7 +93,8 @@ DOCKER_PROBE_TIMEOUT = 5
 # `[supervisor]`'s entry is filled in beside `SUPERVISOR_KEYS`, where those
 # knobs and their defaults are defined.
 KNOWN_KEYS = {
-    "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS),
+    "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
+              | frozenset({"budget_scale"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry"}),
 }
@@ -128,12 +129,15 @@ def check_config(target):
     """The config checks every mode runs at startup, with the command line
     parsed and nothing claimed: unknown keys and every table whose values
     are held to a constraint without touching the host -- `[supervisor]`,
-    `[loop]`, `[report]`, `[merge]`, `[console]`, `[serve]`. `cli()` calls
+    `[loop]`, `[report]`, `[merge]`, `[console]`, `[serve]`, and the one
+    `[agents]` value that is a number and not a route, `budget_scale`.
+    `cli()` calls
     this once it has a target; the daemon's `PUT /config` (KO-356) calls it
     over a candidate document, so what the console can write is exactly
     what startup would accept. Each check exits naming the file, the table
     and the key, so a refusal is one sentence about the value to fix."""
     check_config_keys(target)
+    budget_scale(target)
     sweep_config(target)
     loop_config(target)
     report_config(target)
@@ -233,6 +237,41 @@ def review_route(target):
             f"[holo2] {target.config_path}: [agents] {effort_key} must be one of "
             f"{', '.join(REVIEW_EFFORTS)}, got {effort!r}")
     return model, effort
+
+
+# How much the implementer turn's wall-clock budget stretches on this
+# target: `[agents] budget_scale` multiplies the ticket's estimate into the
+# cap `loop._timed()` arms, the ceiling `agents.agent()` holds it under,
+# and the box the sweep and /status count the run against. A harness that
+# reads more and edits later spends the same budget at a slower rate; the
+# estimate, the ticket and the template's thirty-minute rule are untouched
+# -- the scale is a property of the harness, held beside its route.
+BUDGET_SCALE = 1.0
+BUDGET_SCALE_RANGE = (1.0, 3.0)
+
+
+def budget_scale(target):
+    """The `[agents] budget_scale` multiplier on the implementer's box.
+
+    `BUDGET_SCALE` when the key is absent -- the estimate exactly, as it
+    has always been -- else a number in `BUDGET_SCALE_RANGE`: under 1 the
+    "scale" would shrink a budget the cap exists to stop, and past 3 the
+    cap stops bounding the turn at all. A value outside, or a non-number
+    (`true` included: TOML's boolean is not a 1 the operator meant), is a
+    startup error naming the key and the range, the same refusal a bad
+    `[supervisor]` threshold gets: a multiplier the factory quietly
+    clamped would bound turns with a number nobody chose.
+    """
+    value = config_table(target, "agents").get("budget_scale")
+    if value is None:
+        return BUDGET_SCALE
+    low, high = BUDGET_SCALE_RANGE
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or not low <= value <= high):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [agents] budget_scale must be a "
+            f"number from {low} to {high}, got {value!r}")
+    return value
 
 
 def check_agent_commands(target):

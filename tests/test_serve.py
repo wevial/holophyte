@@ -379,6 +379,22 @@ class StatusTests(ServeTestCase):
         self.assertIs(body["actions"], False)
         self.assertIs(body["config_edit"], False)
 
+    def test_a_scaled_budget_serves_the_scaled_box(self):
+        """`[agents] budget_scale` stretches the box a run is counted
+        against; /status and /runs/N serve the scaled figure, so the
+        console's time-box bar and timeline draw the box the loop armed."""
+        self.seed()
+        self.start(config="[agents]\nbudget_scale = 2\n")
+
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        (run,) = body["runs"]
+        self.assertEqual(run["time_box_ms"], 50 * MIN)
+
+        code, _, detail = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200)
+        self.assertEqual(detail["run"]["time_box_ms"], 50 * MIN)
+
     def test_a_run_carries_title_start_round_and_strikes(self):
         # KO-263: what the console's floor row draws. A run in `reviewing`
         # with two ended rounds and one strike on file.
