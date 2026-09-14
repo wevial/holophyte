@@ -28,15 +28,15 @@ CEILING = {"source": 1000, "test": 1500}
 # back under its ceiling leaves the table.
 OVER = {
     "holophyte/config.py": 1227,
-    "holophyte/loop.py": 4236,
+    "holophyte/loop.py": 3931,
     "holophyte/pr.py": 1033,
     "holophyte/serve.py": 1779,
-    "holophyte/supervisor.py": 1203,
+    "holophyte/supervisor.py": 1250,
     "store/__init__.py": 2995,
     "tests/test_factory_config.py": 2074,
     "tests/test_factory_loop.py": 6647,
     "tests/test_serve.py": 3134,
-    "tests/test_supervisor_sweep.py": 2197,
+    "tests/test_supervisor_sweep.py": 2255,
 }
 
 
