@@ -6,14 +6,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { BrowserWindow, Menu, Tray, app, dialog, nativeImage, nativeTheme, shell } from "electron";
+import { BrowserWindow, Menu, Tray, app, dialog, nativeImage, shell } from "electron";
 
 import { CONFIG_FILE, resolveConsoleUrl } from "./config.ts";
 import { appendLog, consoleLine, failedLoadLine } from "./log.ts";
 import type { MenuActions } from "./menu.ts";
 import { POLL_INTERVAL_MS, pollAll, readTokens } from "./poll.ts";
 import { seedScript } from "./seed.ts";
-import { type Level, buildSummary, summarizeAnswer } from "./tray.ts";
+import { type Level, buildSummary, summarizeAnswer, trayImageFile } from "./tray.ts";
 
 // The SwiftBar drawer's template icon; nativeImage picks up the @2x sibling
 // by name. From the repository, app.getAppPath() is this package's directory
@@ -31,19 +31,14 @@ function trayIconPath(): string {
 // the state dot inside the glyph. Electron cannot load an SVG into a tray,
 // so `bun run icon` renders them to PNG in dist/ (`files` in
 // electron-builder.yml carries them into the bundle); a missing render
-// falls back to the template glyph, as the drawer does.
-const VARIANT: Partial<Record<Level, string>> = { attention: "warn", bad: "bad" };
-
-// The variants are colour images, so macOS does not recolour them for the
-// bar the way it does the template glyph: `bun run icon` renders each twice,
-// stroke dark for a light bar and light for a dark one, and the pick
-// follows the system appearance (`nativeTheme`), re-picked when it changes.
-function trayImage(level: Level): Electron.NativeImage {
-  const variant = VARIANT[level];
-  if (variant !== undefined) {
-    const suffix = nativeTheme.shouldUseDarkColors ? "-dark" : "";
-    const file = path.join(app.getAppPath(), "dist", `menubar-${variant}${suffix}@1x.png`);
-    if (existsSync(file)) return nativeImage.createFromPath(file);
+// falls back to the template glyph, as the drawer does. The glyphs carry
+// no dark strokes, so one file reads on a light bar or a dark one and the
+// pick never asks the appearance.
+export function trayImage(level: Level): Electron.NativeImage {
+  const file = trayImageFile(level);
+  if (file !== null) {
+    const png = path.join(app.getAppPath(), "dist", file);
+    if (existsSync(png)) return nativeImage.createFromPath(png);
   }
   const icon = nativeImage.createFromPath(trayIconPath());
   if (process.platform === "darwin") icon.setTemplateImage(true);
@@ -52,8 +47,6 @@ function trayImage(level: Level): Electron.NativeImage {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-/** The level the tray last drew, so an appearance change can redraw it. */
-let trayLevel: Level = "idle";
 
 function readConfigFile(): string | null {
   try {
@@ -153,7 +146,6 @@ async function refreshTray(url: string, configText: string | null): Promise<void
     actions: trayActions(url, configText),
   });
   tray.setContextMenu(Menu.buildFromTemplate(items));
-  trayLevel = level;
   tray.setImage(trayImage(level));
 }
 
@@ -170,9 +162,6 @@ function addTray(url: string, configText: string | null): void {
   };
   tick();
   setInterval(tick, POLL_INTERVAL_MS);
-  nativeTheme.on("updated", () => {
-    tray?.setImage(trayImage(trayLevel));
-  });
 }
 
 app.whenReady().then(() => {

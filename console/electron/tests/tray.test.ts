@@ -1,7 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
+import * as electronStub from "./electron-stub.ts";
 import { pollAll, readTokens } from "../poll.ts";
-import { type Attention, type FetchResult, type Status, buildSummary, summarizeAnswer } from "../tray.ts";
+import { type Attention, type FetchResult, type Status, buildSummary, summarizeAnswer, trayImageFile } from "../tray.ts";
+
+// The stub has to answer "electron" before main.ts links, so main.ts is
+// imported inside the test, after this registration.
+mock.module("electron", () => electronStub);
 
 // The wire shapes from docs/reference/http.md.
 const NOW = 1788450534491;
@@ -77,6 +84,37 @@ describe("buildSummary", () => {
     expect(labels(items)).toContain("writer-2:7710 · unreachable");
     expect(labels(items)).toContain("1 host · 2 daemons");
     expect(level).toBe("bad");
+  });
+});
+
+describe("trayImageFile", () => {
+  test("warn and bad name their rendered PNG; idle and working keep the template glyph", () => {
+    expect(trayImageFile("attention")).toBe("menubar-warn@1x.png");
+    expect(trayImageFile("bad")).toBe("menubar-bad@1x.png");
+    expect(trayImageFile("idle")).toBeNull();
+    expect(trayImageFile("working")).toBeNull();
+  });
+
+  test("the pick loads the same file whether shouldUseDarkColors is true or false", async () => {
+    // The menu bar's darkness comes from the wallpaper behind it, not the
+    // appearance setting, so the pick must not read nativeTheme: drive
+    // trayImage under both values against a dist dir holding the rendered
+    // PNG and compare the file it loads.
+    const { trayImage } = await import("../main.ts");
+    const { appDir, imagePaths, nativeTheme } = electronStub;
+    mkdirSync(path.join(appDir, "dist"), { recursive: true });
+    for (const [level, variant] of [["attention", "warn"], ["bad", "bad"]] as const) {
+      const file = `menubar-${variant}@1x.png`;
+      writeFileSync(path.join(appDir, "dist", file), "png");
+      for (const dark of [true, false]) {
+        nativeTheme.shouldUseDarkColors = dark;
+        imagePaths.length = 0;
+        trayImage(level);
+        expect(imagePaths).toEqual([path.join(appDir, "dist", file)]);
+      }
+    }
+    const main = readFileSync(path.resolve(import.meta.dirname, "../main.ts"), "utf8");
+    expect(main).not.toContain("nativeTheme");
   });
 });
 
