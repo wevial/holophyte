@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Now } from "../src/components/Now";
 import { RunDetail } from "../src/components/RunDetail";
-import { labelFits } from "../src/components/RoundTimeline";
 import { formatClock } from "../src/lib/format";
 import type { LedgerRow } from "../src/lib/ledger";
 import type { Fetch } from "../src/lib/poll";
@@ -99,10 +98,8 @@ const answering =
 
 afterEach(cleanup);
 
-async function mount(body: RunDetailBody, now: number, files?: () => Response, barPx?: number, entries?: LedgerRow[]) {
-  render(
-    <RunDetail base={BASE} id={91} now={now} polls={1} deps={{ fetch: answering(body, files, entries), barPx }} />,
-  );
+async function mount(body: RunDetailBody, now: number, files?: () => Response, entries?: LedgerRow[]) {
+  render(<RunDetail base={BASE} id={91} now={now} polls={1} deps={{ fetch: answering(body, files, entries) }} />);
   await settle();
   // A finished run's ledger fetch lands a cycle after the detail does.
   await settle();
@@ -289,56 +286,138 @@ const SHARES: RunDetailBody = {
   ],
 };
 
-test("each label sits under its segment's left edge, and a segment too narrow for one shows none", async () => {
-  await mount(SHARES, T + 40 * MINUTE, undefined, 600);
+test("a finished run's bar carries no labels and its status line reads done with the run's whole span", async () => {
+  await mount(SHARES, T + 40 * MINUTE);
   const bar = screen.getByRole("list", { name: "Round timeline" });
   expect(Array.from(bar.children).map((item) => item.getAttribute("data-segment"))).toEqual([
     "implement",
     "review",
     "verify",
   ]);
-  // 600 px bar: implement is 300 px and verify 270 px, so both are
-  // labelled at their start shares; the 30 px review shows no label.
-  const cells = Array.from(document.querySelectorAll("[data-segment-label]")) as HTMLElement[];
-  expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["implement", "verify"]);
-  expect(cells[0]!.className).toContain("absolute");
-  expect(parseFloat(cells[0]!.style.left)).toBe(0);
-  expect(parseFloat(cells[1]!.style.left)).toBeCloseTo(55, 6);
+  expect(document.querySelectorAll("[data-segment-label]").length).toBe(0);
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 40m 00s");
 });
 
-test("at a narrower bar only labels whose segment reaches LABEL_MIN_PX remain", async () => {
-  expect(labelFits(0.5, 200)).toBe(true);
-  expect(labelFits(0.05, 200)).toBe(false);
-  expect(labelFits(0.45, 200)).toBe(true);
-  await mount(SHARES, T + 40 * MINUTE, undefined, 200);
-  expect(document.querySelectorAll("[data-segment-label]").length).toBe(2);
-  cleanup();
-  // At 150 px only implement's 75 px is still wide enough.
-  await mount(SHARES, T + 40 * MINUTE, undefined, 150);
-  const cells = Array.from(document.querySelectorAll("[data-segment-label]")) as HTMLElement[];
-  expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["implement"]);
+/** A live run two minutes into a fix round: claimed -> working, round 1's
+ *  review at T+8m, the fix open from T+12m. */
+const FIXING: RunDetailBody = {
+  ...DETAIL,
+  run: { ...DETAIL.run, phase: "addressing" },
+  rounds: [],
+  events: [
+    { at: T, kind: "phase_change", summary: "claimed -> working: KO-232" },
+    { at: T + 8 * MINUTE, kind: "phase_change", summary: "working -> reviewing: round 1 review" },
+    { at: T + 12 * MINUTE, kind: "phase_change", summary: "reviewing -> addressing: round 1: 2 findings to address" },
+  ],
+};
+
+test("a live run's status line names the running fix phase and its duration ticks with the clock", async () => {
+  const seen = T + 20 * MINUTE;
+  const page = (sinceMs: number) => (
+    <RunDetail base={BASE} id={91} now={seen} sinceMs={sinceMs} polls={1} deps={{ fetch: answering(FIXING) }} />
+  );
+  const view = render(page(0));
+  await settle();
+  const status = () => document.querySelector("[data-timeline-status]")!;
+  // The open fix began at T+12m: eight minutes in at the poll.
+  expect(status().textContent).toBe("fix 1 · 8m 00s");
+  expect(document.querySelectorAll("[data-segment-label]").length).toBe(0);
+  // Two seconds on the console's clock grows the figure by two seconds.
+  view.rerender(page(2_000));
+  expect(status().textContent).toBe("fix 1 · 8m 02s");
 });
 
-test("a live run's remaining track gets no label and the running segment's label carries its live duration", async () => {
-  const live: RunDetailBody = {
+test("a run done at 82m 14s reads done with the run's total span", async () => {
+  const done: RunDetailBody = {
     ...DETAIL,
-    run: { ...DETAIL.run, phase: "verifying" },
+    run: { ...DETAIL.run, phase: "done", ended_ms: T + 82 * MINUTE + 14_000, outcome: "merged" },
     rounds: [],
     events: [
       { at: T, kind: "phase_change", summary: "claimed -> working: KO-232" },
-      { at: T + 12 * MINUTE, kind: "phase_change", summary: "working -> verifying: round 1: verify before review" },
+      { at: T + 60 * MINUTE, kind: "phase_change", summary: "working -> verifying: round 1: verify before review" },
+      { at: T + 80 * MINUTE, kind: "phase_change", summary: "verifying -> merging: approved" },
+      { at: T + 82 * MINUTE + 14_000, kind: "phase_change", summary: "merging -> done: merged" },
     ],
   };
-  await mount(live, T + 20 * MINUTE, undefined, 600);
+  await mount(done, T + 82 * MINUTE + 14_000);
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 82m 14s");
+});
+
+test("a finished run's done figure is its whole span, not the stretch the segments cover", async () => {
+  // Claimed at T but working only from T+1m: the segments cover nine of
+  // the run's ten minutes.
+  const done: RunDetailBody = {
+    ...DETAIL,
+    run: { ...DETAIL.run, phase: "done", ended_ms: T + 10 * MINUTE, outcome: "merged" },
+    rounds: [],
+    events: [
+      { at: T + MINUTE, kind: "phase_change", summary: "claimed -> working: KO-232" },
+      { at: T + 9 * MINUTE, kind: "phase_change", summary: "working -> verifying: approved" },
+      { at: T + 10 * MINUTE, kind: "phase_change", summary: "verifying -> done: merged" },
+    ],
+  };
+  await mount(done, T + 10 * MINUTE);
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 10m 00s");
+});
+
+test("a run that ended before any segment opened still reads done with the run's span", async () => {
+  // claimed -> failed maps to no segment kind, so the bar is an empty
+  // track: the done line comes from the run, not the segments.
+  const failed: RunDetailBody = {
+    ...DETAIL,
+    run: { ...DETAIL.run, phase: "failed", ended_ms: T + MINUTE, outcome: "failed" },
+    rounds: [],
+    events: [{ at: T, kind: "phase_change", summary: "claimed -> failed: lease lost" }],
+  };
+  await mount(failed, T + MINUTE);
   const bar = screen.getByRole("list", { name: "Round timeline" });
-  expect(Array.from(bar.children).map((item) => item.getAttribute("data-segment"))).toEqual([
-    "implement",
-    "verify",
-    "remaining",
-  ]);
-  const cells = Array.from(document.querySelectorAll("[data-segment-label]")) as HTMLElement[];
-  expect(cells.map((cell) => cell.getAttribute("data-segment-label"))).toEqual(["implement", "verify"]);
-  expect(cells[1]!.textContent).toBe("verify8m 00s");
+  expect(Array.from(bar.children).map((item) => item.getAttribute("data-segment"))).toEqual(["remaining"]);
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 1m 00s");
+});
+
+test("a run parked on merge approval is live, not done: the status line names the waiting phase and the wait ticks", async () => {
+  const parked: RunDetailBody = {
+    ...DETAIL,
+    run: { ...DETAIL.run, phase: "awaiting_merge_approval" },
+    rounds: [],
+    events: [
+      { at: T, kind: "phase_change", summary: "claimed -> working: KO-232" },
+      { at: T + 30 * MINUTE, kind: "phase_change", summary: "working -> merging: approved" },
+      { at: T + 32 * MINUTE, kind: "phase_change", summary: "merging -> awaiting_merge_approval: candidate parked" },
+    ],
+  };
+  const seen = T + 37 * MINUTE;
+  const page = (sinceMs: number) => (
+    <RunDetail base={BASE} id={91} now={seen} sinceMs={sinceMs} polls={1} deps={{ fetch: answering(parked) }} />
+  );
+  const view = render(page(0));
+  await settle();
+  const status = () => document.querySelector("[data-timeline-status]")!;
+  // The merge segment closed at T+32m but the run has no ended_ms: the
+  // line names the parking phase and how long it has waited, and keeps
+  // counting.
+  expect(status().textContent).toBe("awaiting_merge_approval · 5m 00s");
+  view.rerender(page(2_000));
+  expect(status().textContent).toBe("awaiting_merge_approval · 5m 02s");
+});
+
+test("a segment floats its long name and duration on hover and on focus, hides on leave and blur, and carries no title", async () => {
+  await mount(SHARES, T + 40 * MINUTE);
+  const bar = screen.getByRole("list", { name: "Round timeline" });
+  const items = Array.from(bar.querySelectorAll("li")) as HTMLElement[];
+  expect(items.every((item) => item.getAttribute("title") == null)).toBe(true);
+  expect(items.every((item) => item.getAttribute("tabindex") === "0")).toBe(true);
+  const tooltip = () => document.querySelector("[data-segment-tooltip]");
+  expect(tooltip()).toBeNull();
+  fireEvent.mouseOver(items[0]!);
+  expect(tooltip()!.textContent).toBe("Implementation · 20m 00s");
+  expect((tooltip() as HTMLElement).style.left).toBe("25%");
+  fireEvent.mouseOut(items[0]!);
+  expect(tooltip()).toBeNull();
+  fireEvent.focusIn(items[1]!);
+  expect(tooltip()!.textContent).toBe("Review 1 · 2m 00s");
+  fireEvent.focusOut(items[1]!);
+  expect(tooltip()).toBeNull();
 });
 
 test("a newest round that passed shows no open findings and zero counts", async () => {
@@ -401,7 +480,7 @@ test("only the newest round's fold is open and an older round's header opens it"
         "Implementer response:\nDECLINE old.py — superseded by the rewrite",
     },
   ];
-  await mount(FAILED, T + 25 * MINUTE, undefined, undefined, entries);
+  await mount(FAILED, T + 25 * MINUTE, undefined, entries);
   const folds = Array.from(document.querySelectorAll("[data-round-fold]")) as HTMLElement[];
   // Newest first on the page: round 2, then round 1.
   expect(folds.map((fold) => fold.getAttribute("data-round-fold"))).toEqual(["2", "1"]);
