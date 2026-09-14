@@ -9,7 +9,9 @@ fixes, replies. What the pass calls back into the loop for -- the merge
 gate, the timed turn, the drift check, the pull-request stage's parks and
 merge -- is imported inside the functions that use it, the same in-function
 import `holophyte.pullrequest` uses for the loop, so this module's import
-edge stays one-way.
+edge stays one-way. The moved bodies still name the texts as
+`babysitter.<name>`, the way they did in the loop; the module's self-import
+below keeps those lines verbatim.
 
 Three verdicts, one per thread, from the adjudicator role:
 
@@ -43,9 +45,6 @@ from time import time
 import review_runner
 import store
 import store.read
-
-# The moved bodies below name this module the way they did in
-# `holophyte.loop`; the import binds this module itself.
 from holophyte import babysitter, pr
 from holophyte.agents import agent_route
 from holophyte.board import ledger
