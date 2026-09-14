@@ -1,22 +1,3 @@
-"""The pull-request stage of the loop: open, park, merge, land.
-
-`[merge] mode = "pr"`'s side of the merge gate: `_open_pr()` pushes the
-approved candidate and opens -- or adopts -- its pull request, and the
-babysit pass's ways out are here too: `_park_on_pr()` for every park on the
-PR, `_park_human()` for the threads a person must answer, `_merge_pr()`
-for the merge through the pull-request API and `_landed_pr()` for the
-merge's ledger line. `_resume_on_pr()` is a parked run released back onto
-its open PR, and `_pr_seen()` the one extra read the park records so a
-later reconcile can tell a reviewer's activity from the pass's own writes.
-`PR_TEXT_DIFF_CAP` and `PR_TEXT_BUDGET_MIN` bound the written-PR turn
-`_written_pr_text()` runs under `[merge] pr_text = "written"`.
-
-Moved verbatim from `holophyte.loop`, which imports these names back for
-its remaining call sites; the loop's own names the moved bodies call --
-`_babysit`, `_sync_branch_from_origin`, `_timed`, `_seen`, `GITHUB_BUDGET`
--- are imported inside the functions that use them, in the function and
-not at the top, because `holophyte.loop` imports this module.
-"""
 from time import monotonic, time
 
 import store
