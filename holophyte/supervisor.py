@@ -42,7 +42,7 @@ import holophyte
 import review_runner
 import store
 import store.read
-from holophyte.board import close_out_failure, lease_turn_held
+from holophyte.board import close_out_failure, lease_turn_held, mirror_key
 from holophyte.config import budget_scale, serve_config, sweep_config
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
 from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
@@ -940,10 +940,11 @@ def loop_is_live(conn, project, now, stale_ms):
         (project, *SWEEPABLE_PHASES, now - stale_ms)).fetchone() is not None
 
 
-def board_ready(provider, out):
-    """How many tickets the board itself holds ready, or 0 when it cannot
-    be asked or has none: the KO-411 fall-through for a mirror that has no
-    row for the ticket at all.
+def board_ready(conn, project, provider, out):
+    """How many of the board's ready issues are owed a loop, or 0 when it
+    cannot be asked or has none: the KO-411 fall-through for a mirror
+    that has no row for the ticket at all, less the rows the mirror
+    already holds in a non-ready status (KO-420).
 
     The store mirrors a ticket only once a loop pass has seen it, so a
     ticket that became ready while no loop ran -- one filed with
@@ -952,18 +953,36 @@ def board_ready(provider, out):
     the same question the loop's claim asks, through the provider the
     pass was handed; for the Linear board that call is
     `linear_provider.ready_issues()` on the target's `[board]
-    project_id`. A board that cannot be asked is one printed line and a
+    project_id`. The board's answer is its whole ready column, though,
+    and that column keeps a ticket the store holds `blocked_on_operator`,
+    `in_flight` or terminal -- the board never learns about a park, so a
+    ticket parked on its pull request counted forever, and every pass
+    started a loop whose claim could only refuse it (KO-420). Each issue
+    is therefore checked against the row `mirror_task()` mirrors it
+    under, `mirror_key()`'s `linearIssueId` in the board's project: no
+    row, or a row still `ready` with no live run holding it, is owed a
+    start; any other status is the loop's own claim to refuse and is not
+    owed one. A board that cannot be asked is one printed line and a
     "no", as the reconcile's GitHub errors are: the next pass asks again.
     No provider is no board to ask, and asks nothing.
     """
     if provider is None:
         return 0
     try:
-        return len(provider.ready_issues())
+        issues = provider.ready_issues()
     except Exception as e:  # noqa: BLE001 - never a strike, never the pass
         print(f"[holo2] the board could not be asked for its ready tickets"
               f" ({e}); the next pass asks again", file=out)
         return 0
+    owed = 0
+    for issue in issues:
+        row = conn.execute(
+            "SELECT status, activeRunId FROM tickets"
+            " WHERE linearIssueId = ? AND projectId = ?",
+            (mirror_key(issue), project)).fetchone()
+        if row is None or (row[0] == "ready" and row[1] is None):
+            owed += 1
+    return owed
 
 
 def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
@@ -1005,7 +1024,11 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     no loop ran has no row for it, so an empty answer falls through to
     the board itself (`board_ready()`), the same `ready_issues()` read
     the loop claims from, and a non-empty answer is owed the same start
-    (KO-411). The ask runs only on the miss and never while a loop is
+    (KO-411) -- less the issues the mirror already holds in a non-ready
+    status, because the board's ready column keeps a ticket the store
+    holds parked or leased, the board never learning about the park, and
+    counting it relaunched a loop every pass only for the claim to refuse
+    it (KO-420). The ask runs only on the miss and never while a loop is
     live to ask on its own tick, so a busy target pays nothing and an
     idle one one query a pass; a board that cannot be asked is one
     printed line and a "no", as the reconcile's GitHub errors are. A
@@ -1055,9 +1078,20 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     # while no loop ran has no row in it: an empty mirror falls through
     # to the board itself (KO-411). A live loop asks the board on its own
     # tick, so the read is only for a target with no loop at all; the
-    # answer's issues carry no mirror row and no run, (None, None) apiece.
+    # answer's surviving issues carry no mirror row and no run, (None,
+    # None) apiece. The board's mirror rows live under the provider's
+    # team -- the key `ensure_project()` mirrors them by -- and a
+    # projects row that does not exist yet means nothing of this board's
+    # was ever mirrored, so every issue it answers is owed.
     if not owed and not live:
-        owed = [(None, None)] * board_ready(provider, out)
+        board_project = None
+        if provider is not None:
+            row = conn.execute(
+                "SELECT id FROM projects WHERE linearTeamId = ?",
+                (provider.team,)).fetchone()
+            board_project = row[0] if row else None
+        owed = [(None, None)] * board_ready(conn, board_project,
+                                            provider, out)
     if owed and not lease_turn_held(target):
         start_loop_for(target, conn, owed, now, out)
     return asked
