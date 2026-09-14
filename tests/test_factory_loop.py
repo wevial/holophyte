@@ -51,6 +51,8 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     FakeAgent,
     Idle,
     Reply,
+    _git,
+    block_until_killed,
     no_agent_processes,
 )
 
@@ -1173,6 +1175,37 @@ class LeftoverWorktreeTests(LoopFixture):
                          [("failed",), ("merged",)])
         self.assertIn(commits[0], self.subjects())
 
+    def test_a_turn_killed_mid_staging_still_lands_the_wip_commit(self):
+        """The kill can land inside `git add` itself, and SIGKILL leaves the
+        interrupted staging's `index.lock` behind: the rescue clears the
+        dead turn's lock before its own `git add -A`, so the WIP commit
+        still lands and the reason still names its sha. The event's count
+        is the committed files — two of the three sit inside `new-dir/`,
+        which default porcelain reports as a single `??` line."""
+        step = StageThenTimeout()
+        self.loop(step)
+
+        # The once-flag the blocking filter raises: the kill really landed
+        # mid-`git add`, not before staging began.
+        self.assertTrue(step.flag.exists())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertIn(BRANCH, self.branches())
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
+        commits = self.git("log", f"main..{BRANCH}", "--format=%s").splitlines()
+        self.assertEqual(len(commits), 1)
+        self.assertTrue(
+            commits[0].startswith("WIP: implementer budget fired"), commits)
+        sha = self.git("rev-parse", BRANCH).strip()
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("budget", reason)
+        self.assertIn(sha[:12], reason)
+        ((event,),) = self.read("SELECT summary FROM runEvents"
+                               " WHERE kind = 'wip_committed'")
+        self.assertIn(sha[:12], event)
+        # `.gitattributes`, `one.txt` and `two.txt` under `new-dir/` — not
+        # the single line `?? new-dir/` default porcelain would report.
+        self.assertIn("3 changed file(s)", event)
+
     def test_a_timed_out_clean_tree_is_still_discarded(self):
         """Unchanged by the WIP rescue: a turn the cap killed with nothing
         in the tree holds nothing, so the branch and worktree go the way
@@ -1969,14 +2002,15 @@ class ApproveNotingMergeHead:
 class CommitThenTimeout(Commit):
     """An implementer turn that commits real work, then hits the budget.
 
-    Raises what `holophyte.agents.agent()` raises once the cap has reaped the turn:
-    `TimeoutExpired` carrying the output captured before the kill.
+    The block is a real process under `run_capped`'s cap — the dispatch
+    `agent()` arms the budget on — so the kill, the group reap and the
+    `TimeoutExpired` carrying what the turn printed first are the real ones,
+    not a scripted raise.
     """
 
     def play(self, cwd, turn):
         super().play(cwd, turn)
-        raise subprocess.TimeoutExpired("claude", 300,
-                                        output="partial progress before cap")
+        block_until_killed(cwd, "partial progress before cap")
 
 
 class IdleThenTimeout(Idle):
@@ -1985,20 +2019,53 @@ class IdleThenTimeout(Idle):
     only in the `TimeoutExpired`'s captured output."""
 
     def play(self, cwd, turn):
-        raise subprocess.TimeoutExpired("claude", 300, output=self.reply)
+        block_until_killed(cwd, self.reply)
 
 
 class EditThenTimeout(Idle):
     """The mid-edit case between the two above: real files written and never
     committed — KO-391's turn died inside `git commit` with the whole move
-    staged — then the `TimeoutExpired` the cap raises."""
+    staged — then a real blocking process the cap kills."""
 
     paths = ("wip-one.txt", "wip-two.txt")
 
     def play(self, cwd, turn):
         for path in self.paths:
             (cwd / path).write_text(f"{path}: mid-edit work\n")
-        raise subprocess.TimeoutExpired("claude", 300, output=self.reply)
+        block_until_killed(cwd, self.reply)
+
+
+class StageThenTimeout(Idle):
+    """An implementer the cap kills while its `git add` holds the index
+    lock — the interruption the WIP rescue commits over.
+
+    A clean filter that blocks on a once-only flag keeps a real `git add`
+    inside its staging until `run_capped`'s SIGKILL lands, leaving the
+    stale `index.lock` the rescue's own `git add -A` must clear; the flag
+    then standing, the rescued staging runs the filter straight through.
+    The files sit inside `new-dir/`, which default porcelain collapses into
+    one `??` line — the count in the event is `-uall`'s.
+    """
+
+    def play(self, cwd, turn):
+        # The flag and script live beside the worktree, not in it: in the
+        # tree they would be staged into the WIP commit they exist to test.
+        self.flag = cwd.parent / "filter-ran-once"
+        script = cwd.parent / "block-once.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            f'[ -f "{self.flag}" ] && exec cat\n'
+            f'touch "{self.flag}"\n'
+            "exec sleep 600\n")
+        script.chmod(0o755)
+        _git(cwd, "config", "filter.once.clean", str(script))
+        (cwd / "new-dir").mkdir()
+        (cwd / "new-dir" / ".gitattributes").write_text("*.txt filter=once\n")
+        (cwd / "new-dir" / "one.txt").write_text("one: mid-edit work\n")
+        (cwd / "new-dir" / "two.txt").write_text("two: mid-edit work\n")
+        holophyte.gates.run_capped(
+            ["sh", "-c", 'printf %s "$1"; git add -A; sleep 600',
+             "sh", self.reply], cwd, timeout=2)
 
 
 class Boom:

@@ -693,8 +693,21 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         # and takes the timed-out path below, so the requeue carries the
         # work instead of starting over. Only a tree with no changes at
         # all reaches the discard.
-        dirty = sh(["git", "status", "--porcelain"], cwd=wt).splitlines()
+        # `-uall`: default porcelain collapses an untracked directory into
+        # one `??` line, which would report files as directories in the
+        # event below.
+        dirty = sh(["git", "status", "--porcelain", "-uall"],
+                   cwd=wt).splitlines()
         if dirty:
+            # The kill can land inside `git add` itself — KO-391's turn died
+            # mid-staging — and SIGKILL does no cleanup, so the interrupted
+            # operation leaves `index.lock` and the add below would refuse
+            # it with "File exists". The turn's whole process group was
+            # reaped before `TimeoutExpired` reached here, so a lock in this
+            # worktree can only be the dead turn's: remove it and stage.
+            lock = Path(wt, sh(["git", "rev-parse", "--git-path",
+                                "index.lock"], cwd=wt))
+            lock.unlink(missing_ok=True)
             sh(["git", "add", "-A"], cwd=wt)
             # The identity is pinned for the same reason the reuse WIP
             # commit pins it: a rescue commit is the factory's, and a
