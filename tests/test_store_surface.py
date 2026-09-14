@@ -3,10 +3,11 @@
 Every public function is porting work for the Rust replacement, so a new one
 has to be a deliberate addition and an orphan has to be a deliberate removal:
 both show up here as a failure naming the function. The writers and the state
-graph live in `store/__init__.py` (`EXPECTED`); the typed read views live in
-`store/read.py` (`EXPECTED_READ`). The operator names in AGENTS.md are read
-from that file rather than retyped, so the protocol and the module cannot
-drift apart silently.
+graph live in `store/__init__.py` (`EXPECTED`); the schema, its migration
+ladder and the connection live in `store/schema.py` (`EXPECTED_SCHEMA`);
+the typed read views live in `store/read.py` (`EXPECTED_READ`). The
+operator names in AGENTS.md are read from that file rather than retyped,
+so the protocol and the module cannot drift apart silently.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
@@ -20,6 +21,7 @@ from unittest.mock import patch
 
 import store
 import store.read
+import store.schema
 
 # Alphabetical. Edit this list in the same change that adds or removes a
 # public function, and say why in the commit.
@@ -38,10 +40,8 @@ EXPECTED = [
     "findings_fingerprint",
     "findings_overlap",
     "heartbeat",
-    "init",
     "latest_supervisor_heartbeat",
     "mirror_ticket",
-    "open",
     # KO-256: `[merge] approve = "human"` parks a live run in
     # `awaiting_merge_approval` and frees its lease without ending it.
     "park",
@@ -82,7 +82,6 @@ EXPECTED = [
     # KO-321: the review-round cap the loop gave a run, written where the
     # loop computes it so `/runs/N` serves the cap this run had.
     "set_review_round_cap",
-    "transaction",
     "transition",
     "unreturned_loop_restarts",
     "walk_ticket",
@@ -101,6 +100,15 @@ EXPECTED_CLASSES = [
     "RequeueRefused",
     "ResumeRefused",
     "RunEnded",
+]
+
+# Alphabetical, same rule, for `store/schema.py`: KO-391 moved the schema,
+# the migration ladder and the connection there; the package re-exports
+# them so `store.open()` still answers.
+EXPECTED_SCHEMA = [
+    "init",
+    "open",
+    "transaction",
 ]
 
 # Alphabetical, same rule. One read per SELECT the factory used to embed;
@@ -181,15 +189,18 @@ def operator_api_names():
 
 class StoreSurfaceTests(unittest.TestCase):
     def test_public_functions_match_the_allow_list(self):
-        actual = public_functions()
-        unexpected = sorted(set(actual) - set(EXPECTED))
-        missing = sorted(set(EXPECTED) - set(actual))
-        self.assertEqual(
-            (unexpected, missing), ([], []),
-            f"store public surface drifted: not in allow-list {unexpected},"
-            f" in allow-list but gone {missing}; update EXPECTED in"
-            f" tests/test_store_surface.py deliberately",
-        )
+        for module, expected in ((store, EXPECTED),
+                                 (store.schema, EXPECTED_SCHEMA)):
+            actual = public_functions(module)
+            unexpected = sorted(set(actual) - set(expected))
+            missing = sorted(set(expected) - set(actual))
+            self.assertEqual(
+                (unexpected, missing), ([], []),
+                f"{module.__name__} public surface drifted: not in"
+                f" allow-list {unexpected}, in allow-list but gone"
+                f" {missing}; update the allow-list in"
+                f" tests/test_store_surface.py deliberately",
+            )
 
     def test_public_classes_match_the_allow_list(self):
         actual = public_classes()

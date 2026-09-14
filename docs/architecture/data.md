@@ -6,7 +6,7 @@ writers. It is one SQLite file per target in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
 (`PRAGMA user_version`, currently 10) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
-Every connection, writable or read-only, waits `store.BUSY_TIMEOUT_S`
+Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
 the loop and its supervisor contend on one file without either dying.
 

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import store
 import store.read as read
+import store.schema
 
 T0 = 1_700_000_000_000
 MIN = 60_000
@@ -295,8 +296,8 @@ class OpenReadonlyTests(PopulatedStore):
         self.addCleanup(ro.close)
         self.assertEqual(
             ro.execute("PRAGMA busy_timeout").fetchone(),
-            (store.BUSY_TIMEOUT_S * 1000,))
-        self.assertNotEqual(store.BUSY_TIMEOUT_S, 5, "the sqlite3 default")
+            (store.schema.BUSY_TIMEOUT_S * 1000,))
+        self.assertNotEqual(store.schema.BUSY_TIMEOUT_S, 5, "the sqlite3 default")
 
 
 class ReadonlyTests(PopulatedStore):
