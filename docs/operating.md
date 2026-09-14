@@ -85,7 +85,14 @@ and no intervention. The records are the story, not a discharge: the
 next pass tries again while the ticket is still `ready`
 and the loop still free -- a taken start whose loop never came live is
 owed again -- so on a host without the units the line repeats
-until the operator's launcher takes the ticket. The sweep also
+until the operator's launcher takes the ticket. The store's `ready`
+rows are a mirror a loop pass wrote, so a ticket that became ready
+while no loop ran -- filed with `--file-ticket`, moved from Backlog to
+Todo -- has no row to find; a pass whose mirror answer is empty then
+asks the board itself, the same ready read the loop claims from, and a
+filed ticket starts the loop by itself. The ask is one board query a
+pass and only on the miss; a board that cannot be asked is one printed
+line and the next pass asks again. The sweep also
 watches the loop's own restarts: a loop that merges a change to the
 factory itself writes a `loopRestarts` row and re-executes,
 and if no claim, heartbeat or "no ready tickets" exit follows within
