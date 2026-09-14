@@ -1,6 +1,6 @@
 """README's state-machine diagrams are rendered from the code, not drawn.
 
-`store.render_state_graph()` turns a `{state: {next, ...}}` table into a
+`store.tickets.render_state_graph()` turns a `{state: {next, ...}}` table into a
 Mermaid `stateDiagram-v2` block, and README embeds one for the ticket status
 table and one for the run phase table between marker comments. The tests
 here hold the embedded text to what the live tables render, so a diagram
@@ -20,6 +20,7 @@ import unittest.mock
 from pathlib import Path
 
 import store
+import store.tickets
 
 README = Path(__file__).resolve().parent.parent / "docs" / "loop.md"
 
@@ -42,7 +43,7 @@ EDGE = re.compile(r"^\s*(\S+) --> (\S+)$", re.MULTILINE)
 def readme_sections(text):
     """`{marker name: section text}` for every marked section in `text`,
     markers included, exactly as `render_state_graph_section()` writes it."""
-    return {name: match.group(0) for name, _ in store.STATE_GRAPHS
+    return {name: match.group(0) for name, _ in store.tickets.STATE_GRAPHS
             for match in [re.search(
                 rf"<!-- {re.escape(name)} -->\n.*?<!-- end {re.escape(name)} -->\n",
                 text, re.DOTALL)] if match}
@@ -51,14 +52,15 @@ def readme_sections(text):
 def stale_sections(text):
     """Names of the marked sections in `text` that do not match the code."""
     found = readme_sections(text)
-    return [name for name, table in store.STATE_GRAPHS
+    return [name for name, table in store.tickets.STATE_GRAPHS
             if found.get(name)
-            != store.render_state_graph_section(name, getattr(store, table))]
+            != store.tickets.render_state_graph_section(
+                name, getattr(store.tickets, table, getattr(store, table)))]
 
 
 class RendererTests(unittest.TestCase):
     def test_ticket_graph_draws_each_legal_edge_once_and_nothing_else(self):
-        text = store.render_state_graph(store.TICKET_TRANSITIONS)
+        text = store.tickets.render_state_graph(store.tickets.TICKET_TRANSITIONS)
         edges = EDGE.findall(text)
         self.assertEqual(len(edges), len(set(edges)), "an edge is drawn twice")
         self.assertEqual(set(edges), TICKET_EDGES)
@@ -67,10 +69,10 @@ class RendererTests(unittest.TestCase):
     def test_rendering_is_independent_of_table_order(self):
         forward = {"a": {"c", "b"}, "b": {"a"}, "c": set()}
         backward = {"c": set(), "b": {"a"}, "a": {"b", "c"}}
-        self.assertEqual(store.render_state_graph(forward),
-                         store.render_state_graph(backward))
+        self.assertEqual(store.tickets.render_state_graph(forward),
+                         store.tickets.render_state_graph(backward))
         self.assertEqual(
-            store.render_state_graph(forward),
+            store.tickets.render_state_graph(forward),
             "stateDiagram-v2\n    a\n    b\n    c\n"
             "    a --> b\n    a --> c\n    b --> a\n")
 
@@ -79,7 +81,7 @@ class ReadmeTests(unittest.TestCase):
     def test_the_shipped_readme_matches_the_code(self):
         text = README.read_text()
         self.assertEqual(sorted(readme_sections(text)),
-                         sorted(name for name, _ in store.STATE_GRAPHS),
+                         sorted(name for name, _ in store.tickets.STATE_GRAPHS),
                          "README is missing a marked state-graph section")
         self.assertEqual(stale_sections(text), [],
                          "README state graph differs from the code;"

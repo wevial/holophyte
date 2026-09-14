@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 
 import store
+import store.tickets
 
 
 class TicketLeaseTests(unittest.TestCase):
@@ -24,9 +25,9 @@ class TicketLeaseTests(unittest.TestCase):
         self.path = Path(tmp.name) / "store.sqlite3"
         self.conn = self.open()
         store.init(self.conn)
-        self.project = store.ensure_project(self.conn, "team_abc", "/repos/x")
+        self.project = store.tickets.ensure_project(self.conn, "team_abc", "/repos/x")
         self.tickets = {
-            ident: store.mirror_ticket(
+            ident: store.tickets.mirror_ticket(
                 self.conn, self.project, f"iss_{ident}", ident, f"ticket {ident}",
                 acceptance_criteria=["it works"], verification_commands=["true"])
             for ident in ("KO-1", "KO-2")}

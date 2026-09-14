@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
+import store.tickets  # noqa: E402 - after the sys.path insert above
 
 
 class MirroredBodyTests(unittest.TestCase):
@@ -25,7 +26,7 @@ class MirroredBodyTests(unittest.TestCase):
         self.path = Path(tmp.name) / "store.sqlite3"
         self.conn = store.open(self.path)
         self.addCleanup(self.conn.close)
-        self.project = store.ensure_project(self.conn, "team-1",
+        self.project = store.tickets.ensure_project(self.conn, "team-1",
                                             "/repos/holophyte")
 
     def mirror(self, body, **overrides):
@@ -34,11 +35,11 @@ class MirroredBodyTests(unittest.TestCase):
                     acceptance_criteria=["Given KO-1, then it is worked"],
                     verification_commands=["echo ok"], time_box_ms=1_500_000)
         args.update(overrides)
-        return store.mirror_ticket(self.conn, self.project, body=body, **args)
+        return store.tickets.mirror_ticket(self.conn, self.project, body=body, **args)
 
     def test_a_re_mirror_replaces_the_body_and_leaves_the_status_alone(self):
         ticket_id = self.mirror("first", now=1_700_000_000_000)
-        store.transition(self.conn, ticket_id, "in_flight")
+        store.tickets.transition(self.conn, ticket_id, "in_flight")
 
         self.assertEqual(self.mirror("second", now=1_700_000_060_000),
                          ticket_id)
@@ -61,7 +62,7 @@ class MirroredBodyTests(unittest.TestCase):
 
     def test_a_claimed_ticket_names_its_active_run(self):
         ticket_id = self.mirror("body")
-        store.transition(self.conn, ticket_id, "in_flight")
+        store.tickets.transition(self.conn, ticket_id, "in_flight")
         run_id = store.claim(self.conn, self.project, ticket_id,
                              now=1_700_000_000_000)
         self.assertEqual(
@@ -87,8 +88,8 @@ class Version10BodyMigrationTests(unittest.TestCase):
         build adds the column, stamps version 11, and the ticket it held is
         still there with an empty body."""
         conn = store.open(self.path)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1", acceptance_criteria=["Given KO-1, then worked"],
             verification_commands=["echo ok"], body="the body the loop read")

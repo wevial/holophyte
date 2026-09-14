@@ -25,6 +25,7 @@ import holophyte.cli
 import holophyte.target
 import store
 import store.read
+import store.tickets
 from holophyte.runs import open_store
 
 MINUTE = 60 * 1000
@@ -51,15 +52,15 @@ class ApproveCliTests(unittest.TestCase):
         conn = open_store(self.target)
         self.addCleanup(conn.close)
         self.conn = conn
-        self.project = store.ensure_project(conn, "team-1", self.repo)
-        self.ticket = store.mirror_ticket(
+        self.project = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.ticket = store.tickets.mirror_ticket(
             conn, self.project, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
 
     def claim(self):
-        store.transition(self.conn, self.ticket, "in_flight")
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
         self.run = store.claim(self.conn, self.project, self.ticket, now=T0)
         return self.run
 
@@ -70,7 +71,7 @@ class ApproveCliTests(unittest.TestCase):
         self.claim()
         for phase in ("working", "verifying", "reviewing", "merge_gate"):
             store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
-        store.transition(self.conn, self.ticket, "blocked_on_operator")
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
         self.conn.execute(
             "UPDATE tickets SET blockedQuestion = 'merge?' WHERE id = ?",
             (self.ticket,))
@@ -116,7 +117,7 @@ class ApproveCliTests(unittest.TestCase):
         self.assertEqual(self.ticket_row(), ("ready", None, self.run))
         # Released, the ticket is claimable again -- the loop's next pass
         # is what takes the candidate to the gate.
-        self.assertTrue(store.pickable(self.conn, self.ticket))
+        self.assertTrue(store.tickets.pickable(self.conn, self.ticket))
 
     def test_babysit_releases_the_parked_run_without_approving(self):
         """`--babysit KO-n` is `--approve`'s twin with its own action: the
@@ -159,7 +160,7 @@ class ApproveCliTests(unittest.TestCase):
                          ("awaiting_merge_approval", None, None, None))
         self.assertEqual(self.ticket_row(),
                          ("blocked_on_operator", None, self.run))
-        self.assertFalse(store.pickable(self.conn, self.ticket))
+        self.assertFalse(store.tickets.pickable(self.conn, self.ticket))
         # `--approve` is still the answer for it.
         self.cli("--approve", "KO-1", "--note", "ok")
         self.assertEqual(self.interventions(), [(self.run, "approve")])
@@ -207,7 +208,7 @@ class ApproveCliTests(unittest.TestCase):
         self.assertEqual(self.run_row()[:2], ("claimed", None))
 
         store.release(self.conn, self.run, "merged", now=T0 + MINUTE)
-        store.transition(self.conn, self.ticket, "merged")
+        store.tickets.transition(self.conn, self.ticket, "merged")
         with self.assertRaises(SystemExit) as merged:
             self.cli("--approve", "KO-1", "--note", "ok")
         self.assertIn("KO-1 is merged, not blocked_on_operator",
@@ -228,7 +229,7 @@ class ApproveCliTests(unittest.TestCase):
         walked the ticket on to `ready` from the REPL: the status decides,
         the refusal names it, and the parked run is left as it was."""
         self.park()
-        store.walk_ticket(self.conn, self.ticket, "ready")
+        store.tickets.walk_ticket(self.conn, self.ticket, "ready")
         self.assertEqual(self.run_row()[0], "awaiting_merge_approval")
 
         with self.assertRaises(SystemExit) as raised:

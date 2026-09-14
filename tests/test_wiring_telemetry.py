@@ -32,6 +32,7 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets  # noqa: E402 - after the sys.path insert above
 
 
 class StubProvider:
@@ -205,15 +206,15 @@ class CloseOutTelemetryTests(unittest.TestCase):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         store.init(conn)
-        project = store.ensure_project(conn, "team-1", self.target)
+        project = store.tickets.ensure_project(conn, "team-1", self.target)
         mirror = dict(linear_issue_id="iss-1", linear_identifier="KO-1",
                       title="a ticket")
-        ticket = store.mirror_ticket(conn, project, time_box_ms=25 * 60 * 1000,
+        ticket = store.tickets.mirror_ticket(conn, project, time_box_ms=25 * 60 * 1000,
                                      **mirror)
         run_id = store.claim(conn, project, ticket)
         store.release(conn, run_id, "merged")
 
-        store.mirror_ticket(conn, project, time_box_ms=90 * 60 * 1000, **mirror)
+        store.tickets.mirror_ticket(conn, project, time_box_ms=90 * 60 * 1000, **mirror)
 
         self.assertEqual(
             conn.execute("SELECT timeBoxMs FROM tickets").fetchone()[0],
@@ -244,11 +245,11 @@ class ReportStoreCase(unittest.TestCase):
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = store.ensure_project(self.conn, "team-1", self.target)
+        self.project = store.tickets.ensure_project(self.conn, "team-1", self.target)
 
     def completed_run(self, n, actual_min, estimate_min, rounds, outcome):
         """One ended run of its own ticket, with the timing the test chose."""
-        ticket = store.mirror_ticket(
+        ticket = store.tickets.mirror_ticket(
             self.conn, self.project, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}",
             time_box_ms=estimate_min and estimate_min * 60 * 1000)

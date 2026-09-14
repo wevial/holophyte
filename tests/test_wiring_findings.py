@@ -27,6 +27,7 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class StubProvider:
@@ -103,12 +104,12 @@ class RenderedWindowTests(unittest.TestCase):
         self.conn = store.open(str(self.root / "holophyte.db"))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = store.ensure_project(self.conn, "team-1", self.root / "repo")
+        self.project = tickets.ensure_project(self.conn, "team-1", self.root / "repo")
         self.tgt = holophyte.target.Target.locate(self.root / "repo", adopt=False)
 
     def complete_run(self, n, merge_sha=None):
         """One merged run of its own ticket, stamped a minute apart per `n`."""
-        ticket = store.mirror_ticket(
+        ticket = tickets.mirror_ticket(
             self.conn, self.project,
             linear_issue_id=f"issue-{n}", linear_identifier=f"KO-{n}",
             title=f"ticket {n}", time_box_ms=25 * 60 * 1000)
@@ -395,8 +396,8 @@ class MalformedRoundRowTests(unittest.TestCase):
         self.conn = store.open(str(self.root / "holophyte.db"))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        project = store.ensure_project(self.conn, "team-1", self.root / "repo")
-        ticket = store.mirror_ticket(
+        project = tickets.ensure_project(self.conn, "team-1", self.root / "repo")
+        ticket = tickets.mirror_ticket(
             self.conn, project, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1",
             time_box_ms=25 * 60 * 1000)

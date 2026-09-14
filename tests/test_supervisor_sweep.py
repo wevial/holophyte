@@ -43,6 +43,7 @@ import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets  # noqa: E402 - after the sys.path insert above
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # the runner's shim
 from test_review_runner import docker_shim  # noqa: E402 - after the insert
@@ -94,7 +95,7 @@ class SweepTestCase(unittest.TestCase):
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.projects = 1
-        self.project = store.ensure_project(self.conn, "team-1", self.target)
+        self.project = store.tickets.ensure_project(self.conn, "team-1", self.target)
         self.tickets = 0
         self.ticket_of = {}
 
@@ -104,7 +105,7 @@ class SweepTestCase(unittest.TestCase):
         self.projects += 1
         repo = self.root / f"repo-{self.projects}"
         repo.mkdir()
-        return store.ensure_project(self.conn, f"team-{self.projects}", repo)
+        return store.tickets.ensure_project(self.conn, f"team-{self.projects}", repo)
 
     def a_run(self, budget_min=25, claimed_at=T0, phase="working",
               project=None, ticket=None):
@@ -125,13 +126,13 @@ class SweepTestCase(unittest.TestCase):
         if ticket is None:
             self.tickets += 1
             n = self.tickets
-            ticket = store.mirror_ticket(
+            ticket = store.tickets.mirror_ticket(
                 self.conn, project, linear_issue_id=f"issue-{n}",
                 linear_identifier=f"KO-{n}", title=f"ticket {n}",
                 acceptance_criteria=[f"Given ticket {n}, then it is worked"],
                 verification_commands=["echo ok"],
                 time_box_ms=budget_min and budget_min * MINUTE)
-            store.transition(self.conn, ticket, "in_flight")
+            store.tickets.transition(self.conn, ticket, "in_flight")
         run_id = store.claim(self.conn, project, ticket, now=claimed_at)
         self.ticket_of[run_id] = ticket
         if phase != "claimed":
@@ -1874,7 +1875,7 @@ class ParkedPullRequestTests(SweepTestCase):
         back."""
         run_id = self.a_run()
         ticket = self.ticket_of[run_id]
-        store.transition(self.conn, ticket, "blocked_on_operator")
+        store.tickets.transition(self.conn, ticket, "blocked_on_operator")
         self.conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                           (f"PR open: {self.URL}", ticket))
         self.conn.commit()
@@ -2139,7 +2140,7 @@ class ParkedPullRequestTests(SweepTestCase):
         with a contract and never run."""
         self.tickets += 1
         n = self.tickets
-        return store.mirror_ticket(
+        return store.tickets.mirror_ticket(
             self.conn, self.project, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}",
             acceptance_criteria=[f"Given ticket {n}, then it is worked"],

@@ -1288,7 +1288,7 @@ def _mirror_queue(target, conn, project, provider):
     in `needs_spec`, a valid one lands where its lists put it. Statuses
     that are somebody's decision -- `in_flight`, `blocked_on_operator`,
     `blocked_on_deps`, the terminal ones -- are left alone by
-    `store.mirror_ticket()` itself, and dependencies are left as the store
+    `store.tickets.mirror_ticket()` itself, and dependencies are left as the store
     has them. A board that cannot be asked, or a listing the mirror
     chokes on, skips the whole step in one printed line and the claim
     proceeds: this fills the Board, it does not gate the work. Nothing is

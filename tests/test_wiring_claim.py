@@ -28,6 +28,7 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class StubProvider:
@@ -179,8 +180,8 @@ class WiringClaimTests(unittest.TestCase):
         """Leave HOL-0 with an active run, as a second loop would find it."""
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
-        ticket = store.mirror_ticket(conn, project, "HOL-0", "HOL-0", "in flight")
+        project = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
+        ticket = tickets.mirror_ticket(conn, project, "HOL-0", "HOL-0", "in flight")
         return store.claim(conn, project, ticket)
 
     def test_loop_start_creates_a_wal_store_with_the_schema(self):
@@ -324,7 +325,7 @@ class WiringClaimTests(unittest.TestCase):
 
         A failed run leaves its ticket `in_flight` in the store while the
         board offers it again; claiming it anyway produced a run row that
-        existed only to be refused. So the loop asks `store.pickable()` first
+        existed only to be refused. So the loop asks `tickets.pickable()` first
         and moves on to the next ready ticket, and the skipped one gets no
         run row at all.
         """
@@ -368,8 +369,8 @@ class WiringClaimTests(unittest.TestCase):
         stale = a_task()
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
-        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+        project = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
+        tickets.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
                             linear_identifier=stale["id"], title=stale["title"],
                             acceptance_criteria=stale["criteria"],
                             verification_commands=[stale["verify"]])
@@ -396,15 +397,15 @@ class WiringClaimTests(unittest.TestCase):
         pickable in the very row the gate reads next."""
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        project = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
         dep = a_task(identifier="HOL-0", title="the prerequisite",
                      issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
-        store.mirror_ticket(conn, project, linear_issue_id=dep["issue_id"],
+        tickets.mirror_ticket(conn, project, linear_issue_id=dep["issue_id"],
                             linear_identifier=dep["id"], title=dep["title"],
                             acceptance_criteria=dep["criteria"],
                             verification_commands=[dep["verify"]])
         offered = a_task()
-        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+        tickets.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
                             linear_identifier=offered["id"],
                             title=offered["title"],
                             acceptance_criteria=offered["criteria"],
@@ -458,9 +459,9 @@ class WiringClaimTests(unittest.TestCase):
         mirror follows the body to `needs_spec`, with no run row."""
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, StubProvider.TEAM, self.target)
+        project = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
         was_valid = a_task(identifier="HOL-1", issue_id=ISSUE_UUID)
-        store.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+        tickets.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
                             linear_identifier=was_valid["id"],
                             title=was_valid["title"],
                             acceptance_criteria=was_valid["criteria"],

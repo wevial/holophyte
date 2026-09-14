@@ -85,7 +85,7 @@ class Provider(Protocol):
 
     @property
     def team(self) -> str:
-        """The board's identifier, recorded by `store.ensure_project()`."""
+        """The board's identifier, recorded by `store.tickets.ensure_project()`."""
         ...
 
     def claim_next(self, skip=(), order="identifier") -> dict | None:

@@ -23,6 +23,7 @@ from time import time
 
 import store
 import store.read
+import store.tickets
 from holophyte import pr
 from holophyte.board import ledger, mirror_push
 from holophyte.config import merge_config
@@ -139,7 +140,7 @@ def _reconcile_mirror(conn, project, provider):
                     source="supervisor", trigger=RECONCILE_TRIGGER[state])
             else:
                 line += "; no run to record the intervention against"
-            store.walk_ticket(conn, ticket.id, to_status)
+            store.tickets.walk_ticket(conn, ticket.id, to_status)
         print(line)
 
 
@@ -414,7 +415,7 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
         store.release(conn, run_id, "merged", merge_sha=sha)
         conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
                      (ticket.id,))
-        store.walk_ticket(conn, ticket.id, "merged")
+        store.tickets.walk_ticket(conn, ticket.id, "merged")
     mirror_push(conn, ticket.id, provider)
     ledger(conn, run_id, identifier, "merge",
            f"MERGED through {pull.url} as {sha} by {who} on GitHub (branch"

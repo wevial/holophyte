@@ -19,6 +19,7 @@ import unittest
 from pathlib import Path
 
 import store
+import store.tickets
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -53,14 +54,14 @@ class InterventionFixture(unittest.TestCase):
         self.conn = store.open(str(self.root / "store.sqlite3"))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = store.ensure_project(self.conn, "team-1",
+        self.project = store.tickets.ensure_project(self.conn, "team-1",
                                             self.root / "repo")
         self.ticket = self.a_ticket("KO-1")
-        store.transition(self.conn, self.ticket, "in_flight")
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
         self.run = store.claim(self.conn, self.project, self.ticket, now=T0)
 
     def a_ticket(self, identifier):
-        return store.mirror_ticket(
+        return store.tickets.mirror_ticket(
             self.conn, self.project, linear_issue_id=f"issue-{identifier}",
             linear_identifier=identifier, title=f"ticket {identifier}",
             acceptance_criteria=["Given a ticket, then it is worked"],
@@ -212,7 +213,7 @@ class BabysitTests(InterventionFixture):
             store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
         store.park(self.conn, self.run, "awaiting_merge_approval",
                    pr_url="https://example.test/pull/1", now=T0 + 2 * MINUTE)
-        store.transition(self.conn, self.ticket, "blocked_on_operator")
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
 
         store.babysit(self.conn, self.ticket, "look again",
                       now=T0 + 3 * MINUTE)
@@ -231,7 +232,7 @@ class WalkTicketTests(InterventionFixture):
     def test_the_walk_takes_the_shortest_legal_path(self):
         ticket = self.a_ticket("KO-2")  # ready
 
-        path = store.walk_ticket(self.conn, ticket, "merged")
+        path = store.tickets.walk_ticket(self.conn, ticket, "merged")
 
         self.assertEqual(path, ("in_flight", "merged"))
         self.assertEqual(
@@ -240,10 +241,10 @@ class WalkTicketTests(InterventionFixture):
 
     def test_a_walk_with_no_path_raises_and_writes_nothing(self):
         ticket = self.a_ticket("KO-3")
-        store.walk_ticket(self.conn, ticket, "merged")
+        store.tickets.walk_ticket(self.conn, ticket, "merged")
 
-        with self.assertRaises(store.IllegalTransition):
-            store.walk_ticket(self.conn, ticket, "ready")
+        with self.assertRaises(store.tickets.IllegalTransition):
+            store.tickets.walk_ticket(self.conn, ticket, "ready")
 
         self.assertEqual(
             self.rows(f"SELECT status FROM tickets WHERE id = {ticket}"),
@@ -252,11 +253,11 @@ class WalkTicketTests(InterventionFixture):
     def test_walking_to_the_current_status_is_a_no_op(self):
         ticket = self.a_ticket("KO-4")
 
-        self.assertEqual(store.walk_ticket(self.conn, ticket, "ready"), ())
+        self.assertEqual(store.tickets.walk_ticket(self.conn, ticket, "ready"), ())
 
     def test_an_unknown_status_is_refused(self):
-        with self.assertRaises(store.IllegalTransition):
-            store.walk_ticket(self.conn, self.ticket, "done")
+        with self.assertRaises(store.tickets.IllegalTransition):
+            store.tickets.walk_ticket(self.conn, self.ticket, "done")
 
 
 if __name__ == "__main__":
@@ -299,14 +300,14 @@ class RequeueTests(InterventionFixture):
 
     def test_a_failed_ticket_is_requeued_with_its_intervention_row(self):
         self.fail_the_run()
-        self.assertFalse(store.pickable(self.conn, self.ticket))
+        self.assertFalse(store.tickets.pickable(self.conn, self.ticket))
 
         run_id = store.requeue(self.conn, self.ticket, "contract fixed",
                                now=T0 + 2 * MINUTE)
 
         self.assertEqual(run_id, self.run)
         self.assertEqual(self.ticket_status(), "ready")
-        self.assertTrue(store.pickable(self.conn, self.ticket))
+        self.assertTrue(store.tickets.pickable(self.conn, self.ticket))
         self.assertEqual(
             self.rows('SELECT runId, "action", source, "trigger", at'
                       " FROM interventions"),
@@ -349,7 +350,7 @@ class RequeueTests(InterventionFixture):
         # Out of scope by name: a merged run is not a failure to recover
         # from, so the status stays where the merge left it.
         store.release(self.conn, self.run, "merged", now=T0 + MINUTE)
-        store.transition(self.conn, self.ticket, "merged")
+        store.tickets.transition(self.conn, self.ticket, "merged")
 
         with self.assertRaises(store.RequeueRefused) as refused:
             store.requeue(self.conn, self.ticket, "why not")

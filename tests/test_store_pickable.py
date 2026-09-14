@@ -11,7 +11,7 @@ The predicate the loop's gate asks about a ticket::
 Each test starts from one ticket that satisfies every clause and breaks
 exactly one of them, so a clause that stopped being checked shows up as a
 single failure rather than being masked by its neighbours. The expectations
-are read off the predicate above, not off `store.pickable()`'s branches.
+are read off the predicate above, not off `store.tickets.pickable()`'s branches.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
@@ -22,6 +22,7 @@ import unittest
 from pathlib import Path
 
 import store
+import store.tickets
 
 
 class PickabilityTests(unittest.TestCase):
@@ -53,7 +54,7 @@ class PickabilityTests(unittest.TestCase):
             "verification_commands": ["python3 -m unittest discover tests"],
         }
         fields.update(kwargs)
-        return store.mirror_ticket(
+        return store.tickets.mirror_ticket(
             self.conn,
             self.project_id if project_id is None else project_id,
             linear_issue_id,
@@ -70,50 +71,50 @@ class PickabilityTests(unittest.TestCase):
         self.conn.commit()
 
     def merge(self, ticket_id):
-        store.transition(self.conn, ticket_id, "in_flight")
-        store.transition(self.conn, ticket_id, "merged")
+        store.tickets.transition(self.conn, ticket_id, "in_flight")
+        store.tickets.transition(self.conn, ticket_id, "merged")
 
     # --- the clauses, one at a time -------------------------------------
 
     def test_fully_specced_ready_ticket_is_pickable(self):
-        verdict = store.pickable(self.conn, self.ticket_id)
+        verdict = store.tickets.pickable(self.conn, self.ticket_id)
         self.assertTrue(verdict)
         self.assertIsNone(verdict.reason)
 
     def test_not_pickable_without_verification_commands(self):
         self.set_column(self.ticket_id, "verificationCommands", "[]")
-        self.assertFalse(store.pickable(self.conn, self.ticket_id))
+        self.assertFalse(store.tickets.pickable(self.conn, self.ticket_id))
 
     def test_not_pickable_without_acceptance_criteria(self):
         self.set_column(self.ticket_id, "acceptanceCriteria", "[]")
-        self.assertFalse(store.pickable(self.conn, self.ticket_id))
+        self.assertFalse(store.tickets.pickable(self.conn, self.ticket_id))
 
     def test_not_pickable_unless_status_is_ready(self):
         for status in ("needs_spec", "in_flight", "blocked_on_deps",
                        "blocked_on_operator", "merged", "abandoned"):
             with self.subTest(status=status):
                 self.set_column(self.ticket_id, "status", status)
-                self.assertFalse(store.pickable(self.conn, self.ticket_id))
+                self.assertFalse(store.tickets.pickable(self.conn, self.ticket_id))
 
     def test_not_pickable_while_a_run_is_active(self):
         store.claim(self.conn, self.project_id, self.ticket_id)
-        self.assertFalse(store.pickable(self.conn, self.ticket_id))
+        self.assertFalse(store.tickets.pickable(self.conn, self.ticket_id))
 
     def test_dependency_must_be_merged(self):
         dep_id = self.mirror("iss_dep")
         blocked_id = self.mirror("iss_2", depends_on=["iss_dep"])
         self.conn.commit()
-        self.assertFalse(store.pickable(self.conn, blocked_id))
+        self.assertFalse(store.tickets.pickable(self.conn, blocked_id))
         self.merge(dep_id)
-        self.assertTrue(store.pickable(self.conn, blocked_id))
+        self.assertTrue(store.tickets.pickable(self.conn, blocked_id))
 
     def test_unmirrored_dependency_is_not_pickable(self):
         blocked_id = self.mirror("iss_2", depends_on=["iss_nowhere"])
         self.conn.commit()
-        self.assertFalse(store.pickable(self.conn, blocked_id))
+        self.assertFalse(store.tickets.pickable(self.conn, blocked_id))
 
     def test_missing_ticket_is_not_pickable(self):
-        self.assertFalse(store.pickable(self.conn, self.ticket_id + 1000))
+        self.assertFalse(store.tickets.pickable(self.conn, self.ticket_id + 1000))
 
 
 if __name__ == "__main__":

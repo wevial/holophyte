@@ -17,6 +17,7 @@ import unittest
 from pathlib import Path
 
 import store
+import store.tickets as tickets
 
 
 class ClaimLeaseTests(unittest.TestCase):
@@ -173,11 +174,11 @@ class ContractSnapshotTests(unittest.TestCase):
         self.conn = store.open(Path(tmp.name) / "store.sqlite3")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project_id = store.ensure_project(self.conn, "team_abc", "/repos/x")
+        self.project_id = tickets.ensure_project(self.conn, "team_abc", "/repos/x")
 
     def mirror(self, title, criteria, commands):
         """Upsert the one issue these tests work with, as the loop mirrors it."""
-        return store.mirror_ticket(
+        return tickets.mirror_ticket(
             self.conn, self.project_id, "iss_1", "HOL-1", title,
             acceptance_criteria=criteria, verification_commands=commands)
 

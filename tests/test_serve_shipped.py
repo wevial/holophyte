@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from test_serve import MIN, ServeTestCase  # noqa: E402 - after the insert
 
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets  # noqa: E402 - after the sys.path insert above
 
 GIT_IDENTITY = ("-c", "user.name=test", "-c", "user.email=test@example.com",
                 "-c", "commit.gpgsign=false")
@@ -63,15 +64,15 @@ class CommitUrlTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
             self.runs = {}
             for n, sha in enumerate(shas, start=1):
-                ticket = store.mirror_ticket(
+                ticket = store.tickets.mirror_ticket(
                     conn, project, linear_issue_id=f"issue-{n}",
                     linear_identifier=f"KO-{n}", title=f"ticket {n}",
                     acceptance_criteria=[f"Given {n}, then it is worked"],
                     verification_commands=["echo ok"], time_box_ms=30 * MIN)
-                store.transition(conn, ticket, "in_flight")
+                store.tickets.transition(conn, ticket, "in_flight")
                 run = store.claim(conn, project, ticket,
                                   now=self.now - (10 - n) * MIN)
                 store.release(conn, run, "merged", now=self.now - (5 - n) * MIN,

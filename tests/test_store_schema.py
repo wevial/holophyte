@@ -17,6 +17,7 @@ from pathlib import Path
 
 import store
 import store.schema
+import store.tickets
 
 # table -> the fields the state model documents for it.
 DOCUMENTED_COLUMNS = {
@@ -287,12 +288,12 @@ class StoreSchemaTests(unittest.TestCase):
         # executing" can be answered from.
         conn = self.open()
         store.init(conn)
-        project = store.ensure_project(conn, "team-h", "/repos/x")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-h", "/repos/x")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="iss-h", linear_identifier="KO-9",
             title="a ticket", acceptance_criteria=["Given, then"],
             verification_commands=["echo ok"], time_box_ms=None)
-        store.transition(conn, ticket, "in_flight")
+        store.tickets.transition(conn, ticket, "in_flight")
 
         run_id = store.claim(conn, project, ticket, now=1_000)
 
@@ -504,8 +505,8 @@ class StoreSchemaVersionTests(unittest.TestCase):
         and stamps version 4."""
         conn = store.open(self.path)
         store.init(conn)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
@@ -540,8 +541,8 @@ class StoreSchemaVersionTests(unittest.TestCase):
         it held."""
         conn = store.open(self.path)
         store.init(conn)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
@@ -675,8 +676,8 @@ class Version6MigrationTests(unittest.TestCase):
         build rebuilds the table in place, keeps the 'approve' row it held,
         stamps the current version, and a repoint row then lands."""
         conn = store.open(self.path)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
@@ -726,8 +727,8 @@ class Version9MigrationTests(unittest.TestCase):
         this build adds the column, leaves the run it held with a null
         there, stamps 10, and the cap then lands on a live run (KO-321)."""
         conn = store.open(self.path)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
@@ -781,8 +782,8 @@ class Version10MigrationTests(unittest.TestCase):
         version, and a reconcile row with the 'linear_completed' trigger
         then lands (KO-329)."""
         conn = store.open(self.path)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
@@ -842,8 +843,8 @@ class Version11MigrationTests(unittest.TestCase):
         row it held, stamps the current version, and the daemon's two unit
         actions then land (KO-348)."""
         conn = store.open(self.path)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
@@ -903,8 +904,8 @@ class Version12MigrationTests(unittest.TestCase):
         it held, stamps the current version, and the daemon's config edit
         then lands (KO-356)."""
         conn = store.open(self.path)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
@@ -962,8 +963,8 @@ class Version15MigrationTests(unittest.TestCase):
         every 'shepherd' row to 'babysit' with the rest of the row intact,
         stamps the current version, and a babysit row then lands (KO-374)."""
         conn = store.open(self.path)
-        project = store.ensure_project(conn, "team-1", "/repos/holophyte")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)

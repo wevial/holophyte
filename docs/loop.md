@@ -297,14 +297,15 @@ spawned by the scheduler, never by a worker.
 ## State machines
 
 Both diagrams below are generated from the code, not drawn:
-`store/__init__.py`'s `TICKET_TRANSITIONS` and `RUN_PHASE_TRANSITIONS` are the only authority for
-which moves are legal, `store.render_state_graph()` renders them, and
+`store/tickets.py`'s `TICKET_TRANSITIONS` and `store/__init__.py`'s
+`RUN_PHASE_TRANSITIONS` are the only authority for
+which moves are legal, `store.tickets.render_state_graph()` renders them, and
 `tests/test_store_status_graph.py` fails whenever the text between the
 markers differs from what the tables render to. Regenerate with
 `python3 store/__init__.py --state-graph` and paste the output over the
 marked sections.
 
-Ticket status (`store.transition()` refuses every edge not drawn here):
+Ticket status (`store.tickets.transition()` refuses every edge not drawn here):
 
 <!-- state-graph: tickets -->
 ```mermaid

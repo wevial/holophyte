@@ -25,6 +25,7 @@ import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets  # noqa: E402 - after the sys.path insert above
 
 ISSUE_UUID = "b0c1d2e3-4567-4890-abcd-ef0123456789"  # Linear's canonical id
 
@@ -202,7 +203,7 @@ class MirrorPushTests(unittest.TestCase):
         """§1 the other way round: the store decides what may be worked, so a
         board that is behind it cannot re-open finished work. A merged ticket
         whose Done push never landed is still non-terminal in Linear and gets
-        offered again — `store.pickable()` refuses it before the claim, so no
+        offered again — `store.tickets.pickable()` refuses it before the claim, so no
         run is opened for it, the loop says why it moved on, and Done is
         pushed once more at the board that missed it: a skip that left the
         board alone would leave the ticket offered forever."""
@@ -234,8 +235,8 @@ class MirrorPushTests(unittest.TestCase):
         self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
 
         with patch.object(holophyte.loop, "run_task"), \
-                patch.object(store, "pickable",
-                             return_value=store.Pickability(True, None)):
+                patch.object(store.tickets, "pickable",
+                             return_value=store.tickets.Pickability(True, None)):
             holophyte.operator.main(self.tgt, StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"),

@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 
 import store
+import store.tickets
 
 # §4's phase list, split by §5's rule about which of them a resume applies to.
 # "Mechanically resumable — `failed`, or any of working/verifying/reviewing/
@@ -44,7 +45,7 @@ class ResumeTests(unittest.TestCase):
             " (linearTeamId, repoPath, defaultBranch, autonomyProfile)"
             " VALUES ('team_abc', '/repos/holophyte', 'main', 'personal')"
         ).lastrowid
-        self.ticket_id = store.mirror_ticket(
+        self.ticket_id = store.tickets.mirror_ticket(
             self.conn,
             self.project_id,
             "iss_1",

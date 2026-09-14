@@ -28,6 +28,7 @@ from pathlib import Path
 
 import store
 import store.read
+import store.tickets
 import ticket_template
 from holophyte.findings import refresh_findings
 from holophyte.report import host_label
@@ -312,7 +313,7 @@ def mirror_task(conn, project, task, specced=True):
     UUID to give still gets a mirror, keyed on the identifier it does have.
 
     No `depends_on`, on purpose: the provider does not parse a dependency
-    list, so the store's copy is the only one, and `store.mirror_ticket()`
+    list, so the store's copy is the only one, and `store.tickets.mirror_ticket()`
     keeps it when the caller says nothing. Passing `[]` here instead would
     clear a blocked ticket's dependencies in the very row the pickability
     gate reads next.
@@ -329,7 +330,7 @@ def mirror_task(conn, project, task, specced=True):
     title, criteria, commands = task_contract(task)
     if not specced:
         criteria, commands = [], []
-    return store.mirror_ticket(
+    return store.tickets.mirror_ticket(
         conn,
         project,
         linear_issue_id=mirror_key(task),
@@ -487,8 +488,8 @@ def mirror_status(conn, ticket_id, status, provider):
     if conn is None:
         return False
     try:
-        store.transition(conn, ticket_id, status)
-    except store.IllegalTransition as e:
+        store.tickets.transition(conn, ticket_id, status)
+    except store.tickets.IllegalTransition as e:
         warn(conn, ticket_id, f"ticket status left where it was: {e}")
         return False
     mirror_push(conn, ticket_id, provider)
