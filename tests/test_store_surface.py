@@ -24,6 +24,7 @@ from unittest.mock import patch
 import store
 import store.read
 import store.schema
+import store.tickets
 
 # Alphabetical. Edit this list in the same change that adds or removes a
 # public function, and say why in the commit.

@@ -59,7 +59,7 @@ PINNED = {
     "tests/test_holophyte_package.py": 298, "tests/test_provider.py": 578,
     "tests/test_store.py": 248, "tests/test_store_interventions.py": 402,
     "tests/test_store_read.py": 336, "tests/test_store_schema.py": 1012,
-    "tests/test_store_status.py": 311, "tests/test_store_surface.py": 275,
+    "tests/test_store_status.py": 311, "tests/test_store_surface.py": 276,
     "tests/test_wiring_claim.py": 635, "tests/test_wiring_findings.py": 488,
     "tests/test_wiring_mirror.py": 288,
     "tests/test_wiring_phases.py": 440,
