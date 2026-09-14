@@ -60,7 +60,6 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
-import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
