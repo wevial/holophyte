@@ -1131,6 +1131,60 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.last_fake.turns[0].timeout, 5 * 60)
         self.assertIn("partial progress before cap", printed)
 
+    def test_a_timed_out_dirty_tree_is_kept_as_a_wip_commit(self):
+        """KO-391's turn: the move done, killed inside `git commit`. The
+        budget is a wall-clock cap, not a judgement, so the dirty tree lands
+        as a WIP commit on the preserved branch, the run's reason names the
+        sha — and the reclaim carries the candidate through verify and
+        review instead of re-implementing it."""
+        self.loop(EditThenTimeout("the whole move done; mid-commit"))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertIn(BRANCH, self.branches())
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
+        commits = self.git("log", f"main..{BRANCH}", "--format=%s").splitlines()
+        self.assertEqual(len(commits), 1)
+        self.assertTrue(
+            commits[0].startswith("WIP: implementer budget fired"), commits)
+        sha = self.git("rev-parse", BRANCH).strip()
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("budget", reason)
+        self.assertIn(sha[:12], reason)
+        ((event,),) = self.read("SELECT summary FROM runEvents"
+                               " WHERE kind = 'wip_committed'")
+        self.assertIn(sha[:12], event)
+        # the two files the turn left dirty
+        self.assertIn("2 changed file(s)", event)
+
+        # The requeue puts the ticket back and the reclaim lands on the
+        # preserved worktree: an implementer that correctly adds nothing
+        # sees its candidate carried, verified and reviewed — the WIP
+        # commit reaches main rather than being re-implemented.
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        store.requeue(conn, 1, "budget fired; the WIP commit is the work")
+        fake, _ = self.loop(Idle(), APPROVE, provider=StubProvider(a_task()))
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        ((carried,),) = self.read("SELECT summary FROM runEvents"
+                                 " WHERE kind = 'carried_candidate'")
+        self.assertIn(sha[:12], carried)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("failed",), ("merged",)])
+        self.assertIn(commits[0], self.subjects())
+
+    def test_a_timed_out_clean_tree_is_still_discarded(self):
+        """Unchanged by the WIP rescue: a turn the cap killed with nothing
+        in the tree holds nothing, so the branch and worktree go the way
+        they always did."""
+        self.loop(IdleThenTimeout())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertNotIn(BRANCH, self.branches())
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("discarded", reason)
+
     def test_the_refusal_reason_reaches_the_run_row(self):
         """The reuse refusal's whole product is an explanation for a human;
         it must land on the run row, not only in a Linear comment a provider
@@ -1888,6 +1942,19 @@ class IdleThenTimeout(Idle):
     only in the `TimeoutExpired`'s captured output."""
 
     def play(self, cwd, turn):
+        raise subprocess.TimeoutExpired("claude", 300, output=self.reply)
+
+
+class EditThenTimeout(Idle):
+    """The mid-edit case between the two above: real files written and never
+    committed — KO-391's turn died inside `git commit` with the whole move
+    staged — then the `TimeoutExpired` the cap raises."""
+
+    paths = ("wip-one.txt", "wip-two.txt")
+
+    def play(self, cwd, turn):
+        for path in self.paths:
+            (cwd / path).write_text(f"{path}: mid-edit work\n")
         raise subprocess.TimeoutExpired("claude", 300, output=self.reply)
 
 

@@ -230,8 +230,8 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # A reuse that left main's merge mid-way (conflicts) hands the paths to
     # the implementer as the opening of its brief; empty on every other cut.
     conflicts = merge_conflicts(wt)
-    sha = _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
-                     start_sha, ticket, verify_cmd, budget_min,
+    sha = _implement(target, conn, run_id, task_id, task, branch, wt, fresh,
+                     beat_s, start_sha, ticket, verify_cmd, budget_min,
                      conflicts=conflicts)
 
     # 2. review rounds, up to the cap the candidate's size earns it. Verify
@@ -645,7 +645,7 @@ def _record_implementer_output(conn, run_id, out, secrets=()):
                        level="detail", payload=text[-OUTPUT_TAIL:])
 
 
-def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
+def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=()):
     """The implementer phase: one turn against `ticket`, then the no-commit
     gate. Returns the candidate's sha. `conflicts` are the paths a reuse
@@ -670,6 +670,30 @@ def _implement(target, conn, run_id, task, branch, wt, fresh, beat_s,
     carried = not fresh and bool(
         subprocess.run(["git", "diff", "--quiet", "main", "HEAD"],
                        cwd=wt, capture_output=True).returncode)
+    if head == start_sha and not carried and timed_out:
+        # The budget is a wall-clock cap, not a judgement of the work: a
+        # turn killed mid-edit — KO-391's died inside `git commit` with the
+        # whole move staged — keeps the tree as a WIP commit on the branch
+        # and takes the timed-out path below, so the requeue carries the
+        # work instead of starting over. Only a tree with no changes at
+        # all reaches the discard.
+        dirty = sh(["git", "status", "--porcelain"], cwd=wt).splitlines()
+        if dirty:
+            sh(["git", "add", "-A"], cwd=wt)
+            # The identity is pinned for the same reason the reuse WIP
+            # commit pins it: a rescue commit is the factory's, and a
+            # target with no committer configured must not make it raise.
+            sh(["git", "-c", "user.name=holophyte",
+                "-c", "user.email=holophyte@factory.invalid",
+                "commit", "-q", "-m",
+                f"WIP: implementer budget fired mid-edit ({task_id});"
+                " not verified"], cwd=wt)
+            head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+            note = (f"budget fired mid-edit; {len(dirty)} changed file(s)"
+                    f" committed as WIP on {branch} at {head[:12]}")
+            print(f"[holo2] {note}")
+            if conn is not None and run_id is not None:
+                store.record_event(conn, run_id, "wip_committed", note)
     if head == start_sha and not carried:
         print(f"[holo2] implementer made no commits for: {task}")
         # What the turn said is the only evidence left once the worktree
