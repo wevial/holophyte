@@ -79,8 +79,10 @@ Each module, one line:
 The store is its own package:
 
 - `store/__init__.py` — the v2 durable state store, one WAL-mode SQLite
-  file: schema, claims and leases, ticket and run-phase transitions, review
+  file: claims and leases, ticket and run-phase transitions, review
   rounds, interventions, and the state-graph renderer.
+- `store/schema.py` — the schema, its migration ladder and the
+  connection (`open`/`init`/`transaction`), re-exported from the package.
 - `store/read.py` — typed read views over the store: one query, one row
   type, no SQL elsewhere.
 

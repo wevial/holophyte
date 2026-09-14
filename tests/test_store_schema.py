@@ -2,7 +2,7 @@
 
 The expected table and column names below are transcribed from
 docs/v2/state-model.md §1-§2 (plus the §7 lease column) by hand, on purpose:
-reading them back out of store.SCHEMA would only prove the module agrees with
+reading them back out of store.schema.SCHEMA would only prove the module agrees with
 itself. This transcription is the independent oracle.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
@@ -16,6 +16,7 @@ import unittest
 from pathlib import Path
 
 import store
+import store.schema
 
 # table -> the fields the state model documents for it.
 DOCUMENTED_COLUMNS = {
@@ -116,7 +117,7 @@ CREATE TABLE IF NOT EXISTS supervisorHeartbeats (
 """
 
 # `runs` exactly as it shipped before `resumePhase` was added, kept verbatim
-# rather than derived from store.SCHEMA: this is a real older store, and the
+# rather than derived from store.schema.SCHEMA: this is a real older store, and the
 # point of the test below is that init() carries one forward. Creating it
 # first and then calling init() is the upgrade as it actually happens —
 # SCHEMA's `CREATE TABLE IF NOT EXISTS runs` leaves this table alone, so only
@@ -444,7 +445,7 @@ class StoreSchemaTests(unittest.TestCase):
 
 
 # The three indexes the ticket names, by the column each one covers. Named
-# here by hand rather than read from store.INDEXES: the point is that these
+# here by hand rather than read from store.schema.INDEXES: the point is that these
 # foreign keys are indexed, whatever the module chooses to call the indexes.
 HOT_FOREIGN_KEYS = {
     ("runs", "ticketId"),
@@ -468,7 +469,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         """A store with every current column and `user_version` still 0.
 
         Exactly what any file made before the stamp existed looks like:
-        store.SCHEMA ran, ADDED_COLUMNS ran, nothing recorded which.
+        store.schema.SCHEMA ran, ADDED_COLUMNS ran, nothing recorded which.
         """
         conn = store.open(self.path)
         store.init(conn)
@@ -493,7 +494,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         self.assertEqual(conn.execute("SELECT * FROM projects").fetchall(),
                          before)
 
@@ -522,8 +523,8 @@ class StoreSchemaVersionTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertGreaterEqual(store.SCHEMA_VERSION, 4)
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 4)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
         self.assertIn("mergeSha", columns)
         self.assertEqual(
@@ -569,8 +570,8 @@ class StoreSchemaVersionTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertGreaterEqual(store.SCHEMA_VERSION, 6)
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 6)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         self.assertEqual(
             conn.execute('SELECT runId, "action" FROM interventions'
                          " ORDER BY id").fetchall(),
@@ -591,7 +592,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
 
     def test_a_store_stamped_newer_is_refused_and_untouched(self):
         self.current_unstamped_store()
-        newer = store.SCHEMA_VERSION + 1
+        newer = store.schema.SCHEMA_VERSION + 1
         raw = self.raw()
         raw.execute(f"PRAGMA user_version = {newer}")
         raw.commit()
@@ -603,7 +604,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
 
         message = str(caught.exception)
         self.assertIn(str(newer), message)
-        self.assertIn(str(store.SCHEMA_VERSION), message)
+        self.assertIn(str(store.schema.SCHEMA_VERSION), message)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.user_version(), newer)
 
@@ -699,8 +700,8 @@ class Version6MigrationTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertGreaterEqual(store.SCHEMA_VERSION, 7)
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 7)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         store.record_intervention(conn, run_id, "repoint", "rebuilt")
         self.assertEqual(
             conn.execute('SELECT "action" FROM interventions ORDER BY id')
@@ -743,8 +744,8 @@ class Version9MigrationTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertGreaterEqual(store.SCHEMA_VERSION, 10)
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 10)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         self.assertEqual(
             conn.execute("SELECT id, reviewRoundCap FROM runs").fetchall(),
             [(run_id, None)])
@@ -805,8 +806,8 @@ class Version10MigrationTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertGreaterEqual(store.SCHEMA_VERSION, 11)
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 11)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         store.record_intervention(conn, run_id, "reconcile", "Linear completed",
                                   source="supervisor", trigger="linear_completed")
         self.assertEqual(
@@ -866,8 +867,8 @@ class Version11MigrationTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertGreaterEqual(store.SCHEMA_VERSION, 12)
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 12)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         store.record_intervention(conn, run_id, "restart_supervisor",
                                   "restart asked over HTTP")
         store.record_intervention(conn, run_id, "launch_loop",
@@ -927,8 +928,8 @@ class Version12MigrationTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertGreaterEqual(store.SCHEMA_VERSION, 13)
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 13)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         store.record_intervention(conn, run_id, "config_edit",
                                   "config replaced over HTTP")
         self.assertEqual(
@@ -988,8 +989,8 @@ class Version15MigrationTests(unittest.TestCase):
         conn = store.open(self.path)
         self.addCleanup(conn.close)
 
-        self.assertGreaterEqual(store.SCHEMA_VERSION, 16)
-        self.assertEqual(self.user_version(), store.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 16)
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         self.assertEqual(
             conn.execute('SELECT id, source, "action", at FROM interventions'
                          " ORDER BY id").fetchall(),

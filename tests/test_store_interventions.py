@@ -24,7 +24,7 @@ MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
 
 # `interventions` exactly as it shipped before 'close_out' joined the action
-# CHECK, kept verbatim rather than derived from store.SCHEMA: the point of
+# CHECK, kept verbatim rather than derived from store.schema.SCHEMA: the point of
 # the migration test is that init() carries a real older store forward.
 LEGACY_INTERVENTIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS interventions (
