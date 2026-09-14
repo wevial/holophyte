@@ -13,12 +13,19 @@ with their refusals and the `_release_parked()` transaction `approve()` and
 stay home; `PHASES`, `_append_event`, `set_phase()` and `record_ledger()`
 are shared with the run API and are imported back from the package, while
 `walk_ticket` comes straight from `store.tickets` -- the package binds it
-only after this module is imported. The package re-exports every name, so
+only after this module is imported. The supervisor sweep's liveness
+bookkeeping followed in the same slice's review: `record_strike()`'s
+consecutive-silence tally, the `record_supervisor_heartbeat()`/
+`latest_supervisor_heartbeat()` watcher rows and the `loopRestarts`
+trio, the autonomous operator's half of the record-keeping
+`record_intervention()` writes (`INTERVENTION_SOURCES` already names
+`"supervisor"`). The package re-exports every name, so
 `store.release()` keeps working.
 """
 from __future__ import annotations
 
 import re
+import socket
 import time
 
 from . import PHASES, _append_event, record_ledger, set_phase
@@ -753,3 +760,186 @@ def record_intervention(conn, run_id, action, note, source="human",
                       source="operator" if source == "human" else "loop",
                       now=now)
     return cursor.lastrowid
+
+
+# --- the supervisor sweep's strike tally --------------------------------------
+# A run whose loop has crashed stops heartbeating, but so does one whose host
+# is briefly wedged, so liveness is not a single sample: the sweep records what
+# it saw and only the second consecutive silent sighting is evidence. The
+# counting lives here rather than in the sweep because it is a read-then-write
+# over a store table, and two sweeps racing on one target must serialize on it
+# the way every other writer in this module does.
+
+
+def record_strike(conn, run_id, stale, heartbeat, now=None):
+    """Record one sweep's liveness sighting of run `run_id`; return its strikes.
+
+    `stale` is the sweep's verdict on this run's heartbeat, not a threshold
+    this decides: the sweep owns how old is too old (and 5/5 will make that
+    configurable), and this owns only how many sightings in a row say so.
+
+    A silent run's tally goes up by one and the row remembers the sweep that
+    last touched it. A run seen alive drops its row and answers 0 -- the
+    strikes a sweep counts are consecutive, so one heartbeat clears the count
+    rather than leaving a run one old sighting away from tripping forever.
+
+    Which is why `heartbeat` -- the run's `lastHeartbeat`, the timestamp the
+    caller's verdict was reached on -- is compared against the `lastSeen` of
+    the strike already on file. A sighting is only the *next* consecutive one
+    if the run has been silent throughout; a run that answered after the last
+    strike was recorded and then went quiet again has proved itself alive in
+    between, and starts over at one however few sweeps saw it do so. Counting
+    on sightings alone makes the tally consecutive in sweeps rather than in
+    silence, and a run heartbeating just slower than the sweep interval trips
+    while alive -- exactly the false positive two strikes exist to prevent.
+
+    An unknown `run_id` is a caller bug and raises `ValueError`, as everywhere
+    else here. `now` is epoch milliseconds for `lastSeen`, defaulting to the
+    clock; a sweep passes its own so every run in one pass is stamped with the
+    one time it was taken.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        if conn.execute(
+            "SELECT 1 FROM runs WHERE id = ?", (run_id,)
+        ).fetchone() is None:
+            raise ValueError(f"no run {run_id}")
+        if not stale:
+            conn.execute("DELETE FROM sweepStrikes WHERE runId = ?", (run_id,))
+            strikes = 0
+        else:
+            row = conn.execute(
+                "SELECT strikes, lastSeen FROM sweepStrikes WHERE runId = ?",
+                (run_id,)
+            ).fetchone()
+            if row is None or heartbeat > row[1]:
+                # Nothing on file, or the run answered after what is: either
+                # way this is the first sighting of the silence it is in now.
+                strikes = 1
+            else:
+                strikes = row[0] + 1
+            conn.execute(
+                "INSERT INTO sweepStrikes (runId, strikes, lastSeen)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT (runId) DO UPDATE SET strikes = excluded.strikes,"
+                " lastSeen = excluded.lastSeen",
+                (run_id, strikes, now),
+            )
+    return strikes
+
+
+def record_supervisor_heartbeat(conn, pid, started_at, now=None):
+    """Record one completed pass of the supervisor `pid`; return its passes.
+
+    The supervisor is identified by `(pid, started_at)` rather than pid alone
+    because pids are reused: a supervisor started tomorrow with yesterday's
+    pid is a different watcher, and folding its passes into the old row would
+    make the old one look like it never died. The first call inserts the row
+    with one pass; every later call bumps `lastBeat` and the count. `now` is
+    epoch milliseconds, defaulting to the clock; the loop passes the instant
+    its sweep ran so the beat and the sweep it vouches for agree. Every beat
+    stamps `host` with this machine's hostname, so a store read elsewhere can
+    say which machine the watcher is on.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        conn.execute(
+            "INSERT INTO supervisorHeartbeats"
+            " (pid, startedAt, lastBeat, passes, host)"
+            " VALUES (?, ?, ?, 1, ?)"
+            " ON CONFLICT (pid, startedAt) DO UPDATE SET"
+            "   lastBeat = excluded.lastBeat, passes = passes + 1,"
+            "   host = excluded.host",
+            (pid, started_at, now, socket.gethostname()),
+        )
+        return conn.execute(
+            "SELECT passes FROM supervisorHeartbeats"
+            " WHERE pid = ? AND startedAt = ?", (pid, started_at)).fetchone()[0]
+
+
+def latest_supervisor_heartbeat(conn):
+    """The newest supervisor heartbeat, or None when no supervisor has beaten.
+
+    `(pid, started_at, last_beat, passes, host)` for the row whose `lastBeat`
+    is most recent: the one supervisor that could still be alive, since any
+    other process's row stopped moving before it. `host` is None for a beat
+    written before the column existed. Read-only, so `--report` can ask it
+    of a store a live supervisor is writing to.
+    """
+    row = conn.execute(
+        "SELECT pid, startedAt, lastBeat, passes, host"
+        " FROM supervisorHeartbeats"
+        " ORDER BY lastBeat DESC, startedAt DESC LIMIT 1").fetchone()
+    return tuple(row) if row is not None else None
+
+
+def record_loop_restart(conn, project_id, sha, now=None):
+    """Note that the loop is about to re-exec itself from `sha`; return the id.
+
+    Written by the loop just before `os.execv()` replaces it, so a restart that
+    never comes back has left something a reader can see: the exec itself
+    prints nothing once it has failed, and every gate before it had passed.
+    `now` is epoch milliseconds for `at`, defaulting to the clock. The row is
+    the question "did the loop return?"; `record_loop_return()` and a claim
+    are the two ways of answering yes, `unreturned_loop_restarts()` is how the
+    sweep asks.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        cursor = conn.execute(
+            "INSERT INTO loopRestarts (projectId, sha, at) VALUES (?, ?, ?)",
+            (project_id, sha, now))
+        return cursor.lastrowid
+
+
+def record_loop_return(conn, project_id, now=None):
+    """The loop's exit note: every open restart of `project_id` came back.
+
+    Called where the loop prints "no ready tickets" and exits clean -- the one
+    way a loop that restarted successfully can end without ever claiming, and
+    so without a heartbeat to vouch for it. Stamps `returnedAt` on every
+    restart row of the project not already returned, and returns how many it
+    stamped: zero for a loop that was not restarted, which is the common case
+    and not an error. `now` is epoch milliseconds, defaulting to the clock.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        return conn.execute(
+            "UPDATE loopRestarts SET returnedAt = ?"
+            " WHERE projectId = ? AND returnedAt IS NULL",
+            (now, project_id)).rowcount
+
+
+def unreturned_loop_restarts(conn, grace_ms, now=None):
+    """Restarts older than `grace_ms` no loop activity has followed, once each.
+
+    A restart row counts as unreturned when it has no `returnedAt`, no run of
+    its project has a heartbeat newer than it -- `claim()` stamps a fresh
+    run's heartbeat at its claim time, so a claim is a heartbeat here -- and
+    it is at least `grace_ms` old at `now`, the time the exec is allowed to
+    take before its silence means something. Each row is returned as
+    `(id, project_id, sha, age_ms)` exactly once: this stamps `reportedAt` on
+    what it returns, in the caller's transaction when there is one, so the
+    sweep that prints the line is the sweep that records it and the next pass
+    is quiet about the same restart. A restart younger than the grace is not
+    returned and not stamped; it is asked about again on the next pass.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        rows = conn.execute(
+            "SELECT id, projectId, sha, at FROM loopRestarts"
+            " WHERE returnedAt IS NULL AND reportedAt IS NULL"
+            "   AND at <= ?"
+            "   AND NOT EXISTS (SELECT 1 FROM runs"
+            "                   WHERE runs.projectId = loopRestarts.projectId"
+            "                     AND runs.lastHeartbeat > loopRestarts.at)"
+            " ORDER BY at, id", (now - grace_ms,)).fetchall()
+        conn.executemany(
+            "UPDATE loopRestarts SET reportedAt = ? WHERE id = ?",
+            [(now, row[0]) for row in rows])
+        return [(row[0], row[1], row[2], now - row[3]) for row in rows]
