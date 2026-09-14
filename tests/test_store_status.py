@@ -6,7 +6,7 @@ mirrored into `needs_spec` rather than `ready`. And the §3 diagram: a status
 change is legal only if the diagram draws it.
 
 The legal and illegal moves below are transcribed from that diagram by hand,
-on purpose — walking `store.TICKET_TRANSITIONS` to generate them would only
+on purpose — walking `tickets.TICKET_TRANSITIONS` to generate them would only
 prove the module agrees with itself. This transcription is the independent
 oracle, and the stored `status` column is what every assertion reads.
 
@@ -22,6 +22,7 @@ from pathlib import Path
 
 import store
 import store.schema
+import store.tickets as tickets
 
 # The §3 drawing, read as (from, to) pairs, plus Holophyte's own escalation
 # edge `in_flight → blocked_on_operator` (KO-140): a ticket the loop keeps
@@ -70,7 +71,7 @@ class TicketStatusTests(unittest.TestCase):
             "verification_commands": ["python3 -m unittest discover tests"],
         }
         fields.update(kwargs)
-        return store.mirror_ticket(
+        return tickets.mirror_ticket(
             self.conn, self.project_id, linear_issue_id, **fields
         )
 
@@ -197,7 +198,7 @@ class TicketStatusTests(unittest.TestCase):
 
         walked = [self.status_of(ticket_id)]
         for step in ("ready", "in_flight", "merged"):
-            self.assertEqual(store.transition(self.conn, ticket_id, step), walked[-1])
+            self.assertEqual(tickets.transition(self.conn, ticket_id, step), walked[-1])
             walked.append(self.status_of(ticket_id))
 
         self.assertEqual(walked, ["needs_spec", "ready", "in_flight", "merged"])
@@ -206,8 +207,8 @@ class TicketStatusTests(unittest.TestCase):
         ticket_id = self.mirror()
         self.force_status(ticket_id, "merged")
 
-        with self.assertRaises(store.IllegalTransition):
-            store.transition(self.conn, ticket_id, "in_flight")
+        with self.assertRaises(tickets.IllegalTransition):
+            tickets.transition(self.conn, ticket_id, "in_flight")
 
         self.assertEqual(self.status_of(ticket_id), "merged")
 
@@ -219,8 +220,8 @@ class TicketStatusTests(unittest.TestCase):
                     continue
                 with self.subTest(edge=(from_status, to_status)):
                     self.force_status(ticket_id, from_status)
-                    with self.assertRaises(store.IllegalTransition):
-                        store.transition(self.conn, ticket_id, to_status)
+                    with self.assertRaises(tickets.IllegalTransition):
+                        tickets.transition(self.conn, ticket_id, to_status)
                     self.assertEqual(self.status_of(ticket_id), from_status)
 
     def test_every_pair_the_diagram_draws_is_accepted(self):
@@ -228,14 +229,14 @@ class TicketStatusTests(unittest.TestCase):
         for from_status, to_status in sorted(LEGAL_EDGES):
             with self.subTest(edge=(from_status, to_status)):
                 self.force_status(ticket_id, from_status)
-                store.transition(self.conn, ticket_id, to_status)
+                tickets.transition(self.conn, ticket_id, to_status)
                 # Also proves the schema's CHECK accepts every §3 status: an
                 # UPDATE to one it did not know would raise here instead.
                 self.assertEqual(self.status_of(ticket_id), to_status)
 
     def test_transitioning_a_ticket_that_does_not_exist_is_refused(self):
-        with self.assertRaises(store.IllegalTransition):
-            store.transition(self.conn, 4242, "ready")
+        with self.assertRaises(tickets.IllegalTransition):
+            tickets.transition(self.conn, 4242, "ready")
 
     # --- composable with a caller-owned transaction ---------------------
 
@@ -243,12 +244,12 @@ class TicketStatusTests(unittest.TestCase):
         # A writer that opens its own transaction cannot run inside a
         # caller's `store.transaction()` block at all: the nested BEGIN raises.
         with store.transaction(self.conn):
-            ticket_id = store.mirror_ticket(
+            ticket_id = tickets.mirror_ticket(
                 self.conn, self.project_id, "iss_9", "HOL-9", "webhook ticket",
                 acceptance_criteria=["given/when/then"],
                 verification_commands=["python3 -m unittest discover tests"],
             )
-            previous = store.transition(self.conn, ticket_id, "in_flight")
+            previous = tickets.transition(self.conn, ticket_id, "in_flight")
             self.assertTrue(self.conn.in_transaction)
 
         self.assertFalse(self.conn.in_transaction)
@@ -259,14 +260,14 @@ class TicketStatusTests(unittest.TestCase):
         # The other half of atomicity, and the reason a joined writer must not
         # commit at its own boundary: the block mirrors a ticket and only then
         # makes an illegal move. The new row must not survive.
-        with self.assertRaises(store.IllegalTransition):
+        with self.assertRaises(tickets.IllegalTransition):
             with store.transaction(self.conn):
-                store.mirror_ticket(
+                tickets.mirror_ticket(
                     self.conn, self.project_id, "iss_9", "HOL-9", "webhook ticket",
                     acceptance_criteria=["given/when/then"],
                     verification_commands=["python3 -m unittest discover tests"],
                 )
-                store.transition(self.conn, 4242, "ready")  # no such ticket
+                tickets.transition(self.conn, 4242, "ready")  # no such ticket
 
         self.assertFalse(self.conn.in_transaction)
         self.assertEqual(

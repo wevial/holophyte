@@ -30,6 +30,7 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class StubProvider:
@@ -530,8 +531,8 @@ class RoundWriteTests(unittest.TestCase):
         self.conn = store.open(Path(tmp.name) / "store.sqlite3")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        project = store.ensure_project(self.conn, "team", Path(tmp.name) / "repo")
-        ticket = store.mirror_ticket(self.conn, project, "iss-1", "HOL-1", "a ticket")
+        project = tickets.ensure_project(self.conn, "team", Path(tmp.name) / "repo")
+        ticket = tickets.mirror_ticket(self.conn, project, "iss-1", "HOL-1", "a ticket")
         self.run_id = store.claim(self.conn, project, ticket, now=1000)
 
     def test_a_malformed_finding_stores_no_round_at_all(self):

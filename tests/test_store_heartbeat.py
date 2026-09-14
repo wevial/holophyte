@@ -14,6 +14,7 @@ import unittest
 from pathlib import Path
 
 import store
+import store.tickets
 
 
 class HeartbeatTests(unittest.TestCase):
@@ -23,8 +24,8 @@ class HeartbeatTests(unittest.TestCase):
         self.path = Path(tmp.name) / "store.sqlite3"
         self.conn = self.open()
         store.init(self.conn)
-        project = store.ensure_project(self.conn, "team_abc", "/repos/x")
-        ticket = store.mirror_ticket(
+        project = store.tickets.ensure_project(self.conn, "team_abc", "/repos/x")
+        ticket = store.tickets.mirror_ticket(
             self.conn, project, "iss_1", "KO-1", "ticket one",
             acceptance_criteria=["it works"], verification_commands=["true"])
         self.run = store.claim(self.conn, project, ticket, now=1_000)

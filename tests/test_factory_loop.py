@@ -68,6 +68,7 @@ import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
@@ -562,7 +563,7 @@ class LoopTests(LoopFixture):
         offer opens a run that does the work again."""
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        store.walk_ticket(conn, 1, "ready")
+        tickets.walk_ticket(conn, 1, "ready")
 
     def fail_again(self, tag="retry"):
         """A second run that fails on the work: the second `work` strike."""
@@ -694,7 +695,7 @@ class LoopTests(LoopFixture):
         store.record_intervention(
             conn, last_run, "close_out",
             "reviewed the failures and released the ticket", source=source)
-        store.walk_ticket(conn, 1, "ready")
+        tickets.walk_ticket(conn, 1, "ready")
 
     def test_a_recorded_human_intervention_grants_a_fresh_count(self):
         """69fe923's rule stands for board drags — they write no rows and
@@ -1608,14 +1609,14 @@ class SweepDiagnosticsTests(LoopFixture):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         store.init(conn)
-        project = store.ensure_project(conn, StubProvider.TEAM,
+        project = tickets.ensure_project(conn, StubProvider.TEAM,
                                        str(self.target))
-        ticket = store.mirror_ticket(
+        ticket = tickets.mirror_ticket(
             conn, project, linear_issue_id="iss-stale",
             linear_identifier=self.HELD, title="stalled elsewhere",
             acceptance_criteria=["Given a run, then it heartbeats"],
             verification_commands=["echo ok"], time_box_ms=25 * self.MINUTE)
-        store.transition(conn, ticket, "in_flight")
+        tickets.transition(conn, ticket, "in_flight")
         then = int(time.time() * 1000) - minutes_silent * self.MINUTE
         run_id = store.claim(conn, project, ticket, now=then)
         store.set_phase(conn, run_id, "working", now=then)
@@ -1707,21 +1708,21 @@ class ReconcileTests(LoopFixture):
         with a run behind it (failed, requeued; KO-2's body then lost its
         criteria on a re-mirror), and KO-3 ready and never run."""
         conn = store.open(str(self.db))
-        project = store.ensure_project(conn, StubProvider.TEAM, str(self.target))
+        project = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
         runs = {}
         for n in (1, 2):
-            ticket = store.mirror_ticket(
+            ticket = tickets.mirror_ticket(
                 conn, project, linear_issue_id=f"iss-{n}",
                 linear_identifier=f"KO-{n}", title=f"ticket {n}",
                 acceptance_criteria=self.CRITERIA,
                 verification_commands=["echo ok"])
             runs[f"KO-{n}"] = store.claim(conn, project, ticket)
-            store.transition(conn, ticket, "in_flight")
+            tickets.transition(conn, ticket, "in_flight")
             store.release(conn, runs[f"KO-{n}"], "failed", "crashed")
             store.requeue(conn, ticket, "contract fixed")
-        store.mirror_ticket(conn, project, linear_issue_id="iss-2",
+        tickets.mirror_ticket(conn, project, linear_issue_id="iss-2",
                             linear_identifier="KO-2", title="ticket 2")
-        store.mirror_ticket(conn, project, linear_issue_id="iss-3",
+        tickets.mirror_ticket(conn, project, linear_issue_id="iss-3",
                             linear_identifier="KO-3", title="ticket 3",
                             acceptance_criteria=self.CRITERIA,
                             verification_commands=["echo ok"])
@@ -1760,13 +1761,13 @@ class ReconcileTests(LoopFixture):
 
     def test_a_ticket_with_an_active_run_is_left_to_that_run(self):
         conn = store.open(str(self.db))
-        project = store.ensure_project(conn, StubProvider.TEAM, str(self.target))
-        ticket = store.mirror_ticket(
+        project = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
+        ticket = tickets.mirror_ticket(
             conn, project, linear_issue_id="iss-9", linear_identifier="KO-9",
             title="being worked", acceptance_criteria=self.CRITERIA,
             verification_commands=["echo ok"])
         run_id = store.claim(conn, project, ticket)
-        store.transition(conn, ticket, "in_flight")
+        tickets.transition(conn, ticket, "in_flight")
         conn.close()
         provider = StubProvider()
         provider.closed = {"KO-9": "completed"}
@@ -1791,12 +1792,12 @@ class ReconcileTests(LoopFixture):
         class ClaimsMeanwhile(StubProvider):
             def closed_identifiers(self, identifiers):
                 other = store.open(db)
-                project = store.ensure_project(other, team, target)
+                project = tickets.ensure_project(other, team, target)
                 (ticket_id,) = other.execute(
                     "SELECT id FROM tickets WHERE linearIdentifier = 'KO-1'"
                 ).fetchone()
                 self.run_id = store.claim(other, project, ticket_id)
-                store.transition(other, ticket_id, "in_flight")
+                tickets.transition(other, ticket_id, "in_flight")
                 other.close()
                 return super().closed_identifiers(identifiers)
 
@@ -1821,8 +1822,8 @@ class ReconcileTests(LoopFixture):
         to reconcile."""
         self.seed()
         conn = store.open(str(self.db))
-        other = store.ensure_project(conn, "another-team", "/elsewhere")
-        store.mirror_ticket(conn, other, linear_issue_id="iss-x",
+        other = tickets.ensure_project(conn, "another-team", "/elsewhere")
+        tickets.mirror_ticket(conn, other, linear_issue_id="iss-x",
                             linear_identifier="XX-1", title="theirs",
                             acceptance_criteria=self.CRITERIA,
                             verification_commands=["echo ok"])
@@ -1906,10 +1907,10 @@ class QueueMirrorTests(LoopFixture):
     def test_a_ticket_parked_on_the_operator_is_not_moved_by_the_mirror(self):
         a, b, c = self.queue()
         conn = store.open(str(self.db))
-        project = store.ensure_project(conn, StubProvider.TEAM, str(self.target))
+        project = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
         ticket = holophyte.board.mirror_task(conn, project, c)
-        store.transition(conn, ticket, "blocked_on_deps")
-        store.transition(conn, ticket, "blocked_on_operator")
+        tickets.transition(conn, ticket, "blocked_on_deps")
+        tickets.transition(conn, ticket, "blocked_on_operator")
         conn.close()
         provider = StubProvider(self.head(), a, b, c)
 
@@ -2200,7 +2201,7 @@ class MergeConflictTests(LoopFixture):
                   Commit("first fix round 2"), FAIL)
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        store.walk_ticket(conn, 1, "ready")
+        tickets.walk_ticket(conn, 1, "ready")
         self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
                   MainDiverges(lambda: self.commit_on_main("README.md",
                                                            "main side\n")),
@@ -2641,7 +2642,7 @@ class MergeApprovalTests(LoopFixture):
             store.release(conn, 1, "abandoned", "released by hand")
             conn.execute("UPDATE runs SET resumePhase = 'merge_gate'"
                          " WHERE id = 1")
-            store.walk_ticket(conn, 1, "ready")
+            tickets.walk_ticket(conn, 1, "ready")
             conn.commit()
         finally:
             conn.close()
@@ -5161,11 +5162,11 @@ class GateConflictRequeueTests(LoopFixture):
         sha = self.git("rev-parse", branch, cwd=wt).strip()
         conn = store.open(str(self.db))
         try:
-            project = store.ensure_project(conn, StubProvider.TEAM,
+            project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
             ticket = holophyte.board.mirror_task(conn, project, a_task())
             run_id = store.claim(conn, project, ticket)
-            store.transition(conn, ticket, "in_flight")
+            tickets.transition(conn, ticket, "in_flight")
             store.set_branch(conn, run_id, branch)
             # The conflict goes to the implementer first now (KO-404);
             # this fake leaves it unresolved, so the park below is the
@@ -5216,11 +5217,11 @@ class GateConflictRequeueTests(LoopFixture):
         url = "https://github.com/example/repo/pull/7"
         conn = store.open(str(self.db))
         try:
-            project = store.ensure_project(conn, StubProvider.TEAM,
+            project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
             ticket = holophyte.board.mirror_task(conn, project, a_task())
             run_id = store.claim(conn, project, ticket)
-            store.transition(conn, ticket, "in_flight")
+            tickets.transition(conn, ticket, "in_flight")
             store.park(conn, run_id, "awaiting_merge_approval",
                        pr_url=url, candidate_sha="a" * 40)
             self.assertTrue(holophyte.board.block_ticket(
@@ -5271,11 +5272,11 @@ class GateConflictImplementerTests(LoopFixture):
         sha = self.git("rev-parse", branch, cwd=wt).strip()
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, StubProvider.TEAM,
+        project = tickets.ensure_project(conn, StubProvider.TEAM,
                                        str(self.target))
         ticket = holophyte.board.mirror_task(conn, project, a_task())
         run_id = store.claim(conn, project, ticket)
-        store.transition(conn, ticket, "in_flight")
+        tickets.transition(conn, ticket, "in_flight")
         store.set_branch(conn, run_id, branch)
         return conn, run_id, branch, wt, sha
 
@@ -5495,11 +5496,11 @@ class GateConflictImplementerTests(LoopFixture):
         sha = self.git("rev-parse", branch, cwd=wt).strip()
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, StubProvider.TEAM,
+        project = tickets.ensure_project(conn, StubProvider.TEAM,
                                        str(self.target))
         ticket = holophyte.board.mirror_task(conn, project, a_task())
         run_id = store.claim(conn, project, ticket)
-        store.transition(conn, ticket, "in_flight")
+        tickets.transition(conn, ticket, "in_flight")
         store.set_branch(conn, run_id, branch)
         fake = FakeAgent()  # no steps: any turn asked for is a ScriptError
         with patch.object(holophyte.loop, "agent", fake):
@@ -5540,11 +5541,11 @@ class BoardLeaseLabelTests(LoopFixture):
         id."""
         conn = store.open(str(self.db))
         try:
-            project = store.ensure_project(conn, StubProvider.TEAM,
+            project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
             ticket = holophyte.board.mirror_task(conn, project, a_task())
             run_id = store.claim(conn, project, ticket)
-            store.transition(conn, ticket, "in_flight")
+            tickets.transition(conn, ticket, "in_flight")
             store.release(conn, run_id, "failed", "the board was down")
             if requeue:
                 store.requeue(conn, ticket, "board back")
@@ -5634,7 +5635,7 @@ class BoardLeaseLabelTests(LoopFixture):
         def compete(provider, issue_id):
             conn = store.open(str(db))
             try:
-                project = store.ensure_project(conn, StubProvider.TEAM,
+                project = tickets.ensure_project(conn, StubProvider.TEAM,
                                                str(target))
                 (ticket_id,) = conn.execute(
                     "SELECT id FROM tickets WHERE linearIssueId = ?",
@@ -5684,7 +5685,7 @@ class BoardLeaseLabelTests(LoopFixture):
         ended = self.seed_ended_run()
         conn = store.open(str(self.db))
         try:
-            project = store.ensure_project(conn, StubProvider.TEAM,
+            project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
             (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
             live = store.claim(conn, project, ticket_id)
@@ -5722,7 +5723,7 @@ class BoardLeaseLabelTests(LoopFixture):
         def claim(provider, issue_id):
             conn = store.open(str(db))
             try:
-                project = store.ensure_project(conn, StubProvider.TEAM,
+                project = tickets.ensure_project(conn, StubProvider.TEAM,
                                                str(target))
                 (ticket_id,) = conn.execute(
                     "SELECT id FROM tickets WHERE linearIssueId = ?",
@@ -6053,7 +6054,7 @@ class PoolTests(LoopFixture):
         provider = StubProvider(a_task(1))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, provider.team, self.target)
+        project = tickets.ensure_project(conn, provider.team, self.target)
 
         def filed_one():
             # Worker 1 holds ticket 1; ticket 2 arrives on the board.
@@ -6106,7 +6107,7 @@ class PoolTests(LoopFixture):
         provider = StubProvider(*(a_task(n) for n in range(1, 6)))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, provider.team, self.target)
+        project = tickets.ensure_project(conn, provider.team, self.target)
 
         def first_exit():
             # Worker 1 merged ticket 1; workers 2 and 3 hold tickets 2 and 3.
@@ -6134,7 +6135,7 @@ class PoolTests(LoopFixture):
         provider = StubProvider(a_task(1), a_task(2))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, provider.team, self.target)
+        project = tickets.ensure_project(conn, provider.team, self.target)
         ticket = holophyte.board.mirror_task(conn, project, a_task(1))
         store.claim(conn, project, ticket)
 
@@ -6153,7 +6154,7 @@ class PoolTests(LoopFixture):
         provider = StubProvider(*(a_task(n) for n in range(1, 6)))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, provider.team, self.target)
+        project = tickets.ensure_project(conn, provider.team, self.target)
         ids = [holophyte.board.mirror_task(conn, project, a_task(n))
                for n in range(1, 6)]
         for ticket in ids[2:]:
@@ -6177,7 +6178,7 @@ class PoolTests(LoopFixture):
         provider = StubProvider(a_task(1), a_task(2))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        project = store.ensure_project(conn, provider.team, self.target)
+        project = tickets.ensure_project(conn, provider.team, self.target)
         holophyte.board.mirror_task(conn, project, a_task(1))
         second = holophyte.board.mirror_task(conn, project, a_task(2))
         conn.execute("UPDATE tickets SET dependsOn = ? WHERE id = ?",
@@ -6494,8 +6495,8 @@ class SweptHeartbeatTests(unittest.TestCase):
         self.conn = store.open(self.path)
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        project = store.ensure_project(self.conn, "team_abc", "/repos/x")
-        ticket = store.mirror_ticket(
+        project = tickets.ensure_project(self.conn, "team_abc", "/repos/x")
+        ticket = tickets.mirror_ticket(
             self.conn, project, "iss_1", "KO-1", "ticket one",
             acceptance_criteria=["it works"], verification_commands=["true"])
         self.run = store.claim(self.conn, project, ticket)

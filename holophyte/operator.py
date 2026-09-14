@@ -26,6 +26,7 @@ from pathlib import Path
 
 import store
 import store.read
+import store.tickets
 from holophyte.agents import probe_implementer
 from holophyte.board import release_lease_label
 from holophyte.claim import _claim_next
@@ -115,7 +116,7 @@ def _serial(target, provider, knobs):
         # The provider knows its team by name rather than by id; the column's
         # contract is one row per Linear team, which the name keys just as
         # well until the provider resolves the id.
-        project = store.ensure_project(conn, provider.team, target.path)
+        project = store.tickets.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
         _reconcile_at_startup(target, conn, project, provider)
         # The tickets this pass has refused to claim. A blocked ticket keeps

@@ -22,6 +22,7 @@ from unittest.mock import patch
 
 import store
 import store.schema
+import store.tickets
 
 
 def hold_write_lock(path, seconds, held):
@@ -109,19 +110,19 @@ class RepointTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.conn = store.open(str(Path(tmp.name) / "store.sqlite3"))
         self.addCleanup(self.conn.close)
-        self.project = store.ensure_project(self.conn, "team-1", tmp.name)
-        self.ticket = store.mirror_ticket(
+        self.project = store.tickets.ensure_project(self.conn, "team-1", tmp.name)
+        self.ticket = store.tickets.mirror_ticket(
             self.conn, self.project, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
-        store.transition(self.conn, self.ticket, "in_flight")
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
         self.run = store.claim(self.conn, self.project, self.ticket, now=T0)
         for phase in ("working", "verifying", "reviewing", "merge_gate"):
             store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
 
     def park(self):
-        store.transition(self.conn, self.ticket, "blocked_on_operator")
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
         store.park(self.conn, self.run, "awaiting_merge_approval",
                    candidate_sha=OLD_SHA, now=T0 + 2 * MINUTE)
 

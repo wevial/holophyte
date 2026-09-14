@@ -20,6 +20,7 @@ import sys
 from time import monotonic, sleep
 
 import store
+import store.tickets
 from holophyte.config import loop_config
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import MergeLockHeld, merge_lock
@@ -118,7 +119,7 @@ def worker(target, provider):
     knobs = loop_config(target)
     conn = open_store(target)
     try:
-        project = store.ensure_project(conn, provider.team, target.path)
+        project = store.tickets.ensure_project(conn, provider.team, target.path)
         task, ticket_id, run_id = _claim_next(target, conn, project, provider,
                                               knobs.order, set(), NOTHING_SEEN)
         if not task:
@@ -237,7 +238,7 @@ def scheduler(target, provider, knobs):
     slots = iter(range(1, sys.maxsize))
     state = _PoolState(self_hosted(target), knobs.stop_on_failure)
     try:
-        project = store.ensure_project(conn, provider.team, target.path)
+        project = store.tickets.ensure_project(conn, provider.team, target.path)
         _startup_sweep(target, conn)
         _reconcile_at_startup(target, conn, project, provider)
         first_tick = True
@@ -367,7 +368,7 @@ def _claimable(conn, project, listing):
     fetches the project's rows once and answers §2 for all of them in
     memory (the review's second round counted seven selects for five
     tickets when this asked `pickable()` one ticket at a time)."""
-    verdicts = store.pickable_tickets(conn, project)
+    verdicts = store.tickets.pickable_tickets(conn, project)
     return sum(1 for task in listing if verdicts.get(task["id"]))
 
 

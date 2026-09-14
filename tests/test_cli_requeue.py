@@ -24,6 +24,7 @@ import holophyte.cli
 import holophyte.target
 import store
 import store.read
+import store.tickets
 from holophyte.runs import open_store
 
 MINUTE = 60 * 1000
@@ -62,13 +63,13 @@ class RequeueCliTests(unittest.TestCase):
         conn = open_store(self.target)
         self.addCleanup(conn.close)
         self.conn = conn
-        self.project = store.ensure_project(conn, "team-1", self.repo)
-        self.ticket = store.mirror_ticket(
+        self.project = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.ticket = store.tickets.mirror_ticket(
             conn, self.project, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
-        store.transition(conn, self.ticket, "in_flight")
+        store.tickets.transition(conn, self.ticket, "in_flight")
         self.run = store.claim(conn, self.project, self.ticket, now=T0)
 
     def with_board(self):

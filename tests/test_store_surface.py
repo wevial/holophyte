@@ -2,12 +2,12 @@
 
 Every public function is porting work for the Rust replacement, so a new one
 has to be a deliberate addition and an orphan has to be a deliberate removal:
-both show up here as a failure naming the function. The writers and the state
-graph live in `store/__init__.py` (`EXPECTED`); the schema, its migration
-ladder and the connection live in `store/schema.py` (`EXPECTED_SCHEMA`);
-the typed read views live in `store/read.py` (`EXPECTED_READ`). The
-operator names in AGENTS.md are read from that file rather than retyped,
-so the protocol and the module cannot drift apart silently.
+both show up here as a failure naming the function. `EXPECTED` is the
+package namespace: the writers live in `store/__init__.py`, the ticket
+state machine in `store/tickets.py`, the schema and connection in
+`store/schema.py` (`EXPECTED_SCHEMA`), the read views in `store/read.py`
+(`EXPECTED_READ`). The operator names in AGENTS.md are read from that
+file, not retyped, so the protocol and the module cannot drift apart.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
@@ -22,6 +22,7 @@ from unittest.mock import patch
 import store
 import store.read
 import store.schema
+import store.tickets
 
 # Alphabetical. Edit this list in the same change that adds or removes a
 # public function, and say why in the commit.
@@ -90,9 +91,9 @@ EXPECTED = [
     "walk_ticket",
 ]
 
-# Alphabetical, same rule, for the classes `store/__init__.py` defines: the
-# exceptions a caller matches on are surface too, and each is an error
-# variant the Rust port has to carry.
+# Alphabetical, same rule, for the classes the `store` package exposes:
+# the exceptions a caller matches on are surface too, each an error
+# variant the Rust port carries — two re-exported from `store/tickets.py`.
 EXPECTED_CLASSES = [
     "ApproveRefused",
     "ClaimConflict",
@@ -179,11 +180,11 @@ def public_functions(module=store):
 
 
 def public_classes(module=store):
-    """Names of the classes `module` itself defines without a leading `_`."""
+    """Names of the classes `module` exposes without a leading `_`."""
     return sorted(
-        name
-        for name, obj in inspect.getmembers(module, inspect.isclass)
-        if obj.__module__ == module.__name__ and not name.startswith("_")
+        name for name, obj in inspect.getmembers(module, inspect.isclass)
+        if not name.startswith("_")
+        and (module is store or obj.__module__ == module.__name__)
     )
 
 

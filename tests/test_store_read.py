@@ -19,6 +19,7 @@ from pathlib import Path
 import store
 import store.read as read
 import store.schema
+import store.tickets
 
 T0 = 1_700_000_000_000
 MIN = 60_000
@@ -49,11 +50,11 @@ class PopulatedStore(unittest.TestCase):
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         c = self.conn
-        p1 = store.ensure_project(c, "team-1", self.root / "repo-1")
-        p2 = store.ensure_project(c, "team-2", self.root / "repo-2")
+        p1 = store.tickets.ensure_project(c, "team-1", self.root / "repo-1")
+        p2 = store.tickets.ensure_project(c, "team-2", self.root / "repo-2")
 
         def ticket(project, n, time_box=25 * MIN):
-            return store.mirror_ticket(
+            return store.tickets.mirror_ticket(
                 c, project, linear_issue_id=f"issue-{n}",
                 linear_identifier=f"KO-{n}", title=f"ticket {n}",
                 time_box_ms=time_box)

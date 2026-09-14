@@ -41,6 +41,7 @@ import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.tickets  # noqa: E402 - after the sys.path insert above
 
 SEC = 1000
 MIN = 60 * SEC
@@ -71,14 +72,14 @@ class ServeTestCase(unittest.TestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
-            ticket = store.mirror_ticket(
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            ticket = store.tickets.mirror_ticket(
                 conn, project, linear_issue_id="issue-7",
                 linear_identifier="KO-7", title="ticket 7",
                 acceptance_criteria=["Given ticket 7, then it is worked"],
                 verification_commands=["echo ok"],
                 time_box_ms=25 * MIN)
-            store.transition(conn, ticket, "in_flight")
+            store.tickets.transition(conn, ticket, "in_flight")
             self.run = store.claim(conn, project, ticket, now=self.now - 2 * MIN)
             store.set_phase(conn, self.run, "working", now=self.now - 2 * MIN)
             store.heartbeat(conn, self.run, now=self.now - 30 * SEC)
@@ -94,19 +95,19 @@ class ServeTestCase(unittest.TestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
             # KO-3 merged under a module that stamps the merge commit; KO-1
             # merged before the column existed and carries none.
             plan = (("KO-1", 20 * MIN, 10 * MIN, "merged", 1, None),
                     ("KO-2", 20 * MIN, 45 * MIN, "failed", 0, None),
                     ("KO-3", None, 15 * MIN, "merged", 2, MERGE_SHA))
             for n, (ident, box, took, outcome, rounds, sha) in enumerate(plan):
-                ticket = store.mirror_ticket(
+                ticket = store.tickets.mirror_ticket(
                     conn, project, linear_issue_id=f"issue-{ident}",
                     linear_identifier=ident, title=f"ticket {ident}",
                     acceptance_criteria=[f"Given {ident}, then it is worked"],
                     verification_commands=["echo ok"], time_box_ms=box)
-                store.transition(conn, ticket, "in_flight")
+                store.tickets.transition(conn, ticket, "in_flight")
                 started = self.now - (10 - n) * 60 * MIN
                 run = store.claim(conn, project, ticket, now=started)
                 for number in range(1, rounds + 1):
@@ -659,14 +660,14 @@ class TicketTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
-            ticket = store.mirror_ticket(
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            ticket = store.tickets.mirror_ticket(
                 conn, project, linear_issue_id="issue-7",
                 linear_identifier="KO-7", title="ticket 7",
                 acceptance_criteria=["Given KO-7, then it is worked"],
                 verification_commands=["echo ok"], time_box_ms=25 * MIN,
                 body=self.BODY, now=self.now - 5 * MIN)
-            store.transition(conn, ticket, "in_flight")
+            store.tickets.transition(conn, ticket, "in_flight")
             self.run = store.claim(conn, project, ticket, now=self.now - 2 * MIN)
         finally:
             conn.close()
@@ -734,17 +735,17 @@ class AttentionTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
 
             def ticket(ident):
-                return store.mirror_ticket(
+                return store.tickets.mirror_ticket(
                     conn, project, linear_issue_id=f"issue-{ident}",
                     linear_identifier=ident, title=f"ticket {ident}",
                     acceptance_criteria=[f"Given {ident}, then it is worked"],
                     verification_commands=["echo ok"], time_box_ms=25 * MIN)
 
             blocked = ticket("KO-8")
-            store.transition(conn, blocked, "in_flight")
+            store.tickets.transition(conn, blocked, "in_flight")
             self.blocked_run = store.claim(conn, project, blocked,
                                            now=self.asked - 10 * MIN)
             store.set_phase(conn, self.blocked_run, "working",
@@ -752,7 +753,7 @@ class AttentionTests(ServeTestCase):
             # The heartbeat is `asked_ms`'s fallback: a minute before the
             # redirect so the two are told apart.
             store.heartbeat(conn, self.blocked_run, now=self.asked - MIN)
-            store.transition(conn, blocked, "blocked_on_operator")
+            store.tickets.transition(conn, blocked, "blocked_on_operator")
             conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                          ("Which branch is canonical?", blocked))
             conn.commit()
@@ -765,7 +766,7 @@ class AttentionTests(ServeTestCase):
                     question="Which branch is canonical?", now=self.asked)
 
             self.failed_ticket = ticket("KO-9")
-            store.transition(conn, self.failed_ticket, "in_flight")
+            store.tickets.transition(conn, self.failed_ticket, "in_flight")
             self.earlier_failed = []
             for n in range(attempts - 1, 0, -1):
                 earlier = store.claim(conn, project, self.failed_ticket,
@@ -780,7 +781,7 @@ class AttentionTests(ServeTestCase):
 
             # Claimed after KO-9 ended: the project lease is one run at a time.
             live = ticket("KO-7")
-            store.transition(conn, live, "in_flight")
+            store.tickets.transition(conn, live, "in_flight")
             self.run = store.claim(conn, project, live, now=self.now - 40 * MIN)
             store.set_phase(conn, self.run, "working", now=self.now - 40 * MIN)
             store.heartbeat(conn, self.run,
@@ -833,17 +834,17 @@ class AttentionTests(ServeTestCase):
         `pr_seen` recorded as what the park's read saw; the run id."""
         conn = store.open(str(self.db))
         try:
-            project = store.ensure_project(conn, "team-1", self.target)
-            parked = store.mirror_ticket(
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            parked = store.tickets.mirror_ticket(
                 conn, project, linear_issue_id="issue-KO-10",
                 linear_identifier="KO-10", title="ticket KO-10",
                 acceptance_criteria=["Given KO-10, then it is worked"],
                 verification_commands=["echo ok"], time_box_ms=25 * MIN)
-            store.transition(conn, parked, "in_flight")
+            store.tickets.transition(conn, parked, "in_flight")
             run = store.claim(conn, project, parked, now=self.now - 5 * MIN)
             store.set_phase(conn, run, "working", now=self.now - 5 * MIN)
             store.heartbeat(conn, run, now=self.now - 2 * MIN)
-            store.transition(conn, parked, "blocked_on_operator")
+            store.tickets.transition(conn, parked, "blocked_on_operator")
             conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                          (f"PR open: {url}\nreview requested from a coworker"
                           "\n1. src/x.py:3 by @coworker", parked))
@@ -1003,10 +1004,10 @@ class BoardTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
 
             def ticket(n, specced=True, depends_on=None):
-                return store.mirror_ticket(
+                return store.tickets.mirror_ticket(
                     conn, project, linear_issue_id=f"issue-{n}",
                     linear_identifier=f"KO-{n}", title=f"ticket {n}",
                     acceptance_criteria=[f"Given KO-{n}, then it is worked"]
@@ -1019,21 +1020,21 @@ class BoardTests(ServeTestCase):
             ticket(2)
             blocked_on_deps = ticket(
                 3, depends_on=["issue-2", "issue-6", "issue-never-seen"])
-            store.transition(conn, blocked_on_deps, "blocked_on_deps")
+            store.tickets.transition(conn, blocked_on_deps, "blocked_on_deps")
             parked = ticket(4)
-            store.transition(conn, parked, "in_flight")
-            store.transition(conn, parked, "blocked_on_operator")
+            store.tickets.transition(conn, parked, "in_flight")
+            store.tickets.transition(conn, parked, "blocked_on_operator")
             conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                          ("Which branch is canonical?", parked))
             conn.commit()
             merged = ticket(6)
-            store.transition(conn, merged, "in_flight")
+            store.tickets.transition(conn, merged, "in_flight")
             run = store.claim(conn, project, merged, now=self.now - 20 * MIN)
             store.release(conn, run, "merged", now=self.now - 10 * MIN,
                           merge_sha=MERGE_SHA)
-            store.transition(conn, merged, "merged")
+            store.tickets.transition(conn, merged, "merged")
             live = ticket(5)
-            store.transition(conn, live, "in_flight")
+            store.tickets.transition(conn, live, "in_flight")
             self.run = store.claim(conn, project, live, now=self.now - 2 * MIN)
             store.set_phase(conn, self.run, "working", now=self.now - 2 * MIN)
         finally:
@@ -1244,19 +1245,19 @@ class ShippedTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
             plan = (("KO-1", 10 * H, 9 * H, "merged", (2,), MERGE_SHA),
                     ("KO-2", 8 * H, 7 * H, "failed", (), None),
                     ("KO-3", 6 * H, 1 * H, "merged", (1, 3), "b" * 40),
                     ("KO-4", 5 * H, 4 * H, "merged", (), "c" * 40))
             self.runs = {}
             for ident, started_ago, ended_ago, outcome, findings, sha in plan:
-                ticket = store.mirror_ticket(
+                ticket = store.tickets.mirror_ticket(
                     conn, project, linear_issue_id=f"issue-{ident}",
                     linear_identifier=ident, title=f"ticket {ident}",
                     acceptance_criteria=[f"Given {ident}, then it is worked"],
                     verification_commands=["echo ok"], time_box_ms=30 * MIN)
-                store.transition(conn, ticket, "in_flight")
+                store.tickets.transition(conn, ticket, "in_flight")
                 started = self.now - started_ago
                 run = store.claim(conn, project, ticket, now=started)
                 for number, count in enumerate(findings, start=1):
@@ -1373,13 +1374,13 @@ class RunDetailTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
-            ticket = store.mirror_ticket(
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            ticket = store.tickets.mirror_ticket(
                 conn, project, linear_issue_id="issue-9",
                 linear_identifier="KO-9", title="ticket 9",
                 acceptance_criteria=["Given ticket 9, then it is worked"],
                 verification_commands=["echo ok"], time_box_ms=25 * MIN)
-            store.transition(conn, ticket, "in_flight")
+            store.tickets.transition(conn, ticket, "in_flight")
             started = self.now - 30 * MIN
             self.run = store.claim(conn, project, ticket, now=started)
             # `claim()` writes the first narrative rows itself; the seed's
@@ -1623,18 +1624,18 @@ class PrUrlTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
             self.runs = {}
             for ident, url in (("KO-8", self.PR_URL), ("KO-9", None)):
-                ticket = store.mirror_ticket(
+                ticket = store.tickets.mirror_ticket(
                     conn, project, linear_issue_id=f"issue-{ident}",
                     linear_identifier=ident, title=f"ticket {ident}",
                     acceptance_criteria=[f"Given {ident}, then it is worked"],
                     verification_commands=["echo ok"], time_box_ms=25 * MIN)
-                store.transition(conn, ticket, "in_flight")
+                store.tickets.transition(conn, ticket, "in_flight")
                 run = store.claim(conn, project, ticket, now=self.now - 20 * MIN)
                 store.set_phase(conn, run, "working", now=self.now - 20 * MIN)
-                store.transition(conn, ticket, "blocked_on_operator")
+                store.tickets.transition(conn, ticket, "blocked_on_operator")
                 store.park(conn, run, "blocked_on_operator", "parked on the PR",
                            candidate_sha=MERGE_SHA, pr_url=url,
                            now=self.now - 10 * MIN)
@@ -1700,13 +1701,13 @@ class RunLedgerTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
-            ticket = store.mirror_ticket(
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            ticket = store.tickets.mirror_ticket(
                 conn, project, linear_issue_id="issue-11",
                 linear_identifier="KO-11", title="ticket 11",
                 acceptance_criteria=["Given ticket 11, then it is worked"],
                 verification_commands=["echo ok"], time_box_ms=25 * MIN)
-            store.transition(conn, ticket, "in_flight")
+            store.tickets.transition(conn, ticket, "in_flight")
             started = self.now - 30 * MIN
             self.run = store.claim(conn, project, ticket, now=started)
             self.seeded = [
@@ -1770,7 +1771,7 @@ class LedgerWindowTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             store.init(conn)
-            project = store.ensure_project(conn, "team-1", self.target)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
             self.runs = {}
             self.seeded = []
             # One lease per project: each run is claimed, written and
@@ -1782,12 +1783,12 @@ class LedgerWindowTests(ServeTestCase):
                                       "answered: ship it", "operator"),
                                      (self.t1, "merge", "MERGED to main",
                                       "loop")])):
-                ticket = store.mirror_ticket(
+                ticket = store.tickets.mirror_ticket(
                     conn, project, linear_issue_id=f"issue-{n}",
                     linear_identifier=f"KO-{n}", title=f"ticket {n}",
                     acceptance_criteria=[f"Given ticket {n}, then worked"],
                     verification_commands=["echo ok"], time_box_ms=25 * MIN)
-                store.transition(conn, ticket, "in_flight")
+                store.tickets.transition(conn, ticket, "in_flight")
                 run = store.claim(conn, project, ticket, now=started)
                 for at, kind, text, source in entries:
                     store.record_ledger(conn, run, kind, text, source=source,
@@ -1867,16 +1868,16 @@ class LedgerWaitTests(ServeTestCase):
     def open_store(self):
         conn = store.open(str(self.db))
         store.init(conn)
-        self.project = store.ensure_project(conn, "team-1", self.target)
+        self.project = store.tickets.ensure_project(conn, "team-1", self.target)
         return conn
 
     def claim(self, conn, n, now):
-        ticket = store.mirror_ticket(
+        ticket = store.tickets.mirror_ticket(
             conn, self.project, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}",
             acceptance_criteria=[f"Given ticket {n}, then worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MIN)
-        store.transition(conn, ticket, "in_flight")
+        store.tickets.transition(conn, ticket, "in_flight")
         return ticket, store.claim(conn, self.project, ticket, now=now)
 
     @staticmethod
@@ -2357,13 +2358,13 @@ class ActionsTests(ServeTestCase):
         self.seed_ended()
         conn = store.open(str(self.db))
         try:
-            project = store.ensure_project(conn, "team-1", self.target)
-            twin = store.mirror_ticket(
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            twin = store.tickets.mirror_ticket(
                 conn, project, linear_issue_id="issue-KO-2-twin",
                 linear_identifier="KO-2", title="ticket KO-2 again",
                 acceptance_criteria=["Given KO-2, then it is worked"],
                 verification_commands=["echo ok"], time_box_ms=20 * MIN)
-            store.transition(conn, twin, "in_flight")
+            store.tickets.transition(conn, twin, "in_flight")
             run = store.claim(conn, project, twin, now=self.now - 30 * MIN)
             store.release(conn, run, "failed", now=self.now - 20 * MIN)
         finally:

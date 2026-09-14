@@ -26,6 +26,7 @@ from pathlib import Path
 
 import store
 import store.read
+import store.tickets
 from holophyte.board import (
     MAX_FAILED_RUNS,
     body_problem,
@@ -657,7 +658,7 @@ def _admit_ticket(target, conn, project, provider, task, seen):
     # *because* the board is behind, and skipping it silently would
     # leave it Ready on the board for good. Best-effort, like every
     # push: a status with no board state (`needs_spec`) pushes nothing.
-    verdict = store.pickable(conn, ticket_id)
+    verdict = store.tickets.pickable(conn, ticket_id)
     if not verdict:
         status = store_status(conn, ticket_id)
         print(f"[holo2] {task['id']} is {status} in the store,"
