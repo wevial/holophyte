@@ -5,10 +5,9 @@ has to be a deliberate addition and an orphan has to be a deliberate removal:
 both show up here as a failure naming the function. `EXPECTED` is the
 package namespace: the writers live in `store/__init__.py`, the operator
 API in `store/operate.py`, the ticket state machine in `store/tickets.py`,
-the schema and connection in `store/schema.py` (`EXPECTED_SCHEMA`), the
-read views in `store/read.py` (`EXPECTED_READ`). The operator names in
-AGENTS.md are read from that file, not retyped, so the protocol and the
-module cannot drift apart.
+the schema/connection in `store/schema.py` (`EXPECTED_SCHEMA`), the read
+views in `store/read.py` (`EXPECTED_READ`). The operator names in
+AGENTS.md are read from that file, so the protocol and module can't drift.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """

@@ -67,7 +67,7 @@ PINNED = {
     "tests/test_store_read.py": 337, "tests/test_store_resume.py": 203,
     "tests/test_store_schema.py": 1013, "tests/test_store_status.py": 312,
     "tests/test_store_status_graph.py": 111,
-    "tests/test_store_surface.py": 268, "tests/test_store_tickets.py": 118,
+    "tests/test_store_surface.py": 267, "tests/test_store_tickets.py": 118,
     "tests/test_wiring_claim.py": 636, "tests/test_wiring_findings.py": 489,
     "tests/test_wiring_mirror.py": 289,
     "tests/test_wiring_phases.py": 441,
