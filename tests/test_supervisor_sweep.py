@@ -712,14 +712,17 @@ class StubProvider:
 
     `ready` is what `ready_issues()` answers the supervisor's empty-mirror
     fall-through (KO-411): a list of issues, or an exception to raise; the
-    ask is counted in `ready_asked`.
+    ask is counted in `ready_asked`. `team` is the board's identifier, the
+    key the fall-through finds the mirror's project row by (KO-420) --
+    "team-1" is the one `setUp` ensures.
     """
 
-    def __init__(self, ready=()):
+    def __init__(self, ready=(), team="team-1"):
         self.states = []
         self.comments = []
         self.ready = ready
         self.ready_asked = 0
+        self.team = team
 
     def ready_issues(self):
         self.ready_asked += 1
@@ -2229,6 +2232,52 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertEqual(provider.ready_asked, 1)
         self.assertIn("Linear is down", out)
         self.assertEqual(calls(), [])
+
+    # KO-420: the board's ready column keeps a ticket the store holds
+    # parked -- the board never learns about a park. The fall-through
+    # subtracts the issues the mirror already holds in a non-ready
+    # status, so a board whose only ready issue is a parked one is no
+    # tickets owed and no start.
+    def test_a_board_issue_the_mirror_holds_parked_owes_no_start(self):
+        """The Relos incident's shape: parked on its pull request and
+        still in the board's ready column, the ticket counted ready on
+        every pass -- a start and a claim's refusal, a minute apart, all
+        day. The mirror's `blocked_on_operator` row now subtracts it."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        quiet = dict(self.ACTIVE_PULL, updatedAt="2026-09-01T10:00:00Z",
+                     reviewThreads={"totalCount": 1})
+        self.fake_github(quiet)
+        provider = StubProvider(
+            ready=[{"id": "KO-1", "issue_id": "issue-1"}])
+        calls = self.fake_systemctl()
+
+        out = self.one_pass(T0 + 20 * MINUTE, provider)
+
+        self.assertEqual(provider.ready_asked, 1)
+        self.assertEqual(calls(), [])
+        self.assertNotIn("ready", out)
+        self.assertNotIn("holophyte-loop@", out)
+
+    def test_a_parked_issue_and_an_unmirrored_one_owe_a_single_start(self):
+        """The subtraction is per issue: the parked one is not owed, the
+        one the mirror never saw is, so the pass starts the unit once
+        and the line says `1 ticket ready`."""
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        quiet = dict(self.ACTIVE_PULL, updatedAt="2026-09-01T10:00:00Z",
+                     reviewThreads={"totalCount": 1})
+        self.fake_github(quiet)
+        provider = StubProvider(
+            ready=[{"id": "KO-1", "issue_id": "issue-1"},
+                   {"id": "KO-9", "issue_id": "issue-9"}])
+        calls = self.fake_systemctl()
+
+        out = self.one_pass(T0 + 20 * MINUTE, provider)
+
+        self.assertEqual(provider.ready_asked, 1)
+        self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
+        self.assertIn("1 ticket ready", out)
 
     def test_a_ready_ticket_under_a_held_lease_turn_starts_nothing(self):
         """A loop between its startup and its first claim's heartbeat

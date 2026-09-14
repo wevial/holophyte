@@ -33,11 +33,11 @@ OVER = {
     "holophyte/loop.py": 1586,
     "holophyte/pr.py": 1033,
     "holophyte/serve.py": 1792,
-    "holophyte/supervisor.py": 1262,
+    "holophyte/supervisor.py": 1296,
     "tests/test_factory_config.py": 2186,
     "tests/test_factory_loop.py": 6907,
     "tests/test_serve.py": 3152,
-    "tests/test_supervisor_sweep.py": 2309,
+    "tests/test_supervisor_sweep.py": 2358,
 }
 
 # Repo-relative path to the file's `wc -l` count, for a file a slice
