@@ -43,7 +43,12 @@ Each module, one line:
 - `holophyte/files.py` — the files a run touched, read from git in the
   target's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: `run_task`'s stages, the merge gate,
-  `main`, `report`, `requeue` and the self-merge re-exec.
+  the dispatcher and its crash containment, the startup sweep and the
+  queue mirror.
+- `holophyte/operator.py` — the operator commands and the entry point:
+  `main` (the serial pass or the pool's scheduler) and the self-merge
+  re-exec, `report`, and the `--requeue`/`--approve`/`--babysit`/
+  `--repoint` store verbs.
 - `holophyte/claim.py` — claiming a ticket and cutting its worktree:
   `_claim_next` over `_admit_ticket`'s questions and `_claim_run`'s lease
   and board label, then `_cut_worktree`/`reuse_leftover`,

@@ -6,7 +6,7 @@ supervisor when the checkout it was started from is no longer the one on
 disk. Both replace the process image with the command line they were
 launched with -- never a module reloaded -- and both do it through a seam a
 test can patch, so `reexec_self()` takes the caller's `EXEC` rather than
-owning one: the loop's tests patch `holophyte.loop.EXEC`, the supervisor's
+owning one: the loop's tests patch `holophyte.operator.EXEC`, the supervisor's
 `holophyte.supervisor.EXEC`, and neither ever execs the test runner.
 
 The other way a factory process is started: `start_loop()` asks the user

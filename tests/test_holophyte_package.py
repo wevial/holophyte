@@ -173,7 +173,9 @@ DEFINED = {
         "sweep_lines",
         "sweep_report",
     ],
-    _module("loop"): ["main", "report", "run_task", "self_hosted"],
+    _module("loop"): ["run_task"],
+    # KO-390: the operator commands and the entry point, out of `holophyte.loop`.
+    _module("operator"): ["main", "report", "self_hosted"],
     # KO-389: the claim and the worktree cut, out of `holophyte.loop`.
     _module("claim"): [
         "_Held", "_admit_ticket", "_claim_next", "_claim_run",
@@ -182,9 +184,7 @@ DEFINED = {
         "merge_conflicts", "reuse_leftover", "run_worktree_setup", "skip_line",
         "timeout_report",
     ],
-    _module("cli"): [
-        "cli",
-    ],
+    _module("cli"): ["cli"],
     # KO-385: the pull-request stage, split out of `holophyte.loop`.
     _module("pullrequest"): [
         "_landed_pr",

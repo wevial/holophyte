@@ -21,6 +21,7 @@ import holophyte.cli
 import holophyte.config
 import holophyte.gates
 import holophyte.loop
+import holophyte.operator
 import holophyte.pr
 import holophyte.runs
 import holophyte.supervisor
@@ -511,7 +512,7 @@ class StateDirectoryTests(ConfigTestCase):
         self.locate()
         out = io.StringIO()
 
-        holophyte.loop.report(self.tgt, out=out)
+        holophyte.operator.report(self.tgt, out=out)
 
         self.assertIn("no store at", out.getvalue())
         self.assertFalse(self.tgt.holo_dir.exists())

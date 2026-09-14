@@ -22,6 +22,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -135,7 +136,7 @@ class MirrorPushTests(unittest.TestCase):
         """Run the loop over one task, with the run itself stubbed out."""
         provider = provider or StubProvider(a_task())
         with patch.object(holophyte.loop, "run_task", return_value=merged):
-            holophyte.loop.main(self.tgt, provider)
+            holophyte.operator.main(self.tgt, provider)
         return provider
 
     def test_the_claim_pushes_in_progress_exactly_once(self):
@@ -152,7 +153,7 @@ class MirrorPushTests(unittest.TestCase):
 
         provider = StubProvider(a_task())
         with patch.object(holophyte.loop, "run_task", spy):
-            holophyte.loop.main(self.tgt, provider)
+            holophyte.operator.main(self.tgt, provider)
 
         self.assertEqual(seen["states"], [(ISSUE_UUID, "In Progress")])
         self.assertEqual(seen["status"], "in_flight")
@@ -212,7 +213,7 @@ class MirrorPushTests(unittest.TestCase):
         provider = StubProvider(a_task())
         with patch.object(holophyte.loop, "run_task") as run_task, \
                 patch("builtins.print") as printed:
-            holophyte.loop.main(self.tgt, provider)
+            holophyte.operator.main(self.tgt, provider)
 
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), runs)
@@ -235,7 +236,7 @@ class MirrorPushTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task"), \
                 patch.object(store, "pickable",
                              return_value=store.Pickability(True, None)):
-            holophyte.loop.main(self.tgt, StubProvider(a_task()))
+            holophyte.operator.main(self.tgt, StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"),
                          [(None,)])

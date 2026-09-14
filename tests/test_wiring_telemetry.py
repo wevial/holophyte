@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -158,7 +159,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
                           "then the run row carries its timing"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.loop.main(self.tgt, provider)
+                holophyte.operator.main(self.tgt, provider)
         return provider
 
     def test_close_out_stamps_the_run_row_and_the_window_reads_it_back(self):
