@@ -78,7 +78,10 @@ machines it walks. Back to the [README](index.md).
    checkout's environment tests something other than the branch it is on.
 3. Implementer agent (Claude Code / Opus at high effort, write access)
    implements and commits under a wall-clock budget from the ticket's estimate
-   (default 20 min).
+   (default 20 min). A budget that fires with uncommitted work in the tree
+   keeps it as a `WIP:` commit on the branch — unverified, and named in the
+   run's failure reason — so the requeue carries the work; only a tree with
+   no changes at all is discarded.
 4. Verify gate: the ticket's mechanical verify command must pass before
    each review round and again before merge. A failure is fail-loud: a
    top-level `&&` chain is run clause by clause in one shell, and the report
