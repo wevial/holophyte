@@ -69,6 +69,7 @@ import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
@@ -2343,7 +2344,7 @@ class MergeModeTests(MergeModeFixture):
         the whole stale budget; the beat must move under it."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        "[supervisor]\nheartbeat_stale_min = 0.01\n")
-        knobs = holophyte.config.sweep_config(self.tgt)
+        knobs = holophyte.config_tables.sweep_config(self.tgt)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
         samples = self.db.parent / "heartbeats.log"
         sampler = (
@@ -3859,7 +3860,7 @@ class HeartbeatTests(LoopFixture):
         # 0.01 min is 600 ms; two strikes make a 1.2 s budget. The turn
         # below sweeps every 400 ms for 2 s.
         self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
-        knobs = holophyte.config.sweep_config(self.tgt)
+        knobs = holophyte.config_tables.sweep_config(self.tgt)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
         db, tgt = self.db, self.tgt
         sightings = []

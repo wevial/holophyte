@@ -30,7 +30,7 @@ import store.tickets
 from holophyte.agents import probe_implementer
 from holophyte.board import release_lease_label
 from holophyte.claim import _claim_next
-from holophyte.config import loop_config, report_config
+from holophyte.config_tables import loop_config, report_config
 from holophyte.findings import commit_findings
 from holophyte.gates import sh
 from holophyte.pool import scheduler

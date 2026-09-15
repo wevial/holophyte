@@ -17,7 +17,7 @@ store a newer build has stamped -- releases its lock and re-executes itself
 through the `EXEC` seam rather than exiting. Beyond the standard library it
 imports `store` and `store.read` for the rows, `open_store` from
 `holophyte.runs`, `reexec_self` from `holophyte.reexec`, `close_out_failure`
-from `holophyte.board`, `sweep_config` from `holophyte.config`, and
+from `holophyte.board`, `sweep_config` from `holophyte.config_tables`, and
 `host_label`, `format_age`, `REPORT_GAP` from `holophyte.report`; nothing
 from `factory`.
 
@@ -41,7 +41,8 @@ import holophyte
 import store
 import store.read
 from holophyte.board import close_out_failure, lease_turn_held, mirror_key
-from holophyte.config import budget_scale, serve_config, sweep_config
+from holophyte.config import budget_scale, serve_config
+from holophyte.config_tables import sweep_config
 from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
 from holophyte.report import format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store

@@ -21,7 +21,7 @@ from time import monotonic, sleep
 
 import store
 import store.tickets
-from holophyte.config import loop_config
+from holophyte.config_tables import loop_config
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import MergeLockHeld, merge_lock
 from holophyte.reconcile import _reconcile_at_startup, _reconcile_pull_requests

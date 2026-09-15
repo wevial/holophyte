@@ -53,6 +53,8 @@ from holophyte.claim import (
 from holophyte.config import (
     branch_prefix,
     budget_scale,
+)
+from holophyte.config_tables import (
     loop_config,
     merge_config,
     sweep_config,

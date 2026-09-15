@@ -48,7 +48,7 @@ import store.read
 from holophyte import babysitter, pr
 from holophyte.agents import agent_route
 from holophyte.board import ledger
-from holophyte.config import merge_config
+from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, RunFailure, run_verify
 from holophyte.pr import NO_AUTHOR
 from holophyte.review import criteria_brief, criteria_findings

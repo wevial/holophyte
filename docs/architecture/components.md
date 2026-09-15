@@ -20,7 +20,7 @@ every file; this page lists what each seam promises.
 | **`findings`** | `holophyte/findings.py` | The `FINDINGS.md` window renderer, byte-stable, from `EndedRun` and `ReviewRound` rows only. |
 | **`board`** | `holophyte/board.py` | Linear as a notice board: mirror a ticket into the store with its contract snapshot, push status, detect drift at merge, escalate a twice-failed ticket, file and update tickets from files. |
 | **`reexec`** | `holophyte/reexec.py` | Replace the process with the same command line, through an `EXEC` seam tests can intercept. Shared by the loop and the supervisor. |
-| **`config`** | `holophyte/config.py` | Every `config.toml` table as a typed value with defaults, validated at startup; unknown keys are startup errors. |
+| **`config`** | `holophyte/config.py`, `holophyte/config_tables.py` | Every `config.toml` table as a typed value with defaults, validated at startup; unknown keys are startup errors. |
 
 ## What depends on what
 

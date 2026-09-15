@@ -18,7 +18,7 @@ import subprocess
 from pathlib import Path
 
 import store.read
-from holophyte.config import report_config
+from holophyte.config_tables import report_config
 from holophyte.gates import sh
 from holophyte.review import BLOCK_BREAK_RE
 

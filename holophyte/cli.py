@@ -23,11 +23,13 @@ from pathlib import Path
 
 from holophyte.board import FILE_TICKET_PRIORITIES, file_ticket
 from holophyte.config import (
-    SUPERVISE_INTERVAL_SEC,
-    board_config,
     check_agent_commands,
     check_config,
     check_worktree_setup,
+)
+from holophyte.config_tables import (
+    SUPERVISE_INTERVAL_SEC,
+    board_config,
     loop_config,
 )
 from holophyte.operator import (

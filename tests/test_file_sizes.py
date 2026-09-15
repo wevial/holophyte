@@ -29,13 +29,12 @@ CEILING = {"source": 1000, "test": 1500}
 # a listed file's size rewrites its entry in the same commit; a file
 # back under its ceiling leaves the table.
 OVER = {
-    "holophyte/config.py": 1280,
-    "holophyte/loop.py": 1583,
+    "holophyte/loop.py": 1585,
     "holophyte/pr.py": 1033,
-    "tests/test_factory_config.py": 2187,
-    "tests/test_factory_loop.py": 4384,
-    "tests/test_serve.py": 3155,
-    "tests/test_supervisor_sweep.py": 2360,
+    "tests/test_factory_config.py": 2188,
+    "tests/test_factory_loop.py": 4385,
+    "tests/test_serve.py": 3156,
+    "tests/test_supervisor_sweep.py": 2361,
 }
 
 # Repo-relative path to the file's `wc -l` count, for a file a slice
@@ -43,15 +42,17 @@ OVER = {
 # left it, so the table only moves down for that file too.
 PINNED = {
     "holophyte/babysitter.py": 841, "holophyte/board.py": 870,
-    "holophyte/claim.py": 823, "holophyte/cli.py": 458,
+    "holophyte/claim.py": 823, "holophyte/cli.py": 460,
+    "holophyte/config.py": 752,
+    "holophyte/config_tables.py": 558, "holophyte/findings.py": 331,
     "holophyte/gates.py": 664, "holophyte/operator.py": 431,
     "holophyte/pool.py": 387,
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 468, "holophyte/reexec.py": 94,
     "holophyte/report.py": 160, "provider.py": 303,
-    "holophyte/serve.py": 887,
+    "holophyte/serve.py": 889,
     "holophyte/serve_actions.py": 169, "holophyte/serve_config.py": 336,
-    "holophyte/serve_runs.py": 507, "holophyte/supervisor.py": 877,
+    "holophyte/serve_runs.py": 507, "holophyte/supervisor.py": 878,
     "holophyte/supervisor_lock.py": 227,
     "holophyte/sweep_report.py": 236, "store/__init__.py": 975,
     "store/operate.py": 939, "store/read.py": 930,
@@ -59,9 +60,10 @@ PINNED = {
     "tests/loop_fixture.py": 360, "tests/test_babysitter.py": 466,
     "tests/test_claim.py": 1468, "tests/test_cli.py": 114,
     "tests/test_cli_approve.py": 269, "tests/test_cli_requeue.py": 214,
-    "tests/test_file_sizes.py": 197, "tests/test_holophyte_package.py": 307,
-    "tests/test_pool.py": 836, "tests/test_provider.py": 578,
-    "tests/test_serve_shipped.py": 181, "tests/test_store.py": 249,
+    "tests/test_file_sizes.py": 199, "tests/test_holophyte_package.py": 306,
+    "tests/test_pool.py": 837, "tests/test_provider.py": 578,
+    "tests/test_runs.py": 55, "tests/test_serve_shipped.py": 181,
+    "tests/test_store.py": 249,
     "tests/test_store_claim.py": 261, "tests/test_store_heartbeat.py": 64,
     "tests/test_store_interventions.py": 403,
     "tests/test_store_lease.py": 80, "tests/test_store_pickable.py": 121,

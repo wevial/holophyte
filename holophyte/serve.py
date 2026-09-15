@@ -104,6 +104,8 @@ from holophyte.config import (
     budget_scale,
     console_config,
     serve_config,
+)
+from holophyte.config_tables import (
     split_address,
     sweep_config,
 )
@@ -187,7 +189,7 @@ def parse_address(text):
     non-negative integer -- 0 asks the kernel for an ephemeral one, which
     is how the tests bind. With a host, it is whatever precedes the last
     colon, so nothing here decides what a valid hostname is: the bind does.
-    The `HOST:PORT` rule is `config.split_address()`'s, the one `[console]
+    The `HOST:PORT` rule is `config_tables.split_address()`'s, the one `[console]
     daemons` entries are held to.
     """
     text = str(text)
