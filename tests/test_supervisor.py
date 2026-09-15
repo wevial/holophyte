@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_supervisor_sweep import MINUTE, T0, SweepTestCase  # noqa: E402
+from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above

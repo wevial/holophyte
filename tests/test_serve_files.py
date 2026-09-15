@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from test_serve import ServeTestCase  # noqa: E402 - after the insert
+from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above

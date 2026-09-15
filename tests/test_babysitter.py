@@ -2,7 +2,7 @@
 
 The verdict parser is what decides which thread gets fixed, which gets a
 decline, and which parks the run for a person; the acceptance tests in
-`test_factory_loop.py` witness the pass end to end, and this holds the
+`test_babysit_pass.py` witness the pass end to end, and this holds the
 parser's edges: a thread with no line is `HUMAN`, a verdict is read whatever
 separator the model reached for, and a number outside the listing is
 ignored rather than filed against a thread that does not exist.
@@ -20,12 +20,12 @@ from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 # The repo root for `holophyte`, and `tests/` itself for the loop harness
-# (`test_factory_loop`) and its scripted agent (`fake_agent`).
+# (`loop_fixture`) and its scripted agent (`fake_agent`).
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
 from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
-from test_factory_loop import (  # noqa: E402
+from loop_fixture import (  # noqa: E402
     BRANCH,
     MergeModeFixture,
 )

@@ -16,7 +16,7 @@ from time import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from test_serve import MIN, ServeTestCase  # noqa: E402 - after the insert
+from serve_fixture import MIN, ServeTestCase  # noqa: E402 - after the insert
 
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above

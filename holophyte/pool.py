@@ -103,7 +103,7 @@ def worker(target, provider):
     of the `WORKER_*` statuses; the scheduler reads it from the exit code.
     """
     from holophyte.claim import _claim_next
-    from holophyte.loop import PARKED, _dispatch
+    from holophyte.dispatch import PARKED, _dispatch
 
     slot = os.environ.get(WORKER_SLOT_ENV)
     if slot:
@@ -225,7 +225,7 @@ def scheduler(target, provider, knobs):
     when any worker failed or stopped for a human.
     """
     from holophyte.claim import _park_unlisted
-    from holophyte.loop import _mirror_queue, _startup_sweep
+    from holophyte.dispatch import _mirror_queue, _startup_sweep
     from holophyte.operator import _reexec, self_hosted
 
     conn = open_store(target)

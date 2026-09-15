@@ -96,7 +96,7 @@ def _serial(target, provider, knobs):
     (KO-211). The loop as it was before the pool: `[loop] workers = 1`
     runs exactly this, and a `--worker` child runs the same phases once
     in `worker()`."""
-    from holophyte.loop import (
+    from holophyte.dispatch import (
         PARKED,
         SWEPT,
         _dispatch,

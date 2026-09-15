@@ -285,7 +285,8 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
     the gate's verify reads the worktree, so the sha it goes on to must
     be the merge of the candidate it claimed.
     """
-    from holophyte.loop import _is_ancestor, _timed
+    from holophyte.loop import _timed
+    from holophyte.merge_gate import _is_ancestor
 
     paths = ", ".join(conflicts)
     set_phase(conn, run_id, "merge_gate",
@@ -556,7 +557,7 @@ def skip_line(identifier, strikes, pr_url, question):
     or a questionless park once the count tripped; a park with neither is
     still a human's, and says so.
     """
-    from holophyte.loop import GATE_CONFLICT_QUESTION
+    from holophyte.merge_gate import GATE_CONFLICT_QUESTION
 
     closed = (question or "").strip().startswith(PR_CLOSED_QUESTION)
     if pr_url and not closed:
