@@ -1,10 +1,3 @@
-"""The pool and the loop machinery around it: the scheduler's spawn and
-wait seams scripted by `FakePool`, the `--worker` child's single pass, the
-run-sweep edges, the implementer probe, and the requeue of a gate-conflict
-park. Moved verbatim from `tests/test_factory_loop.py` (KO-398).
-
-Run: python3 -m unittest discover -s tests -p 'test_pool*' -v
-"""
 from __future__ import annotations
 
 import io

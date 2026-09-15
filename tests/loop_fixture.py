@@ -1,13 +1,3 @@
-"""The fixture and scripted seams the loop's test modules share (KO-398).
-
-`StubProvider` is the provider seam `main()` drives and `LoopFixture` the
-real repo, worktree directory and store every loop test runs on; the
-fake-agent steps and the `FakePool` spawn/wait script more than one test
-module uses live here too. A helper one module's classes alone use sits in
-that module instead. Not a test module: nothing here starts with `test_`,
-so discovery never imports it -- `test_factory_loop`, `test_pool` and
-`test_claim` do.
-"""
 from __future__ import annotations
 
 import io

@@ -1,10 +1,3 @@
-"""The claim path end to end: worktree setup and leftover reuse, the skip
-line and the ticket-named branch, the board's lease label, and the merge
-conflicts a claim can meet. Moved verbatim from `tests/test_factory_loop.py`
-(KO-398).
-
-Run: python3 -m unittest discover -s tests -p 'test_claim*' -v
-"""
 from __future__ import annotations
 
 import dataclasses
