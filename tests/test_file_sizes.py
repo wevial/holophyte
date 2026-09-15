@@ -42,10 +42,8 @@ OVER = {
 # brought back under its ceiling: the pin caps it at the size the slice
 # left it, so the table only moves down for that file too.
 PINNED = {
-    "holophyte/babysitter.py": 841,
-    "holophyte/board.py": 870,
-    "holophyte/claim.py": 823,
-    "holophyte/cli.py": 464,
+    "holophyte/babysitter.py": 841, "holophyte/board.py": 870,
+    "holophyte/claim.py": 823, "holophyte/cli.py": 464,
     "holophyte/config.py": 752,
     "holophyte/config_tables.py": 558, "holophyte/findings.py": 331,
     "holophyte/operator.py": 431,
@@ -61,7 +59,7 @@ PINNED = {
     "store/tickets.py": 460,
     "tests/test_babysitter.py": 466,
     "tests/test_cli.py": 114, "tests/test_cli_approve.py": 269,
-    "tests/test_cli_requeue.py": 214, "tests/test_file_sizes.py": 200,
+    "tests/test_cli_requeue.py": 214, "tests/test_file_sizes.py": 198,
     "tests/test_holophyte_package.py": 297, "tests/test_provider.py": 578,
     "tests/test_runs.py": 55, "tests/test_serve_shipped.py": 181,
     "tests/test_store.py": 249,
