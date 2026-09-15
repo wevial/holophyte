@@ -242,14 +242,15 @@ class PoolTests(LoopFixture):
         self.assertIsNone(self.rc)
         # The tick itself printed nothing; only the spawn it made shows.
         # queue.clear() emptied the board without a claim, so the drain's
-        # mirror reconcile (KO-425) parks KO-132's `ready` row.
+        # mirror reconcile (KO-425) walks KO-132's `ready` row to
+        # `blocked_on_deps`.
         self.assertEqual(self.out.splitlines(), [
             "[holo2] started worker 1 as pid 5001",
             "[holo2] started worker 2 as pid 5002",
             "[holo2] worker 1 merged its ticket",
             "[holo2] worker 2 merged its ticket",
-            "[holo2] 1 mirror rows left the board's ready column; parked"
-            " for the operator: KO-132",
+            "[holo2] 1 mirror rows left the board's ready column; waiting"
+            " on the board: KO-132",
             "[holo2] Linear has no ready tickets. done.",
         ])
 

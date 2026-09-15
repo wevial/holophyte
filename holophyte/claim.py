@@ -466,7 +466,7 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
 
 def _park_unlisted(conn, project, listed):
     """Walk each `ready` mirror row the board's ready listing no longer
-    names to `blocked_on_operator`; one printed line names them (KO-425).
+    names to `blocked_on_deps`; one printed line names them (KO-425).
 
     The mirror is a cache of the board's ready column and nothing used to
     invalidate it on this edge: a ticket the operator pulled to Backlog, or
@@ -476,17 +476,18 @@ def _park_unlisted(conn, project, listed):
     scheduler's `_mirror_queue()` listing), so no second board ask is spent;
     a caller that saw no listing passes None and parks nothing.
 
+    `blocked_on_deps`, not `blocked_on_operator`: the wait is on the board,
+    so the way back is the board's -- a ticket the listing names again is
+    walked back to `ready` when the pass mirrors it, no operator step.
     Rows the listing still names are left alone, whatever kept them off
     this pass's claim. Each row is re-read under its `transaction()` so a
-    sibling's claim or park landing in between is honored; the park is
-    marked `OFF_BOARD_QUESTION`, which a return to Todo or `--requeue`
-    recognises as the way back, and the `note` lands on the ticket's last
-    run when it has one, all in one transaction.
+    sibling's claim or park landing in between is honored, and the `note`
+    lands on the ticket's last run when it has one, all in one transaction.
     """
     if listed is None:
         return
     listed = set(listed)
-    parked = []
+    waiting = []
     for ticket_id, _ in store.read.ready_tickets(conn, project):
         with store.transaction(conn):
             # The listing and the `ready_tickets()` read are snapshots;
@@ -496,20 +497,17 @@ def _park_unlisted(conn, project, listed):
             if (ticket.status != "ready" or ticket.activeRunId is not None
                     or ticket.linearIdentifier in listed):
                 continue
-            store.walk_ticket(conn, ticket_id, "blocked_on_operator")
-            conn.execute("UPDATE tickets SET blockedQuestion = ?"
-                         " WHERE id = ?",
-                         (store.operate.OFF_BOARD_QUESTION, ticket_id))
+            store.walk_ticket(conn, ticket_id, "blocked_on_deps")
             if ticket.lastRunId is not None:
                 store.record_ledger(
                     conn, ticket.lastRunId, "note",
                     f"{ticket.linearIdentifier} left the board's ready"
-                    " column without being claimed; the mirror is parked"
-                    " for the operator")
-            parked.append(ticket.linearIdentifier)
-    if parked:
-        print(f"[holo2] {len(parked)} mirror rows left the board's ready"
-              f" column; parked for the operator: {', '.join(parked)}")
+                    " column without being claimed; the mirror waits on"
+                    " the board")
+            waiting.append(ticket.linearIdentifier)
+    if waiting:
+        print(f"[holo2] {len(waiting)} mirror rows left the board's ready"
+              f" column; waiting on the board: {', '.join(waiting)}")
 
 
 def _claim_next(target, conn, project, provider, order, skip, seen):
@@ -608,17 +606,14 @@ def _admit_ticket(target, conn, project, provider, task, seen):
         print(f"[holo2] {task['id']} skipped: {problem}")
         return None
     ticket_id = mirror_task(conn, project, task)
-    # The board re-listing a ticket the empty pass parked off-board
-    # (KO-425) is the park's question answered, so the row walks back to
-    # `ready` and the gates below judge it like any other; every other
-    # `blocked_on_operator` park is still a human's and falls through to
+    # The board re-listing a ticket the empty pass walked to
+    # `blocked_on_deps` (KO-425) is the wait over: the row walks back to
+    # `ready` and the gates below judge it like any other. A
+    # `blocked_on_operator` park is a human's and falls through to
     # `escalate()`'s skip.
     with store.transaction(conn):
         ticket = store.read.ticket_by_id(conn, ticket_id)
-        if ticket.status == "blocked_on_operator" \
-                and ticket.blockedQuestion == store.operate.OFF_BOARD_QUESTION:
-            conn.execute("UPDATE tickets SET blockedQuestion = NULL"
-                         " WHERE id = ?", (ticket_id,))
+        if ticket.status == "blocked_on_deps":
             store.walk_ticket(conn, ticket_id, "ready")
     # The lease is per ticket (KO-341): a ticket another live run holds
     # is that run's, and the answer is the next candidate, not a stop.
