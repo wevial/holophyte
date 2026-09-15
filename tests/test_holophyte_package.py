@@ -51,12 +51,8 @@ DEFINED = {
     ],
     # KO-397: the per-table readers, out of `holophyte.config`.
     _module("config_tables"): [
-        "LoopConfig",
-        "ReportConfig",
-        "SweepConfig",
-        "loop_config",
-        "report_config",
-        "sweep_config",
+        "LoopConfig", "ReportConfig", "SweepConfig", "loop_config",
+        "report_config", "sweep_config",
     ],
     _module("gates"): [
         "InfraFailure",
