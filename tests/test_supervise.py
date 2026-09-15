@@ -500,7 +500,8 @@ class SupervisorConfigTests(SweepTestCase):
     def test_an_absent_table_is_the_documented_defaults(self):
 
         self.assertEqual(holophyte.config_tables.sweep_config(self.tgt),
-                         (5 * MINUTE, 2, 1.5, 3.0, 0.5, 60, 2 * MINUTE))
+                         (5 * MINUTE, 2, 1.5, 3.0, 0.5, 60, 2 * MINUTE,
+                          10 * MINUTE))
 
     def test_heartbeat_stale_min_moves_the_silence_a_trip_needs(self):
         """A heartbeat two and three minutes old on two consecutive sweeps:
@@ -1119,6 +1120,58 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertEqual(provider.ready_asked, 1)
         self.assertIn("Linear is down", out)
         self.assertEqual(calls(), [])
+
+    # KO-434: the fallback's ask is stamped on the projects row and held to
+    # `[supervisor] board_ask_sec` -- an empty mirror is not a reason to
+    # spend one ready listing a minute on it forever.
+    def test_an_empty_mirror_is_not_re_asked_within_board_ask_sec(self):
+        """A pass 30 s after one that asked -- `board_ask_sec` is ten
+        minutes -- asks nothing and starts nothing, the stamp on the
+        projects row holding it; once the interval is past the board is
+        asked again, so a ticket filed while the loop was down is not
+        waited out."""
+        provider = StubProvider()
+        self.fake_systemctl()
+
+        self.one_pass(T0 + 20 * MINUTE, provider)
+        second = self.one_pass(T0 + 20 * MINUTE + 30_000, provider)
+
+        self.assertEqual(provider.ready_asked, 1)
+        self.assertNotIn("holophyte-loop@", second)
+        # The stamp is the first ask's instant; the throttled pass left it.
+        self.assertEqual(self.conn.execute(
+            "SELECT boardAskedAt FROM projects WHERE id = ?",
+            (self.project,)).fetchone(), (T0 + 20 * MINUTE,))
+
+        self.one_pass(T0 + 31 * MINUTE, provider)
+
+        self.assertEqual(provider.ready_asked, 2)
+
+    def test_a_low_complexity_budget_asks_nothing_and_says_the_reset_once(
+            self):
+        """Under a tenth of the key's complexity limit the fallback waits
+        for the reset rather than asking to be refused: the provider is
+        never called, the one printed line names the reset -- and the next
+        pass under the same reading says nothing again."""
+        import linear_provider
+        budget = linear_provider.LinearBudget()
+        budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "200000",
+            "x-ratelimit-complexity-reset": str(T0 + 60 * MINUTE)})
+        provider = StubProvider()
+        self.fake_systemctl()
+        clock = time.strftime("%H:%M",
+                              time.localtime((T0 + 60 * MINUTE) / 1000))
+
+        with patch.object(linear_provider, "LINEAR_BUDGET", budget):
+            first = self.one_pass(T0 + 20 * MINUTE, provider)
+            second = self.one_pass(T0 + 21 * MINUTE, provider)
+
+        self.assertEqual(provider.ready_asked, 0)
+        self.assertIn(f"board not asked: budget resets at {clock}", first)
+        self.assertNotIn("board not asked", second)
+        self.assertNotIn("holophyte-loop@", first + second)
 
     # KO-420: the board's ready column keeps a ticket the store holds
     # parked -- the board never learns about a park. The fall-through

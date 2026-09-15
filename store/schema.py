@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS projects (
         CHECK (autonomyProfile IN ('personal', 'shared_low_risk', 'production')),
     highRiskPaths       TEXT    NOT NULL DEFAULT '[]',  -- JSON string[] of globs
     verificationDefault TEXT,
+    -- Epoch ms the supervisor's board fallback last asked Linear for the
+    -- ready listing, so `board_ask_sec` throttles across passes and across
+    -- the supervisor's restarts. NULL until the first ask.
+    boardAskedAt        INTEGER,
     -- §7: the per-project single-threading lease. Held here rather than
     -- inferred from runs so a concurrent claim loses on a uniqueness-style
     -- assertion instead of on a race-prone count.
@@ -359,7 +363,11 @@ CREATE TABLE IF NOT EXISTS interventions (
 # (KO-368). Version 16 renames the action 'shepherd' to 'babysit', the word
 # the operator reads everywhere else since KO-373: the CHECK swaps the value
 # and the rebuild rewrites every row that carried the old one (KO-374).
-SCHEMA_VERSION = 16
+# Version 17 is `projects.boardAskedAt`, the epoch millisecond the
+# supervisor's board fallback last asked Linear for the ready listing, so
+# `[supervisor] board_ask_sec` throttles across passes and process restarts
+# (KO-434).
+SCHEMA_VERSION = 17
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -534,6 +542,11 @@ ADDED_COLUMNS = (
         "runs",
         "prSeenReview",
         "prSeenReview TEXT",
+    ),
+    (
+        "projects",
+        "boardAskedAt",
+        "boardAskedAt INTEGER",
     ),
 )
 

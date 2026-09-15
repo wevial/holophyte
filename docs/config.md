@@ -218,9 +218,28 @@ run_cap                  = 3.0  # the run's hard ceiling, in boxes: the loop ref
 review_overlap_threshold = 0.5  # findings shared by two rounds that reads as stuck
 sweep_interval_sec       = 60   # sleep between two --supervise passes
 restart_grace_sec        = 120  # how long a self-merge re-exec may take to come back
+board_ask_sec            = 600  # least wait between two fallback asks of the board
 ```
 
-Accepted keys: the seven above.
+Accepted keys: the eight above.
+
+`board_ask_sec` bounds how often the supervisor's board fallback may list
+the board's ready tickets. The fallback runs when the mirror is empty and
+no loop is live — a ticket filed while the loop was down has no mirror
+row, so the pass asks the board itself — and a ready listing is Linear's
+most expensive query here, thousands of the key's hourly complexity
+points. The last ask is stamped on the project's store row, so the
+interval holds across passes and across supervisor restarts whatever
+`sweep_interval_sec` is. The value is an integer of at least 60; under a
+minute the fallback is the polling that emptied the key.
+
+Separately, every Linear answer carries the key's complexity-budget
+headers and the provider keeps them in a process-wide budget. When under
+a tenth of the limit remains, the fallback and the loop's idle relisting
+both wait for the reset instead of spending the points to be refused: one
+`[holo2] board not asked: budget resets at HH:MM` line per refill, and no
+calls until it. A refused answer (HTTP 429) lands the same way, as a
+`LinearBudgetExhausted` naming the reset.
 
 The box is counted per turn: a run's allowance is the ticket's estimate once
 for its first implementer turn and once more for each review round it has
@@ -240,7 +259,8 @@ Different targets want different patience — a Go build's worktree setup is
 slower than stdlib Python's — and these are the knobs `--sweep` and
 `--supervise` read. Each value is checked at startup, for every mode: the
 thresholds and the interval must be positive numbers, `stale_strikes` a
-positive integer, the overlap a fraction in (0, 1], and `run_cap` a number
+positive integer, `board_ask_sec` an integer of at least 60, the overlap
+a fraction in (0, 1], and `run_cap` a number
 from 1.5 to 5.0. A value outside its
 constraint is an error naming the key and the constraint, like malformed TOML,
 rather than a default quietly used in its place. A key this version does not

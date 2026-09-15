@@ -49,6 +49,7 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
+import linear_provider  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -381,6 +382,32 @@ class PoolTests(LoopFixture):
         self.assertEqual(self.rc, 1)
         self.assertNotIn("Linear has no ready tickets", self.out)
         self.assertIn("linear unreachable", self.out)
+
+    def test_a_low_complexity_budget_relists_nothing(self):
+        """KO-434: under a tenth of the key's hourly complexity limit the
+        idle relisting waits for the reset rather than asking to be
+        refused -- the provider is never called, one line names when the
+        budget refills, and an unlisted queue is not mistaken for an
+        empty one."""
+        budget = linear_provider.LinearBudget()
+        budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "200000",
+            "x-ratelimit-complexity-reset": "9999999999999"})
+        provider = StubProvider(a_task(1), a_task(2))
+        asked = []
+        ready_issues = provider.ready_issues
+        provider.ready_issues = lambda: asked.append(1) or ready_issues()
+
+        with patch.object(linear_provider, "LINEAR_BUDGET", budget):
+            pool = self.run_scheduler(2, provider, [])
+
+        self.assertEqual(asked, [])
+        self.assertEqual(pool.spawned, [])
+        self.assertEqual(self.rc, 1)
+        self.assertIn("board not asked: budget resets at", self.out)
+        self.assertEqual(self.out.count("board not asked"), 1)
+        self.assertNotIn("Linear has no ready tickets", self.out)
 
     def test_stop_on_failure_drains_the_pool_and_exits_nonzero(self):
         """`workers = 2`, `stop_on_failure = true`: a worker exits failed

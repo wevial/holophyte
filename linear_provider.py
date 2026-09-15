@@ -12,8 +12,10 @@ list_ready_issues() / ready_issues() / closed_identifiers(). Operator API, for
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from pathlib import Path
+from time import localtime, strftime, time
 
 import ticket_template
 
@@ -45,6 +47,89 @@ def _load_env_key():
     return _load_env_var("LINEAR_API_KEY")
 
 
+def _clock(epoch_ms):
+    """`reset_at` as the wall-clock HH:MM the operator reads in the log."""
+    return strftime("%H:%M", localtime(epoch_ms / 1000))
+
+
+class LinearBudgetExhausted(RuntimeError):
+    """Linear answered 429: the API key's complexity budget is spent for
+    the window. `reset_at` carries the epoch-millisecond refill instant the
+    refusal's headers named, or None when they named none."""
+
+    def __init__(self, message, reset_at=None):
+        super().__init__(message)
+        self.reset_at = reset_at
+
+
+class LinearBudget:
+    """What the last Linear answer's `x-ratelimit-complexity-*` headers
+    said of the API key's hourly budget: `remaining` points of `limit`,
+    refilled at `reset_at` (epoch milliseconds). `remember()` is fed every
+    `_gql()` answer's headers -- a refusal's included; `low()` is the
+    callers' signal to wait for the reset rather than spend the points to
+    be refused: under a tenth of the limit left, the asks that remain could
+    not buy back what one more listing costs. One per process -- the key is
+    the process's, and the factory keeps this object rather than another
+    ask to learn the meter by."""
+
+    def __init__(self):
+        self.limit = None
+        self.remaining = None
+        self.reset_at = None
+        # The reset the last "board not asked" line named, so the line
+        # lands once per refill, not once per pass that waits on it.
+        self._noticed = None
+
+    def remember(self, headers):
+        """The `x-ratelimit-complexity-*` fields of one answer's headers,
+        when it carried them; a field the answer did not carry leaves what
+        the last answer said."""
+        if headers is None:
+            return
+        fields = {str(k).lower(): str(v) for k, v in headers.items()}
+        for name, attr in (("x-ratelimit-complexity-limit", "limit"),
+                           ("x-ratelimit-complexity-remaining", "remaining"),
+                           ("x-ratelimit-complexity-reset", "reset_at")):
+            if name in fields:
+                try:
+                    setattr(self, attr, int(fields[name]))
+                except ValueError:
+                    pass  # a field that is not a number says nothing
+
+    def low(self, now=None):
+        """Under a tenth of `limit` with the refill still ahead. A reset
+        that has passed forgets the reading -- the key is whole again until
+        the next answer says otherwise. `now` is epoch milliseconds."""
+        if self.limit is None or self.remaining is None \
+                or self.remaining >= self.limit / 10:
+            return False
+        now = int(time() * 1000) if now is None else now
+        if self.reset_at is not None and now >= self.reset_at:
+            self.limit = self.remaining = self.reset_at = None
+            return False
+        return True
+
+    def notice(self, now=None):
+        """The one line a skipped ask prints, once per reset the budget has
+        named; None while the budget is not low, and None again for a reset
+        already announced -- "wait for the reset" is said once, not once
+        per pass that waits."""
+        if not self.low(now):
+            return None
+        state = self.reset_at if self.reset_at is not None else "unreset"
+        if state == self._noticed:
+            return None
+        self._noticed = state
+        if self.reset_at is None:
+            return ("board not asked: the complexity budget is low and"
+                    " Linear named no reset")
+        return f"board not asked: budget resets at {_clock(self.reset_at)}"
+
+
+LINEAR_BUDGET = LinearBudget()
+
+
 def _gql(query, variables=None):
     key = _load_env_key()
     if not key:
@@ -52,7 +137,20 @@ def _gql(query, variables=None):
     body = json.dumps({"query": query, "variables": variables or {}}).encode()
     req = urllib.request.Request(GRAPHQL, data=body, headers={
         "Authorization": key, "Content-Type": "application/json"})
-    r = json.load(urllib.request.urlopen(req, timeout=30))
+    try:
+        res = urllib.request.urlopen(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        LINEAR_BUDGET.remember(e.headers)
+        if e.code == 429:
+            reset = LINEAR_BUDGET.reset_at
+            raise LinearBudgetExhausted(
+                "Linear refused the query (429): the API key's complexity"
+                " budget is spent" + (
+                    f"; it resets at {_clock(reset)}"
+                    if reset is not None else ""), reset_at=reset) from e
+        raise
+    LINEAR_BUDGET.remember(res.headers)
+    r = json.load(res)
     if r.get("errors"):
         raise RuntimeError(f"Linear GraphQL error: {r['errors']}")
     return r["data"]

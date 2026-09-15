@@ -24,6 +24,10 @@ DOCUMENTED_COLUMNS = {
     "projects": {
         "id", "linearTeamId", "repoPath", "defaultBranch", "autonomyProfile",
         "highRiskPaths", "verificationDefault", "activeRunId",
+        # Store-owned: when the supervisor's board fallback last asked
+        # Linear for the ready listing, so `board_ask_sec` throttles
+        # across passes and restarts (KO-434).
+        "boardAskedAt",
     },
     "tickets": {
         "id", "projectId", "linearIssueId", "linearIdentifier", "title",

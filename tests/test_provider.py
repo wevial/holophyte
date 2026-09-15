@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import re
 import shutil
@@ -26,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -572,6 +574,84 @@ class LinearImportTests(unittest.TestCase):
 
         self.assertEqual((one.project_id, one.team), ("p-1", "Team One"))
         self.assertEqual((two.project_id, two.team), ("p-2", "Team Two"))
+
+
+def _answer(data, headers):
+    """A `urlopen` response stand-in: the body `json.load` reads and the
+    headers Linear answers it with."""
+    answer = io.BytesIO(json.dumps(data).encode())
+    answer.headers = headers
+    return answer
+
+
+class LinearBudgetTests(unittest.TestCase):
+    """KO-434: `LINEAR_BUDGET` keeps what every `_gql()` answer's
+    `x-ratelimit-complexity-*` headers said of the key's hourly budget --
+    the refusal's headers included -- and a 429 lands as
+    `LinearBudgetExhausted` carrying the reset the refusal named."""
+
+    @classmethod
+    def setUpClass(cls):
+        import linear_provider
+        cls.linear = linear_provider
+
+    def setUp(self):
+        # The budget is process state; a fresh one per test so a reading
+        # one test made is not the next test's.
+        patcher = patch.object(self.linear, "LINEAR_BUDGET",
+                               self.linear.LinearBudget())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.budget = self.linear.LINEAR_BUDGET
+
+    def test_under_a_tenth_of_the_limit_is_low(self):
+        """200,000 of 3,000,000 points left is low -- the asks that remain
+        could not buy back what one more listing costs. 400,000 is not."""
+        self.budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "200000"})
+        self.assertTrue(self.budget.low())
+
+        self.budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "400000"})
+        self.assertFalse(self.budget.low())
+
+    def test_every_answer_updates_the_budget(self):
+        """A served answer's headers are the budget's reading."""
+        headers = {"x-ratelimit-complexity-limit": "3000000",
+                   "x-ratelimit-complexity-remaining": "2000000",
+                   "x-ratelimit-complexity-reset": "1800000000000"}
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "key"}), \
+                patch.object(self.linear.urllib.request, "urlopen",
+                             lambda req, timeout: _answer(
+                                 {"data": {}}, headers)):
+            self.linear._gql("query { viewer { id } }")
+
+        self.assertEqual((self.budget.limit, self.budget.remaining,
+                          self.budget.reset_at),
+                         (3000000, 2000000, 1_800_000_000_000))
+
+    def test_a_429_is_a_budget_exhausted_carrying_the_reset(self):
+        """The refusal is not a generic transport error: it lands as
+        `LinearBudgetExhausted`, and its own headers have already been
+        remembered -- the reset the guards wait for is the budget's."""
+        headers = {"x-ratelimit-complexity-limit": "3000000",
+                   "x-ratelimit-complexity-remaining": "0",
+                   "x-ratelimit-complexity-reset": "1800000000000"}
+
+        def refused(req, timeout):
+            raise urllib.error.HTTPError(
+                self.linear.GRAPHQL, 429, "Too Many Requests", headers, None)
+
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "key"}), \
+                patch.object(self.linear.urllib.request, "urlopen", refused):
+            with self.assertRaises(self.linear.LinearBudgetExhausted) as hit:
+                self.linear._gql("query { viewer { id } }")
+
+        self.assertEqual(hit.exception.reset_at, 1_800_000_000_000)
+        self.assertIn("resets at", str(hit.exception))
+        self.assertTrue(self.budget.low(now=1_799_999_999_000))
 
 
 if __name__ == "__main__":
