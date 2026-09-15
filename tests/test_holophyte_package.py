@@ -200,6 +200,7 @@ DEFINED = {
         "_open_pr",
         "_park_human",
         "_park_on_pr",
+        "_pr_template",
         "_resume_on_pr",
         "_written_pr_text",
     ],

@@ -628,7 +628,10 @@ the body the ticket verbatim with the run's FINDINGS entry appended. With
 branch is pushed, the loop runs one more turn on the implementer route in the
 task worktree, given the diff against `main` (capped, with a note when cut),
 the ticket body, the repository's `AGENTS.md` and `CLAUDE.md` when the
-repository root has them, and `pr_style`. The turn answers with one line
+repository root has them, the repository's pull request template --
+`.github/pull_request_template.md`, or `PULL_REQUEST_TEMPLATE.md` under
+`.github/` or at the root -- when the worktree has one, with the instruction
+to fill its sections, and `pr_style`. The turn answers with one line
 `TITLE: ...` and the description in Markdown after it; the loop takes the
 title as given, appends one line `Linear: KO-n` with the issue's URL to the
 body, and opens the pull request with them. No FINDINGS entry is appended,

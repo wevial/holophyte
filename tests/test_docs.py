@@ -179,6 +179,25 @@ class UsageTests(unittest.TestCase):
             self.assertIn(f"docs/{name}.md", text)
 
 
+class PullRequestTemplateTests(unittest.TestCase):
+    """KO-430: the repository's pull request template -- the file the
+    written turn fills under `pr_text = "written"`; GitHub itself applies
+    it only to pull requests opened in the web UI."""
+
+    TEMPLATE = ROOT / ".github" / "pull_request_template.md"
+
+    def test_the_template_has_the_house_sections(self):
+        text = self.TEMPLATE.read_text()
+        self.assertEqual(headings(text, 2),
+                         ["Summary", "Why", "Changes", "Diagram",
+                          "Verification"])
+        # Changes is an at-a-glance table, and the last line is the
+        # `Linear:` marker the loop completes -- no footer after it.
+        changes = text.split("## Changes", 1)[1].split("##", 1)[0]
+        self.assertIn("|", changes)
+        self.assertEqual(text.rstrip().splitlines()[-1], "Linear:")
+
+
 class BabysitterTests(unittest.TestCase):
     """KO-373: the pass over an open pull request is the babysitter wherever
     the operator reads it; KO-374 renamed the store's action value and
