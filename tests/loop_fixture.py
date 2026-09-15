@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -358,3 +360,285 @@ class FakePool:
         pid = self.alive.pop(0)
         self.reaped.append((pid, code))
         return pid, code
+
+
+class MergeModeFixture(LoopFixture):
+    """`[merge] mode = "pr"`'s fixture: an approved, verified candidate is
+    pushed and opened as a pull request instead of merged, and the loop
+    babysits the PR -- threads verdicted, fixed and answered, checks
+    awaited -- until it merges through the PR's API or the run parks.
+    `"local"`, or no key, merges as it always has.
+
+    `git` and `gh` on PATH are fakes that record their argv: the fake `git`
+    intercepts `push` alone and hands everything else to the real one, so
+    the loop's worktrees, merges and rev-parses are real while the one call
+    that would leave the machine is witnessed instead of made. The fake
+    `gh` answers `pr create` with `URL` and `api` with what the test put in
+    the state files: the PR's threads and checks for the state query, an
+    empty success for the reply and resolve mutations, `MERGE_SHA` for the
+    merge.
+
+    Split from the tests so a suite elsewhere -- the conflicting-PR tests
+    in `test_babysitter.py` -- drives the same fake GitHub without
+    re-running the tests that came with it."""
+
+    URL = "https://github.com/example/repo/pull/7"
+    # The `origin` the fixture target is given: the repository the push
+    # goes to and the one `gh pr create` must be pinned to.
+    ORIGIN = "https://github.com/example/repo.git"
+    MERGE_SHA = "9f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"
+    # A body the claim-time template gate accepts, so the run reaches the
+    # gate with a ticket body for the PR to carry.
+    BODY = VALID_BODY
+    # Two threads a review bot might leave: a clear defect and a style nit.
+    DEFECT = ("src/app.py", 10, "review-bot",
+              "`load()` returns None when the file is missing and the"
+              " caller indexes it: a crash on first run.")
+    NIT = ("src/app.py", 20, "style-bot",
+           "Prefer `thing_count` over `n` for this variable name.")
+
+    @staticmethod
+    def comment(number, author, body):
+        """One comment as the GraphQL answer carries it. `author` is a
+        login -- a review bot's, `__typename` `Bot`, the kind the babysitter
+        answers -- or a `(login, typename)` pair for a person (`User`)."""
+        login, kind = (author if isinstance(author, tuple)
+                       else (author, "Bot"))
+        return {"author": {"login": login, "__typename": kind},
+                "body": body,
+                "url": f"{MergeModeFixture.URL}#discussion_r{number}"}
+
+    @classmethod
+    def thread(cls, number, path, line, author, body, replies=(),
+               resolved=False, next_cursor=None):
+        """One review thread as the GraphQL answer carries it: the opening
+        comment, then `replies` (each `(author, body)`) as the follow-ups
+        on its first page of comments; `next_cursor` names a further page
+        the babysitter must fetch."""
+        nodes = [cls.comment(number, author, body)]
+        nodes += [cls.comment(f"{number}_{n}", who, text)
+                  for n, (who, text) in enumerate(replies, 1)]
+        return {"id": f"PRRT_{number}", "isResolved": resolved,
+                "isOutdated": False, "path": path, "line": line,
+                "comments": {"pageInfo": {"hasNextPage": next_cursor
+                                          is not None,
+                                          "endCursor": next_cursor},
+                             "nodes": nodes}}
+
+    @classmethod
+    def comments_page(cls, number, replies, next_cursor=None):
+        """A later page of one thread's comments, as the thread query
+        answers it."""
+        return {"data": {"node": {"comments": {
+            "pageInfo": {"hasNextPage": next_cursor is not None,
+                         "endCursor": next_cursor},
+            "nodes": [cls.comment(f"{number}_p{n}", who, text)
+                      for n, (who, text) in enumerate(replies, 1)]}}}}
+
+    # What the fake `gh` swaps for the branch's real tip when it serves a
+    # state: the PR's head is the candidate the loop pushed, unless a test
+    # says otherwise (`head=`).
+    HEAD = "HEAD_SHA"
+
+    def pr_state(self, threads=(), checks="SUCCESS", merged=False,
+                 head=HEAD, resolved=(), next_cursor=None,
+                 mergeable="MERGEABLE"):
+        """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
+        tuple) open, `resolved` the same shape but resolved, the head's
+        check rollup, whether the PR is merged, GitHub's `mergeable`
+        answer (None for the lazy-computation `null`), and -- for a page
+        that is not the last -- the cursor of the next."""
+        nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
+        nodes += [self.thread(n, *t[:4], resolved=True)
+                  for n, t in enumerate(resolved, len(nodes) + 1)]
+        return {"data": {"repository": {"pullRequest": {
+            "state": "MERGED" if merged else "OPEN", "merged": merged,
+            "headRefOid": head, "mergeable": mergeable,
+            "mergeCommit": {"oid": self.MERGE_SHA} if merged else None,
+            "commits": {"nodes": [{"commit": {"statusCheckRollup":
+                                              {"state": checks}}}]},
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": next_cursor is not None,
+                             "endCursor": next_cursor},
+                "nodes": nodes}}}}}
+
+    def fake_route(self, push_exit=0, push_sh="", states=None,
+                   comments=(), open_pr=None):
+        """Put a recording `git` and `gh` ahead of the real PATH, and give
+        the target an `origin` for them to name.
+
+        Each call appends its argv to `self.calls`; `gh pr create` keeps
+        the body it read on stdin in `self.pr_body` and prints `URL`; each
+        `gh api` call keeps its JSON body under `self.api_dir` (read back
+        by `api_calls()`) and answers by what the body asks: the state
+        query gets the first of `states` (each served once until the last,
+        which is served forever), a mutation an empty success, the merge
+        `MERGE_SHA`, a thread's further comments page the next of
+        `comments` (each a `comments_page()`), the open step's
+        `pullRequests(headRefName:)` lookup (KO-407) one open pull request
+        at `open_pr` -- none without it -- and the reconcile's pull-status
+        read (KO-359) an open pull request; the check-runs and
+        branch-rules reads answer no runs and no rules, so the rollup
+        alone decides the checks. `push_exit` is what `git
+        push` answers with --
+        non-zero is a remote refusing -- and `push_sh` is shell the fake
+        push runs first, for a push that takes its time. A push the fake
+        answers successfully also appends `REF SHA` to `self.push_log`:
+        the refspec's source resolved in the pushing checkout at push
+        time, which is the tip a real remote's branch would have
+        received (`pushed()` reads it back).
+        """
+        self.git("remote", "add", "origin", self.ORIGIN)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        bindir = Path(tmp.name)
+        self.calls = bindir / "calls.log"
+        self.pr_body = bindir / "pr_body.md"
+        self.push_log = bindir / "pushes.log"
+        self.api_dir = bindir / "api"
+        self.api_dir.mkdir()
+        # The open step's lookup answer: `open_pr` is the URL the branch
+        # is already open as, None the common "no open pull request".
+        self.open_answer = bindir / "open.json"
+        nodes = [{"url": open_pr}] if open_pr else []
+        self.open_answer.write_text(json.dumps(
+            {"data": {"repository":
+                      {"pullRequests": {"nodes": nodes}}}}))
+        answers = bindir / "states"
+        answers.mkdir()
+        for n, state in enumerate([self.pr_state()] if states is None
+                                  else states, 1):
+            (answers / f"{n:03d}.json").write_text(json.dumps(state))
+        # Kept on the fixture so `serve()` can hand a resumed run a fresh
+        # answer sequence mid-test without re-faking PATH.
+        self.answers = answers
+        pages = bindir / "comments"
+        pages.mkdir()
+        for n, page in enumerate(comments, 1):
+            (pages / f"{n:03d}.json").write_text(json.dumps(page))
+        real_git = shutil.which("git")
+        # The fetch before every cut (KO-378) is `git fetch origin` with
+        # no refspec and would ask the example remote for real; the fake
+        # route answers just that call as an origin with nothing new,
+        # unrecorded: `self.calls` witnesses what the loop sends out
+        # (pushes, pull requests), and a fetch sends nothing. A fetch
+        # with a refspec is a different caller — the babysit resume's
+        # `fetch origin BRANCH` and the fixture's fetches into a bare
+        # remote — and reaches the real git, which fails against the
+        # example remote or succeeds against a bare one as it would.
+        (bindir / "git").write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
+            " then exit 0; fi\n"
+            'if [ "$1" = push ]; then\n'
+            f'  printf "git %s\\n" "$*" >> "{self.calls}"\n'
+            f"{push_sh}\n"
+            f'  if [ {push_exit} -ne 0 ]; then\n'
+            '    echo "remote: refused" >&2\n'
+            f"    exit {push_exit}\n"
+            "  fi\n"
+            # The push is witnessed, not made; what a real remote's
+            # branch would have received is the refspec's source
+            # resolved now, in the pushing checkout.
+            '  for src in "$@"; do :; done\n'
+            '  src="${src%%:*}"; src="${src#+}"\n'
+            f'  printf "%s %s\\n" "$src" "$("{real_git}" rev-parse'
+            f' "$src" 2>/dev/null || echo MISSING)" >> "{self.push_log}"\n'
+            "  exit 0\n"
+            "fi\n"
+            f'exec "{real_git}" "$@"\n')
+        (bindir / "gh").write_text(
+            "#!/bin/sh\n"
+            f'printf "gh %s\\n" "$*" >> "{self.calls}"\n'
+            'if [ "$1" = api ]; then\n'
+            '  case "$*" in\n'
+            '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
+            '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            '  esac\n'
+            f'  n=$(ls "{self.api_dir}" | wc -l); n=$((n+1))\n'
+            f'  body="{self.api_dir}/$n.json"; cat > "$body"\n'
+            '  if grep -q resolveReviewThread "$body"; then\n'
+            "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"
+            '  elif grep -q addPullRequestReviewThreadReply "$body"; then\n'
+            "    echo '{\"data\":{\"addPullRequestReviewThreadReply\":{}}}'\n"
+            '  elif grep -q mergedBy "$body"; then\n'
+            "    echo '{\"data\":{\"repository\":{\"pullRequest\":"
+            "{\"state\":\"OPEN\",\"merged\":false}}}}'\n"
+            '  elif grep -q PullRequestReviewThread "$body"; then\n'
+            f'    f=$(ls "{pages}"/*.json | head -1); cat "$f"; rm "$f"\n'
+            '  elif grep -q headRefName "$body"; then\n'
+            f'    cat "{self.open_answer}"\n'
+            '  elif grep -q reviewThreads "$body"; then\n'
+            f'    f=$(ls "{answers}"/*.json | head -1)\n'
+            f'    tip=$("{real_git}" -C "{self.target}" rev-parse {BRANCH})\n'
+            f'    sed "s/{self.HEAD}/$tip/" "$f"\n'
+            f'    [ $(ls "{answers}"/*.json | wc -l) -gt 1 ] && rm "$f"\n'
+            "  else\n"
+            f"    echo '{{\"sha\":\"{self.MERGE_SHA}\",\"merged\":true}}'\n"
+            "  fi\n"
+            "  exit 0\n"
+            "fi\n"
+            f'cat > "{self.pr_body}"\n'
+            f"echo {self.URL}\n")
+        for script in ("git", "gh"):
+            (bindir / script).chmod(0o755)
+        patcher = patch.dict(os.environ,
+                             {"PATH": f"{bindir}:{os.environ['PATH']}"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def recorded(self):
+        return (self.calls.read_text().splitlines()
+                if self.calls.exists() else [])
+
+    def pushed(self):
+        """Every `git push` the fake answered, as `(ref, sha)`: the
+        refspec's source resolved in the pushing checkout at push time --
+        the tip a real remote's branch would have received, which is the
+        witness a bare argv count cannot give."""
+        return [tuple(line.split())
+                for line in (self.push_log.read_text().splitlines()
+                             if self.push_log.exists() else [])]
+
+    def serve(self, *states):
+        """Replace the state answers the fake `gh` still owes with `states`
+        -- served in order, the last one sticky -- so a run resumed
+        mid-test reads what GitHub now says. The calls log is untouched:
+        the pushes and requests already witnessed keep counting."""
+        n = max((int(p.stem) for p in self.answers.iterdir()), default=0)
+        for p in self.answers.iterdir():
+            p.unlink()
+        for k, state in enumerate(states or (self.pr_state(),), n + 1):
+            (self.answers / f"{k:03d}.json").write_text(json.dumps(state))
+
+    def api_calls(self):
+        """Every `gh api` body the babysitter made, in order, as `(kind,
+        variables)`: the kind is `state`, `reply`, `resolve` or `merge`.
+        The loop's per-pass pull-status read of a parked run (KO-359) is
+        left out: it is the reconcile's, tested on its own below, and
+        every pass after a park makes one. The open step's
+        `pullRequests(headRefName:)` lookup (KO-407) is left out too: it
+        is the open step's, not the pass's, and is witnessed by
+        `recorded()` and the api bodies instead."""
+        calls = []
+        for path in sorted(self.api_dir.iterdir(),
+                           key=lambda p: int(p.stem)):
+            body = json.loads(path.read_text())
+            query = body.get("query", "")
+            if "mergedBy" in query or "headRefName" in query:
+                continue
+            kind = ("resolve" if "resolveReviewThread" in query
+                    else "reply" if "addPullRequestReviewThreadReply" in query
+                    else "comments" if "PullRequestReviewThread" in query
+                    else "state" if "reviewThreads" in query else "merge")
+            calls.append((kind, body.get("variables", body)))
+        return calls
+
+    def provider(self):
+        return StubProvider(dict(a_task(), body=self.BODY))
+
+    def question(self):
+        ((status, question),) = self.read(
+            "SELECT status, blockedQuestion FROM tickets")
+        self.assertEqual(status, "blocked_on_operator")
+        return question
