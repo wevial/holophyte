@@ -138,18 +138,23 @@ def _serial(target, provider, knobs):
                 skip -= _reconcile_pull_requests(target, conn, project,
                                                  provider)
             first_pass = False
+            _mirror_queue(target, conn, project, provider)
             # The claim's `claim_next()` spends the same ready listing the
             # mirror does, so a complexity budget under its tenth holds the
             # whole pass, not just the mirror: the pass ends on the reset
             # line `linear_budget_low()` prints once rather than asking to
-            # be refused (KO-434). The supervisor's fallback waits out the
-            # same reset and starts the loop again once the meter refills.
+            # be refused (KO-434). Asked after the mirror, not before it:
+            # the mirror's own answer can be what pushed the budget under
+            # its tenth -- a caught 429's remembered headers included --
+            # and the mirror guards its own ask, so this one check holds
+            # both (KO-434 review). The supervisor's fallback waits out
+            # the same reset and starts the loop again once the meter
+            # refills.
             if linear_budget_low():
                 store.record_loop_return(conn, project)
                 print("[holo2] the ready listing waits for the budget's"
                       " reset; done.")
                 return 1
-            _mirror_queue(target, conn, project, provider)
             task, ticket_id, run_id = _claim_next(target, conn, project,
                                                   provider, order, skip, seen)
             if not task:
