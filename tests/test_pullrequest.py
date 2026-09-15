@@ -352,18 +352,26 @@ class MergeModePullRequestTests(MergeModeFixture):
     PR_TEMPLATE = ("## Summary\n\n<!-- what the change does. -->\n\n"
                    "## Why\n\n<!-- why it is needed. -->\n")
 
+    # The prompt the frozen base's written turn was handed for this
+    # scenario, recorded once from `refs/review/base`: criterion 2's
+    # oracle. Comparing the live prompt against the same run's own output
+    # would let a drift in the shared text move both sides together.
+    RECORDED = (ROOT / "tests" / "fixtures" / "pullrequest"
+                / "written_prompt_base.txt")
+
     def test_the_written_turn_fills_the_repositorys_pr_template(self):
         """KO-430: a worktree carrying `.github/pull_request_template.md`
         gives the written turn the file under a "fill its sections"
         heading, ahead of the style line; a worktree without one gets
-        today's prompt byte for byte, witnessed against the prompt the
-        same candidate's run recorded."""
+        the frozen base's prompt byte for byte, witnessed against the
+        recording."""
         provider = self.written_target()
         fake, _ = self.loop(Commit("the scripted work"), APPROVE,
                             self.WRITTEN, provider=provider)
-        # The recorded prompt for a worktree with no template file.
-        prompt = fake.turns[2].goal
-        self.assertNotIn("pull request template", prompt.lower())
+        # A worktree with no template file: the recorded base prompt,
+        # byte for byte.
+        base = self.RECORDED.read_text()
+        self.assertEqual(fake.turns[2].goal, base)
 
         # The same candidate's parked worktree now carrying the file: the
         # rebuilt prompt is the recorded one plus exactly the template's
@@ -386,7 +394,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertIn(part, filled)
         self.assertLess(filled.index(part),
                         filled.index("Style instructions"))
-        self.assertEqual(filled.replace(part, ""), prompt)
+        self.assertEqual(filled.replace(part, ""), base)
 
     def test_a_squash_only_repository_merges_with_its_configured_method(self):
         """`[merge] pr_merge_method = "squash"`: the one `PUT
