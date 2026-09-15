@@ -40,13 +40,9 @@ from holophyte.operator import (
 )
 from holophyte.pool import worker
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
-from holophyte.supervisor import (
-    SupervisorHeld,
-    supervise,
-    supervisor_liveness_line,
-    supervisor_running,
-    sweep_report,
-)
+from holophyte.supervisor import supervise, supervisor_liveness_line
+from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
+from holophyte.sweep_report import sweep_report
 from holophyte.target import Target
 from provider import LinearProvider
 
