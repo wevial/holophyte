@@ -45,7 +45,7 @@ from time import time
 import review_runner
 import store
 import store.read
-from holophyte import babysitter, pr
+from holophyte import babysitter, pr, pr_status
 from holophyte.agents import agent_route
 from holophyte.board import ledger
 from holophyte.config_tables import merge_config
@@ -362,7 +362,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
 
     Design note 7's second half, the `review -> eval -> fix -> reply ->
     watch` loop, capped by `[merge] pr_rounds`. Each pass reads the PR
-    once (`pr.pr_state()`: unresolved threads, the head's check rollup,
+    once (`pr_status.pr_state()`: unresolved threads, the head's check rollup,
     merged or closed) and is one `reviewRounds` row with route
     `github:LOGIN`, so FINDINGS shows it beside the Codex rounds. A pass
     with threads hands them to `_answer_threads()`: the adjudicator
@@ -410,7 +410,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     from holophyte.merge_gate import _merge_gate
     from holophyte.pullrequest import _merge_pr, _park_on_pr
     merge = merge_config(target)
-    pull = pr.parse_pr_url(url)
+    pull = pr_status.parse_pr_url(url)
     if pull is None:
         raise RunFailure(f"cannot read a pull request off {url!r};"
                          f" branch {branch} preserved at {sha[:12]}")
@@ -626,14 +626,14 @@ def _settled_state(target, conn, run_id, beat_s, pull):
     restarts the checks anyway."""
     waited = 0
     with heartbeat_while(conn, run_id, beat_s):
-        state = pr.pr_state(target, pull)
+        state = pr_status.pr_state(target, pull)
         while (state.checks == "pending" and not state.threads
                and not state.merged and waited < pr.CHECK_WAIT_S):
             print(f"[holo2] checks pending on {pull.url}; waiting"
                   f" {pr.CHECK_POLL_S}s")
             pr.SLEEP(pr.CHECK_POLL_S)
             waited += pr.CHECK_POLL_S
-            state = pr.pr_state(target, pull)
+            state = pr_status.pr_state(target, pull)
     return state
 
 

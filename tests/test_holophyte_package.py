@@ -245,6 +245,22 @@ DEFINED = {
         "repo_of",
         "token_from_env",
     ],
+    # KO-426: reading a pull request's state, out of `holophyte.pr`.
+    _module("pr_status"): [
+        "PullStatus",
+        "_check_reads",
+        "_check_runs_of",
+        "_comment_nodes",
+        "_comments_of",
+        "_head_checks",
+        "_pull_request_page",
+        "_required_contexts",
+        "_state_of",
+        "fold_checks",
+        "parse_pr_url",
+        "pr_state",
+        "pull_status",
+    ],
     # KO-388: the worker pool and its scheduler, out of `holophyte.loop`.
     _module("pool"): [
         "_PoolState",

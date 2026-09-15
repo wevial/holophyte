@@ -79,10 +79,13 @@ Each module, one line:
   and board label, then `_cut_worktree`/`reuse_leftover`,
   `run_worktree_setup` under `_setup_worktree`, and the mid-merge
   hand-off (`merge_conflicts`, `conflict_brief`, `_resolve_merge_conflict`).
-- `holophyte/pr.py` — `[merge] mode = "pr"`'s one GitHub surface: the
-  startup route check, the push, the pull request and its body, and the
-  babysitter's calls -- review threads and checks, replies, resolves, the
-  merge through the PR API.
+- `holophyte/pr.py` — `[merge] mode = "pr"`'s GitHub writes: the startup
+  route check, the push, the pull request and its body, the babysitter's
+  replies and resolves, the merge through the PR API, and the `gh`/API
+  transport they ride on.
+- `holophyte/pr_status.py` — reading a pull request's state (KO-426), out
+  of `holophyte/pr.py`: `pull_status()` for the parked-run reconcile,
+  `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.

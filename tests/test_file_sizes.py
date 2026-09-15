@@ -28,11 +28,7 @@ CEILING = {"source": 1000, "test": 1500}
 # Repo-relative path to the file's `wc -l` count. A slice that changes
 # a listed file's size rewrites its entry in the same commit; a file
 # back under its ceiling leaves the table.
-OVER = {
-    "holophyte/pr.py": 1033,
-    "tests/test_factory_config.py": 1693,
-    "tests/test_serve.py": 1655,
-}
+OVER = {}
 
 # Repo-relative path to the file's `wc -l` count, for a file a slice
 # brought back under its ceiling: the pin caps it at the size the slice
@@ -45,6 +41,7 @@ PINNED = {
     "holophyte/gates.py": 664, "holophyte/loop.py": 893,
     "holophyte/merge_gate.py": 493,
     "holophyte/operator.py": 431, "holophyte/pool.py": 387,
+    "holophyte/pr.py": 620, "holophyte/pr_status.py": 449,
     "holophyte/pullrequest.py": 312,
     "holophyte/reconcile.py": 468, "holophyte/reexec.py": 94,
     "holophyte/report.py": 160, "provider.py": 302,
@@ -56,18 +53,22 @@ PINNED = {
     "store/operate.py": 923, "store/read.py": 930,
     "store/schema.py": 753, "store/tickets.py": 460,
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 644,
-    "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 855,
+    "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 856,
     "tests/test_babysitter.py": 466, "tests/test_config_tables.py": 487,
     "tests/test_claim.py": 1468, "tests/test_claim_mirror.py": 178,
     "tests/test_cli.py": 114,
     "tests/test_cli_approve.py": 269, "tests/test_cli_requeue.py": 214,
-    "tests/test_file_sizes.py": 203, "tests/test_holophyte_package.py": 306,
+    "tests/test_file_sizes.py": 204, "tests/test_holophyte_package.py": 322,
+    "tests/test_factory_config.py": 1073,
     "tests/test_factory_loop.py": 1127, "tests/test_merge_gate.py": 831,
     "tests/test_pool.py": 865, "tests/test_provider.py": 658, "tests/test_runs.py": 55,
-    "tests/test_pullrequest.py": 1074, "tests/test_reconcile.py": 414,
+    "tests/test_pullrequest.py": 1077, "tests/test_reconcile.py": 414,
+    "tests/test_serve.py": 1130,
     "tests/test_serve_actions.py": 313, "tests/test_serve_config.py": 677,
-    "tests/test_serve_ledger.py": 449, "tests/test_serve_shipped.py": 181,
-    "tests/sweep_fixture.py": 201, "tests/test_store.py": 249,
+    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 552,
+    "tests/test_serve_shipped.py": 181,
+    "tests/sweep_fixture.py": 201, "tests/test_startup_checks.py": 648,
+    "tests/test_store.py": 249,
     "tests/test_store_claim.py": 261, "tests/test_store_heartbeat.py": 64,
     "tests/test_store_interventions.py": 403,
     "tests/test_store_lease.py": 80, "tests/test_store_pickable.py": 121,
@@ -75,7 +76,7 @@ PINNED = {
     "tests/test_store_schema.py": 1017, "tests/test_store_status.py": 312,
     "tests/test_store_status_graph.py": 111,
     "tests/test_store_surface.py": 267, "tests/test_store_tickets.py": 118,
-    "tests/test_supervise.py": 1298, "tests/test_supervisor_sweep.py": 981,
+    "tests/test_supervise.py": 1299, "tests/test_supervisor_sweep.py": 981,
     "tests/test_wiring_claim.py": 636, "tests/test_wiring_findings.py": 489,
     "tests/test_wiring_mirror.py": 289, "tests/test_wiring_phases.py": 441,
     "tests/test_wiring_rounds.py": 597,

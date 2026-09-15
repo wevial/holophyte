@@ -47,6 +47,7 @@ import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
 class MergeModePullRequestTests(MergeModeFixture):
@@ -635,7 +636,8 @@ class MergeModePullRequestTests(MergeModeFixture):
 
 
     # What GitHub says about a parked pull request when the reconcile asks
-    # (`pr.PULL_QUERY`'s node): merged by a coworker, closed unmerged, open.
+    # (`pr_status.PULL_QUERY`'s node): merged by a coworker, closed
+    # unmerged, open.
     MERGED_PULL = {"state": "MERGED", "merged": True,
                    "mergeCommit": {"oid": MergeModeFixture.MERGE_SHA},
                    "mergedBy": {"login": "coworker"}}
@@ -645,8 +647,9 @@ class MergeModePullRequestTests(MergeModeFixture):
                  "mergedBy": None}
 
     def fake_client(self, *answers, rate=None):
-        """The reconcile's GitHub, faked: `holophyte.pr.graphql` answers
-        each ask with the next of `answers` (the last one forever) and
+        """The reconcile's GitHub, faked: `holophyte.pr_status.graphql`
+        answers each ask with the next of `answers` (the last one
+        forever) and
         records the pull request and variables it was asked about. An
         answer that is an exception is raised instead: GitHub down.
         `rate` is the `rateLimit` node every answer carries, when one
@@ -667,7 +670,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                 data["rateLimit"] = rate
             return data
 
-        patcher = patch.object(holophyte.pr, "graphql", graphql)
+        patcher = patch.object(holophyte.pr_status, "graphql", graphql)
         patcher.start()
         self.addCleanup(patcher.stop)
         return asked

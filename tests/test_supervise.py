@@ -27,6 +27,7 @@ import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor_lock  # noqa: E402 - after the sys.path insert above
@@ -797,7 +798,7 @@ class ParkedPullRequestTests(SweepTestCase):
         return run_id
 
     def fake_github(self, answer):
-        """`holophyte.pr.graphql` faked at the pull-status read: answers
+        """`holophyte.pr_status.graphql` faked at the pull-status read: answers
         `answer` (raised when it is an exception) and records each ask."""
         asked = []
 
@@ -807,7 +808,7 @@ class ParkedPullRequestTests(SweepTestCase):
                 raise answer
             return {"repository": {"pullRequest": answer}}
 
-        patcher = patch.object(holophyte.pr, "graphql", graphql)
+        patcher = patch.object(holophyte.pr_status, "graphql", graphql)
         patcher.start()
         self.addCleanup(patcher.stop)
         return asked
