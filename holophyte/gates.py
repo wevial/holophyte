@@ -517,7 +517,7 @@ def sh(args, cwd=None):
 # How long a second gate waits on the lock before parking, and how often it
 # looks. A gate is a verify and a merge -- minutes, not hours -- so a lock
 # held longer than this is a run that died at the gate, and the sweep's
-# stale rule (`supervisor.merge_lock_lines`) is the backstop that clears it.
+# stale rule (`sweep_report.merge_lock_lines`) is the backstop that clears it.
 MERGE_LOCK_WAIT_SEC = 180
 MERGE_LOCK_POLL_SEC = 1.0
 

@@ -25,6 +25,7 @@ import holophyte.operator
 import holophyte.pr
 import holophyte.runs
 import holophyte.supervisor
+import holophyte.supervisor_lock
 import holophyte.target
 import review_runner
 import store
@@ -471,7 +472,7 @@ class StateDirectoryTests(ConfigTestCase):
         self.assertTrue(holo.name.startswith("repo-"), holo)
         self.assertEqual(self.tgt.config_path, holo / "config.toml")
         self.assertEqual(self.tgt.store_path, holo / "store.db")
-        self.assertEqual(holophyte.supervisor.supervisor_lock_path(self.tgt),
+        self.assertEqual(holophyte.supervisor_lock.supervisor_lock_path(self.tgt),
                          holo / "supervisor.lock")
         # The worktree directory is heavy git state, not factory state, and
         # keeps its own sibling address.
@@ -499,9 +500,9 @@ class StateDirectoryTests(ConfigTestCase):
 
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
-        lock = holophyte.supervisor.acquire_supervisor_lock(
-            holophyte.supervisor.supervisor_lock_path(self.tgt), self.tgt.path)
-        self.addCleanup(holophyte.supervisor.release_supervisor_lock, lock)
+        lock = holophyte.supervisor_lock.acquire_supervisor_lock(
+            holophyte.supervisor_lock.supervisor_lock_path(self.tgt), self.tgt.path)
+        self.addCleanup(holophyte.supervisor_lock.release_supervisor_lock, lock)
 
         self.assertTrue((holo / "store.db").exists())
         self.assertTrue((holo / "supervisor.lock").exists())
@@ -1404,7 +1405,7 @@ class SupervisorSpawnTests(StartupCheckTests):
         return out
 
     def hold_lock(self, pid):
-        lock = holophyte.supervisor.supervisor_lock_path(self.tgt)
+        lock = holophyte.supervisor_lock.supervisor_lock_path(self.tgt)
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text(f"host {pid} 1\n")
         return lock

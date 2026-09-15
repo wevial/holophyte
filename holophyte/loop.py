@@ -86,11 +86,8 @@ from holophyte.runs import (
     set_phase,
     warn_on_run,
 )
-from holophyte.supervisor import (
-    SWEEP_HINT,
-    sweep,
-    sweep_lines,
-)
+from holophyte.supervisor import sweep
+from holophyte.sweep_report import SWEEP_HINT, sweep_lines
 from holophyte.target import worktree_path
 
 # The paths a run works against, plus the config they carry, are a `Target`

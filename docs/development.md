@@ -39,8 +39,15 @@ Each module, one line:
   one way, last write wins, never read back — so the provider's `set_state`
   is the only writer of that state, and the mapping table beside
   `mirror_push` says which state each status shows as.
-- `holophyte/supervisor.py` — the stale-run sweep, its report, the lock and
-  the `--supervise` loop.
+- `holophyte/supervisor.py` — the stale-run sweep and the `--supervise`
+  loop.
+- `holophyte/sweep_report.py` — the sweep's report lines (KO-396): the
+  `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
+  as `--sweep`'s whole body, and the review-container and merge-lock
+  sections.
+- `holophyte/supervisor_lock.py` — the one-supervisor-per-target lock
+  (KO-396): the lockfile's path, read, acquire and release, the
+  `SupervisorHeld` refusal and the `supervisor_running()` probe.
 - `holophyte/serve.py` — `--serve PORT|HOST:PORT`, the read-only HTTP daemon.
 - `holophyte/serve_config.py` — the daemon's `/config` routes (KO-394):
   `GET`'s redacted read and `PUT`'s validated, recorded and backed-up
