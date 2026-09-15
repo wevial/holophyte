@@ -25,7 +25,7 @@ from time import monotonic, time
 import review_runner
 import store
 import store.read
-from holophyte import pr
+from holophyte import pr_status
 from holophyte.agents import agent
 from holophyte.babysitter import _babysit
 from holophyte.board import (
@@ -333,7 +333,7 @@ def _sync_branch_from_origin(target, conn, run_id, provider, task_id,
         if diverged is not None:
             raise RunFailure(diverged.format(branch=branch, local=sha,
                                              remote=remote))
-        pull = pr.parse_pr_url(url)
+        pull = pr_status.parse_pr_url(url)
         if pull is None:
             raise RunFailure(f"cannot read a pull request off {url!r};"
                              f" branch {branch} preserved at {sha[:12]}")

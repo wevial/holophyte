@@ -43,6 +43,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
 class MergeModeBabysitPassTests(MergeModeFixture):
@@ -74,23 +75,23 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         rollup alone -- and the exception does not escape the read."""
         def raising_rest(target, pull, method, path, payload=None):
             raise holophyte.pr.InfraFailure(f"GitHub refused GET {path}")
-        pull = holophyte.pr.parse_pr_url(self.URL)
-        with patch.object(holophyte.pr, "graphql",
+        pull = holophyte.pr_status.parse_pr_url(self.URL)
+        with patch.object(holophyte.pr_status, "graphql",
                           lambda *a, **k: self.pr_state(checks="SUCCESS")
                           ["data"]), \
-                patch.object(holophyte.pr, "rest", raising_rest):
-            state = holophyte.pr.pr_state(self.tgt, pull)
+                patch.object(holophyte.pr_status, "rest", raising_rest):
+            state = holophyte.pr_status.pr_state(self.tgt, pull)
 
         self.assertEqual(state.checks, "pending")
         self.assertEqual(state.head_sha, self.HEAD)
 
     def _state_with_rest(self, rest):
-        pull = holophyte.pr.parse_pr_url(self.URL)
-        with patch.object(holophyte.pr, "graphql",
+        pull = holophyte.pr_status.parse_pr_url(self.URL)
+        with patch.object(holophyte.pr_status, "graphql",
                           lambda *a, **k: self.pr_state(checks="SUCCESS")
                           ["data"]), \
-                patch.object(holophyte.pr, "rest", rest):
-            return holophyte.pr.pr_state(self.tgt, pull)
+                patch.object(holophyte.pr_status, "rest", rest):
+            return holophyte.pr_status.pr_state(self.tgt, pull)
 
     def test_check_runs_are_read_to_the_last_page_before_green(self):
         """Review finding: only the first page of check runs was read and
@@ -809,7 +810,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         walks the pages (`after` the first's cursor) before deciding, finds
         the thread and parks on it -- no merge, under `approve = "auto"`."""
         self.configure('[merge]\nmode = "pr"\n')
-        full_page = [self.NIT] * holophyte.pr.THREADS_PAGE
+        full_page = [self.NIT] * holophyte.pr_status.THREADS_PAGE
         self.fake_route(states=[self.pr_state(resolved=full_page,
                                               next_cursor="c1"),
                                 self.pr_state([self.DEFECT])])
