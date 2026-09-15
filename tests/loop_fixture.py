@@ -439,21 +439,16 @@ class MergeModeFixture(LoopFixture):
     # state: the PR's head is the candidate the loop pushed, unless a test
     # says otherwise (`head=`).
     HEAD = "HEAD_SHA"
-    # The `updatedAt` a state answer carries unless a test says otherwise
-    # (`updated_at=`): far enough in the past that `pr_quiet_sec` has
-    # already elapsed, so the quiet window changes nothing for a test that
-    # does not name it (KO-429).
-    UPDATED = "2000-01-01T00:00:00Z"
 
     def pr_state(self, threads=(), checks="SUCCESS", merged=False,
                  head=HEAD, resolved=(), next_cursor=None,
-                 mergeable="MERGEABLE", updated_at=UPDATED):
+                 mergeable="MERGEABLE", updated_at="2000-01-01T00:00:00Z"):
         """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
         tuple) open, `resolved` the same shape but resolved, the head's
         check rollup, whether the PR is merged, GitHub's `mergeable`
         answer (None for the lazy-computation `null`), `updated_at` the
-        `updatedAt` ISO stamp, and -- for a page
-        that is not the last -- the cursor of the next."""
+        `updatedAt` ISO stamp, and -- for a page that is not the last --
+        the cursor of the next."""
         nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
         nodes += [self.thread(n, *t[:4], resolved=True)
                   for n, t in enumerate(resolved, len(nodes) + 1)]
@@ -486,14 +481,13 @@ class MergeModeFixture(LoopFixture):
         at `open_pr` -- none without it -- and the reconcile's pull-status
         read (KO-359) an open pull request; the check-runs and
         branch-rules reads answer no runs and no rules, so the rollup
-        alone decides the checks. `push_exit` is what `git
-        push` answers with --
-        non-zero is a remote refusing -- and `push_sh` is shell the fake
-        push runs first, for a push that takes its time. A push the fake
-        answers successfully also appends `REF SHA` to `self.push_log`:
-        the refspec's source resolved in the pushing checkout at push
-        time, which is the tip a real remote's branch would have
-        received (`pushed()` reads it back).
+        alone decides the checks. `push_exit` is what `git push` answers
+        with -- non-zero is a remote refusing -- and `push_sh` is shell
+        the fake push runs first, for a push that takes its time. A push
+        the fake answers successfully also appends `REF SHA` to
+        `self.push_log`: the refspec's source resolved in the pushing
+        checkout at push time, which is the tip a real remote's branch
+        would have received (`pushed()` reads it back).
         """
         self.git("remote", "add", "origin", self.ORIGIN)
         tmp = tempfile.TemporaryDirectory()
@@ -526,13 +520,12 @@ class MergeModeFixture(LoopFixture):
         real_git = shutil.which("git")
         # The fetch before every cut (KO-378) is `git fetch origin` with
         # no refspec and would ask the example remote for real; the fake
-        # route answers just that call as an origin with nothing new,
-        # unrecorded: `self.calls` witnesses what the loop sends out
-        # (pushes, pull requests), and a fetch sends nothing. A fetch
+        # route answers just that call, unrecorded (`self.calls` witnesses
+        # what the loop sends out, and a fetch sends nothing). A fetch
         # with a refspec is a different caller — the babysit resume's
         # `fetch origin BRANCH` and the fixture's fetches into a bare
-        # remote — and reaches the real git, which fails against the
-        # example remote or succeeds against a bare one as it would.
+        # remote — and reaches the real git, which fails or succeeds as
+        # it would.
         (bindir / "git").write_text(
             "#!/bin/sh\n"
             'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
@@ -624,9 +617,9 @@ class MergeModeFixture(LoopFixture):
         The loop's per-pass pull-status read of a parked run (KO-359) is
         left out: it is the reconcile's, tested on its own below, and
         every pass after a park makes one. The open step's
-        `pullRequests(headRefName:)` lookup (KO-407) is left out too: it
-        is the open step's, not the pass's, and is witnessed by
-        `recorded()` and the api bodies instead."""
+        `pullRequests(headRefName:)` lookup (KO-407) is left out too: the
+        open step's, not the pass's, witnessed by `recorded()` and the
+        api bodies instead."""
         calls = []
         for path in sorted(self.api_dir.iterdir(),
                            key=lambda p: int(p.stem)):

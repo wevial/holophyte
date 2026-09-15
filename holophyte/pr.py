@@ -149,10 +149,8 @@ class PrState:
     """The pull request as one `pr_state()` read saw it. `mergeable` is
     GitHub's answer: MERGEABLE, CONFLICTING or UNKNOWN -- and UNKNOWN is
     what a read that predates or omits the field is held to, never a
-    license to merge anything in. `updated_at` is the pull request's
-    `updatedAt` as epoch milliseconds -- the stamp every comment, review,
-    push and check moves -- None when the answer carried none the read
-    could use."""
+    license to merge anything in. `updated_at` is `updatedAt` as epoch
+    milliseconds, None when the answer carried none."""
 
     threads: tuple  # unresolved `Thread`s, oldest first
     checks: str  # "success", "pending" or "failure"
@@ -232,14 +230,12 @@ def pr_title(task_id, task):
 
 
 def pr_body(conn, run_id, body, now):
-    """The PR body: the ticket body, then the run's FINDINGS entry.
-
-    The entry is `findings.run_entry` over the run as it stands at this
-    moment -- not yet ended, so `now` is the stamp and the phase it is about
-    to be parked in is the head -- rendered by the same function the
-    close-out renders the window with, so the PR shows what FINDINGS.md will.
-    A direct call with no store carries the ticket body alone.
-    """
+    """The PR body: the ticket body, then the run's FINDINGS entry --
+    `findings.run_entry` over the run as it stands at this moment (not
+    yet ended: `now` is the stamp, the phase it is about to park in the
+    head), rendered as the close-out renders the window, so the PR shows
+    what FINDINGS.md will. A direct call with no store carries the ticket
+    body alone."""
     body = (body or "").strip()
     if conn is None or run_id is None:
         return body
@@ -424,11 +420,10 @@ def open_pull_request(target, branch):
     request adopts that PR instead of opening a second one, which GitHub
     would refuse. The repository is `origin`'s, its owner and name read
     off the remote URL by `parse_pr_url()` the way a PR's own URL is. An
-    `origin` this cannot read, or a repository answer carrying no open
-    pull request for the branch, is None -- the create that follows
-    answers with its own InfraFailure. A node without a URL
-    `parse_pr_url()` can read is InfraFailure, as every unreadable answer
-    here is.
+    `origin` this cannot read, or an answer carrying no open pull request
+    for the branch, is None -- the create that follows answers with its
+    own InfraFailure; a node without a readable URL is InfraFailure, as
+    every unreadable answer here is.
     """
     # Imported at the call: `holophyte.pr_status` imports this module's
     # transport at module top, so the import runs one way.
