@@ -15,8 +15,10 @@ it, so a move back to Todo recovers the ticket with no operator step.
 
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -27,12 +29,16 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
+    FakePool,
     LoopFixture,
     StubProvider,
     a_task,
 )
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.operator  # noqa: E402
+import holophyte.pool  # noqa: E402
+import holophyte.runs  # noqa: E402
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -132,3 +138,41 @@ class OffBoardMirrorTests(LoopFixture):
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("ready",)])
         self.assertEqual(self.read("SELECT id FROM runs"), [])
+
+    def test_the_scheduler_recovers_a_relisted_ticket_before_the_count(self):
+        """`workers = 2`: the scheduler mirrors the queue, then counts
+        claimable tickets before spawning a worker. Recovery kept in
+        `_admit_ticket()` ran only inside a worker -- and with the row
+        still `blocked_on_deps` the count was zero, so no worker ever
+        ran it and the relisted ticket stayed parked (the KO-425 review's
+        reproduction)."""
+        provider = StubProvider(a_task(1))
+        conn = holophyte.runs.open_store(self.tgt)
+        self.addCleanup(conn.close)
+        project = tickets.ensure_project(conn, provider.team, self.target)
+        ticket = holophyte.board.mirror_task(conn, project, a_task(1))
+        tickets.transition(conn, ticket, "blocked_on_deps")
+        conn.commit()
+
+        def merged():
+            # The spawned worker's merge: terminal status, off the board.
+            tickets.walk_ticket(conn, ticket, "merged")
+            conn.commit()
+            provider.queue.clear()
+
+        self.configure("[loop]\nworkers = 2\nstop_on_failure = false\n")
+        pool = FakePool([(holophyte.pool.WORKER_MERGED, merged)])
+        with patch.object(holophyte.pool, "SPAWN", pool.spawn), \
+                patch.object(holophyte.pool, "WAIT", pool.wait), \
+                patch.object(sys, "orig_argv",
+                             ["python3", "-u", "factory.py",
+                              str(self.target)]), \
+                patch.object(sys, "stdout", io.StringIO()):
+            self.rc = holophyte.operator.main(self.tgt, provider)
+
+        # One worker for the relisted ticket; without the mirror-path
+        # recovery the count was zero and nothing spawned.
+        self.assertEqual(len(pool.spawned), 1)
+        self.assertIsNone(self.rc)
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])

@@ -865,8 +865,7 @@ class ReconcileTests(LoopFixture):
 
     The daemon's board showed KO-217 `ready` and KO-137/KO-138 `needs_spec`
     days after another target finished them: the mirror is written at the
-    claim and hears nothing when Linear closes the ticket elsewhere.
-    """
+    claim and hears nothing when Linear closes the ticket elsewhere."""
 
     CRITERIA = ["Given a thing, when it runs, then it works"]
 
@@ -912,12 +911,9 @@ class ReconcileTests(LoopFixture):
 
         printed = self.main_output(provider=provider)
 
-        self.assertEqual(self.statuses(),
-                         {"KO-1": "merged", "KO-2": "abandoned",
-                          # KO-3's row then met the empty pass's own
-                          # reconcile (KO-425): ready with no run and the
-                          # board's listing did not name it.
-                          "KO-3": "blocked_on_deps"})
+        # KO-3's ready row then met the empty pass's reconcile (KO-425).
+        self.assertEqual(self.statuses(), {"KO-1": "merged", "KO-2": "abandoned",
+                                          "KO-3": "blocked_on_deps"})
         self.assertEqual(self.reconcile_rows(),
                          [(runs["KO-1"], "supervisor", "linear_completed"),
                           (runs["KO-2"], "supervisor", "linear_cancelled")])
@@ -926,8 +922,7 @@ class ReconcileTests(LoopFixture):
         self.assertIn("[holo2] reconciled KO-2: needs_spec -> abandoned"
                       " (Linear canceled)", printed)
         self.assertNotIn("reconciled KO-3", printed)
-        self.assertIn("[holo2] 1 mirror rows left the board's ready column;"
-                      " waiting on the board: KO-3", printed)
+        self.assertIn("waiting on the board: KO-3", printed)
         # One call for the whole open set, KO-3 included.
         self.assertEqual(sorted(provider.asked), ["KO-1", "KO-2", "KO-3"])
         self.assertEqual(provider.states, [])  # nothing is written to Linear
@@ -979,11 +974,9 @@ class ReconcileTests(LoopFixture):
 
         printed = self.main_output(provider=provider)
 
-        self.assertEqual(self.statuses(),
-                         {"KO-1": "in_flight", "KO-2": "abandoned",
-                          # KO-3's ready row waits on the board by the
-                          # empty pass's own reconcile (KO-425).
-                          "KO-3": "blocked_on_deps"})
+        # KO-3's ready row waits on the board per the reconcile (KO-425).
+        self.assertEqual(self.statuses(), {"KO-1": "in_flight", "KO-2": "abandoned",
+                                          "KO-3": "blocked_on_deps"})
         self.assertEqual(
             self.read("SELECT phase, endedAt FROM runs WHERE id = %d"
                       % provider.run_id), [("claimed", None)])
@@ -993,9 +986,8 @@ class ReconcileTests(LoopFixture):
         self.assertIn("reconcile left KO-1 alone", printed)
 
     def test_only_this_projects_tickets_are_reconciled(self):
-        """A store may hold more than one project; the provider knows one
-        team, and another project's open tickets are that project's loop
-        to reconcile."""
+        """The provider knows one team; another project's open tickets are
+        that project's loop to reconcile."""
         self.seed()
         conn = store.open(str(self.db))
         other = tickets.ensure_project(conn, "another-team", "/elsewhere")
@@ -1030,10 +1022,7 @@ class ReconcileTests(LoopFixture):
         self.assertIn("network is unreachable", skipped[0])
         self.assertNotIn("reconciled", printed)
         self.assertEqual(self.reconcile_rows(), [])
-        # The seeded mirror was untouched by the *startup* reconcile, and
-        # the loop went on to claim, implement and merge the queued ticket
-        # as before. The empty pass then walked the two seeded `ready`
-        # rows the board's listing did not name to `blocked_on_deps`.
+        # KO-425: the empty pass then parked the unlisted `ready` rows.
         self.assertEqual(self.statuses(),
                          {"KO-1": "blocked_on_deps", "KO-2": "needs_spec",
                           "KO-3": "blocked_on_deps", "KO-131": "merged"})

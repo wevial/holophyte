@@ -605,16 +605,11 @@ def _admit_ticket(target, conn, project, provider, task, seen):
         mirror_task(conn, project, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
         return None
+    # The mirror also walks a `blocked_on_deps` row the board lists again
+    # back to `ready` (KO-425), so the gates below judge it like any
+    # other; a `blocked_on_operator` park is a human's and falls through
+    # to `escalate()`'s skip.
     ticket_id = mirror_task(conn, project, task)
-    # The board re-listing a ticket the empty pass walked to
-    # `blocked_on_deps` (KO-425) is the wait over: the row walks back to
-    # `ready` and the gates below judge it like any other. A
-    # `blocked_on_operator` park is a human's and falls through to
-    # `escalate()`'s skip.
-    with store.transaction(conn):
-        ticket = store.read.ticket_by_id(conn, ticket_id)
-        if ticket.status == "blocked_on_deps":
-            store.walk_ticket(conn, ticket_id, "ready")
     # The lease is per ticket (KO-341): a ticket another live run holds
     # is that run's, and the answer is the next candidate, not a stop.
     # Asked before `pickable()` so the refusal reads as the lease it is

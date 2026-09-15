@@ -46,10 +46,8 @@ class StubProvider:
 
     def __init__(self, *tasks):
         self.queue = list(tasks)
-        # The ids `claim_next()` has handed out, so the listing it reports
-        # can add back the ones the loop refused (`skip`) -- a refused
-        # ticket is still on the board the way Linear leaves it, and the
-        # empty pass's mirror reconcile (KO-425) reads `last_listing`.
+        # The ids `claim_next()` has handed out: refused (`skip`) tasks
+        # stay on the board; the mirror reconcile (KO-425) reads this.
         self.offered = set()
         self.last_listing = None
         # What `fetch_task()` hands back, kept apart from the queue so a
@@ -73,10 +71,8 @@ class StubProvider:
         back the *same* head-of-queue ticket on every ask; a stub that popped
         blindly would let a loop that cannot skip look like one that can.
 
-        `last_listing` is the ready listing as this ask saw it, the way the
-        real providers report it: the queue as it stands plus the offered
-        tasks `skip` marks refused, which the pop below would otherwise
-        take off the board a real board keeps them on.
+        `last_listing` is the ready listing as this ask saw it: the queue
+        plus the offered tasks `skip` marks refused, which the pop removes.
         """
         self.last_listing = sorted(
             {task["id"] for task in self.queue} | (self.offered & set(skip)))
