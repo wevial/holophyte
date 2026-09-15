@@ -41,7 +41,7 @@ from holophyte.reconcile import (
 from holophyte.reexec import reexec_self
 from holophyte.report import report_lines
 from holophyte.runs import open_store
-from holophyte.supervisor import supervisor_liveness_line
+from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
 
 # How the loop restarts itself after merging a change to its own code: the
 # process image is replaced, never a module reloaded. A seam so tests can
@@ -138,6 +138,17 @@ def _serial(target, provider, knobs):
                 skip -= _reconcile_pull_requests(target, conn, project,
                                                  provider)
             first_pass = False
+            # The claim's `claim_next()` spends the same ready listing the
+            # mirror does, so a complexity budget under its tenth holds the
+            # whole pass, not just the mirror: the pass ends on the reset
+            # line `linear_budget_low()` prints once rather than asking to
+            # be refused (KO-434). The supervisor's fallback waits out the
+            # same reset and starts the loop again once the meter refills.
+            if linear_budget_low():
+                store.record_loop_return(conn, project)
+                print("[holo2] the ready listing waits for the budget's"
+                      " reset; done.")
+                return 1
             _mirror_queue(target, conn, project, provider)
             task, ticket_id, run_id = _claim_next(target, conn, project,
                                                   provider, order, skip, seen)

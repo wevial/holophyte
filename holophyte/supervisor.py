@@ -536,8 +536,9 @@ def linear_budget_low(now=None, out=None):
     """Whether a Linear board read waits for the complexity budget's reset
     -- and the one line that says so when it does, printed to `out` once
     per reset the budget names rather than once per pass that waits
-    (KO-434). The supervisor's board fallback and the loop's idle
-    relisting (`_mirror_queue()`) both skip under this rule."""
+    (KO-434). The supervisor's board fallback and the loop's asks --
+    `_mirror_queue()`'s idle relisting and the serial pass's claim --
+    both skip under this rule."""
     budget = _linear_budget()
     if budget is None or not budget.low(now):
         return False
