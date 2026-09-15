@@ -46,24 +46,18 @@ class StubProvider:
 
     def __init__(self, *tasks):
         self.queue = list(tasks)
-        # The ids `claim_next()` has handed out, so the listing it reports
-        # can add back the ones the loop refused (`skip`) -- a refused
-        # ticket is still on the board the way Linear leaves it, and the
-        # empty pass's mirror reconcile (KO-425) reads `last_listing`.
-        self.offered = set()
+        # The ready listing the last `claim_next()` saw, for the empty
+        # pass's mirror reconcile (KO-425); None until asked.
         self.last_listing = None
-        # What `fetch_task()` hands back, kept apart from the queue so a test
-        # can leave the live ticket saying something other than the one that
-        # was claimed — the mid-run edit the merge gate exists to catch. The
-        # loop only reads it at the gate, so seeding it up front and editing
-        # it during the run are the same thing from the loop's side.
+        # What `fetch_task()` hands back, kept apart from the queue so a
+        # test can leave the live ticket saying something other than the
+        # one claimed — the mid-run edit the merge gate exists to catch.
         self.live = {task["issue_id"]: task for task in tasks}
         self.states = []
         self.comments = []
-        # The board lease label (KO-351): the labels each issue carries now,
-        # seeded from the task's `labels`; every label write in order as
-        # `("label" | "unlabel", issue_id, name)` with the exact name; and
-        # every read-back, as the issue asked about.
+        # The board lease label (KO-351): the labels each issue carries
+        # now, seeded from the task's `labels`; the label calls in order;
+        # the read-backs.
         self.labels = {task["issue_id"]: list(task.get("labels") or [])
                        for task in tasks}
         self.label_calls = []
@@ -76,16 +70,13 @@ class StubProvider:
         back the *same* head-of-queue ticket on every ask; a stub that popped
         blindly would let a loop that cannot skip look like one that can.
 
-        `last_listing` is the ready listing as this ask saw it, the way the
-        real providers report it: the queue as it stands plus the offered
-        tasks `skip` marks refused, which the pop below would otherwise
-        take off the board a real board keeps them on.
+        `last_listing` is the ready listing as this ask saw it: the queue
+        as it stands, skips included -- a refused ticket stays on the
+        board the way Linear keeps it.
         """
-        self.last_listing = sorted(
-            {task["id"] for task in self.queue} | (self.offered & set(skip)))
+        self.last_listing = [task["id"] for task in self.queue]
         for i, task in enumerate(self.queue):
             if task["id"] not in skip:
-                self.offered.add(task["id"])
                 return self.queue.pop(i)
         return None
 
@@ -159,12 +150,9 @@ INVALID_BODY = VALID_BODY.replace(
 
 
 class LoopFixture(unittest.TestCase):
-    """The real repo, worktree directory and store every loop test runs on.
-
-    Split from the tests so a suite with its own configuration — the
-    `[worktree]` one below — reuses the fixture without re-running the tests
-    that came with it.
-    """
+    """The real repo, worktree directory and store every loop test runs on;
+    split from the tests so a suite with its own configuration reuses the
+    fixture."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -211,10 +199,9 @@ class LoopFixture(unittest.TestCase):
     def configure(self, toml):
         """Give the fixture target a config file and a `Target` that reads it.
 
-        Through `Target.locate()` rather than by writing `config_path` by
-        hand: it derives every path from the target the same way the fixture
-        does, so a test that set the config by hand could pass with the file
-        unwired. A fresh value, too: a `Target` parses its config once.
+        Through `Target.locate()` rather than a hand-set `config_path`, so a
+        test that set the config by hand could pass with the file unwired.
+        A fresh value, too: a `Target` parses its config once.
         """
         (self.db.parent / "config.toml").write_text(toml)
         self.tgt = holophyte.target.Target.locate(self.target)
@@ -222,12 +209,10 @@ class LoopFixture(unittest.TestCase):
     def loop(self, *script, provider=None, fake=None):
         """Run `main()` over the queued tasks with the script answering agents.
 
-        Returns the fake and the spawn guard, so a test can read both the
-        turns the loop took and the processes it did not start; `main()`'s
-        return code lands in `self.rc` for the tests that pin the exit
-        contract. A test that needs the fake before the loop runs -- a step
-        that reads the turn the loop is asking for -- builds it and passes
-        it as `fake`; `script` is then unused.
+        Returns the fake and the spawn guard; `main()`'s return code lands
+        in `self.rc`. A test that needs the fake before the loop runs --
+        a step that reads the turn the loop asks for -- builds it and
+        passes it as `fake`; `script` is then unused.
         """
         fake = fake or FakeAgent(*script)
         provider = provider or StubProvider(a_task())
@@ -332,12 +317,11 @@ TICK = object()
 class FakePool:
     """The spawn and wait seams of the scheduler, scripted.
 
-    `SPAWN` records each command line and hands back a child with a pid of
-    its own; `WAIT` takes the next scripted exit -- `(code, before)`, where
-    `before` runs against the provider just before the exit is reported, the
-    way a real worker's merge empties its ticket out of the board's listing
-    -- and reports it for the oldest live child. Nothing here forks: the
-    pids are numbers, and the test reads what would have run.
+    `spawn` records each command line and hands back a child with a pid of
+    its own; `wait` takes the next scripted exit -- `(code, before)`, where
+    `before` runs just before the exit is reported, the way a real worker's
+    merge empties its ticket out of the board's listing -- and reports it
+    for the oldest live child. Nothing here forks.
     """
 
     def __init__(self, exits):

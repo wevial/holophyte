@@ -4,17 +4,15 @@
 through its members -- `team`, `claim_next()`, `ready_issues()`,
 `fetch_task()`, `set_state()`, `comment()`, `closed_identifiers()`,
 `label_issue()`, `issue_labels()` and `unlabel_issue()` -- so which board a
-loop runs against is
-the caller's choice (`factory.cli()` builds a `LinearProvider`), not a module
-import. Two boards
-ship here: `LinearProvider`, which wraps the functions `linear_provider.py`
-already has, and `FileProvider`, a directory of ticket files for tests and
-offline runs. The conformance suite in `tests/test_provider.py` holds both to
-the same observable behavior.
+loop runs against is the caller's choice (`factory.cli()` builds a
+`LinearProvider`), not a module import. Two boards ship here:
+`LinearProvider`, which wraps the functions `linear_provider.py` already
+has, and `FileProvider`, a directory of ticket files for tests and offline
+runs. The conformance suite in `tests/test_provider.py` holds both to the
+same observable behavior.
 
 Kept deliberately plain for the Rust port -- a protocol with dict payloads,
-no metaclass, no dispatch on module names -- so `Provider` reads as a trait
-and `FileProvider` as its fixture backend.
+no metaclass, no dispatch on module names.
 
 Task dicts are the shape `linear_provider.parse_task()` produces, and both
 boards hand over the same keys:
@@ -56,9 +54,9 @@ directory's name is the board's `team`. `claim_next()` offers the lowest
 identifier -- plain string order, the order `linear_provider.claim_next()`
 sorts in by default -- whose state is `Todo` and not in `skip`; a file has
 no priority, so `order="priority"` is accepted and orders the same way. The
-file board has no blocking relations: a ticket that must wait is one a human
-leaves out of `Todo`. `budget_min` is the body's `Estimate: N min` line, or
-20 without one; a file has no other estimate field.
+file board has no blocking relations: a ticket that must wait is one a
+human leaves out of `Todo`. `budget_min` is the body's `Estimate: N min`
+line, or 20 without one; a file has no other estimate field.
 """
 from __future__ import annotations
 
@@ -90,20 +88,14 @@ class Provider(Protocol):
 
     def claim_next(self, skip=(), order="identifier") -> dict | None:
         """The first ready task whose `id` is not in `skip`; None when none.
-
-        `order` is `[loop] order`: `"identifier"` or `"priority"`. A board
-        without priorities orders by identifier under either value.
-
-        The call also records the ready listing it chose from -- every
-        identifier in it, `skip` included -- on `self.last_listing`, so the
-        pass that finds nothing reconciles the mirror against the listing
-        the claim saw without asking the board a second time (KO-425)."""
+        `order` is `[loop] order`: `"identifier"` or `"priority"`; a board
+        without priorities orders by identifier under either value. The
+        listing the ask chose from lands on `self.last_listing` (KO-425)."""
         ...
 
     def ready_issues(self) -> list[dict]:
         """Every task `claim_next()` would choose from, parsed, in no
-        promised order: what the loop could claim, so the store's mirror can
-        show the queue. Raise when the board cannot be asked."""
+        promised order. Raise when the board cannot be asked."""
         ...
 
     def fetch_task(self, issue_id) -> dict | None:
@@ -112,7 +104,7 @@ class Provider(Protocol):
 
     def set_state(self, issue_id, state_name) -> None:
         """Move the ticket to the workflow state called `state_name`; raise
-        when the board says the move did not happen."""
+        when the move did not happen."""
         ...
 
     def comment(self, task_id, body) -> None:
@@ -121,26 +113,23 @@ class Provider(Protocol):
 
     def closed_identifiers(self, identifiers) -> dict[str, str]:
         """Which of `identifiers` the board holds closed, as identifier ->
-        `"completed"` or `"canceled"`; an open or unknown identifier is
-        absent. Raise when the board cannot be asked."""
+        `"completed"` or `"canceled"`; open or unknown is absent. Raise when
+        the board cannot be asked."""
         ...
 
     def label_issue(self, issue_id, name) -> None:
-        """Add the label `name` to the ticket, creating the label on first
-        use; a ticket already carrying it is left as it is, and no other
-        label is touched. Raise when the board did not take it: the loop
-        gives the store lease back then."""
+        """Add the label `name` to the ticket, creating it on first use and
+        leaving other labels alone; raise when the board did not take it --
+        the loop gives the store lease back then."""
         ...
 
     def issue_labels(self, issue_id) -> list[str]:
-        """The names of the ticket's labels as the board holds them now --
-        the read-back a lease write is judged by (KO-351). Raise when the
-        board cannot be asked."""
+        """The ticket's labels as the board holds them now -- the read-back
+        a lease write is judged by (KO-351)."""
         ...
 
     def unlabel_issue(self, issue_id, name) -> None:
-        """Remove the label `name` from the ticket; a ticket without it is
-        left as it is. Raise when the board refused."""
+        """Remove the label `name` from the ticket; raise when the board refused."""
         ...
 
 
@@ -148,22 +137,20 @@ class LinearProvider:
     """Linear, through the functions `linear_provider.py` already has.
 
     `project_id` and `team` are the target's `[board]` table, as
-    `holophyte.config_tables.board_config()` resolves it: the pair is stored here
-    and passed to every module call, so
-    the module itself holds no board and two targets on one host drive two
-    projects. The module is imported at the first call that needs it rather
-    than here; importing it reads no configuration any more, but `--report`,
-    a read-only `--sweep` and an acting sweep that trips nothing still run
-    without touching it, as they always have. Construction does no I/O of
-    any kind; the API key is read by the module on the first request.
+    `holophyte.config_tables.board_config()` resolves it: the pair is stored
+    here and passed to every module call, so the module itself holds no
+    board and two targets on one host drive two projects. The module is
+    imported at the first call that needs it rather than here -- the import
+    reads no configuration, so `--report`, a read-only `--sweep` and a
+    trip-less acting sweep never touch it. Construction does no I/O; the
+    API key is read by the module on the first request.
     """
 
     def __init__(self, project_id, team):
         self.project_id = project_id
         self._team = team
         self._module = None
-        # The identifiers the last `claim_next()` saw in the ready listing,
-        # for the empty pass's mirror reconcile (KO-425); None until asked.
+        # The listing the last `claim_next()` saw; None until asked (KO-425).
         self.last_listing = None
 
     def _linear(self):
@@ -231,9 +218,8 @@ class FileProvider:
 
     def claim_next(self, skip=(), order="identifier"):
         # A ticket file has no priority field, so `order = "priority"` is
-        # identifier order here: the keyword is accepted, not acted on.
-        # `last_listing` is the ready column as this ask saw it, `skip`
-        # included: the empty pass reconciles the mirror against it (KO-425).
+        # accepted but orders the same way. `last_listing` is the column as
+        # this ask saw it, for the empty pass's mirror reconcile (KO-425).
         self.last_listing = [i for i in self._identifiers()
                              if self._state(i) == DEFAULT_STATE]
         for identifier in self.last_listing:
@@ -289,8 +275,8 @@ class FileProvider:
             f.write(f"## {ts}\n\n{body.rstrip()}\n\n")
 
     def closed_identifiers(self, identifiers):
-        # The file board keeps state *names*; these are the closed ones, typed
-        # as Linear types its workflow states so both boards answer alike.
+        # The file board keeps state *names*; these are the closed ones,
+        # typed as Linear types so both boards answer alike.
         return {identifier: CLOSED_STATE_NAMES[self._state(identifier)]
                 for identifier in identifiers
                 if "." not in identifier and self._path(identifier).is_file()
@@ -300,10 +286,9 @@ class FileProvider:
 def _parse(identifier, text):
     """A ticket file as the task dict, key for key as `parse_task()` builds it.
 
-    Mirrors `linear_provider.parse_task()` rather than calling it because that
-    module cannot be imported without a configured Linear project, and the
-    file board exists for the runs that have none. The conformance suite
-    seeds both boards with one body and holds the two parses to each other.
+    Mirrored rather than called because `linear_provider` cannot be imported
+    without a configured project, which is the file board's whole case; the
+    conformance suite holds the two parses to each other.
     """
     parsed = ticket_template.parse(text)
     m = VERIFY_RE.search(text)
