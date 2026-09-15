@@ -32,7 +32,6 @@ OVER = {
     "holophyte/loop.py": 1127,
     "holophyte/pr.py": 1033,
     "tests/test_factory_config.py": 1693,
-    "tests/test_factory_loop.py": 2278,
     "tests/test_serve.py": 1655,
 }
 
@@ -62,8 +61,9 @@ PINNED = {
     "tests/test_claim.py": 1468, "tests/test_cli.py": 114,
     "tests/test_cli_approve.py": 269, "tests/test_cli_requeue.py": 214,
     "tests/test_file_sizes.py": 202, "tests/test_holophyte_package.py": 306,
-    "tests/test_pool.py": 838, "tests/test_provider.py": 578,
-    "tests/test_pullrequest.py": 1074, "tests/test_runs.py": 55,
+    "tests/test_factory_loop.py": 1127, "tests/test_merge_gate.py": 830,
+    "tests/test_pool.py": 838, "tests/test_provider.py": 578, "tests/test_runs.py": 55,
+    "tests/test_pullrequest.py": 1074, "tests/test_reconcile.py": 414,
     "tests/test_serve_actions.py": 313, "tests/test_serve_config.py": 677,
     "tests/test_serve_ledger.py": 449, "tests/test_serve_shipped.py": 181,
     "tests/sweep_fixture.py": 201, "tests/test_store.py": 249,
