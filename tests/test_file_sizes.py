@@ -29,7 +29,6 @@ CEILING = {"source": 1000, "test": 1500}
 # a listed file's size rewrites its entry in the same commit; a file
 # back under its ceiling leaves the table.
 OVER = {
-    "tests/test_factory_config.py": 1693,
     "tests/test_serve.py": 1655,
 }
 
@@ -61,13 +60,15 @@ PINNED = {
     "tests/test_claim.py": 1468, "tests/test_claim_mirror.py": 178,
     "tests/test_cli.py": 114,
     "tests/test_cli_approve.py": 269, "tests/test_cli_requeue.py": 214,
-    "tests/test_file_sizes.py": 203, "tests/test_holophyte_package.py": 322,
+    "tests/test_file_sizes.py": 204, "tests/test_holophyte_package.py": 322,
+    "tests/test_factory_config.py": 1073,
     "tests/test_factory_loop.py": 1127, "tests/test_merge_gate.py": 831,
     "tests/test_pool.py": 838, "tests/test_provider.py": 578, "tests/test_runs.py": 55,
     "tests/test_pullrequest.py": 1077, "tests/test_reconcile.py": 414,
     "tests/test_serve_actions.py": 313, "tests/test_serve_config.py": 677,
     "tests/test_serve_ledger.py": 449, "tests/test_serve_shipped.py": 181,
-    "tests/sweep_fixture.py": 201, "tests/test_store.py": 249,
+    "tests/sweep_fixture.py": 201, "tests/test_startup_checks.py": 648,
+    "tests/test_store.py": 249,
     "tests/test_store_claim.py": 261, "tests/test_store_heartbeat.py": 64,
     "tests/test_store_interventions.py": 403,
     "tests/test_store_lease.py": 80, "tests/test_store_pickable.py": 121,
