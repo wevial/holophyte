@@ -390,7 +390,13 @@ def ready_issues(project_id):
 
 
 def claim_next(project_id, team, skip=(), order="identifier"):
-    """First ready issue of `project_id`, parsed. None when there is none.
+    """First ready issue of `project_id`, parsed, and the listing it saw.
+
+    Returns `(task, listed)`: `task` is None when there is none, and `listed`
+    is every identifier the ready listing held, before `skip` removed the
+    refused -- the set `provider.LinearProvider` keeps on `last_listing` for
+    the empty pass's mirror reconcile (KO-425), which judges the listing the
+    claim saw rather than asking the board a second time.
 
     `team` is the board's team, carried alongside the project so the pair
     that names a board travels together; the claim itself queries only the
@@ -413,15 +419,15 @@ def claim_next(project_id, team, skip=(), order="identifier"):
     without a way to ask for the next one after it, one unclaimable ticket at
     the head of the queue starves every ticket behind it forever.
     """
-    ready = [i for i in list_ready_issues(project_id)
-             if i["identifier"] not in skip]
+    issues = list_ready_issues(project_id)
+    ready = [i for i in issues if i["identifier"] not in skip]
     if not ready:
-        return None
+        return None, [i["identifier"] for i in issues]
     issue = min(ready, key=_claim_key(order))
     task = parse_task(issue)
     print(f"[holo2] claimed {task['id']}: {task['title']} "
           f"(budget {task['budget_min']} min)")
-    return task
+    return task, [i["identifier"] for i in issues]
 
 
 def comment(task_id, body):

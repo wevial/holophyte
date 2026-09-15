@@ -92,7 +92,12 @@ class Provider(Protocol):
         """The first ready task whose `id` is not in `skip`; None when none.
 
         `order` is `[loop] order`: `"identifier"` or `"priority"`. A board
-        without priorities orders by identifier under either value."""
+        without priorities orders by identifier under either value.
+
+        The call also records the ready listing it chose from -- every
+        identifier in it, `skip` included -- on `self.last_listing`, so the
+        pass that finds nothing reconciles the mirror against the listing
+        the claim saw without asking the board a second time (KO-425)."""
         ...
 
     def ready_issues(self) -> list[dict]:
@@ -157,6 +162,9 @@ class LinearProvider:
         self.project_id = project_id
         self._team = team
         self._module = None
+        # The identifiers the last `claim_next()` saw in the ready listing,
+        # for the empty pass's mirror reconcile (KO-425); None until asked.
+        self.last_listing = None
 
     def _linear(self):
         if self._module is None:
@@ -169,8 +177,9 @@ class LinearProvider:
         return self._team
 
     def claim_next(self, skip=(), order="identifier"):
-        return self._linear().claim_next(self.project_id, self._team,
-                                         skip=skip, order=order)
+        task, self.last_listing = self._linear().claim_next(
+            self.project_id, self._team, skip=skip, order=order)
+        return task
 
     def ready_issues(self):
         return self._linear().ready_issues(self.project_id)
@@ -203,6 +212,7 @@ class FileProvider:
     def __init__(self, root):
         self.root = Path(root)
         self.team = self.root.name
+        self.last_listing = None
 
     def _path(self, identifier, suffix=".md"):
         return self.root / f"{identifier}{suffix}"
@@ -222,8 +232,12 @@ class FileProvider:
     def claim_next(self, skip=(), order="identifier"):
         # A ticket file has no priority field, so `order = "priority"` is
         # identifier order here: the keyword is accepted, not acted on.
-        for identifier in self._identifiers():
-            if identifier in skip or self._state(identifier) != DEFAULT_STATE:
+        # `last_listing` is the ready column as this ask saw it, `skip`
+        # included: the empty pass reconciles the mirror against it (KO-425).
+        self.last_listing = [i for i in self._identifiers()
+                             if self._state(i) == DEFAULT_STATE]
+        for identifier in self.last_listing:
+            if identifier in skip:
                 continue
             return self.fetch_task(identifier)
         return None

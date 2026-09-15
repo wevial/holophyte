@@ -230,6 +230,7 @@ def scheduler(target, provider, knobs):
     and the next exit recounts. Exits 0 with the queue empty and the pool
     drained, nonzero when any worker failed or stopped for a human.
     """
+    from holophyte.claim import _park_unlisted
     from holophyte.loop import _mirror_queue, _startup_sweep
     from holophyte.operator import _reexec, self_hosted
 
@@ -286,6 +287,13 @@ def scheduler(target, provider, knobs):
                     _reexec(target, conn, project)
                     return  # only a test's EXEC returns
                 store.record_loop_return(conn, project)
+                if listing is not None:
+                    # The empty pass reconciles the mirror the way the
+                    # claim's does (KO-425): `listing` is this tick's own,
+                    # so a `ready` row the board no longer lists is parked
+                    # for the operator rather than owed again next sweep.
+                    _park_unlisted(conn, project,
+                                   [task["id"] for task in listing])
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if state.failed else None
             timeout = None if len(pool) >= knobs.workers else knobs.tick_sec

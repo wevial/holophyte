@@ -187,7 +187,8 @@ DEFINED = {
     # KO-389: the claim and the worktree cut, out of `holophyte.loop`.
     _module("claim"): [
         "_Held", "_admit_ticket", "_claim_next", "_claim_run",
-        "_cut_worktree", "_lease_on_board", "_refresh_main", "_refuse_claim",
+        "_cut_worktree", "_lease_on_board", "_park_unlisted", "_refresh_main",
+        "_refuse_claim",
         "_resolve_merge_conflict", "_setup_worktree", "_skip_held", "conflict_brief",
         "merge_conflicts", "reuse_leftover", "run_worktree_setup", "skip_line",
         "timeout_report",

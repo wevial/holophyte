@@ -912,8 +912,12 @@ class ReconcileTests(LoopFixture):
 
         printed = self.main_output(provider=provider)
 
-        self.assertEqual(self.statuses(), {"KO-1": "merged", "KO-2": "abandoned",
-                                           "KO-3": "ready"})
+        self.assertEqual(self.statuses(),
+                         {"KO-1": "merged", "KO-2": "abandoned",
+                          # KO-3's row then met the empty pass's own
+                          # reconcile (KO-425): ready with no run and the
+                          # board's listing did not name it, so it parked.
+                          "KO-3": "blocked_on_operator"})
         self.assertEqual(self.reconcile_rows(),
                          [(runs["KO-1"], "supervisor", "linear_completed"),
                           (runs["KO-2"], "supervisor", "linear_cancelled")])
@@ -921,7 +925,9 @@ class ReconcileTests(LoopFixture):
                       " (Linear completed)", printed)
         self.assertIn("[holo2] reconciled KO-2: needs_spec -> abandoned"
                       " (Linear canceled)", printed)
-        self.assertNotIn("KO-3", printed)
+        self.assertNotIn("reconciled KO-3", printed)
+        self.assertIn("[holo2] 1 mirror rows left the board's ready column;"
+                      " parked for the operator: KO-3", printed)
         # One call for the whole open set, KO-3 included.
         self.assertEqual(sorted(provider.asked), ["KO-1", "KO-2", "KO-3"])
         self.assertEqual(provider.states, [])  # nothing is written to Linear
@@ -973,8 +979,11 @@ class ReconcileTests(LoopFixture):
 
         printed = self.main_output(provider=provider)
 
-        self.assertEqual(self.statuses(), {"KO-1": "in_flight", "KO-2": "abandoned",
-                                           "KO-3": "ready"})
+        self.assertEqual(self.statuses(),
+                         {"KO-1": "in_flight", "KO-2": "abandoned",
+                          # KO-3's ready row is parked by the empty pass's
+                          # own reconcile (KO-425), not this one's.
+                          "KO-3": "blocked_on_operator"})
         self.assertEqual(
             self.read("SELECT phase, endedAt FROM runs WHERE id = %d"
                       % provider.run_id), [("claimed", None)])
@@ -1021,11 +1030,13 @@ class ReconcileTests(LoopFixture):
         self.assertIn("network is unreachable", skipped[0])
         self.assertNotIn("reconciled", printed)
         self.assertEqual(self.reconcile_rows(), [])
-        # The seeded mirror is untouched and the loop went on to claim,
-        # implement and merge the queued ticket as before.
+        # The seeded mirror was untouched by the *startup* reconcile, and
+        # the loop went on to claim, implement and merge the queued ticket
+        # as before. The empty pass then parked the two seeded `ready`
+        # rows the board's listing did not name (KO-425).
         self.assertEqual(self.statuses(),
-                         {"KO-1": "ready", "KO-2": "needs_spec", "KO-3": "ready",
-                          "KO-131": "merged"})
+                         {"KO-1": "blocked_on_operator", "KO-2": "needs_spec",
+                          "KO-3": "blocked_on_operator", "KO-131": "merged"})
         self.assertIn("the scripted work", self.subjects())
 
 

@@ -493,16 +493,72 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
                        " their work")
 
 
+def _park_unlisted(conn, project, listed):
+    """Walk each `ready` mirror row the board's ready listing no longer
+    names to `blocked_on_operator`; one printed line names them (KO-425).
+
+    The mirror is a cache of the board's ready column and nothing used to
+    invalidate it on this edge: a ticket the operator pulled to Backlog, or
+    one a new relation blocked, kept a `ready` row with no run behind it,
+    which `ready_tickets()` then counted as owed a loop on every sweep --
+    the relaunched pass found nothing, exited, and the next sweep did it
+    again. `listed` is the identifiers the ready listing held as the claim
+    saw them (`provider.claim_next()`'s `last_listing`, or the scheduler's
+    `_mirror_queue()` listing), so the reconcile spends no second ask on
+    it; a caller that saw no listing passes None and nothing is parked on
+    a listing never seen.
+
+    Rows the listing still names are left alone, whatever kept them off
+    this pass's claim -- the board says ready and the mirror may keep
+    saying it. Each row is re-read under its `transaction()` before the
+    walk, so a sibling that claimed or parked it between the listing and
+    this read is left as it left it; the walk and the `note` it records on
+    the ticket's last run -- when it has one -- land together.
+    """
+    if listed is None:
+        return
+    listed = set(listed)
+    parked = []
+    for ticket_id, _ in store.read.ready_tickets(conn, project):
+        ticket = store.read.ticket_by_id(conn, ticket_id)
+        if ticket.linearIdentifier in listed:
+            continue
+        with store.transaction(conn):
+            # The read above is a snapshot: the lease another process took
+            # or a sibling's park of this row lands in between, and the
+            # decision is re-reached under the write lock.
+            ticket = store.read.ticket_by_id(conn, ticket_id)
+            if ticket.status != "ready" or ticket.activeRunId is not None:
+                continue
+            store.walk_ticket(conn, ticket_id, "blocked_on_operator")
+            if ticket.lastRunId is not None:
+                store.record_ledger(
+                    conn, ticket.lastRunId, "note",
+                    f"{ticket.linearIdentifier} left the board's ready"
+                    " column without being claimed; the mirror is parked"
+                    " for the operator")
+        parked.append(ticket.linearIdentifier)
+    if parked:
+        print(f"[holo2] {len(parked)} mirror rows left the board's ready"
+              f" column; parked for the operator: {', '.join(parked)}")
+
+
 def _claim_next(target, conn, project, provider, order, skip, seen):
     """Walk the board's queue to the first ticket this process may run and
     lease it. Returns `(task, ticket_id, run_id)`: `task` None when the
     queue is exhausted, `run_id` None when the claim said stop for a human
     (`_claim_run()`). Every ticket refused on the way -- unadmitted, or
     leased by another run between the admission read and the claim -- is
-    added to `skip`, so the caller's next ask is the one after it."""
+    added to `skip`, so the caller's next ask is the one after it. The ask
+    that finds nothing reconciles the mirror first (`_park_unlisted()`):
+    a `ready` row whose ticket left the board's ready column unclaimed is
+    walked to `blocked_on_operator`, or the supervisor counts it owed a
+    loop on every sweep (KO-425)."""
     while True:
         task = provider.claim_next(skip=skip, order=order)
         if not task:
+            _park_unlisted(conn, project,
+                           getattr(provider, "last_listing", None))
             return None, None, None
         ticket_id = _admit_ticket(target, conn, project, provider, task, seen)
         if ticket_id is None:
