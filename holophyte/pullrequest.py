@@ -71,6 +71,28 @@ PR_TEXT_DIFF_CAP = 60_000
 # The wall clock a written-PR turn gets, in minutes, unless less of the
 # run's box is left: a description, not an implementation.
 PR_TEXT_BUDGET_MIN = 5
+# Where a repository keeps its pull request template, in the order the
+# first present wins (KO-430). GitHub fills a web-UI PR's body from the
+# file; the factory opens through the API, so the written turn has to be
+# handed the file itself.
+PR_TEMPLATE_FILES = (".github/pull_request_template.md",
+                     ".github/PULL_REQUEST_TEMPLATE.md",
+                     "PULL_REQUEST_TEMPLATE.md")
+
+
+def _pr_template(wt):
+    """The task worktree's pull request template, capped like a
+    conventions file with the same note when cut; empty when the
+    repository has none."""
+    for name in PR_TEMPLATE_FILES:
+        path = wt / name
+        if path.is_file():
+            text = path.read_text(errors="replace").strip()
+            if len(text) > babysitter.CONVENTIONS_CAP:
+                text = (text[:babysitter.CONVENTIONS_CAP]
+                        + f"\n\n[{name} truncated here]")
+            return text
+    return ""
 
 
 def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
@@ -82,7 +104,9 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
 
     The turn is given the diff against `main` (capped at `PR_TEXT_DIFF_CAP`,
     with a note when cut), the ticket, the repository's `AGENTS.md` and
-    `CLAUDE.md` when the worktree root has them, and the target's `pr_style`
+    `CLAUDE.md` when the worktree root has them, the repository's pull
+    request template when it has one (`_pr_template()`), with the
+    instruction to fill its sections, and the target's `pr_style`
     instructions; it answers with a line `TITLE: ...` and the body after it.
     The body carries `Linear: KO-n` and the issue URL as its last line, and
     no FINDINGS entry: the description is the repository's, the entry is the
@@ -106,6 +130,10 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         " a link to the ticket -- the loop appends one. Do not edit, commit"
         " or run anything: answer with the text only.",
     ]
+    template = _pr_template(wt)
+    if template:
+        parts.append("Pull request template, fill its sections:\n\n"
+                     + template)
     style = merge_config(target).pr_style.strip()
     if style:
         parts.append(f"Style instructions from the target's configuration:"

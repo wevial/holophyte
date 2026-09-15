@@ -18,6 +18,7 @@ import sqlite3
 import sys
 import unittest
 from pathlib import Path
+from time import monotonic
 from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
@@ -31,6 +32,7 @@ sys.path.insert(0, str(HERE))
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     Commit,
+    FakeAgent,
     Idle,
     Reply,
 )
@@ -44,10 +46,12 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
+import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
 
 
 class MergeModePullRequestTests(MergeModeFixture):
@@ -344,6 +348,45 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(
             self.read("SELECT phase, prUrl FROM runs"),
             [("awaiting_merge_approval", self.URL)])
+
+    PR_TEMPLATE = ("## Summary\n\n<!-- what the change does. -->\n\n"
+                   "## Why\n\n<!-- why it is needed. -->\n")
+
+    def test_the_written_turn_fills_the_repositorys_pr_template(self):
+        """KO-430: a worktree carrying `.github/pull_request_template.md`
+        gives the written turn the file under a "fill its sections"
+        heading, ahead of the style line; a worktree without one gets
+        today's prompt byte for byte, witnessed against the prompt the
+        same candidate's run recorded."""
+        provider = self.written_target()
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            self.WRITTEN, provider=provider)
+        # The recorded prompt for a worktree with no template file.
+        prompt = fake.turns[2].goal
+        self.assertNotIn("pull request template", prompt.lower())
+
+        # The same candidate's parked worktree now carrying the file: the
+        # rebuilt prompt is the recorded one plus exactly the template's
+        # part.
+        wt = self.worktrees / "ko-131-add-a-thing"
+        (wt / ".github").mkdir()
+        (wt / ".github" / "pull_request_template.md").write_text(
+            self.PR_TEMPLATE)
+        turn = FakeAgent(Idle("TITLE: [Contacts] Put Contact Name first\n\n"
+                              "The two forms now ask.\n"))
+        with patch.object(holophyte.loop, "agent", turn):
+            holophyte.pullrequest._written_pr_text(
+                self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                self.BODY.strip(), 60, wt, monotonic(), 5,
+                "https://linear.app/example/issue/KO-131/add-a-thing")
+        filled = turn.turns[0].goal
+        self.assertIn("## Summary", filled)  # the template's first heading
+        part = ("Pull request template, fill its sections:\n\n"
+                + self.PR_TEMPLATE.strip() + "\n\n")
+        self.assertIn(part, filled)
+        self.assertLess(filled.index(part),
+                        filled.index("Style instructions"))
+        self.assertEqual(filled.replace(part, ""), prompt)
 
     def test_a_squash_only_repository_merges_with_its_configured_method(self):
         """`[merge] pr_merge_method = "squash"`: the one `PUT
