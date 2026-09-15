@@ -24,7 +24,7 @@ from time import time
 import store
 import store.read
 import store.tickets
-from holophyte import pr
+from holophyte import pr_status
 from holophyte.board import ledger, mirror_push
 from holophyte.config_tables import merge_config
 from holophyte.findings import refresh_findings
@@ -162,7 +162,7 @@ def _reconcile_pull_requests(target, conn, project, provider):
     later pass -- each serial claim, each scheduler tick -- over the
     project's `blocked_on_operator` tickets whose newest run holds a
     `prUrl` and is still parked in
-    `awaiting_merge_approval`. One `pr.pull_status()` read per ticket. A
+    `awaiting_merge_approval`. One `pr_status.pull_status()` read per ticket. A
     merged pull request is that approval: `_land_github_merge()` ends the
     run merged with the merge commit's sha and walks the ticket to
     `merged`, Done on the board. One closed without merging leaves the run
@@ -191,11 +191,11 @@ def _reconcile_pull_requests(target, conn, project, provider):
     for ticket in store.read.blocked_tickets(conn, project):
         if not ticket.prUrl or ticket.runId is None:
             continue
-        pull = pr.parse_pr_url(ticket.prUrl)
+        pull = pr_status.parse_pr_url(ticket.prUrl)
         if pull is None or _parked_phase(conn, ticket.runId) is None:
             continue
         try:
-            status = pr.pull_status(target, pull)
+            status = pr_status.pull_status(target, pull)
         except Exception as e:  # noqa: BLE001 - any transport failure
             print(f"[holo2] {ticket.linearIdentifier}: {pull.url} could not"
                   f" be read ({e}); the run stays parked")
@@ -459,7 +459,7 @@ def _pr_seen(target, pull):
     record after the pass's own writes; None when GitHub could not be
     asked, which the park records as nothing seen."""
     try:
-        status = pr.pull_status(target, pull)
+        status = pr_status.pull_status(target, pull)
     except Exception as e:  # noqa: BLE001 - any transport failure
         print(f"[holo2] {pull.url} could not be read after the pass ({e});"
               " the park records no activity mark")

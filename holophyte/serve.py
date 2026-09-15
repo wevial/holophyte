@@ -109,7 +109,7 @@ from holophyte.config_tables import (
     split_address,
     sweep_config,
 )
-from holophyte.pr import PR_URL_RE
+from holophyte.pr_status import PR_URL_RE
 from holophyte.report import host_label
 from holophyte.serve_actions import (
     ACTIONS,

@@ -32,7 +32,7 @@ from loop_fixture import (  # noqa: E402
 
 import holophyte.loop  # noqa: E402
 import holophyte.operator  # noqa: E402
-from holophyte import babysitter, pr  # noqa: E402
+from holophyte import babysitter, pr, pr_status  # noqa: E402
 from holophyte.pr import PullRequest, Thread  # noqa: E402
 
 PULL = PullRequest(host="github.com", owner="o", name="r", number=3,
@@ -50,7 +50,7 @@ def run(name, status="completed", conclusion="success"):
 
 
 class FoldChecksTests(unittest.TestCase):
-    """`pr.fold_checks()`: the rollup beside the head's check runs and the
+    """`pr_status.fold_checks()`: the rollup beside the head's check runs and the
     branch's required contexts. Regression: REL-120 was parked "ready to
     merge" 19 seconds after its PR opened, on a rollup that said success
     while vitest, the build and three review bots were still queued."""
@@ -58,41 +58,41 @@ class FoldChecksTests(unittest.TestCase):
     def test_a_run_still_in_progress_is_pending_whatever_the_rollup_says(self):
         runs = [run("lint"), run("vitest", status="in_progress",
                                  conclusion=None)]
-        self.assertEqual(pr.fold_checks("SUCCESS", runs, []), "pending")
+        self.assertEqual(pr_status.fold_checks("SUCCESS", runs, []), "pending")
 
     def test_every_run_completed_without_failure_is_green(self):
         runs = [run("lint"), run("vitest"), run("docs", conclusion="skipped")]
-        self.assertEqual(pr.fold_checks("SUCCESS", runs, []), "success")
+        self.assertEqual(pr_status.fold_checks("SUCCESS", runs, []), "success")
 
     def test_a_completed_run_that_failed_is_red(self):
         runs = [run("lint"), run("vitest", conclusion="failure")]
-        self.assertEqual(pr.fold_checks("SUCCESS", runs, []), "failure")
+        self.assertEqual(pr_status.fold_checks("SUCCESS", runs, []), "failure")
 
     def test_a_required_context_with_no_run_yet_is_pending(self):
         runs = [run("lint")]
-        self.assertEqual(pr.fold_checks("SUCCESS", runs, ["vitest"]),
+        self.assertEqual(pr_status.fold_checks("SUCCESS", runs, ["vitest"]),
                          "pending")
-        self.assertEqual(pr.fold_checks("SUCCESS", runs + [run("vitest")],
+        self.assertEqual(pr_status.fold_checks("SUCCESS", runs + [run("vitest")],
                                         ["vitest"]), "success")
 
     def test_no_rules_and_no_runs_is_green_as_the_rollup_alone_said(self):
-        self.assertEqual(pr.fold_checks(None, [], []), "success")
+        self.assertEqual(pr_status.fold_checks(None, [], []), "success")
 
     def test_a_read_that_did_not_come_back_is_pending_never_green(self):
-        self.assertEqual(pr.fold_checks("SUCCESS", None, []), "pending")
-        self.assertEqual(pr.fold_checks("SUCCESS", [run("lint")], None),
+        self.assertEqual(pr_status.fold_checks("SUCCESS", None, []), "pending")
+        self.assertEqual(pr_status.fold_checks("SUCCESS", [run("lint")], None),
                          "pending")
         # Red still wins: the rollup is the cheapest red signal.
-        self.assertEqual(pr.fold_checks("FAILURE", None, None), "failure")
+        self.assertEqual(pr_status.fold_checks("FAILURE", None, None), "failure")
 
     def test_check_data_the_babysitter_cannot_read_is_pending_never_green(self):
         # Review finding: a `check_runs` that is not a list, or an entry
         # that is not a run, was skipped and the rest read as green.
-        self.assertEqual(pr.fold_checks("SUCCESS", "unreadable", []),
+        self.assertEqual(pr_status.fold_checks("SUCCESS", "unreadable", []),
                          "pending")
-        self.assertEqual(pr.fold_checks("SUCCESS", [run("lint"), "garbage"],
+        self.assertEqual(pr_status.fold_checks("SUCCESS", [run("lint"), "garbage"],
                                         []), "pending")
-        self.assertEqual(pr.fold_checks("SUCCESS", [run("lint"), None], []),
+        self.assertEqual(pr_status.fold_checks("SUCCESS", [run("lint"), None], []),
                          "pending")
 
 
@@ -217,7 +217,7 @@ class WrittenPrTextTests(unittest.TestCase):
 
 
 class PullStatusTests(unittest.TestCase):
-    """`pr.pull_status()` reads the facts `/attention` shows on a parked
+    """`pr_status.pull_status()` reads the facts `/attention` shows on a parked
     pull request (KO-368) from the same answer the reconcile already
     makes: the head's `statusCheckRollup` and `reviewDecision`."""
 
@@ -226,9 +226,9 @@ class PullStatusTests(unittest.TestCase):
             "reviewThreads": {"totalCount": 2}}
 
     def read(self, node):
-        with patch.object(pr, "graphql",
+        with patch.object(pr_status, "graphql",
                           return_value={"repository": {"pullRequest": node}}):
-            return pr.pull_status(None, PULL)
+            return pr_status.pull_status(None, PULL)
 
     def test_checks_and_review_are_read_from_the_head_rollup_and_decision(
             self):
@@ -273,7 +273,7 @@ class AuthorKindTests(unittest.TestCase):
              "body": "a person's word"},
             {"author": None, "body": "a deleted account's word"}]}
 
-        comments = pr._comment_nodes(page)
+        comments = pr_status._comment_nodes(page)
 
         self.assertEqual([c.author_kind for c in comments],
                          ["bot", "user", "unknown"])
@@ -282,7 +282,7 @@ class AuthorKindTests(unittest.TestCase):
 
 
 class MergeableReadTests(unittest.TestCase):
-    """`pr.pr_state()` carries GitHub's `mergeable` answer through to the
+    """`pr_status.pr_state()` carries GitHub's `mergeable` answer through to the
     babysit pass; a read whose page predates the field, and the `null`
     GitHub answers while it computes mergeability lazily, both read
     UNKNOWN -- never a conflict and never a clearance."""
@@ -294,10 +294,10 @@ class MergeableReadTests(unittest.TestCase):
         if mergeable != "absent":
             node["mergeable"] = mergeable
         with patch.object(
-                pr, "graphql",
+                pr_status, "graphql",
                 return_value={"repository": {"pullRequest": node}}), \
-                patch.object(pr, "rest", return_value=[]):
-            return pr.pr_state(None, PULL)
+                patch.object(pr_status, "rest", return_value=[]):
+            return pr_status.pr_state(None, PULL)
 
     def test_the_mergeable_answer_is_carried(self):
         self.assertEqual(self.read("CONFLICTING").mergeable, "CONFLICTING")
