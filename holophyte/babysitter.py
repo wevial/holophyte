@@ -305,13 +305,8 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
     deliver `origin/main` is the route's failure, not the ticket's.
     """
     from holophyte.claim import merge_conflicts
-    from holophyte.loop import (
-        _is_ancestor,
-        _merge_ref,
-        _timed,
-        merge_conflict_goal,
-        sh,
-    )
+    from holophyte.loop import _timed, sh
+    from holophyte.merge_gate import _is_ancestor, _merge_ref, merge_conflict_goal
     from holophyte.pullrequest import _park_on_pr
     with heartbeat_while(conn, run_id, beat_s):
         fetched = subprocess.run(["git", "fetch", pr.REMOTE], cwd=wt,
@@ -412,7 +407,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     UNKNOWN is not a conflict: GitHub computes `mergeable` lazily and the
     next pass sees the answer.
     """
-    from holophyte.loop import _merge_gate
+    from holophyte.merge_gate import _merge_gate
     from holophyte.pullrequest import _merge_pr, _park_on_pr
     merge = merge_config(target)
     pull = pr.parse_pr_url(url)

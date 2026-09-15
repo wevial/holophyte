@@ -72,6 +72,7 @@ import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.merge_gate  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
@@ -1423,7 +1424,7 @@ class MergeApprovalTests(LoopFixture):
         self.loop(Commit("the scripted work"), APPROVE)
         holophyte.operator.approve(self.tgt, "KO-131", "ok", out=io.StringIO())
         seen = []
-        real = holophyte.loop.set_phase
+        real = holophyte.merge_gate.set_phase
 
         def watching(conn, run_id, phase, note=None):
             (branch,) = conn.execute(
@@ -1431,7 +1432,7 @@ class MergeApprovalTests(LoopFixture):
             seen.append((run_id, phase, branch))
             return real(conn, run_id, phase, note)
 
-        with patch.object(holophyte.loop, "set_phase", watching):
+        with patch.object(holophyte.merge_gate, "set_phase", watching):
             self.loop()
 
         self.assertEqual(seen[0], (2, "merge_gate", BRANCH))
@@ -3999,7 +4000,7 @@ class GateConflictImplementerTests(LoopFixture):
         fake = FakeAgent(Commit("merge main into the branch",
                                 path="README.md", body="merged\n"))
         with patch.object(holophyte.loop, "agent", fake):
-            ok, merged = holophyte.loop._merge_gate(
+            ok, merged = holophyte.merge_gate._merge_gate(
                 self.tgt, conn, run_id, provider, "KO-131", "iss-131",
                 branch, wt, 60, sha,
                 f"git rev-parse HEAD > '{seen}'", [], "add a thing", 5)
@@ -4048,7 +4049,7 @@ class GateConflictImplementerTests(LoopFixture):
         with patch.object(holophyte.loop, "agent",
                           FakeAgent(StageThenReEdit())):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.loop._sync_main_into_branch(
+                holophyte.merge_gate._sync_main_into_branch(
                     self.tgt, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
@@ -4088,7 +4089,7 @@ class GateConflictImplementerTests(LoopFixture):
             body="merged\n"))
         with patch.object(holophyte.loop, "agent", fake):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.loop._sync_main_into_branch(
+                holophyte.merge_gate._sync_main_into_branch(
                     self.tgt, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
@@ -4131,7 +4132,7 @@ class GateConflictImplementerTests(LoopFixture):
         with patch.object(holophyte.loop, "agent",
                           FakeAgent(AbortThenResetToMain())):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.loop._sync_main_into_branch(
+                holophyte.merge_gate._sync_main_into_branch(
                     self.tgt, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
@@ -4168,7 +4169,7 @@ class GateConflictImplementerTests(LoopFixture):
             body="merged\n"))
         with patch.object(holophyte.loop, "agent", fake):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.loop._sync_main_into_branch(
+                holophyte.merge_gate._sync_main_into_branch(
                     self.tgt, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
@@ -4213,7 +4214,7 @@ class GateConflictImplementerTests(LoopFixture):
         store.set_branch(conn, run_id, branch)
         fake = FakeAgent()  # no steps: any turn asked for is a ScriptError
         with patch.object(holophyte.loop, "agent", fake):
-            merged = holophyte.loop._sync_main_into_branch(
+            merged = holophyte.merge_gate._sync_main_into_branch(
                 self.tgt, conn, run_id, StubProvider(a_task()), "KO-131",
                 branch, wt, sha, 60, "add a thing", 5)
 

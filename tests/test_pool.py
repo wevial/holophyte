@@ -44,6 +44,7 @@ import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.merge_gate  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
@@ -89,7 +90,7 @@ class GateConflictRequeueTests(LoopFixture):
             # same one it always was.
             with patch.object(holophyte.loop, "agent", FakeAgent(Idle())):
                 with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                    holophyte.loop._sync_main_into_branch(
+                    holophyte.merge_gate._sync_main_into_branch(
                         self.tgt, conn, run_id, provider, "KO-131", branch,
                         wt, sha, 60, "add a thing", 5)
             holophyte.board.close_out_failure(
@@ -561,7 +562,7 @@ class WorkerTests(LoopFixture):
             return holophyte.findings.commit_findings(target, message)
 
         with patch.object(holophyte.pool, "commit_findings", commit_under_lock), \
-                patch.object(holophyte.loop, "commit_findings", commit_under_lock):
+            patch.object(holophyte.merge_gate, "commit_findings", commit_under_lock):
             rc, _ = self.worker(Commit("the scripted work"), APPROVE,
                                 provider=provider)
 
