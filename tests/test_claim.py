@@ -1466,7 +1466,3 @@ class BoardLeaseLabelTests(LoopFixture):
         self.assertEqual(provider.label_calls,
                          [("unlabel", "iss-131", "holo:writer-1")])
         self.assertEqual(provider.labels["iss-131"], ["other"])
-
-
-if __name__ == "__main__":
-    unittest.main()

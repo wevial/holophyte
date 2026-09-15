@@ -834,7 +834,3 @@ class ImplementerProbeTests(LoopFixture):
         self.assertIn("implementer probe failed (no answer within 1s)", out)
         self.assertIn(str(path), out)
         self.assertFalse(self.db.exists())
-
-
-if __name__ == "__main__":
-    unittest.main()
