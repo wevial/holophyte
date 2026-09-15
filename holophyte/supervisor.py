@@ -17,10 +17,9 @@ store a newer build has stamped -- releases its lock and re-executes itself
 through the `EXEC` seam rather than exiting. Beyond the standard library it
 imports `store` and `store.read` for the rows, `open_store` from
 `holophyte.runs`, `reexec_self` from `holophyte.reexec`, `close_out_failure`
-from `holophyte.board`, `sweep_config` from `holophyte.config`,
-`host_label` and `format_age` from `holophyte.report`, the report lines
-from `holophyte.sweep_report` and the lock from
-`holophyte.supervisor_lock`; nothing from `factory`.
+from `holophyte.board`, `sweep_config` from `holophyte.config`, and
+`host_label`, `format_age`, `REPORT_GAP` from `holophyte.report`; nothing
+from `factory`.
 
 Sixth slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.

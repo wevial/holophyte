@@ -186,8 +186,6 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
     the last line: it asks Docker rather than the store, and a reviewer
     leaked by a loop that died is the one thing here the store cannot see.
     """
-    # In the function, not at the top: `holophyte.supervisor` imports this
-    # module's renderers for the lines its sweep and pass print.
     from holophyte.supervisor import sweep
     out = out or sys.stdout
     if conn is None and not target.store_path.exists():
