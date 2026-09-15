@@ -26,7 +26,7 @@ import store.read
 import store.tickets
 from holophyte import pr
 from holophyte.board import ledger, mirror_push
-from holophyte.config import merge_config
+from holophyte.config_tables import merge_config
 from holophyte.findings import refresh_findings
 from holophyte.gates import sh
 from holophyte.target import worktree_path

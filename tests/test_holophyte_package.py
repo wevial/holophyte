@@ -37,9 +37,6 @@ DEFINED = {
         "state_dir",
     ],
     _module("config"): [
-        "LoopConfig",
-        "ReportConfig",
-        "SweepConfig",
         "agent_command",
         "carry_directories",
         "check_agent_commands",
@@ -49,10 +46,16 @@ DEFINED = {
         "check_worktree_setup",
         "docker_probe",
         "load_config",
-        "loop_config",
-        "report_config",
         "setup_commands",
         "setup_timeout",
+    ],
+    # KO-397: the per-table readers, out of `holophyte.config`.
+    _module("config_tables"): [
+        "LoopConfig",
+        "ReportConfig",
+        "SweepConfig",
+        "loop_config",
+        "report_config",
         "sweep_config",
     ],
     _module("gates"): [

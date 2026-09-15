@@ -143,7 +143,7 @@ class LinearProvider:
     """Linear, through the functions `linear_provider.py` already has.
 
     `project_id` and `team` are the target's `[board]` table, as
-    `holophyte.config.board_config()` resolves it: the pair is stored here
+    `holophyte.config_tables.board_config()` resolves it: the pair is stored here
     and passed to every module call, so
     the module itself holds no board and two targets on one host drive two
     projects. The module is imported at the first call that needs it rather

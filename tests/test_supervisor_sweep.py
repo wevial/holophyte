@@ -37,6 +37,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
@@ -1546,7 +1547,7 @@ class SupervisorConfigTests(SweepTestCase):
 
     def test_an_absent_table_is_the_documented_defaults(self):
 
-        self.assertEqual(holophyte.config.sweep_config(self.tgt),
+        self.assertEqual(holophyte.config_tables.sweep_config(self.tgt),
                          (5 * MINUTE, 2, 1.5, 3.0, 0.5, 60, 2 * MINUTE))
 
     def test_heartbeat_stale_min_moves_the_silence_a_trip_needs(self):
@@ -1583,7 +1584,7 @@ class SupervisorConfigTests(SweepTestCase):
     def test_unknown_keys_in_the_table_are_left_alone(self):
         self.configure("[supervisor]\nstale_heartbeat_min = 7\n")
 
-        self.assertEqual(holophyte.config.sweep_config(self.tgt).heartbeat_stale_ms,
+        self.assertEqual(holophyte.config_tables.sweep_config(self.tgt).heartbeat_stale_ms,
                          5 * MINUTE)
 
     def test_a_value_outside_its_constraint_is_refused_at_startup(self):
@@ -1640,7 +1641,7 @@ class SupervisorConfigTests(SweepTestCase):
             with self.subTest(line=line):
                 self.configure(line + "\n")
                 with self.assertRaises(SystemExit) as raised:
-                    holophyte.config.sweep_config(self.tgt)
+                    holophyte.config_tables.sweep_config(self.tgt)
                 message = str(raised.exception)
                 self.assertIn("[supervisor] must be a table", message)
                 self.assertIn(f"got {kind}", message)
@@ -1691,7 +1692,7 @@ class HeartbeatWhileTests(SweepTestCase):
     """
 
     def knobs(self, stale_ms):
-        return holophyte.config.sweep_config(self.tgt)._replace(
+        return holophyte.config_tables.sweep_config(self.tgt)._replace(
             heartbeat_stale_ms=stale_ms)
 
     def sweep_now(self, knobs):

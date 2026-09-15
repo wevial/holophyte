@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.files  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
@@ -375,7 +376,7 @@ class StatusTests(ServeTestCase):
         self.assertTrue(
             5 * SEC <= supervisor["heartbeat_age_ms"] < 5 * SEC + SLACK,
             supervisor)
-        knobs = holophyte.config.sweep_config(self.tgt)
+        knobs = holophyte.config_tables.sweep_config(self.tgt)
         self.assertEqual(body["thresholds"],
                          {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                           "strikes": knobs.stale_strikes,
@@ -2573,7 +2574,7 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual(body["recorded"], self.run)
         # And the written file is what the loop will read at its next start.
         tgt = holophyte.target.Target.locate(self.target)
-        self.assertEqual(holophyte.config.loop_config(tgt).workers, 3)
+        self.assertEqual(holophyte.config_tables.loop_config(tgt).workers, 3)
 
     def test_a_redacted_value_the_file_never_held_is_400(self):
         self.seed()
@@ -3010,7 +3011,7 @@ class ConfigPatchTests(ServeTestCase):
         self.assertEqual(self.changed_lines(before, after),
                          ["+", "+[report]", '+findings = "none"'])
         tgt = holophyte.target.Target.locate(self.target)
-        self.assertEqual(holophyte.config.report_config(tgt).findings, "none")
+        self.assertEqual(holophyte.config_tables.report_config(tgt).findings, "none")
 
     def test_get_values_reads_a_triple_quoted_string_and_a_quoted_table(self):
         self.seed()

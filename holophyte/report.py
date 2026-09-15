@@ -16,7 +16,7 @@ which imports back the names its remaining call sites use.
 import statistics
 
 import store.read
-from holophyte.config import report_config
+from holophyte.config_tables import report_config
 
 # --- estimate vs actual ------------------------------------------------------
 # The rows already carry every number a burndown needs: when a run started and

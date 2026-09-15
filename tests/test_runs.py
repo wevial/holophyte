@@ -12,14 +12,15 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 
 
 def a_config(**overrides):
     """A `LoopConfig` over the defaults, with the review keys overridden."""
-    values = dict(holophyte.config.LOOP_KEYS)
+    values = dict(holophyte.config_tables.LOOP_KEYS)
     values.update(overrides)
-    return holophyte.config.LoopConfig(**values)
+    return holophyte.config_tables.LoopConfig(**values)
 
 
 class ReviewRoundCapTests(unittest.TestCase):
@@ -45,7 +46,7 @@ class ReviewRoundCapTests(unittest.TestCase):
     def test_the_default_config_keeps_the_two_round_base(self):
         """`MAX_ROUNDS` is the base's default: an unconfigured target still
         pays two rounds for a small change."""
-        self.assertEqual(holophyte.config.LOOP_KEYS["review_rounds"],
+        self.assertEqual(holophyte.config_tables.LOOP_KEYS["review_rounds"],
                          holophyte.runs.MAX_ROUNDS)
         self.assertEqual(holophyte.runs.review_round_cap(1, a_config()), 2)
 

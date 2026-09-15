@@ -36,7 +36,7 @@ import urllib.request
 from dataclasses import dataclass
 
 import store.read
-from holophyte import config
+from holophyte import config_tables
 from holophyte.findings import run_entry
 from holophyte.gates import InfraFailure
 
@@ -922,7 +922,7 @@ def merge_pull_request(target, pull, sha):
     GitHub declining -- a protection rule, a conflict, a check that turned
     red, the head moved -- is `MergeRefused` with its reason; the route not
     answering is `InfraFailure` as everywhere else."""
-    method = config.merge_config(target).pr_merge_method
+    method = config_tables.merge_config(target).pr_merge_method
     try:
         answer = rest(target, pull, "PUT",
                       f"repos/{pull.repo}/pulls/{pull.number}/merge",

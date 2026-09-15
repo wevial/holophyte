@@ -19,6 +19,7 @@ import holophyte.agents
 import holophyte.claim
 import holophyte.cli
 import holophyte.config
+import holophyte.config_tables
 import holophyte.gates
 import holophyte.loop
 import holophyte.operator
@@ -310,17 +311,20 @@ class LoopConfigTests(ConfigTestCase):
     def test_an_absent_table_stops_on_failure(self):
         self.locate()
 
-        self.assertIs(holophyte.config.loop_config(self.tgt).stop_on_failure, True)
+        self.assertIs(
+            holophyte.config_tables.loop_config(self.tgt).stop_on_failure, True)
 
     def test_an_absent_order_is_identifier_order(self):
         self.locate()
 
-        self.assertEqual(holophyte.config.loop_config(self.tgt).order, "identifier")
+        self.assertEqual(
+            holophyte.config_tables.loop_config(self.tgt).order, "identifier")
 
     def test_priority_is_read_as_priority_order(self):
         self.locate('[loop]\norder = "priority"\n')
 
-        self.assertEqual(holophyte.config.loop_config(self.tgt).order, "priority")
+        self.assertEqual(
+            holophyte.config_tables.loop_config(self.tgt).order, "priority")
 
     def test_an_unknown_order_is_a_startup_error_naming_the_key_and_values(self):
         """`"urgent"` names no sort the loop has and `1` is not a string:
@@ -345,7 +349,8 @@ class LoopConfigTests(ConfigTestCase):
     def test_false_is_read_as_go_on(self):
         self.locate('[loop]\nstop_on_failure = false\n')
 
-        self.assertIs(holophyte.config.loop_config(self.tgt).stop_on_failure, False)
+        self.assertIs(
+            holophyte.config_tables.loop_config(self.tgt).stop_on_failure, False)
 
     def test_a_non_boolean_is_a_startup_error_naming_the_key(self):
         """`"yes"` is a string, `1` an int: neither is the answer TOML's
@@ -373,7 +378,7 @@ class LoopConfigTests(ConfigTestCase):
         lines, four at most."""
         self.locate()
 
-        cfg = holophyte.config.loop_config(self.tgt)
+        cfg = holophyte.config_tables.loop_config(self.tgt)
         self.assertEqual((cfg.review_rounds, cfg.review_rounds_per_lines,
                           cfg.review_rounds_max), (2, 800, 4))
 
@@ -406,12 +411,12 @@ class LoopConfigTests(ConfigTestCase):
         # `0` is the documented switch for "never scale", not an error.
         self.locate("[loop]\nreview_rounds_per_lines = 0\n")
         self.assertEqual(
-            holophyte.config.loop_config(self.tgt).review_rounds_per_lines, 0)
+            holophyte.config_tables.loop_config(self.tgt).review_rounds_per_lines, 0)
 
     def test_workers_defaults_to_one_process(self):
         self.locate()
 
-        self.assertEqual(holophyte.config.loop_config(self.tgt).workers, 1)
+        self.assertEqual(holophyte.config_tables.loop_config(self.tgt).workers, 1)
 
     def test_workers_must_be_an_integer_of_at_least_one(self):
         """`"3"` is a string and `0` a pool that could work nothing: each
@@ -434,7 +439,7 @@ class LoopConfigTests(ConfigTestCase):
     def test_tick_sec_defaults_to_two_minutes(self):
         self.locate()
 
-        self.assertEqual(holophyte.config.loop_config(self.tgt).tick_sec, 120)
+        self.assertEqual(holophyte.config_tables.loop_config(self.tgt).tick_sec, 120)
 
     def test_tick_sec_must_be_an_integer_of_at_least_ten(self):
         """`"120"` is a string and `5` a poll the board could not bear: each
@@ -851,12 +856,12 @@ class RunCapTests(ConfigTestCase):
     def test_an_absent_key_is_the_default_ceiling(self):
         self.locate()
 
-        self.assertEqual(holophyte.config.sweep_config(self.tgt).run_cap, 3.0)
+        self.assertEqual(holophyte.config_tables.sweep_config(self.tgt).run_cap, 3.0)
 
     def test_a_cap_inside_the_range_is_read(self):
         self.locate("[supervisor]\nrun_cap = 2\n")
 
-        self.assertEqual(holophyte.config.sweep_config(self.tgt).run_cap, 2)
+        self.assertEqual(holophyte.config_tables.sweep_config(self.tgt).run_cap, 2)
 
     def test_a_cap_outside_the_range_is_a_startup_error(self):
         """1 lets a run barely turn twice; 6 is no ceiling at all. Each is
@@ -1953,12 +1958,12 @@ class ReportConfigTests(ConfigTestCase):
     def test_an_absent_table_is_no_label(self):
         self.locate()
 
-        self.assertIsNone(holophyte.config.report_config(self.tgt).host_label)
+        self.assertIsNone(holophyte.config_tables.report_config(self.tgt).host_label)
 
     def test_a_string_is_read_as_the_label(self):
         self.locate('[report]\nhost_label = "writer-1"\n')
 
-        self.assertEqual(holophyte.config.report_config(self.tgt).host_label,
+        self.assertEqual(holophyte.config_tables.report_config(self.tgt).host_label,
                          "writer-1")
 
     def test_a_non_string_or_a_mistyped_key_is_a_startup_error_naming_it(self):
@@ -1985,11 +1990,11 @@ class ReportConfigTests(ConfigTestCase):
         the record and nothing is rendered -- and `repo` for a target that
         wants the rendered file beside its code."""
         self.locate()
-        self.assertEqual(holophyte.config.report_config(self.tgt).findings,
+        self.assertEqual(holophyte.config_tables.report_config(self.tgt).findings,
                          "none")
 
         self.locate('[report]\nfindings = "repo"\n')
-        self.assertEqual(holophyte.config.report_config(self.tgt).findings,
+        self.assertEqual(holophyte.config_tables.report_config(self.tgt).findings,
                          "repo")
 
     def test_a_findings_mode_nobody_defined_is_a_startup_error_naming_it(self):
@@ -2070,7 +2075,7 @@ class MergeConfigTests(ConfigTestCase):
     def test_an_absent_table_is_auto_and_local(self):
         self.locate()
 
-        self.assertEqual(holophyte.config.merge_config(self.tgt),
+        self.assertEqual(holophyte.config_tables.merge_config(self.tgt),
                          ("auto", "local", 5, "merge", 180, "ticket", "",
                           "park", ()))
 
@@ -2080,7 +2085,7 @@ class MergeConfigTests(ConfigTestCase):
         self.locate('[merge]\nafter = ["bun --cwd=console run build",'
                     ' "sh -c true"]\n')
 
-        self.assertEqual(holophyte.config.merge_config(self.tgt).after,
+        self.assertEqual(holophyte.config_tables.merge_config(self.tgt).after,
                          ("bun --cwd=console run build", "sh -c true"))
 
     def test_pr_text_and_pr_style_are_read(self):
@@ -2089,7 +2094,7 @@ class MergeConfigTests(ConfigTestCase):
         self.locate('[merge]\nmode = "pr"\npr_text = "written"\n'
                     'pr_style = "Title starts with [Feature Name]."\n')
 
-        merge = holophyte.config.merge_config(self.tgt)
+        merge = holophyte.config_tables.merge_config(self.tgt)
         self.assertEqual(merge.pr_text, "written")
         self.assertEqual(merge.pr_style, "Title starts with [Feature Name].")
 
@@ -2099,7 +2104,7 @@ class MergeConfigTests(ConfigTestCase):
         self.locate('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
 
         self.assertEqual(
-            holophyte.config.merge_config(self.tgt).human_threads, "act")
+            holophyte.config_tables.merge_config(self.tgt).human_threads, "act")
 
     def test_pr_merge_method_is_read(self):
         """A squash-only repository names its method; absent, it is
@@ -2107,7 +2112,7 @@ class MergeConfigTests(ConfigTestCase):
         self.locate('[merge]\nmode = "pr"\npr_merge_method = "squash"\n')
 
         self.assertEqual(
-            holophyte.config.merge_config(self.tgt).pr_merge_method, "squash")
+            holophyte.config_tables.merge_config(self.tgt).pr_merge_method, "squash")
 
     def test_pr_poll_sec_is_read(self):
         """The least interval between two loop-started babysit rounds on
@@ -2115,7 +2120,7 @@ class MergeConfigTests(ConfigTestCase):
         self.locate('[merge]\nmode = "pr"\npr_poll_sec = 60\n')
 
         self.assertEqual(
-            holophyte.config.merge_config(self.tgt).pr_poll_sec, 60)
+            holophyte.config_tables.merge_config(self.tgt).pr_poll_sec, 60)
 
     def test_pr_poll_sec_must_be_an_integer_of_at_least_ten(self):
         """`"180"` is a string and `5` a poll of GitHub for a reviewer's
@@ -2138,17 +2143,17 @@ class MergeConfigTests(ConfigTestCase):
     def test_pr_rounds_is_read(self):
         self.locate('[merge]\nmode = "pr"\npr_rounds = 2\n')
 
-        self.assertEqual(holophyte.config.merge_config(self.tgt).pr_rounds, 2)
+        self.assertEqual(holophyte.config_tables.merge_config(self.tgt).pr_rounds, 2)
 
     def test_pr_is_read(self):
         self.locate('[merge]\nmode = "pr"\n')
 
-        self.assertEqual(holophyte.config.merge_config(self.tgt).mode, "pr")
+        self.assertEqual(holophyte.config_tables.merge_config(self.tgt).mode, "pr")
 
     def test_human_is_read(self):
         self.locate('[merge]\napprove = "human"\n')
 
-        self.assertEqual(holophyte.config.merge_config(self.tgt).approve,
+        self.assertEqual(holophyte.config_tables.merge_config(self.tgt).approve,
                          "human")
 
     def test_any_other_value_or_key_is_a_startup_error_naming_it(self):

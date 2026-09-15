@@ -16,6 +16,10 @@ Each module, one line:
   the `<slug>` directory, legacy adoption) and the `Target` value.
 - `holophyte/config.py` — `config.toml` and every table it can set, checked
   at startup.
+- `holophyte/config_tables.py` — the per-table readers out of
+  `holophyte/config.py` (KO-397): the `[supervisor]`, `[loop]`, `[board]`,
+  `[merge]` and `[report]` tables with `CONSOLE_KEYS` and
+  `split_address()`, the namedtuples and defaults they own.
 - `holophyte/gates.py` — the verify gate: a ticket's command in, a red or
   green fail-loud report out.
 - `holophyte/agents.py` — the agent routes and the `agent()` call, one turn
