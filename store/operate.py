@@ -10,20 +10,15 @@ with their refusals and the `_release_parked()` transaction `approve()` and
 `resume()`) and `record_intervention()` with the `INTERVENTION_*` unions
 it validates against. The `runEvents` writers, `park()` and
 `record_pr_seen()` are run lifecycle, not operator API, and stay home;
-so does `GuidanceNotAccepted`, which the move list does not name -- the
-package defines it once this module has bound `ResumeRefused`, and
-`resume()` reaches it through a deferred `from . import`. `PHASES`,
-`_append_event`, `set_phase()` and `record_ledger()` are shared with the
-run API and are imported back from the package, while
-`walk_ticket` comes straight from `store.tickets` -- the package binds it
-only after this module is imported. The supervisor sweep's liveness
-bookkeeping followed in the same slice's review: `record_strike()`'s
-consecutive-silence tally, the `record_supervisor_heartbeat()`/
-`latest_supervisor_heartbeat()` watcher rows and the `loopRestarts`
-trio, the autonomous operator's half of the record-keeping
-`record_intervention()` writes (`INTERVENTION_SOURCES` already names
-`"supervisor"`). The package re-exports every name, so
-`store.release()` keeps working.
+so does `GuidanceNotAccepted` -- the package defines it once this module
+has bound `ResumeRefused`, and `resume()` reaches it through a deferred
+`from . import`. `PHASES`, `_append_event`, `set_phase()` and
+`record_ledger()` are shared with the run API and imported back from the
+package; `walk_ticket` comes straight from `store.tickets`. The
+supervisor sweep's liveness bookkeeping followed in the same slice's
+review: `record_strike()`, `record_supervisor_heartbeat()`/
+`latest_supervisor_heartbeat()` and the `loopRestarts` trio. The package
+re-exports every name, so `store.release()` keeps working.
 """
 from __future__ import annotations
 
@@ -75,10 +70,9 @@ def release(conn, run_id, outcome, reason=None, now=None,
     that has already opened one joins instead of raising. A process failing
     *itself* has nothing to join for -- it is the only writer of its own run
     -- but a process failing somebody else's run has to re-read the state it
-    decided on and clear the lease under one lock, or the run heartbeats in
-    between and the lease is handed to a second worker while the first is
-    still writing. That is the supervisor sweep, and this is where its
-    re-check has to be able to sit.
+    decided on and clear the lease under one lock, or the lease is handed
+    to a second worker while the first is still writing. That is the
+    supervisor sweep, and this is where its re-check has to be able to sit.
 
     The run's telemetry is finalized in the same transaction: `endedAt` is
     the other end of the elapsed time `startedAt` opened, and
@@ -94,15 +88,12 @@ def release(conn, run_id, outcome, reason=None, now=None,
     run into the phase it left.
 
     Releasing a run that has already ended — `endedAt` stamped and parked in
-    one of `ENDED_PHASES` — does nothing at all. Since this call writes phase
-    as well as outcome, an unguarded second release would be destructive
-    rather than harmless: it would re-end a `merged`/`done` run as
-    `failed`/`failed`, and a repeat of a failed release would read that run's
-    own `failed` phase back as the phase it stopped in and so wipe the
-    `resumePhase` §5 resumes into. Terminal state and the resume point are
-    written once, by the release that ended the run. Both lease clears stay
-    scoped to *this* run id for the same reason, so no release can drop a
-    lease a newer run has since taken.
+    one of `ENDED_PHASES` — does nothing at all: an unguarded second release
+    would re-end a `merged`/`done` run as `failed`/`failed`, and a repeat of
+    a failed release would read `failed` back as the phase it stopped in and
+    so wipe the `resumePhase` §5 resumes into. Both lease clears stay scoped
+    to *this* run id for the same reason, so no release can drop a lease a
+    newer run has since taken.
 
     An unknown `run_id` is a caller bug and raises `ValueError`. `now` is
     epoch milliseconds for `endedAt`, defaulting to the clock.
@@ -183,10 +174,11 @@ class RequeueRefused(Exception):
     """A requeue `requeue()` will not do; nothing was written.
 
     The ticket does not exist, still has a live run, is neither `in_flight`
-    nor parked on a merge-gate conflict, or its last run did not end
-    `failed` -- each is the same answer to the operator: this is not a
-    failed ticket waiting to go back in the queue, so the message names
-    which and the command line exits on it.
+    nor `blocked_on_operator` on the one ground `requeue()` admits (a
+    merge-gate conflict), or its last run did not end `failed` -- each is
+    the same answer to the operator: this is not a failed ticket waiting
+    to go back in the queue, so the message names which and the command
+    line exits on it.
     """
 
 
@@ -253,10 +245,9 @@ def requeue(conn, ticket_id, note, now=None):
         if run is None:
             raise RequeueRefused(
                 f"{identifier} has no ended run to requeue after")
-        outcome = run[0]
-        if outcome != "failed":
+        if run[0] != "failed":
             raise RequeueRefused(
-                f"{identifier}: run {last_run_id} ended {outcome},"
+                f"{identifier}: run {last_run_id} ended {run[0]},"
                 " not failed; nothing to requeue")
         record_intervention(conn, last_run_id, "requeue", note, now=now)
         if parked_on_conflict:
@@ -299,11 +290,9 @@ def approve(conn, ticket_id, note, now=None):
     threads resolved, merges it through the API -- the approval is the
     human's "merge" whatever `[merge] approve` says.
 
-    Ended rather than left parked: a run is one attempt, and the attempt
-    that merges is the next one, so leaving this row open in
-    `awaiting_merge_approval` would keep `/attention`-style readers pointing
-    at a decision already made. `abandoned` is not `failed`: the escalation
-    count reads `outcome = 'failed'` only, so an approval is never a strike.
+    Ended rather than left parked: a run is one attempt and the merge is
+    the next one's, so an open row would keep readers pointing at a made
+    decision. `abandoned` is never a strike: the count reads `failed` only.
 
     Refuses, with `ApproveRefused` and no write, anything that is not a
     parked ticket: an unknown ticket, one with a live run, one whose status
@@ -334,14 +323,12 @@ def babysit(conn, ticket_id, note, now=None, source="human"):
     ready to merge under `[merge] approve = "human"` parks again for the
     human's "merge" rather than landing on the operator's "look again".
     The refusals are `approve()`'s, as `ApproveRefused`, plus one of its
-    own: a run parked with no pull request (`runs.prUrl` NULL -- parked
-    under `[merge] mode = "local"`) has no threads to look at again, and
-    releasing it would send the candidate down the local gate, where a
-    release is a merge; that is `approve()`'s to do, so the babysitter
+    own: a run parked with no pull request (`runs.prUrl` NULL) has no
+    threads to look at again, and releasing it would merge the candidate
+    down the local gate -- that is `approve()`'s to say, so the babysitter
     refuses it with nothing written. `source` is who sent it back:
-    `"human"` for `--babysit`, `"supervisor"` when the loop's own tick
-    saw new review activity on the pull request (KO-362), so the
-    intervention row and the ledger say which.
+    `"human"` for `--babysit`, `"supervisor"` when the loop's tick saw new
+    review activity on the pull request (KO-362).
     """
     return _release_parked(
         conn, ticket_id, "babysit", note,
@@ -613,21 +600,18 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
     nothing cannot resume into a phase left over from an earlier one.
 
     Every accepted resume writes an `interventions` row — §2 keeps those out
-    of `runEvents` precisely because they are queryable decisions, and a
-    resume is one whether or not a human typed anything. `source` says who
+    of `runEvents` because they are queryable decisions. `source` says who
     resumed (`human` or `supervisor`); the trigger is `manual` because §6's
-    triggers name why a run was *stopped* and none of them names a resume.
+    triggers name why a run was *stopped*, and none names a resume.
 
     Resuming a `failed` run clears the ending `release()` stamped --
-    `endedAt`, `outcome`, `outcomeReason`, `outcomeClass` back to its default
-    -- because the run is live again and everything that reads `endedAt`
-    reads it as "over": `set_phase()` refuses a stamped run (KO-213),
-    `heartbeat()` leaves one alone, the sweep skips it and the FINDINGS
-    window lists it. A resumed run that kept its stamp could not move, and
-    the stretch of work it does is closed out by the release that ends it,
-    which writes a fresh ending over nothing. A resumed run's
+    `endedAt`, `outcome`, `outcomeReason`, `outcomeClass` back to default --
+    because the run is live again and everything that reads `endedAt` reads
+    it as "over": `set_phase()` refuses a stamped run (KO-213), the sweep
+    skips it, the FINDINGS window lists it; the release that ends the
+    resumed stretch writes a fresh ending over nothing. A resumed run's
     `lastHeartbeat` stays where the worker left it: heartbeats are written
-    by whoever is doing the work, and stamping one here would claim liveness
+    by whoever does the work, and stamping one here would claim liveness
     this call has no evidence for. `now` is epoch milliseconds for the
     intervention's `at`, defaulting to the clock.
 

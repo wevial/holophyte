@@ -54,13 +54,10 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 class GateConflictRequeueTests(LoopFixture):
     """A candidate parked on a merge-gate conflict can be requeued once the
-    operator resolves the merge (KO-365).
-
-    The gate's merge of `main` into the branch conflicts: the run fails and
-    the ticket parks `blocked_on_operator` with the branch preserved. Before
-    this, the way back was the store: `--requeue` refused a ticket that was
-    not `in_flight` and `--repoint` a run that was not parked awaiting
-    approval. The park here is the loop's own, made by a real conflict.
+    operator resolves the merge (KO-365): the gate's merge of `main` into
+    the branch conflicts, the run fails and the ticket parks
+    `blocked_on_operator` with the branch preserved. The park here is the
+    loop's own, made by a real conflict.
     """
 
     def park_on_conflict(self, provider):
@@ -85,8 +82,7 @@ class GateConflictRequeueTests(LoopFixture):
             tickets.transition(conn, ticket, "in_flight")
             store.set_branch(conn, run_id, branch)
             # The conflict goes to the implementer first now (KO-404);
-            # this fake leaves it unresolved, so the park below is the
-            # same one it always was.
+            # this fake leaves it unresolved, so the park is as before.
             with patch.object(holophyte.loop, "agent", FakeAgent(Idle())):
                 with self.assertRaises(holophyte.gates.RunFailure) as failed:
                     holophyte.loop._sync_main_into_branch(
@@ -162,9 +158,8 @@ class GateConflictRequeueTests(LoopFixture):
 
 class PoolTests(LoopFixture):
     """`[loop] workers > 1`: the main process schedules a pool of
-    `--worker` children sized to the claimable queue (KO-343). Spawn and
-    wait go through seams, so no process is started and the test reads
-    the counts."""
+    `--worker` children sized to the claimable queue (KO-343); spawn and
+    wait go through seams, so no process is started."""
 
     def run_scheduler(self, workers, provider, exits, stop_on_failure=True,
                       tick_sec=None):
@@ -222,7 +217,7 @@ class PoolTests(LoopFixture):
         """`workers = 3`, one ticket and so one worker; a second ticket filed
         while it runs. The wait carries the tick as its timeout while a slot
         is free, and a wait that times out recounts the queue and spawns
-        the second worker, then waits again (KO-353)."""
+        the second worker (KO-353)."""
         provider = StubProvider(a_task(1))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
@@ -246,11 +241,16 @@ class PoolTests(LoopFixture):
         self.assertEqual(pool.timeouts, [45, 45, 45])
         self.assertIsNone(self.rc)
         # The tick itself printed nothing; only the spawn it made shows.
+        # queue.clear() emptied the board without a claim, so the drain's
+        # mirror reconcile (KO-425) walks KO-132's `ready` row to
+        # `blocked_on_deps`.
         self.assertEqual(self.out.splitlines(), [
             "[holo2] started worker 1 as pid 5001",
             "[holo2] started worker 2 as pid 5002",
             "[holo2] worker 1 merged its ticket",
             "[holo2] worker 2 merged its ticket",
+            "[holo2] 1 mirror rows left the board's ready column; waiting"
+            " on the board: KO-132",
             "[holo2] Linear has no ready tickets. done.",
         ])
 

@@ -7,8 +7,7 @@ a `WORKER_*` status the scheduler reads back. `_wait_any()` reaps the
 children through the `WAIT` seam, `_PoolState` is what the scheduler has
 learnt from their exits, `_claimable()` is the store's count of what a
 worker could claim, `_spawn_worker()` starts one through `SPAWN`, and
-`_PrefixedOut` folds each child's `[holo2]` tag into `[holo2 wN]` in the
-shared log.
+`_PrefixedOut` folds each child's `[holo2]` tag into `[holo2 wN]`.
 
 Moved verbatim out of `holophyte/loop.py` (KO-388); the claim, dispatch
 and queue-mirror phases the pool shares with the serial loop stay there,
@@ -34,16 +33,14 @@ from holophyte.supervisor import Sweep
 # A worker's exit status is its one word back to the scheduler. `0` is a
 # merge, as a clean process exit should be; `1` a failed run, the status the
 # serial loop exits with on one and the one an uncaught exception exits a
-# Python process with, so a worker that crashed outside `_dispatch()` reads
-# as the failure it is. The other three are the scheduler's alone.
+# Python process with. The other three are the scheduler's alone.
 WORKER_MERGED = 0
 WORKER_FAILED = 1
 WORKER_PARKED = 2   # parked awaiting merge approval: not a failure
 WORKER_IDLE = 3     # nothing left to claim
 WORKER_STOP = 4     # the claim said stop for a human (`_claim_run()`)
-# The environment variable a worker reads its slot number from, for the
-# `[holo2 wN]` prefix on its lines: the children share the scheduler's
-# stdout, and the prefix is what tells their lines apart in one log.
+# The variable a worker reads its slot number from, for the `[holo2 wN]`
+# prefix: the children share the scheduler's stdout.
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 # The seams the scheduler spawns and reaps through, so a test patches these
 # and never `subprocess.Popen` or `os.wait` for the whole process.
@@ -60,17 +57,17 @@ def _wait_any(children, timeout):
     exit (KO-353). `timeout` is `None` for no deadline.
 
     `children` is the pool's live `Popen` objects by pid. The scheduler
-    holds them for as long as the workers live -- a `Popen` dropped while
-    its child runs is put on the module's housekeeping list, and the next
-    `Popen()` reaps whatever on that list has exited, out from under this
-    `os.wait()`: the worker becomes a phantom the pool waits on forever and
-    its exit status is lost (the review of KO-343 reproduced it with two
-    real children). Held, they are reaped here alone, and the one reaped is
-    told its status so it is not put on that list when the pool drops it.
-    Under a deadline the wait is `os.waitpid(-1, WNOHANG)` every
-    `WAIT_POLL_S` until a child is reported or the deadline passes: there
-    is no `os.wait()` with a timeout, and a signal-driven one would race
-    a child that exited before the alarm was set.
+    holds them for as long as the workers live: a `Popen` dropped while
+    its child runs goes on the module's housekeeping list and the next
+    `Popen()` reaps whatever on it has exited, out from under this
+    `os.wait()` -- the worker becomes a phantom the pool waits on forever
+    and its exit status is lost (the review of KO-343 reproduced it with
+    two real children) -- so the one reaped here is told its status and
+    is not put on that list when the pool drops it. Under a deadline the
+    wait is `os.waitpid(-1, WNOHANG)` every `WAIT_POLL_S` until a child
+    is reported or the deadline passes: there is no `os.wait()` with a
+    timeout, and a signal-driven one would race a child that exited
+    before the alarm was set.
     """
     if timeout is None:
         pid, status = os.wait()
@@ -91,8 +88,7 @@ def _wait_any(children, timeout):
 
 WAIT = _wait_any
 # A worker runs no sweep of its own -- the scheduler swept once, and a
-# second sweep would count one silence twice -- so its held-ticket lines
-# have no sweep to point at.
+# second sweep would count one silence twice.
 NOTHING_SEEN = Sweep(0, (), False, (), ())
 
 
@@ -100,8 +96,8 @@ def worker(target, provider):
     """One `--worker` child: claim one ticket, run it, close it out, exit.
 
     The serial loop's phases once, less what the scheduler has already
-    done -- the startup sweep, the reconcile, the queue mirror -- and less
-    what belongs to the scheduler alone: no re-exec after a self-merge
+    done -- the startup sweep, the reconcile, the queue mirror -- and
+    less what is the scheduler's alone: no re-exec after a self-merge
     (the scheduler restarts once the pool has drained, so this worker
     finishes on the code it started with) and no exit note. Returns one
     of the `WORKER_*` statuses; the scheduler reads it from the exit code.
@@ -111,9 +107,8 @@ def worker(target, provider):
 
     slot = os.environ.get(WORKER_SLOT_ENV)
     if slot:
-        # Both streams: a traceback, or a verify line's stderr, lands in the
-        # same shared log as the progress lines, and is only attributable to
-        # this worker by the prefix (the review of KO-343, second round).
+        # Both streams: a traceback or a verify line's stderr lands in the
+        # same shared log, attributable to this worker only by the prefix.
         sys.stdout = _PrefixedOut(sys.stdout, f"[holo2 w{slot}]")
         sys.stderr = _PrefixedOut(sys.stderr, f"[holo2 w{slot}]")
     knobs = loop_config(target)
@@ -146,19 +141,18 @@ def _render_findings_locked(target, conn, run_id, task, commit=None):
     """A worker's rendering of FINDINGS.md, under the merge lock: the
     regeneration, and for a merged run its commit with `commit`'s message.
 
-    The serial loop writes the window (and commits it, for a merged run)
-    after its gate has let the lock go, which costs nothing when it is the
-    only process in the checkout. A worker is not: a sibling can be merging
-    in the same checkout at that moment, and a write to FINDINGS.md beside
-    its merge dirties the checkout it is merging in or lands in its index,
-    while a `git add`/`git commit` beside it is an index-lock failure for
-    one of them (the review of KO-343, both rounds). So the write, and the
-    commit when there is one, are one held span, the same lock the gate
-    takes; a failed run's close-out passes `refresh=False` to
-    `close_out_failure()` and renders here instead. A lock that cannot be
-    had within the gate's wait leaves the window unrendered and says so:
-    the run's outcome is in the store, and the next close-out in this
-    checkout renders these rows with its own.
+    The serial loop writes the window (and commits a merged run's) after
+    its gate has let the lock go, which costs nothing when it is the only
+    process in the checkout. A worker is not: a sibling can be merging in
+    the same checkout at that moment, and a write to FINDINGS.md beside
+    its merge dirties the checkout it is merging in, while a `git add`/
+    `git commit` beside it is an index-lock failure for one of them (the
+    review of KO-343, both rounds). So the write, and the commit when
+    there is one, are one held span, the same lock the gate takes; a
+    failed run's close-out passes `refresh=False` and renders here
+    instead. A lock that cannot be had within the gate's wait leaves the
+    window unrendered and says so: the next close-out in this checkout
+    renders these rows with its own.
     """
     try:
         with merge_lock(target, run_id):
@@ -173,18 +167,18 @@ def _render_findings_locked(target, conn, run_id, task, commit=None):
 class _PrefixedOut:
     """A text stream that starts every line with `prefix`, folding the
     factory's own `[holo2]` tag into it: `[holo2] run failed` from worker
-    2 reads `[holo2 w2] run failed`, and any other line is prefixed whole.
-    Writes are passed through as they come, so the line buffering the
-    package set on the real stream still lands each line when it is said.
+    2 reads `[holo2 w2] run failed`; any other line is prefixed whole.
+    Writes pass through as they come, so the stream's line buffering
+    still lands each line when it is said.
     """
 
     def __init__(self, stream, prefix):
         self.stream = stream
         self.prefix = prefix
         self.at_line_start = True
-        # Whitespace written at a line start with no newline yet, such
-        # as the indentation `traceback` writes before a source line: held
-        # until the line shows what it is, so the prefix lands before it.
+        # Whitespace written at a line start with no newline yet, like
+        # `traceback`'s indent: held until the line shows what it is, so
+        # the prefix lands before it.
         self.held = ""
 
     def write(self, text):
@@ -218,18 +212,19 @@ def scheduler(target, provider, knobs):
     claim (`_claimable()`), spawn until `min(claimable, workers)` are
     alive, block until any child exits, read its status. While the pool
     is below the ceiling the block carries `knobs.tick_sec` as a deadline,
-    and a deadline that reaps nobody is a tick like any other: the
-    listing and the count run again for a ticket filed since (KO-353); a
-    full pool waits on exits alone. A failed worker
-    under `stop_on_failure` stops the spawning and the running workers are
-    waited for, as the serial loop stops on its first failure; a merge into
-    the factory itself does the same and re-execs once the pool has
-    drained, so no worker ever runs code newer than the scheduler's. A
-    worker that found nothing to claim is not a stop: the listing can run
-    ahead of a claim a sibling is about to make, so the tick spawns nothing
-    and the next exit recounts. Exits 0 with the queue empty and the pool
-    drained, nonzero when any worker failed or stopped for a human.
+    and a deadline that reaps nobody is a tick like any other: the listing
+    and the count run again for a ticket filed since (KO-353); a full pool
+    waits on exits alone. A failed worker under `stop_on_failure` stops
+    the spawning and the running workers are waited for, as the serial
+    loop stops on its first failure; a merge into the factory itself does
+    the same and re-execs once the pool has drained, so no worker ever
+    runs code newer than the scheduler's. A worker that found nothing to
+    claim is not a stop: the listing can run ahead of a claim a sibling
+    is about to make, so the tick spawns nothing and the next exit
+    recounts. Exits 0 with the queue empty and the pool drained, nonzero
+    when any worker failed or stopped for a human.
     """
+    from holophyte.claim import _park_unlisted
     from holophyte.loop import _mirror_queue, _startup_sweep
     from holophyte.operator import _reexec, self_hosted
 
@@ -286,6 +281,11 @@ def scheduler(target, provider, knobs):
                     _reexec(target, conn, project)
                     return  # only a test's EXEC returns
                 store.record_loop_return(conn, project)
+                if listing is not None:
+                    # The claim's empty-pass reconcile (KO-425) on this
+                    # tick's own listing -- no second board ask.
+                    _park_unlisted(conn, project,
+                                   [task["id"] for task in listing])
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if state.failed else None
             timeout = None if len(pool) >= knobs.workers else knobs.tick_sec
