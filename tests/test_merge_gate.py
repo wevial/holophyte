@@ -50,6 +50,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.dispatch  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.merge_gate  # noqa: E402 - after the sys.path insert above
@@ -154,7 +155,7 @@ class CrashReasonTests(LoopFixture):
             # library's `json` package and nothing else.
             e = err.with_traceback(err.__traceback__.tb_next)
 
-        reason = holophyte.loop.crash_reason(e)
+        reason = holophyte.dispatch.crash_reason(e)
 
         self.assertTrue(reason.startswith("JSONDecodeError: Expecting"), reason)
         self.assertNotIn("(at ", reason)

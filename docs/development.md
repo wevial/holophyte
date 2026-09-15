@@ -62,8 +62,10 @@ Each module, one line:
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
   target's checkout under a timeout: what `/runs/N/files` answers.
-- `holophyte/loop.py` — the loop: `run_task`'s stages, the dispatcher and
-  its crash containment, the startup sweep and the queue mirror.
+- `holophyte/loop.py` — the loop: `run_task`'s stages.
+- `holophyte/dispatch.py` — the dispatcher out of `holophyte/loop.py`
+  (KO-412): one claim run under its crash containment and close-out,
+  the startup sweep and the queue mirror.
 - `holophyte/merge_gate.py` — the merge gate out of `holophyte/loop.py`
   (KO-424): `main` merged into the branch, the pre-merge verify and the
   drift check under the merge lock, the park for a human's approval, the
