@@ -34,7 +34,6 @@ OVER = {
     "tests/test_factory_config.py": 1693,
     "tests/test_factory_loop.py": 4385,
     "tests/test_serve.py": 3156,
-    "tests/test_supervisor_sweep.py": 2361,
 }
 
 # Repo-relative path to the file's `wc -l` count, for a file a slice
@@ -64,7 +63,7 @@ PINNED = {
     "tests/test_file_sizes.py": 199, "tests/test_holophyte_package.py": 306,
     "tests/test_pool.py": 837, "tests/test_provider.py": 578,
     "tests/test_runs.py": 55, "tests/test_serve_shipped.py": 181,
-    "tests/test_store.py": 249,
+    "tests/sweep_fixture.py": 201, "tests/test_store.py": 249,
     "tests/test_store_claim.py": 261, "tests/test_store_heartbeat.py": 64,
     "tests/test_store_interventions.py": 403,
     "tests/test_store_lease.py": 80, "tests/test_store_pickable.py": 121,
@@ -72,6 +71,7 @@ PINNED = {
     "tests/test_store_schema.py": 1013, "tests/test_store_status.py": 312,
     "tests/test_store_status_graph.py": 111,
     "tests/test_store_surface.py": 267, "tests/test_store_tickets.py": 118,
+    "tests/test_supervise.py": 1245, "tests/test_supervisor_sweep.py": 981,
     "tests/test_wiring_claim.py": 636, "tests/test_wiring_findings.py": 489,
     "tests/test_wiring_mirror.py": 289, "tests/test_wiring_phases.py": 441,
     "tests/test_wiring_rounds.py": 597,
