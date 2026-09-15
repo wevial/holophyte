@@ -16,6 +16,7 @@ import json
 import re
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -66,6 +67,72 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "state", "merge"])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_a_green_pr_quieter_than_pr_quiet_sec_is_not_merged(self):
+        """Acceptance (KO-429): a green pull request with no unresolved
+        thread whose `updatedAt` is 10 s old under `pr_quiet_sec = 300`
+        is re-read, not merged: the pass waits on the same cadence it
+        uses for pending checks and prints how long it has been quiet of
+        the quiet required, and `pr_rounds` still ends the run on a pull
+        request that never goes quiet."""
+        self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
+        fresh = (datetime.now(timezone.utc)
+                 - timedelta(seconds=10)).isoformat()
+        self.fake_route(states=[self.pr_state(updated_at=fresh)])
+        naps = []
+        # `CHECK_WAIT_S` shortened so the wait's bound is reached in a few
+        # polls; the served `updatedAt` stays fresh, so the pull request
+        # never goes quiet and the merge API is never called.
+        with patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.pr, "CHECK_WAIT_S", 45):
+            out = self.main_output(Commit("the scripted work"), APPROVE,
+                                   provider=self.provider())
+
+        self.assertTrue(naps)
+        self.assertRegex(out, r"green and quiet for \d+s of the 300s"
+                              r" required; waiting")
+        calls = self.api_calls()
+        self.assertGreater(len(calls), 1)
+        self.assertEqual({kind for kind, _ in calls}, {"state"})
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("pr_rounds = 1", self.question())
+
+    def test_a_green_pr_quiet_for_pr_quiet_sec_merges(self):
+        """Acceptance (KO-429): the same pull request with `updatedAt`
+        301 s old under `pr_quiet_sec = 300` merges on the first pass."""
+        self.configure('[merge]\nmode = "pr"\n')
+        quiet = (datetime.now(timezone.utc)
+                 - timedelta(seconds=301)).isoformat()
+        self.fake_route(states=[self.pr_state(updated_at=quiet)])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("the scripted work"), APPROVE,
+                      provider=self.provider())
+
+        self.assertEqual(naps, [])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_pr_quiet_sec_zero_merges_a_green_pr_on_the_first_pass(self):
+        """Acceptance (KO-429): `pr_quiet_sec = 0` keeps the
+        merge-as-soon-as-green the babysitter had -- a pull request whose
+        `updatedAt` is this second merges without a wait."""
+        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
+        self.fake_route(states=[self.pr_state(
+            updated_at=datetime.now(timezone.utc).isoformat())])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("the scripted work"), APPROVE,
+                      provider=self.provider())
+
+        self.assertEqual(naps, [])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 

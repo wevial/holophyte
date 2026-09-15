@@ -338,8 +338,8 @@ class MergeConfigTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, "ticket", "",
-                          "park", ()))
+                         ("auto", "local", 5, "merge", 180, 300, "ticket",
+                          "", "park", ()))
 
     def test_after_is_read_as_a_list_of_commands(self):
         """`after` is the console build the daemon's bundle depends on, in
@@ -400,6 +400,33 @@ class MergeConfigTests(ConfigTestCase):
                 self.assertIn(str(self.tgt.config_path), message)
                 self.assertIn("[merge] pr_poll_sec", message)
                 self.assertIn("at least 10", message)
+                report.assert_not_called()
+
+    def test_pr_quiet_sec_is_read(self):
+        """How long a green, thread-free pull request must have stood
+        before the babysitter merges it; absent, five minutes (KO-429)."""
+        self.locate('[merge]\nmode = "pr"\npr_quiet_sec = 60\n')
+
+        self.assertEqual(
+            config_tables.merge_config(self.tgt).pr_quiet_sec, 60)
+
+    def test_pr_quiet_sec_must_be_an_integer_of_at_least_zero(self):
+        """`"300"` is a string and `-1` a quiet period that ended before
+        it began: each is a startup error naming `[merge] pr_quiet_sec`
+        (KO-429). `0` is allowed -- the merge-as-soon-as-green the
+        babysitter had."""
+        for line in ('pr_quiet_sec = "300"', "pr_quiet_sec = -1"):
+            with self.subTest(line=line):
+                target = self.locate(f"[merge]\nmode = \"pr\"\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[merge] pr_quiet_sec", message)
+                self.assertIn("at least 0", message)
                 report.assert_not_called()
 
     def test_pr_rounds_is_read(self):

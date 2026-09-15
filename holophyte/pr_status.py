@@ -13,6 +13,7 @@ the module-top import runs one way.
 """
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from holophyte.gates import InfraFailure
 from holophyte.pr import (
@@ -58,7 +59,7 @@ STATE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      state merged headRefOid mergeable mergeCommit { oid }
+      state merged headRefOid mergeable mergeCommit { oid } updatedAt
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       reviewThreads(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
@@ -427,6 +428,20 @@ def _pull_request_page(target, pull, after):
     return node
 
 
+def _iso_ms(text):
+    """`text`, GitHub's ISO 8601 `updatedAt`, as epoch milliseconds; None
+    for anything else. A naive timestamp is read as UTC."""
+    if not isinstance(text, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
 def _state_of(node, threads, runs, required):
     """`PrState` from the first page's node, every page's threads, and the
     two check reads (`_check_reads()`) folded beside the rollup."""
@@ -446,4 +461,5 @@ def _state_of(node, threads, runs, required):
                    closed=node.get("state") == "CLOSED",
                    mergeable=mergeable
                    if isinstance(mergeable, str) and mergeable
-                   else "UNKNOWN")
+                   else "UNKNOWN",
+                   updated_at=_iso_ms(node.get("updatedAt")))

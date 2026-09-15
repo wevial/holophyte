@@ -439,14 +439,20 @@ class MergeModeFixture(LoopFixture):
     # state: the PR's head is the candidate the loop pushed, unless a test
     # says otherwise (`head=`).
     HEAD = "HEAD_SHA"
+    # The `updatedAt` a state answer carries unless a test says otherwise
+    # (`updated_at=`): far enough in the past that `pr_quiet_sec` has
+    # already elapsed, so the quiet window changes nothing for a test that
+    # does not name it (KO-429).
+    UPDATED = "2000-01-01T00:00:00Z"
 
     def pr_state(self, threads=(), checks="SUCCESS", merged=False,
                  head=HEAD, resolved=(), next_cursor=None,
-                 mergeable="MERGEABLE"):
+                 mergeable="MERGEABLE", updated_at=UPDATED):
         """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
         tuple) open, `resolved` the same shape but resolved, the head's
         check rollup, whether the PR is merged, GitHub's `mergeable`
-        answer (None for the lazy-computation `null`), and -- for a page
+        answer (None for the lazy-computation `null`), `updated_at` the
+        `updatedAt` ISO stamp, and -- for a page
         that is not the last -- the cursor of the next."""
         nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
         nodes += [self.thread(n, *t[:4], resolved=True)
@@ -454,6 +460,7 @@ class MergeModeFixture(LoopFixture):
         return {"data": {"repository": {"pullRequest": {
             "state": "MERGED" if merged else "OPEN", "merged": merged,
             "headRefOid": head, "mergeable": mergeable,
+            "updatedAt": updated_at,
             "mergeCommit": {"oid": self.MERGE_SHA} if merged else None,
             "commits": {"nodes": [{"commit": {"statusCheckRollup":
                                               {"state": checks}}}]},

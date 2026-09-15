@@ -149,7 +149,10 @@ class PrState:
     """The pull request as one `pr_state()` read saw it. `mergeable` is
     GitHub's answer: MERGEABLE, CONFLICTING or UNKNOWN -- and UNKNOWN is
     what a read that predates or omits the field is held to, never a
-    license to merge anything in."""
+    license to merge anything in. `updated_at` is the pull request's
+    `updatedAt` as epoch milliseconds -- the stamp every comment, review,
+    push and check moves -- None when the answer carried none the read
+    could use."""
 
     threads: tuple  # unresolved `Thread`s, oldest first
     checks: str  # "success", "pending" or "failure"
@@ -158,6 +161,7 @@ class PrState:
     merge_sha: str | None = None
     closed: bool = False
     mergeable: str = "UNKNOWN"
+    updated_at: int | None = None
 
 
 def origin_url(target):

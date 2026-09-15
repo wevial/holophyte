@@ -369,8 +369,10 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     verdicts each, the fix round takes the accepted ones, replies and
     resolves follow, and a decline or a `HUMAN` parks the run with the
     thread listed. A pass with none waits for pending checks, then: red
-    checks park; green ones are "ready to merge", which merges through the
-    PR's merge API under `approve = "auto"` or after the operator's
+    checks park; green ones are "ready to merge" once the pull request has
+    been green and untouched for `[merge] pr_quiet_sec` (KO-429, measured
+    from its `updatedAt`), and the pass merges through the PR's merge API
+    under `approve = "auto"` or after the operator's
     `--approve` (`approved`), and parks for the human otherwise. A fix
     round moves the candidate past the sha the reviewer approved, and the
     fix is the implementer's work nobody independent has judged: before
@@ -439,6 +441,12 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                                   branch, wt, sha, beat_s, pull, state, rnd,
                                   pass_no, model, ticket, verify_cmd,
                                   contracts, budget_min, reviewed=reviewed)
+            continue
+        if state.checks == "success" and _quiet_left(
+                state, merge.pr_quiet_sec * 1000):
+            # The wait above ran its course and the pull request still is
+            # not quiet: the merge call is not reached on it. The next
+            # pass waits again, and `pr_rounds` still ends the run.
             continue
         reply = babysitter.round_reply(pull, pass_no, (), {}, state.checks, sha)
         record_round(target, conn, run_id, rnd, "review", reply, None, True,
@@ -618,19 +626,49 @@ def _next_round(conn, run_id):
     return len(store.read.rounds_of(conn, run_id)) + 1 if conn else 1
 
 
+def _quiet_left(state, quiet_ms):
+    """Milliseconds of the required quiet still ahead of `state`, 0 when
+    the pull request has stood green and thread-free long enough: quiet is
+    `now - updatedAt`, GitHub's stamp every comment, review, push and
+    check moves. `quiet_ms` of 0 is no wait -- the merge-as-soon-as-green
+    the babysitter had before KO-429 -- and a read that carried no
+    `updatedAt` cannot be called quiet, so it waits like a fresh one."""
+    if quiet_ms <= 0:
+        return 0
+    if state.updated_at is None:
+        return quiet_ms
+    return max(0, quiet_ms - (int(time() * 1000) - state.updated_at))
+
+
 def _settled_state(target, conn, run_id, beat_s, pull):
     """One read of the PR, re-read while its checks are pending and it has
     no thread to answer -- every `pr.CHECK_POLL_S`, for at most
     `pr.CHECK_WAIT_S` -- under the heartbeat, so a long CI run is not a
-    dead loop. Threads are answered without waiting: the fix they call for
-    restarts the checks anyway."""
+    dead loop; and, since KO-429, re-read while it is green and
+    thread-free but younger than `[merge] pr_quiet_sec`, so a merge lands
+    only after the pull request has been quiet that long. Threads are
+    answered without waiting: the fix they call for restarts the checks
+    anyway."""
+    quiet_ms = merge_config(target).pr_quiet_sec * 1000
+    # `waited` counts seconds of `CHECK_POLL_S` naps; the bound is the
+    # quiet required when it is the longer one, so a `pr_quiet_sec` past
+    # `CHECK_WAIT_S` still elapses.
+    wait_s = max(pr.CHECK_WAIT_S, quiet_ms // 1000)
     waited = 0
     with heartbeat_while(conn, run_id, beat_s):
         state = pr_status.pr_state(target, pull)
-        while (state.checks == "pending" and not state.threads
-               and not state.merged and waited < pr.CHECK_WAIT_S):
-            print(f"[holo2] checks pending on {pull.url}; waiting"
-                  f" {pr.CHECK_POLL_S}s")
+        while (not state.threads and not state.merged
+               and waited < wait_s):
+            if state.checks == "pending":
+                print(f"[holo2] checks pending on {pull.url}; waiting"
+                      f" {pr.CHECK_POLL_S}s")
+            elif state.checks == "success" \
+                    and (left := _quiet_left(state, quiet_ms)):
+                print(f"[holo2] {pull.url} is green and quiet for"
+                      f" {max(0, quiet_ms - left) // 1000}s of the"
+                      f" {quiet_ms // 1000}s required; waiting")
+            else:
+                break
             pr.SLEEP(pr.CHECK_POLL_S)
             waited += pr.CHECK_POLL_S
             state = pr_status.pr_state(target, pull)
