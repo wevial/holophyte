@@ -139,16 +139,20 @@ class LinearProvider:
     `project_id` and `team` are the target's `[board]` table, as
     `holophyte.config_tables.board_config()` resolves it: the pair is stored
     here and passed to every module call, so the module itself holds no
-    board and two targets on one host drive two projects. The module is
+    board and two targets on one host drive two projects. `label` is the
+    table's optional third key (KO-432): when set, the ready listing keeps
+    only issues carrying it, so the claim, the queue mirror and the
+    supervisor's board fallback all see the same filtered queue. The module is
     imported at the first call that needs it rather than here -- the import
     reads no configuration, so `--report`, a read-only `--sweep` and a
     trip-less acting sweep never touch it. Construction does no I/O; the
     API key is read by the module on the first request.
     """
 
-    def __init__(self, project_id, team):
+    def __init__(self, project_id, team, label=None):
         self.project_id = project_id
         self._team = team
+        self._label = label
         self._module = None
         # The listing the last `claim_next()` saw; None until asked (KO-425).
         self.last_listing = None
@@ -165,11 +169,12 @@ class LinearProvider:
 
     def claim_next(self, skip=(), order="identifier"):
         task, self.last_listing = self._linear().claim_next(
-            self.project_id, self._team, skip=skip, order=order)
+            self.project_id, self._team, skip=skip, order=order,
+            label=self._label)
         return task
 
     def ready_issues(self):
-        return self._linear().ready_issues(self.project_id)
+        return self._linear().ready_issues(self.project_id, label=self._label)
 
     def fetch_task(self, issue_id):
         return self._linear().fetch_task(issue_id)

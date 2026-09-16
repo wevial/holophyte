@@ -120,7 +120,7 @@ query($project: String!, $after: String) {
 CLOSED_STATE_TYPES = {"completed", "canceled"}
 
 
-def list_ready_issues(project_id):
+def list_ready_issues(project_id, label=None):
     """Triaged (Todo/started), non-terminal, unblocked issues in the project.
 
     Note: Linear stores a blocker as an edge with type=blocks whose SOURCE is
@@ -128,6 +128,16 @@ def list_ready_issues(project_id):
     it. So we fetch the whole project's relations once and invert. A blocker
     gates by its own state type — anything not completed/canceled, Backlog
     included — rather than by whether it happens to be in the ready set.
+
+    `label` is the target's `[board] label` (KO-432): when set, only issues
+    carrying that label name are ready -- on a project people also work in,
+    a ticket reaching Todo is not by itself a contract for the factory, and
+    an issue without the label is invisible to the loop however ready it
+    looks. The filter runs here, after the blocked-by inversion, rather
+    than in READY_QUERY: the inversion needs the whole project's relations
+    either way, so a label argument in the query would save nothing and
+    could only disagree with the set the blockers were read against.
+    Compared by name, case-sensitive, as Linear shows it.
     """
     path = ("project", "issues")
     issues = _paginate(READY_QUERY, {"project": project_id}, path)
@@ -142,7 +152,10 @@ def list_ready_issues(project_id):
                 blocked_by.setdefault(rel["relatedIssue"]["identifier"],
                                       []).append(n["identifier"])
 
-    return [i for i in issues if not blocked_by.get(i["identifier"])]
+    ready = [i for i in issues if not blocked_by.get(i["identifier"])]
+    if label is not None:
+        ready = [i for i in ready if label in label_names(i)]
+    return ready
 
 
 def parse_task(issue):
@@ -378,18 +391,22 @@ def _claim_key(order):
     return lambda i: i["identifier"]
 
 
-def ready_issues(project_id):
+def ready_issues(project_id, label=None):
     """Every issue `claim_next()` chooses from, parsed: the ready listing as
     `list_ready_issues()` filters it -- Todo/started, open, unblocked -- in
     the shape `parse_task()` gives a claimed task. The loop mirrors this
     list at each claim so the Board shows the queue and not only the one
     ticket picked from it (KO-334); Backlog is not in it because the loop
-    could not claim it. Reads only; nothing is written to Linear.
+    could not claim it. `label` is the target's `[board] label` (KO-432),
+    passed through to the listing: the supervisor's board fallback reads
+    the same filtered queue the claim does. Reads only; nothing is written
+    to Linear.
     """
-    return [parse_task(issue) for issue in list_ready_issues(project_id)]
+    return [parse_task(issue)
+            for issue in list_ready_issues(project_id, label=label)]
 
 
-def claim_next(project_id, team, skip=(), order="identifier"):
+def claim_next(project_id, team, skip=(), order="identifier", label=None):
     """First ready issue of `project_id`, parsed, and the listing it saw.
 
     Returns `(task, listed)`: `task` is None when there is none, and `listed`
@@ -406,6 +423,9 @@ def claim_next(project_id, team, skip=(), order="identifier"):
     identifier; `"priority"` offers the most urgent Linear priority first,
     identifier ascending within a priority and unprioritised issues last.
 
+    `label` is the target's `[board] label` (KO-432), handed to the ready
+    listing: the claim chooses only among issues carrying it when set.
+
     Claiming no longer moves the issue to In Progress here. The claim's status
     change belongs to the store — the loop transitions its mirror to
     `in_flight` and projects that through `mirror_push()` — so leaving a state
@@ -419,7 +439,7 @@ def claim_next(project_id, team, skip=(), order="identifier"):
     without a way to ask for the next one after it, one unclaimable ticket at
     the head of the queue starves every ticket behind it forever.
     """
-    issues = list_ready_issues(project_id)
+    issues = list_ready_issues(project_id, label=label)
     ready = [i for i in issues if i["identifier"] not in skip]
     if not ready:
         return None, [i["identifier"] for i in issues]

@@ -266,20 +266,31 @@ def loop_config(target):
 # claim from the same project, and the second silently works the first's
 # queue. Neither has a default -- a board is one operator's, never this
 # file's -- so a loop with no table exits at startup naming the key.
+#
+# `label` is the one optional key (KO-432): set to a non-empty string, it is
+# the label name a ready issue must carry for the loop to see it at all --
+# the opt-in for a project people also work in, where a ticket reaching Todo
+# is not by itself a contract for the factory. Absent, the board is every
+# ready issue in the project, as it has always been.
 BOARD_KEYS = {
     "project_id": None,
     "team": None,
+    "label": None,
 }
-BoardConfig = collections.namedtuple("BoardConfig", ("project_id", "team"))
+BoardConfig = collections.namedtuple("BoardConfig",
+                                     ("project_id", "team", "label"))
 
 
 def board_config(target):
     """The target's `[board]`, or `None` when the table is absent.
 
-    A present table has to carry both keys as non-empty strings: half a
-    board names no project to claim from or no team to resolve states in,
-    and the refusal names the table, the key and the constraint, like a bad
-    `[loop]` value. An absent table is `None`, and the caller decides
+    A present table has to carry `project_id` and `team` as non-empty
+    strings: half a board names no project to claim from or no team to
+    resolve states in. `label` is optional -- `None` when absent -- but a
+    set one is held to the same shape: `3` names no label, and `""` is the
+    invisible filter nobody wrote on purpose. The refusal names the table,
+    the key and the constraint, like a bad `[loop]` value. An absent table
+    is `None`, and the caller decides
     whether its mode needs a board: `--report` and a read-only `--sweep`
     call nobody; the loop exits at startup naming `[board] project_id`.
     Nothing is read from the environment. Keys this version does not know
@@ -295,6 +306,9 @@ def board_config(target):
     values = {}
     for key in BOARD_KEYS:
         value = table.get(key)
+        if key == "label" and value is None:
+            values[key] = None  # absent: the board is unfiltered
+            continue
         if not isinstance(value, str) or not value:
             raise SystemExit(
                 f"[holo2] {target.config_path}: [board] {key} must be a "

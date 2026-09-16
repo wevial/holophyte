@@ -321,7 +321,8 @@ def cli(argv=None):
     # a read-only sweep can live with (it calls nobody) and the modes that
     # post to the board cannot: they exit here, naming the key to set.
     settings = board_config(target)
-    board = (LinearProvider(settings.project_id, settings.team)
+    board = (LinearProvider(settings.project_id, settings.team,
+                            label=settings.label)
              if settings is not None else None)
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails

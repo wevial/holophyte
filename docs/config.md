@@ -354,9 +354,12 @@ scheduler reads it: under `workers = 1` there is no pool to tick.
 # states its tickets move through. Required for the loop and --supervise.
 project_id = "00000000-0000-0000-0000-000000000000"
 team = "Example Team"
+# The label a ready issue must carry for the loop to see it. Optional;
+# absent, every ready issue in the project is the loop's.
+label = "holophyte"
 ```
 
-Accepted keys: `project_id`, `team`.
+Accepted keys: `project_id`, `team`, `label`.
 
 The board is a per-target setting: two targets on one host driven from one
 process-wide variable would both claim from the same project, and the second
@@ -365,6 +368,20 @@ would silently work the first's queue. Both values must be non-empty strings.
 run without the table; the loop and `--supervise` exit at startup naming `[board]
 project_id` when it is absent. Nothing in the environment stands in for the
 table.
+
+`label` is the opt-in for a project people also work in: when it is set, the
+loop's ready listing keeps only issues carrying that label by name
+(case-sensitive, as Linear shows it), so a ticket a person has decided to
+take, or one that is a plan rather than a contract, is invisible to the
+factory however ready it looks. The claim, the queue the console's Board
+mirrors and the supervisor's board fallback all read through the same filter,
+so the label decides the whole queue rather than only the claim. Set or unset
+on a live target it takes effect at the next pass -- the loop asks the board
+fresh each claim, and a mirror row whose ticket lost the label waits on the
+board at `blocked_on_deps` until it carries it again. `project_id` and `team`
+are required when the table is present; `label` is the one key that may be
+absent, but when written it must be a non-empty string, and anything else is
+a startup error naming the key.
 
 ```toml
 [report]

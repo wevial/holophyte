@@ -31,8 +31,18 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+# `loop_fixture` and `fake_agent` are helpers, not test modules: discovery
+# never imports them, and how this file is imported decides whether `tests/`
+# is on the path at all.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import provider as board_seam  # noqa: E402 - after the sys.path insert above
+from loop_fixture import (  # noqa: E402
+    LoopFixture,
+    no_agent_processes,
+)
+
+import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import provider as board_seam  # noqa: E402
 import ticket_template  # noqa: E402
 
 TITLE = "do the thing"
@@ -525,6 +535,42 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         self.assertIn("includeArchived: true", recorded[0])
         self.assertIn("archivedAt", recorded[0])
 
+    def test_a_configured_label_filters_the_ready_listing(self):
+        """`[board] label = "holophyte"` (KO-432): of three ready issues
+        only the one carrying the label is in the listing the claim
+        chooses from and the queue mirror shows -- the rest are invisible
+        to the loop however ready they look."""
+        self.seed("KO-1")
+        self.seed("KO-2")
+        self.seed("KO-3")
+        self.board.issues["KO-2"]["labels"]["nodes"].append(
+            {"id": "label-holophyte", "name": "holophyte"})
+        provider = board_seam.LinearProvider("test-project", "test-team",
+                                             label="holophyte")
+
+        self.assertEqual([task["id"] for task in provider.ready_issues()],
+                         ["KO-2"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            claimed = provider.claim_next()
+        self.assertEqual(claimed["id"], "KO-2")
+        # The listing the empty pass's mirror reconcile reads (KO-425) is
+        # the filtered one.
+        self.assertEqual(provider.last_listing, ["KO-2"])
+
+    def test_no_label_lists_every_ready_issue_as_before(self):
+        """A target with no `[board] label` sees the board as it always
+        has: all three ready issues, the labeled one included -- a label
+        an issue carries is not a filter until the target names one."""
+        self.seed("KO-1")
+        self.seed("KO-2")
+        self.seed("KO-3")
+        self.board.issues["KO-2"]["labels"]["nodes"].append(
+            {"id": "label-holophyte", "name": "holophyte"})
+
+        self.assertEqual(
+            sorted(task["id"] for task in self.provider.ready_issues()),
+            ["KO-1", "KO-2", "KO-3"])
+
     def test_construction_and_team_reach_no_transport(self):
         def tripwire(query, variables=None):
             raise AssertionError(f"_gql was reached: {query[:40]}")
@@ -532,6 +578,36 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         with patch.object(self.linear, "_gql", tripwire):
             fresh = board_seam.LinearProvider("test-project", "test-team")
             self.assertEqual(fresh.team, "test-team")
+
+
+class LabelGatePassTests(LoopFixture):
+    """KO-432 at the pass's scale: `[board] label` set on the provider and
+    no ready issue carrying it -- the loop asks the real provider, reads
+    the filtered board as empty, mirrors nothing and exits on its usual
+    `no ready tickets` line."""
+
+    @classmethod
+    def setUpClass(cls):
+        import linear_provider
+        cls.linear = linear_provider
+
+    def test_a_label_nothing_carries_ends_the_pass_as_empty(self):
+        board = FakeLinear()
+        board.add("KO-1", TITLE, ticket_body())
+        provider = board_seam.LinearProvider("test-project", "test-team",
+                                             label="holophyte")
+
+        out = io.StringIO()
+        with patch.object(self.linear, "_gql", board.gql), \
+                no_agent_processes(), \
+                patch.object(sys, "stdout", out):
+            self.rc = holophyte.operator.main(self.tgt, provider)
+
+        self.assertIsNone(self.rc)
+        self.assertIn("[holo2] Linear has no ready tickets. done.",
+                      out.getvalue())
+        # The unlabeled ticket was never seen: nothing reached the mirror.
+        self.assertEqual(self.read("SELECT COUNT(*) FROM tickets"), [(0,)])
 
 
 class LinearImportTests(unittest.TestCase):

@@ -521,7 +521,7 @@ class SupervisorSpawnTests(StartupCheckTests):
         under test sits between the startup checks and that call.
         """
 
-        def __init__(self, project_id, team):
+        def __init__(self, project_id, team, label=None):
             self.team = team
 
         def ready_issues(self):

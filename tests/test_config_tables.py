@@ -2,6 +2,8 @@
 
 Run: python3 -m unittest discover -s tests -p 'test_config_tables*' -v
 """
+import contextlib
+import io
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -275,6 +277,59 @@ class ReportConfigTests(ConfigTestCase):
                 self.assertIn("[report]", message)
                 self.assertIn("findings", message)
                 report.assert_not_called()
+
+
+class BoardLabelTests(ConfigTestCase):
+    """`[board] label` (KO-432): the opt-in naming the label a ready issue
+    must carry before the loop sees it.
+
+    Absent is `None` and the board is every ready issue, as it has always
+    been; a non-empty string is the name the ready listing filters on;
+    anything else is a startup error naming the key -- `3` names no label
+    and `""` would hide the whole queue without saying so.
+    """
+
+    BOARD = '[board]\nproject_id = "p-1"\nteam = "T"\n'
+
+    def test_an_absent_label_is_no_filter(self):
+        self.locate(self.BOARD)
+
+        self.assertIsNone(config_tables.board_config(self.tgt).label)
+
+    def test_a_label_is_read_and_reaches_the_provider_the_loop_gets(self):
+        """The value `cli()` hands the board it builds: a target that opts
+        in gets a provider whose ready listing the label filters."""
+        target = self.locate(self.BOARD + 'label = "holophyte"\n').path
+
+        self.assertEqual(config_tables.board_config(self.tgt).label,
+                         "holophyte")
+        out = io.StringIO()
+        with patch.object(holophyte.cli, "check_agent_commands"), \
+                patch.object(holophyte.cli, "check_worktree_setup"), \
+                patch.object(holophyte.cli, "main") as main, \
+                contextlib.redirect_stdout(out):
+            holophyte.cli.cli([str(target)])
+
+        board = main.call_args.args[1]
+        self.assertEqual(board._label, "holophyte")
+
+    def test_a_bad_label_is_a_startup_error_naming_the_key(self):
+        """`label = 3` and `label = ""` are refused where `cli()` resolves
+        the board, naming the key, before a route is probed or a ticket is
+        claimed."""
+        for line in ("label = 3", 'label = ""'):
+            with self.subTest(line=line):
+                target = self.locate(self.BOARD + line + "\n").path
+
+                with patch.object(holophyte.cli, "main") as main:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target)])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[board]", message)
+                self.assertIn("label", message)
+                main.assert_not_called()
 
 
 class ConsoleConfigTests(ConfigTestCase):
