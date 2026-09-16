@@ -1,27 +1,15 @@
-"""Linear as the notice board: the ticket mirror, its pushes, and the escalation.
+"""Project the store's ticket state and run narrative onto Linear.
 
-The board-facing half of the loop. `mirror_task()` mirrors an offered ticket's
-live body into the store through `task_contract()` and `body_problem()`,
-`merge_drift()` asks at the merge gate whether that contract moved,
-`release_run()` gives the lease back, `mirror_push()` and `mirror_status()` are
-the loop's only writers of a Linear workflow state (`MIRROR_STATES` says which),
-`warn()` records a best-effort failure against the ticket's run,
-`failure_history()`, `escalation_comment()` and `escalate()` park a ticket whose
-failed runs reached `MAX_FAILED_RUNS`, `close_out_failure()` ends a failed run
-the one way the factory ends them, `ledger()` writes one entry of the run's
-narrative to the store and projects it as a comment on the ticket, and
-`file_ticket()` is `--file-ticket`'s body: a validated markdown file becomes a
-Linear issue and is validated again as stored. Beyond the standard library it
-imports `store` and `store.read` for the rows, `ticket_template` for the
-claim-time body gate, `warn_on_run` from `holophyte.runs` and
-`refresh_findings` from `holophyte.findings`.
-
-Fifth slice of the phase-2 module split; moved verbatim from `factory.py`,
-which imports back the names its remaining call sites use.
+Mirrors validate ticket contracts, publish state and lease labels, and warn
+on best-effort board failures. Escalation parks repeatedly failing tickets;
+close-out releases their runs and refreshes the rendered findings window.
+`ledger()` stores full entries before posting cleaned, capped board copies.
+`file_ticket()` validates operator-supplied tickets before and after filing.
 """
 import contextlib
 import fcntl
 import os
+import re
 import socket
 import sys
 from pathlib import Path
@@ -38,6 +26,34 @@ from holophyte.runs import warn_on_run
 # writer's `[report] host_label`, so the ready column says which writer holds
 # a ticket where the store lease, private to one writer's store, cannot.
 LEASE_LABEL_PREFIX = "holo:"
+
+
+BOARD_COMMENT_LIMIT = 12000
+_COMMENT_BANNERS = (
+    r"Reading additional input from stdin", r"(?:\*\*)?OpenAI Codex v",
+    r"workdir: ", r"model: ", r"provider: ", r"approval: ", r"sandbox: ",
+    r"reasoning effort: ", r"reasoning summaries: ",
+    r"(?:\*\*)?session id: ", r"tokens used",
+)
+
+
+def comment_body(text, limit=BOARD_COMMENT_LIMIT):
+    """Keep at most `limit` cleaned characters plus a notice counting the cut.
+    The store retains the original text, including banners and omitted prose."""
+    text = re.sub(
+        r"(?m)^<!-- devin-review-badge-begin -->[^\n]*\n"
+        r"[\s\S]*?^<!-- devin-review-badge-end -->[^\n]*(?:\n|$)",
+        "", text,
+    )
+    text = re.sub(
+        r"(?m)^(?:" + "|".join(_COMMENT_BANNERS) + r")[^\n]*(?:\n|$)",
+        "", text,
+    )
+    text = re.sub(r"\n(?:[ \t]*\n){3,}", "\n\n\n", text)
+    if len(text) <= limit:
+        return text
+    return (text[:limit] + f"\n[... {len(text) - limit} characters cut; "
+            "the full round is on the run in the store]")
 
 
 def lease_host(target):
@@ -631,7 +647,7 @@ def escalate(conn, ticket_id, provider):
                         strike_question(len(history))):
         return False
     try:
-        provider.comment(issue_id, escalation_comment(history))
+        provider.comment(issue_id, comment_body(escalation_comment(history)))
     except Exception as e:
         warn(conn, ticket_id, f"failure history comment failed for "
                               f"{identifier} ({e}); the store keeps the block"
@@ -722,27 +738,11 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
 
 
 def ledger(conn, run_id, task_id, kind, text, provider):
-    """Record one entry of the run's narrative: the store row, then the
-    board comment that projects it.
+    """Store the full narrative entry before posting its cleaned board copy.
 
-    The row comes first, always, and on the connection the run already
-    holds: the store is where the narrative lives (design note 9), and the
-    comment on the ticket is the board's copy of it -- the same relation
-    ticket status has to the store's `tickets.status`. A board that is
-    down, slow or absent loses its copy and nothing else; the run's story
-    is intact in `ledger` and is what a frontend reads. `kind` is one of
-    `store.LEDGER_KINDS` (a round, a merge, a failure, an adjudication, a
-    note), so the row says what shape of entry it is rather than making a
-    reader parse the prose.
-
-    Nothing is appended to FINDINGS.md here: that file is rendered from the
-    store's rows at close-out (`write_findings`), so it stays a bounded
-    window instead of growing by one full transcript per turn.
-
-    A `run_task()` called directly with no store (`conn` or `run_id` None)
-    has no run to write against and says so; the board is the one the run
-    was handed, never a module reached for here, and a call with no board
-    keeps the row and says so once per record instead of failing.
+    `kind` is a `store.LEDGER_KINDS` value. Board failures leave the row intact;
+    missing store or board connections are reported without failing the run.
+    FINDINGS.md is rendered from store rows at close-out, never appended here.
     """
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -754,7 +754,7 @@ def ledger(conn, run_id, task_id, kind, text, provider):
         print("[holo2] no board to archive to; record kept in the store")
         return
     try:
-        provider.comment(task_id, f"**{ts}**\n\n{text}")
+        provider.comment(task_id, f"**{ts}**\n\n{comment_body(text)}")
     except Exception as e:
         print(f"[holo2] board comment failed ({e}); record kept in the store")
 

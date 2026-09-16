@@ -93,8 +93,8 @@ class ConflictRefusalCases:
                             Commit("Merge main: retain both ratchets", path=path,
                                    body="branch's line\nmain's line\n"), APPROVE,
                             provider=self.provider())
-        self.assertEqual(fake.roles,
-                         ["implement", "review", "implement", "implement", "review"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
         self.assertIn(path, fake.turns[3].goal)
         self.assertIn("mid-merge", fake.turns[3].goal)
         self.assertEqual(fake.turns[3].cwd, self.worktrees / "ko-131-add-a-thing")
@@ -107,8 +107,10 @@ class ConflictRefusalCases:
         review = self.conflict_refusal(conflict=True)
         path = "tests/test_file_sizes.py"
         fake, _ = self.loop(self.ratchet_work(), review, Idle(""),
-                            Idle("Cannot resolve"), provider=self.provider())
-        self.assertEqual(fake.roles, ["implement", "review", "implement", "implement"])
+                            Idle("Cannot resolve"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement"])
         self.assertIn(path, fake.turns[3].goal)
         self.assertIn(self.refusal, self.question())
         self.assertEqual(len(self.pushed()), 1)

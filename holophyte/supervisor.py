@@ -42,7 +42,7 @@ import store
 import store.read
 from holophyte.board import close_out_failure, lease_turn_held, mirror_key
 from holophyte.config import budget_scale, serve_config
-from holophyte.config_tables import sweep_config
+from holophyte.config_tables import BOARD_ASK_SEC, sweep_config
 from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
 from holophyte.report import format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
@@ -522,7 +522,32 @@ def loop_is_live(conn, project, now, stale_ms):
         (project, *SWEEPABLE_PHASES, now - stale_ms)).fetchone() is not None
 
 
-def board_ready(conn, project, provider, out):
+def _linear_budget():
+    """Load the shared Linear cooldown even before this process has asked
+    the board. A test may stub the provider module without a budget."""
+    module = sys.modules.get("linear_provider")
+    if module is None:
+        import linear_provider as module
+    return getattr(module, "__dict__", {}).get("LINEAR_BUDGET")
+
+
+def linear_budget_low(now=None, out=None):
+    """Whether a Linear board read waits for the complexity budget's reset
+    -- and the one line that says so when it does, printed to `out` once
+    per reset the budget names rather than once per pass that waits
+    (KO-434). The supervisor's board fallback and the loop's asks --
+    `_mirror_queue()`'s idle relisting and the serial pass's claim --
+    both skip under this rule."""
+    budget = _linear_budget()
+    if budget is None or not budget.low(now):
+        return False
+    line = budget.notice(now)
+    if line is not None:
+        print(f"[holo2] {line}", file=out or sys.stdout)
+    return True
+
+
+def board_ready(conn, project, provider, out, now=None, board_ask_ms=None):
     """How many of the board's ready issues are owed a loop, or 0 when it
     cannot be asked or has none: the KO-411 fall-through for a mirror
     that has no row for the ticket at all, less the rows the mirror
@@ -547,9 +572,32 @@ def board_ready(conn, project, provider, out):
     owed one. A board that cannot be asked is one printed line and a
     "no", as the reconcile's GitHub errors are: the next pass asks again.
     No provider is no board to ask, and asks nothing.
+
+    Two guards spend the listing only on purpose (KO-434): Linear's
+    complexity budget low -- under a tenth of its limit -- waits for the
+    reset it names, once per reset rather than once per pass; and the
+    last ask stamped on the project's row holds the next off for
+    `board_ask_ms`, so a mirror that stays empty is not re-asked every
+    sweep interval. The stamp lands before the ask rather than after it,
+    so an ask that failed still spent the interval's one listing.
     """
     if provider is None:
         return 0
+    now = int(time() * 1000) if now is None else now
+    if linear_budget_low(now, out):
+        return 0
+    if board_ask_ms is None:
+        board_ask_ms = BOARD_ASK_SEC * 1000
+    if project is not None:
+        row = conn.execute(
+            "SELECT boardAskedAt FROM projects WHERE id = ?",
+            (project,)).fetchone()
+        asked_at = row[0] if row is not None else None
+        if asked_at is not None and now - asked_at < board_ask_ms:
+            return 0
+        with store.transaction(conn):
+            conn.execute("UPDATE projects SET boardAskedAt = ? WHERE id = ?",
+                         (now, project))
     try:
         issues = provider.ready_issues()
     except Exception as e:  # noqa: BLE001 - never a strike, never the pass
@@ -612,8 +660,10 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     counting it relaunched a loop every pass only for the claim to refuse
     it (KO-420). The ask runs only on the miss and never while a loop is
     live to ask on its own tick, so a busy target pays nothing and an
-    idle one one query a pass; a board that cannot be asked is one
-    printed line and a "no", as the reconcile's GitHub errors are. A
+    idle one at most one listing per `board_ask_sec` -- and none at all
+    while Linear's complexity budget is under its tenth, which waits for
+    the reset it names instead (KO-434). A board that cannot be asked is
+    one printed line and a "no", as the reconcile's GitHub errors are. A
     start `systemctl` took is
     recorded as a `launch_loop` row on that run, and a start that failed
     is one printed line and no row; neither mark decides the next pass,
@@ -662,19 +712,18 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     # tick, so the read is only for a target with no loop at all; the
     # answer's surviving issues carry no mirror row and no run, (None,
     # None) apiece. The board's mirror rows live under the provider's
-    # team -- the key `ensure_project()` mirrors them by -- and a
-    # projects row that does not exist yet means nothing of this board's
-    # was ever mirrored, so every issue it answers is owed.
+    # team -- the key `ensure_project()` mirrors them by -- and ensuring
+    # the row here gives `board_ready()` somewhere to stamp its ask, so
+    # `board_ask_sec` holds even for a board nothing has mirrored yet.
     if not owed and not live:
         board_project = None
         if provider is not None:
-            row = conn.execute(
-                "SELECT id FROM projects WHERE linearTeamId = ?",
-                (provider.team,)).fetchone()
-            board_project = row[0] if row else None
-        owed = [(None, None)] * board_ready(conn, board_project,
-                                            provider, out)
-    if owed and not lease_turn_held(target):
+            board_project = store.ensure_project(conn, provider.team,
+                                                 target.path)
+        owed = [(None, None)] * board_ready(
+            conn, board_project, provider, out, now=now,
+            board_ask_ms=knobs.board_ask_ms)
+    if owed and not linear_budget_low(now, out) and not lease_turn_held(target):
         start_loop_for(target, conn, owed, now, out)
     return asked
 

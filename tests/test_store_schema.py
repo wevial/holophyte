@@ -16,6 +16,10 @@ DOCUMENTED_COLUMNS = {
     "projects": {
         "id", "linearTeamId", "repoPath", "defaultBranch", "autonomyProfile",
         "highRiskPaths", "verificationDefault", "activeRunId",
+        # Store-owned: when the supervisor's board fallback last asked
+        # Linear for the ready listing, so `board_ask_sec` throttles
+        # across passes and restarts (KO-434).
+        "boardAskedAt",
     },
     "tickets": {
         "id", "projectId", "linearIssueId", "linearIdentifier", "title",
@@ -463,7 +467,8 @@ class StoreSchemaVersionTests(unittest.TestCase):
         raw.close()
         conn = store.open(self.path)
         self.addCleanup(conn.close)
-        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 17)
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
+                         store.SCHEMA_VERSION)
         store.release(conn, run, "rejected", "closed by alice")
         self.assertEqual(conn.execute("SELECT phase, outcome FROM runs")
                          .fetchone(), ("rejected", "rejected"))

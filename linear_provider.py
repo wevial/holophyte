@@ -9,11 +9,15 @@ Loop-facing API: claim_next() / fetch_task() / set_state() / comment() /
 list_ready_issues() / ready_issues() / closed_identifiers(). Operator API, for
 `--file-ticket`: create_issue() / add_blocker() / fetch_description().
 """
+import fcntl
+import hashlib
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from pathlib import Path
+from time import localtime, strftime, time
 
 import ticket_template
 
@@ -45,6 +49,126 @@ def _load_env_key():
     return _load_env_var("LINEAR_API_KEY")
 
 
+def _clock(epoch_ms):
+    """`reset_at` as the wall-clock HH:MM the operator reads in the log."""
+    return strftime("%H:%M", localtime(epoch_ms / 1000))
+
+
+class LinearBudgetExhausted(RuntimeError):
+    """Linear answered 429: the API key's complexity budget is spent for
+    the window. `reset_at` carries the epoch-millisecond refill instant the
+    refusal's headers named, or None when they named none."""
+
+    def __init__(self, message, reset_at=None):
+        super().__init__(message)
+        self.reset_at = reset_at
+
+
+class LinearBudget:
+    """What the last Linear answer's `x-ratelimit-complexity-*` headers
+    said of the API key's hourly budget: `remaining` points of `limit`,
+    refilled at `reset_at` (epoch milliseconds). `remember()` is fed every
+    `_gql()` answer's headers -- a refusal's included; `low()` is the
+    callers' signal to wait for the reset rather than spend the points to
+    be refused: under a tenth of the limit left, the asks that remain could
+    not buy back what one more listing costs. The production instance shares
+    cooldown deadlines across processes using the same API key and home."""
+
+    def __init__(self, shared=False):
+        self.shared = shared
+        self._retry_at = None
+        self._blocked_until = None
+        self.limit = None
+        self.remaining = None
+        self.reset_at = None
+        # The reset the last "board not asked" line named, so the line
+        # lands once per refill, not once per pass that waits on it.
+        self._noticed = None
+
+    def _shared_until(self, deadline=0):
+        """Keep the longest observed cooldown under a lock, per API key.
+
+        Healthy replies cannot erase a concurrent process's low reading.
+        Only the deadline is stored; neither credentials nor board data are.
+        """
+        key = _load_env_key() if self.shared else None
+        if not key:
+            return 0
+        home = Path(os.environ.get("HOLOPHYTE_HOME") or "~/.holophyte").expanduser()
+        directory = home / "linear-budget"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / hashlib.sha256(key.encode()).hexdigest()
+        with path.open("a+") as state:
+            fcntl.flock(state, fcntl.LOCK_EX)
+            state.seek(0)
+            saved = int(state.read() or "0")
+            if deadline > saved:
+                state.seek(0)
+                state.truncate()
+                state.write(str(deadline))
+                state.flush()
+            return max(saved, deadline)
+
+    def remember(self, headers):
+        """The `x-ratelimit-complexity-*` fields of one answer's headers,
+        when it carried them. A new remaining reading without a reset gets
+        a bounded one-hour retry deadline instead of an indefinite pause."""
+        if headers is None:
+            return
+        fields = {str(k).lower(): str(v) for k, v in headers.items()}
+        if "x-ratelimit-complexity-remaining" in fields:
+            # A new reading without a reset must not reuse an expired window.
+            self.reset_at = None
+            self._retry_at = int(time() * 1000) + 3_600_000
+        for name, attr in (("x-ratelimit-complexity-limit", "limit"),
+                           ("x-ratelimit-complexity-remaining", "remaining"),
+                           ("x-ratelimit-complexity-reset", "reset_at")):
+            if name in fields:
+                try:
+                    setattr(self, attr, int(fields[name]))
+                except ValueError:
+                    pass  # a field that is not a number says nothing
+
+        if self.limit is not None and self.remaining is not None \
+                and self.remaining < self.limit / 10:
+            self._shared_until(self.reset_at or self._retry_at or 0)
+
+    def low(self, now=None):
+        """Under a tenth of `limit` with the refill still ahead. A reset
+        that has passed forgets the reading -- the key is whole again until
+        the next answer says otherwise. `now` is epoch milliseconds."""
+        now = int(time() * 1000) if now is None else now
+        deadline = self._shared_until()
+        if self.limit is not None and self.remaining is not None \
+                and self.remaining < self.limit / 10:
+            deadline = max(deadline, self.reset_at or self._retry_at or 0)
+        self._blocked_until = deadline
+        if now >= deadline:
+            if self.limit is not None and self.remaining is not None \
+                    and self.remaining < self.limit / 10:
+                self.limit = self.remaining = self.reset_at = None
+                self._retry_at = None
+            self._noticed = None
+            return False
+        return True
+
+    def notice(self, now=None):
+        """The one line a skipped ask prints, once per reset the budget has
+        named; None while the budget is not low, and None again for a reset
+        already announced -- "wait for the reset" is said once, not once
+        per pass that waits."""
+        if not self.low(now):
+            return None
+        state = self._blocked_until
+        if state == self._noticed:
+            return None
+        self._noticed = state
+        return f"board not asked: budget resets at {_clock(state)}"
+
+
+LINEAR_BUDGET = LinearBudget(shared=True)
+
+
 def _gql(query, variables=None):
     key = _load_env_key()
     if not key:
@@ -52,7 +176,20 @@ def _gql(query, variables=None):
     body = json.dumps({"query": query, "variables": variables or {}}).encode()
     req = urllib.request.Request(GRAPHQL, data=body, headers={
         "Authorization": key, "Content-Type": "application/json"})
-    r = json.load(urllib.request.urlopen(req, timeout=30))
+    try:
+        res = urllib.request.urlopen(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        LINEAR_BUDGET.remember(e.headers)
+        if e.code == 429:
+            reset = LINEAR_BUDGET.reset_at
+            raise LinearBudgetExhausted(
+                "Linear refused the query (429): the API key's complexity"
+                " budget is spent" + (
+                    f"; it resets at {_clock(reset)}"
+                    if reset is not None else ""), reset_at=reset) from e
+        raise
+    LINEAR_BUDGET.remember(res.headers)
+    r = json.load(res)
     if r.get("errors"):
         raise RuntimeError(f"Linear GraphQL error: {r['errors']}")
     return r["data"]
