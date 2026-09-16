@@ -362,7 +362,9 @@ CREATE TABLE IF NOT EXISTS interventions (
 # supervisor's board fallback last asked Linear for the ready listing, so
 # `[supervisor] board_ask_sec` throttles across passes and process restarts
 # (KO-434).
-SCHEMA_VERSION = 18
+# Version 19 adds `runs.workingMs` and `runs.workStartedAt`, the accumulated
+# working time and active work interval, leaving historical time NULL (KO-457).
+SCHEMA_VERSION = 19
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's

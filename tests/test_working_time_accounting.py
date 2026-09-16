@@ -32,12 +32,17 @@ class WorkingTimeTests(SweepTestCase):
         rounds = store.read.rounds_of(self.conn, old)
         store.release(self.conn, old, 'failed', now=T0 + 900)
         before = store.read.run_detail(self.conn, old)
-        # An actual pre-column database, reopened by the additive migration.
+        # A version-18 database must migrate through the public open path.
         self.conn.execute('ALTER TABLE runs DROP COLUMN workingMs')
         self.conn.execute('ALTER TABLE runs DROP COLUMN workStartedAt')
+        self.conn.execute('PRAGMA user_version = 18')
         self.conn.commit()
-        store.init(self.conn)
+        self.conn.close()
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
         historical = self.snapshot(old)
+        self.assertEqual(self.conn.execute('PRAGMA user_version').fetchone()[0],
+                         store.SCHEMA_VERSION)
         self.assertIsNone(historical.workingMs)
         self.assertIsNone(historical.workStartedAt)
         self.assertEqual(historical.startedAt, T0)
@@ -266,4 +271,3 @@ class WorkingTimeTests(SweepTestCase):
                     self.fail('ended run dispatched work')
             self.assertIsNone(store.read.ticket_by_id(
                 self.conn, self.ticket_of[run]).activeRunId)
-
