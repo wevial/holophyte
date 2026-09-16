@@ -356,7 +356,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     CONFLICTING polls and HTTP 405 merge-conflict refusals both merge
     `origin/main` into the task branch with `_merge_origin_main()`, push, and
     restart the round. Conflicts go to the implementer; unresolved ones park.
-    UNKNOWN is not a conflict. No rebase or force-push moves review threads.
+    Refusal retries require auto approval. UNKNOWN is not a conflict.
 
     `_park_on_pr()` records the question, PR URL, candidate and reviewed sha,
     then raises `MergeParked`, preserving the branch and worktree. Exhausted
@@ -430,7 +430,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                 return _verified_merge(target, conn, run_id, provider, task_id,
                                        issue_id, branch, wt, sha, beat_s, pull,
                                        reviewed, verified, verify_cmd, contracts,
-                                       ticket, budget_min)
+                                       ticket, budget_min, merge.approve == "auto")
             except pr.MergeRefused as refused:
                 verified = sha
                 sha = _merge_origin_main(target, conn, run_id, provider,
@@ -449,7 +449,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
 
 def _verified_merge(target, conn, run_id, provider, task_id, issue_id, branch,
                     wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
-                    contracts, ticket, budget_min):
+                    contracts, ticket, budget_min, retry_conflicts):
     """Gate a changed candidate before attempting the PR merge."""
     from holophyte.merge_gate import _merge_gate
     from holophyte.pullrequest import _merge_pr
@@ -458,7 +458,7 @@ def _verified_merge(target, conn, run_id, provider, task_id, issue_id, branch,
                     wt, beat_s, sha, verify_cmd, contracts, ticket, budget_min,
                     sync_main=False)
     return _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha,
-                     beat_s, pull, reviewed=reviewed, retry_conflicts=True)
+                     beat_s, pull, reviewed=reviewed, retry_conflicts=retry_conflicts)
 
 
 def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,

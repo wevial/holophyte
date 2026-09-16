@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import io
 import sqlite3
 import subprocess
@@ -18,6 +17,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
+from babysit_fixture import ResolveMerge  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     FAIL,
@@ -64,10 +64,17 @@ class BabysitClaimTests(MergeModeFixture):
 
 
 class WorktreeSetupLoopTests(LoopFixture):
-    """Worktree setup through a real run: placement and failure handling."""
+    """`[worktree] setup` as a whole run walks it: real repo, real worktree.
+
+    The unit tests cover the table and the report. What only a run can show is
+    where the commands land in the loop — after the branch is cut, before the
+    first agent turn — and what a failing setup does to the run around it.
+    """
 
     def test_setup_runs_in_the_fresh_worktree_before_the_implementer(self):
-        """Setup runs in the new worktree before implementation and normal merge."""
+        """The commands run in the task worktree — not the main checkout —
+        while the branch is cut and before any agent turn, and the run merges
+        as it otherwise would."""
         marker = self.target.parent / "where.txt"
         self.configure(f'[worktree]\nsetup = ["pwd > {marker}"]\n')
 
@@ -81,7 +88,9 @@ class WorktreeSetupLoopTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_failed_setup_fails_the_run_before_any_agent_turn(self):
-        """Failed setup dispatches no agent and preserves main without a strike."""
+        """No agent is dispatched — the script is empty, so a turn would raise
+        — main is untouched, and the branch is discarded rather than preserved:
+        nothing was implemented on it."""
         provider = StubProvider(a_task(1), a_task(2))
         self.configure('[worktree]\nsetup = ["echo no toolchain here; exit 3"]\n')
 
@@ -456,7 +465,14 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
 
     def test_a_no_commit_run_keeps_the_reused_worktree_and_its_commits(self):
-        """A no-commit resume preserves the existing candidate and worktree."""
+        """Run 10 of the KO-146 incident: the no-commit close-out
+        force-removed the reused worktree and -D'd the branch, destroying
+        exactly the preserved work the reuse path exists to protect — and
+        the run row then claimed the branch was preserved.
+
+        The branch here is ahead of main in history but identical to it in
+        content, so there is no carried candidate to review (KO-172) and the
+        no-commit gate is still what closes the run out."""
         wt = self.leftover()
         (wt / "rescued.txt").write_text("rescued work\n")
         self.git("add", "-A", cwd=wt)
@@ -498,7 +514,9 @@ class LeftoverWorktreeTests(LoopFixture):
         return wt
 
     def test_a_conflicting_reuse_is_handed_to_the_implementer_who_resolves_it(self):
-        """The implementer resolves preserved-worktree conflicts before ticket work."""
+        """The conflict is the implementer's first commit, not a person's
+        park: the brief opens by naming the path, and the run reaches its
+        first verify with the merge committed -- MERGE_HEAD gone."""
         self.conflicting_leftover()
         resolve = ResolveMerge(self.TEST_FILE, self.BOTH_TESTS)
         review = ApproveNotingMergeHead()
@@ -751,32 +769,6 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn(theirs, reason)
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), local)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(), local)
-
-
-@dataclasses.dataclass
-class ResolveMerge:
-    """Resolve a real mid-merge worktree, record conflicts, then do ticket work."""
-
-    path: str
-    resolved: str
-    conflicted: list = dataclasses.field(default_factory=list)
-
-    role = "implement"
-
-    def play(self, cwd, turn):
-        self.conflicted = subprocess.run(
-            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=cwd,
-            capture_output=True, text=True).stdout.split()
-        (cwd / self.path).write_text(self.resolved)
-        self.git(cwd, "add", self.path)
-        self.git(cwd, "commit", "-q", "-m",
-                 "Merge main into the preserved branch: both tests")
-        return Commit("the scripted work").play(cwd, turn)
-
-    @staticmethod
-    def git(cwd, *args):
-        subprocess.run(["git", *args], cwd=cwd, check=True,
-                       capture_output=True, text=True)
 
 
 class ApproveNotingMergeHead:
