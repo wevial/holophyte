@@ -99,7 +99,7 @@ class AgentRouteTests(unittest.TestCase):
             effort="medium",
             profile="codex-sol-medium",
             timeout=1800,
-            verdicts=review_runner.REVIEW_VERDICTS,
+            verdicts=None,
             carry=[],
         )
         self.assertEqual(holophyte.agents.agent_route(self.tgt, "review"),

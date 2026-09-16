@@ -263,7 +263,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     answer for `role`, as before.
 
     `prior_reply` preserves a capped malformed first reply as raw evidence;
-    only `reply` determines the verdict and criterion findings.
+    only `reply` determines the verdict and criterion findings. The evidence
+    is marked so fingerprints and convergence comparisons ignore it.
 
     A `conn` of None makes this a no-op, like `set_phase()`, so a storeless
     `run_task()` runs the same stages and records nothing.
@@ -286,7 +287,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
             findings = findings + unwitnessed
     if prior_reply:
         prior_reply = sanitize_findings(prior_reply, len(prior_reply))
-        findings = [dict(raw_finding(prior_reply), message=prior_reply)] + findings
+        findings = [dict(raw_finding(prior_reply), message=prior_reply,
+                         evidence_only=True)] + findings
     # `run_verify()` reports a pass/fail gate rather than a raw status — the
     # failing clause and its exit code live in the output it builds — so the
     # exit code stored here is that verdict, and `output` is the detail.

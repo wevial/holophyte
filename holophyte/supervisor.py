@@ -161,11 +161,10 @@ def review_overlap(conn, run_id):
     `(earlier_round, later_round, overlap)` from `store.findings_overlap()`
     over the two most recent rounds with an `endedAt` -- a round still being
     reviewed has no findings to compare yet. None when there are fewer than
-    two such rounds, or when either round found nothing: two empty rounds
-    score 1.0 by the measure's definition (equal sets), but a `pass` after a
-    `pass`, or a round after an approval, is a review that has nothing left
-    to say rather than one repeating itself, and reading the sentinel
-    fingerprint as overlap would trip every run whose review went well.
+    two such rounds, or when either has no semantic findings. Evidence-only
+    rows do not count: two empty rounds score 1.0 by the measure's definition
+    (equal sets), but treating an approval as a repeated review would trip
+    a run whose review went well.
 
     The findings are the store's own JSON, written by
     `store.record_review_round()` after it validated them, so a row that
@@ -178,7 +177,8 @@ def review_overlap(conn, run_id):
     later, earlier = rounds[0].round, rounds[1].round
     earlier_findings = json.loads(rounds[1].findings)
     later_findings = json.loads(rounds[0].findings)
-    if not earlier_findings or not later_findings:
+    if any(store.findings_fingerprint(findings) == store.EMPTY_FINGERPRINT
+           for findings in (earlier_findings, later_findings)):
         return None
     return earlier, later, store.findings_overlap(earlier_findings,
                                                   later_findings)
