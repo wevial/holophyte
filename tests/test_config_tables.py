@@ -187,6 +187,44 @@ class RunCapTests(ConfigTestCase):
         report.assert_called_once_with(self.tgt)
 
 
+class BoardAskSecTests(ConfigTestCase):
+    """`[supervisor] board_ask_sec`: the least wait between two asks of the
+    board's ready listing -- ten minutes when absent, an integer of at
+    least sixty when set (KO-434)."""
+
+    def test_an_absent_key_is_ten_minutes(self):
+        self.locate()
+
+        self.assertEqual(config_tables.sweep_config(self.tgt).board_ask_ms,
+                         600 * 1000)
+
+    def test_a_minute_is_the_floor_and_is_read(self):
+        self.locate("[supervisor]\nboard_ask_sec = 60\n")
+
+        self.assertEqual(config_tables.sweep_config(self.tgt).board_ask_ms,
+                         60 * 1000)
+
+    def test_under_a_minute_or_not_an_integer_is_a_startup_error(self):
+        """`board_ask_sec = 30` is the polling KO-434 ended, `59.5` is no
+        interval a sleep can take, and `"600"` is a string: each is a
+        startup error naming `[supervisor] board_ask_sec`, before anything
+        is claimed."""
+        for line in ("board_ask_sec = 30", "board_ask_sec = 59.5",
+                     'board_ask_sec = "600"', "board_ask_sec = true"):
+            with self.subTest(line=line):
+                target = self.locate(f"[supervisor]\n{line}\n").path
+
+                with patch.object(holophyte.cli, "report") as report:
+                    with self.assertRaises(SystemExit) as raised:
+                        holophyte.cli.cli([str(target), "--report"])
+
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[supervisor] board_ask_sec", message)
+                self.assertIn("at least 60", message)
+                report.assert_not_called()
+
+
 class ReportConfigTests(ConfigTestCase):
     """`[report] host_label`: a string shown wherever a host is rendered,
     absent by default."""

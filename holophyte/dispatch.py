@@ -27,7 +27,7 @@ from holophyte.board import (
 )
 from holophyte.findings import refresh_findings
 from holophyte.gates import MergeParked, RunFailure, outcome_class_of
-from holophyte.supervisor import sweep
+from holophyte.supervisor import linear_budget_low, sweep
 from holophyte.sweep_report import SWEEP_HINT, sweep_lines
 
 
@@ -70,8 +70,13 @@ def _mirror_queue(target, conn, project, provider):
     written to Linear. Returns the listing it mirrored -- the scheduler
     counts its claimable tickets from it (KO-343) -- and None when the step
     was skipped: a board that could not be asked has said nothing about the
-    queue, and an empty list would say it is empty.
+    queue, and an empty list would say it is empty. A Linear complexity
+    budget under its tenth is skipped the same way (KO-434): the relisting
+    waits for the reset `linear_budget_low()` names once rather than
+    spending the points to be refused.
     """
+    if linear_budget_low():
+        return None
     mirrored = []
     try:
         for task in provider.ready_issues():
