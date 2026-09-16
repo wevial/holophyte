@@ -383,6 +383,8 @@ MERGE_KEYS = {
     "pr_style": "",
     "human_threads": "park",
     "after": (),
+    "bot_authors": ("devin-ai-integration", "coderabbitai",
+                    "greptile-apps", "github-actions"),
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
@@ -403,26 +405,9 @@ MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
 def merge_config(target):
     """The target's `[merge]` knobs over the defaults.
 
-    Checked at startup beside `loop_config()`, the same way: an absent table
-    (or key) is the defaults exactly -- `approve = "auto"`, `mode = "local"`,
-    `pr_merge_method = "merge"` -- and a present key has to be one of its
-    `MERGE_VALUES`, and only one of those: `"later"` or `true` names no gate
-    the loop has, `"github"` names no merge path, `"fast-forward"` names no
-    method GitHub's merge API takes, and a value the factory quietly read as
-    the default would merge work the operator asked to sign off on, or land
-    locally what they asked to see as a pull request. `pr_rounds` is held to an integer
-    of at least 1 -- a `true`, a `"5"` or a `0` names no number of passes
-    a babysitter can make. `pr_poll_sec` is an integer of at least
-    `PR_POLL_FLOOR` (`pr_quiet_sec` of at least 0) -- `"180"` is a string
-    and `5` a poll of GitHub, not an interval between babysit rounds.
-    `pr_style` is a string (default empty): instructions, not a switch, so
-    any text is taken and anything else is refused. `human_threads` is
-    `"park"` or `"act"`: a `"reply"` names no rule for a person's thread
-    the babysitter has. `after` is a list of strings (default empty), each a
-    shell command; a bare string is refused rather than split, so a target
-    cannot pass one command where a list of them is read. The refusal names the
-    table, the key and the constraint, like a bad `[loop]` value. Keys this
-    version does not know are refused by `check_config_keys()`.
+    Validate enums, integer floors, instruction text, and string lists at
+    startup. `after` holds shell commands; `bot_authors` holds logins whose
+    declined threads are resolved. Refusals name the config, table and key.
     """
     table = target.config().get("merge", {})
     if not isinstance(table, dict):
@@ -452,12 +437,12 @@ def merge_config(target):
                     f" string, got {value!r}")
             values[key] = value
             continue
-        if key == "after":
+        if key in ("after", "bot_authors"):
             if not isinstance(value, (list, tuple)) \
                     or not all(isinstance(cmd, str) for cmd in value):
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be a"
-                    f" list of shell command strings, got {value!r}")
+                    f" list of strings, got {value!r}")
             values[key] = tuple(value)
             continue
         if value not in MERGE_VALUES[key]:

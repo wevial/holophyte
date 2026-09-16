@@ -304,8 +304,8 @@ class ReviewLoopTests(unittest.TestCase):
         """
         replies = list(replies)
 
-        def fake_agent(target, role, goal, cwd, *, base_sha=None,
-                       candidate_sha=None, timeout=None, on_start=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None, conn=None,
+                       candidate_sha=None, timeout=None, on_start=None, run_id=None):
             self.events.append(role)
             self.goals.append((role, goal))
             if role != "implement":

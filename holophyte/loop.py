@@ -769,7 +769,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                 "line:\n"
                 "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
                 "If REQUEST_CHANGES, list only concrete blockers.", wt,
-                base_sha=base_sha, candidate_sha=sha)
+                base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
         # Before the approval check, so the round that ends the loop is stored
         # like every other one: a review the store has no row for is a round
         # §6 cannot compare the next one against.
@@ -867,7 +867,7 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
             "one final line:\n"
             "VERDICT: PASS  or  VERDICT: FAIL\n"
             "PASS means the candidate is mergeable as it stands.", wt,
-            base_sha=base_sha, candidate_sha=sha)
+            base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
     # The adjudication is a round of the run like the reviews before it —
     # numbered after them, so the run's rounds read in the order they
     # happened.

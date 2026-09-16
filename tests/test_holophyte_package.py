@@ -206,7 +206,7 @@ DEFINED = {
     ],
     # KO-386: the babysit pass joins the texts it drives.
     _module("babysitter"): [
-        "_answer_threads",
+        "_answer_threads", "_decline_threads",
         "_babysit",
         "_fix_threads",
         "_merge_origin_main",

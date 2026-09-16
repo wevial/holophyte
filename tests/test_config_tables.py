@@ -303,16 +303,14 @@ class ConsoleConfigTests(ConfigTestCase):
 
 
 class MergeConfigTests(ConfigTestCase):
-    """`[merge] approve`: `"auto"` (the default) or `"human"`; `[merge] mode`:
-    `"local"` (the default) or `"pr"`; `[merge] pr_rounds`: an integer of at
-    least 1 (default 5); `[merge] pr_merge_method`: `"merge"` (the default),
-    `"squash"` or `"rebase"`; nothing else."""
-
+    """Merge defaults, overrides, and startup validation."""
     def test_an_absent_table_is_auto_and_local(self):
         self.locate()
 
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, 300, "", "park", ()))
+                         ("auto", "local", 5, "merge", 180, 300, "", "park", (),
+                          ("devin-ai-integration", "coderabbitai",
+                           "greptile-apps", "github-actions")))
 
     def test_after_is_read_as_a_list_of_commands(self):
         """`after` is the console build the daemon's bundle depends on, in
@@ -408,6 +406,8 @@ class MergeConfigTests(ConfigTestCase):
                           ('pr_quiet_sec = "300"', "pr_quiet_sec"),
                           ("pr_quiet_sec = -1", "pr_quiet_sec"),
                           ('human_threads = "reply"', "human_threads"),
+                          ('bot_authors = "x"', "bot_authors"),
+                          ('bot_authors = [1]', "bot_authors"),
                           ('after = "bun run build"', "after"),
                           ("after = [1]", "after"),
                           ('approve_by = "human"', "approve_by")):

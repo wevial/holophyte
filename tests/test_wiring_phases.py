@@ -115,8 +115,8 @@ class RunPhaseTests(unittest.TestCase):
         replies = list(replies)
         turns = []
 
-        def fake_agent(target, role, goal, cwd, *, base_sha=None,
-                       candidate_sha=None, timeout=None, on_start=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None, conn=None,
+                       candidate_sha=None, timeout=None, on_start=None, run_id=None):
             turns.append(role)
             if role != "implement":
                 return replies.pop(0)
@@ -244,8 +244,8 @@ class RunPhaseTests(unittest.TestCase):
         """The point of durable phases: state that outlives the process. The
         loop dies mid-review with no chance to record anything, and the run
         still says the work stopped under review."""
-        def boom(target, role, goal, cwd, *, base_sha=None,
-                 candidate_sha=None, timeout=None, on_start=None):
+        def boom(target, role, goal, cwd, *, base_sha=None, conn=None,
+                 candidate_sha=None, timeout=None, on_start=None, run_id=None):
             if role == "review":
                 raise RuntimeError("reviewer host went away")
             (Path(cwd) / "change.txt").write_text("work\n")
