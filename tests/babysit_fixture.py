@@ -18,7 +18,7 @@ T0 = 1_700_000_000_000
 
 
 class ConflictRefusalCases:
-    def conflict_refusal(self, conflict=False):
+    def conflict_refusal(self, conflict=False, heads=()):
         """GitHub refuses the first merge after main moves under the PR."""
         import test_babysitter
         self.configure('[merge]\nmode = "pr"\n')
@@ -38,6 +38,11 @@ class ConflictRefusalCases:
         class MoveMain:
             role = APPROVE.role
             def play(self, cwd, turn):
+                if heads:
+                    old = fixture.git("rev-parse", BRANCH).strip()
+                    fixture.serve(fixture.pr_state(), *[
+                        fixture.pr_state(head=old if head == "old" else fixture.HEAD)
+                        for head in heads])
                 fixture.moved = test_babysitter.ConflictingPullRequestTests.remote_main(
                     fixture, path, "main's line\n")
                 return APPROVE.play(cwd, turn)
