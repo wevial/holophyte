@@ -341,27 +341,22 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               criteria=(), approved=False, reviewed=None, verified=None):
     """Watch the PR until it merges or parks, bounded by `[merge] pr_rounds`.
 
-    Each pass reads settled checks, threads and mergeability. Threads go to
-    `_answer_threads()` for adjudication, fixes and replies. Green, quiet,
-    thread-free PRs merge under auto approval or an operator's `--approve`;
-    otherwise they park. Every judged pass records a review round.
+    Each pass records a review round; `_answer_threads()` handles threads.
+    Green, quiet PRs merge under auto approval or `--approve`, else park.
 
     `reviewed` is the sha independently approved, from the fresh review or
     the resumed park's `approvedSha`. A changed candidate needs `_review_fix()`
     before auto-merge; human approval covers only the released candidate.
-    `verified` is the sha verified in this process, None on resume. A changed
-    candidate passes the verify and drift gate before the merge API call.
-    `criteria` holds the ticket's acceptance criteria for the fix review.
+    `verified` is the sha verified here, None on resume; changes pass verify
+    and drift gates. `criteria` holds acceptance criteria for the fix review.
 
     CONFLICTING polls and HTTP 405 merge-conflict refusals both merge
     `origin/main` into the task branch with `_merge_origin_main()`, push, and
-    restart the round. Conflicts go to the implementer; unresolved ones park.
-    Refusal retries require auto approval. UNKNOWN is not a conflict.
+    Auto retries restart the round; unresolved implementer conflicts park.
 
     `_park_on_pr()` records the question, PR URL, candidate and reviewed sha,
-    then raises `MergeParked`, preserving the branch and worktree. Exhausted
-    rounds park with the cap and open threads. A PR merged externally returns
-    its merge sha; one closed unmerged fails. Local main is untouched."""
+    then raises `MergeParked`, preserving work; exhausted rounds park too.
+    Externally merged PRs return their sha; closed ones fail. Main is untouched."""
     from holophyte.pullrequest import _park_on_pr
     merge = merge_config(target)
     pull = pr_status.parse_pr_url(url)

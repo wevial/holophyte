@@ -70,7 +70,7 @@ PINNED = {
     "tests/sweep_fixture.py": 201, "tests/test_startup_checks.py": 648,
     "tests/test_store.py": 282,
     "tests/test_store_claim.py": 261, "tests/test_store_heartbeat.py": 64,
-    "tests/test_store_interventions.py": 383,
+    "tests/test_store_interventions.py": 382,
     "tests/test_store_lease.py": 80, "tests/test_store_pickable.py": 121,
     "tests/test_store_read.py": 337, "tests/test_store_resume.py": 203,
     "tests/test_store_schema.py": 1013, "tests/test_store_status.py": 312,
