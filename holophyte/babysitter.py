@@ -271,7 +271,7 @@ def quoted(thread):
 
 
 def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
-                       sha, beat_s, pull, budget_min, reviewed=None):
+                       sha, beat_s, pull, budget_min, reviewed=None, refusal=None):
     """GitHub answered CONFLICTING: fetch `origin` and merge `origin/main`
     into the worktree's branch -- the remote's `main`, never the possibly
     stale local one -- push, and hand back the branch's sha so the pass
@@ -311,7 +311,8 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                                capture_output=True, text=True)
             _park_on_pr(
                 target, conn, run_id, provider, task_id, branch, sha, pull,
-                f"GitHub reported the pull request conflicting; merging"
+                (f"GitHub refused the merge: {refusal}; " if refusal else "")
+                + f"GitHub reported the pull request conflicting; merging"
                 f" {pr.BASE} into {branch} stopped on"
                 f" {', '.join(still or detail)} and the implementer turn"
                 " left it unresolved", (), reviewed=reviewed)
@@ -338,60 +339,30 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
 def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
               criteria=(), approved=False, reviewed=None, verified=None):
-    """Babysitter the pull request `url` until it merges or the run parks;
-    return the merge commit's sha.
+    """Watch the PR until it merges or parks, bounded by `[merge] pr_rounds`.
 
-    Design note 7's second half, the `review -> eval -> fix -> reply ->
-    watch` loop, capped by `[merge] pr_rounds`. Each pass reads the PR
-    once (`pr_status.pr_state()`: unresolved threads, the head's check rollup,
-    merged or closed) and is one `reviewRounds` row with route
-    `github:LOGIN`, so FINDINGS shows it beside the Codex rounds. A pass
-    with threads hands them to `_answer_threads()`: the adjudicator
-    verdicts each, the fix round takes the accepted ones, replies and
-    resolves follow, and a decline or a `HUMAN` parks the run with the
-    thread listed. A pass with none waits for pending checks, then: red
-    checks park; green ones are "ready to merge" once `[merge]
-    pr_quiet_sec` of untouched green has elapsed (KO-429), which merges
-    through the PR's merge API under `approve = "auto"` or after the
-    operator's `--approve` (`approved`), and parks for the human
-    otherwise. A fix round moves the candidate past the sha the reviewer
-    approved, and the fix is the implementer's work nobody independent
-    has judged: before the merge, `_review_fix()` reviews the candidate
-    at its fixed sha, and
-    anything but an approval parks the run (the operator's `--approve`
-    was of the sha it released, so a candidate moved since is a human's
-    to release again). `reviewed` is that sha as the caller knows it: the
-    candidate just approved and verified on a fresh run, the park's
-    `approvedSha` on a `--babysit` resume, None when nothing on record
-    covers the branch -- which reads as "moved" and gets the review. Every
-    park records it, so the next resume starts from the same fact.
-    `verified` is the sha the merge gate's verify covered in this process
-    -- the candidate a fresh run took through `_merge_gate()` before the
-    PR opened, None on a resume, where the park's verify is a process
-    old -- and the merge API is never called on any other sha: a
-    candidate not verified here goes through `_merge_gate()` first, the
-    ticket's verify commands and the drift check both, and a failure
-    stops the run at the gate as it does under `mode = "local"`.
-    `criteria` are the ticket's acceptance criteria, which the review of
-    a fix is held to as a review round is. Past `pr_rounds` passes the
-    run parks naming the cap. A PR someone merged
-    by hand lands the run as merged with that sha; one closed unmerged
-    fails it.
+    Each pass reads settled checks, threads and mergeability. Threads go to
+    `_answer_threads()` for adjudication, fixes and replies. Green, quiet,
+    thread-free PRs merge under auto approval or an operator's `--approve`;
+    otherwise they park. Every judged pass records a review round.
 
-    Every park is `_park_on_pr()`: the ticket asks `PR open: URL` with the
-    open threads listed, `runs.prUrl` and `runs.candidateSha` are written
-    with the phase move, and `MergeParked` unwinds the run with the branch
-    and worktree left standing. Nothing touches local main.
+    `reviewed` is the sha independently approved, from the fresh review or
+    the resumed park's `approvedSha`. A changed candidate needs `_review_fix()`
+    before auto-merge; human approval covers only the released candidate.
+    `verified` is the sha verified in this process, None on resume. A changed
+    candidate passes the verify and drift gate before the merge API call.
+    `criteria` holds the ticket's acceptance criteria for the fix review.
 
-    Before threads are judged, a `mergeable` answer of CONFLICTING sends
-    the pass through `_merge_origin_main()`: `origin/main` is merged into
-    the branch -- never rebased, so review threads keep their lines --
-    the branch is pushed, and the pass goes back to waiting on checks.
-    UNKNOWN is not a conflict: GitHub computes `mergeable` lazily and the
-    next pass sees the answer.
-    """
-    from holophyte.merge_gate import _merge_gate
-    from holophyte.pullrequest import _merge_pr, _park_on_pr
+    CONFLICTING polls and HTTP 405 merge-conflict refusals both merge
+    `origin/main` into the task branch with `_merge_origin_main()`, push, and
+    restart the round. Conflicts go to the implementer; unresolved ones park.
+    UNKNOWN is not a conflict. No rebase or force-push moves review threads.
+
+    `_park_on_pr()` records the question, PR URL, candidate and reviewed sha,
+    then raises `MergeParked`, preserving the branch and worktree. Exhausted
+    rounds park with the cap and open threads. A PR merged externally returns
+    its merge sha; one closed unmerged fails. Local main is untouched."""
+    from holophyte.pullrequest import _park_on_pr
     merge = merge_config(target)
     pull = pr_status.parse_pr_url(url)
     if pull is None:
@@ -455,13 +426,18 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             # before the merge API is called.
             reviewed = sha
         if merge.approve == "auto" or approved:
-            if sha != verified:
-                _merge_gate(target, conn, run_id, provider, task_id, issue_id,
-                            branch, wt, beat_s, sha, verify_cmd, contracts,
-                            ticket, budget_min, sync_main=False)
+            try:
+                return _verified_merge(target, conn, run_id, provider, task_id,
+                                       issue_id, branch, wt, sha, beat_s, pull,
+                                       reviewed, verified, verify_cmd, contracts,
+                                       ticket, budget_min)
+            except pr.MergeRefused as refused:
                 verified = sha
-            return _merge_pr(target, conn, run_id, provider, task_id, branch,
-                             wt, sha, beat_s, pull, reviewed=reviewed)
+                sha = _merge_origin_main(target, conn, run_id, provider,
+                                         task_id, branch, wt, sha, beat_s, pull,
+                                         budget_min, reviewed=reviewed,
+                                         refusal=refused)
+                continue
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "ready to merge; waiting for a human to say merge"
                     " ([merge] approve = \"human\")", (), reviewed=reviewed)
@@ -469,6 +445,20 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " babysitter stops here", state.threads, reviewed=reviewed)
+
+
+def _verified_merge(target, conn, run_id, provider, task_id, issue_id, branch,
+                    wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
+                    contracts, ticket, budget_min):
+    """Gate a changed candidate before attempting the PR merge."""
+    from holophyte.merge_gate import _merge_gate
+    from holophyte.pullrequest import _merge_pr
+    if sha != verified:
+        _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch,
+                    wt, beat_s, sha, verify_cmd, contracts, ticket, budget_min,
+                    sync_main=False)
+    return _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha,
+                     beat_s, pull, reviewed=reviewed, retry_conflicts=True)
 
 
 def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,

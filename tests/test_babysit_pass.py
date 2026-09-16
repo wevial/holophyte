@@ -1,14 +1,4 @@
-"""`holophyte.babysitter`'s pass under `[merge] mode = "pr"`, end to end.
-
-The checks the pass waits on and how it judges them, the verdicts over
-threads, the fix round and its review, the round cap, the head-vs-candidate
-check and the merge gate the pass runs before the API merge.
-`MergeModeFixture` (`loop_fixture.py`) is the shared base; the open, park,
-resume and merge of the pull request itself live in `test_pullrequest.py`,
-and the parser's edges in `test_babysitter.py`.
-
-Run: python3 -m unittest discover -s tests -p 'test_babysit_pass*' -v
-"""
+"""Babysitter checks, threads, conflict recovery, and the pre-merge gate."""
 from __future__ import annotations
 
 import io
@@ -32,6 +22,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
     Commit,
+    Idle,
     Reply,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
@@ -52,6 +43,86 @@ class MergeModeBabysitPassTests(MergeModeFixture):
     request's threads and checks; the open, park, resume and merge are
     `MergeModePullRequestTests` (`test_pullrequest.py`)."""
 
+    def conflict_refusal(self, conflict=False):
+        """GitHub refuses the first merge after main moves under the PR."""
+        import test_babysitter
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        gh = self.calls.parent / "gh"
+        text = gh.read_text()
+        answer = f"    echo '{{\"sha\":\"{self.MERGE_SHA}\",\"merged\":true}}'"
+        self.refusal = "gh: Pull Request has merge conflicts (HTTP 405)"
+        marker = self.calls.parent / "refused"
+        gh.write_text(text.replace(answer,
+            f'    if [ ! -f "{marker}" ]; then\n'
+            f'      touch "{marker}"; echo "{self.refusal}" >&2; exit 1\n'
+            f'    fi\n{answer}'))
+        path = "tests/test_file_sizes.py" if conflict else "MOVED.md"
+        # Move the remote only after the initial candidate was reviewed.
+        fixture = self
+        class MoveMain:
+            role = APPROVE.role
+            def play(self, cwd, turn):
+                fixture.moved = test_babysitter.ConflictingPullRequestTests.remote_main(
+                    fixture, path, "main's line\n")
+                return APPROVE.play(cwd, turn)
+        return MoveMain()
+
+    @staticmethod
+    def ratchet_work():
+        work = Commit("branch ratchet", path="tests/test_file_sizes.py",
+                      body="branch's line\n")
+        class CreateTests:
+            role = work.role
+            def play(self, cwd, turn):
+                (cwd / "tests").mkdir(exist_ok=True)
+                return work.play(cwd, turn)
+        return CreateTests()
+
+    def assert_conflict_merge_landed(self):
+        pushes = self.pushed()
+        self.assertEqual(len(pushes), 2)
+        original, merged = [sha for _, sha in pushes]
+        self.assertEqual(self.git("rev-parse", f"{merged}^1").strip(), original)
+        self.assertEqual(self.git("rev-parse", f"{merged}^2").strip(), self.moved)
+        calls = [v["sha"] for kind, v in self.api_calls() if kind == "merge"]
+        self.assertEqual(calls, [original, merged])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_conflict_refusal_merges_main_pushes_and_retries(self):
+        review = self.conflict_refusal()
+        self.loop(Commit("the scripted work"), review, APPROVE,
+                  provider=self.provider())
+        self.assert_conflict_merge_landed()
+
+    def test_conflict_refusal_runs_the_implementer_and_continues(self):
+        review = self.conflict_refusal(conflict=True)
+        path = "tests/test_file_sizes.py"
+        fake, _ = self.loop(self.ratchet_work(), review,
+                            Commit("Merge main: retain both ratchets", path=path,
+                                   body="branch's line\nmain's line\n"), APPROVE,
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "review"])
+        self.assertIn(path, fake.turns[2].goal)
+        self.assertIn("mid-merge", fake.turns[2].goal)
+        self.assertEqual(fake.turns[2].cwd, self.worktrees / "ko-131-add-a-thing")
+        self.assert_conflict_merge_landed()
+        merged = self.pushed()[-1][1]
+        self.assertEqual(self.git("show", f"{merged}:{path}"),
+                         "branch's line\nmain's line\n")
+
+    def test_unresolved_conflict_refusal_parks_with_the_refusal(self):
+        review = self.conflict_refusal(conflict=True)
+        path = "tests/test_file_sizes.py"
+        fake, _ = self.loop(self.ratchet_work(), review, Idle("Cannot resolve"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assertIn(path, fake.turns[2].goal)
+        self.assertIn(self.refusal, self.question())
+        self.assertEqual(len(self.pushed()), 1)
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), self.pushed()[0][1])
+
     def test_pending_checks_are_waited_for_before_the_verdict(self):
         """A pass with no thread and pending checks reads the PR again
         after `CHECK_POLL_S` rather than judging a rollup that is not in
@@ -71,12 +142,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_a_green_pr_quieter_than_pr_quiet_sec_is_not_merged(self):
-        """Acceptance (KO-429): a green pull request with no unresolved
-        thread whose `updatedAt` is 10 s old under `pr_quiet_sec = 300`
-        is re-read, not merged: the pass waits on the same cadence it
-        uses for pending checks and prints how long it has been quiet of
-        the quiet required, and `pr_rounds` still ends the run on a pull
-        request that never goes quiet."""
+        """Fresh green PRs wait; exhausting the round cap parks without merging."""
         self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
         fresh = (datetime.now(timezone.utc)
                  - timedelta(seconds=10)).isoformat()
@@ -161,11 +227,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
             return holophyte.pr_status.pr_state(self.tgt, pull)
 
     def test_check_runs_are_read_to_the_last_page_before_green(self):
-        """Review finding: only the first page of check runs was read and
-        `total_count` ignored, so a head with more runs than one page
-        holds read as green whatever the runs past the page said. Now the
-        pages are walked; a page the babysitter asked for and did not get
-        leaves the read incomplete, which is pending."""
+        """All check-run pages must be read and green before merging."""
         def success(name):
             return {"name": name, "status": "completed",
                     "conclusion": "success"}
@@ -201,11 +263,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertEqual(self._state_with_rest(odd_rest).checks, "pending")
 
     def test_a_rules_answer_the_babysitter_cannot_read_is_pending(self):
-        """Review finding: a `required_status_checks` rule whose checks were
-        not a list of contexts was silently dropped (green), and one whose
-        `parameters` was not an object raised out of `pr_state`. Rules
-        the babysitter cannot read are pending, like check runs it cannot
-        read."""
+        """Malformed required-check rules keep the PR pending."""
         def runs_then(rules):
             def odd_rest(target, pull, method, path, payload=None):
                 if "check-runs" in path:
@@ -228,13 +286,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertEqual(self._state_with_rest(rest).checks, "success")
 
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
-        """Regression: the babysitter's fix commit is the implementer's work,
-        and the pass after it -- green, quiet -- merged it with no
-        independent look at that commit: both the review and the
-        adjudication came before the fix. Now a candidate that moved
-        since its approval is reviewed at the fixed sha before the merge
-        API is called; the approving round is a `reviewRounds` row like
-        the others."""
+        """The changed candidate gets an independent review before its API merge."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
@@ -267,13 +319,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_a_ticket_edited_during_the_fix_round_is_not_merged(self):
-        """Regression: the review of the fix vouched for the merge gate
-        too -- the fixed candidate went to the merge API on the review's
-        verify alone, with no drift check, so a ticket edited while the
-        fix round ran was merged against a contract that no longer
-        existed. Now the fixed candidate goes through the gate: the run
-        stops there, nothing is merged, and the ticket is told which
-        fields moved."""
+        """A fixed candidate still passes the drift gate after its review."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
@@ -337,13 +383,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIn("scripted change is incomplete", question)
 
     def test_a_rejected_fix_is_reviewed_again_on_babysitter_re_entry(self):
-        """Regression: `--babysit` on a run parked because the review of
-        the fix asked for changes resumed with the branch's HEAD taken as
-        reviewed, so a green, quiet PR under `approve = "auto"` merged the
-        rejected fix, unchanged, with no reviewer turn. The park now
-        records the sha the last approval covered (none, here), and the
-        resumed babysitter reviews the candidate again before any merge:
-        another `REQUEST_CHANGES` parks it, unmerged, once more."""
+        """A previously rejected fix needs approval when the babysitter resumes."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
@@ -532,13 +572,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertNotIn(self.DEFECT[3], question)
 
     def test_a_fix_round_that_leaves_edits_is_not_pushed_or_resolved(self):
-        """Regression: the fix round commits part of its fix and leaves the
-        rest uncommitted. The verify ran over the working tree, so it
-        passed on a fix the commit does not hold, and the branch was pushed
-        and the thread resolved on a partial fix. Now the candidate must be
-        clean -- HEAD, the branch and the tree on one commit -- before it is
-        verified; otherwise the run fails with nothing pushed, nothing
-        posted, and the edits left in place for a human."""
+        """An uncommitted fix fails without pushing or resolving the thread."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])
         wt = self.worktrees / "ko-131-add-a-thing"
@@ -569,11 +603,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIn("uncommitted", reason)
 
     def test_a_thread_follow_up_reaches_the_adjudicator_and_the_question(self):
-        """Regression: a thread's later comments were dropped, so a bot's
-        finding that the operator had since turned into a question read to
-        the adjudicator as the finding alone -- answerable, fixable,
-        resolvable. The whole conversation reaches the adjudicator, and a
-        `HUMAN` park quotes it."""
+        """Adjudication and the parked question include the later human reply."""
         self.configure('[merge]\nmode = "pr"\n')
         follow_up = ("Hold on: do we want load() to default at all? Asking"
                      " before anything is changed here.")
@@ -596,10 +626,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIn("@ko", question)
 
     def test_a_thread_with_a_second_page_of_comments_is_read_to_the_end(self):
-        """A thread with more comments than one page holds: the babysitter
-        fetches the next page of that thread's comments (`after` its
-        cursor) before the adjudicator judges it, so the latest word in
-        the thread is in the brief."""
+        """Adjudication sees all comment pages, including the latest human reply."""
         self.configure('[merge]\nmode = "pr"\n')
         first_reply = ("the-bot", "Still applies after the rebase.")
         last_word = "Please leave this exactly as it is; I will explain in" \
@@ -634,9 +661,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertLess(goal.index(first_reply[1]), goal.index(last_word))
 
     def test_a_human_verdict_posts_nothing_and_parks_with_the_thread(self):
-        """Acceptance: a thread the adjudicator marks `HUMAN`: no reply is
-        posted on it, no fix round runs, the run parks, and the ticket's
-        question quotes the thread."""
+        """HUMAN verdicts park with the thread and post nothing."""
         self.configure('[merge]\nmode = "pr"\n')
         asks = ("src/app.py", 30, "ko",
                 "Do we want this to be configurable at all?")
@@ -664,12 +689,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
             [("changes_requested", "github:ko")])
 
     def test_a_thread_a_person_opened_is_human_before_the_adjudicator(self):
-        """Acceptance: one thread a person (`User`) opened beside one a bot
-        opened, and an adjudicator that would ADDRESS anything it is shown.
-        The person's thread never reaches the adjudicator -- the brief
-        names the bot's thread alone -- and is recorded `HUMAN`, "opened by
-        a person"; nothing is posted on either; the run parks with the
-        person's thread quoted, as a `HUMAN` verdict parks it."""
+        """Default policy parks on a human thread without adjudicating or replying."""
         self.configure('[merge]\nmode = "pr"\n')
         person = ("src/app.py", 30, ("wevial", "User"),
                   "I would rather this stayed as it was; leaving my reasons"
@@ -717,12 +737,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIn("src/app.py:30 by @wevial", question)
 
     def test_under_act_a_person_s_address_is_fixed_replied_and_left_open(self):
-        """Acceptance (KO-337): `human_threads = "act"`, a thread a person
-        opened asking for a concrete change, and an adjudicator answering
-        ADDRESS for it. The thread reaches the adjudicator and the fix
-        round, the fix is pushed, a reply naming the sha is posted on it,
-        and `resolve_thread` is never called: the thread is the person's
-        to close."""
+        """Act policy fixes a human request and leaves its thread open."""
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
         person = ("src/app.py", 30, ("wevial", "User"),
                   "Rename `thing` to `default_thing` here; the bare name"
@@ -770,11 +785,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIn("src/app.py:30 (@wevial)", question)
 
     def test_under_act_a_declined_person_is_human_and_the_bot_is_fixed(self):
-        """Acceptance (KO-337): `human_threads = "act"`, a person's thread
-        the adjudicator would DECLINE beside a bot's it would ADDRESS. The
-        bot's thread is fixed, replied to and resolved; the person's gets no
-        reply and no resolve -- the factory never declines a person -- and
-        the run parks with the person's thread quoted."""
+        """A declined human request parks; an addressed bot request is fixed."""
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
         person = ("src/app.py", 30, ("wevial", "User"),
                   "Should this be configurable at all? I would leave it.")
@@ -817,11 +828,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertNotIn(self.DEFECT[3], question)
 
     def test_under_act_a_bot_s_human_verdict_still_parks_before_acting(self):
-        """Review finding (KO-337): `human_threads = "act"` and two bots'
-        threads, one the adjudicator marks HUMAN and one ADDRESS. Bot
-        handling is unchanged by the setting: no fix round runs, nothing is
-        posted or resolved, and the run parks with the HUMAN thread
-        quoted -- as it does under the default."""
+        """Act policy still parks before fixing when a bot verdict needs a human."""
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
         asks = ("src/app.py", 30, "ask-bot",
                 "Is this API shape what the operator wants long term?")
@@ -845,9 +852,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertNotIn(f"> {self.DEFECT[3]}", question)
 
     def test_pr_rounds_caps_the_passes_and_parks_naming_the_cap(self):
-        """Acceptance: `pr_rounds = 2` and a thread that keeps reappearing:
-        two passes each fix and answer it, the third pass does not happen,
-        and the run parks naming the cap with the thread listed."""
+        """Repeated defects exhaust the configured rounds and park naming the cap."""
         self.configure('[merge]\nmode = "pr"\npr_rounds = 2\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])
         address = Reply("THREAD 1: ADDRESS -- a real crash")
@@ -872,10 +877,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIn(self.DEFECT[3], question)
 
     def test_threads_past_the_first_page_keep_the_pr_from_reading_quiet(self):
-        """Regression: a PR whose first page of threads is all resolved and
-        whose open thread is on the second page is not quiet. The babysitter
-        walks the pages (`after` the first's cursor) before deciding, finds
-        the thread and parks on it -- no merge, under `approve = "auto"`."""
+        """A thread on a later page prevents a quiet merge."""
         self.configure('[merge]\nmode = "pr"\n')
         full_page = [self.NIT] * holophyte.pr_status.THREADS_PAGE
         self.fake_route(states=[self.pr_state(resolved=full_page,
@@ -895,10 +897,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIn(self.DEFECT[3], self.question())
 
     def test_a_head_that_is_not_the_candidate_parks_instead_of_merging(self):
-        """Regression: the PR's head is a commit this run did not push (a
-        concurrent push to the branch). Its green checks are that commit's,
-        not the candidate's, so the pass judges nothing and parks naming
-        both shas -- no adjudicator, no merge, under `approve = "auto"`."""
+        """A concurrent head push parks without adjudication or merge."""
         self.configure('[merge]\nmode = "pr"\n')
         other = "a" * 40
         self.fake_route(states=[self.pr_state(head=other)])

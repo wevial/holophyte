@@ -1,15 +1,7 @@
-"""Operator surface: `record_intervention()` and `walk_ticket()`.
+"""Operator interventions, legal ticket walks, and parked-run releases.
 
-The KO-146 incident produced four falsely-labeled 'resume' interventions and
-raw SQL because the schema offered no truthful action for an operator
-close-out and `resume()` was the table's only writer — the schema made
-honesty impossible. These tests pin the general writer (row plus narrative
-event, atomic), the CHECK-widening rebuild an older store needs before it
-can hold a 'close_out' row, and the §3 walk helper that replaces hand-found
-status paths.
-
-Run: python3 -m unittest discover -s tests -p 'test_store_interventions*' -v
-"""
+Verify truthful intervention records, transaction boundaries, and resumption.
+Run: python3 -m unittest discover -s tests -p 'test_store_interventions*' -v"""
 from __future__ import annotations
 
 import re
@@ -215,12 +207,16 @@ class BabysitTests(InterventionFixture):
                    pr_url="https://example.test/pull/1", now=T0 + 2 * MINUTE)
         store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
 
+        self.conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                          ("PR open: https://example.test/pull/1", self.ticket))
         store.babysit(self.conn, self.ticket, "look again",
                       now=T0 + 3 * MINUTE)
 
         self.assertEqual(
             self.rows('SELECT runId, source, "action" FROM interventions'),
             [(self.run, "human", "babysit")])
+        self.assertEqual(self.rows("SELECT status, blockedQuestion FROM tickets"),
+                         [("ready", None)])
         with self.assertRaises(sqlite3.IntegrityError):
             self.conn.execute(
                 'INSERT INTO interventions (runId, source, "trigger",'

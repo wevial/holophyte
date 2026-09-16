@@ -33,6 +33,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     CommitThenTimeout,
     IdleThenTimeout,
     LoopFixture,
+    MergeModeFixture,
     StubProvider,
     a_task,
 )
@@ -45,18 +46,28 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
-class WorktreeSetupLoopTests(LoopFixture):
-    """`[worktree] setup` as a whole run walks it: real repo, real worktree.
+class BabysitClaimTests(MergeModeFixture):
+    def test_send_back_claim_resumes_the_parked_candidate(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("candidate"), APPROVE, provider=self.provider())
+        candidate = self.git("rev-parse", BRANCH).strip()
+        self.assertIn("PR open:", self.question())
+        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
+                                         out=io.StringIO())
+        self.assertEqual(self.read("SELECT blockedQuestion FROM tickets"), [(None,)])
+        output = self.main_output(provider=self.provider())
+        self.assertNotIn("parked on PR", output)
+        self.assertEqual(self.read("SELECT id, candidateSha FROM runs ORDER BY id"),
+                         [(1, candidate), (2, candidate)])
+        self.assertEqual([k for k, _ in self.api_calls()], ["state", "state"])
 
-    The unit tests cover the table and the report. What only a run can show is
-    where the commands land in the loop — after the branch is cut, before the
-    first agent turn — and what a failing setup does to the run around it.
-    """
+
+class WorktreeSetupLoopTests(LoopFixture):
+    """Worktree setup through a real run: placement and failure handling."""
 
     def test_setup_runs_in_the_fresh_worktree_before_the_implementer(self):
-        """The commands run in the task worktree — not the main checkout —
-        while the branch is cut and before any agent turn, and the run merges
-        as it otherwise would."""
+        """Setup runs in the new worktree before implementation and normal merge."""
         marker = self.target.parent / "where.txt"
         self.configure(f'[worktree]\nsetup = ["pwd > {marker}"]\n')
 
@@ -70,9 +81,7 @@ class WorktreeSetupLoopTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_failed_setup_fails_the_run_before_any_agent_turn(self):
-        """No agent is dispatched — the script is empty, so a turn would raise
-        — main is untouched, and the branch is discarded rather than preserved:
-        nothing was implemented on it."""
+        """Failed setup dispatches no agent and preserves main without a strike."""
         provider = StubProvider(a_task(1), a_task(2))
         self.configure('[worktree]\nsetup = ["echo no toolchain here; exit 3"]\n')
 
@@ -447,14 +456,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
 
     def test_a_no_commit_run_keeps_the_reused_worktree_and_its_commits(self):
-        """Run 10 of the KO-146 incident: the no-commit close-out
-        force-removed the reused worktree and -D'd the branch, destroying
-        exactly the preserved work the reuse path exists to protect — and
-        the run row then claimed the branch was preserved.
-
-        The branch here is ahead of main in history but identical to it in
-        content, so there is no carried candidate to review (KO-172) and the
-        no-commit gate is still what closes the run out."""
+        """A no-commit resume preserves the existing candidate and worktree."""
         wt = self.leftover()
         (wt / "rescued.txt").write_text("rescued work\n")
         self.git("add", "-A", cwd=wt)
@@ -496,9 +498,7 @@ class LeftoverWorktreeTests(LoopFixture):
         return wt
 
     def test_a_conflicting_reuse_is_handed_to_the_implementer_who_resolves_it(self):
-        """The conflict is the implementer's first commit, not a person's
-        park: the brief opens by naming the path, and the run reaches its
-        first verify with the merge committed -- MERGE_HEAD gone."""
+        """The implementer resolves preserved-worktree conflicts before ticket work."""
         self.conflicting_leftover()
         resolve = ResolveMerge(self.TEST_FILE, self.BOTH_TESTS)
         review = ApproveNotingMergeHead()
@@ -755,10 +755,7 @@ class LeftoverWorktreeTests(LoopFixture):
 
 @dataclasses.dataclass
 class ResolveMerge:
-    """An implementer turn on a worktree left mid-merge: it records the paths
-    git says are unmerged, writes `resolved` to `path`, commits the merge
-    with a message naming both sides, then does one scripted commit of the
-    ticket's own work."""
+    """Resolve a real mid-merge worktree, record conflicts, then do ticket work."""
 
     path: str
     resolved: str
