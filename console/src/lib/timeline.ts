@@ -135,6 +135,7 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
     open = { kind, label, from: change.at, round };
   }
   if (open) {
+    if (live && phase === "merge_gate") open.label = phaseLabel(phase, run.pr_url);
     const last: Segment = { ...open, to: Math.max(open.from, end), running: live, width: 0 };
     if (live || last.to > last.from) push(last);
   }
@@ -195,7 +196,8 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
 export function buildTimeline(run: TimelineRun, now: number): Segment[] {
   const changes = (run.events ?? [])
     .filter((event) => event.kind === "phase_change" ||
-      (event.kind === "pull_request" && event.summary.startsWith("pull request open")))
+      (event.kind === "pull_request" && (event.summary.startsWith("pull request open") ||
+        event.summary.startsWith("adopted the branch's open pull request"))))
     .sort((a, b) => a.at - b.at);
   return changes.some((event) => event.kind === "phase_change") ? fromEvents(run, changes, now) : fromRounds(run, now);
 }
