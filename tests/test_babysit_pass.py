@@ -22,6 +22,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
     Commit,
+    Idle,
     Reply,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
@@ -243,6 +244,40 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         rest = runs_then([{"type": "deletion"},
                           dict(rule, parameters={"required_status_checks": []})])
         self.assertEqual(self._state_with_rest(rest).checks, "success")
+
+    def test_a_stalled_fix_round_keeps_implementer_output(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Idle("reading store/read.py\nstill reading"),
+                            provider=self.provider())
+
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("failed", "failed")])
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(),
+                         fake.turns[1].candidate_sha)
+        ((summary, payload),) = self.read(
+            "SELECT summary, payload FROM runEvents"
+            " WHERE kind = 'implementer_output'")
+        self.assertEqual(summary, "fix round 1: reading store/read.py")
+        self.assertIn("reading store/read.py\nstill reading", payload)
+
+    def test_a_fix_round_that_moves_the_candidate_keeps_no_output_event(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state()])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("fix: default load()"), APPROVE,
+                            provider=self.provider())
+
+        self.assertNotEqual(fake.turns[1].candidate_sha,
+                            fake.turns[4].candidate_sha)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.read("SELECT count(*) FROM runEvents"
+                                   " WHERE kind = 'implementer_output'"),
+                         [(0,)])
 
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
         """Review the fixed candidate independently before merging it."""
