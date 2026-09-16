@@ -28,7 +28,7 @@ import store
 import store.read
 import store.tickets
 from holophyte.agents import probe_implementer
-from holophyte.board import ledger, mirror_push, release_lease_label
+from holophyte.board import mirror_push, post_ledger_comment, release_lease_label
 from holophyte.claim import _claim_next
 from holophyte.config_tables import loop_config, report_config
 from holophyte.findings import commit_findings
@@ -424,10 +424,7 @@ def repoint(target, identifier, sha, note, out=None):
 
 def close_ticket(target, identifier, landed, note=None, out=None, provider=None):
     """Record an external landing after a terminal, unsuccessful factory run.
-
-    Keep the run's outcome: the operator closes the ticket, not a factory
-    merge. Validate under the same write lock as the intervention and walk;
-    project the committed result to the board using the merge helpers.
+    Preserve the outcome; validate and walk atomically, then project to the board.
     """
     out = sys.stdout if out is None else out
     conn = _operator_store(target)
@@ -455,12 +452,17 @@ def close_ticket(target, identifier, landed, note=None, out=None, provider=None)
                     f"[holo2] {identifier}: last run must have ended rejected,"
                     " failed, abandoned or killed")
             store.record_intervention(conn, run_id, "close_out", message)
+            ledger_text = conn.execute(
+                "SELECT text FROM ledger WHERE runId = ? ORDER BY id DESC LIMIT 1",
+                (run_id,)).fetchone()[0]
+            conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
+                         (ticket_id,))
             store.walk_ticket(conn, ticket_id, "merged")
             conn.execute("UPDATE runs SET mergeSha = NULL WHERE id = ?",
                          (run_id,))
         release_lease_label(target, conn, ticket_id, provider, run_id)
         mirror_push(conn, ticket_id, provider)
-        ledger(conn, run_id, ticket.linearIssueId, "note", message, provider)
+        post_ledger_comment(ticket.linearIssueId, ledger_text, provider)
         print(f"[holo2] {identifier} closed: {landed}; no factory merge",
               file=out)
     finally:
@@ -468,9 +470,7 @@ def close_ticket(target, identifier, landed, note=None, out=None, provider=None)
 
 
 def _operator_store(target):
-    """The store an operator command writes to, or the exit for a target
-    that has none: nothing to requeue, approve or re-point, and no file
-    made for the sake of saying so."""
+    """Open the operator's store, refusing a missing store without creating it."""
     if not target.store_path.exists():
         raise SystemExit(f"[holo2] no store at {target.store_path}")
     return open_store(target)

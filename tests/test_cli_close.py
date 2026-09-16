@@ -53,6 +53,10 @@ class CloseFlagTests(unittest.TestCase):
     def end(self, outcome="rejected"):
         store.release(self.conn, self.run, outcome)
         store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.execute(
+            "UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+            ("Rejected pull request: how should this proceed?", self.ticket))
+        self.conn.commit()
 
     def test_close_records_external_landing_and_walks_board(self):
         self.end()
@@ -78,6 +82,26 @@ class CloseFlagTests(unittest.TestCase):
         self.assertEqual(issue, "issue-1")
         self.assertIn(URL, comment)
         self.assertIn("no factory merge", comment)
+
+    def test_close_projects_one_ledger_entry_to_board(self):
+        self.end()
+        before = self.conn.execute("SELECT COUNT(*) FROM ledger").fetchone()[0]
+        self.cli("--close", "KO-1", "--landed", URL)
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM ledger").fetchone()[0], before + 1)
+        kind, text = self.conn.execute(
+            "SELECT kind, text FROM ledger ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual(kind, "intervention")
+        self.assertIn(URL, text)
+        self.board.comment.assert_called_once()
+        self.assertIn(text, self.board.comment.call_args.args[1])
+
+    def test_close_clears_resolved_operator_question(self):
+        self.end()
+        self.cli("--close", "KO-1", "--landed", URL)
+        self.assertEqual(self.conn.execute(
+            "SELECT status, blockedQuestion FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone(), ("merged", None))
 
     def test_refusals_leave_store_and_board_unchanged(self):
         for case in ("live run", "parked", "merged", "unknown"):
