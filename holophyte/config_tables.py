@@ -351,15 +351,9 @@ def board_config(target):
 # `updatedAt`. An integer of at least 0; the default is 300, `0`
 # merge-as-soon-as-green.
 #
-# `pr_text` is where the pull request's title and body come from under
-# `mode = "pr"`: `"ticket"` (the default) titles it `KO-n: TITLE` and pastes
-# the ticket body with the run's FINDINGS entry; `"written"` spends one
-# implementer turn on the diff, the ticket and the repository's agent guide
-# and opens the PR with the title and description that turn writes, the
-# Linear issue linked at the end (KO-336). `pr_style` is an optional string
-# of instructions that turn is given -- the repository's own PR conventions
-# in the operator's words. A reply the loop cannot read falls back to the
-# ticket form for that PR, so a PR is always opened.
+# Pull request titles and bodies are always written by one implementer turn
+# from the diff, ticket and repository conventions. `pr_style` supplies
+# optional instructions. An unusable reply falls back to a Summary stub.
 #
 # `human_threads` is what the babysitter does with a review thread a person
 # opened: `"park"` (the default, KO-327) is HUMAN before the adjudicator is
@@ -382,7 +376,6 @@ MERGE_KEYS = {
     "pr_merge_method": "merge",
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
-    "pr_text": "ticket",
     "pr_style": "",
     "human_threads": "park",
     "after": (),
@@ -390,10 +383,9 @@ MERGE_KEYS = {
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
 MERGE_METHODS = ("merge", "squash", "rebase")
-MERGE_PR_TEXTS = ("ticket", "written")
 MERGE_HUMAN_THREADS = ("park", "act")
 MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
-                "pr_merge_method": MERGE_METHODS, "pr_text": MERGE_PR_TEXTS,
+                "pr_merge_method": MERGE_METHODS,
                 "human_threads": MERGE_HUMAN_THREADS}
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
 # The least `pr_poll_sec`: under this the loop would be polling GitHub for
@@ -419,7 +411,6 @@ def merge_config(target):
     a babysitter can make. `pr_poll_sec` is an integer of at least
     `PR_POLL_FLOOR` (`pr_quiet_sec` of at least 0) -- `"180"` is a string
     and `5` a poll of GitHub, not an interval between babysit rounds.
-    `pr_text` is `"ticket"` or `"written"`, and
     `pr_style` is a string (default empty): instructions, not a switch, so
     any text is taken and anything else is refused. `human_threads` is
     `"park"` or `"act"`: a `"reply"` names no rule for a person's thread
@@ -434,6 +425,10 @@ def merge_config(target):
         raise SystemExit(
             f"[holo2] {target.config_path}: [merge] must be a table, got "
             f"{type(table).__name__}")
+    if "pr_text" in table:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [merge] pr_text was retired:"
+            " pull request bodies are always written")
     values = {}
     for key, default in MERGE_KEYS.items():
         value = table.get(key, default)

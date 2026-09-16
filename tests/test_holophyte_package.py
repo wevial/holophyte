@@ -240,7 +240,7 @@ DEFINED = {
         "check_pr_route",
         "create_pull_request",
         "origin_url",
-        "pr_body",
+        "pr_body_stub",
         "pr_title",
         "push_branch",
         "repo_of",

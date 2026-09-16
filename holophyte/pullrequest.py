@@ -1,4 +1,4 @@
-from time import monotonic, time
+from time import monotonic
 
 import store
 import store.read
@@ -97,10 +97,9 @@ def _pr_template(wt):
 
 def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
                      beat_s, wt, started, budget_min, issue_url):
-    """`[merge] pr_text = "written"`: one implementer turn writes the PR's
-    title and body from the diff; `(title, body)`, or None when its reply
-    could not be read or the turn ran out of time, with one printed line
-    saying so.
+    """One implementer turn writes the PR title and body from the diff.
+    Return `(title, body)`, using a Summary stub when the reply is unusable
+    or the turn runs out of time, with one printed line saying so.
 
     The turn is given the diff against `main` (capped at `PR_TEXT_DIFF_CAP`,
     with a note when cut), the ticket, the repository's `AGENTS.md` and
@@ -153,25 +152,25 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
     reply, timed_out = _timed(target, conn, run_id, beat_s, wt, minutes,
                               goal)
     parsed = None if timed_out else pr.parse_pr_text(reply)
-    if parsed is None:
+    if parsed is None or not parsed[1]:
         why = ("the turn ran out of time" if timed_out
                else "the reply has no `TITLE:` line, an empty title, or a"
-               f" title over {pr.PR_TITLE_MAX} characters")
+               f" title over {pr.PR_TITLE_MAX} characters, or an empty body")
         print(f"[holo2] written PR text refused for {task_id}: {why};"
-              " opening the pull request with the ticket's title and body")
-        return None
+              " opening the pull request with the ticket's title and a stub")
+        return pr.pr_title(task_id, task), pr.pr_body_stub(
+            {"id": task_id, "body": body}, why, issue_url)
     title, text = parsed
     return title, pr.pr_body_written(text, task_id, issue_url)
 
 
 def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
-             wt=None, started=None, budget_min=None, issue_url=None):
+             wt, started, budget_min, issue_url=None):
     """`[merge] mode = "pr"`: push the approved candidate and open its pull
     request; return the PR's URL.
 
-    `git push origin BRANCH`, then the PR with the title `KO-n: TITLE` and
-    the ticket body plus the run's FINDINGS entry as its body -- in that
-    order, so a PR never names a branch the remote does not hold. Either
+    `git push origin BRANCH`, then the PR with its written title and body,
+    so a PR never names a branch the remote does not hold. Either
     refusing is `InfraFailure` out of `holophyte.pr`: the route gave out,
     not the ticket, so no strike is spent and the branch and worktree stay
     exactly as after a refused merge. Nothing touches main.
@@ -184,22 +183,16 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     that follows is the same one a created PR gets, and a park through
     `_park_on_pr()` records it like every other PR park.
 
-    Under `[merge] pr_text = "written"` the title and body are what
-    `_written_pr_text()` had one implementer turn write from the diff,
-    before the push; a reply it cannot read is the ticket form above for
-    this PR, so a PR is always opened (KO-336). `wt`, `started` and
-    `budget_min` are that turn's worktree and box, and `issue_url` the
-    link its body ends with; a direct call with none of them takes the
-    ticket form.
+    Before the push, `_written_pr_text()` writes the title and body from
+    the diff. An unusable reply falls back to the ticket title and a short
+    Summary stub explaining the failure, followed by the Linear link.
 
     Both calls leave the machine and block for as long as the remote takes,
     so they run under `heartbeat_while()` like every other wait: a slow push
     is not a dead loop for the supervisor to sweep before the URL is on the
     run (KO-259 review round 1).
     """
-    written = None
-    if wt is not None and merge_config(target).pr_text == "written":
-        written = _written_pr_text(target, conn, run_id, task_id, task,
+    title, text = _written_pr_text(target, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,
                                    budget_min, issue_url)
     # Still the `merge_gate` phase: the push and the create are the mode's
@@ -217,12 +210,6 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
         # a requeued run used to fail after doing everything right.
         url = pr.open_pull_request(target, branch)
         if url is None:
-            now = int(time() * 1000)
-            if written is not None:
-                title, text = written
-            else:
-                title = pr.pr_title(task_id, task)
-                text = pr.pr_body(conn, run_id, body, now)
             url = pr.create_pull_request(target, branch, title, text)
             print(f"[holo2] pull request open: {url}")
         else:
