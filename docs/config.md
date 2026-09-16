@@ -234,11 +234,16 @@ interval holds across passes and across supervisor restarts whatever
 minute the fallback is the polling that emptied the key.
 
 Separately, every Linear answer carries the key's complexity-budget
-headers and the provider keeps them in a process-wide budget. When under
+headers and the provider shares low-budget deadlines per API key under
+`HOLOPHYTE_HOME/linear-budget` (default `~/.holophyte/linear-budget`). When under
 a tenth of the limit remains, the fallback and the loop's idle relisting
 both wait for the reset instead of spending the points to be refused: one
 `[holo2] board not asked: budget resets at HH:MM` line per refill, and no
-calls until it. A refused answer (HTTP 429) lands the same way, as a
+calls until it. Supervisor loop starts and pool worker claims honor the same
+deadline, including after a process restart; the pool also checks after
+mirroring before spawning workers. If a low reading omits the reset, the
+factory waits one hour from that reading before probing again. A refused
+answer (HTTP 429) lands the same way, as a
 `LinearBudgetExhausted` naming the reset.
 
 The box is counted per turn: a run's allowance is the ticket's estimate once

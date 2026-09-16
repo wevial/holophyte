@@ -758,16 +758,7 @@ class HostLabelTests(SweepTestCase):
 
 
 class ParkedPullRequestTests(SweepTestCase):
-    """KO-372: the supervisor closes out a run parked on its pull request
-    when GitHub says the pull request was merged, while no loop is live.
-
-    The loop's reconcile (KO-359) only runs inside a loop pass, and a
-    pull-request target's loop exits once Linear has no ready tickets; a
-    merge after that sat in the store until someone relaunched. The
-    supervisor is always up, so its sweep pass runs the same reconcile --
-    the loop's function, not a copy -- with GitHub faked at the one
-    GraphQL read it makes.
-    """
+    """Reconcile parked pull requests and restart loops for ready work."""
 
     URL = "https://github.com/example/repo/pull/7"
     MERGE_SHA = "9f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"
@@ -1060,6 +1051,22 @@ class ParkedPullRequestTests(SweepTestCase):
             acceptance_criteria=[f"Given ticket {n}, then it is worked"],
             verification_commands=["echo ok"])
 
+    def test_low_budget_holds_a_loop_start_for_mirrored_ready_work(self):
+        import linear_provider
+        self.ready_ticket()
+        calls = self.fake_systemctl()
+        budget = linear_provider.LinearBudget()
+        budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "0",
+            "x-ratelimit-complexity-reset": str(T0 + 60 * MINUTE)})
+        with patch.object(linear_provider, "LINEAR_BUDGET", budget):
+            out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
+            self.assertEqual(calls(), [])
+            self.assertIn("board not asked: budget resets at", out)
+            self.one_pass(T0 + 60 * MINUTE, StubProvider())
+        self.assertTrue(calls())
+
     def test_a_ready_ticket_without_a_send_back_starts_the_loop_unit(self):
         """A pass that sent nothing back but finds a ticket `ready`
         starts the unit; a store holding nothing ready starts nothing."""
@@ -1110,9 +1117,7 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertNotIn("holophyte-loop@", out)
 
     def test_a_board_that_cannot_be_asked_is_printed_and_starts_nothing(self):
-        """A failed board read is a "no", like the reconcile's GitHub
-        errors: one printed line, nothing started, the next pass asks
-        again."""
+        """A failed board ask prints its error and starts nothing."""
         provider = StubProvider(ready=RuntimeError("Linear is down"))
         calls = self.fake_systemctl()
 
@@ -1126,11 +1131,7 @@ class ParkedPullRequestTests(SweepTestCase):
     # `[supervisor] board_ask_sec` -- an empty mirror is not a reason to
     # spend one ready listing a minute on it forever.
     def test_an_empty_mirror_is_not_re_asked_within_board_ask_sec(self):
-        """A pass 30 s after one that asked -- `board_ask_sec` is ten
-        minutes -- asks nothing and starts nothing, the stamp on the
-        projects row holding it; once the interval is past the board is
-        asked again, so a ticket filed while the loop was down is not
-        waited out."""
+        """Fallback asks are throttled for ten minutes, then resume."""
         provider = StubProvider()
         self.fake_systemctl()
 
@@ -1150,10 +1151,7 @@ class ParkedPullRequestTests(SweepTestCase):
 
     def test_a_low_complexity_budget_asks_nothing_and_says_the_reset_once(
             self):
-        """Under a tenth of the key's complexity limit the fallback waits
-        for the reset rather than asking to be refused: the provider is
-        never called, the one printed line names the reset -- and the next
-        pass under the same reading says nothing again."""
+        """Low budget suppresses board asks and announces each reset only once."""
         import linear_provider
         budget = linear_provider.LinearBudget()
         budget.remember({

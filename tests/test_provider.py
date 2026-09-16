@@ -1,19 +1,7 @@
-"""Conformance suite for the board seam: one set of assertions, two boards.
+"""Board conformance: shared claim and contract assertions for both providers.
 
-`provider.Provider` is what `holophyte.operator.main()` drives, and the loop observes a
-board through five things only -- what `claim_next()` hands out and in what
-order, whether `skip` is honored, whether `fetch_task()` sees an edit made
-after the claim, whether `set_state()` is reflected by `fetch_task()` and
-`claim_next()`, and whether `comment()` lands on the ticket. The mixin asserts
-exactly those, through the protocol, and each board supplies only the seeding
-and the readback it alone knows how to do: files on disk for `FileProvider`,
-and for `LinearProvider` a fake of the one transport function
-(`linear_provider._gql`) serving the canned GraphQL shapes the real module
-parses. Nothing above the transport is stubbed, so the Linear case exercises
-`list_ready_issues()`, `parse_task()`, `_state_id()` and the mutations as they
-run against the API.
-
-Run: python3 -m unittest tests.test_provider -v
+FileProvider uses seeded files; LinearProvider uses canned GraphQL replies
+below the provider seam, exercising parsing, workflow states and mutations.
 """
 from __future__ import annotations
 
@@ -141,10 +129,7 @@ class ConformanceMixin:
             self.assertIn("## Acceptance criteria", task["body"])
 
     def test_a_claimed_task_carries_the_parsed_contract(self):
-        """The task dict is the shape `parse_task()` produces, with the
-        values the seeded body says -- the two boards parse the same body to
-        the same contract, and the body is one the claim-time validator
-        accepts."""
+        """Claiming carries the parsed acceptance criteria and verify commands."""
         self.seed("KO-1", title="add a thing", criterion="Given x, when y, then z.",
                   verify="echo ok", estimate=25)
 
@@ -214,10 +199,7 @@ class ConformanceMixin:
         self.assertEqual(self.comments_on("KO-2"), [])
 
     def test_a_label_added_rides_the_listing_and_comes_off_on_unlabel(self):
-        """The board lease (KO-351): `label_issue()` puts a label on the
-        ticket the next claim and listing can read back in `labels`,
-        creating the label on first use; `unlabel_issue()` takes exactly
-        that one off and leaves the ticket's other labels alone."""
+        """Labels survive listing and can be removed."""
         self.seed("KO-1")
         self.assertEqual(self.claim()["labels"], [])
 
@@ -537,15 +519,7 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
 
 
 class LinearImportTests(unittest.TestCase):
-    """Importing `linear_provider` reads no configuration.
-
-    The board is the target's `[board]` table, handed to `LinearProvider`;
-    the module holds no project or team of its own, so importing it with no
-    `HOLO2_*` variables and no `.env` beside it succeeds. The import runs in
-    a subprocess from a copy of the module in a directory with no `.env`, so
-    neither this process's modules nor the operator's own file can stand in
-    for the configuration the import must not need.
-    """
+    """Importing Linear does not require credentials or make network requests."""
 
     def test_the_module_imports_with_no_configuration_at_all(self):
         tmp = tempfile.TemporaryDirectory()
@@ -585,10 +559,7 @@ def _answer(data, headers):
 
 
 class LinearBudgetTests(unittest.TestCase):
-    """KO-434: `LINEAR_BUDGET` keeps what every `_gql()` answer's
-    `x-ratelimit-complexity-*` headers said of the key's hourly budget --
-    the refusal's headers included -- and a 429 lands as
-    `LinearBudgetExhausted` carrying the reset the refusal named."""
+    """KO-434: response headers, cooldown persistence and 429 handling."""
 
     @classmethod
     def setUpClass(cls):
@@ -617,6 +588,36 @@ class LinearBudgetTests(unittest.TestCase):
             "x-ratelimit-complexity-remaining": "400000"})
         self.assertFalse(self.budget.low())
 
+    def test_unknown_reset_allows_a_probe_after_one_hour(self):
+        with patch.object(self.linear, "time", return_value=1000):
+            self.budget.remember({
+                "x-ratelimit-complexity-limit": "3000000",
+                "x-ratelimit-complexity-remaining": "0"})
+        self.assertTrue(self.budget.low(now=4_599_999))
+        self.assertFalse(self.budget.low(now=4_600_000))
+
+    def test_cooldown_survives_a_fresh_process(self):
+        for reset, deadline in ((9999999999999, 9999999999999), (None, 4600000)):
+            with self.subTest(reset=reset), tempfile.TemporaryDirectory() as home, \
+                    patch.dict(os.environ, {"HOLOPHYTE_HOME": home,
+                                            "LINEAR_API_KEY": "test-key"}):
+                headers = {"x-ratelimit-complexity-limit": "3000000",
+                           "x-ratelimit-complexity-remaining": "0"}
+                if reset is not None:
+                    headers["x-ratelimit-complexity-reset"] = str(reset)
+                writer = f"""
+import linear_provider as lp
+lp.time = lambda: 1000
+lp.LINEAR_BUDGET.remember({headers!r})
+"""
+                subprocess.run([sys.executable, "-c", writer], check=True)
+                reader = f"""
+import linear_provider as lp
+assert lp.LINEAR_BUDGET.low(now={deadline - 1})
+assert not lp.LINEAR_BUDGET.low(now={deadline})
+"""
+                subprocess.run([sys.executable, "-c", reader], check=True)
+
     def test_every_answer_updates_the_budget(self):
         """A served answer's headers are the budget's reading."""
         headers = {"x-ratelimit-complexity-limit": "3000000",
@@ -633,9 +634,7 @@ class LinearBudgetTests(unittest.TestCase):
                          (3000000, 2000000, 1_800_000_000_000))
 
     def test_a_429_is_a_budget_exhausted_carrying_the_reset(self):
-        """The refusal is not a generic transport error: it lands as
-        `LinearBudgetExhausted`, and its own headers have already been
-        remembered -- the reset the guards wait for is the budget's."""
+        """A 429 remembers its headers and raises the distinct reset-bearing error."""
         headers = {"x-ratelimit-complexity-limit": "3000000",
                    "x-ratelimit-complexity-remaining": "0",
                    "x-ratelimit-complexity-reset": "1800000000000"}

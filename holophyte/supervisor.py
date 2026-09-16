@@ -523,12 +523,11 @@ def loop_is_live(conn, project, now, stale_ms):
 
 
 def _linear_budget():
-    """The process's Linear complexity budget, or None when the provider
-    module was never imported -- no Linear answer has been seen, so nothing
-    is spent -- or a test stubbed the module without one."""
+    """Load the shared Linear cooldown even before this process has asked
+    the board. A test may stub the provider module without a budget."""
     module = sys.modules.get("linear_provider")
     if module is None:
-        return None
+        import linear_provider as module
     return getattr(module, "__dict__", {}).get("LINEAR_BUDGET")
 
 
@@ -724,7 +723,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
         owed = [(None, None)] * board_ready(
             conn, board_project, provider, out, now=now,
             board_ask_ms=knobs.board_ask_ms)
-    if owed and not lease_turn_held(target):
+    if owed and not linear_budget_low(now, out) and not lease_turn_held(target):
         start_loop_for(target, conn, owed, now, out)
     return asked
 

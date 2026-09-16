@@ -55,12 +55,7 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class GateConflictRequeueTests(LoopFixture):
-    """A candidate parked on a merge-gate conflict can be requeued once the
-    operator resolves the merge (KO-365): the gate's merge of `main` into
-    the branch conflicts, the run fails and the ticket parks
-    `blocked_on_operator` with the branch preserved. The park here is the
-    loop's own, made by a real conflict.
-    """
+    """A merge-gate conflict preserves and requeues the candidate."""
 
     def park_on_conflict(self, provider):
         """KO-131 parked by `_sync_main_into_branch()` on a README conflict;
@@ -216,10 +211,7 @@ class PoolTests(LoopFixture):
         self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(0,)])
 
     def test_a_timer_tick_with_a_slot_free_spawns_for_a_ticket_filed_since(self):
-        """`workers = 3`, one ticket and so one worker; a second ticket filed
-        while it runs. The wait carries the tick as its timeout while a slot
-        is free, and a wait that times out recounts the queue and spawns
-        the second worker (KO-353)."""
+        """A timer tick fills a free slot with newly ready work."""
         provider = StubProvider(a_task(1))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
@@ -273,11 +265,7 @@ class PoolTests(LoopFixture):
         self.assertIsNone(self.rc)
 
     def test_the_pool_refills_while_live_workers_hold_their_leases(self):
-        """Five ready tickets, `workers = 3`, and workers that really hold
-        their tickets: after the first exit the two survivors each lease
-        one, two tickets stay free, and the scheduler must still spawn a
-        fourth -- the pool is the live workers plus the free tickets, not
-        the free tickets alone (a fake spawn that never leased hid this)."""
+        """Live leases do not prevent free slots from being refilled."""
         provider = StubProvider(*(a_task(n) for n in range(1, 6)))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
@@ -321,10 +309,7 @@ class PoolTests(LoopFixture):
         self.assertIsNone(self.rc)
 
     def test_the_claimable_count_is_one_store_read_per_tick(self):
-        """Five listed tickets, three of them with a dependency: the count
-        asks the store once, not once per ticket and again per dependency
-        (the ticket's note holds the tick to one store read; the review
-        counted seven selects for five tickets)."""
+        """Count claimable tickets with one store read per tick."""
         provider = StubProvider(*(a_task(n) for n in range(1, 6)))
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
@@ -383,12 +368,26 @@ class PoolTests(LoopFixture):
         self.assertNotIn("Linear has no ready tickets", self.out)
         self.assertIn("linear unreachable", self.out)
 
+    def test_mirror_that_spends_budget_does_not_spawn_workers(self):
+        budget = linear_provider.LinearBudget()
+        provider = StubProvider(a_task(1))
+        ready = provider.ready_issues
+
+        def listing():
+            budget.remember({
+                "x-ratelimit-complexity-limit": "3000000",
+                "x-ratelimit-complexity-remaining": "0",
+                "x-ratelimit-complexity-reset": "9999999999999"})
+            return ready()
+
+        provider.ready_issues = listing
+        with patch.object(linear_provider, "LINEAR_BUDGET", budget):
+            pool = self.run_scheduler(2, provider, [])
+        self.assertEqual(pool.spawned, [])
+        self.assertIn("board not asked: budget resets at", self.out)
+
     def test_a_low_complexity_budget_relists_nothing(self):
-        """KO-434: under a tenth of the key's hourly complexity limit the
-        idle relisting waits for the reset rather than asking to be
-        refused -- the provider is never called, one line names when the
-        budget refills, and an unlisted queue is not mistaken for an
-        empty one."""
+        """KO-434: low budget skips listing, names reset, and is not an empty queue."""
         budget = linear_provider.LinearBudget()
         budget.remember({
             "x-ratelimit-complexity-limit": "3000000",
@@ -521,6 +520,20 @@ class WorkerTests(LoopFixture):
             rc = holophyte.pool.worker(self.tgt, provider)
         return rc, out.getvalue()
 
+    def test_worker_checks_budget_before_claiming(self):
+        provider = StubProvider(a_task(1))
+        budget = linear_provider.LinearBudget()
+        budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "0",
+            "x-ratelimit-complexity-reset": "9999999999999"})
+        provider.LINEAR_BUDGET = budget
+        with patch("holophyte.claim._claim_next") as claim:
+            rc, out = self.worker(provider=provider)
+        claim.assert_not_called()
+        self.assertEqual(rc, holophyte.pool.WORKER_IDLE)
+        self.assertIn("board not asked: budget resets at", out)
+
     def test_a_worker_merges_one_ticket_and_exits_merged(self):
         provider = StubProvider(a_task(1), a_task(2))
 
@@ -633,13 +646,7 @@ class WorkerTests(LoopFixture):
 
 
 class SweptHeartbeatTests(unittest.TestCase):
-    """`heartbeat_while()` notices the run it beats for being ended (KO-339).
-
-    The block is the loop's wait on an agent; a second connection ends the
-    run mid-block the way `act_on_trip()` does. The callback -- the loop's
-    kill of the turn -- fires once, and the block's exit raises `RunSwept`
-    naming the run and the reason the store recorded.
-    """
+    """A swept heartbeat stops the worker without dispatching stale work."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -708,16 +715,7 @@ class SweptHeartbeatTests(unittest.TestCase):
 
 
 class SweptTurnTests(LoopFixture):
-    """A loop whose run the supervisor swept stops that run's turn (KO-339).
-
-    Run 160 was ended by the supervisor on its time box while the loop was
-    inside a fix turn; the loop kept the agent working for twenty more
-    minutes and would have verified, recorded and merged against a run the
-    store had already failed. Here the implementer turn really starts a
-    process in a session of its own and hands the loop its handle, as
-    `agent()` does, then sweeps the store with `act` the way the supervisor
-    would and waits on the process. The kill is the only way that wait ends.
-    """
+    """A swept turn stops its worker and preserves the candidate."""
 
     def test_a_swept_run_kills_its_turn_writes_nothing_more_and_moves_on(self):
         # 0.01 min is 600 ms of stale threshold, so the loop beats every

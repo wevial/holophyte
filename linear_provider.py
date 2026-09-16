@@ -9,6 +9,8 @@ Loop-facing API: claim_next() / fetch_task() / set_state() / comment() /
 list_ready_issues() / ready_issues() / closed_identifiers(). Operator API, for
 `--file-ticket`: create_issue() / add_blocker() / fetch_description().
 """
+import fcntl
+import hashlib
 import json
 import os
 import re
@@ -69,11 +71,13 @@ class LinearBudget:
     `_gql()` answer's headers -- a refusal's included; `low()` is the
     callers' signal to wait for the reset rather than spend the points to
     be refused: under a tenth of the limit left, the asks that remain could
-    not buy back what one more listing costs. One per process -- the key is
-    the process's, and the factory keeps this object rather than another
-    ask to learn the meter by."""
+    not buy back what one more listing costs. The production instance shares
+    cooldown deadlines across processes using the same API key and home."""
 
-    def __init__(self):
+    def __init__(self, shared=False):
+        self.shared = shared
+        self._retry_at = None
+        self._blocked_until = None
         self.limit = None
         self.remaining = None
         self.reset_at = None
@@ -81,13 +85,41 @@ class LinearBudget:
         # lands once per refill, not once per pass that waits on it.
         self._noticed = None
 
+    def _shared_until(self, deadline=0):
+        """Keep the longest observed cooldown under a lock, per API key.
+
+        Healthy replies cannot erase a concurrent process's low reading.
+        Only the deadline is stored; neither credentials nor board data are.
+        """
+        key = _load_env_key() if self.shared else None
+        if not key:
+            return 0
+        home = Path(os.environ.get("HOLOPHYTE_HOME") or "~/.holophyte").expanduser()
+        directory = home / "linear-budget"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / hashlib.sha256(key.encode()).hexdigest()
+        with path.open("a+") as state:
+            fcntl.flock(state, fcntl.LOCK_EX)
+            state.seek(0)
+            saved = int(state.read() or "0")
+            if deadline > saved:
+                state.seek(0)
+                state.truncate()
+                state.write(str(deadline))
+                state.flush()
+            return max(saved, deadline)
+
     def remember(self, headers):
         """The `x-ratelimit-complexity-*` fields of one answer's headers,
-        when it carried them; a field the answer did not carry leaves what
-        the last answer said."""
+        when it carried them. A new remaining reading without a reset gets
+        a bounded one-hour retry deadline instead of an indefinite pause."""
         if headers is None:
             return
         fields = {str(k).lower(): str(v) for k, v in headers.items()}
+        if "x-ratelimit-complexity-remaining" in fields:
+            # A new reading without a reset must not reuse an expired window.
+            self.reset_at = None
+            self._retry_at = int(time() * 1000) + 3_600_000
         for name, attr in (("x-ratelimit-complexity-limit", "limit"),
                            ("x-ratelimit-complexity-remaining", "remaining"),
                            ("x-ratelimit-complexity-reset", "reset_at")):
@@ -97,16 +129,26 @@ class LinearBudget:
                 except ValueError:
                     pass  # a field that is not a number says nothing
 
+        if self.limit is not None and self.remaining is not None \
+                and self.remaining < self.limit / 10:
+            self._shared_until(self.reset_at or self._retry_at or 0)
+
     def low(self, now=None):
         """Under a tenth of `limit` with the refill still ahead. A reset
         that has passed forgets the reading -- the key is whole again until
         the next answer says otherwise. `now` is epoch milliseconds."""
-        if self.limit is None or self.remaining is None \
-                or self.remaining >= self.limit / 10:
-            return False
         now = int(time() * 1000) if now is None else now
-        if self.reset_at is not None and now >= self.reset_at:
-            self.limit = self.remaining = self.reset_at = None
+        deadline = self._shared_until()
+        if self.limit is not None and self.remaining is not None \
+                and self.remaining < self.limit / 10:
+            deadline = max(deadline, self.reset_at or self._retry_at or 0)
+        self._blocked_until = deadline
+        if now >= deadline:
+            if self.limit is not None and self.remaining is not None \
+                    and self.remaining < self.limit / 10:
+                self.limit = self.remaining = self.reset_at = None
+                self._retry_at = None
+            self._noticed = None
             return False
         return True
 
@@ -117,17 +159,14 @@ class LinearBudget:
         per pass that waits."""
         if not self.low(now):
             return None
-        state = self.reset_at if self.reset_at is not None else "unreset"
+        state = self._blocked_until
         if state == self._noticed:
             return None
         self._noticed = state
-        if self.reset_at is None:
-            return ("board not asked: the complexity budget is low and"
-                    " Linear named no reset")
-        return f"board not asked: budget resets at {_clock(self.reset_at)}"
+        return f"board not asked: budget resets at {_clock(state)}"
 
 
-LINEAR_BUDGET = LinearBudget()
+LINEAR_BUDGET = LinearBudget(shared=True)
 
 
 def _gql(query, variables=None):
