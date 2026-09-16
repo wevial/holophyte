@@ -1,18 +1,19 @@
 """Reading a pull request's state, out of `holophyte.pr` (KO-426).
 
 `holophyte.pr` keeps `[merge] mode = "pr"`'s writers -- the route check,
-the push, the open and the merge -- and the `gh`/API transport
-(`graphql`, `rest`, `_call`). This module is the readers: `pull_status()`,
-the reconcile's one read of a parked run's pull request; `pr_state()`,
-the babysitter's read of its unresolved threads and the head's checks
-folded by `fold_checks()`; and `parse_pr_url()`, the `PullRequest` a run's
-`prUrl` names. The transport and the shapes the answers are folded into
-(`PullRequest`, `Thread`, `Comment`, `PrState`) are imported back from
-`holophyte.pr` at module top; `pr.py` reaches `parse_pr_url()` lazily, so
-the module-top import runs one way.
+the push, the open and the merge -- and the `gh`/API transport. This
+module is the readers: `pull_status()`, the reconcile's one read of a
+parked run's pull request; `pr_state()`, the babysitter's read of its
+unresolved threads and the head's checks folded by `fold_checks()`; and
+`parse_pr_url()`, the `PullRequest` a run's `prUrl` names. The transport
+and the shapes (`PullRequest`, `Thread`, `Comment`, `PrState`) are
+imported back from `holophyte.pr` at module top; `pr.py` reaches
+`parse_pr_url()` lazily, so the module-top import runs one way.
 """
+import contextlib
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from holophyte.gates import InfraFailure
 from holophyte.pr import (
@@ -31,11 +32,10 @@ from holophyte.pr import (
 # host is kept so an Enterprise PR is answered on its own API.
 PR_URL_RE = re.compile(r"^https://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)/?$")
 # What `statusCheckRollup.state` says, folded to the three answers the
-# babysitter acts on. A PR with no checks at all (`null`) has nothing to wait
-# for and reads as green -- as far as the rollup goes: `fold_checks()`
-# reads the head's check runs and the branch's required contexts beside
-# it, since seconds after a PR opens the rollup already says success while
-# only the instant checks have reported and the rest are still queued.
+# babysitter acts on. A PR with no checks (`null`) reads as green as far
+# as the rollup goes: `fold_checks()` reads the head's check runs and the
+# branch's required contexts beside it, since seconds after a PR opens
+# the rollup already says success while the rest are still queued.
 CHECK_STATES = {None: "success", "SUCCESS": "success",
                 "PENDING": "pending", "EXPECTED": "pending"}
 # A check run's `conclusion` that is red; `neutral`, `skipped`, `success`
@@ -47,18 +47,17 @@ RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
 CHECK_RUNS_PAGE = 100
 
 # One page of threads per call; `$after` walks the rest, so a PR with more
-# than `THREADS_PAGE` threads is read to the end before the babysitter decides
-# it has nothing open.
+# than `THREADS_PAGE` open threads is read to the end before the
+# babysitter decides it has nothing open.
 THREADS_PAGE = 100
-# One page of a thread's comments in the state query; a thread with more
-# is read to its last page (`THREAD_COMMENTS_QUERY`) before it is judged,
-# so the latest word in a long thread is in the brief.
+# One page of a thread's comments in the state query; a longer thread is
+# read to its last page (`THREAD_COMMENTS_QUERY`) before it is judged.
 COMMENTS_PAGE = 50
 STATE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      state merged headRefOid mergeable mergeCommit { oid }
+      state merged headRefOid mergeable mergeCommit { oid } updatedAt
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       reviewThreads(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
@@ -86,20 +85,19 @@ query($thread: ID!, $after: String) {
 }""" % COMMENTS_PAGE
 
 
-# The one read the loop's pull-request reconcile makes of a parked PR: is it
-# still open, merged (as which commit, by whom) or closed unmerged, and --
-# KO-362 -- whether anything happened on it since the babysitter last looked:
-# `updatedAt` and the count of its review threads, which the reconcile
-# holds against what the last babysit pass recorded (`runs.prSeenAt`,
+# The one read the loop's pull-request reconcile makes of a parked PR: is
+# it still open, merged (as which commit, by whom) or closed unmerged, and
+# -- KO-362 -- whether anything happened on it since the babysitter last
+# looked: `updatedAt` and the count of its review threads, held against
+# what the last babysit pass recorded (`runs.prSeenAt`,
 # `runs.prSeenThreads`), and -- KO-368 -- the facts `/attention` shows
-# beside them: the head commit's checks rollup and the review decision
+# beside them: the head's checks rollup and the review decision
 # (`runs.prSeenChecks`, `runs.prSeenReview`). The thread bodies and the
 # per-run checks are still the babysitter's own read. `mergeable` rides
-# along too: GitHub's MERGEABLE / CONFLICTING / UNKNOWN, the answer a
-# resumed pass merges `origin/main` on. `rateLimit` rides
-# along at no cost: the remaining GraphQL budget on the token and when it
-# resets, so the reconcile backs off before the babysitter's reads run it
-# dry.
+# along too (GitHub's MERGEABLE / CONFLICTING / UNKNOWN, the answer a
+# resumed pass merges `origin/main` on) and `rateLimit` at no cost: the
+# remaining GraphQL budget on the token and when it resets, so the
+# reconcile backs off before the babysitter's reads run it dry.
 PULL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -120,16 +118,15 @@ class PullStatus:
     `merge_sha` by `merged_by`, or closed without merging; when it last
     changed (`updated_at`, GitHub's ISO 8601 timestamp) and how many
     review threads it carries (`threads`), None for either when GitHub
-    did not say; the head commit's checks rollup as `checks` ("success",
+    did not say; the head's checks rollup as `checks` ("success",
     "pending" or "failure", None when the head carries no rollup -- a
-    pull request with no checks -- or the answer had none) and GitHub's
+    pull request with no checks -- or the answer had none) and
     `reviewDecision` lower-cased as `review` ("approved",
     "changes_requested", "review_required", None when the repository
     requires no review or the answer had none); `mergeable` as GitHub
     spells it ("MERGEABLE", "CONFLICTING", "UNKNOWN", None when the
-    answer had none); and the token's remaining
-    GraphQL budget with the time it resets (`rate_remaining`,
-    `rate_reset`), None when the answer carried no `rateLimit`."""
+    answer had none); and the token's GraphQL budget with its reset
+    (`rate_remaining`, `rate_reset`), None without a `rateLimit`."""
 
     merged: bool
     closed: bool
@@ -147,13 +144,12 @@ class PullStatus:
 def pull_status(target, pull):
     """One GraphQL read of the pull request's `state`, `merged`,
     `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, review-thread
-    count,
-    `reviewDecision` and head checks rollup, with the token's `rateLimit`
-    (`PULL_QUERY`): the loop's reconcile of a run parked on its PR asks
-    this once per pass. GitHub answering without the pull request is
-    `InfraFailure`, as every read here is; an answer without the
-    activity, fact or budget fields is one without them (None), not an
-    error."""
+    count, `reviewDecision` and head checks rollup, with the token's
+    `rateLimit` (`PULL_QUERY`): the loop's reconcile of a run parked on
+    its PR asks this once per pass. GitHub answering without the pull
+    request is `InfraFailure`, as every read here is; an answer without
+    the activity, fact or budget fields is one without them (None), not
+    an error."""
     data = graphql(target, pull, PULL_QUERY,
                    {"owner": pull.owner, "name": pull.name,
                     "number": pull.number})
@@ -194,11 +190,10 @@ def pull_status(target, pull):
 
 def _head_checks(node):
     """The pull request node's head `statusCheckRollup.state` as "success",
-    "pending" or "failure"; None when the head carries no rollup (a pull
-    request with no checks) or the answer did not include the commit.
-    Absent is absent here, not "pending": the babysitter's `fold_checks()`
-    reads a missing rollup as green only beside the check runs and the
-    required contexts, which this one-field read does not have."""
+    "pending" or "failure"; None when the head carries no rollup or the
+    answer did not include the commit. Absent is absent here, not
+    "pending": `fold_checks()` reads a missing rollup as green only
+    beside the check runs and required contexts it does not have."""
     commits = node.get("commits")
     nodes = commits.get("nodes") if isinstance(commits, dict) else None
     head = nodes[0] if isinstance(nodes, list) and nodes else None
@@ -223,22 +218,20 @@ def parse_pr_url(url):
 
 
 def pr_state(target, pull):
-    """One read of the pull request: its unresolved review threads, the head
-    commit's check rollup, its `mergeable` answer, and whether it is
-    already merged or closed.
+    """One read of the pull request: its unresolved review threads, the
+    head commit's check rollup, its `mergeable` answer, its `updatedAt`,
+    and whether it is already merged or closed.
 
     One GraphQL query per page of threads (`THREADS_PAGE`), walked to the
     last page before anything is decided: a PR whose first page is all
     resolved and whose open thread is on the next must not read as quiet.
     The head, the checks and the merged/closed answer are the first
     page's, so the threads and the checks are the same moment's. A
-    thread's author and body are its opening comment's and its `replies`
-    the rest of the conversation, read to the last page of comments
-    (`COMMENTS_PAGE` per read) so a long thread's latest word is not
-    dropped; a thread with no comments (GitHub does not make one) is
-    skipped. Resolved threads are not returned: the babysitter answers what
-    is open.
-    """
+    thread's `replies` carry the rest of the conversation, read to the
+    last page of comments (`COMMENTS_PAGE` per read) so a long thread's
+    latest word is not dropped; a thread with no comments is skipped.
+    Resolved threads are not returned: the babysitter answers what is
+    open."""
     first_page = node = _pull_request_page(target, pull, None)
     threads = []
     while True:
@@ -265,29 +258,24 @@ def pr_state(target, pull):
 
 
 def _check_reads(target, pull, sha):
-    """The head's check runs and `main`'s required contexts, two REST reads;
-    either one the babysitter cannot make or cannot read is None, which
-    `fold_checks()` takes as pending: a check the babysitter cannot see is
-    never a check that passed."""
+    """The head's check runs and `main`'s required contexts, two REST
+    reads; either one unreadable is None, which `fold_checks()` takes as
+    pending: a check it cannot see is never a check that passed."""
     runs = required = None
     if sha:
-        try:
+        with contextlib.suppress(InfraFailure):
             runs = _check_runs_of(target, pull, sha)
-        except InfraFailure:
-            runs = None
-    try:
-        answer = rest(target, pull, "GET",
-                      f"repos/{pull.owner}/{pull.name}/rules/branches/main")
-        required = _required_contexts(answer)
-    except InfraFailure:
-        required = None
+    with contextlib.suppress(InfraFailure):
+        required = _required_contexts(rest(
+            target, pull, "GET",
+            f"repos/{pull.owner}/{pull.name}/rules/branches/main"))
     return runs, required
 
 
 def _check_runs_of(target, pull, sha):
-    """Every check run of commit `sha`, walked page by page (`CHECK_RUNS_PAGE`
-    a page) until the answer's `total_count` is in hand, or None when the
-    answer is not readable as check runs or a page the babysitter asked for
+    """Every check run of commit `sha`, walked page by page
+    (`CHECK_RUNS_PAGE` a page) until the answer's `total_count` is in
+    hand, or None when the answer is not readable as check runs or a page
     did not come back: a head with more runs than one page holds must not
     be read as green on the page alone."""
     base = (f"repos/{pull.owner}/{pull.name}/commits/{sha}"
@@ -317,8 +305,8 @@ def _check_runs_of(target, pull, sha):
 def _required_contexts(rules):
     """The contexts every `required_status_checks` rule names, or None for
     an answer that is not the rules list or a rule the babysitter cannot
-    read as one: a required check it cannot make out is not one that
-    reported, so None folds to pending, never green."""
+    read: a required check it cannot make out is not one that reported,
+    so None folds to pending, never green."""
     if not isinstance(rules, list):
         return None
     contexts = []
@@ -346,15 +334,14 @@ def fold_checks(rollup, runs, required):
 
     `rollup` is `statusCheckRollup.state`; `runs` the head commit's check
     runs (each with `name`, `status` and `conclusion`) and `required` the
-    contexts `main`'s rules require -- either None when the babysitter could
-    not read it. Red first: a red rollup, or any completed run with a red
-    conclusion. Then pending: a pending rollup, a run still queued or in
-    progress, a required context with no completed run, a read that did
-    not come back, or check data that is not readable as runs. Green is
-    what is left: every run completed without a
-    red conclusion and every required context reported. No rules and no
-    runs is green, as the rollup alone said.
-    """
+    contexts `main`'s rules require -- either None when the babysitter
+    could not read it. Red first: a red rollup, or any completed run with
+    a red conclusion. Then pending: a pending rollup, a run still queued
+    or in progress, a required context with no completed run, a read that
+    did not come back, or check data that is not readable as runs. Green
+    is what is left: every run completed without a red conclusion and
+    every required context reported. No rules and no runs is green, as
+    the rollup alone said."""
     state = CHECK_STATES.get(rollup, "failure")
     if state == "failure":
         return state
@@ -427,6 +414,18 @@ def _pull_request_page(target, pull, after):
     return node
 
 
+def _iso_ms(text):
+    """`text`, GitHub's ISO 8601 `updatedAt`, as epoch milliseconds; None
+    for anything else (a naive stamp is read as UTC)."""
+    try:
+        parsed = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
 def _state_of(node, threads, runs, required):
     """`PrState` from the first page's node, every page's threads, and the
     two check reads (`_check_reads()`) folded beside the rollup."""
@@ -446,4 +445,5 @@ def _state_of(node, threads, runs, required):
                    closed=node.get("state") == "CLOSED",
                    mergeable=mergeable
                    if isinstance(mergeable, str) and mergeable
-                   else "UNKNOWN")
+                   else "UNKNOWN",
+                   updated_at=_iso_ms(node.get("updatedAt")))

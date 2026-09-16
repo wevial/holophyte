@@ -522,6 +522,11 @@ pr_merge_method = "merge"
 # one parked pull request when it sees new review activity. Optional; the
 # value shown is the default.
 pr_poll_sec = 180
+# The least seconds a pull request must have been green and untouched --
+# no comment, review, push or check -- before the babysitter merges it.
+# Optional; the value shown is the default. 0 merges as soon as it is
+# green.
+pr_quiet_sec = 300
 # Where the pull request's title and body come from: "ticket" (the ticket
 # pasted, titled `KO-n: TITLE`) or "written" (one implementer turn writes
 # them from the diff). Optional; the value shown is the default.
@@ -538,7 +543,8 @@ after = ["bun --cwd=console run build"]
 ```
 
 Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`,
-`pr_poll_sec`, `pr_text`, `pr_style`, `human_threads`, `after`.
+`pr_poll_sec`, `pr_quiet_sec`, `pr_text`, `pr_style`, `human_threads`,
+`after`.
 
 With `approve = "auto"` a clean merge gate merges, as it always has. With
 `approve = "human"` the loop stops there instead: the run's phase becomes
@@ -620,6 +626,19 @@ reviewer typing three comments in a minute gets one round rather than
 three. The default is 180; an integer of at least 10, and anything else
 (`5`, `"180"`, `true`) is a startup error naming the key. The reads back off
 on their own when the token's GraphQL budget runs low, whatever the value.
+
+`pr_quiet_sec` is the least time, in seconds, a pull request must have been
+green with no unresolved thread before the babysitter merges it (KO-429) --
+the "quiet" of "green and quiet". It is measured from GitHub's `updatedAt`,
+which moves on every comment, review, push and check: a reviewer still
+typing, a bot's second pass not yet posted, or a commit pushed a minute
+after the checks went green all restart the count. Until then the pass
+re-reads the pull request on the cadence it uses for pending checks and
+prints how long it has been quiet of the quiet required, and `pr_rounds`
+still caps a pull request that never goes quiet. The default is 300; an
+integer of at least 0, and anything else (`-1`, `"300"`, `true`) is a
+startup error naming the key. `0` is the merge-as-soon-as-green the
+babysitter had before.
 
 `pr_text` is where a pull request's title and body come from under `mode =
 "pr"`. `"ticket"` (the default) is the form above: the title `KO-n: TITLE`,
