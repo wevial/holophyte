@@ -33,7 +33,7 @@ export function TicketCard({ card, open = false, onOpen }: { card: BoardCard; op
           {card.ticket}
         </button>
         {card.status === "blocked_on_operator" && <KindPill kind="blocked">question</KindPill>}
-        {card.status === "in_flight" && run && <PhasePill phase={run.phase} />}
+        {card.status === "in_flight" && run && <PhasePill phase={run.phase} pr_url={run.pr_url} />}
         {card.status === "in_flight" && run && <StrikePill strikes={run.strikes ?? 0} max={card.strikesMax} />}
         <span className="ml-auto truncate text-[11px] text-faint">{card.project}</span>
       </div>

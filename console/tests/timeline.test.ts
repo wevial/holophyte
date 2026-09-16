@@ -82,7 +82,7 @@ test("a merged four-round run's phase changes yield implement, 4× (verify, revi
     "verify", "review 2", "fix 2",
     "verify", "review 3", "fix 3",
     "verify", "review 4",
-    "verify", "merge",
+    "verifying", "merge",
   ]);
   expect(out.map((segment) => segment.kind)).toEqual([
     "implement",

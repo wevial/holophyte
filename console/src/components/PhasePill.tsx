@@ -9,8 +9,8 @@ const TONES = {
 
 /** A run's phase folded into its working word; an unknown phase keeps its
  *  own name on the neutral wash. */
-export function PhasePill({ phase }: { phase: string }) {
-  const label = phaseLabel(phase);
+export function PhasePill({ phase, pr_url }: { phase: string; pr_url?: string | null }) {
+  const label = phaseLabel(phase, pr_url);
   const tone = phaseTone(label);
   return (
     <span
