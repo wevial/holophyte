@@ -74,6 +74,9 @@ preflight identity or write rejection fails, the Codex tool host cannot
 execute a local command, the container times out, or the staged repository
 fingerprint changes.
 
+Configured `[agents] reviewer` and `adjudicator` commands heartbeat the run
+while they execute, like the implementer, every half heartbeat stale interval.
+
 ## PR rounds
 
 Under `[merge] mode = "pr"` (see [Config](config.md)) the reviewer's approval

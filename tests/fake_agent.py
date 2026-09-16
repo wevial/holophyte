@@ -181,8 +181,8 @@ class FakeAgent:
         self.turns: list[Turn] = []
         self.replies: list[str] = []
 
-    def __call__(self, target, role, goal, cwd, *, base_sha=None,
-                 candidate_sha=None, timeout=None, on_start=None):
+    def __call__(self, target, role, goal, cwd, *, base_sha=None, conn=None,
+                 candidate_sha=None, timeout=None, on_start=None, run_id=None):
         n = len(self.turns) + 1
         if not self.script:
             raise ScriptError(f"script exhausted: the loop asked for a {role!r}"
