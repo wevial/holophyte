@@ -127,6 +127,8 @@ EXPECTED_READ = [
     "blocked_tickets",
     "ended_runs",
     "failed_attempts_since",
+    # KO-435: pages of ended runs of any outcome for `/shipped`.
+    "finished_runs",
     "latest_human_intervention_at",
     # KO-250: a run's ledger entries, oldest first.
     "ledger",

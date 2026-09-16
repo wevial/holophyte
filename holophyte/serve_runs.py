@@ -246,7 +246,7 @@ SHIPPED_CAP = 200
 
 
 def shipped(target, query=""):
-    """The `/shipped` answer: merged runs newest end first, one page.
+    """The `/shipped` answer: finished runs newest end first, one page.
 
     The console's Shipped view is the merge ledger scrolling back over
     older days, and the Board's "shipped today" is its first page; `/runs`
@@ -256,16 +256,19 @@ def shipped(target, query=""):
     `merge_sha`, `commit_url` (the merge commit's page on `origin` when the
     sha has reached `origin/main`, `commit_url()`), `pr_url` (the pull
     request the run merged through, `runs.prUrl`, null when none) and
-    `host`. `limit`
+    `host`, `outcome` and `outcome_reason` (at most 400 characters).
+    `outcome=merged` is the default; `outcome=all` includes every ended run.
+    `limit`
     defaults to `SHIPPED_LIMIT` and is capped at `SHIPPED_CAP`;
     `before=RUN_ID` answers the rows that ended before that run (ties by
     id), and `next_before` is the id to pass back for the next page, null
-    on the last. A bad `limit` or `before` is 400
+    on the last. A bad `limit`, `before` or `outcome` is 400
     naming it; a `before` no run has is an empty page.
     """
     try:
         limit = parse_limit(query, default=SHIPPED_LIMIT, cap=SHIPPED_CAP)
         before = parse_before(query)
+        outcome = parse_filter(query, "outcome", ("merged", "all"))
     except ValueError as bad:
         return 400, {"error": str(bad)}
     if not target.store_path.exists():
@@ -273,7 +276,9 @@ def shipped(target, query=""):
     conn = store.read.open_readonly(target.store_path)
     try:
         # One past the page tells whether there is a next one.
-        runs = store.read.merged_runs(conn, limit + 1, before)
+        runs = store.read.finished_runs(
+            conn, limit + 1, before,
+            outcomes=None if outcome == "all" else ("merged",))
     finally:
         conn.close()
     more = len(runs) > limit
@@ -289,6 +294,9 @@ def shipped(target, query=""):
                                    if run.timeBoxMs else None),
                   "merge_sha": run.mergeSha,
                   "commit_url": commit_url(target, run.mergeSha, origin),
+                  "outcome": run.outcome,
+                  "outcome_reason": (run.outcomeReason[:400]
+                                     if run.outcomeReason is not None else None),
                   "pr_url": run.prUrl,
                   "host": json_host(target, run.host)}
                  for run in runs],
