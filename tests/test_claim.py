@@ -50,7 +50,7 @@ class BabysitClaimTests(MergeModeFixture):
     def test_send_back_claim_resumes_the_parked_candidate(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
-        self.loop(Commit("candidate"), APPROVE, provider=self.provider())
+        self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
         self.assertIn("PR open:", self.question())
         holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",

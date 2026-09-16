@@ -487,24 +487,24 @@ def resolve_thread(target, pull, thread_id):
 
 
 def merge_pull_request(target, pull, sha):
-    """Merge the pull request through the merge API, pinned to head `sha`;
-    return the sha of the commit that landed on `main`. The method is the
-    target's `[merge] pr_merge_method`: `"merge"` by default -- a merge
-    commit, like the loop's `--no-ff` merge, so the branch's history lands
-    as it was reviewed -- or `"squash"` or `"rebase"` where the
-    repository's ruleset allows nothing else; for those the sha answered is
-    the new commit on `main`, not a merge commit. `sha` is the candidate
-    whose checks and threads the babysitter judged: the API's `sha` field
-    makes GitHub refuse (409) if the head has moved since, so a push that
-    raced the pass never lands on its verdict.
-    GitHub declining -- a protection rule, a conflict, a check that turned
-    red, the head moved -- is `MergeRefused` with its reason; the route not
-    answering is `InfraFailure` as everywhere else."""
+    """Merge pinned head `sha`; return the landed sha. Squash/merge use the
+    PR title plus ` (#N)` and Summary paragraph; rebase leaves messages alone.
+    Refusals raise `MergeRefused`; route failures raise `InfraFailure`."""
     method = config_tables.merge_config(target).pr_merge_method
+    payload = {"merge_method": method, "sha": sha}
+    if method in {"squash", "merge"}:
+        details = rest(target, pull, "GET",
+                       f"repos/{pull.repo}/pulls/{pull.number}")
+        summary = re.search(r"^## Summary\s*\n(.*?)(?=^## |\Z)",
+                            details.get("body") or "", re.MULTILINE | re.DOTALL)
+        payload.update(
+            commit_title=f"{details['title']} (#{pull.number})",
+            commit_message=re.split(r"\n\s*\n", summary.group(1).strip())[0]
+            if summary else "")
     try:
         answer = rest(target, pull, "PUT",
                       f"repos/{pull.repo}/pulls/{pull.number}/merge",
-                      {"merge_method": method, "sha": sha})
+                      payload)
     except InfraFailure as e:
         # A 405 (not mergeable) or 409 (head moved) is the PR refusing, not
         # the route; `_call` folds every non-2xx into the same exception,

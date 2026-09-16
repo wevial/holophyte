@@ -10,6 +10,41 @@ import holophyte.pullrequest
 from holophyte import pr
 
 
+class MergePayloadTests(unittest.TestCase):
+    def test_merge_commit_metadata(self):
+        pull = pr.PullRequest("github.com", "example", "repo", 7,
+                              "https://github.com/example/repo/pull/7")
+        for method in ("squash", "merge", "rebase"):
+            for body, message in (
+                    ("## Summary\n\nKeep [links](https://example.com)\n"
+                     "and details.\n\nAnother paragraph.\n\n"
+                     "## Tests\nPassed.",
+                     "Keep [links](https://example.com)\nand details."),
+                    ("## Tests\nPassed.", ""),
+                    ("## Summary\n\n## Tests\nPassed.", ""),
+                    (None, "")):
+                target = SimpleNamespace(config=lambda: {
+                    "merge": {"pr_merge_method": method}})
+                with self.subTest(method=method, body=body), patch.object(
+                        pr, "rest", side_effect=lambda _t, _p, verb, path,
+                        *args: {"title": "feat(x): do y (KO-1)", "body": body}
+                        if verb == "GET" else {"merged": True, "sha": "landed"}
+                        ) as rest:
+                    self.assertEqual(pr.merge_pull_request(target, pull, "head"),
+                                     "landed")
+                expected = {"merge_method": method, "sha": "head"}
+                if method != "rebase":
+                    expected.update(commit_title="feat(x): do y (KO-1) (#7)",
+                                    commit_message=message)
+                    self.assertEqual(rest.call_args_list[0].args,
+                                     (target, pull, "GET",
+                                      "repos/example/repo/pulls/7"))
+                self.assertEqual(rest.call_count, 1 if method == "rebase" else 2)
+                self.assertEqual(rest.call_args.args,
+                                 (target, pull, "PUT",
+                                  "repos/example/repo/pulls/7/merge", expected))
+
+
 class PrBodyStubTests(unittest.TestCase):
     def test_stub_uses_only_the_first_summary_paragraph(self):
         body = pr.pr_body_stub(

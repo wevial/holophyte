@@ -68,7 +68,7 @@ class ConflictRefusalCases:
     def test_human_approval_conflict_refusal_preserves_the_candidate(self):
         review = self.conflict_refusal()
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        self.loop(Commit("candidate"), review, provider=self.provider())
+        self.loop(Commit("candidate"), review, Idle(""), provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
         holophyte.operator.approve(self.tgt, "KO-131", "merge this candidate",
                                    out=io.StringIO())
@@ -82,21 +82,22 @@ class ConflictRefusalCases:
 
     def test_conflict_refusal_merges_main_pushes_and_retries(self):
         review = self.conflict_refusal()
-        self.loop(Commit("the scripted work"), review, APPROVE,
+        self.loop(Commit("the scripted work"), review, Idle(""), APPROVE,
                   provider=self.provider())
         self.assert_conflict_merge_landed()
 
     def test_conflict_refusal_runs_the_implementer_and_continues(self):
         review = self.conflict_refusal(conflict=True)
         path = "tests/test_file_sizes.py"
-        fake, _ = self.loop(self.ratchet_work(), review,
+        fake, _ = self.loop(self.ratchet_work(), review, Idle(""),
                             Commit("Merge main: retain both ratchets", path=path,
                                    body="branch's line\nmain's line\n"), APPROVE,
                             provider=self.provider())
-        self.assertEqual(fake.roles, ["implement", "review", "implement", "review"])
-        self.assertIn(path, fake.turns[2].goal)
-        self.assertIn("mid-merge", fake.turns[2].goal)
-        self.assertEqual(fake.turns[2].cwd, self.worktrees / "ko-131-add-a-thing")
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "implement", "implement", "review"])
+        self.assertIn(path, fake.turns[3].goal)
+        self.assertIn("mid-merge", fake.turns[3].goal)
+        self.assertEqual(fake.turns[3].cwd, self.worktrees / "ko-131-add-a-thing")
         self.assert_conflict_merge_landed()
         merged = self.pushed()[-1][1]
         self.assertEqual(self.git("show", f"{merged}:{path}"),
@@ -105,10 +106,10 @@ class ConflictRefusalCases:
     def test_unresolved_conflict_refusal_parks_with_the_refusal(self):
         review = self.conflict_refusal(conflict=True)
         path = "tests/test_file_sizes.py"
-        fake, _ = self.loop(self.ratchet_work(), review, Idle("Cannot resolve"),
-                            provider=self.provider())
-        self.assertEqual(fake.roles, ["implement", "review", "implement"])
-        self.assertIn(path, fake.turns[2].goal)
+        fake, _ = self.loop(self.ratchet_work(), review, Idle(""),
+                            Idle("Cannot resolve"), provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "implement"])
+        self.assertIn(path, fake.turns[3].goal)
         self.assertIn(self.refusal, self.question())
         self.assertEqual(len(self.pushed()), 1)
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), self.pushed()[0][1])

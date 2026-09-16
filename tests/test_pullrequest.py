@@ -96,8 +96,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             f" repos/example/repo/commits/{tip}/check-runs?per_page=100",
             "gh api --hostname github.com --method GET"
             " repos/example/repo/rules/branches/main"])
-        # Pinned to the repository the push went to, not `gh`'s own default
-        # repository (`gh repo set-default`), which can point elsewhere.
+        # Pin the repository to the push destination, not gh's default.
         self.assertEqual(
             calls[2],
             f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
@@ -397,10 +396,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(filled.replace(part, ""), base)
 
     def test_a_squash_only_repository_merges_with_its_configured_method(self):
-        """`[merge] pr_merge_method = "squash"`: the one `PUT
-        .../pulls/7/merge` carries `merge_method` `squash`, still pinned to
-        the approved candidate, and the run records the sha GitHub answered
-        -- for a squash, the new commit on `main`, not a merge commit."""
+        """Squash uses PR metadata, pins the candidate and records the landed sha."""
         self.configure('[merge]\nmode = "pr"\npr_merge_method = "squash"\n')
         self.fake_route()
 
@@ -409,6 +405,8 @@ class MergeModePullRequestTests(MergeModeFixture):
 
         self.assertEqual(self.api_calls()[-1],
                          ("merge", {"merge_method": "squash",
+                                    "commit_title": "feat(x): do y (KO-1) (#7)",
+                                    "commit_message": "",
                                     "sha": fake.turns[1].candidate_sha}))
         self.assertEqual(
             self.read("SELECT phase, outcome, mergeSha FROM runs"),
@@ -471,6 +469,8 @@ class MergeModePullRequestTests(MergeModeFixture):
                                      "number": 7, "after": None}),
                           # Pinned to the candidate the reviewer approved.
                           ("merge", {"merge_method": "merge",
+                                     "commit_title": "feat(x): do y (KO-1) (#7)",
+                                     "commit_message": "",
                                      "sha": fake.turns[1].candidate_sha})])
         self.assertIn("gh api --hostname github.com --method PUT"
                       " repos/example/repo/pulls/7/merge --input -",
