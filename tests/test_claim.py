@@ -154,8 +154,8 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("fail", asked)
 
         closed = holophyte.claim.skip_line(
-            "KO-131", 0, url, f"PR closed without merge: {url}")
-        self.assertIn(f"a question: PR closed without merge: {url};", closed)
+            "KO-131", 0, url, f"rejected: {url}")
+        self.assertIn(f"a question: rejected: {url};", closed)
         self.assertNotIn("--approve", closed)
 
     def test_a_module_question_outranks_the_strike_count(self):

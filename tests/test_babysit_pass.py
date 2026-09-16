@@ -1,14 +1,4 @@
-"""`holophyte.babysitter`'s pass under `[merge] mode = "pr"`, end to end.
-
-The checks the pass waits on and how it judges them, the verdicts over
-threads, the fix round and its review, the round cap, the head-vs-candidate
-check and the merge gate the pass runs before the API merge.
-`MergeModeFixture` (`loop_fixture.py`) is the shared base; the open, park,
-resume and merge of the pull request itself live in `test_pullrequest.py`,
-and the parser's edges in `test_babysitter.py`.
-
-Run: python3 -m unittest discover -s tests -p 'test_babysit_pass*' -v
-"""
+"""`holophyte.babysitter`'s pass under `[merge] mode = "pr"`, end to end."""
 from __future__ import annotations
 
 import io
@@ -16,6 +6,7 @@ import json
 import re
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -51,6 +42,34 @@ class MergeModeBabysitPassTests(MergeModeFixture):
     request's threads and checks; the open, park, resume and merge are
     `MergeModePullRequestTests` (`test_pullrequest.py`)."""
 
+    def test_closed_pr_is_rejected_mid_pass(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        state = self.pr_state()
+        node = state["data"]["repository"]["pullRequest"]
+        node.update(state="CLOSED", timelineItems={"nodes": [
+            {"actor": {"login": "alice"}}]})
+        self.fake_route(states=[state])
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("rejected", "rejected")])
+        self.assertTrue(self.read("SELECT blockedQuestion FROM tickets")
+                        [0][0].startswith("rejected:"))
+        self.assertIsNone(self.rc)
+
+    def test_closed_pr_at_pass_cap_is_rejected(self):
+        self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
+        closed = self.pr_state()
+        closed["data"]["repository"]["pullRequest"].update(
+            state="CLOSED", timelineItems={"nodes": [{"actor": {"login": "alice"}}]})
+        self.fake_route(states=[self.pr_state([self.DEFECT]), closed])
+        self.loop(Commit("the scripted work"), APPROVE,
+                  Reply("THREAD 1: ADDRESS -- a real crash"),
+                  Commit("fix: default load()"), provider=self.provider())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("rejected", "rejected")])
+        self.assertIsNone(self.rc)
+
     def test_pending_checks_are_waited_for_before_the_verdict(self):
         """A pass with no thread and pending checks reads the PR again
         after `CHECK_POLL_S` rather than judging a rollup that is not in
@@ -66,6 +85,71 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "state", "merge"])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_a_green_pr_quieter_than_pr_quiet_sec_is_not_merged(self):
+        """Acceptance (KO-429): a green pull request with no unresolved
+        thread whose `updatedAt` is 10 s old under `pr_quiet_sec = 300`
+        is re-read, not merged: the pass waits on the same cadence it
+        uses for pending checks and prints how long it has been quiet of
+        the quiet required, and `pr_rounds` still ends the run on a pull
+        request that never goes quiet."""
+        self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
+        fresh = (datetime.now(timezone.utc)
+                 - timedelta(seconds=10)).isoformat()
+        self.fake_route(states=[self.pr_state(updated_at=fresh)])
+        naps = []
+        # `CHECK_WAIT_S` shortened so the wait's bound is reached in a few
+        # polls; the served `updatedAt` stays fresh, so the pull request
+        # never goes quiet and the merge API is never called.
+        with patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.pr, "CHECK_WAIT_S", 45):
+            out = self.main_output(Commit("the scripted work"), APPROVE,
+                                   provider=self.provider())
+
+        self.assertTrue(naps)
+        self.assertRegex(out, r"green and quiet for \d+s of the 300s"
+                              r" required; waiting")
+        calls = self.api_calls()
+        self.assertGreater(len(calls), 1)
+        self.assertEqual({kind for kind, _ in calls}, {"state"})
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("pr_rounds = 1", self.question())
+
+    def test_a_green_pr_quiet_for_pr_quiet_sec_merges(self):
+        """Merge a green PR after the quiet interval has elapsed."""
+        self.configure('[merge]\nmode = "pr"\n')
+        quiet = (datetime.now(timezone.utc)
+                 - timedelta(seconds=301)).isoformat()
+        self.fake_route(states=[self.pr_state(updated_at=quiet)])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("the scripted work"), APPROVE,
+                      provider=self.provider())
+
+        self.assertEqual(naps, [])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_pr_quiet_sec_zero_merges_a_green_pr_on_the_first_pass(self):
+        """Acceptance (KO-429): `pr_quiet_sec = 0` keeps the
+        merge-as-soon-as-green the babysitter had -- a pull request whose
+        `updatedAt` is this second merges without a wait."""
+        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
+        self.fake_route(states=[self.pr_state(
+            updated_at=datetime.now(timezone.utc).isoformat())])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("the scripted work"), APPROVE,
+                      provider=self.provider())
+
+        self.assertEqual(naps, [])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge"])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
@@ -161,13 +245,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertEqual(self._state_with_rest(rest).checks, "success")
 
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
-        """Regression: the babysitter's fix commit is the implementer's work,
-        and the pass after it -- green, quiet -- merged it with no
-        independent look at that commit: both the review and the
-        adjudication came before the fix. Now a candidate that moved
-        since its approval is reviewed at the fixed sha before the merge
-        API is called; the approving round is a `reviewRounds` row like
-        the others."""
+        """Review the fixed candidate independently before merging it."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
@@ -200,13 +278,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_a_ticket_edited_during_the_fix_round_is_not_merged(self):
-        """Regression: the review of the fix vouched for the merge gate
-        too -- the fixed candidate went to the merge API on the review's
-        verify alone, with no drift check, so a ticket edited while the
-        fix round ran was merged against a contract that no longer
-        existed. Now the fixed candidate goes through the gate: the run
-        stops there, nothing is merged, and the ticket is told which
-        fields moved."""
+        """Recheck ticket drift after the fix round and before merging."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
@@ -400,12 +472,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
 
     def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
         """Acceptance: two unresolved threads, a clear defect and a style
-        nit, and green checks. One pass: the adjudicator addresses the one
-        and declines the other; the defect gets a fix commit, pushed, a
-        reply opening `---- Comment by MODEL ----` and naming the sha, and
-        is resolved; the nit gets a decline reply and stays open; the pass
-        is a `reviewRounds` row routed `github:LOGIN`; and the run parks
-        with the nit listed in the ticket's question."""
+        nit, and green checks."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT, self.NIT])])
         provider = self.provider()

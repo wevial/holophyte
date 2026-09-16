@@ -16,24 +16,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
 
-class Case(ConfigTestCase):
-    """`ConfigTestCase` plus `refused`: the startup-error round trip the
-    validation tests here share -- `cli()` exits on the bad config naming
-    the config path before `report` runs, and the message comes back for
-    the test's own needles."""
-
-    def refused(self, config):
-        target = self.locate(config).path
-        with patch.object(holophyte.cli, "report") as report, \
-                self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli([str(target), "--report"])
-        report.assert_not_called()
-        message = str(raised.exception)
-        self.assertIn(str(self.tgt.config_path), message)
-        return message
+def refused(case, toml):
+    """`cli --report` on a target whose config is `toml`: the startup
+    refusal's message, which names the config path and is never followed
+    by the report."""
+    target = case.locate(toml).path
+    with patch.object(holophyte.cli, "report") as report, \
+            case.assertRaises(SystemExit) as raised:
+        holophyte.cli.cli([str(target), "--report"])
+    message = str(raised.exception)
+    case.assertIn(str(case.tgt.config_path), message)
+    report.assert_not_called()
+    return message
 
 
-class LoopConfigTests(Case):
+class LoopConfigTests(ConfigTestCase):
     """`[loop] stop_on_failure`: a boolean, defaulting to today's stop.
     `[loop] order`: `"identifier"` (the default) or `"priority"`."""
 
@@ -58,10 +55,11 @@ class LoopConfigTests(Case):
         before anything is claimed."""
         for line in ('order = "urgent"', "order = 1", 'order = "Identifier"'):
             with self.subTest(line=line):
-                message = self.refused(f"[loop]\n{line}\n")
-                for needle in ("[loop]", "order", '"identifier"',
-                               '"priority"'):
-                    self.assertIn(needle, message)
+                message = refused(self, f"[loop]\n{line}\n")
+                self.assertIn("[loop]", message)
+                self.assertIn("order", message)
+                self.assertIn('"identifier"', message)
+                self.assertIn('"priority"', message)
 
     def test_false_is_read_as_go_on(self):
         self.locate('[loop]\nstop_on_failure = false\n')
@@ -75,9 +73,11 @@ class LoopConfigTests(Case):
         for line in ('stop_on_failure = "yes"', "stop_on_failure = 1",
                      'stop_on_failure = "false"'):
             with self.subTest(line=line):
-                message = self.refused(f"[loop]\n{line}\n")
-                for needle in ("[loop]", "stop_on_failure", "boolean"):
-                    self.assertIn(needle, message)
+                message = refused(self, f"[loop]\n{line}\n")
+                self.assertIn("[loop]", message)
+                self.assertIn("stop_on_failure", message)
+                self.assertIn("boolean", message)
+
 
     def test_review_round_keys_default_to_the_two_round_cap(self):
         """No table: the base is two rounds, one more per 800 changed
@@ -102,7 +102,7 @@ class LoopConfigTests(Case):
                  ('review_rounds = "2"', "review_rounds")]
         for lines, key in cases:
             with self.subTest(lines=lines):
-                message = self.refused(f"[loop]\n{lines}\n")
+                message = refused(self, f"[loop]\n{lines}\n")
                 self.assertIn("[loop]", message)
                 self.assertIn(key, message)
 
@@ -122,7 +122,7 @@ class LoopConfigTests(Case):
         claimed (KO-343)."""
         for line in ('workers = "3"', "workers = 0"):
             with self.subTest(line=line):
-                message = self.refused(f"[loop]\n{line}\n")
+                message = refused(self, f"[loop]\n{line}\n")
                 self.assertIn("[loop] workers", message)
                 self.assertIn("at least 1", message)
 
@@ -136,12 +136,12 @@ class LoopConfigTests(Case):
         is a startup error naming `[loop] tick_sec` (KO-353)."""
         for line in ('tick_sec = "120"', "tick_sec = 5"):
             with self.subTest(line=line):
-                message = self.refused(f"[loop]\n{line}\n")
+                message = refused(self, f"[loop]\n{line}\n")
                 self.assertIn("[loop] tick_sec", message)
                 self.assertIn("at least 10", message)
 
 
-class RunCapTests(Case):
+class RunCapTests(ConfigTestCase):
     """`[supervisor] run_cap`: the run's hard ceiling, in multiples of its
     box -- 3.0 when absent, a number from 1.5 to 5.0 when set."""
 
@@ -161,7 +161,7 @@ class RunCapTests(Case):
         before anything is claimed."""
         for line in ("run_cap = 1", "run_cap = 6"):
             with self.subTest(line=line):
-                message = self.refused(f"[supervisor]\n{line}\n")
+                message = refused(self, f"[supervisor]\n{line}\n")
                 for needle in ("[supervisor]", "run_cap", "1.5", "5.0"):
                     self.assertIn(needle, message)
 
@@ -176,7 +176,7 @@ class RunCapTests(Case):
         report.assert_called_once_with(self.tgt)
 
 
-class ReportConfigTests(Case):
+class ReportConfigTests(ConfigTestCase):
     """`[report] host_label`: a string shown wherever a host is rendered,
     absent by default."""
 
@@ -198,7 +198,7 @@ class ReportConfigTests(Case):
                           ('host_label = ""', "host_label"),
                           ('hots_label = "x"', "hots_label")):
             with self.subTest(line=line):
-                message = self.refused(f"[report]\n{line}\n")
+                message = refused(self, f"[report]\n{line}\n")
                 self.assertIn("[report]", message)
                 self.assertIn(key, message)
 
@@ -220,12 +220,12 @@ class ReportConfigTests(Case):
         for line in ('findings = "yes"', 'findings = "window"',
                      'findings = "off"', "findings = false"):
             with self.subTest(line=line):
-                message = self.refused(f"[report]\n{line}\n")
+                message = refused(self, f"[report]\n{line}\n")
                 self.assertIn("[report]", message)
                 self.assertIn("findings", message)
 
 
-class BoardLabelTests(Case):
+class BoardLabelTests(ConfigTestCase):
     """`[board] label` (KO-432): absent is `None` and the board is every
     ready issue, as it has always been; a non-empty string is the name the
     ready listing filters on; `3` and `""` are startup errors naming the
@@ -265,7 +265,7 @@ class BoardLabelTests(Case):
                 self.assertIn("[board] label", message)
 
 
-class ConsoleConfigTests(Case):
+class ConsoleConfigTests(ConfigTestCase):
     """`[console] daemons`: the other daemons as `HOST:PORT` strings, each
     held to `--serve`'s address rule, none twice; empty by default."""
 
@@ -290,19 +290,19 @@ class ConsoleConfigTests(Case):
                              "'writer-2:7710'"),
                             ('daemons = "writer-2:7710"', "'writer-2:7710'")):
             with self.subTest(line=line):
-                message = self.refused(f"[console]\n{line}\n")
+                message = refused(self, f"[console]\n{line}\n")
                 self.assertIn("[console] daemons", message)
                 self.assertIn(entry, message)
 
     def test_an_unknown_key_is_a_startup_error(self):
-        message = self.refused("[console]\nother = 1\n")
+        message = refused(self, "[console]\nother = 1\n")
 
         self.assertIn("[console]", message)
         self.assertIn("other", message)
         self.assertIn("unknown key", message)
 
 
-class MergeConfigTests(Case):
+class MergeConfigTests(ConfigTestCase):
     """`[merge] approve`: `"auto"` (the default) or `"human"`; `[merge] mode`:
     `"local"` (the default) or `"pr"`; `[merge] pr_rounds`: an integer of at
     least 1 (default 5); `[merge] pr_merge_method`: `"merge"` (the default),
@@ -312,8 +312,8 @@ class MergeConfigTests(Case):
         self.locate()
 
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, "ticket", "",
-                          "park", ()))
+                         ("auto", "local", 5, "merge", 180, 300, "ticket",
+                          "", "park", ()))
 
     def test_after_is_read_as_a_list_of_commands(self):
         """`after` is the console build the daemon's bundle depends on, in
@@ -364,9 +364,17 @@ class MergeConfigTests(Case):
         `[merge] pr_poll_sec` (KO-362)."""
         for line in ('pr_poll_sec = "180"', "pr_poll_sec = 5"):
             with self.subTest(line=line):
-                message = self.refused(f"[merge]\nmode = \"pr\"\n{line}\n")
+                message = refused(self, f"[merge]\nmode = \"pr\"\n{line}\n")
                 self.assertIn("[merge] pr_poll_sec", message)
                 self.assertIn("at least 10", message)
+
+    def test_pr_quiet_sec_is_read(self):
+        """How long a green, thread-free pull request must have stood
+        before the babysitter merges it; absent, five minutes (KO-429)."""
+        self.locate('[merge]\nmode = "pr"\npr_quiet_sec = 60\n')
+
+        self.assertEqual(
+            config_tables.merge_config(self.tgt).pr_quiet_sec, 60)
 
     def test_pr_rounds_is_read(self):
         self.locate('[merge]\nmode = "pr"\npr_rounds = 2\n')
@@ -397,11 +405,13 @@ class MergeConfigTests(Case):
                            "pr_merge_method"),
                           ('pr_text = "agent"', "pr_text"),
                           ("pr_style = true", "pr_style"),
+                          ('pr_quiet_sec = "300"', "pr_quiet_sec"),
+                          ("pr_quiet_sec = -1", "pr_quiet_sec"),
                           ('human_threads = "reply"', "human_threads"),
                           ('after = "bun run build"', "after"),
                           ("after = [1]", "after"),
                           ('approve_by = "human"', "approve_by")):
             with self.subTest(line=line):
-                message = self.refused(f"[merge]\n{line}\n")
+                message = refused(self, f"[merge]\n{line}\n")
                 self.assertIn("[merge]", message)
                 self.assertIn(key, message)

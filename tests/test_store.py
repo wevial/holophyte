@@ -21,6 +21,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
+import store.read
 import store.schema
 import store.tickets
 
@@ -243,6 +244,38 @@ class RepointTests(unittest.TestCase):
                                    " WHERE runId = ?"), [("approve",)])
         self.assertEqual(self.rows("SELECT 1 FROM runEvents WHERE runId = ?"
                                    " AND kind = 'repoint'"), [])
+
+
+class FinishedRunsTests(unittest.TestCase):
+    def test_mixed_outcomes_page_by_end_then_id_and_filter_before_limiting(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = store.open(str(Path(tmp.name) / "store.sqlite3"))
+        self.addCleanup(conn.close)
+        project = store.tickets.ensure_project(conn, "team-1", "/repo")
+        runs = []
+        for number, (outcome, end) in enumerate(
+                (("merged", 300), ("failed", 200), ("killed", 300),
+                 ("failed", 100), (None, None)), start=1):
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id=f"issue-{number}",
+                linear_identifier=f"KO-{number}", title="a ticket",
+                acceptance_criteria=["Given a ticket, then it is worked"],
+                verification_commands=["echo ok"], time_box_ms=1000)
+            store.tickets.transition(conn, ticket, "in_flight")
+            run = store.claim(conn, project, ticket, now=1)
+            runs.append(run)
+            if outcome:
+                store.release(conn, run, outcome, now=end)
+        first = store.read.finished_runs(conn, 2)
+        self.assertEqual([r.id for r in first], [runs[2], runs[0]])
+        second = store.read.finished_runs(conn, 2, before=first[-1].id)
+        self.assertEqual([r.id for r in second], [runs[1], runs[3]])
+        self.assertEqual(store.read.finished_runs(conn, 2, before=second[-1].id), [])
+        filtered = store.read.finished_runs(conn, 2, outcomes=("failed",))
+        self.assertEqual([r.id for r in filtered], [runs[1], runs[3]])
+        self.assertEqual([r.id for r in store.read.merged_runs(conn, 2)], [runs[0]])
+        self.assertEqual(store.read.finished_runs(conn, 2, outcomes=()), [])
 
 
 if __name__ == "__main__":

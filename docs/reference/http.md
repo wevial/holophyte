@@ -69,7 +69,7 @@ on main as, null for any other outcome or a run merged before the store
 recorded it. `?limit=N` keeps the first N rows and echoes `limit`; a
 non-positive or non-integer limit is 400.
 
-## `GET /shipped?limit=N&before=RUN_ID`
+## `GET /shipped?limit=N&before=RUN_ID&outcome=merged`
 
 ```json
 {"rows": [
@@ -79,12 +79,15 @@ non-positive or non-integer limit is 400.
    "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "pr_url": "https://github.com/example/repo/pull/2170",
-   "host": "writer-1"}
+   "host": "writer-1", "outcome": "merged", "outcome_reason": null}
 ], "next_before": 298, "limit": 50}
 ```
 
-The merge ledger, newest end first: only runs whose outcome is `merged`,
-ordered by `ended_ms` descending then `id` descending. The console's
+Finished runs, newest end first, ordered by `ended_ms` descending then
+`id` descending. `outcome=merged` (the default) returns only merged runs;
+`outcome=all` returns every ended run. Each row includes `outcome` and
+`outcome_reason` (the stored reason cut at 400 characters, null when absent).
+Any other `outcome` is 400 naming the parameter and its value. The console's
 Shipped view scrolls back over it grouped by day; the Board's "shipped
 today" is its first page. `findings` is the count of findings over the
 run's review rounds. `limit` defaults to 50 and is capped at 200; the
@@ -481,7 +484,7 @@ included on every path but the `/actions/` routes of
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}` |
-| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit` or `before`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
+| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET and OPTIONS, and `POST` outside `/actions/`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |

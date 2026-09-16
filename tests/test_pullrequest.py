@@ -835,30 +835,6 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(self.read('SELECT "action" FROM interventions'),
                          [("approve",)])
 
-    def test_a_pull_request_closed_without_merge_keeps_the_run_parked(self):
-        """The pull request was closed on GitHub unmerged: the run stays
-        parked, the ticket's question says so, the skip line reads the
-        question rather than an `--approve` that would merge nothing, and
-        a second pass finding the same neither writes nor prints again."""
-        self.parked_on_pr()
-        self.fake_client(self.CLOSED_PULL)
-
-        out = self.main_output(provider=StubProvider(
-            dict(a_task(), body=self.BODY)))
-        again = self.main_output(provider=StubProvider())
-
-        self.assertEqual(
-            self.read("SELECT phase, outcome, prUrl FROM runs"),
-            [("awaiting_merge_approval", None, self.URL)])
-        self.assertEqual(self.question(),
-                         f"PR closed without merge: {self.URL}")
-        self.assertIn(f"[holo2] KO-131 is parked on a question: PR closed"
-                      f" without merge: {self.URL}; skipping it\n", out)
-        self.assertNotIn("--approve", out)
-        self.assertIn("closed on GitHub without merging", out)
-        self.assertNotIn("closed on GitHub", again)
-        self.assertEqual(self.last_provider.states, [])
-
     def test_an_open_pull_request_is_asked_about_once_and_left_alone(self):
         self.parked_on_pr()
         runs = self.read("SELECT * FROM runs")
