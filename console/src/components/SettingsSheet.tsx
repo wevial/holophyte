@@ -37,7 +37,12 @@ export const FIELDS: readonly Field[] = [
   { table: "merge", key: "mode", label: "Merge mode", kind: "select", options: ["local", "pr"] },
   { table: "merge", key: "approve", label: "Approval", kind: "select", options: ["auto", "human"] },
   { table: "merge", key: "pr_merge_method", label: "PR merge method", kind: "select", options: ["merge", "squash", "rebase"] },
+  { table: "merge", key: "human_threads", label: "Human threads", kind: "select", options: ["park", "act"] },
+  { table: "merge", key: "pr_rounds", label: "PR rounds", kind: "number" },
+  { table: "merge", key: "pr_poll_sec", label: "PR poll seconds", kind: "number" },
+  { table: "merge", key: "pr_quiet_sec", label: "PR quiet seconds", kind: "number" },
   { table: "merge", key: "after", label: "After merge", kind: "lines" },
+  { table: "board", key: "label", label: "Board label", kind: "text" },
 ];
 
 const fieldId = (field: Field) => `${field.table}.${field.key}`;
@@ -254,8 +259,9 @@ export function SettingsSheet({
           readOnly={inert}
           value={typeof value === "number" ? value : ""}
           onChange={(event) => {
-            const parsed = Number.parseInt(event.target.value, 10);
-            edit(field, event.target.value === "" || Number.isNaN(parsed) ? null : parsed);
+            const parsed = Number(event.target.value);
+            if (event.target.value === "") edit(field, null);
+            else if (Number.isInteger(parsed)) edit(field, parsed);
           }}
         />
       );
