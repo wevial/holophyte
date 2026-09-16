@@ -1,12 +1,4 @@
-"""store.schema: the store's schema, its migration ladder and the connection.
-
-Moved verbatim out of `store/__init__.py` (KO-391): `SCHEMA` and the
-`interventions` DDL it rebuilds older stores from, `SCHEMA_VERSION`, the
-`ADDED_COLUMNS`/`BACKFILLS` ladder and the `INDEXES` run on every open,
-`BUSY_TIMEOUT_S`, and `open()`/`init()`/`transaction()` with the private
-helpers only they call. The package re-exports `open`, `init`,
-`transaction` and `SCHEMA_VERSION`, so `store.open()` keeps working.
-"""
+"""store.schema: the store's schema, its migration ladder and the connection."""
 from __future__ import annotations
 
 import contextlib
@@ -87,7 +79,7 @@ CREATE TABLE IF NOT EXISTS runs (
         CHECK (phase IN ('claimed', 'working', 'verifying', 'reviewing',
                          'addressing', 'merge_gate', 'awaiting_merge_approval',
                          'merging', 'squashing', 'done', 'blocked_on_operator',
-                         'failed', 'killed')),
+                         'failed', 'killed', 'rejected')),
     workerId          TEXT,
     providerSessionId TEXT,
     branch            TEXT,
@@ -114,7 +106,7 @@ CREATE TABLE IF NOT EXISTS runs (
     ticketSnapshot    TEXT,
     outcome           TEXT
         CHECK (outcome IS NULL
-               OR outcome IN ('merged', 'killed', 'abandoned', 'failed')),
+               OR outcome IN ('merged', 'killed', 'abandoned', 'failed', 'rejected')),
     outcomeReason     TEXT,
     -- The merge commit a `merged` run landed on main as, the full sha.
     -- NULL until the merge close-out writes it, and NULL forever on a run
@@ -147,7 +139,7 @@ CREATE TABLE IF NOT EXISTS runs (
                                   'addressing', 'merge_gate',
                                   'awaiting_merge_approval', 'merging',
                                   'squashing', 'done', 'blocked_on_operator',
-                                  'failed', 'killed')),
+                                  'failed', 'killed', 'rejected')),
     -- The candidate a run parked awaiting merge approval was parked on: the
     -- full sha the reviewer approved and the pre-merge verify passed.
     -- Written by `park()` and read by the loop's resume at the merge gate,
@@ -363,11 +355,12 @@ CREATE TABLE IF NOT EXISTS interventions (
 # (KO-368). Version 16 renames the action 'shepherd' to 'babysit', the word
 # the operator reads everywhere else since KO-373: the CHECK swaps the value
 # and the rebuild rewrites every row that carried the old one (KO-374).
-# Version 17 is `projects.boardAskedAt`, the epoch millisecond the
+# Version 17 admits rejected run phases and outcomes (KO-431).
+# Version 18 is `projects.boardAskedAt`, the epoch millisecond the
 # supervisor's board fallback last asked Linear for the ready listing, so
 # `[supervisor] board_ask_sec` throttles across passes and process restarts
 # (KO-434).
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -598,12 +591,16 @@ def init(conn):
     about, which is harmless, while the reverse is what this repairs.
     """
     conn.executescript(SCHEMA)
+    foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+    foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+    conn.execute("PRAGMA foreign_keys = OFF")
     # Everything after the executescript rolls back together on failure: a
     # migration that died must not leave an open transaction holding its
     # half-done work, because the next caller's `executescript` would issue
     # an implicit COMMIT and make the half-state durable — the exact hazard
     # `_transaction()`'s docstring warns joined writers about.
     try:
+        conn.execute("BEGIN IMMEDIATE")
         conn.execute(_INTERVENTIONS_DDL)
         for table, column, ddl in ADDED_COLUMNS:
             # A misspelled table name leaves `columns` empty and the ALTER
@@ -616,43 +613,46 @@ def init(conn):
         # the step above has only just added.
         for _repairs, sql in BACKFILLS:
             conn.execute(sql)
+        _widen_runs_outcomes(conn)
         _widen_interventions_action(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
         # version means.
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
+        if conn.execute("PRAGMA foreign_key_check").fetchall() != foreign_key_errors:
+            raise sqlite3.IntegrityError("foreign key violation during migration")
         conn.commit()
     except BaseException:
         conn.rollback()
         raise
+    finally:
+        conn.execute(f"PRAGMA foreign_keys = {foreign_keys}")
+
+
+def _widen_runs_outcomes(conn):
+    """Rebuild the run CHECKs for rejected outcomes (KO-431)."""
+    ddl = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'runs'")\
+        .fetchone()[0]
+    if "'rejected'" in ddl.partition("CHECK (phase IN (")[2].partition(")")[0]:
+        return
+    indexes = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'index'"
+                           " AND tbl_name = 'runs' AND sql IS NOT NULL").fetchall()
+    with _transaction(conn):
+        widened = ddl.replace('CREATE TABLE "runs"', "CREATE TABLE runs_new", 1)
+        widened = widened.replace("CREATE TABLE runs (", "CREATE TABLE runs_new (", 1)
+        widened = widened.replace("'failed'", "'failed', 'rejected'")
+        conn.execute(widened)
+        conn.execute("INSERT INTO runs_new SELECT * FROM runs")
+        conn.execute("DROP TABLE runs")
+        conn.execute("ALTER TABLE runs_new RENAME TO runs")
+        for (sql,) in indexes:
+            conn.execute(sql)
 
 
 def _widen_interventions_action(conn):
     """Rebuild `interventions` when its action CHECK predates 'repoint',
     'shepherd', 'reconcile', the daemon's unit actions, 'config_edit' or
-    the rename of 'shepherd' to 'babysit'.
-
-    `CREATE TABLE IF NOT EXISTS` never touches an existing table and SQLite
-    cannot ALTER a CHECK, so a store initialized before a value shipped
-    would refuse the row forever — which is how the KO-146 incident ended in
-    raw SQL and four falsely-labeled 'resume' rows, the precedent that added
-    'close_out' here. 'requeue' (schema version 3), 'approve' (schema
-    version 5), 'repoint' (schema version 7), 'shepherd' (schema version 8)
-    'reconcile' (schema version 11, which also widens the trigger CHECK
-    to 'linear_completed'), 'restart_supervisor'/'launch_loop' (schema
-    version 12) and 'config_edit' (schema version 13) ride the same
-    rebuild: the newest values
-    are the ones tested for, so a store from before any of them shipped --
-    or from a branch that shipped one of them as its own version 7 -- is
-    carried forward in one pass. The stored DDL says which world this store
-    is from; the
-    rebuild is the standard rename-copy-drop from
-    `_INTERVENTIONS_DDL` itself, run only when needed, so a fresh store and
-    a second call both skip it. The column list is unchanged, so existing
-    rows are carried verbatim; `runId`'s foreign key stays enforced through
-    the copy, which only re-checks rows against `runs` — rows that were valid
-    stay valid.
-    """
+    the rename of 'shepherd' to 'babysit'."""
     row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table'"
         " AND name = 'interventions'").fetchone()

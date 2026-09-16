@@ -324,7 +324,7 @@ class ConflictingPullRequestTests(MergeModeFixture):
         made the candidate. Returns the approved candidate's sha."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route(states=[self.pr_state([self.NIT])])
-        self.loop(work, APPROVE,
+        self.loop(work, APPROVE, Idle(""),
                   Reply("THREAD 1: DECLINE -- a naming preference"),
                   provider=self.provider())
         approved = self.git("rev-parse", BRANCH).strip()

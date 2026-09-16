@@ -1,0 +1,70 @@
+Write the pull request title and description for branch task/ko-131-add-a-thing, the candidate for ticket KO-131: add a thing.
+
+Answer with exactly one line `TITLE: ...` (the title alone, under 120 characters) followed by the description in Markdown. Describe what the diff changes and why, in this repository's own style; do not paste the ticket, and do not add a link to the ticket -- the loop appends one. Do not edit, commit or run anything: answer with the text only.
+
+Style instructions from the target's configuration:
+No ticket identifier in the title.
+
+The repository's AGENTS.md:
+
+# Agent guide
+
+Title starts with [Feature Name]. No testing plan.
+
+The ticket:
+
+# Add a thing
+
+## Summary
+
+The thing, added.
+
+## What / Why / How
+
+**What:** Add the thing.
+
+**Why:** The thing is wanted.
+
+**How:** Write the thing.
+
+## In scope
+
+* The thing.
+
+## Out of scope
+
+* Everything else.
+
+## Acceptance criteria
+
+- [ ] Given the thing, when it runs, then it works (a test witnesses this)
+
+## Verify command(s)
+
+```
+echo ok
+```
+
+## Implementation notes
+
+* None.
+
+## Estimate & dependencies
+
+Estimate: 5 min · Depends on: none
+
+## Open questions
+
+* None
+
+The diff against main (`git diff main...HEAD`):
+
+```diff
+diff --git a/scripted-1.txt b/scripted-1.txt
+new file mode 100644
+index 0000000..9d2ab02
+--- /dev/null
++++ b/scripted-1.txt
+@@ -0,0 +1 @@
++the scripted work
+```

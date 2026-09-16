@@ -170,3 +170,14 @@ export function prLabel(url: string): string {
   const segment = url.replace(/\/+$/, "").split("/").pop() ?? "";
   return /^\d+$/.test(segment) ? `PR #${segment}` : "PR";
 }
+
+export type OutcomeFilter = "merged" | "all";
+
+/** One finished-run page; omit the outcome for older daemons' merged default. */
+export function shippedUrl(base: string, limit: number, before?: number, outcome: OutcomeFilter = "merged"): string {
+  return `${base}/shipped?limit=${limit}${before == null ? "" : `&before=${before}`}${outcome === "all" ? "&outcome=all" : ""}`;
+}
+
+export function mergedRows(rows: ShippedRow[]): ShippedRow[] {
+  return rows.filter((row) => (row.outcome ?? "merged") === "merged");
+}

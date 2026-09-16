@@ -200,12 +200,13 @@ DEFINED = {
         "_open_pr",
         "_park_human",
         "_park_on_pr",
+        "_pr_template",
         "_resume_on_pr",
         "_written_pr_text",
     ],
     # KO-386: the babysit pass joins the texts it drives.
     _module("babysitter"): [
-        "_answer_threads",
+        "_answer_threads", "_decline_threads",
         "_babysit",
         "_fix_threads",
         "_merge_origin_main",
@@ -239,7 +240,7 @@ DEFINED = {
         "check_pr_route",
         "create_pull_request",
         "origin_url",
-        "pr_body",
+        "pr_body_stub",
         "pr_title",
         "push_branch",
         "repo_of",

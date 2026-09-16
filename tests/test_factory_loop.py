@@ -72,9 +72,7 @@ class LoopTests(LoopFixture):
     # --- the clean run ---------------------------------------------------
 
     def test_a_script_ending_in_approve_merges_without_spawning_an_agent(self):
-        """One implement turn, one APPROVE: the branch reaches main, the run
-        row says merged, and nothing anywhere under the loop started a real
-        agent process."""
+        """Approval merges the candidate without launching a real agent."""
         fake, guard = self.loop(Commit("the scripted work"), APPROVE)
 
         self.assertEqual(guard.spawned, [])
@@ -107,9 +105,7 @@ class LoopTests(LoopFixture):
         return provider
 
     def test_a_clean_approval_records_its_round_before_the_merge(self):
-        """A run approved on its first review still has a `round` entry --
-        the approving round -- ahead of its `merge` entry, and each row is in
-        the store before the comment that projects it."""
+        """The approving round reaches the ledger before the merge."""
         provider = self._ledger_reading_provider()
         self.loop(Commit("first cut"), APPROVE, provider=provider)
 
@@ -127,12 +123,7 @@ class LoopTests(LoopFixture):
             self.assertIn(seen[-1][1], body)
 
     def test_the_ledger_row_is_in_the_store_before_its_board_comment(self):
-        """A findings round, the approving round and the merge each land in
-        `ledger` -- in that order, for this run -- and each row is committed
-        before the comment that projects it is posted: the provider stub
-        reads the table over its own connection at every `comment()` and
-        finds the entry already there. The comment is the projection; the
-        row is the record."""
+        """Store ledger entries precede the corresponding board comments."""
         provider = self._ledger_reading_provider()
         self.loop(Commit("first cut"), REQUEST_CHANGES, Commit("fix round 1"),
                   APPROVE, provider=provider)
@@ -160,9 +151,7 @@ class LoopTests(LoopFixture):
     # --- both rounds spent, then a terminal PASS -------------------------
 
     def test_two_findings_rounds_then_adjudication_pass_merges_the_fixes(self):
-        """REQUEST_CHANGES twice spends both review rounds and both fix
-        rounds, so the loop falls through to the terminal adjudication; a PASS
-        there merges, and every fix commit is in main's history."""
+        """Two review fixes followed by terminal PASS merge the candidate."""
         fake, _ = self.loop(Commit("first cut"), REQUEST_CHANGES,
                             Commit("fix round 1"), REQUEST_CHANGES,
                             Commit("fix round 2"), PASS)
@@ -188,15 +177,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_review_cap_from_config_admits_a_third_round(self):
-        """The round cap is the target's `[loop]` review keys applied to
-        the candidate's diff (KO-299). With one extra round per changed line
-        and a ceiling of 3, a one-line candidate earns a third round, so a
-        reviewer that requests changes twice and approves on round 3 merges
-        without an adjudicator; the run's row and its narrative carry the
-        cap it was given (KO-321). Under the default config the same script
-        hits the cap after round 2 and the third turn is the terminal
-        adjudication, as today.
-        """
+        """Configured review limits permit a third round for a large candidate."""
         self.configure("[loop]\nreview_rounds = 2\n"
                        "review_rounds_per_lines = 1\nreview_rounds_max = 3\n")
         fake, _ = self.loop(Commit("first cut"), REQUEST_CHANGES,
@@ -236,9 +217,7 @@ class LoopTests(LoopFixture):
     # --- adjudication refuses --------------------------------------------
 
     def test_adjudication_fail_preserves_the_branch_and_stops_the_loop(self):
-        """FAIL is terminal and has no fix round: main is untouched, the
-        branch and its worktree are left where a human can pick them up, and
-        the next queued ticket is never claimed."""
+        """Terminal FAIL preserves work and stops the loop."""
         provider = StubProvider(a_task(1), a_task(2))
         self.loop(Commit("first cut"), REQUEST_CHANGES,
                   Commit("fix round 1"), REQUEST_CHANGES,
@@ -252,9 +231,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(len(provider.queue), 1)  # the loop stopped
 
     def test_an_adjudication_reply_with_no_verdict_is_read_as_fail(self):
-        """A reply that names no verdict is not an approval by omission: the
-        run fails like an explicit FAIL and the unreadable reply is kept as
-        the round's finding."""
+        """An absent verdict fails closed."""
         self.loop(Commit("first cut"), REQUEST_CHANGES,
                   Commit("fix round 1"), REQUEST_CHANGES,
                   Commit("fix round 2"), MALFORMED)
@@ -269,11 +246,7 @@ class LoopTests(LoopFixture):
     # --- merge-time drift ------------------------------------------------
 
     def test_a_ticket_edited_during_the_run_is_not_merged(self):
-        """The candidate was implemented, reviewed and verified against the
-        ticket as it was claimed. The board now says something else, so the
-        approved work answers a contract that no longer exists: main is left
-        untouched, the branch and worktree are preserved, and the ticket is
-        told which fields moved."""
+        """Ticket drift prevents merging a candidate built to an older contract."""
         provider = StubProvider(a_task())
         provider.live["iss-131"] = dict(
             a_task(), title="add a thing, and a second thing",
@@ -293,10 +266,7 @@ class LoopTests(LoopFixture):
             self.assertIn(field, body)
 
     def test_a_ticket_that_cannot_be_re_read_still_merges(self):
-        """A Linear that will not answer is missing evidence, not drift: the
-        run says so in its event stream and merges on the contract frozen at
-        the claim, because failing closed here would make every outage a
-        stuck queue."""
+        """Missing board evidence alone is not ticket drift."""
         provider = StubProvider(a_task())
 
         def unreachable(issue_id):
@@ -360,10 +330,7 @@ class LoopTests(LoopFixture):
         return self.read("SELECT attempt FROM runs ORDER BY id")
 
     def test_one_failed_run_leaves_the_ticket_claimable(self):
-        """One failure is not a pattern: the ticket is left in flight rather
-        than parked, and once a human walks it back to `ready` the claim path
-        lets it through — a second run row is the lease being taken for a
-        second attempt, whatever that attempt then runs into."""
+        """One work failure leaves the ticket eligible after a board drag."""
         self.fail_once()
 
         self.assertEqual(self.status(), "in_flight")
@@ -373,9 +340,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.attempts(), [(1,), (2,)])
 
     def test_the_second_failure_blocks_the_ticket_and_reports_both_runs(self):
-        """At the threshold the ticket stops being open work: the store parks
-        it for an operator, the board is told, and one comment accounts for
-        every failed run by the reason that run actually ended on."""
+        """Two work failures park the ticket and report both attempts."""
         self.fail_once()
 
         provider = self.offer_again()  # skipped: the store says in_flight
@@ -407,10 +372,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.attempts(), [(1,), (2,)])
 
     def test_an_offered_back_ticket_the_store_holds_in_flight_is_skipped(self):
-        """A ticket the store still says is `in_flight` is refused before the
-        claim, so no run row is opened for it and no failure is recorded —
-        the KO-150 spurious second strike (holophyte-bugs #4) cannot recur.
-        The skip is printed with the store status that refused it."""
+        """Stale board offers cannot reclaim a ticket still in flight."""
         self.fail_once()
 
         with patch("builtins.print") as printed:
@@ -537,8 +499,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.status(), "in_flight")
 
     def test_infra_failures_alone_never_block_the_ticket(self):
-        """Two runs the factory lost on its own are not a pattern about the
-        ticket: MAX_FAILED_RUNS of them park nothing."""
+        """Infrastructure failures never spend the ticket's work strikes."""
         self.loop(InfraRefuse())
         self.drag_back()
         provider = StubProvider(a_task())
@@ -555,10 +516,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.status(), "merged")
 
     def test_a_blocked_ticket_is_not_claimed_again(self):
-        """The board says Todo — that is where `blocked_on_operator` projects
-        — and offers the ticket back anyway. The claim path refuses it on the
-        store's count instead: no run is opened, so no worktree is cut and no
-        agent is paid to fail a third time."""
+        """A blocked ticket cannot be reclaimed through a stale board offer."""
         self.fail_once()
         self.fail_again()
         blocked_at = self.attempts()
@@ -583,12 +541,7 @@ class LoopTests(LoopFixture):
         tickets.walk_ticket(conn, 1, "ready")
 
     def test_a_recorded_human_intervention_grants_a_fresh_count(self):
-        """69fe923's rule stands for board drags — they write no rows and
-        forgive nothing — but a *recorded* human intervention is a human
-        taking the ticket back: the failures before it are that human's
-        accepted history, so one unblock buys a fresh MAX_FAILED_RUNS
-        rather than exactly one attempt forever (the KO-146 incident left
-        the ticket carrying 4 permanent strikes, none its own fault)."""
+        """A recorded human intervention resets the work-failure count."""
         self.fail_once()
         self.fail_again()  # second failure parks it
         self.intervene("human")
@@ -602,10 +555,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.status(), "blocked_on_operator")
 
     def test_a_hand_closed_run_is_dispositioned_not_a_carried_strike(self):
-        """The canonical repair records the close_out first and releases the
-        run a clock-read later; whether the run's endedAt lands before or
-        after the row's `at` is jitter, and a run the human dispositioned by
-        hand must not be the strike that re-parks the ticket next time."""
+        """A recorded manual close-out excludes that run from work strikes."""
         self.fail_once()
         self.fail_again()  # second failure parks it
         conn = store.open(str(self.db))
@@ -624,9 +574,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(holophyte.board.failure_history(conn, 1), [])
 
     def test_a_supervisor_intervention_grants_no_amnesty(self):
-        """Only a human's recorded touch resets the count: a supervisor
-        close-out is the machine talking to itself, and one unblock after
-        it still buys exactly one attempt."""
+        """Supervisor intervention does not reset the work-failure count."""
         self.fail_once()
         self.fail_again()
         self.intervene("supervisor")
@@ -636,13 +584,7 @@ class LoopTests(LoopFixture):
         self.assertEqual(self.status(), "blocked_on_operator")
 
     def test_a_blocked_ticket_is_skipped_rather_than_stopped_on(self):
-        """The blocked ticket keeps its place at the head of the board's ready
-        set — `blocked_on_operator` projects to Todo, and the provider offers
-        the lowest identifier first — so it is offered ahead of the next
-        ticket on this pass and every later one. It is passed over, not
-        stopped on: the ticket behind it is claimed, worked and merged in the
-        same pass, which is what stops one parked ticket from starving the
-        queue behind it forever."""
+        """A blocked ticket does not prevent claiming the next ready ticket."""
         self.fail_once()
         self.fail_again()
         blocked, other = a_task(), dict(a_task(2), title="add another thing")
@@ -666,9 +608,7 @@ class LoopTests(LoopFixture):
             [("KO-131", "failed"), ("KO-131", "failed"), ("KO-132", "merged")])
 
     def test_branch_is_recorded_at_worktree_cut(self):
-        """`runs.branch` names the task branch before the first `working`
-        phase change lands, so a live run's files panel has a worktree to
-        read from the moment the run starts implementing."""
+        """Record the branch before the first working-phase event."""
         seen = []
         real = holophyte.claim.set_phase
 
@@ -793,10 +733,7 @@ class RunCapTests(LoopFixture):
         return patch.object(holophyte.loop, "set_phase", watching)
 
     def test_a_fix_turn_the_cap_has_no_room_for_is_refused(self):
-        """70 min into a 30 min box, the fix turn's 30 min would take the
-        run past 3 boxes: the turn is refused before it starts, the run
-        fails naming the minutes, the box, the cap and the preserved sha,
-        and the implementer is never invoked for it."""
+        """Refuse a fix turn that cannot fit within the run's remaining cap."""
         self.configure("[supervisor]\nrun_cap = 3\n")
         task = dict(a_task(), budget_min=30)
 
@@ -822,9 +759,7 @@ class RunCapTests(LoopFixture):
         self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
 
     def test_a_fix_turn_the_cap_still_has_room_for_runs(self):
-        """Same run at cap 4: 70 + 30 fits in 120, so the turn starts. The
-        cap arithmetic is the only difference -- the fix lands, the next
-        review approves, the run merges."""
+        """A larger configured cap admits the same fix turn."""
         self.configure("[supervisor]\nrun_cap = 4\n")
         task = dict(a_task(), budget_min=30)
 
@@ -963,9 +898,7 @@ class GateConflictImplementerTests(LoopFixture):
             [("blocked_on_operator",)])
 
     def test_a_merge_committed_over_uncommitted_edits_is_rejected(self):
-        """The turn commits the merge but leaves edits behind: the sha is
-        a merge, yet the tree the gate's verify would read is not the one
-        the sha holds, so it does not count and the run parks as before."""
+        """A merge commit with uncommitted edits is not a clean candidate."""
         provider = StubProvider(a_task())
         conn, run_id, branch, wt, sha = self.conflicted()
 
@@ -1115,6 +1048,74 @@ class GateConflictImplementerTests(LoopFixture):
                          merged)
 
 
+class TransportRetryTests(LoopFixture):
+    def failed_turn(self, message, code=1):
+        class FailedTurn:
+            role = "implement"
+
+            def play(inner, cwd, turn):
+                # Exercise the real exit-code capture at the agent boundary.
+                with patch.object(holophyte.agents, "run_capped",
+                                  return_value=(code, message)):
+                    return holophyte.agents.agent(
+                        self.tgt, "implement", "task", cwd)
+        return FailedTurn()
+
+    def test_transport_retry_reaches_review(self):
+        elapsed = 0
+
+        def wait(seconds):
+            nonlocal elapsed
+            elapsed += seconds
+
+        with patch.object(holophyte.loop, "sleep", side_effect=wait) as nap, \
+                patch.object(holophyte.loop, "retry_clock",
+                             side_effect=lambda: time.monotonic() + elapsed):
+            fake, _ = self.loop(self.failed_turn("FETCH FAILED"),
+                                Commit("recovered"), APPROVE)
+        nap.assert_called_once_with(30)
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.read("SELECT count(*) FROM runEvents"
+                                   " WHERE kind = 'transport_retry'"), [(1,)])
+        self.assertEqual(self.read("SELECT payload FROM runEvents"
+                                   " WHERE kind = 'implementer_output'"),
+                         [("FETCH FAILED",)])
+        self.assertLessEqual(fake.turns[1].timeout, fake.turns[0].timeout - 30)
+
+    def test_two_transport_failures_preserve_branch_without_a_strike(self):
+        with patch.object(holophyte.loop, "sleep"):
+            fake, _ = self.loop(self.failed_turn("ECONNRESET"),
+                                self.failed_turn("ECONNRESET"))
+        self.assertEqual(fake.roles, ["implement", "implement"])
+        ((outcome, kind, reason),) = self.read(
+            "SELECT outcome, outcomeClass, outcomeReason FROM runs")
+        self.assertEqual((outcome, kind), ("failed", "infra"))
+        self.assertIn("ECONNRESET", reason)
+        self.assertIn(BRANCH, self.branches())
+        self.assertTrue(fake.turns[0].cwd.exists())
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        ((ticket_id,),) = self.read("SELECT ticketId FROM runs")
+        self.assertEqual(store.read.failed_attempts_since(conn, ticket_id, 0), [])
+        self.assertEqual(self.read("SELECT count(*) FROM runEvents"
+                                   " WHERE kind = 'implementer_output'"), [(2,)])
+
+    def test_unrelated_error_and_successful_transport_text_are_work(self):
+        for message, code in (("AssertionError", 1), ("fetch failed", 0)):
+            with self.subTest(message=message):
+                if code == 0:
+                    conn = store.open(str(self.db))
+                    self.addCleanup(conn.close)
+                    tickets.walk_ticket(conn, 1, "ready")
+                with patch.object(holophyte.loop, "sleep") as nap:
+                    fake, _ = self.loop(self.failed_turn(message, code))
+                nap.assert_not_called()
+                self.assertEqual(fake.roles, ["implement"])
+        self.assertEqual(self.read("SELECT outcomeClass FROM runs"),
+                         [("work",), ("work",)])
+
+
 class NoCommitOutputTests(LoopFixture):
     """A turn that ends without a commit keeps what the implementer said on
     the run (KO-375): the worktree it may have explained itself in is
@@ -1169,8 +1170,7 @@ class NoCommitOutputTests(LoopFixture):
         self.assertEqual(seen, [[("This contract cannot be met.", message)]])
 
     def test_a_nonzero_exit_without_commits_keeps_its_output_too(self):
-        """A real route, not the fake: the turn's exit code is the process's,
-        so this is the loop reading a failed harness's last words."""
+        """Capture a real CLI's nonzero-exit output before discarding its branch."""
         path = self.db.parent / "implementer.sh"
         path.write_text(
             "#!/bin/sh\n"

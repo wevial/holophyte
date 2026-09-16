@@ -1,12 +1,4 @@
-"""Schema bootstrap contract for the v2 store.
-
-The expected table and column names below are transcribed from
-docs/v2/state-model.md §1-§2 (plus the §7 lease column) by hand, on purpose:
-reading them back out of store.schema.SCHEMA would only prove the module agrees with
-itself. This transcription is the independent oracle.
-
-Run: python3 -m unittest discover -s tests -p 'test_store*' -v
-"""
+"""Schema bootstrap contract for the v2 store."""
 from __future__ import annotations
 
 import socket
@@ -419,12 +411,7 @@ class StoreSchemaTests(unittest.TestCase):
         conn.commit()
 
     def a_run(self, conn, phase="working", ended_at=None):
-        """One project, ticket and run in `phase`, for the migration tests.
-
-        Each call makes its own project and ticket, numbered so that two
-        runs in one test do not collide on `projects.linearTeamId` or
-        `tickets.linearIssueId`, both of which are UNIQUE.
-        """
+        """One project, ticket and run in `phase`, for the migration tests."""
         columns, values = A_PROJECT
         nth = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0] + 1
         project_id = conn.execute(
@@ -465,17 +452,39 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
 
+    def test_version_16_accepts_rejection_after_migration(self):
+        raw = self.raw()
+        old = store.schema.SCHEMA.replace(", 'rejected'", "")
+        raw.executescript(old)
+        raw.execute("PRAGMA user_version = 16")
+        raw.commit()
+        project = store.tickets.ensure_project(raw, "team", "/repos/project")
+        ticket = store.tickets.mirror_ticket(
+            raw, project, linear_issue_id="issue", linear_identifier="KO-1",
+            title="candidate")
+        run = store.claim(raw, project, ticket)
+        store.record_event(raw, run, "candidate", "preserve this history")
+        raw.close()
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
+                         store.SCHEMA_VERSION)
+        store.release(conn, run, "rejected", "closed by alice")
+        self.assertEqual(conn.execute("SELECT phase, outcome FROM runs")
+                         .fetchone(), ("rejected", "rejected"))
+        self.assertEqual(conn.execute("SELECT summary FROM runEvents"
+                                      " WHERE kind = 'candidate'").fetchone(),
+                         ("preserve this history",))
+        self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
     def raw(self):
         conn = sqlite3.connect(self.path)
         self.addCleanup(conn.close)
         return conn
 
     def current_unstamped_store(self):
-        """A store with every current column and `user_version` still 0.
-
-        Exactly what any file made before the stamp existed looks like:
-        store.schema.SCHEMA ran, ADDED_COLUMNS ran, nothing recorded which.
-        """
+        """A store with every current column and `user_version` still 0."""
         conn = store.open(self.path)
         store.init(conn)
         conn.execute(f"INSERT INTO projects ({A_PROJECT[0]}) VALUES (?, ?, ?, ?)",
@@ -537,12 +546,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
             [(run_id, "merged", None)])
 
     def test_a_version_4_store_migrates_in_place_and_still_reports(self):
-        """A store stamped 4 has an `interventions` action CHECK without
-        'approve' and no `ledger` table; opening it with this build rebuilds
-        the one and creates the other in place, keeps the rows it held,
-        stamps the current version, accepts an 'approve' row -- and the
-        ledger entry that row now carries -- and `--report` renders the runs
-        it held."""
+        """Migrate version 4 while retaining its runs and intervention history."""
         conn = store.open(self.path)
         store.init(conn)
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
@@ -842,10 +846,7 @@ class Version11MigrationTests(unittest.TestCase):
             raw.close()
 
     def test_a_version_11_store_is_rebuilt_to_accept_the_unit_actions(self):
-        """A store stamped 11 refuses a 'restart_supervisor' row; opening it
-        with this build rebuilds the table in place, keeps the 'reconcile'
-        row it held, stamps the current version, and the daemon's two unit
-        actions then land (KO-348)."""
+        """Migrate version 11 while preserving its reconcile intervention."""
         conn = store.open(self.path)
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(

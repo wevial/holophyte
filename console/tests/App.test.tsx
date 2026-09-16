@@ -57,7 +57,7 @@ test("the rail lists the project from the daemon's path and the four views", asy
     "Now",
     "Board",
     "Hosts",
-    "Shipped",
+    "Finished",
   ]);
   const hosts = screen.getByRole("region", { name: "Hosts" });
   expect(hosts.querySelector("[data-host-label]")!.getAttribute("data-host-label")).toBe("writer");
@@ -68,12 +68,12 @@ test("the rail lists the project from the daemon's path and the four views", asy
 test("clicking Shipped selects it; the Now view carries no page heading, Shipped its own", async () => {
   await mount({ status: working, attention: NO_ATTENTION });
   expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
-  const shipped = screen.getByRole("button", { name: "Shipped" });
+  const shipped = screen.getByRole("button", { name: "Finished" });
   expect(shipped.getAttribute("aria-pressed")).toBe("false");
   fireEvent.click(shipped);
   expect(shipped.getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByRole("button", { name: /^Now/ }).getAttribute("aria-pressed")).toBe("false");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Shipped");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Finished");
 });
 
 test("the Now button carries the attention count as a badge", async () => {

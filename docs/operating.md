@@ -15,7 +15,9 @@ cleared and the ticket walked to `ready`, and the next claim resumes on the
 preserved branch as after any other failure. `--repoint` is for a candidate
 still parked `awaiting_merge_approval` and rebuilt on a rewritten `main`,
 not for a failed run, and not for commits pushed on top of the candidate:
-those a `--babysit KO-n` resume fetches and fast-forwards to by itself
+`--babysit KO-n` clears the parked question as it releases the run and
+readies the ticket; its next claim resumes the candidate, fetching and
+fast-forwarding to those commits by itself
 (see [the loop](loop.md)), since `--repoint` moves `runs.candidateSha` and
 not the worktree; every other
 `blocked_on_operator` park (a pull request, `merge?`, a strike-out) keeps

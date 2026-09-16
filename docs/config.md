@@ -547,10 +547,11 @@ pr_merge_method = "merge"
 # one parked pull request when it sees new review activity. Optional; the
 # value shown is the default.
 pr_poll_sec = 180
-# Where the pull request's title and body come from: "ticket" (the ticket
-# pasted, titled `KO-n: TITLE`) or "written" (one implementer turn writes
-# them from the diff). Optional; the value shown is the default.
-pr_text = "ticket"
+# The least seconds a pull request must have been green and untouched --
+# no comment, review, push or check -- before the babysitter merges it.
+# Optional; the value shown is the default. 0 merges as soon as it is
+# green.
+pr_quiet_sec = 300
 # Instructions the written turn is given, in the repository's own words.
 # Optional; default empty.
 pr_style = ""
@@ -563,7 +564,17 @@ after = ["bun --cwd=console run build"]
 ```
 
 Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`,
-`pr_poll_sec`, `pr_text`, `pr_style`, `human_threads`, `after`.
+`pr_poll_sec`, `pr_quiet_sec`, `pr_style`, `human_threads`,
+`after`, `bot_authors`.
+
+`bot_authors` is a list of login strings, defaulting to
+`["devin-ai-integration", "coderabbitai", "greptile-apps", "github-actions"]`.
+A declined thread whose opening author is listed or whose login ends in
+`[bot]` is replied to with the reason and then resolved. Other declines stay
+open and park the run. Setting the list replaces the defaults; `[]` keeps
+only the suffix rule. A bare string or a non-string entry fails startup
+naming `bot_authors`. This key controls decline resolution; the existing
+GitHub author-type policy still determines which threads are adjudicated.
 
 With `approve = "auto"` a clean merge gate merges, as it always has. With
 `approve = "human"` the loop stops there instead: the run's phase becomes
@@ -582,10 +593,9 @@ be `"auto"` or `"human"`; anything else is a startup error naming the key.
 
 With `mode = "local"` a clean merge gate lands the candidate on `main` with a
 `--no-ff` merge, as it always has. With `mode = "pr"` the loop pushes the task
-branch to `origin` instead and opens a pull request against `main` titled
-`KO-n: TITLE`, whose body is the ticket body followed by the run's FINDINGS
-entry, so the repository's own review bots and CI see the change before it
-lands (design note 7). The loop then babysits the pull request -- reads its
+branch to `origin` instead and opens a pull request against `main` with
+a title and body written from the change, so the repository's own review
+bots and CI see the change before it lands (design note 7). The loop then babysits the pull request -- reads its
 unresolved review threads and its checks, verdicts each thread, fixes and
 replies, waits for CI -- for at most `pr_rounds` passes; see
 [PR rounds](reviewing.md#pr-rounds) for the pass. A pull request that comes
@@ -597,8 +607,8 @@ the PR's URL recorded on the run (`runs.prUrl`), in the ticket's question
 (`PR open: URL`, with the open threads listed) and in the ledger comment,
 until `--approve KO-n` releases it: the resumed claim babysits the PR once
 more and merges it through the API when it is green and quiet. A declined
-thread, a thread only a person can answer, red checks, or the cap park the
-run the same way; `--babysit KO-n` sends such a run back for another round
+thread left open for its author, a thread only a person can answer, red
+checks, or the cap park the run the same way; `--babysit KO-n` sends such a run back for another round
 of passes without saying "merge". The factory never moves local `main` under
 this mode: the merge is GitHub's, and the writer host's checkout tracks
 `origin` by the operator's hand. The pull request is opened through `gh`
@@ -646,28 +656,43 @@ three. The default is 180; an integer of at least 10, and anything else
 (`5`, `"180"`, `true`) is a startup error naming the key. The reads back off
 on their own when the token's GraphQL budget runs low, whatever the value.
 
-`pr_text` is where a pull request's title and body come from under `mode =
-"pr"`. `"ticket"` (the default) is the form above: the title `KO-n: TITLE`,
-the body the ticket verbatim with the run's FINDINGS entry appended. With
-`"written"`, after the candidate is approved and verified and before the
-branch is pushed, the loop runs one more turn on the implementer route in the
-task worktree, given the diff against `main` (capped, with a note when cut),
+`pr_quiet_sec` is the least time, in seconds, a pull request must have been
+green with no unresolved thread before the babysitter merges it (KO-429) --
+the "quiet" of "green and quiet". It is measured from GitHub's `updatedAt`,
+which moves on every comment, review, push and check: a reviewer still
+typing, a bot's second pass not yet posted, or a commit pushed a minute
+after the checks went green all restart the count. Until then the pass
+re-reads the pull request on the cadence it uses for pending checks and
+prints how long it has been quiet of the quiet required, and `pr_rounds`
+still caps a pull request that never goes quiet. The default is 300; an
+integer of at least 0, and anything else (`-1`, `"300"`, `true`) is a
+startup error naming the key. `0` is the merge-as-soon-as-green the
+babysitter had before.
+
+Pull request bodies are always written. After the candidate is approved and
+verified and before the branch is pushed, the loop runs one more turn on
+the implementer route in the task worktree, given the diff against `main`
+(capped, with a note when cut),
 the ticket body, the repository's `AGENTS.md` and `CLAUDE.md` when the
-repository root has them, and `pr_style`. The turn answers with one line
+repository root has them, the repository's pull request template --
+`.github/pull_request_template.md`, or `PULL_REQUEST_TEMPLATE.md` under
+`.github/` or at the root -- when the worktree has one, with the instruction
+to fill its sections, and `pr_style`. The turn answers with one line
 `TITLE: ...` and the description in Markdown after it; the loop takes the
 title as given, appends one line `Linear: KO-n` with the issue's URL to the
 body, and opens the pull request with them. No FINDINGS entry is appended,
 and the branch keeps its identifier. A reply with no `TITLE:` line, an empty
-title or a title over 120 characters, or a turn that runs out of its budget
-(a few minutes of the run's remaining box), falls back to the ticket form for
-that pull request and prints one line saying so, so a pull request is always
-opened. The text is written once, when the pull request opens; later babysitter
-passes leave it alone. The value must be `"ticket"` or `"written"`; anything
-else is a startup error naming the key.
+title or a title over 120 characters, an empty body, or a turn that runs out
+of its budget (a few minutes of the run's remaining box), falls back to the
+ticket title and a short stub. The stub contains the first paragraph of the
+ticket's Summary section (up to 600 characters), one line saying
+`The description could not be written: REASON`, and the `Linear: KO-n` line
+with the issue URL. The loop prints the failure reason. The text is written
+once, when the pull request opens; later babysitter passes leave it alone.
 
 `pr_style` is an optional string of instructions the written turn is given
 verbatim, for the repository's own pull request conventions -- for example,
 "Title starts with [Feature Name], the feature read from the diff. No ticket
 identifier in the title. Describe what changed and why in a few short
-paragraphs; no testing plan." It is read under `pr_text = "written"` only,
-and anything but a string is a startup error naming the key.
+paragraphs; no testing plan." Anything but a string is a startup error
+naming the key.

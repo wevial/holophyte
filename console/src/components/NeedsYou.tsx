@@ -167,6 +167,8 @@ export function NeedsYou({
             <AttentionRow
               key={key}
               kind={item.kind}
+              runId={typeof item.run === "number" ? item.run : undefined}
+              now={now}
               project={projectName(String(item.project))}
               description={describeRow(item)}
               thread={threadOf(item, key)}

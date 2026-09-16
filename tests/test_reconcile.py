@@ -1,14 +1,4 @@
-"""The loop's pass before a claim, driven end to end with zero agent calls.
-
-What the loop does at startup and at each claim before any ticket is
-dispatched: the read-only sweep's diagnostics (`_startup_sweep` and the
-held-ticket preamble), the startup reconcile of the mirrored board
-(`_reconcile_at_startup`) and the queue mirror (`_mirror_queue`). The
-harness is `tests/loop_fixture.py`: a real throwaway repo, a real store, a
-stub provider, and `tests/fake_agent.py` scripting the agent turns.
-
-Run: python3 -m unittest discover -s tests -p 'test_reconcile*' -v
-"""
+"""The loop's pass before a claim, driven end to end with zero agent calls."""
 from __future__ import annotations
 
 import io
@@ -31,6 +21,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     VALID_BODY,
     Boom,
     LoopFixture,
+    MergeModeFixture,
     StubProvider,
     a_task,
 )
@@ -41,16 +32,7 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class SweepDiagnosticsTests(LoopFixture):
-    """A held ticket and the startup preamble surface the read-only sweep.
-
-    The KO-146 incident's dead end: "lease already held by run 7" with
-    nothing about whether run 7 was alive, and no strike recorded, so the
-    relaunch reflex never accumulated evidence. One read-only sweep per
-    invocation turns the relaunch into the evidence — the second launch can
-    act. Since KO-341 the lease is the ticket's, so the held ticket is
-    skipped for the next candidate rather than stopping the loop; the line
-    still names the holder and points at the sweep.
-    """
+    """A held ticket and the startup preamble surface the read-only sweep."""
 
     MINUTE = 60 * 1000
     HELD = "KO-9"
@@ -149,12 +131,7 @@ class SweepDiagnosticsTests(LoopFixture):
 
 
 class ReconcileTests(LoopFixture):
-    """At startup, right after the sweep, the loop walks the mirrored
-    tickets Linear has since closed elsewhere to their terminal status.
-
-    The daemon's board showed KO-217 `ready` and KO-137/KO-138 `needs_spec`
-    days after another target finished them: the mirror is written at the
-    claim and hears nothing when Linear closes the ticket elsewhere."""
+    """Walk mirrored tickets closed on the board to their terminal status."""
 
     CRITERIA = ["Given a thing, when it runs, then it works"]
 
@@ -320,22 +297,13 @@ class ReconcileTests(LoopFixture):
 
 class QueueMirrorTests(LoopFixture):
     """Each claim mirrors every ready issue the provider lists, so the Board
-    shows the queue and not only the ticket the loop picked.
-
-    The operator filed four tickets and saw none of them on the Board: the
-    mirror was written at the claim alone, so a ticket in Todo was invisible
-    until its turn came.
-    """
+    shows the queue and not only the ticket the loop picked."""
 
     def statuses(self):
         return dict(self.read("SELECT linearIdentifier, status FROM tickets"))
 
     def queue(self):
-        """KO-a with a template-valid body, KO-b with the body KO-165 was
-        claimed on (the template's Summary placeholder left in, so only the
-        validator objects), KO-c valid; the stub offers KO-131 first, so
-        that is the one claimed. Every body is a real string so each ticket
-        takes the validator's route and not the no-body bypass."""
+        """Claim a valid ticket after skipping invalid contracts."""
         a, b, c = a_task(2), a_task(3), a_task(4)
         a["body"] = c["body"] = VALID_BODY
         b["body"] = INVALID_BODY
@@ -412,3 +380,35 @@ class QueueMirrorTests(LoopFixture):
         self.assertEqual(len(skipped), 1, printed)
         self.assertIn("board unreachable", skipped[0])
         self.assertEqual(self.statuses(), {"KO-131": "merged", "KO-132": "merged"})
+
+
+class RejectedPullRequestTests(MergeModeFixture):
+    def test_closed_parked_pr_is_rejected_without_a_strike(self):
+        import test_pullrequest
+        helpers = test_pullrequest.MergeModePullRequestTests
+        helpers.parked_on_pr(self)
+        branch, sha = self.read("SELECT branch, candidateSha FROM runs")[0]
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        ticket = conn.execute("SELECT id FROM tickets").fetchone()[0]
+        before = store.read.failed_attempts_since(conn, ticket, 0)
+        helpers.fake_client(self, dict(helpers.CLOSED_PULL, timelineItems={
+            "nodes": [{"actor": {"login": "alice"}}]}))
+        provider = StubProvider()
+        label = holophyte.board.lease_label(self.tgt)
+        provider.labels["iss-131"] = [label]
+        provider.closed = {"KO-131": "canceled"}
+        self.main_output(provider=provider)
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("rejected", "rejected")])
+        reason = self.read("SELECT outcomeReason FROM runs")[0][0]
+        self.assertIn("alice", reason)
+        self.assertIn(sha, reason)
+        self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
+                         [("blocked_on_operator",
+                           f"rejected: {self.URL} closed by alice")])
+        self.assertNotIn(label, provider.labels["iss-131"])
+        self.assertIn(("unlabel", "iss-131", label), provider.label_calls)
+        self.assertEqual(provider.states, [])
+        self.assertEqual(store.read.failed_attempts_since(conn, ticket, 0), before)
+        self.assertEqual(self.git("rev-parse", branch).strip(), sha)

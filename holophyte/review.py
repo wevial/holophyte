@@ -4,15 +4,18 @@ The verdict line a record must keep, the sanitizer every stored message goes
 through, the best-effort split of a reviewer's prose into `{path, line?,
 severity, message}` findings, the per-criterion checklist the reviewer is held
 to, and the collapse of both reviewer vocabularies onto `reviewRounds.verdict`.
-Pure text: nothing here reads config, the store, the target or the board, and
-the one import beyond the standard library is `review_runner`, whose verdict
+Witness checks read candidate files and import test modules in a subprocess;
+other helpers parse text without reading config, the store or the board. The
+one import beyond the standard library is `review_runner`, whose verdict
 reader `round_verdict` wraps.
 
 Third slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
 import hashlib
+import json
 import re
+import subprocess
 from pathlib import Path
 
 import review_runner
@@ -343,15 +346,77 @@ def test_references(witness):
     return references
 
 
-def missing_witnesses(references, root):
-    """One message per reference in `references` that `root` does not hold.
+# One child resolves all class witnesses; imports cannot mutate the loop's
+# interpreter. Match discovery's module names and tests-first search path.
+_WITNESS_RESOLVER = r"""
+import contextlib
+import importlib.util
+import json
+import sys
+from pathlib import Path
 
-    A text scan of the named file, never an import: `def NAME(` at any
-    indentation for a module-level test, or inside the block of `class CLS`
-    — the lines indented deeper than the class line, up to the next line
-    indented at or below it — when a class is named. No test runs here; the
-    verify gate does that.
+sys.path.insert(0, str(Path("tests").resolve()))
+modules = {}
+results = []
+for path, cls, name in json.loads(sys.argv[1]):
+    with contextlib.redirect_stdout(sys.stderr):
+        if path not in modules:
+            try:
+                file = Path(path).resolve()
+                module_name = ".".join(file.relative_to(Path("tests").resolve())
+                                       .with_suffix("").parts)
+                spec = importlib.util.spec_from_file_location(module_name, file)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+                modules[path] = module
+            except (Exception, SystemExit):
+                modules[path] = None
+        module = modules[path]
+        found = (callable(getattr(getattr(module, cls, None), name, None))
+                 if module is not None else None)
+    results.append(found)
+print(json.dumps(results))
+"""
+
+
+def _import_witnesses(references, root):
+    """Resolve existing, contained class references in one isolated import."""
+    candidates = [ref for ref in references if ref[1] is not None
+                  and (file := _inside(root, ref[0])) is not None
+                  and file.is_file()]
+    if not candidates:
+        return {}
+    try:
+        result = subprocess.run(
+            ["python3", "-c", _WITNESS_RESOLVER, json.dumps(candidates)],
+            cwd=root, capture_output=True, text=True, timeout=30, check=True)
+        return dict(zip(candidates, json.loads(result.stdout), strict=True))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}  # The child could not import: retain the textual fallback.
+
+
+def _scan_witness(file, cls, name):
+    """The original literal-definition check, used when import is unavailable."""
+    lines = file.read_text(errors="replace").splitlines()
+    if cls is None:
+        return (None if any(re.match(rf"\s*def {name}\(", line) for line in lines)
+                else f"no def {name}")
+    found = _defines_in_class(lines, cls, name)
+    if found is None:
+        return f"no class {cls}"
+    return None if found else f"no def {name} in class {cls}"
+
+
+def missing_witnesses(references, root):
+    """Missing references, with the route that decided each absence.
+
+    Class witnesses resolve callable attributes, including inherited tests,
+    by importing in a child in the checkout. Failed imports fall back to the
+    literal scan. Module-level witnesses retain the scan. No tests run here.
     """
+    references = [tuple(ref) for ref in references]
+    imported = _import_witnesses(references, root)
     missing = []
     for path, cls, name in references:
         spec = f"{path}::{cls}::{name}" if cls else f"{path}::{name}"
@@ -362,16 +427,15 @@ def missing_witnesses(references, root):
         if not file.is_file():
             missing.append(f"{spec} (no file {path})")
             continue
-        lines = file.read_text(errors="replace").splitlines()
-        if cls is None:
-            if not any(re.match(rf"\s*def {name}\(", line) for line in lines):
-                missing.append(f"{spec} (no def {name})")
+        found = imported.get((path, cls, name))
+        if found is not None:
+            if not found:
+                missing.append(f"{spec} (import: no callable {name} on class {cls})")
             continue
-        found = _defines_in_class(lines, cls, name)
-        if found is None:
-            missing.append(f"{spec} (no class {cls})")
-        elif not found:
-            missing.append(f"{spec} (no def {name} in class {cls})")
+        reason = _scan_witness(file, cls, name)
+        if reason:
+            route = "textual fallback" if cls else "textual scan"
+            missing.append(f"{spec} ({route}: {reason})")
     return missing
 
 

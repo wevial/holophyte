@@ -34,6 +34,7 @@ from .tickets import walk_ticket
 # leave a finished run parked in the phase it was working in. `killed` is its
 # own phase in §4; the other two failure outcomes share `failed`.
 TERMINAL_PHASES = {
+    "rejected": "rejected",
     "merged": "done",
     "killed": "killed",
     "abandoned": "failed",
@@ -197,7 +198,7 @@ def is_gate_conflict(reason):
 
 
 def requeue(conn, ticket_id, note, now=None):
-    """Put a failed ticket back in the queue; return the run it failed in.
+    """Put a failed or rejected ticket back in the queue; return its last run.
 
     The escalation ladder's rung-3 pair (`record_intervention()` then
     `walk_ticket()`) as one rung-1 call: a run that fails leaves its ticket
@@ -239,18 +240,21 @@ def requeue(conn, ticket_id, note, now=None):
         parked_on_conflict = status == "blocked_on_operator" \
             and run is not None and run[0] == "failed" \
             and is_gate_conflict(run[1])
-        if status != "in_flight" and not parked_on_conflict:
+        rejected = run is not None and run[0] == "rejected"
+        if status != "in_flight" and not (parked_on_conflict or
+                                          status == "blocked_on_operator"
+                                          and rejected):
             raise RequeueRefused(
                 f"{identifier} is {status}, not in_flight; nothing to requeue")
         if run is None:
             raise RequeueRefused(
                 f"{identifier} has no ended run to requeue after")
-        if run[0] != "failed":
+        if run[0] not in ("failed", "rejected"):
             raise RequeueRefused(
                 f"{identifier}: run {last_run_id} ended {run[0]},"
-                " not failed; nothing to requeue")
+                " not failed or rejected; nothing to requeue")
         record_intervention(conn, last_run_id, "requeue", note, now=now)
-        if parked_on_conflict:
+        if parked_on_conflict or rejected:
             conn.execute("UPDATE tickets SET blockedQuestion = NULL"
                          " WHERE id = ?", (ticket_id,))
         walk_ticket(conn, ticket_id, "ready")
@@ -310,26 +314,15 @@ def approve(conn, ticket_id, note, now=None):
 
 
 def babysit(conn, ticket_id, note, now=None, source="human"):
-    """Send a ticket parked on its pull request back to the babysitter; return
-    the parked run's id.
+    """Send a PR-parked ticket back to the babysitter; return its run id.
 
-    `approve()`'s twin for `[merge] mode = "pr"`, and the same transaction
-    with the action `babysit` on the `interventions` row: the parked run is
-    ended `abandoned` with its resume point at the merge gate and the ticket
-    walked to `ready`, so the loop's next claim resumes the candidate --
-    and, the run carrying a pull request, babysits it again: reads the
-    threads that arrived since the park, verdicts them, fixes and replies,
-    waits for the checks. What it is not is an approval: a PR that comes up
-    ready to merge under `[merge] approve = "human"` parks again for the
-    human's "merge" rather than landing on the operator's "look again".
-    The refusals are `approve()`'s, as `ApproveRefused`, plus one of its
-    own: a run parked with no pull request (`runs.prUrl` NULL) has no
-    threads to look at again, and releasing it would merge the candidate
-    down the local gate -- that is `approve()`'s to say, so the babysitter
-    refuses it with nothing written. `source` is who sent it back:
-    `"human"` for `--babysit`, `"supervisor"` when the loop's tick saw new
-    review activity on the pull request (KO-362).
-    """
+    The shared release transaction records a `babysit` intervention, ends the
+    run `abandoned` with its merge-gate resume point, clears `blockedQuestion`,
+    and readies the ticket. The next claim resumes the candidate on its PR.
+    This is "look again", not approval: human-approval mode parks again when
+    the PR is ready. All `approve()` refusals apply; a park without a PR is
+    also refused before any write, since releasing it would land locally.
+    `source` is `human` for --babysit, `supervisor` for new PR activity."""
     return _release_parked(
         conn, ticket_id, "babysit", note,
         "sent back to the babysitter; the next claim resumes the candidate"
@@ -387,6 +380,9 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
         # is the operator's, written once the ending is stamped.
         conn.execute("UPDATE runs SET resumePhase = ? WHERE id = ?",
                      (APPROVED_RESUME_PHASE, last_run_id))
+        if action == "babysit":
+            conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
+                         (ticket_id,))
         walk_ticket(conn, ticket_id, "ready")
     return last_run_id
 
@@ -545,13 +541,13 @@ RUN_PHASE_TRANSITIONS = {
     "reviewing": frozenset({"addressing", "merge_gate", "failed", "killed"}),
     "addressing": frozenset({"verifying", "failed", "killed"}),
     "merge_gate": frozenset({"merging", "awaiting_merge_approval", "failed",
-                             "killed"}),
+                             "killed", "rejected"}),
     # `awaiting_merge_approval -> done` is the pull request a person merged
     # on GitHub while the run waited for `--approve`: the loop's reconcile
     # ends the parked run merged with that merge commit (KO-359). The
     # operator's own `--approve` still ends it `failed` (abandoned) and lets
     # the next run merge.
-    "awaiting_merge_approval": frozenset({"done", "failed", "killed"}),
+    "awaiting_merge_approval": frozenset({"done", "failed", "killed", "rejected"}),
     "merging": frozenset({"done", "failed", "killed"}),
     "squashing": frozenset(),
     "done": frozenset(),
@@ -561,17 +557,13 @@ RUN_PHASE_TRANSITIONS = {
     "failed": RESUMABLE_WORK_PHASES,
     "blocked_on_operator": frozenset({"working"}),
     "killed": frozenset(),
+    "rejected": frozenset(),
 }
 assert set(RUN_PHASE_TRANSITIONS) == set(PHASES)
 
 
 class ResumeRefused(Exception):
-    """A resume the state model does not allow; nothing was written.
-
-    Raised for a run that does not exist and for one in a phase §5 gives no
-    resume for — both are the same answer to the caller: this run is not
-    going to start moving again because you asked.
-    """
+    """A resume the state model does not allow; nothing was written."""
 
 
 def resume(conn, run_id, guidance=None, source="human", now=None):

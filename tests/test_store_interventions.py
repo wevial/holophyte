@@ -1,25 +1,14 @@
-"""Operator surface: `record_intervention()` and `walk_ticket()`.
-
-The KO-146 incident produced four falsely-labeled 'resume' interventions and
-raw SQL because the schema offered no truthful action for an operator
-close-out and `resume()` was the table's only writer — the schema made
-honesty impossible. These tests pin the general writer (row plus narrative
-event, atomic), the CHECK-widening rebuild an older store needs before it
-can hold a 'close_out' row, and the §3 walk helper that replaces hand-found
-status paths.
-
-Run: python3 -m unittest discover -s tests -p 'test_store_interventions*' -v
-"""
+"""Operator surface: `record_intervention()` and `walk_ticket()`."""
 from __future__ import annotations
 
 import re
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 import store
 import store.tickets
+from tests.babysit_fixture import StoreBabysitCases
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -204,28 +193,8 @@ class MigrationTests(InterventionFixture):
                                    " WHERE name = 'interventions_old'"), [])
 
 
-class BabysitTests(InterventionFixture):
-    def test_babysit_writes_its_own_action_and_the_old_word_is_refused(self):
-        """KO-374: `store.babysit()` records the action 'babysit' on the
-        parked run; 'shepherd', the word it wrote before, no longer passes
-        the CHECK -- a hand-written row with it fails at the database."""
-        for phase in ("working", "verifying", "reviewing", "merge_gate"):
-            store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
-        store.park(self.conn, self.run, "awaiting_merge_approval",
-                   pr_url="https://example.test/pull/1", now=T0 + 2 * MINUTE)
-        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
-
-        store.babysit(self.conn, self.ticket, "look again",
-                      now=T0 + 3 * MINUTE)
-
-        self.assertEqual(
-            self.rows('SELECT runId, source, "action" FROM interventions'),
-            [(self.run, "human", "babysit")])
-        with self.assertRaises(sqlite3.IntegrityError):
-            self.conn.execute(
-                'INSERT INTO interventions (runId, source, "trigger",'
-                ' "action", at) VALUES (?, \'human\', \'manual\','
-                ' \'shepherd\', ?)', (self.run, T0))
+class BabysitTests(StoreBabysitCases, InterventionFixture):
+    pass
 
 
 class WalkTicketTests(InterventionFixture):
@@ -297,6 +266,16 @@ class RequeueTests(InterventionFixture):
         return self.conn.execute(
             "SELECT status FROM tickets WHERE id = ?",
             (ticket_id or self.ticket,)).fetchone()[0]
+
+    def test_rejected_candidate_can_be_requeued(self):
+        self.conn.execute("UPDATE runs SET branch = 'candidate',"
+                          " candidateSha = 'abc' WHERE id = ?", (self.run,))
+        store.release(self.conn, self.run, "rejected", "closed by alice")
+        store.walk_ticket(self.conn, self.ticket, "blocked_on_operator")
+        store.requeue(self.conn, self.ticket, "try again")
+        self.assertEqual(self.ticket_status(), "ready")
+        self.assertEqual(self.rows("SELECT branch, candidateSha FROM runs"),
+                         [("candidate", "abc")])
 
     def test_a_failed_ticket_is_requeued_with_its_intervention_row(self):
         self.fail_the_run()

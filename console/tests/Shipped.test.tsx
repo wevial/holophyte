@@ -187,7 +187,7 @@ test("an empty page reads Nothing merged yet with no Load older", async () => {
   const { fetchImpl } = pagedFetch({ "": { rows: [], limit: 50, next_before: null } });
   render(<Shipped hosts={[HOST]} now={now} deps={{ fetch: fetchImpl }} tz="UTC" />);
   await act(settle);
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Shipped");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Finished");
   expect(screen.getByText("Nothing merged yet")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Load older" })).toBeNull();
   expect(document.querySelector("[data-subtitle]")).toBeNull();

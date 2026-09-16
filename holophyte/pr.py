@@ -1,9 +1,8 @@
 """`[merge] mode = "pr"`: the loop's one GitHub surface.
-
 Design note 7. Instead of the `--no-ff` merge into main, an approved,
 verified candidate is pushed to `origin` and opened as a pull request whose
-body is the ticket body plus the run's FINDINGS entry, so the repository's
-own review bots and CI see the change before it lands. The loop then
+body is written from the change, so the repository's own review bots and CI
+see the change before it lands. The loop then
 babysits the PR (`holophyte.loop`): `pr_state()` reads its unresolved
 review threads and its checks, `reply_thread()` and `resolve_thread()`
 answer the threads the adjudicator verdicted, `merge_pull_request()` lands
@@ -12,9 +11,9 @@ of `main`.
 
 Everything that talks to GitHub is in this file, so the surface is one seam
 to port: `check_pr_route()` is the startup preflight, `push_branch()` and
-`create_pull_request()` the two calls the merge path makes, `pr_body()` the
-body they carry, and the babysitter's calls go through `graphql()` and
-`rest()`. The route is `gh` on PATH, authenticated, or -- with no `gh` --
+`create_pull_request()` the two calls the merge path makes; the babysitter's
+calls go through `graphql()` and `rest()`. The route is `gh` on PATH,
+authenticated, or -- with no `gh` --
 the REST and GraphQL APIs with a token read from `TOKEN_VARS` in the
 environment. The token is read there and only there: never written to the
 config, the store or a log line.
@@ -35,9 +34,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-import store.read
+import ticket_template
 from holophyte import config_tables
-from holophyte.findings import run_entry
 from holophyte.gates import InfraFailure
 
 # The remote the mode pushes to and the branch the PR targets. `main` is the
@@ -149,15 +147,18 @@ class PrState:
     """The pull request as one `pr_state()` read saw it. `mergeable` is
     GitHub's answer: MERGEABLE, CONFLICTING or UNKNOWN -- and UNKNOWN is
     what a read that predates or omits the field is held to, never a
-    license to merge anything in."""
+    license to merge anything in. `updated_at` is `updatedAt` as epoch
+    milliseconds, None when the answer carried none."""
 
     threads: tuple  # unresolved `Thread`s, oldest first
     checks: str  # "success", "pending" or "failure"
     head_sha: str | None
     merged: bool = False
     merge_sha: str | None = None
+    closed_by: str | None = None
     closed: bool = False
     mergeable: str = "UNKNOWN"
+    updated_at: int | None = None
 
 
 def origin_url(target):
@@ -227,30 +228,21 @@ def pr_title(task_id, task):
     return f"{task_id}: {task}"
 
 
-def pr_body(conn, run_id, body, now):
-    """The PR body: the ticket body, then the run's FINDINGS entry.
-
-    The entry is `findings.run_entry` over the run as it stands at this
-    moment -- not yet ended, so `now` is the stamp and the phase it is about
-    to be parked in is the head -- rendered by the same function the
-    close-out renders the window with, so the PR shows what FINDINGS.md will.
-    A direct call with no store carries the ticket body alone.
-    """
-    body = (body or "").strip()
-    if conn is None or run_id is None:
-        return body
-    detail = store.read.run_detail(conn, run_id)
-    if detail is None:
-        return body
-    row = store.read.EndedRun(
-        id=detail.id, linearIdentifier=detail.linearIdentifier,
-        startedAt=detail.startedAt, endedAt=now, timeBoxMs=detail.timeBoxMs,
-        reviewRoundCount=len(store.read.rounds_of(conn, run_id)),
-        outcome="awaiting_merge_approval",
-        outcomeReason=f"pull request open for {detail.branch}",
-        branch=detail.branch, host=detail.host, mergeSha=None)
-    entry = run_entry(row)
-    return f"{body}\n\n{entry}" if body else entry
+def pr_body_stub(task, reason, issue_url):
+    """A short Summary and the failure reason, followed by the ticket link."""
+    summary = ticket_template.parse(task.get("body") or "").sections.get(
+        "Summary", "").strip()
+    paragraph = []
+    for line in summary.splitlines():
+        if not line.strip():
+            break
+        paragraph.append(line.strip())
+    summary = " ".join(paragraph)[:600]
+    reason = " ".join(reason.split())
+    text = f"The description could not be written: {reason}"
+    if summary:
+        text = f"{summary}\n\n{text}"
+    return pr_body_written(text, task["id"], issue_url)
 
 
 # The longest title a written reply may carry; GitHub truncates past 256, and
@@ -420,11 +412,10 @@ def open_pull_request(target, branch):
     request adopts that PR instead of opening a second one, which GitHub
     would refuse. The repository is `origin`'s, its owner and name read
     off the remote URL by `parse_pr_url()` the way a PR's own URL is. An
-    `origin` this cannot read, or a repository answer carrying no open
-    pull request for the branch, is None -- the create that follows
-    answers with its own InfraFailure. A node without a URL
-    `parse_pr_url()` can read is InfraFailure, as every unreadable answer
-    here is.
+    `origin` this cannot read, or an answer carrying no open pull request
+    for the branch, is None -- the create that follows answers with its
+    own InfraFailure; a node without a readable URL is InfraFailure, as
+    every unreadable answer here is.
     """
     # Imported at the call: `holophyte.pr_status` imports this module's
     # transport at module top, so the import runs one way.

@@ -359,15 +359,14 @@ def board_config(target):
 # in a minute gets one round rather than three. An integer of at least
 # 10; the default is 180.
 #
-# `pr_text` is where the pull request's title and body come from under
-# `mode = "pr"`: `"ticket"` (the default) titles it `KO-n: TITLE` and pastes
-# the ticket body with the run's FINDINGS entry; `"written"` spends one
-# implementer turn on the diff, the ticket and the repository's agent guide
-# and opens the PR with the title and description that turn writes, the
-# Linear issue linked at the end (KO-336). `pr_style` is an optional string
-# of instructions that turn is given -- the repository's own PR conventions
-# in the operator's words. A reply the loop cannot read falls back to the
-# ticket form for that PR, so a PR is always opened.
+# `pr_quiet_sec` is the quiet a green, thread-free pull request must have
+# behind it before the babysitter merges it (KO-429), from GitHub's
+# `updatedAt`. An integer of at least 0; the default is 300, `0`
+# merge-as-soon-as-green.
+#
+# Pull request titles and bodies are always written by one implementer turn
+# from the diff, ticket and repository conventions. `pr_style` supplies
+# optional instructions. An unusable reply falls back to a Summary stub.
 #
 # `human_threads` is what the babysitter does with a review thread a person
 # opened: `"park"` (the default, KO-327) is HUMAN before the adjudicator is
@@ -389,74 +388,55 @@ MERGE_KEYS = {
     "pr_rounds": 5,
     "pr_merge_method": "merge",
     "pr_poll_sec": 180,
-    "pr_text": "ticket",
+    "pr_quiet_sec": 300,
     "pr_style": "",
     "human_threads": "park",
     "after": (),
+    "bot_authors": ("devin-ai-integration", "coderabbitai",
+                    "greptile-apps", "github-actions"),
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
 MERGE_METHODS = ("merge", "squash", "rebase")
-MERGE_PR_TEXTS = ("ticket", "written")
 MERGE_HUMAN_THREADS = ("park", "act")
 MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
-                "pr_merge_method": MERGE_METHODS, "pr_text": MERGE_PR_TEXTS,
+                "pr_merge_method": MERGE_METHODS,
                 "human_threads": MERGE_HUMAN_THREADS}
-MergeConfig = collections.namedtuple(
-    "MergeConfig", ("approve", "mode", "pr_rounds", "pr_merge_method",
-                    "pr_poll_sec", "pr_text", "pr_style", "human_threads",
-                    "after"))
+MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
 # The least `pr_poll_sec`: under this the loop would be polling GitHub for
 # a reviewer's next keystroke rather than their next comment.
 PR_POLL_FLOOR = 10
+# The least value each integer [merge] key takes.
+MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
+                    "pr_quiet_sec": 0}
 
 
 def merge_config(target):
     """The target's `[merge]` knobs over the defaults.
 
-    Checked at startup beside `loop_config()`, the same way: an absent table
-    (or key) is the defaults exactly -- `approve = "auto"`, `mode = "local"`,
-    `pr_merge_method = "merge"` -- and a present key has to be one of its
-    `MERGE_VALUES`, and only one of those: `"later"` or `true` names no gate
-    the loop has, `"github"` names no merge path, `"fast-forward"` names no
-    method GitHub's merge API takes, and a value the factory quietly read as
-    the default would merge work the operator asked to sign off on, or land
-    locally what they asked to see as a pull request. `pr_rounds` is held to an integer
-    of at least 1 -- a `true`, a `"5"` or a `0` names no number of passes
-    a babysitter can make. `pr_poll_sec` is an integer of at least
-    `PR_POLL_FLOOR` -- `"180"` is a string and `5` a poll of GitHub, not an
-    interval between babysit rounds. `pr_text` is `"ticket"` or `"written"`, and
-    `pr_style` is a string (default empty): instructions, not a switch, so
-    any text is taken and anything else is refused. `human_threads` is
-    `"park"` or `"act"`: a `"reply"` names no rule for a person's thread
-    the babysitter has. `after` is a list of strings (default empty), each a
-    shell command; a bare string is refused rather than split, so a target
-    cannot pass one command where a list of them is read. The refusal names the
-    table, the key and the constraint, like a bad `[loop]` value. Keys this
-    version does not know are refused by `check_config_keys()`.
+    Validate enums, integer floors, instruction text, and string lists at
+    startup. `after` holds shell commands; `bot_authors` holds logins whose
+    declined threads are resolved. Refusals name the config, table and key.
     """
     table = target.config().get("merge", {})
     if not isinstance(table, dict):
         raise SystemExit(
             f"[holo2] {target.config_path}: [merge] must be a table, got "
             f"{type(table).__name__}")
+    if "pr_text" in table:
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [merge] pr_text was retired:"
+            " pull request bodies are always written")
     values = {}
     for key, default in MERGE_KEYS.items():
         value = table.get(key, default)
-        if key == "pr_rounds":
+        if key in MERGE_INT_FLOORS:
             if isinstance(value, bool) or not isinstance(value, int) \
-                    or value < 1:
+                    or value < MERGE_INT_FLOORS[key]:
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be an"
-                    f" integer of at least 1, got {value!r}")
-            values[key] = value
-            continue
-        if key == "pr_poll_sec":
-            if isinstance(value, bool) or not isinstance(value, int) \
-                    or value < PR_POLL_FLOOR:
-                raise SystemExit(
-                    f"[holo2] {target.config_path}: [merge] {key} must be an"
-                    f" integer of at least {PR_POLL_FLOOR}, got {value!r}")
+                    f" integer of at least {MERGE_INT_FLOORS[key]},"
+                    f" got {value!r}")
             values[key] = value
             continue
         if key == "pr_style":
@@ -466,12 +446,12 @@ def merge_config(target):
                     f" string, got {value!r}")
             values[key] = value
             continue
-        if key == "after":
+        if key in ("after", "bot_authors"):
             if not isinstance(value, (list, tuple)) \
                     or not all(isinstance(cmd, str) for cmd in value):
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be a"
-                    f" list of shell command strings, got {value!r}")
+                    f" list of strings, got {value!r}")
             values[key] = tuple(value)
             continue
         if value not in MERGE_VALUES[key]:

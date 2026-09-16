@@ -430,7 +430,7 @@ def ended_runs(conn):
 
 @dataclass(frozen=True)
 class MergedRun:
-    """One merged run, joined to its ticket, with its findings counted: what
+    """One finished run, joined to its ticket, with its findings counted: what
     `/shipped` draws a row from."""
 
     id: int
@@ -447,6 +447,8 @@ class MergedRun:
     mergeSha: str | None
     # The pull request the run merged through (`runs.prUrl`), None when none.
     prUrl: str | None = None
+    outcome: str | None = None
+    outcomeReason: str | None = None
 
 
 # The range of a SQLite INTEGER, and so of any run id a cursor can name.
@@ -455,8 +457,13 @@ SQLITE_INT64_MAX = 2 ** 63 - 1
 
 
 def merged_runs(conn, limit, before=None):
-    """Up to `limit` runs with outcome `merged`, newest end first (ties by
-    id descending), keyset-paged on `(endedAt, id)`.
+    """The merged subset of `finished_runs()`, with the same paging."""
+    return finished_runs(conn, limit, before, outcomes=("merged",))
+
+
+def finished_runs(conn, limit, before=None, outcomes=None):
+    """Up to `limit` ended runs, optionally filtered by outcomes, newest end
+    first (ties by id descending), keyset-paged on `(endedAt, id)`.
 
     `before` is a run id: only runs that ended before that run's end (or
     at the same instant with a smaller id) are answered, so a client pages
@@ -468,8 +475,11 @@ def merged_runs(conn, limit, before=None):
         # Past what an INTEGER column can hold, so no run has it; binding
         # it would raise OverflowError rather than answer the empty page.
         return []
-    where = "r.outcome = 'merged' AND r.endedAt IS NOT NULL"
+    where = "r.endedAt IS NOT NULL"
     params = []
+    if outcomes is not None:
+        where += f" AND r.outcome IN ({', '.join('?' for _ in outcomes)})"
+        params.extend(outcomes)
     if before is not None:
         where += (" AND (r.endedAt, r.id) < (SELECT endedAt, id FROM runs"
                   " WHERE id = ? AND endedAt IS NOT NULL)")
@@ -479,7 +489,7 @@ def merged_runs(conn, limit, before=None):
         " r.timeBoxMs, r.reviewRoundCount,"
         " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
         "    FROM reviewRounds rr WHERE rr.runId = r.id),"
-        " r.host, r.mergeSha, r.prUrl"
+        " r.host, r.mergeSha, r.prUrl, r.outcome, r.outcomeReason"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         f" WHERE {where}"
         " ORDER BY r.endedAt DESC, r.id DESC LIMIT ?",
@@ -487,7 +497,8 @@ def merged_runs(conn, limit, before=None):
     return [MergedRun(id=row[0], linearIdentifier=row[1], title=row[2],
                       startedAt=row[3], endedAt=row[4], timeBoxMs=row[5],
                       reviewRoundCount=row[6], findingCount=row[7],
-                      host=row[8], mergeSha=row[9], prUrl=row[10])
+                      host=row[8], mergeSha=row[9], prUrl=row[10],
+                      outcome=row[11], outcomeReason=row[12])
             for row in rows]
 
 

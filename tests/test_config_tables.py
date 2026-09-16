@@ -16,6 +16,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
 
+def refused(case, toml):
+    """`cli --report` on a target whose config is `toml`: the startup
+    refusal's message, which names the config path and is never followed
+    by the report."""
+    target = case.locate(toml).path
+    with patch.object(holophyte.cli, "report") as report, \
+            case.assertRaises(SystemExit) as raised:
+        holophyte.cli.cli([str(target), "--report"])
+    message = str(raised.exception)
+    case.assertIn(str(case.tgt.config_path), message)
+    report.assert_not_called()
+    return message
+
+
 class LoopConfigTests(ConfigTestCase):
     """`[loop] stop_on_failure`: a boolean, defaulting to today's stop.
     `[loop] order`: `"identifier"` (the default) or `"priority"`."""
@@ -41,19 +55,11 @@ class LoopConfigTests(ConfigTestCase):
         before anything is claimed."""
         for line in ('order = "urgent"', "order = 1", 'order = "Identifier"'):
             with self.subTest(line=line):
-                target = self.locate(f"[loop]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[loop]\n{line}\n")
                 self.assertIn("[loop]", message)
                 self.assertIn("order", message)
                 self.assertIn('"identifier"', message)
                 self.assertIn('"priority"', message)
-                report.assert_not_called()
 
     def test_false_is_read_as_go_on(self):
         self.locate('[loop]\nstop_on_failure = false\n')
@@ -67,18 +73,10 @@ class LoopConfigTests(ConfigTestCase):
         for line in ('stop_on_failure = "yes"', "stop_on_failure = 1",
                      'stop_on_failure = "false"'):
             with self.subTest(line=line):
-                target = self.locate(f"[loop]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[loop]\n{line}\n")
                 self.assertIn("[loop]", message)
                 self.assertIn("stop_on_failure", message)
                 self.assertIn("boolean", message)
-                report.assert_not_called()
 
 
     def test_review_round_keys_default_to_the_two_round_cap(self):
@@ -104,17 +102,9 @@ class LoopConfigTests(ConfigTestCase):
                  ('review_rounds = "2"', "review_rounds")]
         for lines, key in cases:
             with self.subTest(lines=lines):
-                target = self.locate(f"[loop]\n{lines}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[loop]\n{lines}\n")
                 self.assertIn("[loop]", message)
                 self.assertIn(key, message)
-                report.assert_not_called()
 
         # `0` is the documented switch for "never scale", not an error.
         self.locate("[loop]\nreview_rounds_per_lines = 0\n")
@@ -132,17 +122,9 @@ class LoopConfigTests(ConfigTestCase):
         claimed (KO-343)."""
         for line in ('workers = "3"', "workers = 0"):
             with self.subTest(line=line):
-                target = self.locate(f"[loop]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[loop]\n{line}\n")
                 self.assertIn("[loop] workers", message)
                 self.assertIn("at least 1", message)
-                report.assert_not_called()
 
     def test_tick_sec_defaults_to_two_minutes(self):
         self.locate()
@@ -154,17 +136,9 @@ class LoopConfigTests(ConfigTestCase):
         is a startup error naming `[loop] tick_sec` (KO-353)."""
         for line in ('tick_sec = "120"', "tick_sec = 5"):
             with self.subTest(line=line):
-                target = self.locate(f"[loop]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[loop]\n{line}\n")
                 self.assertIn("[loop] tick_sec", message)
                 self.assertIn("at least 10", message)
-                report.assert_not_called()
 
 
 
@@ -367,17 +341,14 @@ class ConsoleConfigTests(ConfigTestCase):
 
 
 class MergeConfigTests(ConfigTestCase):
-    """`[merge] approve`: `"auto"` (the default) or `"human"`; `[merge] mode`:
-    `"local"` (the default) or `"pr"`; `[merge] pr_rounds`: an integer of at
-    least 1 (default 5); `[merge] pr_merge_method`: `"merge"` (the default),
-    `"squash"` or `"rebase"`; nothing else."""
-
+    """Merge defaults, overrides, and startup validation."""
     def test_an_absent_table_is_auto_and_local(self):
         self.locate()
 
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, "ticket", "",
-                          "park", ()))
+                         ("auto", "local", 5, "merge", 180, 300, "", "park", (),
+                          ("devin-ai-integration", "coderabbitai",
+                           "greptile-apps", "github-actions")))
 
     def test_after_is_read_as_a_list_of_commands(self):
         """`after` is the console build the daemon's bundle depends on, in
@@ -388,15 +359,16 @@ class MergeConfigTests(ConfigTestCase):
         self.assertEqual(config_tables.merge_config(self.tgt).after,
                          ("bun --cwd=console run build", "sh -c true"))
 
-    def test_pr_text_and_pr_style_are_read(self):
-        """`pr_text = "written"` with the target's own instructions; absent,
-        `"ticket"` and no instructions, the form the PR has always had."""
-        self.locate('[merge]\nmode = "pr"\npr_text = "written"\n'
-                    'pr_style = "Title starts with [Feature Name]."\n')
+    def test_pr_text_is_retired_at_startup(self):
+        message = refused(self, '[merge]\npr_text = "ticket"\n')
+        self.assertIn("[merge] pr_text was retired: "
+                      "pull request bodies are always written", message)
 
-        merge = config_tables.merge_config(self.tgt)
-        self.assertEqual(merge.pr_text, "written")
-        self.assertEqual(merge.pr_style, "Title starts with [Feature Name].")
+    def test_pr_style_is_read(self):
+        self.locate('[merge]\nmode = "pr"\n'
+                    'pr_style = "Title starts with [Feature Name]."\n')
+        self.assertEqual(config_tables.merge_config(self.tgt).pr_style,
+                         "Title starts with [Feature Name].")
 
     def test_human_threads_is_read(self):
         """`human_threads = "act"` lets the babysitter act on a person's
@@ -440,6 +412,14 @@ class MergeConfigTests(ConfigTestCase):
                 self.assertIn("at least 10", message)
                 report.assert_not_called()
 
+    def test_pr_quiet_sec_is_read(self):
+        """How long a green, thread-free pull request must have stood
+        before the babysitter merges it; absent, five minutes (KO-429)."""
+        self.locate('[merge]\nmode = "pr"\npr_quiet_sec = 60\n')
+
+        self.assertEqual(
+            config_tables.merge_config(self.tgt).pr_quiet_sec, 60)
+
     def test_pr_rounds_is_read(self):
         self.locate('[merge]\nmode = "pr"\npr_rounds = 2\n')
 
@@ -469,7 +449,11 @@ class MergeConfigTests(ConfigTestCase):
                            "pr_merge_method"),
                           ('pr_text = "agent"', "pr_text"),
                           ("pr_style = true", "pr_style"),
+                          ('pr_quiet_sec = "300"', "pr_quiet_sec"),
+                          ("pr_quiet_sec = -1", "pr_quiet_sec"),
                           ('human_threads = "reply"', "human_threads"),
+                          ('bot_authors = "x"', "bot_authors"),
+                          ('bot_authors = [1]', "bot_authors"),
                           ('after = "bun run build"', "after"),
                           ("after = [1]", "after"),
                           ('approve_by = "human"', "approve_by")):
