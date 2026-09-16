@@ -36,7 +36,7 @@ class StubBoard:
 
     instance = None
 
-    def __init__(self, project_id, team):
+    def __init__(self, project_id, team, label=None):
         self.team = team
         self.unlabelled = []
         StubBoard.instance = self

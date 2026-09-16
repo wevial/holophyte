@@ -21,8 +21,14 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+# `loop_fixture` is a helper, not a test module: `tests/` goes on the path
+# only when a file puts it there.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from loop_fixture import LoopFixture, no_agent_processes  # noqa: E402
 
-import provider as board_seam  # noqa: E402 - after the sys.path insert above
+import holophyte.operator  # noqa: E402
+import linear_provider  # noqa: E402
+import provider as board_seam  # noqa: E402
 import ticket_template  # noqa: E402
 
 TITLE = "do the thing"
@@ -34,48 +40,14 @@ ESTIMATE = 25
 def ticket_body(title=TITLE, summary="The thing gets done.", criterion=CRITERION,
                 verify=VERIFY, estimate=ESTIMATE):
     """A body `ticket_template.validate()` passes, the shape both boards hand over."""
-    return f"""# {title}
-
-## Summary
-
-{summary}
-
-## What / Why / How
-
-**What:** The thing is done by the loop.
-
-**How:** Do it in the obvious place.
-
-## In scope
-
-- Doing the thing.
-
-## Out of scope
-
-- Doing the other thing.
-
-## Acceptance criteria
-
-- [ ] {criterion}
-
-## Verify command(s)
-
-```
-{verify}
-```
-
-## Implementation notes
-
-- None worth noting.
-
-## Estimate & dependencies
-
-Estimate: {estimate} min · Depends on: none
-
-## Open questions
-
-- None
-"""
+    return (f"# {title}\n\n## Summary\n\n{summary}\n\n## What / Why / How\n\n"
+            "**What:** The thing is done by the loop.\n\n**How:** Do it in "
+            "the obvious place.\n\n## In scope\n\n- Doing the thing.\n\n"
+            "## Out of scope\n\n- Doing the other thing.\n\n## Acceptance "
+            f"criteria\n\n- [ ] {criterion}\n\n## Verify command(s)\n\n```\n"
+            f"{verify}\n```\n\n## Implementation notes\n\n- None worth "
+            f"noting.\n\n## Estimate & dependencies\n\nEstimate: {estimate} "
+            "min · Depends on: none\n\n## Open questions\n\n- None\n")
 
 
 class ConformanceMixin:
@@ -96,8 +68,7 @@ class ConformanceMixin:
         raise NotImplementedError
 
     def claim(self, skip=(), **kwargs):
-        # `linear_provider.claim_next()` prints the claim line; a passing
-        # suite should not narrate it.
+        # `claim_next()` prints the claim line; the suite should not narrate it.
         with contextlib.redirect_stdout(io.StringIO()):
             return self.provider.claim_next(skip=skip, **kwargs)
 
@@ -108,12 +79,12 @@ class ConformanceMixin:
 
         self.assertEqual(self.claim()["id"], "KO-1")
         self.assertEqual(self.claim(skip=("KO-1",))["id"], "KO-2")
-        # KO-3 is Done: with the two Todo tickets refused there is nothing left.
+        # KO-3 is Done: both Todo tickets refused, nothing is left.
         self.assertIsNone(self.claim(skip=("KO-1", "KO-2")))
 
     def test_ready_issues_lists_every_task_claim_would_offer(self):
-        """The listing the claim chooses from, parsed: the Todo tickets and
-        not the closed one, each in the shape `claim_next()` hands out."""
+        """The listing the claim chooses from, parsed: the Todo tickets, not
+        the closed one, each in the shape `claim_next()` hands out."""
         self.seed("KO-2")
         self.seed("KO-1")
         self.seed("KO-3", state="Done")
@@ -172,9 +143,9 @@ class ConformanceMixin:
         self.assertEqual(self.claim()["id"], "KO-2")
 
     def test_closed_identifiers_names_the_done_and_cancelled_ones_by_type(self):
-        """One ask over the open mirror's identifiers: a Done ticket answers
-        `completed`, a Canceled one `canceled`, and an open or unknown
-        identifier is absent rather than answered."""
+        """One ask over the mirror's identifiers: a Done ticket answers
+        `completed`, a Canceled one `canceled`, an open or unknown one is
+        absent rather than answered."""
         self.seed("KO-1", state="Done")
         self.seed("KO-2", state="Canceled")
         self.seed("KO-3")
@@ -187,7 +158,7 @@ class ConformanceMixin:
 
     def test_a_comment_is_recorded_on_the_ticket_under_either_id(self):
         """`ledger()` comments by the human id and `escalate()` by the
-        board's; both have to land on the same ticket, in order."""
+        board's; both land on the same ticket, in order."""
         self.seed("KO-1")
         self.seed("KO-2")
         task = self.claim()
@@ -242,17 +213,16 @@ class FileProviderTests(ConformanceMixin, unittest.TestCase):
 
     def comments_on(self, identifier):
         path = self.root / f"{identifier}.comments.md"
-        if not path.exists():
-            return []
-        return re.findall(r"^## \S+\n\n(.*?)\n\n", path.read_text(), re.S | re.M)
+        text = path.read_text() if path.exists() else ""
+        return re.findall(r"^## \S+\n\n(.*?)\n\n", text, re.S | re.M)
 
     def issue_id(self, identifier):
         return identifier  # a ticket file has one name
 
     def test_priority_order_is_identifier_order_on_a_board_without_priority(self):
-        """`[loop] order = "priority"` against the file board: a ticket file
-        has no priority, so the keyword is accepted and the lowest identifier
-        is offered, exactly as under `"identifier"`."""
+        """`[loop] order = "priority"` against the file board: a ticket
+        file has no priority, so the lowest identifier is offered, exactly
+        as under `"identifier"`."""
         self.seed("KO-2")
         self.seed("KO-1")
 
@@ -264,7 +234,7 @@ class FileProviderTests(ConformanceMixin, unittest.TestCase):
 
     def test_in_progress_hides_the_ticket_from_claim_but_not_from_fetch(self):
         """The file board offers Todo only: a ticket in progress is one the
-        loop is already working, and its state is what the state file says."""
+        loop is already working; its state is what the state file says."""
         self.seed("KO-1")
         self.seed("KO-2")
 
@@ -276,7 +246,7 @@ class FileProviderTests(ConformanceMixin, unittest.TestCase):
         self.assertEqual(self.claim()["id"], "KO-2")
 
     def test_a_sibling_file_is_not_a_ticket(self):
-        """`KO-1.comments.md` sits beside `KO-1.md`; a board that read every
+        """`KO-1.comments.md` sits beside `KO-1.md`; a board reading every
         `*.md` would offer a ticket called `KO-1.comments`."""
         self.seed("KO-1")
         self.provider.comment("KO-1", "a note")
@@ -296,8 +266,8 @@ STATE_TYPES = {"Todo": "unstarted", "In Progress": "started", "Done": "completed
 
 
 class FakeLinear:
-    """`linear_provider._gql` with a board behind it, serving the shapes the
-    module's queries and mutations expect and keeping what they wrote."""
+    """`linear_provider._gql` with a board behind it: the shapes the
+    module's queries and mutations expect, and what they wrote."""
 
     def __init__(self):
         self.issues = {}
@@ -309,11 +279,10 @@ class FakeLinear:
             priority=0):
         self.issues[identifier] = {
             "identifier": identifier, "id": f"uuid-{identifier}",
-            "title": title, "description": description, "estimate": estimate,
-            "priority": priority,
+            "title": title, "description": description,
+            "estimate": estimate, "priority": priority,
             "state": {"name": state, "type": STATE_TYPES[state]},
-            "labels": {"nodes": []},
-            "relations": {"nodes": []}}
+            "labels": {"nodes": []}, "relations": {"nodes": []}}
 
     def find(self, ref):
         """Linear resolves an issue by its UUID or its identifier."""
@@ -323,10 +292,9 @@ class FakeLinear:
         return None
 
     def labels_gql(self, query, variables):
-        """The label half of the transport (KO-351): the team's label
-        lookup and creation, and the `addedLabelIds`/`removedLabelIds`
-        forms of `issueUpdate`, each touching only the labels named; None
-        for a query that is none of those."""
+        """The label half of the transport (KO-351): the team's label lookup
+        and creation, and the `addedLabelIds`/`removedLabelIds` forms of
+        `issueUpdate`; None for a query that is none of those."""
         if "issueUpdate" in query and "LabelIds" in query:
             issue = self.find(variables["id"])
             if issue is None:
@@ -378,34 +346,27 @@ class FakeLinear:
             issue = self.find(variables["id"])
             return {"issue": dict(issue) if issue else None}
         if "number: { in:" in query:  # CLOSED_QUERY: team key + numbers
-            nodes = [i for i in self.issues.values()
+            nodes = [{"identifier": i["identifier"], "archivedAt": None,
+                      "state": i["state"]}
+                     for i in self.issues.values()
                      if i["identifier"].split("-")[0] == variables["key"]
                      and int(i["identifier"].split("-")[1]) in variables["numbers"]]
-            return {"issues": {
-                "nodes": [{"identifier": i["identifier"], "archivedAt": None,
-                           "state": i["state"]}
-                          for i in nodes],
-                "pageInfo": {"hasNextPage": False, "endCursor": None}}}
+            return {"issues": {"nodes": nodes, "pageInfo": {
+                "hasNextPage": False, "endCursor": None}}}
         nodes = list(self.issues.values())
         if "nin:" in query:  # READY_QUERY's state filter; RELATIONS_QUERY has none
-            nodes = [i for i in nodes
-                     if i["state"]["type"] not in ("completed", "canceled", "backlog")]
-        return {"project": {"issues": {
-            "nodes": nodes,
-            "pageInfo": {"hasNextPage": False, "endCursor": None}}}}
+            nodes = [i for i in nodes if i["state"]["type"]
+                     not in ("completed", "canceled", "backlog")]
+        return {"project": {"issues": {"nodes": nodes, "pageInfo": {
+            "hasNextPage": False, "endCursor": None}}}}
 
 
 class LinearProviderTests(ConformanceMixin, unittest.TestCase):
     """`LinearProvider` with the transport faked and nothing else."""
 
-    @classmethod
-    def setUpClass(cls):
-        import linear_provider
-        cls.linear = linear_provider
-
     def setUp(self):
         self.board = FakeLinear()
-        patcher = patch.object(self.linear, "_gql", self.board.gql)
+        patcher = patch.object(linear_provider, "_gql", self.board.gql)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.provider = board_seam.LinearProvider("test-project", "test-team")
@@ -413,10 +374,9 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
     def seed(self, identifier, state="Todo", **fields):
         # `priority` is an issue field, not part of the body's template.
         priority = fields.pop("priority", 0)
-        title = fields.get("title", TITLE)
-        self.board.add(identifier, title, ticket_body(**fields),
-                       estimate=fields.get("estimate", ESTIMATE), state=state,
-                       priority=priority)
+        self.board.add(identifier, fields.get("title", TITLE),
+                       ticket_body(**fields), state=state, priority=priority,
+                       estimate=fields.get("estimate", ESTIMATE))
 
     def edit(self, identifier, body):
         self.board.issues[identifier]["description"] = body
@@ -428,9 +388,8 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         return self.board.issues[identifier]["id"]
 
     def test_priority_order_claims_the_most_urgent_first_and_unprioritised_last(self):
-        """`order="priority"`: Linear's 1 (urgent) before 3 (medium) before
-        0 (none), whatever the identifiers say -- KO-3 is the urgent one and
-        KO-2 the unprioritised one, and the claim walks 3, 1, 2."""
+        """`order="priority"`: Linear's 1 (urgent) before 3 before 0 (none),
+        whatever the identifiers say -- the claim walks KO-3, KO-1, KO-2."""
         self.seed("KO-3", priority=1)
         self.seed("KO-1", priority=3)
         self.seed("KO-2", priority=0)
@@ -457,9 +416,8 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         self.assertEqual(self.claim()["id"], "KO-1")
 
     def test_the_ready_query_asks_for_priority(self):
-        """The sort is only as good as the field: the ready query names
-        `priority` so the fake's canned value is what the real board would
-        also return."""
+        """The ready query names `priority`, so the fake's canned value is
+        what the real board would also return."""
         self.seed("KO-1")
         self.claim(order="priority")
 
@@ -467,8 +425,7 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         self.assertTrue(asked and all("priority" in q for q in asked))
 
     def test_team_is_the_team_the_state_lookup_asks_for(self):
-        """`team` names the board the states are resolved in: the workflow
-        state query goes to exactly that team."""
+        """`team` names the board the states are resolved in."""
         self.seed("KO-1")
         self.provider.set_state("uuid-KO-1", "Done")
 
@@ -477,29 +434,28 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         self.assertEqual(asked, [self.provider.team])
 
     def test_closed_identifiers_sees_archived_issues_and_cancels_an_archived_open(self):
-        """Linear omits archived issues unless asked, and a Done ticket
-        Linear archived on its own was a ghost on the board. The answer is
-        read straight off a fake `_paginate`: a completed issue is
-        `completed` archived or not, an archived issue whose state is still
-        open is `canceled` (nobody will work it), and an unarchived open
-        issue is absent; and the query sent asks for archived issues and
-        for the field the rule reads."""
+        """Linear omits archived issues unless asked, and a Done ticket it
+        archived on its own was a ghost on the board. Read off a fake
+        `_paginate`: completed is `completed` archived or not, an archived
+        still-open issue is `canceled` (nobody will work it), unarchived
+        open is absent; the query asks for archived issues and the field
+        the rule reads."""
         recorded = []
 
         def paginate(query, variables, path):
             recorded.append(query)
+            archived = "2026-09-02T00:00:00.000Z"
             return [
                 {"identifier": "KO-1", "archivedAt": None,
                  "state": {"type": "completed"}},
-                {"identifier": "KO-2", "archivedAt": "2026-09-02T00:00:00.000Z",
+                {"identifier": "KO-2", "archivedAt": archived,
                  "state": {"type": "completed"}},
-                {"identifier": "KO-3", "archivedAt": "2026-09-02T00:00:00.000Z",
+                {"identifier": "KO-3", "archivedAt": archived,
                  "state": {"type": "unstarted"}},
                 {"identifier": "KO-4", "archivedAt": None,
-                 "state": {"type": "unstarted"}},
-            ]
+                 "state": {"type": "unstarted"}}]
 
-        with patch.object(self.linear, "_paginate", paginate):
+        with patch.object(linear_provider, "_paginate", paginate):
             closed = self.provider.closed_identifiers(
                 ["KO-1", "KO-2", "KO-3", "KO-4"])
 
@@ -509,13 +465,65 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         self.assertIn("includeArchived: true", recorded[0])
         self.assertIn("archivedAt", recorded[0])
 
+    def test_a_configured_label_filters_the_ready_listing(self):
+        """`[board] label = "holophyte"` (KO-432): of three ready issues
+        only the one carrying the label is in the listing the claim
+        chooses from and the queue mirror shows -- the rest are invisible
+        to the loop however ready they look."""
+        self.seed("KO-1")
+        self.seed("KO-2")
+        self.seed("KO-3")
+        self.board.issues["KO-2"]["labels"]["nodes"].append(
+            {"id": "label-holophyte", "name": "holophyte"})
+        provider = board_seam.LinearProvider("test-project", "test-team",
+                                             label="holophyte")
+
+        self.assertEqual([task["id"] for task in provider.ready_issues()],
+                         ["KO-2"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(provider.claim_next()["id"], "KO-2")
+        self.assertEqual(provider.last_listing, ["KO-2"])
+
+    def test_no_label_lists_every_ready_issue_as_before(self):
+        """A target with no `[board] label` sees the board as it always
+        has: all three ready issues, the labeled one included -- a label
+        an issue carries is not a filter until the target names one."""
+        self.seed("KO-1")
+        self.seed("KO-2")
+        self.seed("KO-3")
+        self.board.issues["KO-2"]["labels"]["nodes"].append(
+            {"id": "label-holophyte", "name": "holophyte"})
+        self.assertEqual(
+            sorted(task["id"] for task in self.provider.ready_issues()),
+            ["KO-1", "KO-2", "KO-3"])
+
     def test_construction_and_team_reach_no_transport(self):
         def tripwire(query, variables=None):
             raise AssertionError(f"_gql was reached: {query[:40]}")
+        with patch.object(linear_provider, "_gql", tripwire):
+            self.assertEqual(board_seam.LinearProvider("p", "t").team, "t")
 
-        with patch.object(self.linear, "_gql", tripwire):
-            fresh = board_seam.LinearProvider("test-project", "test-team")
-            self.assertEqual(fresh.team, "test-team")
+
+class LabelGatePassTests(LoopFixture):
+    """KO-432 at the pass's scale: a `label` nothing carries reads the
+    board as empty, and the pass exits on its usual `no ready tickets`
+    line having mirrored nothing."""
+
+    def test_a_label_nothing_carries_ends_the_pass_as_empty(self):
+        board = FakeLinear()
+        board.add("KO-1", TITLE, ticket_body())
+        provider = board_seam.LinearProvider("test-project", "test-team",
+                                             label="holophyte")
+        out = io.StringIO()
+        with patch.object(linear_provider, "_gql", board.gql), \
+                no_agent_processes(), patch.object(sys, "stdout", out):
+            self.rc = holophyte.operator.main(self.tgt, provider)
+
+        self.assertIsNone(self.rc)
+        self.assertIn("[holo2] Linear has no ready tickets. done.",
+                      out.getvalue())
+        # The unlabeled ticket was never seen: nothing reached the mirror.
+        self.assertEqual(self.read("SELECT COUNT(*) FROM tickets"), [(0,)])
 
 
 class LinearImportTests(unittest.TestCase):
@@ -529,11 +537,9 @@ class LinearImportTests(unittest.TestCase):
         env = {k: v for k, v in os.environ.items()
                if k not in ("HOLO2_PROJECT_ID", "HOLO2_TEAM")}
         env["PYTHONDONTWRITEBYTECODE"] = "1"
-
         done = subprocess.run(
-            [sys.executable, "-c",
-             "import linear_provider; "
-             "print(hasattr(linear_provider, 'PROJECT_ID'), "
+            [sys.executable, "-c", "import linear_provider; print("
+             "hasattr(linear_provider, 'PROJECT_ID'), "
              "hasattr(linear_provider, 'TEAM'))"],
             cwd=tmp.name, env=env, capture_output=True, text=True)
 
@@ -541,11 +547,9 @@ class LinearImportTests(unittest.TestCase):
         self.assertEqual(done.stdout.strip(), "False False")
 
     def test_the_provider_carries_the_pair_it_was_built_with(self):
-        """`team` is the stored value, not a module read: two providers on
-        one host answer with their own boards."""
+        """`team` is the stored value, not a module read."""
         one = board_seam.LinearProvider("p-1", "Team One")
         two = board_seam.LinearProvider("p-2", "Team Two")
-
         self.assertEqual((one.project_id, one.team), ("p-1", "Team One"))
         self.assertEqual((two.project_id, two.team), ("p-2", "Team Two"))
 

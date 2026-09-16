@@ -141,7 +141,6 @@ class LoopConfigTests(ConfigTestCase):
                 self.assertIn("at least 10", message)
 
 
-
 class RunCapTests(ConfigTestCase):
     """`[supervisor] run_cap`: the run's hard ceiling, in multiples of its
     box -- 3.0 when absent, a number from 1.5 to 5.0 when set."""
@@ -162,19 +161,9 @@ class RunCapTests(ConfigTestCase):
         before anything is claimed."""
         for line in ("run_cap = 1", "run_cap = 6"):
             with self.subTest(line=line):
-                target = self.locate(f"[supervisor]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
-                self.assertIn("[supervisor]", message)
-                self.assertIn("run_cap", message)
-                self.assertIn("1.5", message)
-                self.assertIn("5.0", message)
-                report.assert_not_called()
+                message = refused(self, f"[supervisor]\n{line}\n")
+                for needle in ("[supervisor]", "run_cap", "1.5", "5.0"):
+                    self.assertIn(needle, message)
 
     def test_the_key_is_a_known_supervisor_key(self):
         """A set `run_cap` is not the unknown-key typo refusal: the config
@@ -247,17 +236,9 @@ class ReportConfigTests(ConfigTestCase):
                           ('host_label = ""', "host_label"),
                           ('hots_label = "x"', "hots_label")):
             with self.subTest(line=line):
-                target = self.locate(f"[report]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[report]\n{line}\n")
                 self.assertIn("[report]", message)
                 self.assertIn(key, message)
-                report.assert_not_called()
 
     def test_findings_is_none_by_default_and_repo_when_opted_in(self):
         """KO-363: `[report] findings` is `none` when absent -- the store is
@@ -277,16 +258,49 @@ class ReportConfigTests(ConfigTestCase):
         for line in ('findings = "yes"', 'findings = "window"',
                      'findings = "off"', "findings = false"):
             with self.subTest(line=line):
-                target = self.locate(f"[report]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
+                message = refused(self, f"[report]\n{line}\n")
                 self.assertIn("[report]", message)
                 self.assertIn("findings", message)
-                report.assert_not_called()
+
+
+class BoardLabelTests(ConfigTestCase):
+    """`[board] label` (KO-432): absent is `None` and the board is every
+    ready issue, as it has always been; a non-empty string is the name the
+    ready listing filters on; `3` and `""` are startup errors naming the
+    key -- `""` would hide the whole queue without saying so."""
+
+    BOARD = '[board]\nproject_id = "p-1"\nteam = "T"\n'
+
+    def test_a_label_is_read_and_reaches_the_provider_the_loop_gets(self):
+        """Absent, `label` is `None`; set, `cli()` hands it to the board
+        it builds -- the provider whose ready listing the label filters."""
+        self.locate(self.BOARD)
+        self.assertIsNone(config_tables.board_config(self.tgt).label)
+
+        target = self.locate(self.BOARD + 'label = "holophyte"\n').path
+        with patch.object(holophyte.cli, "check_agent_commands"), \
+                patch.object(holophyte.cli, "check_worktree_setup"), \
+                patch.object(holophyte.cli, "main") as main:
+            holophyte.cli.cli([str(target)])
+        self.assertEqual(main.call_args.args[1]._label, "holophyte")
+
+    def test_a_bad_label_is_a_startup_error_naming_the_key(self):
+        """`label = 3` and `label = ""` are refused where `cli()` resolves
+        the board -- the loop's path; `--report` builds no board -- before
+        a route is probed or a ticket is claimed."""
+        for line in ("label = 3", 'label = ""'):
+            with self.subTest(line=line):
+                target = self.locate(self.BOARD + line + "\n").path
+                with patch.object(holophyte.cli, "check_agent_commands"
+                                  ) as routes, \
+                        patch.object(holophyte.cli, "main") as main, \
+                        self.assertRaises(SystemExit) as raised:
+                    holophyte.cli.cli([str(target)])
+                routes.assert_not_called()
+                main.assert_not_called()
+                message = str(raised.exception)
+                self.assertIn(str(self.tgt.config_path), message)
+                self.assertIn("[board] label", message)
 
 
 class ConsoleConfigTests(ConfigTestCase):
@@ -314,30 +328,16 @@ class ConsoleConfigTests(ConfigTestCase):
                              "'writer-2:7710'"),
                             ('daemons = "writer-2:7710"', "'writer-2:7710'")):
             with self.subTest(line=line):
-                target = self.locate(f"[console]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[console]\n{line}\n")
                 self.assertIn("[console] daemons", message)
                 self.assertIn(entry, message)
-                report.assert_not_called()
 
     def test_an_unknown_key_is_a_startup_error(self):
-        target = self.locate("[console]\nother = 1\n").path
+        message = refused(self, "[console]\nother = 1\n")
 
-        with patch.object(holophyte.cli, "report") as report:
-            with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli([str(target), "--report"])
-
-        message = str(raised.exception)
         self.assertIn("[console]", message)
         self.assertIn("other", message)
         self.assertIn("unknown key", message)
-        report.assert_not_called()
 
 
 class MergeConfigTests(ConfigTestCase):
@@ -400,17 +400,9 @@ class MergeConfigTests(ConfigTestCase):
         `[merge] pr_poll_sec` (KO-362)."""
         for line in ('pr_poll_sec = "180"', "pr_poll_sec = 5"):
             with self.subTest(line=line):
-                target = self.locate(f"[merge]\nmode = \"pr\"\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[merge]\nmode = \"pr\"\n{line}\n")
                 self.assertIn("[merge] pr_poll_sec", message)
                 self.assertIn("at least 10", message)
-                report.assert_not_called()
 
     def test_pr_quiet_sec_is_read(self):
         """How long a green, thread-free pull request must have stood
@@ -458,14 +450,6 @@ class MergeConfigTests(ConfigTestCase):
                           ("after = [1]", "after"),
                           ('approve_by = "human"', "approve_by")):
             with self.subTest(line=line):
-                target = self.locate(f"[merge]\n{line}\n").path
-
-                with patch.object(holophyte.cli, "report") as report:
-                    with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
-
-                message = str(raised.exception)
-                self.assertIn(str(self.tgt.config_path), message)
+                message = refused(self, f"[merge]\n{line}\n")
                 self.assertIn("[merge]", message)
                 self.assertIn(key, message)
-                report.assert_not_called()

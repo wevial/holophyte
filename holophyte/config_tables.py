@@ -25,22 +25,22 @@ STALE_STRIKES = 2
 # rather than one that is merely slower than the ticket hoped.
 BUDGET_GRACE = 1.5
 # A run's hard ceiling, in multiples of its box: whatever the per-turn
-# allowance grows to, a run stops here. The loop refuses to arm a turn whose
-# budget would carry the run past it -- refused rather than killed mid-edit
-# -- and the sweep trips a run that slips past anyway. Bounded on both
-# ends: under 1.5 the ceiling sits inside the grace a single turn already
-# gets, and past 5 the ceiling stops bounding the run at all.
+# allowance grows to, a run stops here. The loop refuses to arm a turn
+# whose budget would carry the run past it -- refused rather than killed
+# mid-edit -- and the sweep trips a run that slips past anyway. Bounded
+# on both ends: under 1.5 the ceiling sits inside a single turn's grace,
+# and past 5 it stops bounding anything.
 RUN_CAP = 3.0
 RUN_CAP_RANGE = (1.5, 5.0)
 # How much of their findings two consecutive review rounds may share before
-# the review is read as circling rather than converging: the Jaccard overlap
-# `store.findings_overlap()` measures, over the `(path, line, severity)` keys
-# the fingerprint hashes. Half, because a fix round that leaves half of the
-# reviewer's complaints standing has not moved the review, and the round after
-# it is the terminal adjudication -- a doomed one is cheaper failed now than
-# paid for. Two rounds are compared and never one: a healthy run sits in
-# `reviewing` with a single round on file, and there is nothing to compare
-# it against.
+# the review is read as circling rather than converging: the Jaccard
+# overlap `store.findings_overlap()` measures, over the `(path, line,
+# severity)` keys the fingerprint hashes. Half, because a fix round that
+# leaves half of the reviewer's complaints standing has not moved the
+# review, and the round after it is the terminal adjudication -- a doomed
+# one is cheaper failed now than paid for. Two rounds are compared and
+# never one: a healthy run sits in `reviewing` with a single round on
+# file, and there is nothing to compare it against.
 REVIEW_OVERLAP_THRESHOLD = 0.5
 # How long the supervisor sleeps between two acting sweeps. A minute: fine
 # enough that a dead run is noticed within `HEARTBEAT_STALE_MS` plus one
@@ -51,11 +51,10 @@ SUPERVISE_INTERVAL_SEC = 60
 # reported. The loop writes a `loopRestarts` row just before `os.execv()`
 # replaces it, and a loop that came back claims a ticket (a heartbeat) or
 # writes its exit note; a restart older than this that neither has followed
-# is a loop that died in the exec -- the one gap every earlier gate had
-# passed through when the first live re-exec after KO-191 died with
-# `FileNotFoundError` before printing anything. Two minutes: an exec is
-# instant and a startup probe is seconds, so a loop that has not claimed or
-# exited in two minutes is not merely slow.
+# is a loop that died in the exec -- the gap every earlier gate passed
+# through when the first live re-exec after KO-191 died before printing
+# anything. Two minutes: an exec is instant and a startup probe is seconds,
+# so a loop silent that long is not merely slow.
 RESTART_GRACE_SEC = 120
 # How long the supervisor's board fallback waits between two asks for the
 # ready listing (KO-434). A Linear ready listing costs thousands of the
@@ -179,8 +178,8 @@ def sweep_config(target):
 # with no table pays the two rounds it always has.
 # `workers`: the ceiling on the pool of worker processes the loop keeps
 # running, one per claimable ticket up to this many (KO-343). `1`, the
-# default, is the loop as it has always been: one process, one ticket at a
-# time. Above `1` the main process is a scheduler that spawns
+# default, is the loop as it has always been: one process, one ticket at
+# a time. Above `1` the main process is a scheduler spawning
 # `factory.py TARGET --worker` children and works nothing itself.
 # `tick_sec`: how often, in seconds, the scheduler recounts the queue while
 # the pool is below `workers` (KO-353). A scheduler waiting on child exits
@@ -219,22 +218,21 @@ LoopConfig = collections.namedtuple(
 def loop_config(target):
     """The target's `[loop]` knobs over the defaults.
 
-    Checked at startup beside `sweep_config()`, the same way: an absent table
-    is the defaults exactly, and a present value has to be the type the key
-    means. `stop_on_failure` and `spawn_supervisor` are booleans, and only
-    booleans -- `"yes"`,
-    `1` and `"false"` are all truthy strings or numbers TOML never meant as
-    the answer, and a value the factory quietly read as one would run a
-    night nobody chose. `order` is one of `LOOP_ORDERS`, and only one of
-    those -- `"urgent"` or `1` names no sort the loop has. The three
-    `review_rounds*` keys are integers at or above `LOOP_INTEGER_FLOORS`
-    (a boolean is refused too: TOML's `true` is not a count), and
-    `review_rounds_max` is at least `review_rounds`, or the cap is one the
-    formula could never reach. `workers` is an integer of at least 1, the
-    same way: `"3"` is a string and `0` a pool that could work nothing.
-    `tick_sec` is an integer of at least 10: `"120"` is a string and `5` a
-    poll the board was never meant to answer. The refusal names
-    the table, the key and the constraint, like a bad `[supervisor]`
+    Checked at startup beside `sweep_config()`, the same way: an absent
+    table is the defaults exactly, and a present value has to be the type
+    the key means. `stop_on_failure` and `spawn_supervisor` are booleans,
+    and only booleans -- `"yes"`, `1` and `"false"` are all truthy strings
+    or numbers TOML never meant as the answer, and a value the factory
+    quietly read as one would run a night nobody chose. `order` is one of
+    `LOOP_ORDERS`, and only one of those -- `"urgent"` or `1` names no sort
+    the loop has. The three `review_rounds*` keys are integers at or above
+    `LOOP_INTEGER_FLOORS` (a boolean is refused too: TOML's `true` is not
+    a count), and `review_rounds_max` is at least `review_rounds`, or the
+    cap is one the formula could never reach. `workers` is an integer of
+    at least 1, the same way: `"3"` is a string and `0` a pool that could
+    work nothing. `tick_sec` is an integer of at least 10: `"120"` is a
+    string and `5` a poll the board was never meant to answer. The refusal
+    names the table, the key and the constraint, like a bad `[supervisor]`
     threshold. Keys this version does not know are refused by
     `check_config_keys()`.
     """
@@ -279,19 +277,25 @@ def loop_config(target):
 # claim from the same project, and the second silently works the first's
 # queue. Neither has a default -- a board is one operator's, never this
 # file's -- so a loop with no table exits at startup naming the key.
+# `label` (KO-432) is the one optional key: set to a non-empty string, it
+# names the label a ready issue must carry for the loop to see it at all;
+# absent, the board is every ready issue, as it has always been.
 BOARD_KEYS = {
     "project_id": None,
     "team": None,
+    "label": None,
 }
-BoardConfig = collections.namedtuple("BoardConfig", ("project_id", "team"))
+BoardConfig = collections.namedtuple("BoardConfig", BOARD_KEYS)
 
 
 def board_config(target):
     """The target's `[board]`, or `None` when the table is absent.
 
-    A present table has to carry both keys as non-empty strings: half a
-    board names no project to claim from or no team to resolve states in,
-    and the refusal names the table, the key and the constraint, like a bad
+    A present table has to carry `project_id` and `team` as non-empty
+    strings -- half a board names no project to claim from or no team to
+    resolve states in -- and may carry `label` the same way, the one
+    optional key (KO-432): `None` when absent, `3` or `""` refused. The
+    refusal names the table, the key and the constraint, like a bad
     `[loop]` value. An absent table is `None`, and the caller decides
     whether its mode needs a board: `--report` and a read-only `--sweep`
     call nobody; the loop exits at startup naming `[board] project_id`.
@@ -305,16 +309,17 @@ def board_config(target):
         raise SystemExit(
             f"[holo2] {target.config_path}: [board] must be a table, got "
             f"{type(table).__name__}")
-    values = {}
+    values = {"label": None}  # the one optional key; absent is no filter
     for key in BOARD_KEYS:
         value = table.get(key)
+        if value is None and key == "label":
+            continue
         if not isinstance(value, str) or not value:
             raise SystemExit(
                 f"[holo2] {target.config_path}: [board] {key} must be a "
                 f"non-empty string, got {value!r}")
         values[key] = value
     return BoardConfig(**values)
-
 
 
 # Who says "merge" once the reviewer has approved and the pre-merge verify
