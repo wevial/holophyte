@@ -124,7 +124,7 @@ class CommitUrlTests(ServeTestCase):
             set(by_sha[self.local]),
             {"id", "ticket", "title", "rounds", "findings", "started_ms",
              "ended_ms", "actual_min", "estimate_min", "merge_sha",
-             "commit_url", "pr_url", "host"})
+             "commit_url", "pr_url", "host", "outcome", "outcome_reason"})
 
         # Without an `origin` at all, the pushed sha links nowhere either.
         self.git("remote", "remove", "origin")
