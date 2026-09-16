@@ -94,7 +94,7 @@ export function AttentionRow({
 }) {
   const { pill, ticket, body, meta, ageMs, actions, facts } = description;
   const [expanded, setExpanded] = useState(false);
-  const failed = kind === "failed" && runId != null && daemon != null;
+  const failed = kind === "failed" && runId != null && daemon != null && !thread && !attempts;
   const card = thread ?? attempts ?? (failed ? { open: expanded, onToggle: () => setExpanded((value) => !value) } : undefined);
   const toggle = card?.onToggle;
   const [detail, setDetail] = useState<{ text: string; ok: boolean } | null>(null);

@@ -317,3 +317,26 @@ test("a failed Needs You row opens its named run card with the frozen time box a
   fireEvent.keyDown(document.querySelector('[aria-expanded="true"]')!, { key: "Enter" });
   expect(screen.queryByRole("article", { name: "run 436" })).toBeNull();
 });
+
+test("a failed ticket's attempts affordance opens only its attempts card", async () => {
+  const now = allKinds.status.now;
+  const items = [435, 436].map((run, index) => ({
+    kind: "failed", level: "attention", run, ticket: "KO-436",
+    reason: `Verification failed on attempt ${index + 1}`, ended_ms: now - (1 - index) * 60000,
+  }));
+  const { seen, fetchImpl } = fakeFetch(() => new Response("not found", { status: 404 }));
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { ...allKinds.attention, items }, BASE)]} project="all" now={now} actionFetch={fetchImpl} />);
+  expect(screen.queryByText("run ▾")).toBeNull();
+  fireEvent.click(screen.getByText("attempts ▾"));
+  await act(settle);
+  const card = document.querySelector("[data-attempts-card]")!;
+  expect(card).not.toBeNull();
+  expect(within(card as HTMLElement).getAllByRole("listitem").map(row => row.textContent)).toEqual([
+    "run #435 · Verification failed on attempt 1",
+    "run #436 · Verification failed on attempt 2",
+  ]);
+  expect(seen).toEqual([]);
+  expect(screen.queryByRole("article")).toBeNull();
+  fireEvent.click(screen.getByText("hide attempts ▴"));
+  expect(document.querySelector("[data-attempts-card]")).toBeNull();
+});
