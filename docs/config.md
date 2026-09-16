@@ -642,7 +642,9 @@ gate has passed. The sha recorded on the run and in the ledger is the one
 GitHub answers, which for `"squash"` and `"rebase"` is the new commit on
 `main`. The key is validated whatever the mode; anything but the three
 strings is a startup error naming the key. The local mode's `--no-ff` merge
-is unaffected.
+is unaffected. For `"squash"` and `"merge"`, the commit subject is the pull
+request title followed by ` (#N)` and the commit body is its first Summary
+paragraph (empty when absent). `"rebase"` sends neither override.
 
 `pr_poll_sec` is the least time, in seconds, between two babysit rounds the
 loop itself starts on one parked pull request (KO-362). Every tick already

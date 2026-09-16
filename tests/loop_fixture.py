@@ -480,10 +480,8 @@ class MergeModeFixture(LoopFixture):
         `pullRequests(headRefName:)` lookup (KO-407) one open pull request
         at `open_pr` -- none without it -- and the reconcile's pull-status
         read (KO-359) an open pull request; the check-runs and
-        branch-rules reads answer no runs and no rules, so the rollup
-        alone decides the checks. `push_exit` is what `git push` answers
-        with -- non-zero is a remote refusing -- and `push_sh` is shell
-        the fake push runs first, for a push that takes its time. A push
+        branch-rules reads answer no runs and no rules. `push_exit` and
+        `push_sh` control push failure and an optional delay. A push
         the fake answers successfully also appends `REF SHA` to
         `self.push_log`: the refspec's source resolved in the pushing
         checkout at push time, which is the tip a real remote's branch
@@ -554,6 +552,8 @@ class MergeModeFixture(LoopFixture):
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            '    *"GET repos/example/repo/pulls/"*) '
+            'echo \'{"title":"feat(x): do y (KO-1)","body":""}\'; exit 0;;\n'
             '  esac\n'
             f'  n=$(ls "{self.api_dir}" | wc -l); n=$((n+1))\n'
             f'  body="{self.api_dir}/$n.json"; cat > "$body"\n'
