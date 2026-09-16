@@ -16,7 +16,7 @@ export const VIEWS: { id: View; label: string }[] = [
   { id: "now", label: "Now" },
   { id: "board", label: "Board" },
   { id: "hosts", label: "Hosts" },
-  { id: "shipped", label: "Shipped" },
+  { id: "shipped", label: "Finished" },
 ];
 
 /** `all`, or the selected project's path. */

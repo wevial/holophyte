@@ -130,7 +130,7 @@ test("a question row with pr_url shows a PR #N anchor on its line; the fixture's
 
 test("every action button of a daemon without actions is disabled: wired ones name the opt-in, the rest not wired yet", () => {
   render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention)]} project="all" now={allKinds.status.now} />);
-  const actions = rows().flatMap((row) => within(row).getAllByRole("button"));
+  const actions = rows().flatMap((row) => Array.from(row.querySelectorAll("button")));
   expect(actions.map((button) => button.textContent)).toEqual([
     "Requeue",
     "Mark needs_spec",

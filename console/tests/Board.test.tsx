@@ -229,7 +229,7 @@ test("the ledger lives above the view switch: today's rows loaded on Shipped sta
   });
   render(<App base={BASE} pollDeps={deps} />);
   await act(settle);
-  fireEvent.click(screen.getByRole("button", { name: "Shipped" }));
+  fireEvent.click(screen.getByRole("button", { name: "Finished" }));
   await act(settle);
   expect(document.querySelectorAll("[data-row]").length).toBe(threeDays.shipped.rows.length);
 
