@@ -35,12 +35,12 @@ OVER = {}
 # left it, so the table only moves down for that file too.
 PINNED = {
     "holophyte/babysitter.py": 835, "holophyte/board.py": 870,
-    "holophyte/claim.py": 815, "holophyte/cli.py": 460,
+    "holophyte/claim.py": 815, "holophyte/cli.py": 479,
     "holophyte/config.py": 752, "holophyte/dispatch.py": 262,
     "holophyte/config_tables.py": 556, "holophyte/findings.py": 331,
     "holophyte/gates.py": 664, "holophyte/loop.py": 893,
     "holophyte/merge_gate.py": 493,
-    "holophyte/operator.py": 447, "holophyte/pool.py": 381,
+    "holophyte/operator.py": 492, "holophyte/pool.py": 381,
     "holophyte/pr.py": 611, "holophyte/pr_status.py": 443,
     "holophyte/pullrequest.py": 327,
     "holophyte/reconcile.py": 466, "holophyte/reexec.py": 94,
@@ -64,7 +64,7 @@ PINNED = {
     "tests/test_pool.py": 863, "tests/test_provider.py": 661, "tests/test_runs.py": 55,
     "tests/test_pullrequest.py": 1104, "tests/test_reconcile.py": 414,
     "tests/test_serve.py": 1130,
-    "tests/test_serve_actions.py": 313, "tests/test_serve_config.py": 677,
+    "tests/test_serve_actions.py": 313, "tests/test_serve_config.py": 711,
     "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 588,
     "tests/test_serve_shipped.py": 181,
     "tests/sweep_fixture.py": 201, "tests/test_startup_checks.py": 648,

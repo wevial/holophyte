@@ -2,6 +2,7 @@
 
 `--report`, `--requeue KO-n --note TEXT`, `--approve KO-n [--note TEXT]`,
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
+`--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
 `--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT`, the internal
 `--worker` and the loop itself
@@ -35,6 +36,7 @@ from holophyte.config_tables import (
 from holophyte.operator import (
     approve,
     babysit_ticket,
+    close_ticket,
     main,
     repoint,
     report,
@@ -101,26 +103,34 @@ def _file_ticket_only(parser, args):
 
 def _note_checks(parser, args):
     """`--note` belongs to `--requeue` and `--repoint`, which require it,
-    and to `--approve` and `--babysit`, which take it: refuse a requeue or
-    re-point without one, a note without any of the four, and a blank note
-    on an approval or a babysitter -- the default is what one with nothing
-    to add says, and a blank row would say nothing."""
+    and to `--approve`, `--babysit` and `--close`, which take it. Refuse a
+    required note missing, a note without an operator verb, or a blank note:
+    leave it off when there is nothing to add."""
     if args.requeue is not None and not (args.note or "").strip():
         parser.error("--requeue records why the ticket goes back in the "
                      "queue; say so with --note TEXT")
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
-    optional = args.approve if args.approve is not None else args.babysit
+    optional = args.approve or args.babysit or args.close
     if args.note is not None and args.requeue is None \
             and args.repoint is None and optional is None:
         parser.error("--note is what --requeue, --approve, --babysit and "
-                     "--repoint record; it has nothing to annotate by itself")
+                     "--repoint and --close record; it has nothing to annotate "
+                     "by itself")
     if optional is not None and args.note is not None \
             and not args.note.strip():
-        parser.error("--note with --approve or --babysit is the operator's "
+        parser.error("--note with --approve, --babysit or --close is the operator's "
                      "own words; leave it off for the default rather than "
                      "blank")
+
+
+def _close_checks(parser, args):
+    """Require the landing reference only for an external close-out."""
+    if args.close is not None and not (args.landed or "").strip():
+        parser.error("--close requires --landed URL")
+    if args.landed is not None and args.close is None:
+        parser.error("--landed belongs to --close")
 
 
 def cli(argv=None):
@@ -205,6 +215,13 @@ def cli(argv=None):
              "transaction; the branch itself is not touched; refuses a "
              "ticket not parked awaiting merge approval or a malformed "
              "sha, naming it, and writes nothing then")
+    modes.add_argument(
+        "--close", metavar="KO-n",
+        help="close a ticket whose change landed outside the factory; requires "
+             "--landed URL and a terminal non-merged last run, with no live run")
+    parser.add_argument(
+        "--landed", metavar="URL",
+        help="with --close: where the change landed outside the factory")
     # The other writing mode, and it writes to the board, not the store:
     # a ticket file validated against the target becomes a Linear issue,
     # and the body Linear stored is validated again so the transfer is a
@@ -258,8 +275,8 @@ def cli(argv=None):
         help="with --sweep: fail each tripped run and release its leases, "
              "leaving its branch and worktree for a human")
     # Required with `--requeue` and `--repoint`, optional with `--approve`
-    # and `--babysit`, and meaningless without one of them: the
-    # intervention row is the point of all four modes, and a requeue or
+    # and `--babysit`/`--close`, and meaningless without one of them: the
+    # intervention row is the point of these modes, and a requeue or
     # re-point row with no reason is the unrecorded action the row exists
     # to replace, while an approval says "merge" by itself.
     parser.add_argument(
@@ -268,7 +285,8 @@ def cli(argv=None):
              "--repoint: why the candidate moved to the new sha; with "
              "--approve: anything the approval should say beyond "
              f"{APPROVE_DEFAULT_NOTE!r}; with --babysit: anything beyond "
-             f"{BABYSIT_DEFAULT_NOTE!r}; recorded on the intervention row's "
+             f"{BABYSIT_DEFAULT_NOTE!r}; with --close: context for the external "
+             "landing; recorded on the intervention row's "
              "event")
     # Only the two states a filed ticket can start in: Todo is ready to
     # claim, Backlog waits on triage. Anything else is a state the loop
@@ -293,6 +311,7 @@ def cli(argv=None):
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
     _note_checks(parser, args)
+    _close_checks(parser, args)
     target = Target.locate(args.target)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
@@ -328,7 +347,7 @@ def cli(argv=None):
     # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
         return sweep_report(target, act=args.act, provider=board)
-    # The four operator verbs on the store, in their own function so the
+    # The operator verbs on the store, in their own function so the
     # dispatch stays under the complexity bound with all of them in it.
     if _store_verb(args, target, board):
         return None
@@ -378,11 +397,8 @@ def cli(argv=None):
 
 def _store_verb(args, target, board):
     """Run the operator verb the command line names, if it is one of the
-    four that write the store and exit -- `--requeue`, `--approve`,
-    `--babysit`, `--repoint` -- and say whether one ran. Each returns
-    nothing, so the bool is the whole of what `cli()` needs back. Every one
-    writes only to the store and calls nobody, so no route has to resolve
-    first."""
+    verbs that write the store and exit, including `--close`, which also
+    projects the result to the board. No agent route has to resolve first."""
     # Hands the ticket back to a loop that will mirror it to the board when
     # it claims it again, so a target with no board exits here naming the
     # key, before anything is written.
@@ -403,8 +419,11 @@ def _store_verb(args, target, board):
                         args.note if args.note is not None
                         else BABYSIT_DEFAULT_NOTE)
         return True
-    # Unlike the three above, hands nothing to a loop: the ticket stays
-    # parked, so no board has to be there to mirror it.
+    if args.close is not None:
+        close_ticket(target, args.close, args.landed, args.note,
+                     provider=require_board(target, board))
+        return True
+    # Repoint leaves the ticket parked, so it needs no board.
     if args.repoint is not None:
         identifier, sha = args.repoint
         repoint(target, identifier, sha, args.note)

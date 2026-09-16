@@ -6,8 +6,8 @@ the queue to `holophyte.pool`'s `scheduler()` above it; a loop that
 merged a change to the factory itself re-executes through `_reexec()`
 and the `EXEC` seam once `self_hosted()` says the target is this
 repository. `report()` is `--report`'s whole body. `requeue()`,
-`approve()`, `babysit_ticket()` and `repoint()` are the four operator
-verbs behind `--requeue`, `--approve`, `--babysit` and `--repoint`:
+`approve()`, `babysit_ticket()`, `repoint()` and `close_ticket()` are the operator
+verbs behind `--requeue`, `--approve`, `--babysit`, `--repoint` and `--close`:
 each opens the store through `_operator_store()`, resolves the ticket
 through `_ticket_by_identifier()`, does its one `store` transaction and
 exits.
@@ -28,7 +28,7 @@ import store
 import store.read
 import store.tickets
 from holophyte.agents import probe_implementer
-from holophyte.board import release_lease_label
+from holophyte.board import ledger, mirror_push, release_lease_label
 from holophyte.claim import _claim_next
 from holophyte.config_tables import loop_config, report_config
 from holophyte.findings import commit_findings
@@ -418,6 +418,51 @@ def repoint(target, identifier, sha, note, out=None):
         print(f"[holo2] {identifier} re-pointed: run {run_id}'s candidate"
               f" moved from {old_sha} to {sha}; the merge gate now holds the"
               " branch to the new sha", file=out)
+    finally:
+        conn.close()
+
+
+def close_ticket(target, identifier, landed, note=None, out=None, provider=None):
+    """Record an external landing after a terminal, unsuccessful factory run.
+
+    Keep the run's outcome: the operator closes the ticket, not a factory
+    merge. Validate under the same write lock as the intervention and walk;
+    project the committed result to the board using the merge helpers.
+    """
+    out = sys.stdout if out is None else out
+    conn = _operator_store(target)
+    message = f"Closed: change landed at {landed}; no factory merge occurred."
+    if note:
+        message += f"\n\n{note}"
+    try:
+        with store.transaction(conn):
+            ticket_id = _ticket_by_identifier(target, conn, identifier)
+            ticket = store.read.ticket_by_id(conn, ticket_id)
+            if ticket.status == "merged":
+                raise SystemExit(f"[holo2] {identifier}: already merged")
+            live = conn.execute(
+                "SELECT id FROM runs WHERE ticketId = ? AND endedAt IS NULL",
+                (ticket_id,)).fetchone()
+            if ticket.activeRunId is not None or live is not None:
+                raise SystemExit(f"[holo2] {identifier}: has a live run")
+            run_id = ticket.lastRunId
+            run = conn.execute(
+                "SELECT outcome, endedAt FROM runs WHERE id = ?",
+                (run_id,)).fetchone()
+            if run is None or run[1] is None or run[0] not in (
+                    "rejected", "failed", "abandoned", "killed"):
+                raise SystemExit(
+                    f"[holo2] {identifier}: last run must have ended rejected,"
+                    " failed, abandoned or killed")
+            store.record_intervention(conn, run_id, "close_out", message)
+            store.walk_ticket(conn, ticket_id, "merged")
+            conn.execute("UPDATE runs SET mergeSha = NULL WHERE id = ?",
+                         (run_id,))
+        release_lease_label(target, conn, ticket_id, provider, run_id)
+        mirror_push(conn, ticket_id, provider)
+        ledger(conn, run_id, ticket.linearIssueId, "note", message, provider)
+        print(f"[holo2] {identifier} closed: {landed}; no factory merge",
+              file=out)
     finally:
         conn.close()
 
