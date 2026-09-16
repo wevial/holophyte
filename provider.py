@@ -88,8 +88,7 @@ class Provider(Protocol):
 
     def claim_next(self, skip=(), order="identifier") -> dict | None:
         """The first ready task whose `id` is not in `skip`; None when none.
-        `order` is `[loop] order`: `"identifier"` or `"priority"`; a board
-        without priorities orders by identifier under either value. The
+        `order` is `[loop] order` (`"identifier"` or `"priority"`); the
         listing the ask chose from lands on `self.last_listing` (KO-425)."""
         ...
 
@@ -113,8 +112,7 @@ class Provider(Protocol):
 
     def closed_identifiers(self, identifiers) -> dict[str, str]:
         """Which of `identifiers` the board holds closed, as identifier ->
-        `"completed"` or `"canceled"`; open or unknown is absent. Raise when
-        the board cannot be asked."""
+        `"completed"` or `"canceled"`; open or unknown is absent."""
         ...
 
     def label_issue(self, issue_id, name) -> None:
@@ -136,17 +134,15 @@ class Provider(Protocol):
 class LinearProvider:
     """Linear, through the functions `linear_provider.py` already has.
 
-    `project_id` and `team` are the target's `[board]` table, as
-    `holophyte.config_tables.board_config()` resolves it: the pair is stored
-    here and passed to every module call, so the module itself holds no
-    board and two targets on one host drive two projects. `label` is the
-    table's optional third key (KO-432): when set, the ready listing keeps
-    only issues carrying it, so the claim, the queue mirror and the
-    supervisor's board fallback all see the same filtered queue. The module is
-    imported at the first call that needs it rather than here -- the import
-    reads no configuration, so `--report`, a read-only `--sweep` and a
-    trip-less acting sweep never touch it. Construction does no I/O; the
-    API key is read by the module on the first request.
+    `project_id`, `team` and `label` are the target's `[board]` table, as
+    `holophyte.config_tables.board_config()` resolves it -- `label` the one
+    optional key (KO-432): set, the ready listing keeps only the issues
+    carrying it. Stored here and passed to every module call, so the module
+    itself holds no board and two targets on one host drive two projects.
+    The module is imported at the first call that needs it rather than here
+    -- the import reads no configuration, so `--report`, a read-only
+    `--sweep` and a trip-less acting sweep never touch it. Construction does
+    no I/O; the API key is read by the module on the first request.
     """
 
     def __init__(self, project_id, team, label=None):
@@ -169,8 +165,7 @@ class LinearProvider:
 
     def claim_next(self, skip=(), order="identifier"):
         task, self.last_listing = self._linear().claim_next(
-            self.project_id, self._team, skip=skip, order=order,
-            label=self._label)
+            self.project_id, self._team, skip, order, self._label)
         return task
 
     def ready_issues(self):

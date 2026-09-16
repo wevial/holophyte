@@ -375,13 +375,15 @@ loop's ready listing keeps only issues carrying that label by name
 take, or one that is a plan rather than a contract, is invisible to the
 factory however ready it looks. The claim, the queue the console's Board
 mirrors and the supervisor's board fallback all read through the same filter,
-so the label decides the whole queue rather than only the claim. Set or unset
-on a live target it takes effect at the next pass -- the loop asks the board
-fresh each claim, and a mirror row whose ticket lost the label waits on the
-board at `blocked_on_deps` until it carries it again. `project_id` and `team`
-are required when the table is present; `label` is the one key that may be
-absent, but when written it must be a non-empty string, and anything else is
-a startup error naming the key.
+so the label decides the whole queue rather than only the claim. The key is
+read once when the process builds its provider: set, unset or changed on a
+live target it takes effect at the next restart, not the next pass. The board
+side is live -- the loop asks the board fresh each claim, so a ticket that
+gains the label joins the listing, and a mirror row whose ticket lost it
+waits on the board at `blocked_on_deps` until it carries it again.
+`project_id` and `team` are required when the table is present; `label` is
+the one key that may be absent, but when written it must be a non-empty
+string, and anything else is a startup error naming the key.
 
 ```toml
 [report]
