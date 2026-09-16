@@ -459,6 +459,8 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                     "ready to merge; waiting for a human to say merge"
                     " ([merge] approve = \"human\")", (), reviewed=reviewed)
     state = _settled_state(target, conn, run_id, beat_s, pull)
+    _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
+                 pull, state, reviewed)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " babysitter stops here", state.threads, reviewed=reviewed)
@@ -466,11 +468,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
 
 def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed):
-    """The answers on one `PrState` that end the pass before threads are
-    judged: the merge sha when the pull request is already merged, None
-    to go on. A closed-unmerged PR rejects the run; a head that is not the
-    pushed candidate parks it -- its checks and threads are about someone
-    else's commit, not the one verified and reviewed here."""
+    """Handle a terminal PR or park a head that differs from the candidate."""
     from holophyte.pullrequest import _park_on_pr
     if state.merged:
         print(f"[holo2] {pull.url} is already merged as"
