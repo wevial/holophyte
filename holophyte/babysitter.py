@@ -272,7 +272,7 @@ def quoted(thread):
 
 def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                        sha, beat_s, pull, budget_min, reviewed=None, refusal=None):
-    """GitHub answered CONFLICTING: fetch `origin` and merge `origin/main`
+    """On CONFLICTING or a conflict refusal, fetch and merge `origin/main`
     into the worktree's branch -- the remote's `main`, never the possibly
     stale local one -- push, and hand back the branch's sha so the pass
     waits on the restarted checks. A merge commit, never a rebase or a
@@ -281,8 +281,8 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
     A merge that stops on unmerged paths goes to one implementer turn,
     which resolves and commits it (`merge_conflict_goal()`); a turn that
     leaves it unresolved -- or dropped it without merging -- aborts the
-    merge and parks the run with the conflicting paths in the question,
-    the branch left at `sha`. A fetch that cannot deliver `origin/main`
+    merge and parks with the paths and optional `refusal` text in the
+    question, the branch left at `sha`. A fetch without `origin/main`
     is the route's failure, not the ticket's.
     """
     from holophyte.claim import merge_conflicts
