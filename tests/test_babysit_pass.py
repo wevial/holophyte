@@ -72,9 +72,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIsNone(self.rc)
 
     def test_pending_checks_are_waited_for_before_the_verdict(self):
-        """A pass with no thread and pending checks reads the PR again
-        after `CHECK_POLL_S` rather than judging a rollup that is not in
-        yet; green on the second read merges."""
+        """Wait for pending checks and merge once the next poll is green."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state(checks="PENDING"),
                                 self.pr_state(checks="SUCCESS")])
@@ -90,12 +88,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_a_green_pr_quieter_than_pr_quiet_sec_is_not_merged(self):
-        """Acceptance (KO-429): a green pull request with no unresolved
-        thread whose `updatedAt` is 10 s old under `pr_quiet_sec = 300`
-        is re-read, not merged: the pass waits on the same cadence it
-        uses for pending checks and prints how long it has been quiet of
-        the quiet required, and `pr_rounds` still ends the run on a pull
-        request that never goes quiet."""
+        """A recently updated green PR waits for its configured quiet interval."""
         self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
         fresh = (datetime.now(timezone.utc)
                  - timedelta(seconds=10)).isoformat()
@@ -137,9 +130,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_pr_quiet_sec_zero_merges_a_green_pr_on_the_first_pass(self):
-        """Acceptance (KO-429): `pr_quiet_sec = 0` keeps the
-        merge-as-soon-as-green the babysitter had -- a pull request whose
-        `updatedAt` is this second merges without a wait."""
+        """A zero quiet interval permits merging on the first green poll."""
         self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
         self.fake_route(states=[self.pr_state(
             updated_at=datetime.now(timezone.utc).isoformat())])
@@ -155,9 +146,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_a_check_runs_read_the_babysitter_cannot_make_is_pending(self):
-        """`pr_state()` reads the head's check runs beside the rollup; a
-        read that raises leaves `checks` pending -- never green on a
-        rollup alone -- and the exception does not escape the read."""
+        """An unreadable check-runs response remains pending."""
         def raising_rest(target, pull, method, path, payload=None):
             raise holophyte.pr.InfraFailure(f"GitHub refused GET {path}")
         pull = holophyte.pr_status.parse_pr_url(self.URL)
@@ -179,11 +168,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
             return holophyte.pr_status.pr_state(self.tgt, pull)
 
     def test_check_runs_are_read_to_the_last_page_before_green(self):
-        """Review finding: only the first page of check runs was read and
-        `total_count` ignored, so a head with more runs than one page
-        holds read as green whatever the runs past the page said. Now the
-        pages are walked; a page the babysitter asked for and did not get
-        leaves the read incomplete, which is pending."""
+        """Incomplete pagination cannot establish that every check passed."""
         def success(name):
             return {"name": name, "status": "completed",
                     "conclusion": "success"}
@@ -219,11 +204,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertEqual(self._state_with_rest(odd_rest).checks, "pending")
 
     def test_a_rules_answer_the_babysitter_cannot_read_is_pending(self):
-        """Review finding: a `required_status_checks` rule whose checks were
-        not a list of contexts was silently dropped (green), and one whose
-        `parameters` was not an object raised out of `pr_state`. Rules
-        the babysitter cannot read are pending, like check runs it cannot
-        read."""
+        """Malformed required-check rules leave the PR pending."""
         def runs_then(rules):
             def odd_rest(target, pull, method, path, payload=None):
                 if "check-runs" in path:
@@ -262,6 +243,25 @@ class MergeModeBabysitPassTests(MergeModeFixture):
             " WHERE kind = 'implementer_output'")
         self.assertEqual(summary, "fix round 1: reading store/read.py")
         self.assertIn("reading store/read.py\nstill reading", payload)
+
+    def test_fix_transport_retry_preserves_the_pr_on_second_failure(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        failed = Idle(holophyte.agents.ImplementerOutput("fetch failed", 1))
+        with patch("holophyte.loop.sleep") as nap:
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                                Reply("THREAD 1: ADDRESS -- a real crash"),
+                                failed, failed, provider=self.provider())
+        nap.assert_called_once_with(30)
+        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
+                         [("failed", "infra")])
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(),
+                         fake.turns[1].candidate_sha)
+        self.assertEqual(self.read("SELECT count(*) FROM runEvents"
+                                   " WHERE kind = 'transport_retry'"), [(1,)])
+        self.assertEqual(self.read("SELECT payload FROM runEvents"
+                                   " WHERE kind = 'implementer_output'"),
+                         [("fetch failed",), ("fetch failed",)])
 
     def test_a_fix_round_that_moves_the_candidate_keeps_no_output_event(self):
         self.configure('[merge]\nmode = "pr"\n')

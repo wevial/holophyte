@@ -32,6 +32,32 @@ from holophyte.config import (
 )
 from holophyte.gates import InfraFailure, run_capped, sh
 
+TRANSPORT_SIGNATURES = (
+    "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "getaddrinfo",
+    "fetch failed", "Could not resolve host", "502 Bad Gateway",
+    "503 Service Unavailable", "504 Gateway Timeout", "overloaded_error",
+    "network error",
+)
+
+
+def transport_failure(exit_code, output):
+    """Identify a failed CLI's transport signature in its output tail."""
+    if exit_code is None or exit_code == 0:
+        return None
+    tail = output[-4000:].casefold()
+    return next((sig for sig in TRANSPORT_SIGNATURES
+                 if sig.casefold() in tail), None)
+
+
+class ImplementerOutput(str):
+    """Output text retaining the implementer CLI's exit status."""
+
+    def __new__(cls, output, exit_code):
+        result = super().__new__(cls, output)
+        result.exit_code = exit_code
+        return result
+
+
 # The one-line prompt the implementer probe hands a configured route, and the
 # word its answer has to contain. Short enough that any harness answering at
 # all answers it inside `PROBE_TIMEOUT` seconds; the cap is generous next to a
@@ -267,5 +293,5 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     # The hook is passed only when there is one, so a turn without a
     # sweep-time kill runs exactly the call it always did.
     hook = {"on_start": on_start} if on_start is not None else {}
-    _, out = run_capped(cmd, cwd, cap, **hook)
-    return out.strip()
+    code, out = run_capped(cmd, cwd, cap, **hook)
+    return ImplementerOutput(out.strip(), code)

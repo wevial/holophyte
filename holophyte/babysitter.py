@@ -774,12 +774,12 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte.loop import (
         _candidate_drift,
         _record_implementer_output,
-        _timed,
+        _transport_timed,
         sh,
     )
     from holophyte.redact import known_secrets
-    fixes, timed_out = _timed(target, conn, run_id, beat_s, wt, budget_min,
-                              babysitter.fix_brief(pull, addressed, ticket))
+    fixes, timed_out = _transport_timed(target, conn, run_id, beat_s, wt, budget_min,
+        babysitter.fix_brief(pull, addressed, ticket))
     fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if fixed == sha:
         _record_implementer_output(conn, run_id,
