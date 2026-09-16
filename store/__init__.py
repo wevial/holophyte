@@ -225,7 +225,7 @@ def claim(conn, project_id, ticket_id, now=None):
 PHASES = (
     "claimed", "working", "verifying", "reviewing", "addressing", "merge_gate",
     "awaiting_merge_approval", "merging", "squashing", "done",
-    "blocked_on_operator", "failed", "killed",
+    "blocked_on_operator", "failed", "killed", "rejected",
 )
 
 

@@ -26,7 +26,7 @@ from holophyte.config_tables import report_config
 # of the newest 25 entries is not something a calibration question can be
 # asked of. Nothing here writes, claims or calls Linear.
 REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome",
-                  "host")
+                  "rejected", "host")
 REPORT_GAP = "  "
 
 
@@ -107,12 +107,13 @@ def report_lines(conn, target=None):
             f"{ratio:.2f}" if ratio is not None else "n/a",
             str(rounds),
             outcome,
+            str(int(outcome == "rejected")),
             host_label(target, host),
         ))
     widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
         REPORT_GAP.join(
-            cell.ljust(width) if i in (0, 5, 6) else cell.rjust(width)
+            cell.ljust(width) if i in (0, 5, 7) else cell.rjust(width)
             for i, (cell, width) in enumerate(zip(row, widths))).rstrip()
         for row in table
     ]
@@ -135,11 +136,7 @@ def format_age(ms):
 
 
 def host_name(host):
-    """A `host` column as printed: the hostname, or `?` for a row without one.
-
-    Rows older than the column are not backfilled, and a blank cell at the
-    end of a line is invisible; `?` says "unknown" where unknown is the truth.
-    """
+    """A `host` column as printed: the hostname, or `?` for a row without one."""
     return "?" if host is None else host
 
 

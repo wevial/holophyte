@@ -205,7 +205,9 @@ class ShippedTests(ServeTestCase):
                         "reviewer-model", findings=[self.FINDING] * count,
                         started_at=started + number * MIN)
                 store.release(conn, run, outcome, now=self.now - ended_ago,
-                              merge_sha=sha)
+                              merge_sha=sha,
+                              reason="verification failed" if outcome == "failed"
+                              else None)
                 self.runs[ident] = run
         finally:
             conn.close()
@@ -239,6 +241,37 @@ class ShippedTests(ServeTestCase):
         self.assertEqual(newest["estimate_min"], 30.0)
         self.assertEqual(newest["host"], socket.gethostname())
 
+    def test_all_outcomes_preserve_finished_runs_and_bound_the_reason(self):
+        self.seed_shipped()
+        self.start()
+
+        code, _headers, body = self.request("GET", "/shipped?outcome=all")
+        self.assertEqual(code, 200)
+        self.assertEqual([r["ticket"] for r in body["rows"]],
+                         ["KO-3", "KO-4", "KO-2", "KO-1"])
+        self.assertEqual([r["outcome"] for r in body["rows"]],
+                         ["merged", "merged", "failed", "merged"])
+        self.assertEqual([r["outcome_reason"] for r in body["rows"]],
+                         [None, None, "verification failed", None])
+        code, _headers, default = self.request("GET", "/shipped")
+        self.assertEqual(code, 200)
+        self.assertEqual(default["rows"],
+                         [body["rows"][0], body["rows"][1], body["rows"][3]])
+        code, _headers, explicit = self.request("GET", "/shipped?outcome=merged")
+        self.assertEqual(code, 200)
+        self.assertEqual(explicit, default)
+
+        conn = store.open(str(self.db))
+        try:
+            conn.execute("UPDATE runs SET outcomeReason = ? WHERE id = ?",
+                         ("x" * 401, self.runs["KO-2"]))
+            conn.commit()
+        finally:
+            conn.close()
+        code, _headers, body = self.request("GET", "/shipped?outcome=all")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["rows"][2]["outcome_reason"], "x" * 400)
+
     def test_a_client_pages_to_the_end_with_next_before(self):
         self.seed_shipped()
         self.start()
@@ -261,12 +294,15 @@ class ShippedTests(ServeTestCase):
         self.start()
 
         for query, name in (("limit=0", "limit"), ("limit=x", "limit"),
-                            ("before=x", "before")):
+                            ("before=x", "before"),
+                            ("outcome=bogus", "outcome")):
             with self.subTest(query=query):
                 code, headers, body = self.request("GET", f"/shipped?{query}")
                 self.assertEqual(code, 400)
                 self.assertEqual(headers["Content-Type"], "application/json")
                 self.assertIn(name, body["error"])
+                if name == "outcome":
+                    self.assertIn("bogus", body["error"])
                 self.assertNotIn("rows", body)
 
         # An integer no run has is an empty page, whichever side of the id
