@@ -1,13 +1,9 @@
 """The public surface of the `store` package, held to explicit allow-lists.
 
-Every public function is porting work for the Rust replacement, so a new one
-has to be a deliberate addition and an orphan has to be a deliberate removal:
-both show up here as a failure naming the function. `EXPECTED` is the
-package namespace: the writers live in `store/__init__.py`, the operator
-API in `store/operate.py`, the ticket state machine in `store/tickets.py`,
-the schema/connection in `store/schema.py` (`EXPECTED_SCHEMA`), the read
-views in `store/read.py` (`EXPECTED_READ`). The operator names in
-AGENTS.md are read from that file, so the protocol and module can't drift.
+Every public function is porting work for the Rust replacement. Additions
+and removals must be deliberate: these lists hold the package, schema,
+read and working-clock surfaces. Operator names are also read from
+AGENTS.md so the protocol and module cannot drift.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
@@ -24,6 +20,7 @@ import store.operate
 import store.read
 import store.schema
 import store.tickets
+import store.working
 
 # Alphabetical. Edit this list in the same change that adds or removes a
 # public function, and say why in the commit.
@@ -204,7 +201,10 @@ def operator_api_names():
 class StoreSurfaceTests(unittest.TestCase):
     def test_public_functions_match_the_allow_list(self):
         for module, expected in ((store, EXPECTED),
-                                 (store.schema, EXPECTED_SCHEMA)):
+                                 (store.schema, EXPECTED_SCHEMA),
+                                 # KO-457: persisted work boundaries and live read.
+                                 (store.working, ["effective_work", "settle_work",
+                                                  "working"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
             missing = sorted(set(expected) - set(actual))

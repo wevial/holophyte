@@ -521,7 +521,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts)
+        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
     if not ok:
         ledger(conn, run_id, task_id, "failure",
                f"FAILED verify before the review of the fix at {sha} on"
@@ -795,7 +795,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                          f" unclean ({unclean.splitlines()[0]}); branch"
                          f" {branch} preserved at {fixed[:12]}")
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts)
+        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
     if not ok:
         print(f"[holo2] verify FAILED after the fix round for {pull.url};"
               f" leaving branch {branch} at {fixed} for a human:\n{out}")

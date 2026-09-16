@@ -11,7 +11,6 @@ import store
 import store.schema
 import store.tickets
 
-# table -> the fields the state model documents for it.
 DOCUMENTED_COLUMNS = {
     "projects": {
         "id", "linearTeamId", "repoPath", "defaultBranch", "autonomyProfile",
@@ -34,6 +33,7 @@ DOCUMENTED_COLUMNS = {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
         "providerSessionId", "branch", "prUrl", "startedAt", "lastHeartbeat",
         "endedAt", "reviewRoundCount", "outcome", "outcomeReason",
+        "workingMs", "workStartedAt",
         # Store-owned: the merge commit a merged run landed on main as, so
         # the ticket-to-commit link is a column and not a grep of git log.
         "mergeSha",

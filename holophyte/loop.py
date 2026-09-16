@@ -478,7 +478,7 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
             return (agent(target, "implement", goal, wt,
                           timeout=budget_min * budget_scale(target) * 60,
-                          on_start=kill.arm),
+                          on_start=kill.arm, conn=conn, run_id=run_id),
                     False)
     except subprocess.TimeoutExpired as expired:
         print(f"[holo2] task exceeded {budget_min} min budget"
@@ -746,7 +746,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" resolves the merge before this ticket is run again;"
                     f" branch {branch} preserved at {sha[:12]}")
         with heartbeat_while(conn, run_id, beat_s):
-            ok, out = run_verify(verify_cmd, wt, contracts)
+            ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
         if ok:
             print(f"[holo2] verify ok before round {rnd}")
         else:
@@ -833,7 +833,7 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
     """
     set_phase(conn, run_id, "verifying", "verify before terminal adjudication")
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts)
+        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
     if not ok:
         print(f"[holo2] verify FAILED before adjudication; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
