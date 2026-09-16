@@ -9,13 +9,7 @@ import time
 import store.read
 from holophyte.config_tables import report_config
 
-# --- estimate vs actual ------------------------------------------------------
-# The rows already carry every number a burndown needs: when a run started and
-# ended, the estimate it was claimed under, how many rounds it took. So the
-# report is a query and an aligned print rather than a grep over FINDINGS.md --
-# the ledger line was the only reading of this data until now, and a rendering
-# of the newest 25 entries is not something a calibration question can be
-# asked of. Nothing here writes, claims or calls Linear.
+# Render timing and review counts from the store without writing or claiming.
 REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome",
                   "rejected", "host")
 REPORT_GAP = "  "
@@ -94,8 +88,16 @@ def report_lines(conn, target=None):
     over nothing. `target` is where the `[report] host_label` comes from;
     without one the host column is the hostname the store holds.
     """
-    live = live_lines(conn, int(time.time() * 1000)) + [""]
-    rows = report_rows(conn)
+    owns_transaction = not conn.in_transaction
+    if owns_transaction:
+        conn.execute("BEGIN")
+    try:
+        # Both sections describe one snapshot while WAL writers keep working.
+        live = live_lines(conn, int(time.time() * 1000)) + [""]
+        rows = report_rows(conn)
+    finally:
+        if owns_transaction:
+            conn.rollback()  # Release only our read transaction, even on errors.
     if not rows:
         return live + ["no completed runs yet"]
     table = [REPORT_HEADERS]
@@ -123,9 +125,7 @@ def report_lines(conn, target=None):
 def format_age(ms):
     """An age in milliseconds as an operator reads one: `12s`, `9m`, `3h`.
 
-    Whole units, largest that fits, because the question the age answers --
-    is the watcher a minute quiet or an evening quiet -- is not one that
-    turns on the seconds past the hour.
+    Whole units, largest that fits: distinguish a quiet minute from an evening.
     """
     seconds = max(0, int(ms // 1000))
     if seconds < 60:
