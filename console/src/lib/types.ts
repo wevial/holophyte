@@ -125,9 +125,12 @@ export interface RunFilesBody {
   truncated?: boolean;
 }
 
-/** One merged run of `/shipped` (holophyte/serve.py `shipped()`), newest
+/** One finished run of `/shipped` (holophyte/serve.py `shipped()`), newest
  *  end first on the wire. `estimate_min` is null for a run with no box. */
 export interface ShippedRow {
+  /** Absent on older daemons, whose ledger contains only merges. */
+  outcome?: string;
+  outcome_reason?: string | null;
   id: number;
   ticket: string;
   title: string | null;

@@ -9,6 +9,7 @@ import { ActionButton } from "./ActionButton";
 import { AttemptsCard } from "./AttemptsCard";
 import { KindPill } from "./KindPill";
 import { QuestionThread } from "./QuestionThread";
+import { RunDetail } from "./RunDetail";
 import { PrLink } from "./ShippedTable";
 
 /** A question row's thread, when the daemon serves `/ledger`: its rows,
@@ -63,6 +64,7 @@ function bodyFor(label: string, ticket: string | null): Record<string, unknown> 
  *  card the same way; one given `prUrl` opens its body line with a
  *  "PR #N" link that follows without toggling, and one whose description
  *  carries `facts` draws them as chips under it.
+ *  A failed row given `runId` and `daemon` opens that run’s detail card.
  *  A row given `daemon` posts each wired label (`lib/actions.ts` ROUTES)
  *  to it on click and shows the reply's `detail` under the buttons; the
  *  next poll redraws the row. Labels without a route, and every label of
@@ -77,6 +79,8 @@ export function AttentionRow({
   attempts,
   prUrl,
   daemon,
+  runId,
+  now = Date.now(),
 }: {
   kind: string;
   project: string;
@@ -85,9 +89,13 @@ export function AttentionRow({
   attempts?: AttemptsProps;
   prUrl?: string | null;
   daemon?: RowDaemon;
+  runId?: number;
+  now?: number;
 }) {
   const { pill, ticket, body, meta, ageMs, actions, facts } = description;
-  const card = thread ?? attempts;
+  const [expanded, setExpanded] = useState(false);
+  const failed = kind === "failed" && runId != null && daemon != null;
+  const card = thread ?? attempts ?? (failed ? { open: expanded, onToggle: () => setExpanded((value) => !value) } : undefined);
   const toggle = card?.onToggle;
   const [detail, setDetail] = useState<{ text: string; ok: boolean } | null>(null);
   const act = (label: string) => {
@@ -177,6 +185,9 @@ export function AttentionRow({
             </p>
           )}
           {meta && <p className="text-[12px] text-faint">{meta}</p>}
+          {failed && !attempts && (
+            <p className="text-[12px] font-semibold text-needs-you-link">{card?.open ? "hide run ▴" : "run ▾"}</p>
+          )}
           {thread && (
             <p data-thread-hint className="text-[12px] font-semibold text-needs-you-link">
               {thread.open ? "hide thread ▴" : "thread ▾"}
@@ -211,6 +222,7 @@ export function AttentionRow({
       </div>
       {thread?.open && <QuestionThread rows={thread.rows} />}
       {attempts?.open && <AttemptsCard runs={attempts.runs} />}
+      {failed && card?.open && <RunDetail base={daemon.base} id={runId} now={now} polls={0} deps={daemon.fetch ? { fetch: daemon.fetch } : undefined} />}
     </li>
   );
 }
