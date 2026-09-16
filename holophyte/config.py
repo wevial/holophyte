@@ -156,12 +156,12 @@ def check_config(target):
     over a candidate document, so what the console can write is exactly
     what startup would accept. Each check exits naming the file, the table
     and the key, so a refusal is one sentence about the value to fix."""
+    merge_config(target)
     check_config_keys(target)
     budget_scale(target)
     sweep_config(target)
     loop_config(target)
     report_config(target)
-    merge_config(target)
     console_config(target)
     serve_config(target)
 
