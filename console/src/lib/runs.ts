@@ -14,8 +14,10 @@ const PHASE_LABELS: Record<string, Exclude<PhaseTone, "neutral">> = {
 };
 
 /** `working`/`addressing` → implementing, `verifying`/`merge_gate` →
- *  verifying, `reviewing` → reviewing; any other phase is its own label. */
-export function phaseLabel(phase: string): string {
+ *  verifying (or monitoring PR once a PR exists), `reviewing` → reviewing;
+ *  any other phase is its own label. */
+export function phaseLabel(phase: string, pr_url?: string | null): string {
+  if (phase === "merge_gate" && pr_url) return "monitoring PR";
   return PHASE_LABELS[phase] ?? phase;
 }
 

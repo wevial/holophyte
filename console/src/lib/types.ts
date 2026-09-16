@@ -25,6 +25,7 @@ export interface Supervisor {
 }
 
 export interface Run {
+  pr_url?: string | null;
   id: number;
   ticket: string;
   phase: string;

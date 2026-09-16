@@ -2,6 +2,35 @@ import { expect, test } from "bun:test";
 import { boxPercent, boxTone, groupByProject, phaseLabel, strikeTone } from "../src/lib/runs";
 import type { Status } from "../src/lib/types";
 import { fixture } from "./harness";
+import { buildTimeline, type TimelineRun } from "../src/lib/timeline";
+
+const PR_URL = "https://github.com/example/repo/pull/453";
+
+test("only merge_gate with a PR URL is monitoring PR", () => {
+  expect(phaseLabel("merge_gate", PR_URL)).toBe("monitoring PR");
+  for (const url of [null, undefined, ""]) expect(phaseLabel("merge_gate", url)).toBe("verifying");
+  for (const url of [PR_URL, null, undefined, ""]) {
+    expect(phaseLabel("verifying", url)).toBe("verifying");
+    expect(phaseLabel("working", url)).toBe("implementing");
+    expect(phaseLabel("reviewing", url)).toBe("reviewing");
+  }
+});
+
+test("the timeline preserves pre-PR verification and labels the PR wait", () => {
+  const run: TimelineRun = {
+    started_ms: 0, time_box_ms: 100, phase: "merge_gate", pr_url: PR_URL, rounds: [],
+    events: [
+      { at: 0, kind: "phase_change", summary: "verifying -> merge_gate: approved" },
+      { at: 20, kind: "pull_request", summary: `pull request open: ${PR_URL}` },
+      { at: 30, kind: "phase_change", summary: "merge_gate -> merge_gate: babysitting" },
+    ],
+  };
+  expect(buildTimeline(run, 60).map(({ label, from, to }) => ({ label, from, to }))).toEqual([
+    { label: "verifying", from: 0, to: 20 },
+    { label: "monitoring PR", from: 20, to: 60 },
+  ]);
+  expect(buildTimeline({ ...run, events: [] }, 60).at(-1)?.label).toBe("monitoring PR");
+});
 
 const working = await fixture<Status>("working.json");
 

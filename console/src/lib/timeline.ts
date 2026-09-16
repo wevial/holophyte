@@ -28,6 +28,7 @@ export interface TimelineRun {
   ended_ms?: number | null;
   time_box_ms: number;
   phase: string;
+  pr_url?: string | null;
   rounds: { started_ms: number; ended_ms: number | null }[];
   events?: RunEvent[];
 }
@@ -52,6 +53,7 @@ const NAMES: Record<SegmentKind, string> = {
 /** The tooltip's name for a segment: the kind's long name, plus the round
  *  a numbered review or fix belongs to ("Review 2", "Fix 1"). */
 export function segmentName(segment: Segment): string {
+  if (segment.label === "monitoring PR" || segment.label === "verifying") return segment.label;
   return segment.round == null ? NAMES[segment.kind] : `${NAMES[segment.kind]} ${segment.round}`;
 }
 
@@ -113,12 +115,17 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
     if (open && at > open.from) push({ ...open, to: at, running: false, width: 0 });
     open = null;
   };
+  let phase: string | null = null;
+  let prOpen = false;
   for (const change of changes) {
+    if (change.kind === "pull_request") {
+      prOpen = true;
+      if (phase !== "merge_gate") continue;
+    } else phase = phaseAfterArrow(change.summary);
     close(change.at);
-    const phase = phaseAfterArrow(change.summary);
     const kind = phase == null ? undefined : PHASE_KINDS[phase];
     if (!kind) continue;
-    let label = LABELS[kind];
+    let label = phase === "merge_gate" ? phaseLabel(phase, prOpen ? run.pr_url : null) : LABELS[kind];
     let round: number | undefined;
     if (kind === "review") reviews = roundNumber(change.summary) ?? reviews + 1;
     if (kind === "review" || kind === "fix") {
@@ -172,7 +179,7 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
   });
 
   const kind = runningKind(run, openRound);
-  const label = running ? phaseLabel(run.phase) : LABELS[kind];
+  const label = running ? phaseLabel(run.phase, run.pr_url) : LABELS[kind];
   const round = kind === "review" ? openIndex + 1 : kind === "fix" && rounds.length > 0 ? rounds.length : undefined;
   out.push({ kind, label, from: cursor, to: Math.max(cursor, end), round, running, width: 0 });
   return size(out, run, Math.max(end, cursor));
@@ -187,9 +194,10 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
  */
 export function buildTimeline(run: TimelineRun, now: number): Segment[] {
   const changes = (run.events ?? [])
-    .filter((event) => event.kind === "phase_change")
+    .filter((event) => event.kind === "phase_change" ||
+      (event.kind === "pull_request" && event.summary.startsWith("pull request open")))
     .sort((a, b) => a.at - b.at);
-  return changes.length > 0 ? fromEvents(run, changes, now) : fromRounds(run, now);
+  return changes.some((event) => event.kind === "phase_change") ? fromEvents(run, changes, now) : fromRounds(run, now);
 }
 
 /** Positive: milliseconds left in the box; negative: how far past it. */

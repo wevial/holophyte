@@ -1,3 +1,5 @@
+import { useRunDetail } from "../hooks/useRunDetail";
+import { defaultPollDeps, type Fetch } from "../lib/poll";
 import type { ReactNode } from "react";
 import { isStale } from "../lib/derive";
 import { formatSpan } from "../lib/format";
@@ -16,8 +18,14 @@ export function RunRow({
   onToggle,
   detail,
   sinceMs = 0,
+  base = "",
+  polls = 0,
+  deps = defaultPollDeps,
 }: {
   run: Run;
+  base?: string;
+  polls?: number;
+  deps?: { fetch: Fetch };
   thresholds: { heartbeat_stale_ms: number; strikes: number };
   expanded: boolean;
   onToggle: () => void;
@@ -26,6 +34,11 @@ export function RunRow({
    *  row adds it so they keep counting between polls. */
   sinceMs?: number;
 }) {
+  // /status omits the PR URL; read it from the existing detail endpoint
+  // while the merge gate is active, including when the row is collapsed.
+  const { detail: prDetail } = useRunDetail(
+    base, run.phase === "merge_gate" && run.pr_url === undefined ? run.id : null, polls, deps,
+  );
   const heartbeatAge = run.heartbeat_age_ms + sinceMs;
   const stale = isStale(heartbeatAge, thresholds.heartbeat_stale_ms);
   return (
@@ -46,7 +59,7 @@ export function RunRow({
           <StrikePill strikes={run.strikes ?? 0} max={thresholds.strikes} />
         </span>
         <span>
-          <PhasePill phase={run.phase} />
+          <PhasePill phase={run.phase} pr_url={run.pr_url ?? prDetail?.run.pr_url} />
         </span>
         <TimeBoxBar elapsedMs={run.elapsed_ms + sinceMs} boxMs={run.time_box_ms} />
         <span

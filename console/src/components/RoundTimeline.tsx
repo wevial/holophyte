@@ -38,7 +38,7 @@ export function RoundTimeline({
    *  last segment alone is only a park) and the done figure is its whole
    *  span, not the stretch the segments cover — drawn even when the run's
    *  events left no segment at all. */
-  run: Pick<TimelineRun, "started_ms" | "ended_ms" | "phase">;
+  run: Pick<TimelineRun, "started_ms" | "ended_ms" | "phase" | "pr_url">;
   /** The caller's clock; a parked phase's wait ages by it. */
   now: number;
 }) {
@@ -61,7 +61,7 @@ export function RoundTimeline({
         ? undefined
         : last.running
           ? { label: last.label, ms: last.to - last.from }
-          : { label: phaseLabel(run.phase), ms: now - last.to };
+          : { label: phaseLabel(run.phase, run.pr_url), ms: now - last.to };
   const hovered = active == null ? undefined : segments[active];
   return (
     <div data-timeline className="relative">

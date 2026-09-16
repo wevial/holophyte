@@ -72,6 +72,9 @@ export function ProjectBlock({
             <RunRow
               key={run.id}
               run={run}
+              base={group.base}
+              polls={status.now}
+              deps={deps}
               thresholds={thresholds}
               expanded={expanded}
               onToggle={() => onToggleRun(key)}

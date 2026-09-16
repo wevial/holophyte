@@ -22,7 +22,7 @@ export function roundLine(body: RunDetailBody): string {
   const seen = body.rounds.length;
   const current = Math.max(1, seen);
   const max = Math.max(current, body.run.max_rounds ?? seen);
-  return `Round ${current} of ${max} · ${phaseLabel(body.run.phase)}`;
+  return `Round ${current} of ${max} · ${phaseLabel(body.run.phase, body.run.pr_url)}`;
 }
 
 /** The expanded run's card: header line, round timeline, the newest
