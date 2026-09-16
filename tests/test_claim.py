@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import io
 import sqlite3
 import subprocess
@@ -18,6 +17,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
+from babysit_fixture import ResolveMerge  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     FAIL,
@@ -33,6 +33,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     CommitThenTimeout,
     IdleThenTimeout,
     LoopFixture,
+    MergeModeFixture,
     StubProvider,
     a_task,
 )
@@ -43,6 +44,23 @@ import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
+
+
+class BabysitClaimTests(MergeModeFixture):
+    def test_send_back_claim_resumes_the_parked_candidate(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("candidate"), APPROVE, provider=self.provider())
+        candidate = self.git("rev-parse", BRANCH).strip()
+        self.assertIn("PR open:", self.question())
+        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
+                                         out=io.StringIO())
+        self.assertEqual(self.read("SELECT blockedQuestion FROM tickets"), [(None,)])
+        output = self.main_output(provider=self.provider())
+        self.assertNotIn("parked on PR", output)
+        self.assertEqual(self.read("SELECT id, candidateSha FROM runs ORDER BY id"),
+                         [(1, candidate), (2, candidate)])
+        self.assertEqual([k for k, _ in self.api_calls()], ["state", "state"])
 
 
 class WorktreeSetupLoopTests(LoopFixture):
@@ -751,35 +769,6 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn(theirs, reason)
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), local)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=wt).strip(), local)
-
-
-@dataclasses.dataclass
-class ResolveMerge:
-    """An implementer turn on a worktree left mid-merge: it records the paths
-    git says are unmerged, writes `resolved` to `path`, commits the merge
-    with a message naming both sides, then does one scripted commit of the
-    ticket's own work."""
-
-    path: str
-    resolved: str
-    conflicted: list = dataclasses.field(default_factory=list)
-
-    role = "implement"
-
-    def play(self, cwd, turn):
-        self.conflicted = subprocess.run(
-            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=cwd,
-            capture_output=True, text=True).stdout.split()
-        (cwd / self.path).write_text(self.resolved)
-        self.git(cwd, "add", self.path)
-        self.git(cwd, "commit", "-q", "-m",
-                 "Merge main into the preserved branch: both tests")
-        return Commit("the scripted work").play(cwd, turn)
-
-    @staticmethod
-    def git(cwd, *args):
-        subprocess.run(["git", *args], cwd=cwd, check=True,
-                       capture_output=True, text=True)
 
 
 class ApproveNotingMergeHead:

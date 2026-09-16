@@ -1,4 +1,4 @@
-import { groupByDay, medianRounds } from "../lib/shipped";
+import { groupByDay, medianRounds, mergedRows } from "../lib/shipped";
 import type { ShippedState } from "../hooks/useShipped";
 import type { Fetch } from "../lib/poll";
 import { ShippedTable } from "./ShippedTable";
@@ -8,7 +8,7 @@ export { SHIPPED_PAGE, concatLedgers, shippedUrl } from "../hooks/useShipped";
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /**
- * The Shipped view: the merge ledger the shell holds (`useShipped`, one
+ * The Finished view: the outcome-filtered ledger the shell holds (`useShipped`, one
  * ledger shared with the Board's Shipped-today table), every daemon's
  * rows newest first under a sub-header per day; "Load older" fetches, for
  * every daemon with more, the page before the oldest id it has shown.
@@ -28,23 +28,32 @@ export function Shipped({
   deps?: { fetch: Fetch };
   tz?: string;
 }) {
-  const { rows, more, errors, loading, paging, loadOlder } = shipped;
+  const { more, errors, loading, paging, loadOlder, outcome, setOutcome } = shipped;
+  const rows = outcome === "all" ? shipped.rows : mergedRows(shipped.rows);
   const days = groupByDay(rows, now, tz).length;
   const median = medianRounds(rows);
   const subtitle =
     rows.length === 0
       ? null
-      : `${plural(rows.length, "merge")} · last ${plural(days, "day")} · median ${median} rounds${more ? ` (of ${rows.length} loaded)` : ""}`;
+      : `${plural(rows.length, outcome === "all" ? "run" : "merge")} · last ${plural(days, "day")} · median ${median} rounds${more ? ` (of ${rows.length} loaded)` : ""}`;
 
   return (
-    <section aria-label="Shipped" className="px-6 pt-6 pb-6">
+    <section aria-label="Finished" className="px-6 pt-6 pb-6">
       <div className="flex items-baseline gap-3">
-        <h1 className="text-[20px] font-semibold text-ink">Shipped</h1>
+        <h1 className="text-[20px] font-semibold text-ink">Finished</h1>
         {subtitle && (
           <span data-subtitle className="text-[13px] text-muted">
             {subtitle}
           </span>
         )}
+      </div>
+      <div role="group" aria-label="Outcomes" className="mt-3 flex gap-2">
+        {(["merged", "all"] as const).map(value => (
+          <button key={value} type="button" aria-pressed={outcome === value} onClick={() => setOutcome(value)}
+            className={`rounded-button border border-line px-3 py-1.5 text-[13px] font-semibold ${outcome === value ? "bg-well text-ink" : "bg-card text-muted hover:bg-hover"}`}>
+            {value === "merged" ? "Merged" : "All"}
+          </button>
+        ))}
       </div>
       {errors.map((error) => (
         <p key={error} role="alert" className="mt-2 font-mono text-[11px] text-bad-text">
@@ -52,10 +61,10 @@ export function Shipped({
         </p>
       ))}
       {!loading && rows.length === 0 ? (
-        <p className="mt-3 text-[13px] text-muted">Nothing merged yet</p>
+        <p className="mt-3 text-[13px] text-muted">{outcome === "all" ? "Nothing finished yet" : "Nothing merged yet"}</p>
       ) : (
         <div className="mt-3">
-          <ShippedTable rows={rows} now={now} polls={polls} deps={deps} tz={tz} />
+          <ShippedTable outcome={outcome} rows={rows} now={now} polls={polls} deps={deps} tz={tz} />
           {more && (
             <button
               type="button"

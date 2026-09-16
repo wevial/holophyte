@@ -312,8 +312,7 @@ class MergeConfigTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, 300, "ticket",
-                          "", "park", ()))
+                         ("auto", "local", 5, "merge", 180, 300, "", "park", ()))
 
     def test_after_is_read_as_a_list_of_commands(self):
         """`after` is the console build the daemon's bundle depends on, in
@@ -324,15 +323,16 @@ class MergeConfigTests(ConfigTestCase):
         self.assertEqual(config_tables.merge_config(self.tgt).after,
                          ("bun --cwd=console run build", "sh -c true"))
 
-    def test_pr_text_and_pr_style_are_read(self):
-        """`pr_text = "written"` with the target's own instructions; absent,
-        `"ticket"` and no instructions, the form the PR has always had."""
-        self.locate('[merge]\nmode = "pr"\npr_text = "written"\n'
-                    'pr_style = "Title starts with [Feature Name]."\n')
+    def test_pr_text_is_retired_at_startup(self):
+        message = refused(self, '[merge]\npr_text = "ticket"\n')
+        self.assertIn("[merge] pr_text was retired: "
+                      "pull request bodies are always written", message)
 
-        merge = config_tables.merge_config(self.tgt)
-        self.assertEqual(merge.pr_text, "written")
-        self.assertEqual(merge.pr_style, "Title starts with [Feature Name].")
+    def test_pr_style_is_read(self):
+        self.locate('[merge]\nmode = "pr"\n'
+                    'pr_style = "Title starts with [Feature Name]."\n')
+        self.assertEqual(config_tables.merge_config(self.tgt).pr_style,
+                         "Title starts with [Feature Name].")
 
     def test_human_threads_is_read(self):
         """`human_threads = "act"` lets the babysitter act on a person's

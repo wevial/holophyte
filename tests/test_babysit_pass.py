@@ -18,10 +18,12 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
+from babysit_fixture import ConflictRefusalCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
     Commit,
+    Idle,
     Reply,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
@@ -37,7 +39,7 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
-class MergeModeBabysitPassTests(MergeModeFixture):
+class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
     """The `[merge] mode = "pr"` tests that judge and fix the pull
     request's threads and checks; the open, park, resume and merge are
     `MergeModePullRequestTests` (`test_pullrequest.py`)."""
@@ -49,7 +51,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         node.update(state="CLOSED", timelineItems={"nodes": [
             {"actor": {"login": "alice"}}]})
         self.fake_route(states=[state])
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("rejected", "rejected")])
@@ -63,7 +65,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         closed["data"]["repository"]["pullRequest"].update(
             state="CLOSED", timelineItems={"nodes": [{"actor": {"login": "alice"}}]})
         self.fake_route(states=[self.pr_state([self.DEFECT]), closed])
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   Reply("THREAD 1: ADDRESS -- a real crash"),
                   Commit("fix: default load()"), provider=self.provider())
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
@@ -71,15 +73,13 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertIsNone(self.rc)
 
     def test_pending_checks_are_waited_for_before_the_verdict(self):
-        """A pass with no thread and pending checks reads the PR again
-        after `CHECK_POLL_S` rather than judging a rollup that is not in
-        yet; green on the second read merges."""
+        """Wait for pending checks and merge once the next poll is green."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state(checks="PENDING"),
                                 self.pr_state(checks="SUCCESS")])
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("the scripted work"), APPROVE,
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
 
         self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
@@ -89,12 +89,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_a_green_pr_quieter_than_pr_quiet_sec_is_not_merged(self):
-        """Acceptance (KO-429): a green pull request with no unresolved
-        thread whose `updatedAt` is 10 s old under `pr_quiet_sec = 300`
-        is re-read, not merged: the pass waits on the same cadence it
-        uses for pending checks and prints how long it has been quiet of
-        the quiet required, and `pr_rounds` still ends the run on a pull
-        request that never goes quiet."""
+        """A recently updated green PR waits for its configured quiet interval."""
         self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
         fresh = (datetime.now(timezone.utc)
                  - timedelta(seconds=10)).isoformat()
@@ -105,7 +100,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         # never goes quiet and the merge API is never called.
         with patch.object(holophyte.pr, "SLEEP", naps.append), \
                 patch.object(holophyte.pr, "CHECK_WAIT_S", 45):
-            out = self.main_output(Commit("the scripted work"), APPROVE,
+            out = self.main_output(Commit("the scripted work"), APPROVE, Idle(""),
                                    provider=self.provider())
 
         self.assertTrue(naps)
@@ -126,7 +121,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state(updated_at=quiet)])
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("the scripted work"), APPROVE,
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
 
         self.assertEqual(naps, [])
@@ -136,15 +131,13 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_pr_quiet_sec_zero_merges_a_green_pr_on_the_first_pass(self):
-        """Acceptance (KO-429): `pr_quiet_sec = 0` keeps the
-        merge-as-soon-as-green the babysitter had -- a pull request whose
-        `updatedAt` is this second merges without a wait."""
+        """A zero quiet interval permits merging on the first green poll."""
         self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
         self.fake_route(states=[self.pr_state(
             updated_at=datetime.now(timezone.utc).isoformat())])
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("the scripted work"), APPROVE,
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
 
         self.assertEqual(naps, [])
@@ -154,9 +147,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          [("merged", self.MERGE_SHA)])
 
     def test_a_check_runs_read_the_babysitter_cannot_make_is_pending(self):
-        """`pr_state()` reads the head's check runs beside the rollup; a
-        read that raises leaves `checks` pending -- never green on a
-        rollup alone -- and the exception does not escape the read."""
+        """An unreadable check-runs response remains pending."""
         def raising_rest(target, pull, method, path, payload=None):
             raise holophyte.pr.InfraFailure(f"GitHub refused GET {path}")
         pull = holophyte.pr_status.parse_pr_url(self.URL)
@@ -169,20 +160,8 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertEqual(state.checks, "pending")
         self.assertEqual(state.head_sha, self.HEAD)
 
-    def _state_with_rest(self, rest):
-        pull = holophyte.pr_status.parse_pr_url(self.URL)
-        with patch.object(holophyte.pr_status, "graphql",
-                          lambda *a, **k: self.pr_state(checks="SUCCESS")
-                          ["data"]), \
-                patch.object(holophyte.pr_status, "rest", rest):
-            return holophyte.pr_status.pr_state(self.tgt, pull)
-
     def test_check_runs_are_read_to_the_last_page_before_green(self):
-        """Review finding: only the first page of check runs was read and
-        `total_count` ignored, so a head with more runs than one page
-        holds read as green whatever the runs past the page said. Now the
-        pages are walked; a page the babysitter asked for and did not get
-        leaves the read incomplete, which is pending."""
+        """Incomplete pagination cannot establish that every check passed."""
         def success(name):
             return {"name": name, "status": "completed",
                     "conclusion": "success"}
@@ -218,11 +197,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.assertEqual(self._state_with_rest(odd_rest).checks, "pending")
 
     def test_a_rules_answer_the_babysitter_cannot_read_is_pending(self):
-        """Review finding: a `required_status_checks` rule whose checks were
-        not a list of contexts was silently dropped (green), and one whose
-        `parameters` was not an object raised out of `pr_state`. Rules
-        the babysitter cannot read are pending, like check runs it cannot
-        read."""
+        """Malformed required-check rules leave the PR pending."""
         def runs_then(rules):
             def odd_rest(target, pull, method, path, payload=None):
                 if "check-runs" in path:
@@ -244,27 +219,80 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                           dict(rule, parameters={"required_status_checks": []})])
         self.assertEqual(self._state_with_rest(rest).checks, "success")
 
+    def test_a_stalled_fix_round_keeps_implementer_output(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Idle("reading store/read.py\nstill reading"),
+                            provider=self.provider())
+
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("failed", "failed")])
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(),
+                         fake.turns[1].candidate_sha)
+        ((summary, payload),) = self.read(
+            "SELECT summary, payload FROM runEvents"
+            " WHERE kind = 'implementer_output'")
+        self.assertEqual(summary, "fix round 1: reading store/read.py")
+        self.assertIn("reading store/read.py\nstill reading", payload)
+
+    def test_fix_transport_retry_preserves_the_pr_on_second_failure(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        failed = Idle(holophyte.agents.ImplementerOutput("fetch failed", 1))
+        with patch("holophyte.loop.sleep") as nap:
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                                Reply("THREAD 1: ADDRESS -- a real crash"),
+                                failed, failed, provider=self.provider())
+        nap.assert_called_once_with(30)
+        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
+                         [("failed", "infra")])
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(),
+                         fake.turns[1].candidate_sha)
+        self.assertEqual(self.read("SELECT count(*) FROM runEvents"
+                                   " WHERE kind = 'transport_retry'"), [(1,)])
+        self.assertEqual(self.read("SELECT payload FROM runEvents"
+                                   " WHERE kind = 'implementer_output'"),
+                         [("fetch failed",), ("fetch failed",)])
+
+    def test_a_fix_round_that_moves_the_candidate_keeps_no_output_event(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state()])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("fix: default load()"), APPROVE,
+                            provider=self.provider())
+
+        self.assertNotEqual(fake.turns[1].candidate_sha,
+                            fake.turns[5].candidate_sha)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.read("SELECT count(*) FROM runEvents"
+                                   " WHERE kind = 'implementer_output'"),
+                         [(0,)])
+
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
         """Review the fixed candidate independently before merging it."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
                             Commit("fix: default load()"), APPROVE,
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
                                       "implement", "review"])
         merge = [v for kind, v in self.api_calls() if kind == "merge"]
         self.assertEqual(len(merge), 1)
         fixed = merge[0]["sha"]
         self.assertNotEqual(fixed, fake.turns[1].candidate_sha)
         # The second review judged the fix commit itself, against main.
-        self.assertEqual(fake.turns[4].candidate_sha, fixed)
-        self.assertEqual(fake.turns[4].base_sha, self.base)
-        self.assertIn(fake.turns[1].candidate_sha[:12], fake.turns[4].goal)
+        self.assertEqual(fake.turns[5].candidate_sha, fixed)
+        self.assertEqual(fake.turns[5].base_sha, self.base)
+        self.assertIn(fake.turns[1].candidate_sha[:12], fake.turns[5].goal)
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "reply", "resolve", "state", "merge"])
         self.assertEqual(
@@ -293,17 +321,17 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                     title="add a thing, and a second thing")
                 return super().play(cwd, turn)
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
                             CommitAndEditTheTicket("fix: default load()"),
                             APPROVE, provider=provider)
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
                                       "implement", "review"])
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "reply", "resolve", "state"])
         fixed = self.git("rev-parse", BRANCH).strip()
-        self.assertEqual(fake.turns[4].candidate_sha, fixed)
+        self.assertEqual(fake.turns[5].candidate_sha, fixed)
         self.assertEqual(
             self.read("SELECT phase, outcome, mergeSha FROM runs"),
             [("failed", "failed", None)])
@@ -321,12 +349,12 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
                             Commit("fix: default load()"), REQUEST_CHANGES,
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
                                       "implement", "review"])
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "reply", "resolve", "state"])
@@ -352,7 +380,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   Reply("THREAD 1: ADDRESS -- a real crash"),
                   Commit("fix: default load()"), REQUEST_CHANGES,
                   provider=self.provider())
@@ -384,7 +412,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         second review."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.NIT]), self.pr_state()])
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   Reply("THREAD 1: DECLINE -- a naming preference"),
                   provider=self.provider())
         approved = self.git("rev-parse", BRANCH).strip()
@@ -415,7 +443,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state([self.NIT]), self.pr_state()])
         marker = self.worktrees.parent / "verify-must-fail"
         task = dict(a_task(), body=self.BODY, verify=f"test ! -e {marker}")
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   Reply("THREAD 1: DECLINE -- a naming preference"),
                   provider=StubProvider(task))
         approved = self.git("rev-parse", BRANCH).strip()
@@ -448,16 +476,16 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
                             Commit("fix: default load()"),
                             Reply("CRITERION 1: unwitnessed \u2014 no test"
                                   " covers the fix\nVERDICT: APPROVE"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
                                       "implement", "review"])
-        self.assertIn("Acceptance criteria, numbered:", fake.turns[4].goal)
+        self.assertIn("Acceptance criteria, numbered:", fake.turns[5].goal)
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "reply", "resolve", "state"])
         fixed = self.git("rev-parse", BRANCH).strip()
@@ -481,18 +509,18 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                          "THREAD 2: DECLINE -- a naming preference, not a"
                          " defect")
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""), verdicts,
                             Commit("fix: default load() to an empty thing"),
                             provider=provider)
 
-        self.assertEqual(fake.roles,
-                         ["implement", "review", "adjudicate", "implement"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "adjudicate", "implement"])
         # The adjudicator judged the candidate as pushed, against main.
-        self.assertEqual(fake.turns[2].base_sha, self.base)
-        self.assertIn(self.URL, fake.turns[2].goal)
-        self.assertIn(self.DEFECT[3], fake.turns[2].goal)
+        self.assertEqual(fake.turns[3].base_sha, self.base)
+        self.assertIn(self.URL, fake.turns[3].goal)
+        self.assertIn(self.DEFECT[3], fake.turns[3].goal)
         fixed = self.git("rev-parse", BRANCH).strip()
-        self.assertNotEqual(fixed, fake.turns[2].candidate_sha)
+        self.assertNotEqual(fixed, fake.turns[3].candidate_sha)
         self.assertIn("fix: default load() to an empty thing",
                       self.subjects(BRANCH))
         # Two pushes: the candidate, then the fix.
@@ -549,13 +577,13 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                 (cwd / "rest-of-the-fix.py").write_text("not committed\n")
                 return out
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
                             CommitLeavingEdits("fix: half of it"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles,
-                         ["implement", "review", "adjudicate", "implement"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "adjudicate", "implement"])
         # The candidate's push only; the fix never left the machine.
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"])
@@ -580,12 +608,12 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         thread = self.DEFECT + ([("ko", follow_up)],)
         self.fake_route(states=[self.pr_state([thread])])
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: HUMAN -- the operator asked"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
-        goal = fake.turns[2].goal
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate"])
+        goal = fake.turns[3].goal
         self.assertIn(self.DEFECT[3], goal)
         self.assertIn(follow_up, goal)
         self.assertLess(goal.index(self.DEFECT[3]), goal.index(follow_up))
@@ -618,17 +646,17 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         (Path(self.calls).parent / "states" / "001.json").write_text(
             json.dumps(state))
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: HUMAN -- the operator said so"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate"])
         calls = self.api_calls()
         self.assertEqual([kind for kind, _ in calls],
                          ["state", "comments"])
         self.assertEqual(calls[1][1]["thread"], "PRRT_1")
         self.assertEqual(calls[1][1]["after"], "k1")
-        goal = fake.turns[2].goal
+        goal = fake.turns[3].goal
         self.assertIn(first_reply[1], goal)
         self.assertIn(last_word, goal)
         self.assertLess(goal.index(first_reply[1]), goal.index(last_word))
@@ -644,10 +672,10 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         verdict = Reply("THREAD 1: HUMAN -- a question about the approach"
                         " for the operator")
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdict,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""), verdict,
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate"])
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"])
@@ -678,12 +706,12 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         verdicts = Reply("THREAD 1: ADDRESS -- a real crash\n"
                          "THREAD 2: ADDRESS -- whatever it is, fix it")
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""), verdicts,
                             Commit("fix: never reached"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
-        goal = fake.turns[2].goal
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate"])
+        goal = fake.turns[3].goal
         self.assertIn(self.DEFECT[3], goal)
         self.assertIn("THREAD 1 -- src/app.py:10 by @review-bot", goal)
         self.assertNotIn(person[3], goal)
@@ -729,21 +757,21 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                   " shadows the module.")
         self.fake_route(states=[self.pr_state([person])])
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- rename as asked"),
                             Commit("fix: rename thing to default_thing"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles,
-                         ["implement", "review", "adjudicate", "implement"])
-        goal = fake.turns[2].goal
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "adjudicate", "implement"])
+        goal = fake.turns[3].goal
         self.assertIn("THREAD 1 -- src/app.py:30 by @wevial", goal)
         self.assertIn(person[3], goal)
         self.assertIn("opened by a person", goal)
         self.assertIn("Never DECLINE a person's thread", goal)
         # The fix round was given the person's thread.
-        self.assertIn(person[3], fake.turns[3].goal)
-        self.assertIn("@wevial", fake.turns[3].goal)
+        self.assertIn(person[3], fake.turns[4].goal)
+        self.assertIn("@wevial", fake.turns[4].goal)
         fixed = self.git("rev-parse", BRANCH).strip()
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"] * 2)
@@ -782,18 +810,18 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         verdicts = Reply("THREAD 1: DECLINE -- a preference, not a defect\n"
                          "THREAD 2: ADDRESS -- a real crash")
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""), verdicts,
                             Commit("fix: default load() to an empty thing"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles,
-                         ["implement", "review", "adjudicate", "implement"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "adjudicate", "implement"])
         self.assertIn("THREAD 1 -- src/app.py:30 by @wevial",
-                      fake.turns[2].goal)
+                      fake.turns[3].goal)
         self.assertIn("THREAD 2 -- src/app.py:10 by @review-bot",
-                      fake.turns[2].goal)
-        self.assertNotIn(person[3], fake.turns[3].goal)
-        self.assertIn(self.DEFECT[3], fake.turns[3].goal)
+                      fake.turns[3].goal)
+        self.assertNotIn(person[3], fake.turns[4].goal)
+        self.assertIn(self.DEFECT[3], fake.turns[4].goal)
         fixed = self.git("rev-parse", BRANCH).strip()
         calls = self.api_calls()
         self.assertEqual([kind for kind, _ in calls],
@@ -829,10 +857,10 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         verdicts = Reply("THREAD 1: HUMAN -- a design question for the"
                          " operator\nTHREAD 2: ADDRESS -- a real crash")
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, verdicts,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""), verdicts,
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate"])
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"])
@@ -852,11 +880,11 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state([self.DEFECT])])
         address = Reply("THREAD 1: ADDRESS -- a real crash")
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             address, Commit("fix 1"), address, Commit("fix 2"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate",
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
                                       "implement", "adjudicate", "implement"])
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "reply", "resolve",
@@ -882,11 +910,11 @@ class MergeModeBabysitPassTests(MergeModeFixture):
                                               next_cursor="c1"),
                                 self.pr_state([self.DEFECT])])
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: HUMAN -- not mine to answer"),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review", "adjudicate"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate"])
         calls = self.api_calls()
         self.assertEqual([kind for kind, _ in calls], ["state", "state"])
         self.assertEqual([v["after"] for _, v in calls], [None, "c1"])
@@ -903,10 +931,10 @@ class MergeModeBabysitPassTests(MergeModeFixture):
         other = "a" * 40
         self.fake_route(states=[self.pr_state(head=other)])
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=self.provider())
 
-        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
         candidate = self.git("rev-parse", BRANCH).strip()
         self.assertEqual(

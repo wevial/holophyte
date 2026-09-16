@@ -181,7 +181,7 @@ class UsageTests(unittest.TestCase):
 
 class PullRequestTemplateTests(unittest.TestCase):
     """KO-430: the repository's pull request template -- the file the
-    written turn fills under `pr_text = "written"`; GitHub itself applies
+    written turn fills; GitHub itself applies
     it only to pull requests opened in the web UI."""
 
     TEMPLATE = ROOT / ".github" / "pull_request_template.md"

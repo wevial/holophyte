@@ -314,26 +314,15 @@ def approve(conn, ticket_id, note, now=None):
 
 
 def babysit(conn, ticket_id, note, now=None, source="human"):
-    """Send a ticket parked on its pull request back to the babysitter; return
-    the parked run's id.
+    """Send a PR-parked ticket back to the babysitter; return its run id.
 
-    `approve()`'s twin for `[merge] mode = "pr"`, and the same transaction
-    with the action `babysit` on the `interventions` row: the parked run is
-    ended `abandoned` with its resume point at the merge gate and the ticket
-    walked to `ready`, so the loop's next claim resumes the candidate --
-    and, the run carrying a pull request, babysits it again: reads the
-    threads that arrived since the park, verdicts them, fixes and replies,
-    waits for the checks. What it is not is an approval: a PR that comes up
-    ready to merge under `[merge] approve = "human"` parks again for the
-    human's "merge" rather than landing on the operator's "look again".
-    The refusals are `approve()`'s, as `ApproveRefused`, plus one of its
-    own: a run parked with no pull request (`runs.prUrl` NULL) has no
-    threads to look at again, and releasing it would merge the candidate
-    down the local gate -- that is `approve()`'s to say, so the babysitter
-    refuses it with nothing written. `source` is who sent it back:
-    `"human"` for `--babysit`, `"supervisor"` when the loop's tick saw new
-    review activity on the pull request (KO-362).
-    """
+    The shared release transaction records a `babysit` intervention, ends the
+    run `abandoned` with its merge-gate resume point, clears `blockedQuestion`,
+    and readies the ticket. The next claim resumes the candidate on its PR.
+    This is "look again", not approval: human-approval mode parks again when
+    the PR is ready. All `approve()` refusals apply; a park without a PR is
+    also refused before any write, since releasing it would land locally.
+    `source` is `human` for --babysit, `supervisor` for new PR activity."""
     return _release_parked(
         conn, ticket_id, "babysit", note,
         "sent back to the babysitter; the next claim resumes the candidate"
@@ -391,6 +380,9 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
         # is the operator's, written once the ending is stamped.
         conn.execute("UPDATE runs SET resumePhase = ? WHERE id = ?",
                      (APPROVED_RESUME_PHASE, last_run_id))
+        if action == "babysit":
+            conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
+                         (ticket_id,))
         walk_ticket(conn, ticket_id, "ready")
     return last_run_id
 

@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ShippedTable } from "../src/components/ShippedTable";
 import { tagRows } from "../src/lib/shipped";
 import type { ShippedBody, ShippedRow } from "../src/lib/types";
-import { fixture } from "./harness";
+import { ShippedWithLedger } from "./ledger";
+import { fixture, settle } from "./harness";
 
 const HOST = { base: "http://writer:7710", project: "/srv/dev/writer" };
 const threeDays = await fixture<{ now: number; shipped: ShippedBody }>("shipped_three_days.json");
@@ -49,4 +50,58 @@ test("a row without pr_url ends in the short sha linking to the commit", () => {
   expect(link.getAttribute("href")).toBe(commit);
   expect(cell.textContent).toBe("3f9c2ab");
   expect(cell.querySelector("[data-pr]")).toBeNull();
+});
+
+
+test("Finished defaults to Merged; All shows every outcome and polls and pages with outcome=all", async () => {
+  const failed = { ...ROWS[0]!, id: 900, ticket: "KO-436", outcome: "failed", outcome_reason: "Verification failed\nFull diagnostic details", merge_sha: null };
+  const merged = { ...ROWS[1]!, outcome: "merged" };
+  const killed = { ...failed, id: 901, outcome: "killed", outcome_reason: "Stopped by operator" };
+  const rejected = { ...failed, id: 902, outcome: "rejected", outcome_reason: "Pull request closed" };
+  const asked: string[] = [];
+  const deps = { fetch: async (url: string) => {
+    asked.push(url);
+    if (url.includes("/runs/")) return new Response("not found", { status: 404 });
+    const all = new URL(url).searchParams.get("outcome") === "all";
+    return Response.json({ rows: all ? [failed, killed, rejected, merged] : [merged], limit: 2, next_before: all ? merged.id : null });
+  } };
+  const view = render(<ShippedWithLedger hosts={[HOST]} now={now} deps={deps} />);
+  await act(settle);
+  expect(screen.getByRole("heading", { name: "Finished" })).toBeTruthy();
+  expect(document.querySelector('[data-row="900"]')).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  await act(settle);
+  const row = document.querySelector('[data-row="900"]') as HTMLElement;
+  expect(within(row).getByText("failed")).toBeTruthy();
+  expect(within(row).getByText("Verification failed")).toBeTruthy();
+  expect(row.textContent).not.toContain("Full diagnostic details");
+  expect(within(document.querySelector('[data-row="901"]') as HTMLElement).getByText("killed")).toBeTruthy();
+  expect(within(document.querySelector('[data-row="902"]') as HTMLElement).getByText("rejected")).toBeTruthy();
+  fireEvent.click(row);
+  await act(settle);
+  expect(row.parentElement!.querySelector("[data-detail]")).not.toBeNull();
+  expect(asked).toContain(`${HOST.base}/runs/900`);
+  fireEvent.click(row);
+  expect(document.querySelector(`[data-row="${merged.id}"]`)).not.toBeNull();
+  asked.length = 0;
+  view.rerender(<ShippedWithLedger hosts={[HOST]} now={now} polls={1} deps={deps} />);
+  await act(settle);
+  expect(asked.length).toBeGreaterThan(0);
+  expect(asked.every(url => new URL(url).searchParams.get("outcome") === "all")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Load older" }));
+  await act(settle);
+  expect(asked.some(url => url.includes("before=") && url.includes("outcome=all"))).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Merged" }));
+  await act(settle);
+  expect(document.querySelector('[data-row="900"]')).toBeNull();
+  expect(document.querySelector(`[data-row="${merged.id}"]`)).not.toBeNull();
+});
+
+test("All has a Finished empty state", async () => {
+  const deps = { fetch: async () => Response.json({ rows: [], limit: 50, next_before: null }) };
+  render(<ShippedWithLedger hosts={[HOST]} now={now} deps={deps} />);
+  await act(settle);
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  await act(settle);
+  expect(screen.getByText("Nothing finished yet")).toBeTruthy();
 });

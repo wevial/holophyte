@@ -60,10 +60,8 @@ class MergeModePullRequestTests(MergeModeFixture):
     `MergeModeBabysitPassTests` (`test_babysit_pass.py`)."""
 
     def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
-        """Push, then create, in that order; the PR is titled `KO-n: TITLE`
-        and its body is the ticket body followed by the run's FINDINGS
-        entry; the babysitter's one pass finds no thread and green checks,
-        and under `approve = "human"` the run parks "ready to merge": the
+        """Push, then create with the ticket title and Summary stub.
+        With green checks and `approve = "human"`, park ready to merge: the
         URL `gh` printed is the run's `prUrl` and heads the ticket's
         question; main is untouched, the branch and worktree stay, and the
         run is parked alive in `awaiting_merge_approval` with its lease
@@ -72,10 +70,10 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.fake_route()
         provider = self.provider()
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=provider)
 
-        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
         # The seventh is the park reading the pull request once more, after
         # the pass's own writes, for the activity mark it records (KO-362);
@@ -107,8 +105,9 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
         body = self.pr_body.read_text()
         self.assertIn("The thing, added.", body)
-        self.assertIn("— KO-131", body)  # the FINDINGS entry heading
-        self.assertIn("estimate: 5 min · rounds: 1", body)
+        self.assertIn("could not be written", body)
+        self.assertIn("Linear: KO-131", body)
+        self.assertNotIn("## Acceptance criteria", body)
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertIn(BRANCH, self.branches())
         self.assertTrue((self.worktrees / "ko-131-add-a-thing").exists())
@@ -145,10 +144,10 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.fake_route(open_pr=adopted)
         provider = self.provider()
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=provider)
 
-        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
         # The lookup, between the push and where the create would be --
@@ -196,7 +195,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.git("remote", "set-url", "origin",
                  "https://github.com/example/repo/")
 
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
 
         calls = self.recorded()
@@ -218,7 +217,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()  # open_pr=None: no open pull request
 
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
 
         calls = self.recorded()
@@ -240,10 +239,9 @@ class MergeModePullRequestTests(MergeModeFixture):
                    " anything else.\n\nThe thing file is what changed.\n")
 
     def written_target(self):
-        """`pr_text = "written"` with a style line, and an `AGENTS.md` on
+        """A style line, and an `AGENTS.md` on
         main for the worktree to carry."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
-                       'pr_text = "written"\n'
                        'pr_style = "No ticket identifier in the title."\n')
         (self.target / "AGENTS.md").write_text(self.AGENTS_MD)
         self.git("add", "-A")
@@ -261,7 +259,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         claimed and merged in the same pass."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         self.assertEqual(self.question().split("\n")[0],
                          f"PR open: {self.URL}")
@@ -283,7 +281,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             [("KO-131", "blocked_on_operator"), ("KO-132", "merged")])
 
     def test_a_written_pr_takes_the_turns_title_and_body(self):
-        """`pr_text = "written"`: after the approval one more implementer
+        """After the approval one more implementer
         turn is given the diff, the ticket, the repository's `AGENTS.md`
         and the style line; the PR is created with the title it answered
         and a body ending with the Linear line, with no FINDINGS entry."""
@@ -321,9 +319,9 @@ class MergeModePullRequestTests(MergeModeFixture):
             self.read("SELECT phase, prUrl FROM runs"),
             [("awaiting_merge_approval", self.URL)])
 
-    def test_a_reply_without_a_title_falls_back_to_the_ticket_form(self):
+    def test_a_reply_without_a_title_falls_back_to_the_stub(self):
         """No `TITLE:` line: the PR is still opened, titled `KO-n: TITLE`
-        with the ticket body and the FINDINGS entry, and one printed line
+        with a Summary stub and the Linear link, and one printed line
         says the written text was refused."""
         provider = self.written_target()
 
@@ -338,8 +336,10 @@ class MergeModePullRequestTests(MergeModeFixture):
             f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
             " --title KO-131: add a thing --body-file -"])
         body = self.pr_body.read_text()
-        self.assertIn("The thing, added.", body)
-        self.assertIn("\u2014 KO-131", body)
+        self.assertEqual(body.splitlines()[0], "The thing, added.")
+        self.assertIn("could not be written", body)
+        self.assertIn("Linear: KO-131 (https://linear.app/example/issue/KO-131/", body)
+        self.assertNotIn("## Acceptance criteria", body)
         refused = [line for line in out.splitlines()
                    if "written PR text refused" in line]
         self.assertEqual(len(refused), 1, out)
@@ -404,7 +404,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\npr_merge_method = "squash"\n')
         self.fake_route()
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=self.provider())
 
         self.assertEqual(self.api_calls()[-1],
@@ -437,7 +437,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             f"    open({str(samples)!r}, 'a').write('%s %s\\n' % row)\n")
         self.fake_route(push_sh=f"  {sys.executable} -c {shlex.quote(sampler)}")
 
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
 
         seen = [line.split() for line in samples.read_text().splitlines()]
@@ -462,10 +462,10 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.fake_route()
         provider = self.provider()
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=provider)
 
-        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
         self.assertEqual(self.api_calls(),
                          [("state", {"owner": "example", "name": "repo",
                                      "number": 7, "after": None}),
@@ -507,7 +507,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         the bare branch (`force` for a rewritten history)."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.NIT]), self.pr_state()])
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   Reply("THREAD 1: DECLINE -- a naming preference"),
                   provider=self.provider())
         approved = self.git("rev-parse", BRANCH).strip()
@@ -633,7 +633,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         no push, no local merge, main untouched."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         approved = self.git("rev-parse", BRANCH).strip()
         self.calls.unlink()
@@ -667,7 +667,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         parks again on the same URL."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(self.tgt, "KO-131", "bots are done",
                                        out=io.StringIO())
@@ -732,7 +732,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         text appended after the `[merge]` table."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + extra)
         self.fake_route()
-        self.loop(Commit("the scripted work"), APPROVE,
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         self.assertEqual(self.read("SELECT phase, prUrl FROM runs"),
                          [("awaiting_merge_approval", self.URL)])
@@ -1072,7 +1072,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(push_exit=1)
 
-        self.loop(Commit("the scripted work"), APPROVE)
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""))
 
         self.assertEqual(self.recorded(), [f"git push origin {BRANCH}"])
         self.assertFalse(self.pr_body.exists())

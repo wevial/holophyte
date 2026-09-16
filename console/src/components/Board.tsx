@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { columns, type BoardCard } from "../lib/board";
 import type { HostRecord } from "../lib/hosts";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
-import { groupByDay, medianRounds, withinDays } from "../lib/shipped";
+import { groupByDay, medianRounds, mergedRows, withinDays } from "../lib/shipped";
 import { useBoard } from "../hooks/useBoard";
 import type { ShippedState } from "../hooks/useShipped";
 import { BoardColumn } from "./BoardColumn";
@@ -70,7 +70,7 @@ export function Board({
   // poll; the card as opened when the poll has since dropped it.
   const openCard = open == null ? null : (board.cards.find((card) => card.key === open.key) ?? open);
   const openHost = open == null ? null : (hosts.find((host) => open.key.startsWith(`${host.base}#`)) ?? null);
-  const today = withinDays(groupByDay(shipped.rows, now, tz), 1);
+  const today = withinDays(groupByDay(mergedRows(shipped.rows), now, tz), 1);
   const todayRows = today.flatMap((group) => group.rows);
   const median = medianRounds(todayRows);
   return (
