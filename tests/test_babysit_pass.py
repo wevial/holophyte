@@ -284,7 +284,7 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
         self.fake_route(states=[self.pr_state([self.DEFECT])])
         failed = Idle(holophyte.agents.ImplementerOutput("fetch failed", 1))
         with patch("holophyte.loop.sleep") as nap:
-            fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 Reply("THREAD 1: ADDRESS -- a real crash"),
                                 failed, failed, provider=self.provider())
         nap.assert_called_once_with(30)
