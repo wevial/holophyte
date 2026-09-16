@@ -1,15 +1,4 @@
-"""Reading a pull request's state, out of `holophyte.pr` (KO-426).
-
-`holophyte.pr` keeps `[merge] mode = "pr"`'s writers -- the route check,
-the push, the open and the merge -- and the `gh`/API transport. This
-module is the readers: `pull_status()`, the reconcile's one read of a
-parked run's pull request; `pr_state()`, the babysitter's read of its
-unresolved threads and the head's checks folded by `fold_checks()`; and
-`parse_pr_url()`, the `PullRequest` a run's `prUrl` names. The transport
-and the shapes (`PullRequest`, `Thread`, `Comment`, `PrState`) are
-imported back from `holophyte.pr` at module top; `pr.py` reaches
-`parse_pr_url()` lazily, so the module-top import runs one way.
-"""
+"""Reading a pull request's state, out of `holophyte.pr` (KO-426)."""
 import contextlib
 import re
 from dataclasses import dataclass
@@ -57,6 +46,9 @@ STATE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
+        nodes { ... on ClosedEvent { actor { login } } }
+      }
       state merged headRefOid mergeable mergeCommit { oid } updatedAt
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       reviewThreads(first: %d, after: $after) {
@@ -102,6 +94,9 @@ PULL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
+        nodes { ... on ClosedEvent { actor { login } } }
+      }
       state merged mergeable mergeCommit { oid } mergedBy { login }
       updatedAt reviewThreads { totalCount }
       reviewDecision
@@ -130,6 +125,7 @@ class PullStatus:
 
     merged: bool
     closed: bool
+    closed_by: str | None = None
     merge_sha: str | None = None
     merged_by: str | None = None
     updated_at: str | None = None
@@ -166,6 +162,7 @@ def pull_status(target, pull):
     decision = node.get("reviewDecision")
     return PullStatus(merged=bool(node.get("merged")),
                       closed=node.get("state") == "CLOSED",
+                   closed_by=_closed_by(node),
                       merge_sha=merge.get("oid") if isinstance(merge, dict)
                       else None,
                       merged_by=by.get("login") if isinstance(by, dict)
@@ -220,18 +217,7 @@ def parse_pr_url(url):
 def pr_state(target, pull):
     """One read of the pull request: its unresolved review threads, the
     head commit's check rollup, its `mergeable` answer, its `updatedAt`,
-    and whether it is already merged or closed.
-
-    One GraphQL query per page of threads (`THREADS_PAGE`), walked to the
-    last page before anything is decided: a PR whose first page is all
-    resolved and whose open thread is on the next must not read as quiet.
-    The head, the checks and the merged/closed answer are the first
-    page's, so the threads and the checks are the same moment's. A
-    thread's `replies` carry the rest of the conversation, read to the
-    last page of comments (`COMMENTS_PAGE` per read) so a long thread's
-    latest word is not dropped; a thread with no comments is skipped.
-    Resolved threads are not returned: the babysitter answers what is
-    open."""
+    and whether it is already merged or closed."""
     first_page = node = _pull_request_page(target, pull, None)
     threads = []
     while True:
@@ -443,7 +429,15 @@ def _state_of(node, threads, runs, required):
                    merge_sha=merge.get("oid") if isinstance(merge, dict)
                    else None,
                    closed=node.get("state") == "CLOSED",
+                   closed_by=_closed_by(node),
                    mergeable=mergeable
                    if isinstance(mergeable, str) and mergeable
                    else "UNKNOWN",
                    updated_at=_iso_ms(node.get("updatedAt")))
+
+
+def _closed_by(node):
+    """The latest closure's actor; deleted accounts remain unknown."""
+    events = (node.get("timelineItems") or {}).get("nodes") or []
+    return ((events[-1].get("actor") or {}).get("login")
+            if events else None)

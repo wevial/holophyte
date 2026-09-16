@@ -145,9 +145,9 @@ def _reconcile_mirror(conn, project, provider):
 
 
 # How the ticket's question begins once its pull request was closed on
-# GitHub without merging: the run stays parked, and the skip line reads
+# GitHub without merging: the run ends rejected, and the skip line reads
 # this rather than the `--approve` that would merge nothing.
-PR_CLOSED_QUESTION = "PR closed without merge: "
+PR_CLOSED_QUESTION = "rejected: "
 
 
 def _reconcile_pull_requests(target, conn, project, provider):
@@ -165,8 +165,8 @@ def _reconcile_pull_requests(target, conn, project, provider):
     `awaiting_merge_approval`. One `pr_status.pull_status()` read per ticket. A
     merged pull request is that approval: `_land_github_merge()` ends the
     run merged with the merge commit's sha and walks the ticket to
-    `merged`, Done on the board. One closed without merging leaves the run
-    parked and makes the question `PR closed without merge: URL`
+    `merged`, Done on the board. One closed without merging ends the run
+    rejected and makes the question `rejected: URL closed by LOGIN`
     (`_note_closed_pr()`); an open one changes nothing. A GitHub error is
     one printed line for that ticket and the pass goes on to the next, as
     the mirror reconcile skips a board that cannot be asked: this lands
@@ -205,7 +205,7 @@ def _reconcile_pull_requests(target, conn, project, provider):
         if status.merged:
             _land_github_merge(target, conn, provider, ticket, pull, status)
         elif status.closed:
-            _note_closed_pr(conn, ticket, pull)
+            _note_closed_pr(target, conn, provider, ticket, pull, status)
         elif not low:
             # A babysit round is many reads and writes: not on a budget
             # that is already low.
@@ -367,33 +367,17 @@ def _parked_phase(conn, run_id):
 
 
 def _parked_pull_request(conn, ticket_id):
-    """The `prUrl` of the ticket's newest run when that run is parked
-    awaiting merge approval on a pull request, None otherwise: the ticket
-    the pull request reconcile owns and the mirror reconcile leaves."""
+    """The PR whose parked or rejected run owns the mirror status."""
     row = conn.execute(
         "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
-        " WHERE t.id = ? AND r.phase = 'awaiting_merge_approval'"
+        " WHERE t.id = ? AND r.phase IN ('awaiting_merge_approval', 'rejected')"
         " AND r.prUrl IS NOT NULL", (ticket_id,)).fetchone()
     return None if row is None else row[0]
 
 
 def _land_github_merge(target, conn, provider, ticket, pull, status):
     """Close out the run parked on `pull` as merged: a person merged it on
-    GitHub, and that is the `--approve` the park was waiting for.
-
-    One transaction, record before acting: the ticket and the run are
-    re-read under the write lock and must still be where the open read saw
-    them -- parked, no live run, the same newest run -- or another process
-    moved them while GitHub was being asked and nothing is written. Then
-    an `approve` intervention naming who merged it, the run released
-    `merged` with the pull request's merge commit as `mergeSha`
-    (`awaiting_merge_approval -> done`), the question cleared and the
-    ticket walked to `merged`. Outside the lock: the board's Done, the
-    merged ledger line with the merger's login, the local worktree and
-    branch removed as `_merge_pr()` removes them after an API merge (a
-    refusal is debris, not a failure), and the findings window rendered so
-    the run appears in Shipped.
-    """
+    GitHub, and that is the `--approve` the park was waiting for."""
     identifier, run_id = ticket.linearIdentifier, ticket.runId
     who = status.merged_by or "someone"
     sha = status.merge_sha
@@ -432,25 +416,39 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
           f" as {short}; run {run_id} closed out as merged")
 
 
-def _note_closed_pr(conn, ticket, pull):
-    """The pull request was closed on GitHub without merging: the run stays
-    parked -- the branch and its candidate are still a person's to decide
-    on -- and the ticket's question becomes `PR closed without merge: URL`,
-    which the skip line then reads. Idempotent: a question already saying
-    so is left as it is, so the pass after this one writes and prints
-    nothing. The run's event stream carries the change first."""
-    question = f"{PR_CLOSED_QUESTION}{pull.url}"
-    if (ticket.blockedQuestion or "").startswith(question):
-        return
+def _note_closed_pr(target, conn, provider, ticket, pull, status):
+    """Reject only the same parked candidate that the GitHub read saw."""
     with store.transaction(conn):
-        store.record_event(conn, ticket.runId, "pull_request",
-                           f"{pull.url} was closed on GitHub without"
-                           " merging; the run stays parked for a person")
-        conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?"
-                     " AND status = 'blocked_on_operator'",
-                     (question, ticket.id))
-    print(f"[holo2] {ticket.linearIdentifier}: {pull.url} was closed on"
-          " GitHub without merging; the run stays parked")
+        current = store.read.ticket_by_id(conn, ticket.id)
+        if current is None or current.status != "blocked_on_operator" \
+                or current.lastRunId != ticket.runId \
+                or current.activeRunId is not None \
+                or _parked_phase(conn, ticket.runId) is None:
+            return
+        branch, sha = conn.execute(
+            "SELECT branch, candidateSha FROM runs WHERE id = ?",
+            (ticket.runId,)).fetchone()
+        _reject_pr(conn, ticket.runId, pull, status.closed_by, branch, sha)
+    from holophyte.board import release_lease_label
+    release_lease_label(target, conn, ticket.id, provider, ticket.runId)
+
+
+def _reject_pr(conn, run_id, pull, who, branch, sha):
+    """Record the human decision and preserve the candidate and board state."""
+    who = who or "unknown"
+    question = f"{PR_CLOSED_QUESTION}{pull.url} closed by {who}"
+    reason = (f"closed on GitHub by {who} without merging;"
+              f" branch {branch} preserved at {sha}")
+    with store.transaction(conn):
+        store.record_event(conn, run_id, "pull_request", reason)
+        store.release(conn, run_id, "rejected", reason)
+        ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+        store.walk_ticket(conn, ticket_id, "blocked_on_operator")
+        conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                     (question, ticket_id))
+        conn.execute("UPDATE runs SET candidateSha = ?, prUrl = ? WHERE id = ?",
+                     (sha, pull.url, run_id))
+    print(f"[holo2] {question}; {reason}")
 
 
 def _pr_seen(target, pull):

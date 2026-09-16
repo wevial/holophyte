@@ -1,14 +1,4 @@
-"""`holophyte.babysitter`'s pass under `[merge] mode = "pr"`, end to end.
-
-The checks the pass waits on and how it judges them, the verdicts over
-threads, the fix round and its review, the round cap, the head-vs-candidate
-check and the merge gate the pass runs before the API merge.
-`MergeModeFixture` (`loop_fixture.py`) is the shared base; the open, park,
-resume and merge of the pull request itself live in `test_pullrequest.py`,
-and the parser's edges in `test_babysitter.py`.
-
-Run: python3 -m unittest discover -s tests -p 'test_babysit_pass*' -v
-"""
+"""`holophyte.babysitter`'s pass under `[merge] mode = "pr"`, end to end."""
 from __future__ import annotations
 
 import io
@@ -51,6 +41,21 @@ class MergeModeBabysitPassTests(MergeModeFixture):
     """The `[merge] mode = "pr"` tests that judge and fix the pull
     request's threads and checks; the open, park, resume and merge are
     `MergeModePullRequestTests` (`test_pullrequest.py`)."""
+
+    def test_closed_pr_is_rejected_mid_pass(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        state = self.pr_state()
+        node = state["data"]["repository"]["pullRequest"]
+        node.update(state="CLOSED", timelineItems={"nodes": [
+            {"actor": {"login": "alice"}}]})
+        self.fake_route(states=[state])
+        self.loop(Commit("the scripted work"), APPROVE,
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("rejected", "rejected")])
+        self.assertTrue(self.read("SELECT blockedQuestion FROM tickets")
+                        [0][0].startswith("rejected:"))
+        self.assertIsNone(self.rc)
 
     def test_pending_checks_are_waited_for_before_the_verdict(self):
         """A pass with no thread and pending checks reads the PR again
@@ -467,12 +472,7 @@ class MergeModeBabysitPassTests(MergeModeFixture):
 
     def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
         """Acceptance: two unresolved threads, a clear defect and a style
-        nit, and green checks. One pass: the adjudicator addresses the one
-        and declines the other; the defect gets a fix commit, pushed, a
-        reply opening `---- Comment by MODEL ----` and naming the sha, and
-        is resolved; the nit gets a decline reply and stays open; the pass
-        is a `reviewRounds` row routed `github:LOGIN`; and the run parks
-        with the nit listed in the ticket's question."""
+        nit, and green checks."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT, self.NIT])])
         provider = self.provider()
