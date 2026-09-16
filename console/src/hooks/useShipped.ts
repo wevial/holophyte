@@ -1,17 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { HostRecord } from "../lib/hosts";
 import { defaultPollDeps, fetchJson, type Fetch } from "../lib/poll";
-import { mergeRows, tagRows } from "../lib/shipped";
+import { mergeRows, tagRows, shippedUrl, type OutcomeFilter } from "../lib/shipped";
 import type { ShippedBody, ShippedRow } from "../lib/types";
 
 /** Rows per `/shipped` page. */
 export const SHIPPED_PAGE = 50;
 
-/** One `/shipped` page from `base`; `before` asks for the rows that ended
- *  before that run. */
-export function shippedUrl(base: string, limit: number, before?: number): string {
-  return `${base}/shipped?limit=${limit}${before == null ? "" : `&before=${before}`}`;
-}
+export { shippedUrl } from "../lib/shipped";
 
 /** Whether the daemon has older rows than the page: its `next_before`
  *  when it says, else a full page. */
@@ -40,6 +36,8 @@ export function concatLedgers(ledgers: Record<string, Ledger>, bases: string[]):
 }
 
 export interface ShippedState {
+  outcome: OutcomeFilter;
+  setOutcome: (outcome: OutcomeFilter) => void;
   /** Every host's rows as one ledger, newest first. */
   rows: ShippedRow[];
   /** Whether any host has a page older than what it has shown. */
@@ -69,7 +67,10 @@ export function useShipped(
 ): ShippedState {
   const fetchRef = useRef(deps.fetch);
   fetchRef.current = deps.fetch;
-  const [ledgers, setLedgers] = useState<Record<string, Ledger>>({});
+  const [outcome, setOutcome] = useState<OutcomeFilter>("merged");
+  // Each filter owns its rows and cursor, including late pagination replies.
+  const [allLedgers, setLedgers] = useState<Record<string, Record<string, Ledger>>>({});
+  const ledgers = allLedgers[outcome] ?? {};
   const [paging, setPaging] = useState(false);
   const bases = hosts.map((host) => host.base);
   // The project is part of the key: a host whose `/status` first names it
@@ -77,7 +78,7 @@ export function useShipped(
   const key = hosts.map((host) => `${host.base}\t${host.project ?? ""}`).join("\n");
 
   const update = (base: string, change: (previous: Ledger) => Ledger) =>
-    setLedgers((all) => ({ ...all, [base]: change(all[base] ?? EMPTY) }));
+    setLedgers((all) => ({ ...all, [outcome]: { ...all[outcome], [base]: change(all[outcome]?.[base] ?? EMPTY) } }));
 
   useEffect(() => {
     let alive = true;
@@ -85,7 +86,7 @@ export function useShipped(
       const [base = "", project = ""] = line.split("\t");
       void (async () => {
         try {
-          const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit));
+          const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit, undefined, outcome));
           if (!alive) return;
           update(base, (previous) => ({
             rows: mergeRows(previous.rows, tagRows({ base, project: project || null }, body.rows)),
@@ -105,7 +106,7 @@ export function useShipped(
     return () => {
       alive = false;
     };
-  }, [key, limit, polls]);
+  }, [key, limit, polls, outcome]);
 
   const loadOlder = async () => {
     if (paging) return;
@@ -118,7 +119,7 @@ export function useShipped(
         const oldest = ledger.rows.reduce((least, row) => Math.min(least, row.id), Number.POSITIVE_INFINITY);
         if (!Number.isFinite(oldest)) return;
         try {
-          const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit, oldest));
+          const body = await fetchJson<ShippedBody>(fetchRef.current, shippedUrl(base, limit, oldest, outcome));
           update(base, (previous) => ({
             rows: mergeRows(previous.rows, tagRows(host, body.rows)),
             more: hasMore(body),
@@ -135,6 +136,8 @@ export function useShipped(
   };
 
   return {
+    outcome,
+    setOutcome,
     rows: concatLedgers(ledgers, bases),
     more: bases.some((base) => ledgers[base]?.more),
     errors: bases.flatMap((base) => (ledgers[base]?.error ? [ledgers[base]!.error!] : [])),

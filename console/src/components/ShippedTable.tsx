@@ -2,6 +2,8 @@ import { useState, type KeyboardEvent } from "react";
 import { formatClock } from "../lib/format";
 import type { Fetch } from "../lib/poll";
 import {
+  mergedRows,
+  type OutcomeFilter,
   boxFill,
   boxRatio,
   commitLink,
@@ -15,6 +17,7 @@ import {
   type DayGroup,
 } from "../lib/shipped";
 import type { ShippedRow } from "../lib/types";
+import { PhasePill } from "./PhasePill";
 import { RunDetail } from "./RunDetail";
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -135,7 +138,12 @@ function Row({
       >
         <span className="font-mono text-[12px] text-muted">{formatClock(row.ended_ms)}</span>
         <span className="truncate font-mono text-[13px] font-semibold text-ink">{row.ticket}</span>
-        <span className="truncate text-[13px] text-body">{row.title ?? ""}</span>
+        <span className="min-w-0 text-[13px] text-body">
+          <span className="flex items-center gap-2"><span className="truncate">{row.title ?? ""}</span><PhasePill phase={row.outcome ?? "merged"} /></span>
+          {row.outcome && row.outcome !== "merged" && row.outcome_reason && (
+            <span className="block truncate text-[12px] text-muted">{row.outcome_reason.split(/\r?\n/, 1)[0]}</span>
+          )}
+        </span>
         <span className="truncate text-[13px] text-muted">{row.project}</span>
         <span className="font-mono text-[13px] text-body">{row.rounds}</span>
         <span className="font-mono text-[13px] text-body">{row.findings}</span>
@@ -149,11 +157,11 @@ function Row({
   );
 }
 
-function DayHeader({ group }: { group: DayGroup }) {
+function DayHeader({ group, outcome }: { group: DayGroup; outcome: OutcomeFilter }) {
   return (
     <div data-day-header className="flex items-baseline gap-2 border-t border-line-faint bg-card-header px-4 py-2">
       <span className="text-[12px] font-semibold text-ink">{group.label}</span>
-      <span className="font-mono text-[11px] text-faint">{plural(group.rows.length, "merge")}</span>
+      <span className="font-mono text-[11px] text-faint">{plural(group.rows.length, outcome === "all" ? "run" : "merge")}</span>
     </div>
   );
 }
@@ -173,8 +181,10 @@ export function ShippedTable({
   deps,
   days,
   tz,
+  outcome = "merged",
 }: {
   rows: ShippedRow[];
+  outcome?: OutcomeFilter;
   now: number;
   polls?: number;
   deps?: { fetch: Fetch };
@@ -182,19 +192,19 @@ export function ShippedTable({
   tz?: string;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const grouped = groupByDay(rows, now, tz);
+  const grouped = groupByDay(outcome === "all" ? rows : mergedRows(rows), now, tz);
   const groups = days == null ? grouped : withinDays(grouped, days);
   return (
     <div className="overflow-hidden rounded-[10px] border border-line bg-card shadow-card">
       <div className={`${GRID} py-2 text-[11px] font-semibold uppercase tracking-[.08em] text-faint`}>
         <span aria-hidden="true" />
         {COLUMNS.map((column) => (
-          <span key={column}>{column}</span>
+          <span key={column}>{column === "Merged" && outcome === "all" ? "Ended" : column}</span>
         ))}
       </div>
       {groups.map((group) => (
         <div key={group.key} data-day={group.key}>
-          <DayHeader group={group} />
+          <DayHeader group={group} outcome={outcome} />
           {group.rows.map((row) => {
             const key = `${row.daemon ?? ""}#${row.id}`;
             return (

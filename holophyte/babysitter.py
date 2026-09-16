@@ -713,7 +713,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     if by_verdict["ADDRESS"]:
         sha = _fix_threads(target, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
-                           model, ticket, verify_cmd, contracts, budget_min)
+                           model, ticket, verify_cmd, contracts, budget_min,
+                           pass_no)
     for _, thread, reason in by_verdict["DECLINE"]:
         _post(target, conn, run_id, beat_s, pull, thread,
               babysitter.declined_reply(model, reason), resolve=False)
@@ -759,17 +760,27 @@ def _verdicts_by_kind(threads, judged, parsed):
 
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
-                 contracts, budget_min):
+                 contracts, budget_min, pass_no):
     """The fix round for the addressed threads, the push, then a reply on
     each and a resolve on each bot's; the fixed candidate's sha."""
-    from holophyte.loop import _candidate_drift, _timed, sh
+    from holophyte.loop import (
+        _candidate_drift,
+        _record_implementer_output,
+        _timed,
+        sh,
+    )
+    from holophyte.redact import known_secrets
     fixes, timed_out = _timed(target, conn, run_id, beat_s, wt, budget_min,
                               babysitter.fix_brief(pull, addressed, ticket))
-    if timed_out or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
+    fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if fixed == sha:
+        _record_implementer_output(conn, run_id,
+                                   f"fix round {pass_no}: {fixes}",
+                                   known_secrets(target.config()))
+    if timed_out or fixed == sha:
         raise RunFailure(f"fix round for {pull.url} timed out or made no"
                          f" progress; branch {branch} preserved at"
                          f" {sha[:12]}")
-    fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # The verify runs over the working tree, so it vouches for the
     # commit only when the tree is that commit: a fix half committed and
     # half left in the tree would verify green and push a commit that

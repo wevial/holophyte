@@ -159,14 +159,14 @@ test("the band hands each row its own daemon: the fixture's status without actio
   const { seen, fetchImpl } = fakeFetch({ ok: true, detail: "done" });
   render(<NeedsYou hosts={[hostOf(allKinds.status, allKinds.attention, BASE)]} project="all" now={allKinds.status.now} actionFetch={fetchImpl} />);
   for (const row of screen.getAllByRole("listitem")) {
-    for (const b of within(row).getAllByRole("button") as HTMLButtonElement[]) expect(b.disabled).toBe(true);
+    for (const b of Array.from(row.querySelectorAll("button")) as HTMLButtonElement[]) expect(b.disabled).toBe(true);
   }
   cleanup();
 
   const status = { ...allKinds.status, actions: true };
   render(<NeedsYou hosts={[hostOf(status, allKinds.attention, BASE)]} project="all" now={allKinds.status.now} actionFetch={fetchImpl} />);
   const states = screen.getAllByRole("listitem").flatMap((row) =>
-    (within(row).getAllByRole("button") as HTMLButtonElement[]).map((b) => [b.textContent, b.disabled]),
+    (Array.from(row.querySelectorAll("button")) as HTMLButtonElement[]).map((b) => [b.textContent, b.disabled]),
   );
   expect(states).toEqual([
     ["Requeue", false],
@@ -289,4 +289,54 @@ test("a pr_open row without pr draws no fact chips and keeps the PR link after t
   const body = within(row!).getByText(/^review requested from a coworker/).closest("p")!;
   expect(body.textContent).toMatch(/^review requested from a coworker[\s\S]*PR #2170$/);
   expect(body.lastElementChild!.querySelector("a[data-pr]")).toBeTruthy();
+});
+
+
+test("a failed Needs You row opens its named run card with the frozen time box and timeline", async () => {
+  const now = allKinds.status.now;
+  const item = { kind: "failed", level: "attention", run: 436, ticket: "KO-436", reason: "Verification failed", ended_ms: now };
+  const asked: string[] = [];
+  const fetchImpl: Fetch = async url => {
+    asked.push(url);
+    if (url.endsWith("/runs/436")) return Response.json({
+      run: { id: 436, ticket: "KO-436", title: "Failed run", phase: "done", attempt: 1,
+        started_ms: now - 600000, ended_ms: now, outcome: "failed", time_box_ms: 1800000,
+        branch: "task/ko-436", host: "writer", heartbeat_age_ms: 0 },
+      rounds: [{ round: 1, started_ms: now - 300000, ended_ms: now, verdict: "changes_requested", findings: [] }], events: [],
+    });
+    return new Response("not found", { status: 404 });
+  };
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { ...allKinds.attention, items: [item] }, BASE)]} project="all" now={now} actionFetch={fetchImpl} />);
+  fireEvent.click(screen.getByText("Verification failed"));
+  await act(settle);
+  expect(asked).toContain(`${BASE}/runs/436`);
+  const card = screen.getByRole("article", { name: "run 436" });
+  expect(within(card).getByText(/Round 1 of/)).toBeTruthy();
+  expect(card.querySelector("[data-timeline]")).not.toBeNull();
+  expect(card.querySelector("[data-box]")!.textContent).toBe("20m left in box");
+  fireEvent.keyDown(document.querySelector('[aria-expanded="true"]')!, { key: "Enter" });
+  expect(screen.queryByRole("article", { name: "run 436" })).toBeNull();
+});
+
+test("a failed ticket's attempts affordance opens only its attempts card", async () => {
+  const now = allKinds.status.now;
+  const items = [435, 436].map((run, index) => ({
+    kind: "failed", level: "attention", run, ticket: "KO-436",
+    reason: `Verification failed on attempt ${index + 1}`, ended_ms: now - (1 - index) * 60000,
+  }));
+  const { seen, fetchImpl } = fakeFetch(() => new Response("not found", { status: 404 }));
+  render(<NeedsYou hosts={[hostOf(allKinds.status, { ...allKinds.attention, items }, BASE)]} project="all" now={now} actionFetch={fetchImpl} />);
+  expect(screen.queryByText("run ▾")).toBeNull();
+  fireEvent.click(screen.getByText("attempts ▾"));
+  await act(settle);
+  const card = document.querySelector("[data-attempts-card]")!;
+  expect(card).not.toBeNull();
+  expect(within(card as HTMLElement).getAllByRole("listitem").map(row => row.textContent)).toEqual([
+    "run #435 · Verification failed on attempt 1",
+    "run #436 · Verification failed on attempt 2",
+  ]);
+  expect(seen).toEqual([]);
+  expect(screen.queryByRole("article")).toBeNull();
+  fireEvent.click(screen.getByText("hide attempts ▴"));
+  expect(document.querySelector("[data-attempts-card]")).toBeNull();
 });
