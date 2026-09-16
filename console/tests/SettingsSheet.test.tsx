@@ -125,6 +125,53 @@ test("workers changed to 3 and Save clicked: the PUT body is a patch of that one
   expect((within(dialog).getByRole("button", { name: "Restart supervisor" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
+test("pull-request controls show loaded values and save their dotted keys together", async () => {
+  const { fetch, puts } = daemon(TEXT, {
+    ...VALUES,
+    merge: { human_threads: "park", pr_style: "Keep it brief.", pr_rounds: 5, pr_poll_sec: 180, pr_quiet_sec: 300 },
+    board: { label: "ready" },
+  });
+  await open(editable, fetch);
+  const human = screen.getByRole("combobox", { name: /^Human threads/ }) as HTMLSelectElement;
+  expect(Array.from(human.options, (option) => option.value)).toEqual(["", "park", "act"]);
+  expect(human.value).toBe("park");
+  const style = screen.getByRole("textbox", { name: /^PR style/ }) as HTMLInputElement;
+  expect(style.type).toBe("text");
+  expect(style.value).toBe("Keep it brief.");
+  for (const [label, value] of [["PR rounds", "5"], ["PR poll seconds", "180"], ["PR quiet seconds", "300"]]) {
+    expect((screen.getByRole("spinbutton", { name: new RegExp(`^${label}`) }) as HTMLInputElement).value).toBe(value);
+  }
+  expect((screen.getByRole("textbox", { name: /^Board label/ }) as HTMLInputElement).value).toBe("ready");
+  fireEvent.change(human, { target: { value: "act" } });
+  fireEvent.change(style, { target: { value: "Explain the user impact." } });
+  fireEvent.change(field("merge.pr_rounds"), { target: { value: "3" } });
+  fireEvent.change(field("merge.pr_poll_sec"), { target: { value: "60" } });
+  fireEvent.change(field("merge.pr_quiet_sec"), { target: { value: "120" } });
+  fireEvent.change(field("board.label"), { target: { value: "holophyte" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await act(settle);
+  expect(puts).toEqual([{ patch: {
+    "merge.human_threads": "act",
+    "merge.pr_style": "Explain the user impact.",
+    "merge.pr_rounds": 3,
+    "merge.pr_poll_sec": 60,
+    "merge.pr_quiet_sec": 120,
+    "board.label": "holophyte",
+  } }]);
+});
+
+test("PR quiet seconds rejects a fractional edit instead of saving a truncated integer", async () => {
+  const { fetch, puts } = daemon(TEXT, { ...VALUES, merge: { pr_quiet_sec: 300 } });
+  await open(editable, fetch);
+  fireEvent.change(field("merge.pr_quiet_sec"), { target: { value: "120.5" } });
+  const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.click(save);
+  await act(settle);
+  expect(puts).toEqual([]);
+  expect(field("merge.pr_quiet_sec").value).toBe("300");
+});
+
 test("the raw tab edited and Save clicked: the PUT body carries text and no patch, even after a field edit", async () => {
   const { fetch, puts } = daemon(TEXT, VALUES);
   await open(editable, fetch);
@@ -213,7 +260,7 @@ test("a daemon whose /status lacks config_edit opens the sheet read-only, every 
   expect(dialog.querySelector("[data-config-edit-off]")!.textContent).toBe(CONFIG_EDIT_OFF);
   expect(CONFIG_EDIT_OFF).toContain("[serve] config_edit");
   const controls = Array.from(dialog.querySelectorAll("[data-field]")) as (HTMLInputElement | HTMLSelectElement)[];
-  expect(controls.length).toBe(9);
+  expect(controls.length).toBe(15);
   for (const control of controls) {
     expect(control instanceof HTMLSelectElement ? control.disabled : control.readOnly).toBe(true);
   }
