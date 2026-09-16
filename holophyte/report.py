@@ -1,19 +1,10 @@
-"""The estimate-vs-actual report: ended runs as an aligned table.
+"""Live runs and the finished estimate-vs-actual table, read-only.
 
-One tuple per ended run, the summary line with the mean and median ratio,
-the padded lines an operator reads, and the two formatting helpers the
-report shares with the supervisor's liveness line and the sweep table --
-`format_age` for a heartbeat's age, `host_name` for a `host` column and
-`host_label` for that column as a public rendering shows it.
-Read-only: `store.read` and the standard library, and nothing that writes,
-claims or calls Linear. Opening the store is `report()`'s job in
-`holophyte.operator` and `supervisor_liveness_line()`'s in
-`holophyte.supervisor`.
-
-Fourth slice of the phase-2 module split; moved verbatim from `factory.py`,
-which imports back the names its remaining call sites use.
+The report shares age and host formatting with supervisor and sweep output.
+Opening the store belongs to the callers in operator and supervisor.
 """
 import statistics
+import time
 
 import store.read
 from holophyte.config_tables import report_config
@@ -30,32 +21,47 @@ REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome",
 REPORT_GAP = "  "
 
 
-def report_rows(conn):
-    """Every ended run, oldest first, as the report's own tuple.
+def live_rows(conn):
+    """Unfinished runs as (ticket, phase, started_at, heartbeat, pr_url).
+    Include every phase with no end timestamp, oldest claim first.
+    """
+    return conn.execute(
+        "SELECT t.linearIdentifier, r.phase, r.startedAt, r.lastHeartbeat,"
+        " r.prUrl FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.endedAt IS NULL ORDER BY r.startedAt").fetchall()
 
-    `(ticket, actual_min, estimate_min, ratio, rounds, outcome, host)`, with
-    `estimate` and `ratio` None when the run was claimed against no estimate
-    -- an older run, or a ticket Linear gave no points. None rather than zero
-    because "not comparable" is not a ratio of nothing, and the summary below
-    leaves those runs out of its averages instead of dragging them to 0.
-    `host` is the machine the run was claimed on, None for a row older than
-    the column: a store read from another machine says where each run ran.
+
+def live_lines(conn, now):
+    """An aligned in-flight block, with ages relative to epoch milliseconds."""
+    rows = live_rows(conn)
+    if not rows:
+        return ["in flight: none"]
+    table = [(ticket, phase, format_age(now - started),
+              format_age(now - heartbeat), url or "")
+             for ticket, phase, started, heartbeat, url in rows]
+    widths = [max(len(cell) for cell in column) for column in zip(*table)]
+    lines = []
+    for row in table:
+        cells = [cell.rjust(width) if i in (2, 3) else cell.ljust(width)
+                 for i, (cell, width) in enumerate(zip(row, widths))]
+        cells[3] = "hb " + cells[3]
+        lines.append(REPORT_GAP.join(cells).rstrip())
+    return ["in flight:"] + lines
+
+
+def report_rows(conn):
+    """Ended runs, oldest first: ticket, actual_min, estimate_min, ratio,
+    rounds, outcome, host. Missing estimates and ratios are None and excluded
+    from averages; a missing host marks a run older than that column.
     """
     return [row[:-2] for row in ended_rows(conn)]
 
 
 def ended_rows(conn):
-    """`report_rows()`'s tuple with the run's `endedAt` and `mergeSha`
-    appended: every ended run, oldest first, as `(ticket, actual_min,
-    estimate_min, ratio, rounds, outcome, host, ended_at, merge_sha)`.
+    """Report tuples with ended_at (epoch ms) and merge_sha appended.
 
-    The daemon's `/runs` reads this one -- a drawer saying "last merge KO-n
-    · 2h ago" needs to know *when*, which the terminal table never prints,
-    and a reviewer tracing a ticket to its commit needs the sha -- and
-    `report_rows()` drops the last two positions, so `--report`'s shape
-    stays what it was. `ended_at` is epoch milliseconds, never None here:
-    `ended_runs()` lists only runs with an end. `merge_sha` is the full
-    merge commit, None unless the run merged under a module that wrote it.
+    The daemon uses these to show when a run ended and link its merge;
+    report_rows() drops them to preserve the terminal table's shape.
     """
     rows = []
     for run in store.read.ended_runs(conn):
@@ -69,14 +75,7 @@ def ended_rows(conn):
 
 
 def report_summary(rows):
-    """The last line: how many runs, and how the ratios sit.
-
-    Mean and median together, because they answer different halves of the
-    calibration question -- the mean carries the one run that blew its budget,
-    the median says what a typical ticket costs -- and the early signal worth
-    watching (actuals running several times under estimate) is a claim about
-    the middle, not about the total.
-    """
+    """Run count and mean/median ratios, excluding runs with no estimate."""
     ratios = [row[3] for row in rows if row[3] is not None]
     if not ratios:
         return f"{len(rows)} runs · no estimates to compare against"
@@ -87,7 +86,7 @@ def report_summary(rows):
 
 
 def report_lines(conn, target=None):
-    """The whole report as lines: a header, one line per ended run, a summary.
+    """Live work, then the finished table and its summary, as lines.
 
     Columns are padded to the widest cell in them so the numbers line up in a
     terminal; the ticket, the outcome and the host read left, everything
@@ -95,9 +94,10 @@ def report_lines(conn, target=None):
     over nothing. `target` is where the `[report] host_label` comes from;
     without one the host column is the hostname the store holds.
     """
+    live = live_lines(conn, int(time.time() * 1000)) + [""]
     rows = report_rows(conn)
     if not rows:
-        return ["no completed runs yet"]
+        return live + ["no completed runs yet"]
     table = [REPORT_HEADERS]
     for ticket, actual, estimate, ratio, rounds, outcome, host in rows:
         table.append((
@@ -117,7 +117,7 @@ def report_lines(conn, target=None):
             for i, (cell, width) in enumerate(zip(row, widths))).rstrip()
         for row in table
     ]
-    return lines + [report_summary(rows)]
+    return live + lines + [report_summary(rows)]
 
 
 def format_age(ms):

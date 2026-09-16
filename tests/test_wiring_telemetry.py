@@ -288,7 +288,7 @@ class ReportTests(ReportStoreCase):
     def test_rejected_run_has_its_own_report_column(self):
         self.completed_run(1, actual_min=5, estimate_min=25, rounds=1,
                            outcome="rejected")
-        lines = holophyte.report.report_lines(self.conn)
+        lines = holophyte.report.report_lines(self.conn)[2:]
         row = dict(zip(lines[0].split(), lines[1].split()))
         self.assertEqual(row["outcome"], "rejected")
         self.assertEqual(row["rejected"], "1")
@@ -297,7 +297,7 @@ class ReportTests(ReportStoreCase):
     def test_a_line_per_run_with_its_ratio_and_a_summary(self):
         self.three_runs()
 
-        lines = holophyte.report.report_lines(self.conn)
+        lines = holophyte.report.report_lines(self.conn)[2:]
 
         # The host column is this machine's own name: the claim stamped it.
         host = socket.gethostname()
@@ -320,7 +320,7 @@ class ReportTests(ReportStoreCase):
         self.completed_run(4, actual_min=7, estimate_min=None, rounds=0,
                            outcome="merged")
 
-        lines = holophyte.report.report_lines(self.conn)
+        lines = holophyte.report.report_lines(self.conn)[2:]
 
         self.assertEqual(lines[4].split(), ["KO-4", "7.0", "n/a", "n/a", "0",
                                             "merged", "0", socket.gethostname()])
@@ -332,7 +332,7 @@ class ReportTests(ReportStoreCase):
         self.three_runs()
         self.conn.execute("UPDATE runs SET host = NULL WHERE id = 2")
 
-        lines = holophyte.report.report_lines(self.conn)
+        lines = holophyte.report.report_lines(self.conn)[2:]
 
         self.assertEqual(lines[2].split()[-1], "?")
         self.assertEqual(lines[1].split()[-1], socket.gethostname())
@@ -354,14 +354,14 @@ class ReportTests(ReportStoreCase):
                 holophyte.cli.cli(["--report", str(self.target)])
 
         printed = out.getvalue().splitlines()
-        self.assertEqual(printed[0].split()[0], "ticket")
+        self.assertEqual(printed[:2], ["in flight: none", ""])
         # The table is the five lines it always was, and below it the
         # `[report] findings` mode -- the default, nothing configured -- and
         # the one line on the supervisor: none has ever beaten in this store.
-        self.assertEqual(printed[:5], holophyte.report.report_lines(self.conn))
-        self.assertEqual(printed[5], "findings: none")
-        self.assertEqual(printed[6], "supervisor: none recorded")
-        self.assertEqual(len(printed), 7)
+        self.assertEqual(printed[:7], holophyte.report.report_lines(self.conn))
+        self.assertEqual(printed[7], "findings: none")
+        self.assertEqual(printed[8], "supervisor: none recorded")
+        self.assertEqual(len(printed), 9)
         # Nothing was claimed: three runs went in, three are there, all ended,
         # and the lease the loop would have taken is free.
         self.assertEqual(
@@ -424,7 +424,7 @@ class HostLabelTests(ReportStoreCase):
         self.assertNotIn(hostname, rendered)
         # Every recorded host is the label; the NULL row stays unknown, as
         # the store does not know the pre-column run ran on this writer.
-        self.assertEqual([line.split()[-1] for line in printed[1:4]],
+        self.assertEqual([line.split()[-1] for line in printed[3:6]],
                          [self.LABEL, "?", self.LABEL])
         self.assertRegex(printed[-1],
                          rf"^supervisor: live, .* \(pid 4242 on {self.LABEL}\)$")
