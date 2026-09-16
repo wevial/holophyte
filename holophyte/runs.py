@@ -33,6 +33,7 @@ from holophyte.review import (
     parse_findings,
     raw_finding,
     round_verdict,
+    sanitize_findings,
 )
 
 MAX_ROUNDS = 2
@@ -225,7 +226,8 @@ def _ending_of(conn, run_id):
 
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
-                 started_at=None, criteria=(), root=None, route=None):
+                 started_at=None, criteria=(), root=None, route=None,
+                 prior_reply=""):
     """Record one review or adjudication round as a `reviewRounds` row.
 
     The round the loop just ran, as the store holds it: the verdict, the
@@ -260,6 +262,9 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     beside the Codex rounds as what it was. None is `agent_route()`'s
     answer for `role`, as before.
 
+    `prior_reply` preserves a capped malformed first reply as raw evidence;
+    only `reply` determines the verdict and criterion findings.
+
     A `conn` of None makes this a no-op, like `set_phase()`, so a storeless
     `run_task()` runs the same stages and records nothing.
     """
@@ -279,6 +284,9 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
         if unwitnessed:
             verdict = "changes_requested"
             findings = findings + unwitnessed
+    if prior_reply:
+        prior_reply = sanitize_findings(prior_reply, len(prior_reply))
+        findings = [dict(raw_finding(prior_reply), message=prior_reply)] + findings
     # `run_verify()` reports a pass/fail gate rather than a raw status — the
     # failing clause and its exit code live in the output it builds — so the
     # exit code stored here is that verdict, and `output` is the detail.
