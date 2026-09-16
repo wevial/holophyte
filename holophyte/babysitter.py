@@ -271,18 +271,10 @@ def quoted(thread):
 
 def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                        sha, beat_s, pull, budget_min, reviewed=None, refusal=None):
-    """On CONFLICTING or a conflict refusal, fetch and merge `origin/main`
-    into the worktree's branch -- the remote's `main`, never the possibly
-    stale local one -- push, and hand back the branch's sha so the pass
-    waits on the restarted checks. A merge commit, never a rebase or a
-    force-push: review threads keep their lines.
+    """Fetch and merge origin/main, push, and wait for GitHub's head.
 
-    A merge that stops on unmerged paths goes to one implementer turn,
-    which resolves and commits it (`merge_conflict_goal()`); a turn that
-    leaves it unresolved -- or dropped it without merging -- aborts the
-    merge and parks with the paths and optional `refusal` text in the
-    question, the branch left at `sha`. A fetch without `origin/main`
-    is the route's failure, not the ticket's.
+    Conflicts get one implementer turn; unresolved merges abort and park.
+    Preserve the branch and reviewed sha. Never rebase or force-push.
     """
     from holophyte.claim import merge_conflicts
     from holophyte.loop import _timed, sh
@@ -332,30 +324,36 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                 " a conflict)")
         if conn is not None and run_id is not None:
             store.record_ledger(conn, run_id, "note", note)
-    return merged
+    # GitHub can still report the pre-push head. Wait only for this known
+    # push; the normal terminal check still rejects unrelated head changes.
+    # Hand the matching state to the next round to settle its checks and
+    # quiet interval. On timeout, preserve the pushed candidate for the operator.
+    waited = 0
+    wait_s = merge_config(target).pr_poll_sec
+    with heartbeat_while(conn, run_id, beat_s):
+        state = pr_status.pr_state(target, pull)
+        while state.head_sha != merged and waited < wait_s:
+            nap = min(pr.CHECK_POLL_S, wait_s - waited)
+            pr.SLEEP(nap)
+            waited += nap
+            state = pr_status.pr_state(target, pull)
+    if state.head_sha != merged:
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, merged, pull,
+                    f"the pull request's head is {(state.head_sha or '?')[:12]}"
+                    f" after {waited}s; the babysitter pushed {merged[:12]}", (),
+                    reviewed=reviewed)
+    return merged, state
 
 
 def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
               criteria=(), approved=False, reviewed=None, verified=None):
-    """Watch the PR until it merges or parks, bounded by `[merge] pr_rounds`.
+    """Watch the PR until it merges or parks, bounded by pr_rounds.
 
-    Each pass records a review round; `_answer_threads()` handles threads.
-    Green, quiet PRs merge under auto approval or `--approve`, else park.
-
-    `reviewed` is the sha independently approved, from the fresh review or
-    the resumed park's `approvedSha`. A changed candidate needs `_review_fix()`
-    before auto-merge; human approval covers only the released candidate.
-    `verified` is the sha verified here, None on resume; changes pass verify
-    and drift gates. `criteria` holds acceptance criteria for the fix review.
-
-    CONFLICTING polls and HTTP 405 merge-conflict refusals both merge
-    `origin/main` into the task branch with `_merge_origin_main()` and push.
-    Auto retries restart the round; unresolved implementer conflicts park.
-
-    `_park_on_pr()` records the question, PR URL, candidate and reviewed sha,
-    then raises `MergeParked`, preserving work; exhausted rounds park too.
-    Externally merged PRs return their sha; closed ones fail. Main is untouched."""
+    Changed candidates need independent review and verification before merge;
+    human approval covers only the released candidate. Conflict recovery merges
+    origin/main and pushes before restarting the round. Main stays untouched.
+    """
     from holophyte.pullrequest import _park_on_pr
     merge = merge_config(target)
     pull = pr_status.parse_pr_url(url)
@@ -365,8 +363,10 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     model = agent_route(target, "adjudicate")
     # `reviewed`: the sha an independent judgement covers -- the reviewer's
     # approval or the operator's release. A fix round moves `sha` past it.
+    pushed_state = None
     for pass_no in range(1, merge.pr_rounds + 1):
-        state = _settled_state(target, conn, run_id, beat_s, pull)
+        state = _settled_state(target, conn, run_id, beat_s, pull, pushed_state)
+        pushed_state = None
         done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
                             sha, pull, state, reviewed)
         if done is not None:
@@ -377,9 +377,9 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             # the next pass wait on the restarted checks, before any
             # thread is judged. UNKNOWN is not a conflict -- GitHub
             # computes `mergeable` lazily and a later pass sees it.
-            sha = _merge_origin_main(target, conn, run_id, provider,
-                                     task_id, branch, wt, sha, beat_s, pull,
-                                     budget_min, reviewed=reviewed)
+            sha, pushed_state = _merge_origin_main(
+                target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
+                pull, budget_min, reviewed=reviewed)
             continue
         rnd = len(store.read.rounds_of(conn, run_id)) + 1 if conn else pass_no
         if state.threads:
@@ -427,15 +427,15 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                                        ticket, budget_min, merge.approve == "auto")
             except pr.MergeRefused as refused:
                 verified = sha
-                sha = _merge_origin_main(target, conn, run_id, provider,
-                                         task_id, branch, wt, sha, beat_s, pull,
-                                         budget_min, reviewed=reviewed,
-                                         refusal=refused)
+                sha, pushed_state = _merge_origin_main(
+                    target, conn, run_id, provider, task_id, branch, wt, sha,
+                    beat_s, pull, budget_min, reviewed=reviewed,
+                    refusal=refused)
                 continue
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "ready to merge; waiting for a human to say merge"
                     " ([merge] approve = \"human\")", (), reviewed=reviewed)
-    state = _settled_state(target, conn, run_id, beat_s, pull)
+    state = _settled_state(target, conn, run_id, beat_s, pull, pushed_state)
     _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
@@ -597,7 +597,7 @@ def _quiet_left(state, quiet_ms):
     return max(0, quiet_ms - (int(time() * 1000) - state.updated_at))
 
 
-def _settled_state(target, conn, run_id, beat_s, pull):
+def _settled_state(target, conn, run_id, beat_s, pull, state=None):
     """One read of the PR, re-read while its checks are pending and it has
     no thread to answer -- every `pr.CHECK_POLL_S`, for at most
     `pr.CHECK_WAIT_S` -- and, since KO-429, while it is green and
@@ -610,7 +610,7 @@ def _settled_state(target, conn, run_id, beat_s, pull):
     wait_s = max(pr.CHECK_WAIT_S, quiet_ms // 1000)
     waited = 0
     with heartbeat_while(conn, run_id, beat_s):
-        state = pr_status.pr_state(target, pull)
+        state = state or pr_status.pr_state(target, pull)
         while not state.threads and not state.merged and waited < wait_s:
             if state.checks == "pending":
                 nap = pr.CHECK_POLL_S
