@@ -6,7 +6,7 @@ under the process-group cap the gate shares; `agent_route` names what ran, for
 the record the round leaves; `publish_review_refs` gives a configured reviewer
 the same two `refs/review/*` names the staged default route gets. This is the
 factory's only process-spawning surface besides the gate. Nothing here knows
-the loop, the store or the board: config and gates in, output text out.
+the loop or the board; a run context keeps configured review turns alive.
 
 Third slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
@@ -29,6 +29,7 @@ from holophyte.config import (
     carry_directories,
     review_profile,
     review_route,
+    sweep_config,
 )
 from holophyte.gates import InfraFailure, run_capped, sh
 
@@ -216,7 +217,7 @@ def publish_review_refs(repo, base_sha, candidate_sha):
 
 
 def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
-          timeout=None, on_start=None):
+          timeout=None, on_start=None, conn=None, run_id=None):
     """Run one agent turn for a role. Returns combined output text.
 
     An `implement` turn runs in a process group of its own under `timeout`
@@ -231,7 +232,8 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     sweeps the run mid-turn (KO-339). The review and adjudicate routes run
     through `subprocess.run` -- the container runner's and the configured
     command's -- and hold no handle to hand over, so `on_start` is not
-    called for them.
+    called for them. Configured review commands heartbeat while running when
+    `conn` and `run_id` are supplied, at half the target's stale interval.
 
     `adjudicate` is the terminal pass/fail round. It takes the same
     independent reviewer route as `review` — a fresh dispatch that knows only
@@ -281,8 +283,14 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     elif role != "implement":
         publish_review_refs(Path(cwd), base_sha, candidate_sha)
     if role != "implement":
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                           timeout=1800)
+        # runs imports agent_route for round records; defer this import to
+        # avoid a cycle at module load time.
+        from holophyte.runs import heartbeat_while
+
+        beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+        with heartbeat_while(conn, run_id, beat_s):
+            r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                               timeout=1800)
         return (r.stdout + "\n" + r.stderr).strip()
     # `IMPL_TIMEOUT` is the scaled thirty minutes on this target: the
     # caller's `timeout` already carries `[agents] budget_scale`, and the

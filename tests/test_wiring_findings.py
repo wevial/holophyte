@@ -273,8 +273,8 @@ class CloseOutRegenerationTests(unittest.TestCase):
         replies = list(replies)
         turns = []
 
-        def fake_agent(target, role, goal, cwd, *, base_sha=None,
-                       candidate_sha=None, timeout=None, on_start=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None, conn=None,
+                       candidate_sha=None, timeout=None, on_start=None, run_id=None):
             turns.append(role)
             if role != "implement":
                 return replies.pop(0)

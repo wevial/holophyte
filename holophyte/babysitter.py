@@ -556,7 +556,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
-            base_sha=base_sha, candidate_sha=sha)
+            base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
     record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out, started_at=round_started, criteria=criteria,
                  root=wt)
@@ -678,8 +678,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
             reply = agent(target, "adjudicate",
                           babysitter.adjudication_brief(
                               pull, judged, ticket, sha,
-                              babysitter.conventions(wt)),
-                          wt, base_sha=base_sha, candidate_sha=sha)
+                              babysitter.conventions(wt)), wt, conn=conn,
+                          base_sha=base_sha, candidate_sha=sha, run_id=run_id)
     verdicts = _verdicts_by_kind(
         threads, judged, babysitter.parse_verdicts(reply, len(judged)))
     record_round(target, conn, run_id, rnd, "review",
