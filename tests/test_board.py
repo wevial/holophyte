@@ -1,5 +1,8 @@
 """Console contract: a failed attention row names a durable run card."""
+import unittest
+
 import store
+from holophyte import board
 from tests.serve_fixture import MIN, ServeTestCase
 
 
@@ -43,3 +46,43 @@ class FailedRunCardTests(ServeTestCase):
         self.assertEqual(retained["run"]["id"], self.run)
         self.assertEqual(retained["run"]["outcome"], "failed")
         self.assertEqual(retained["run"]["ended_ms"], self.now)
+
+
+class CommentBodyTests(unittest.TestCase):
+    def test_tool_banners_are_removed_and_findings_preserved(self):
+        text = (
+            "Round 1: changes requested\n"
+            "Reading additional input from stdin...\n"
+            "OpenAI Codex v0.154.0\n"
+            "**OpenAI Codex v0.154.0**\n"
+            "workdir: /workspace\nmodel: reviewer\nprovider: openai\n"
+            "approval: never\nsandbox: read-only\n"
+            "reasoning effort: high\nreasoning summaries: auto\n"
+            "session id: example\n**session id: example**\n"
+            "tokens used\n"
+            "<!-- devin-review-badge-begin -->\n"
+            "[Review badge](https://example.com)\n"
+            "<!-- devin-review-badge-end -->\n"
+            "\n\n\nReviewer findings:\n"
+            "Keep the timeout finding and its proposed fix.\n"
+            "The model: label in this sentence is prose.\n"
+        )
+        self.assertEqual(board.comment_body(text), (
+            "Round 1: changes requested\n\n\nReviewer findings:\n"
+            "Keep the timeout finding and its proposed fix.\n"
+            "The model: label in this sentence is prose.\n"
+        ))
+
+    def test_long_body_is_capped_with_an_accurate_cut_count(self):
+        result = board.comment_body("x" * 20000)
+        head, closing = result.rsplit("\n", 1)
+        self.assertEqual(head, "x" * 12000)
+        self.assertEqual(closing, (
+            "[... 8000 characters cut; "
+            "the full round is on the run in the store]"
+        ))
+        self.assertLessEqual(len(result), 12000 + 1 + len(closing))
+
+    def test_short_clean_body_is_unchanged(self):
+        text = "Round 2: approved\n\nReviewer findings:\nNo findings.\n"
+        self.assertEqual(board.comment_body(text), text)

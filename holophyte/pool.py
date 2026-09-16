@@ -1,17 +1,7 @@
-"""The worker pool and its scheduler (KO-343).
+"""Worker pool: the scheduler mirrors and reconciles; children claim one task.
 
-Under `[loop] workers > 1` `main()` is `scheduler()`: a pool of
-`factory.py --worker` children sized to the claimable queue, each one
-`worker()` -- the serial loop's phases once, for one ticket, exiting with
-a `WORKER_*` status the scheduler reads back. `_wait_any()` reaps the
-children through the `WAIT` seam, `_PoolState` is what the scheduler has
-learnt from their exits, `_claimable()` is the store's count of what a
-worker could claim, `_spawn_worker()` starts one through `SPAWN`, and
-`_PrefixedOut` folds each child's `[holo2]` tag into `[holo2 wN]`.
-
-Moved verbatim out of `holophyte/loop.py` (KO-388); the claim, dispatch
-and queue-mirror phases the pool shares with the serial loop stay there,
-imported back inside the functions that call them.
+The pool drains before re-exec after a self-merge (KO-343, KO-388).
+SPAWN and WAIT are the process seams; worker exit codes report outcomes.
 """
 import os
 import subprocess
@@ -26,7 +16,7 @@ from holophyte.gates import MergeLockHeld, merge_lock
 from holophyte.reconcile import _reconcile_at_startup, _reconcile_pull_requests
 from holophyte.reexec import reexec_command
 from holophyte.runs import open_store
-from holophyte.supervisor import Sweep
+from holophyte.supervisor import Sweep, linear_budget_low
 
 # --- the pool (KO-343) -------------------------------------------------------
 #
@@ -115,6 +105,8 @@ def worker(target, provider):
     conn = open_store(target)
     try:
         project = store.tickets.ensure_project(conn, provider.team, target.path)
+        if linear_budget_low():
+            return WORKER_IDLE
         task, ticket_id, run_id = _claim_next(target, conn, project, provider,
                                               knobs.order, set(), NOTHING_SEEN)
         if not task:
@@ -247,6 +239,8 @@ def scheduler(target, provider, knobs):
             listing = None
             if state.spawning:
                 listing = _mirror_queue(target, conn, project, provider)
+                if linear_budget_low():
+                    listing = None
                 if listing is None:
                     # The board could not be asked: an empty listing would
                     # end the loop reporting a queue it never saw. Nothing

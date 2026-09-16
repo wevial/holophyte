@@ -1,24 +1,13 @@
-"""Conformance suite for the board seam: one set of assertions, two boards.
+"""Board conformance: shared claim and contract assertions for both providers.
 
-`provider.Provider` is what `holophyte.operator.main()` drives, and the loop
-observes a board through five things only -- what `claim_next()` hands out
-and in what order, whether `skip` is honored, whether `fetch_task()` sees an
-edit made after the claim, whether `set_state()` is reflected by
-`fetch_task()` and `claim_next()`, and whether `comment()` lands on the
-ticket. The mixin asserts exactly those, through the protocol, and each
-board supplies only the seeding and the readback it alone knows how to do:
-files on disk for `FileProvider`, and for `LinearProvider` a fake of the one
-transport function (`linear_provider._gql`) serving the canned GraphQL
-shapes the real module parses. Nothing above the transport is stubbed, so
-the Linear case exercises `list_ready_issues()`, `parse_task()`,
-`_state_id()` and the mutations as they run against the API.
-
-Run: python3 -m unittest tests.test_provider -v
+FileProvider uses seeded files; LinearProvider uses canned GraphQL replies
+below the provider seam, exercising parsing, workflow states and mutations.
 """
 from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import re
 import shutil
@@ -26,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -110,9 +100,7 @@ class ConformanceMixin:
             self.assertIn("## Acceptance criteria", task["body"])
 
     def test_a_claimed_task_carries_the_parsed_contract(self):
-        """The task dict is the shape `parse_task()` produces, the seeded
-        body's values -- both boards parse the same body to the same
-        contract, one the claim-time validator accepts."""
+        """Claiming carries the parsed acceptance criteria and verify commands."""
         self.seed("KO-1", title="add a thing", criterion="Given x, when y, then z.",
                   verify="echo ok", estimate=25)
 
@@ -182,9 +170,7 @@ class ConformanceMixin:
         self.assertEqual(self.comments_on("KO-2"), [])
 
     def test_a_label_added_rides_the_listing_and_comes_off_on_unlabel(self):
-        """The board lease (KO-351): `label_issue()` puts a label on the
-        ticket the next claim and listing read back in `labels`, creating
-        it on first use; `unlabel_issue()` takes exactly that one off."""
+        """Labels survive listing and can be removed."""
         self.seed("KO-1")
         self.assertEqual(self.claim()["labels"], [])
 
@@ -541,12 +527,7 @@ class LabelGatePassTests(LoopFixture):
 
 
 class LinearImportTests(unittest.TestCase):
-    """Importing `linear_provider` reads no configuration: the board is the
-    target's `[board]` table, handed to `LinearProvider`, so the module
-    imports clean with no `HOLO2_*` variables and no `.env` beside it. The
-    import runs in a subprocess from a copy in a directory with no `.env`,
-    so this process's modules and the operator's own file cannot stand in.
-    """
+    """Importing Linear does not require credentials or make network requests."""
 
     def test_the_module_imports_with_no_configuration_at_all(self):
         tmp = tempfile.TemporaryDirectory()
@@ -571,6 +552,109 @@ class LinearImportTests(unittest.TestCase):
         two = board_seam.LinearProvider("p-2", "Team Two")
         self.assertEqual((one.project_id, one.team), ("p-1", "Team One"))
         self.assertEqual((two.project_id, two.team), ("p-2", "Team Two"))
+
+
+def _answer(data, headers):
+    """A `urlopen` response stand-in: the body `json.load` reads and the
+    headers Linear answers it with."""
+    answer = io.BytesIO(json.dumps(data).encode())
+    answer.headers = headers
+    return answer
+
+
+class LinearBudgetTests(unittest.TestCase):
+    """KO-434: response headers, cooldown persistence and 429 handling."""
+
+    @classmethod
+    def setUpClass(cls):
+        import linear_provider
+        cls.linear = linear_provider
+
+    def setUp(self):
+        # The budget is process state; a fresh one per test so a reading
+        # one test made is not the next test's.
+        patcher = patch.object(self.linear, "LINEAR_BUDGET",
+                               self.linear.LinearBudget())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.budget = self.linear.LINEAR_BUDGET
+
+    def test_under_a_tenth_of_the_limit_is_low(self):
+        """200,000 of 3,000,000 points left is low -- the asks that remain
+        could not buy back what one more listing costs. 400,000 is not."""
+        self.budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "200000"})
+        self.assertTrue(self.budget.low())
+
+        self.budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "400000"})
+        self.assertFalse(self.budget.low())
+
+    def test_unknown_reset_allows_a_probe_after_one_hour(self):
+        with patch.object(self.linear, "time", return_value=1000):
+            self.budget.remember({
+                "x-ratelimit-complexity-limit": "3000000",
+                "x-ratelimit-complexity-remaining": "0"})
+        self.assertTrue(self.budget.low(now=4_599_999))
+        self.assertFalse(self.budget.low(now=4_600_000))
+
+    def test_cooldown_survives_a_fresh_process(self):
+        for reset, deadline in ((9999999999999, 9999999999999), (None, 4600000)):
+            with self.subTest(reset=reset), tempfile.TemporaryDirectory() as home, \
+                    patch.dict(os.environ, {"HOLOPHYTE_HOME": home,
+                                            "LINEAR_API_KEY": "test-key"}):
+                headers = {"x-ratelimit-complexity-limit": "3000000",
+                           "x-ratelimit-complexity-remaining": "0"}
+                if reset is not None:
+                    headers["x-ratelimit-complexity-reset"] = str(reset)
+                writer = f"""
+import linear_provider as lp
+lp.time = lambda: 1000
+lp.LINEAR_BUDGET.remember({headers!r})
+"""
+                subprocess.run([sys.executable, "-c", writer], check=True)
+                reader = f"""
+import linear_provider as lp
+assert lp.LINEAR_BUDGET.low(now={deadline - 1})
+assert not lp.LINEAR_BUDGET.low(now={deadline})
+"""
+                subprocess.run([sys.executable, "-c", reader], check=True)
+
+    def test_every_answer_updates_the_budget(self):
+        """A served answer's headers are the budget's reading."""
+        headers = {"x-ratelimit-complexity-limit": "3000000",
+                   "x-ratelimit-complexity-remaining": "2000000",
+                   "x-ratelimit-complexity-reset": "1800000000000"}
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "key"}), \
+                patch.object(self.linear.urllib.request, "urlopen",
+                             lambda req, timeout: _answer(
+                                 {"data": {}}, headers)):
+            self.linear._gql("query { viewer { id } }")
+
+        self.assertEqual((self.budget.limit, self.budget.remaining,
+                          self.budget.reset_at),
+                         (3000000, 2000000, 1_800_000_000_000))
+
+    def test_a_429_is_a_budget_exhausted_carrying_the_reset(self):
+        """A 429 remembers its headers and raises the distinct reset-bearing error."""
+        headers = {"x-ratelimit-complexity-limit": "3000000",
+                   "x-ratelimit-complexity-remaining": "0",
+                   "x-ratelimit-complexity-reset": "1800000000000"}
+
+        def refused(req, timeout):
+            raise urllib.error.HTTPError(
+                self.linear.GRAPHQL, 429, "Too Many Requests", headers, None)
+
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "key"}), \
+                patch.object(self.linear.urllib.request, "urlopen", refused):
+            with self.assertRaises(self.linear.LinearBudgetExhausted) as hit:
+                self.linear._gql("query { viewer { id } }")
+
+        self.assertEqual(hit.exception.reset_at, 1_800_000_000_000)
+        self.assertIn("resets at", str(hit.exception))
+        self.assertTrue(self.budget.low(now=1_799_999_999_000))
 
 
 if __name__ == "__main__":

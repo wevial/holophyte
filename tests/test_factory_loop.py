@@ -386,6 +386,109 @@ class LoopTests(LoopFixture):
         self.assertIn(a_task()["id"], notes[0])
         self.assertIn("in_flight", notes[0])
 
+    def test_a_low_complexity_budget_claims_nothing(self):
+        """KO-434 review: the serial claim's `claim_next()` spends the same
+        ready listing the queue mirror skipped, so under a tenth of the
+        key's hourly limit the pass ends on the reset line -- the provider
+        never asked -- rather than claiming to be refused. `loop()` stands
+        the provider in for `sys.modules["linear_provider"]`, so the budget
+        the guards read is the provider's own attribute."""
+        import linear_provider
+        budget = linear_provider.LinearBudget()
+        budget.remember({
+            "x-ratelimit-complexity-limit": "3000000",
+            "x-ratelimit-complexity-remaining": "200000",
+            "x-ratelimit-complexity-reset": "9999999999999"})
+        provider = StubProvider(a_task())
+        provider.LINEAR_BUDGET = budget
+        asked = []
+        claim_next = provider.claim_next
+        provider.claim_next = \
+            lambda **kw: asked.append("claim") or claim_next(**kw)
+        ready_issues = provider.ready_issues
+        provider.ready_issues = \
+            lambda: asked.append("mirror") or ready_issues()
+
+        out = self.main_output(provider=provider)
+
+        self.assertEqual(asked, [])
+        self.assertEqual(self.rc, 1)
+        self.assertIn("board not asked: budget resets at", out)
+        self.assertEqual(out.count("board not asked"), 1)
+        self.assertNotIn("Linear has no ready tickets", out)
+
+    def test_a_mirror_answer_making_the_budget_low_claims_nothing(self):
+        """KO-434 review: the mirror's own answer can be the spend that
+        pushes the complexity budget under its tenth, and the serial
+        claim's `claim_next()` lists the same queue -- so the pass ends
+        on the reset line with the claim never asked rather than asking
+        to be refused. `ready_issues()` remembers the low headers the way
+        `_gql()` does on the real board; `loop()` stands the provider in
+        for `sys.modules["linear_provider"]`, so the budget the guards
+        read is the provider's own attribute."""
+        import linear_provider
+        provider = StubProvider(a_task())
+        provider.LINEAR_BUDGET = linear_provider.LinearBudget()
+        asked = []
+        ready_issues = provider.ready_issues
+
+        def mirror():
+            asked.append("mirror")
+            listing = ready_issues()
+            provider.LINEAR_BUDGET.remember({
+                "x-ratelimit-complexity-limit": "3000000",
+                "x-ratelimit-complexity-remaining": "200000",
+                "x-ratelimit-complexity-reset": "9999999999999"})
+            return listing
+
+        provider.ready_issues = mirror
+        claim_next = provider.claim_next
+        provider.claim_next = \
+            lambda **kw: asked.append("claim") or claim_next(**kw)
+
+        out = self.main_output(provider=provider)
+
+        self.assertEqual(asked, ["mirror"])
+        self.assertEqual(self.rc, 1)
+        self.assertIn("board not asked: budget resets at", out)
+        self.assertEqual(out.count("board not asked"), 1)
+        self.assertNotIn("Linear has no ready tickets", out)
+
+    def test_a_mirror_429_making_the_budget_low_claims_nothing(self):
+        """KO-434 review: a refusal is the same transition. The 429's
+        headers are what make the budget low, the mirror's catch-all
+        turns the raise into a skipped listing, and the claim's
+        `claim_next()` must still not spend the listing to be refused
+        a second time."""
+        import linear_provider
+        provider = StubProvider(a_task())
+        provider.LINEAR_BUDGET = linear_provider.LinearBudget()
+        asked = []
+
+        def mirror():
+            asked.append("mirror")
+            provider.LINEAR_BUDGET.remember({
+                "x-ratelimit-complexity-limit": "3000000",
+                "x-ratelimit-complexity-remaining": "0",
+                "x-ratelimit-complexity-reset": "9999999999999"})
+            raise linear_provider.LinearBudgetExhausted(
+                "Linear refused the query (429): the API key's complexity"
+                " budget is spent", reset_at=9999999999999)
+
+        provider.ready_issues = mirror
+        claim_next = provider.claim_next
+        provider.claim_next = \
+            lambda **kw: asked.append("claim") or claim_next(**kw)
+
+        out = self.main_output(provider=provider)
+
+        self.assertEqual(asked, ["mirror"])
+        self.assertEqual(self.rc, 1)
+        self.assertIn("queue mirror skipped", out)
+        self.assertIn("board not asked: budget resets at", out)
+        self.assertEqual(out.count("board not asked"), 1)
+        self.assertNotIn("Linear has no ready tickets", out)
+
     def test_an_infra_failure_raised_by_the_run_is_closed_out_as_infra(self):
         self.loop(InfraRefuse())
 

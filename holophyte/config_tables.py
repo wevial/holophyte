@@ -56,13 +56,20 @@ SUPERVISE_INTERVAL_SEC = 60
 # anything. Two minutes: an exec is instant and a startup probe is seconds,
 # so a loop silent that long is not merely slow.
 RESTART_GRACE_SEC = 120
+# How long the supervisor's board fallback waits between two asks for the
+# ready listing (KO-434). A Linear ready listing costs thousands of the
+# key's hourly complexity points, and a mirror that stays empty does not
+# need a fresh answer a minute: ten minutes is the default, and under one
+# minute the fallback is the polling that emptied the key.
+BOARD_ASK_SEC = 600
 
-# The seven knobs above have an address: the optional `[supervisor]` table
-# of `<repo>.holophyte.toml`. Different targets want different patience --
-# a Go build's setup is slower than stdlib Python's -- and the constants
-# are the defaults, not the lookup sites. The keys are named in the units
-# an operator thinks in (minutes, seconds, a multiplier, a fraction) and
-# `sweep_config()` converts them to the units the sweep computes in.
+# The eight knobs above have an address: the optional `[supervisor]` table of
+# `<repo>.holophyte.toml`. Different targets legitimately want different
+# patience -- a Go build's setup is slower than stdlib Python's -- and the
+# constants are the defaults, not the lookup sites: an absent table is
+# exactly the numbers above. The keys are named in the units an operator
+# thinks in (minutes, seconds, a multiplier, a fraction) and `sweep_config()`
+# converts them to the units the sweep computes in.
 SUPERVISOR_KEYS = {
     "heartbeat_stale_min": HEARTBEAT_STALE_MS / 60000,
     "stale_strikes": STALE_STRIKES,
@@ -71,14 +78,17 @@ SUPERVISOR_KEYS = {
     "review_overlap_threshold": REVIEW_OVERLAP_THRESHOLD,
     "sweep_interval_sec": SUPERVISE_INTERVAL_SEC,
     "restart_grace_sec": RESTART_GRACE_SEC,
+    "board_ask_sec": BOARD_ASK_SEC,
 }
-# The knobs as the sweep reads them: the same seven, with the heartbeat
-# threshold and the restart grace already in milliseconds, so the arithmetic
-# in `sweep()` is the arithmetic it always was.
+# The knobs as the sweep reads them: the same eight, with the heartbeat
+# threshold, the restart grace and the board-ask interval already in
+# milliseconds, so the arithmetic in `sweep()` is the arithmetic it always
+# was.
 SweepConfig = collections.namedtuple(
     "SweepConfig",
     ("heartbeat_stale_ms", "stale_strikes", "budget_grace", "run_cap",
-     "review_overlap_threshold", "sweep_interval_sec", "restart_grace_ms"))
+     "review_overlap_threshold", "sweep_interval_sec", "restart_grace_ms",
+     "board_ask_ms"))
 
 
 def sweep_config(target):
@@ -120,6 +130,9 @@ def sweep_config(target):
             low, high = RUN_CAP_RANGE
             constraint, ok = (f"a number from {low} to {high}",
                               number and low <= value <= high)
+        elif key == "board_ask_sec":
+            constraint, ok = "an integer of at least 60", number and (
+                isinstance(value, int) and value >= 60)
         else:
             constraint, ok = "a finite positive number", number and value > 0
         if not ok:
@@ -134,7 +147,8 @@ def sweep_config(target):
         run_cap=values["run_cap"],
         review_overlap_threshold=values["review_overlap_threshold"],
         sweep_interval_sec=values["sweep_interval_sec"],
-        restart_grace_ms=values["restart_grace_sec"] * 1000)
+        restart_grace_ms=values["restart_grace_sec"] * 1000,
+        board_ask_ms=values["board_ask_sec"] * 1000)
 
 # What the claim loop does after a run it closed out as failed. The default
 # is the loop as it has always been: one failure ends the process, and an
