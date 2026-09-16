@@ -20,13 +20,14 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from time import monotonic, time
+from time import monotonic, sleep, time
+from time import monotonic as retry_clock
 
 import review_runner
 import store
 import store.read
 from holophyte import pr_status
-from holophyte.agents import agent
+from holophyte.agents import agent, transport_failure
 from holophyte.babysitter import _babysit
 from holophyte.board import (
     block_ticket,
@@ -51,6 +52,7 @@ from holophyte.config_tables import (
 from holophyte.dispatch import SWEPT
 from holophyte.gates import (
     GroupKill,
+    InfraFailure,
     MergeParked,
     RunFailure,
     run_verify,
@@ -464,23 +466,10 @@ def _scale_note(target, budget_min):
 
 
 def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
-    """Run one implementer turn with the budget as its wall-clock cap.
+    """Run one implementer turn under its scaled wall-clock budget.
 
-    Returns `(output, timed_out)`: what the turn printed ("" when it
-    printed nothing) and whether the cap ended it rather than the turn
-    itself. The pair rather than a `None` sentinel because a timed-out
-    turn still has last words -- the no-commit gate records them on the
-    run before the worktree goes (KO-375) -- so the cap's partial capture
-    is handed back untrimmed, not dropped with the `TimeoutExpired`.
-
-    The budget is the dispatch's own timeout, not an alarm around it: an
-    alarm interrupted the wait but left the implementer and its children
-    running, so a run recorded as over budget kept committing into the
-    worktree. `agent()` kills the whole group before raising, and what
-    the turn printed before the kill is kept in the log. The cap armed
-    here is `budget_min` times the target's `[agents] budget_scale` --
-    the estimate unchanged, the harness's pace priced in.
-    """
+    Return `(output, timed_out)`; retain output and reap children on timeout.
+    The sweep hook kills the same group if the run is swept."""
     # The sweep's hook: a beat that finds the run ended kills the turn's
     # whole process group, the same kill the budget sends, and the block
     # raises `RunSwept` for `run_task()` once the turn has stopped.
@@ -522,22 +511,12 @@ def _open_findings(conn, run_id):
 
 
 def _check_run_cap(target, conn, run_id, budget_min, sha):
-    """Fail the run rather than arm a turn its ceiling cannot hold.
+    """Refuse a turn whose scaled budget would exceed the run's hard cap.
 
-    `[supervisor] run_cap` is the run's hard ceiling: `runs.timeBoxMs` --
-    scaled the way the sweep and `/status` count it -- times the cap. Each
-    turn's budget bounds one turn; this bounds the sum, for the run that
-    keeps earning turns by failing review. Before `_timed()` arms a turn,
-    the time spent since `runs.startedAt` plus the scaled budget the turn
-    would get is held against the ceiling; over it the turn is refused
-    rather than started and killed mid-edit: the run fails with a reason
-    naming the minutes, the box, the cap, the candidate's sha and the open
-    findings, and a `run_cap` event says the same in the run's own stream,
-    so a requeue can carry the candidate.
-
-    A storeless call has no `startedAt` to count from, and a run whose
-    ticket carried no estimate has no box for the ceiling to multiply; both
-    pass.
+    The ceiling is runs.timeBoxMs times budget_scale times supervisor.run_cap.
+    Count wall time since startedAt plus the proposed turn's scaled budget.
+    Record the candidate and open findings on refusal. Storeless calls and
+    tickets without estimates have no run ceiling to enforce.
     """
     if conn is None or run_id is None:
         return
@@ -565,22 +544,43 @@ OUTPUT_TAIL = 4000
 
 
 def _record_implementer_output(conn, run_id, out, secrets=()):
-    """Keep the tail of a no-commit turn's output as an `implementer_output`
-    event, before the worktree it may have explained itself in is gone.
+    """Record the output tail as a detail event before discarding a worktree.
 
-    A `detail` row, like `crash`: the summary is the message's first line and
-    the payload its last `OUTPUT_TAIL` characters. The output is prose, not
-    a document, so it goes through `redact_prose()`: every value in
-    `secrets` -- the config's and the environment's credentials,
-    `known_secrets()` -- and every `name = value` pair with a secret's name
-    are replaced before the store sees the text, so a secret the
-    implementer echoed never reaches it."""
+    The summary is the first line; the payload is the last OUTPUT_TAIL
+    characters, redacted with config/environment secrets and secret names."""
     if conn is None or run_id is None:
         return
     text = redact_prose((out or "").strip(), secrets)
     summary = text.splitlines()[0] if text else "(implementer printed nothing)"
     store.record_event(conn, run_id, "implementer_output", summary,
                        level="detail", payload=text[-OUTPUT_TAIL:])
+
+
+def _transport_timed(target, conn, run_id, beat_s, wt, budget_min, goal):
+    """Retry transport loss once, sharing the original turn's wall-clock cap."""
+    scale = budget_scale(target)
+    deadline = retry_clock() + budget_min * scale * 60
+    remaining = budget_min
+    for attempt in range(2):
+        out, timed_out = _timed(target, conn, run_id, beat_s, wt,
+                                remaining, goal)
+        signature = transport_failure(getattr(out, "exit_code", 0), out)
+        if timed_out or signature is None:
+            return out, timed_out
+        _record_implementer_output(conn, run_id, out,
+                                   known_secrets(target.config()))
+        reason = f"implementer transport failure ({signature})"
+        if attempt:
+            raise InfraFailure(f"{reason} after retry; branch preserved")
+        note = f"{reason}; retrying once in 30s"
+        print(f"[holo2] {note}")
+        if conn is not None and run_id is not None:
+            store.record_event(conn, run_id, "transport_retry", note)
+        with heartbeat_while(conn, run_id, beat_s):
+            sleep(min(30, max(0, deadline - retry_clock())))
+        remaining = (deadline - retry_clock()) / (scale * 60)
+        if remaining <= 0:
+            raise InfraFailure(f"{reason}; retry budget exhausted; branch preserved")
 
 
 def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
@@ -594,7 +594,7 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     # the run already old, and a turn the cap has no room for is refused
     # rather than started.
     _check_run_cap(target, conn, run_id, budget_min, start_sha)
-    out, timed_out = _timed(
+    out, timed_out = _transport_timed(
         target, conn, run_id, beat_s, wt, budget_min,
         conflict_brief(branch, conflicts)
         + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
