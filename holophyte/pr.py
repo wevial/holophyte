@@ -1,5 +1,4 @@
 """`[merge] mode = "pr"`: the loop's one GitHub surface.
-
 Design note 7. Instead of the `--no-ff` merge into main, an approved,
 verified candidate is pushed to `origin` and opened as a pull request whose
 body is the ticket body plus the run's FINDINGS entry, so the repository's
@@ -157,6 +156,7 @@ class PrState:
     head_sha: str | None
     merged: bool = False
     merge_sha: str | None = None
+    closed_by: str | None = None
     closed: bool = False
     mergeable: str = "UNKNOWN"
     updated_at: int | None = None

@@ -376,19 +376,12 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     a fix is held to as a review round is. Past `pr_rounds` passes the
     run parks naming the cap. A PR someone merged
     by hand lands the run as merged with that sha; one closed unmerged
-    fails it.
+    rejects it.
 
     Every park is `_park_on_pr()`: the ticket asks `PR open: URL` with the
     open threads listed, `runs.prUrl` and `runs.candidateSha` are written
     with the phase move, and `MergeParked` unwinds the run with the branch
     and worktree left standing. Nothing touches local main.
-
-    Before threads are judged, a `mergeable` answer of CONFLICTING sends
-    the pass through `_merge_origin_main()`: `origin/main` is merged into
-    the branch -- never rebased, so review threads keep their lines --
-    the branch is pushed, and the pass goes back to waiting on checks.
-    UNKNOWN is not a conflict: GitHub computes `mergeable` lazily and the
-    next pass sees the answer.
     """
     from holophyte.merge_gate import _merge_gate
     from holophyte.pullrequest import _merge_pr, _park_on_pr
@@ -466,6 +459,8 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                     "ready to merge; waiting for a human to say merge"
                     " ([merge] approve = \"human\")", (), reviewed=reviewed)
     state = _settled_state(target, conn, run_id, beat_s, pull)
+    _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
+                 pull, state, reviewed)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " babysitter stops here", state.threads, reviewed=reviewed)
@@ -473,19 +468,22 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
 
 def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed):
-    """The answers on one `PrState` that end the pass before threads are
-    judged: the merge sha when the pull request is already merged, None
-    to go on. A closed-unmerged PR fails the run; a head that is not the
-    pushed candidate parks it -- its checks and threads are about someone
-    else's commit, not the one verified and reviewed here."""
+    """Handle a terminal PR or park a head that differs from the candidate."""
     from holophyte.pullrequest import _park_on_pr
     if state.merged:
         print(f"[holo2] {pull.url} is already merged as"
               f" {(state.merge_sha or '?')[:12]}")
         return state.merge_sha
     if state.closed:
-        raise RunFailure(f"{pull.url} was closed without merging;"
-                         f" branch {branch} preserved at {sha[:12]}")
+        from holophyte.board import release_lease_label
+        from holophyte.gates import MergeParked
+        from holophyte.reconcile import _reject_pr
+        if conn is not None and run_id is not None:
+            _reject_pr(conn, run_id, pull, state.closed_by, branch, sha)
+            ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+            release_lease_label(target, conn, ticket_id, provider, run_id)
+        raise MergeParked(f"rejected: {pull.url} closed by"
+                          f" {state.closed_by or 'unknown'}")
     if state.head_sha and state.head_sha != sha:
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
                     pull,

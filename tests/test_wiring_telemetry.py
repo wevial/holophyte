@@ -285,6 +285,15 @@ class ReportStoreCase(unittest.TestCase):
 class ReportTests(ReportStoreCase):
     """`--report` over a seeded store: what it prints, and what it never does."""
 
+    def test_rejected_run_has_its_own_report_column(self):
+        self.completed_run(1, actual_min=5, estimate_min=25, rounds=1,
+                           outcome="rejected")
+        lines = holophyte.report.report_lines(self.conn)
+        row = dict(zip(lines[0].split(), lines[1].split()))
+        self.assertEqual(row["outcome"], "rejected")
+        self.assertEqual(row["rejected"], "1")
+        self.assertEqual(store.read.recent_failed_runs(self.conn, 0), [])
+
     def test_a_line_per_run_with_its_ratio_and_a_summary(self):
         self.three_runs()
 
@@ -294,10 +303,10 @@ class ReportTests(ReportStoreCase):
         host = socket.gethostname()
         self.assertEqual([line.split() for line in lines[:4]], [
             ["ticket", "actual", "estimate", "ratio", "rounds", "outcome",
-             "host"],
-            ["KO-1", "5.0", "25", "0.20", "2", "merged", host],
-            ["KO-2", "40.0", "20", "2.00", "1", "failed", host],
-            ["KO-3", "3.0", "25", "0.12", "0", "merged", host],
+             "rejected", "host"],
+            ["KO-1", "5.0", "25", "0.20", "2", "merged", "0", host],
+            ["KO-2", "40.0", "20", "2.00", "1", "failed", "0", host],
+            ["KO-3", "3.0", "25", "0.12", "0", "merged", "0", host],
         ])
         # 0.20, 2.00 and 0.12: a mean the one blown budget carries, and a
         # median that says what a typical ticket actually costs.
@@ -314,7 +323,7 @@ class ReportTests(ReportStoreCase):
         lines = holophyte.report.report_lines(self.conn)
 
         self.assertEqual(lines[4].split(), ["KO-4", "7.0", "n/a", "n/a", "0",
-                                            "merged", socket.gethostname()])
+                                            "merged", "0", socket.gethostname()])
         self.assertEqual(lines[5], "4 runs · 3 with an estimate · "
                                    "mean ratio 0.77 · median ratio 0.20")
 
@@ -392,16 +401,7 @@ class ReportTests(ReportStoreCase):
 
 
 class HostLabelTests(ReportStoreCase):
-    """`[report] host_label`: the rendering names the writer, not the machine.
-
-    The repository is public and the loop commits `FINDINGS.md` after every
-    merge, so the hostname the store records must not be what the factory
-    prints. With the label set, every rendered host is the label; the store
-    goes on holding the real hostname, which is what the supervisor's
-    own-host checks compare against. The FINDINGS window has no host column
-    (its run and round entries never carried one), so the only thing to
-    hold it to is that it does not start naming the machine.
-    """
+    """`[report] host_label`: the rendering names the writer, not the machine."""
 
     LABEL = "writer-1"
 
