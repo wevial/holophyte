@@ -738,18 +738,18 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
 
 
 def ledger(conn, run_id, task_id, kind, text, provider):
-    """Store the full narrative entry before posting its cleaned board copy.
-
-    `kind` is a `store.LEDGER_KINDS` value. Board failures leave the row intact;
-    missing store or board connections are reported without failing the run.
-    FINDINGS.md is rendered from store rows at close-out, never appended here.
-    """
-    from datetime import datetime, timezone
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Store the full narrative, then post a cleaned board copy best-effort."""
     if conn is not None and run_id is not None:
         store.record_ledger(conn, run_id, kind, text)
     else:
         print("[holo2] no store to record the ledger entry in")
+    post_ledger_comment(task_id, text, provider)
+
+
+def post_ledger_comment(task_id, text, provider):
+    """Project an already-recorded narrative to the board without another row."""
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if provider is None:
         print("[holo2] no board to archive to; record kept in the store")
         return
