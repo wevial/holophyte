@@ -34,7 +34,7 @@ OVER = {}
 # brought back under its ceiling: the pin caps it at the size the slice
 # left it, so the table only moves down for that file too.
 PINNED = {
-    "holophyte/babysitter.py": 845, "holophyte/board.py": 870,
+    "holophyte/babysitter.py": 837, "holophyte/board.py": 870,
     "holophyte/claim.py": 815, "holophyte/cli.py": 460,
     "holophyte/config.py": 752, "holophyte/dispatch.py": 257,
     "holophyte/config_tables.py": 553, "holophyte/findings.py": 331,
@@ -50,12 +50,12 @@ PINNED = {
     "holophyte/serve_runs.py": 515, "holophyte/supervisor.py": 878,
     "holophyte/supervisor_lock.py": 227,
     "holophyte/sweep_report.py": 236, "store/__init__.py": 975,
-    "store/operate.py": 923, "store/read.py": 941,
+    "store/operate.py": 915, "store/read.py": 941,
     "store/schema.py": 740, "store/tickets.py": 460,
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 644,
-    "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 958,
+    "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 951,
     "tests/test_babysitter.py": 466, "tests/test_config_tables.py": 433,
-    "tests/test_claim.py": 1468, "tests/test_claim_mirror.py": 178,
+    "tests/test_claim.py": 1457, "tests/test_claim_mirror.py": 178,
     "tests/test_cli.py": 114,
     "tests/test_cli_approve.py": 269, "tests/test_cli_requeue.py": 214,
     "tests/test_file_sizes.py": 204, "tests/test_holophyte_package.py": 323,
@@ -70,7 +70,7 @@ PINNED = {
     "tests/sweep_fixture.py": 201, "tests/test_startup_checks.py": 648,
     "tests/test_store.py": 282,
     "tests/test_store_claim.py": 261, "tests/test_store_heartbeat.py": 64,
-    "tests/test_store_interventions.py": 402,
+    "tests/test_store_interventions.py": 382,
     "tests/test_store_lease.py": 80, "tests/test_store_pickable.py": 121,
     "tests/test_store_read.py": 337, "tests/test_store_resume.py": 203,
     "tests/test_store_schema.py": 1013, "tests/test_store_status.py": 312,

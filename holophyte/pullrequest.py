@@ -242,19 +242,19 @@ def _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
 
 
 def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
-              pull, reviewed=None):
-    """The `merging` phase under `mode = "pr"`: the PR merged through the
-    merge API -- never a local push of main -- pinned to the candidate `sha`
-    the pass judged, then the worktree and local branch removed as after a
-    local merge; return the merge commit's sha. GitHub declining the merge,
-    the head having moved since the pass included, parks the run with its
-    reason."""
+              pull, reviewed=None, retry_conflicts=False):
+    """Merge the pinned candidate, clean up, and return its merge sha.
+    Park on refusal unless the babysitter opts into raising 405 conflicts;
+    operator approval retains the default park on every refusal."""
     set_phase(conn, run_id, "merging", f"merging {pull.url} through the"
               " pull request API")
     try:
         with heartbeat_while(conn, run_id, beat_s):
             merge_sha = pr.merge_pull_request(target, pull, sha)
     except pr.MergeRefused as refused:
+        if (retry_conflicts and "405" in str(refused)
+                and "merge conflicts" in str(refused).lower()):
+            raise
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     f"GitHub refused the merge: {refused}", (),
                     reviewed=reviewed)

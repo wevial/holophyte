@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 import store
 import store.tickets
+from tests.babysit_fixture import StoreBabysitCases
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -193,28 +193,8 @@ class MigrationTests(InterventionFixture):
                                    " WHERE name = 'interventions_old'"), [])
 
 
-class BabysitTests(InterventionFixture):
-    def test_babysit_writes_its_own_action_and_the_old_word_is_refused(self):
-        """KO-374: `store.babysit()` records the action 'babysit' on the
-        parked run; 'shepherd', the word it wrote before, no longer passes
-        the CHECK -- a hand-written row with it fails at the database."""
-        for phase in ("working", "verifying", "reviewing", "merge_gate"):
-            store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
-        store.park(self.conn, self.run, "awaiting_merge_approval",
-                   pr_url="https://example.test/pull/1", now=T0 + 2 * MINUTE)
-        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
-
-        store.babysit(self.conn, self.ticket, "look again",
-                      now=T0 + 3 * MINUTE)
-
-        self.assertEqual(
-            self.rows('SELECT runId, source, "action" FROM interventions'),
-            [(self.run, "human", "babysit")])
-        with self.assertRaises(sqlite3.IntegrityError):
-            self.conn.execute(
-                'INSERT INTO interventions (runId, source, "trigger",'
-                ' "action", at) VALUES (?, \'human\', \'manual\','
-                ' \'shepherd\', ?)', (self.run, T0))
+class BabysitTests(StoreBabysitCases, InterventionFixture):
+    pass
 
 
 class WalkTicketTests(InterventionFixture):

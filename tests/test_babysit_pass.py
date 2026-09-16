@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
+from babysit_fixture import ConflictRefusalCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
@@ -38,7 +39,7 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
-class MergeModeBabysitPassTests(MergeModeFixture):
+class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
     """The `[merge] mode = "pr"` tests that judge and fix the pull
     request's threads and checks; the open, park, resume and merge are
     `MergeModePullRequestTests` (`test_pullrequest.py`)."""
@@ -158,14 +159,6 @@ class MergeModeBabysitPassTests(MergeModeFixture):
 
         self.assertEqual(state.checks, "pending")
         self.assertEqual(state.head_sha, self.HEAD)
-
-    def _state_with_rest(self, rest):
-        pull = holophyte.pr_status.parse_pr_url(self.URL)
-        with patch.object(holophyte.pr_status, "graphql",
-                          lambda *a, **k: self.pr_state(checks="SUCCESS")
-                          ["data"]), \
-                patch.object(holophyte.pr_status, "rest", rest):
-            return holophyte.pr_status.pr_state(self.tgt, pull)
 
     def test_check_runs_are_read_to_the_last_page_before_green(self):
         """Incomplete pagination cannot establish that every check passed."""
