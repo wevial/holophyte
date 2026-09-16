@@ -540,7 +540,16 @@ after = ["bun --cwd=console run build"]
 
 Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`,
 `pr_poll_sec`, `pr_quiet_sec`, `pr_style`, `human_threads`,
-`after`.
+`after`, `bot_authors`.
+
+`bot_authors` is a list of login strings, defaulting to
+`["devin-ai-integration", "coderabbitai", "greptile-apps", "github-actions"]`.
+A declined thread whose opening author is listed or whose login ends in
+`[bot]` is replied to with the reason and then resolved. Other declines stay
+open and park the run. Setting the list replaces the defaults; `[]` keeps
+only the suffix rule. A bare string or a non-string entry fails startup
+naming `bot_authors`. This key controls decline resolution; the existing
+GitHub author-type policy still determines which threads are adjudicated.
 
 With `approve = "auto"` a clean merge gate merges, as it always has. With
 `approve = "human"` the loop stops there instead: the run's phase becomes
@@ -573,8 +582,8 @@ the PR's URL recorded on the run (`runs.prUrl`), in the ticket's question
 (`PR open: URL`, with the open threads listed) and in the ledger comment,
 until `--approve KO-n` releases it: the resumed claim babysits the PR once
 more and merges it through the API when it is green and quiet. A declined
-thread, a thread only a person can answer, red checks, or the cap park the
-run the same way; `--babysit KO-n` sends such a run back for another round
+thread left open for its author, a thread only a person can answer, red
+checks, or the cap park the run the same way; `--babysit KO-n` sends such a run back for another round
 of passes without saying "merge". The factory never moves local `main` under
 this mode: the merge is GitHub's, and the writer host's checkout tracks
 `origin` by the operator's hand. The pull request is opened through `gh`

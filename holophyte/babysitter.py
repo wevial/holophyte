@@ -18,10 +18,10 @@ Three verdicts, one per thread, from the adjudicator role:
 * `ADDRESS` -- a concrete defect; the fix round takes it, the reply names
   the sha, the thread is resolved.
 * `DECLINE` -- asks for nothing specific, or for what the ticket puts out
-  of scope; the reply says why and the thread is left open for the
-  reviewer to close. A thread naming an existing function, helper or
-  constant the diff re-implements is a concrete change request, not a
-  preference: the fix is reuse, and the repository's `AGENTS.md` or
+  of scope; the reply says why. Recognized bot authors have their
+  threads resolved; other authors retain the last word. A thread naming an
+  existing function, helper or constant the diff re-implements is a concrete
+  change request, not a preference: the fix is reuse, and `AGENTS.md` or
   `CLAUDE.md` conventions are the reviewer's standard.
 * `HUMAN` -- a genuine question, a reject, or anything the adjudicator
   will not answer for the operator: no reply is posted, the run parks and
@@ -229,10 +229,9 @@ def addressed_reply(model, summary, sha):
 
 
 def declined_reply(model, reason):
-    """The reply on a declined thread: the header and the reason; it stays
-    open for its author to close."""
+    """The reply on a declined thread: the header and the reason."""
     return (f"{COMMENT_HEADER.format(model=model)}\n\n"
-            f"Declined: {reason}\n\nLeaving this thread open.")
+            f"Declined: {reason}")
 
 
 def round_reply(pull, pass_no, threads, verdicts, checks, sha):
@@ -637,26 +636,10 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     """One pass over the PR's unresolved threads; return the candidate's
     sha after the fix round, or park.
 
-    The adjudicator judges every thread against the ticket and the
-    candidate (the same frozen `refs/review/*` pair a review round gets)
-    and answers `ADDRESS`, `DECLINE` or `HUMAN` per thread; the pass is
-    recorded as a round before anything is posted, so an interrupted
-    pass has its row. A `HUMAN` verdict ends the pass with nothing
-    posted: the run parks and the ticket's question quotes the thread.
-    Otherwise the addressed threads go to one fix round (`_timed()`, the
-    implementer), the verify commands run over the fix, the branch is
-    pushed, and each addressed thread gets a reply naming the change and
-    the sha and is resolved; each declined thread gets a reply with the
-    reason and stays open. Declines park the run with those threads
-    listed -- they are the reviewer's to close.
-
-    Under `[merge] human_threads = "act"` a person's thread is judged
-    too: an `ADDRESS` on it is fixed and answered like a bot's but never
-    resolved, and any other verdict folds to `HUMAN`. A person's `HUMAN`
-    parks after the fix round then, so a bot's defect is not held up by
-    a person's question, and a pass that answered a person parks with
-    their thread listed as left open for them to close. A bot's `HUMAN`
-    still ends the pass before anything is posted.
+    Record the adjudication, fix ADDRESSes, then reply to DECLINEs. Resolve
+    declines from configured bot logins or logins ending in `[bot]`; park
+    with the other declined threads left open. Human ADDRESSes under `act`
+    are answered but stay open; other human verdicts park without a reply.
     """
     from holophyte.loop import agent, sh
     from holophyte.pullrequest import _park_human, _park_on_pr
@@ -715,10 +698,9 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
                            model, ticket, verify_cmd, contracts, budget_min,
                            pass_no)
-    for _, thread, reason in by_verdict["DECLINE"]:
-        _post(target, conn, run_id, beat_s, pull, thread,
-              babysitter.declined_reply(model, reason), resolve=False)
-    left_open = tuple(t for _, t, _ in by_verdict["DECLINE"]) + tuple(
+    declined_open = _decline_threads(target, conn, run_id, beat_s, pull,
+                                     by_verdict["DECLINE"], model)
+    left_open = declined_open + tuple(
         t for _, t, _ in by_verdict["ADDRESS"] if t.author_kind != "bot")
     if by_verdict["HUMAN"]:
         _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
@@ -726,7 +708,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                     tuple(t for _, t, _ in by_verdict["HUMAN"]) + left_open,
                     reviewed)
     if left_open:
-        declined = len(by_verdict["DECLINE"])
+        declined = len(declined_open)
         answered = len(left_open) - declined
         why = [f"{declined} thread(s) declined and left open for their"
                " authors"] if declined else []
@@ -735,6 +717,22 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "; ".join(why), left_open, reviewed=reviewed)
     return sha
+
+
+def _decline_threads(target, conn, run_id, beat_s, pull, declined, model):
+    """Reply before resolving bot declines; return the threads left open."""
+    bot_authors = merge_config(target).bot_authors
+    left_open = []
+    for _, thread, reason in declined:
+        resolve = thread.author.endswith("[bot]") or thread.author in bot_authors
+        _post(target, conn, run_id, beat_s, pull, thread,
+              babysitter.declined_reply(model, reason), resolve=resolve)
+        if not resolve:
+            left_open.append(thread)
+    if declined:
+        print(f"[holo2] {len(declined)} thread(s) declined;"
+              f" {len(declined) - len(left_open)} from bots resolved with the reason")
+    return tuple(left_open)
 
 
 def _verdicts_by_kind(threads, judged, parsed):
