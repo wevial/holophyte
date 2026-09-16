@@ -351,7 +351,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     and drift gates. `criteria` holds acceptance criteria for the fix review.
 
     CONFLICTING polls and HTTP 405 merge-conflict refusals both merge
-    `origin/main` into the task branch with `_merge_origin_main()`, push, and
+    `origin/main` into the task branch with `_merge_origin_main()` and push.
     Auto retries restart the round; unresolved implementer conflicts park.
 
     `_park_on_pr()` records the question, PR URL, candidate and reviewed sha,
