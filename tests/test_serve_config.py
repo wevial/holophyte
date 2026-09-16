@@ -205,6 +205,40 @@ class ConfigEditTests(ServeTestCase):
         tgt = holophyte.target.Target.locate(self.target)
         self.assertEqual(holophyte.config_tables.loop_config(tgt).workers, 3)
 
+    def test_settings_sheet_pr_keys_are_accepted_and_persisted(self):
+        self.seed()
+        before = self.config("config_edit = true\n") + (
+            '\n[board]\nproject_id = "project"\nteam = "team"\n')
+        self.start(before)
+        for key, value in (
+            ("merge.human_threads", "act"),
+            ("merge.pr_style", "Explain the user impact."),
+            ("merge.pr_rounds", 3),
+            ("merge.pr_poll_sec", 60),
+            ("merge.pr_quiet_sec", 120),
+            ("board.label", "holophyte"),
+        ):
+            with self.subTest(key=key):
+                code, _, body = self.request(
+                    "PUT", "/config", self.BEARER,
+                    body={"patch": {key: value}})
+                self.assertEqual(code, 200, body)
+                self.assertIs(body["ok"], True)
+                table, name = key.split(".")
+                self.assertEqual(tomllib.loads(self.on_disk())[table][name],
+                                 value)
+
+    def test_retired_pr_text_is_refused_without_changing_the_file(self):
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        code, _, body = self.request(
+            "PUT", "/config", self.BEARER,
+            body={"patch": {"merge.pr_text": "written"}})
+        self.assertEqual(code, 400, body)
+        self.assertIn("pr_text", body["error"])
+        self.assertEqual(self.on_disk(), before)
+
     def test_a_redacted_value_the_file_never_held_is_400(self):
         self.seed()
         before = self.config("config_edit = true\n")

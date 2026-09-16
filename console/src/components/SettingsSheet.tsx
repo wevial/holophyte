@@ -38,6 +38,7 @@ export const FIELDS: readonly Field[] = [
   { table: "merge", key: "approve", label: "Approval", kind: "select", options: ["auto", "human"] },
   { table: "merge", key: "pr_merge_method", label: "PR merge method", kind: "select", options: ["merge", "squash", "rebase"] },
   { table: "merge", key: "human_threads", label: "Human threads", kind: "select", options: ["park", "act"] },
+  { table: "merge", key: "pr_style", label: "PR style", kind: "text" },
   { table: "merge", key: "pr_rounds", label: "PR rounds", kind: "number" },
   { table: "merge", key: "pr_poll_sec", label: "PR poll seconds", kind: "number" },
   { table: "merge", key: "pr_quiet_sec", label: "PR quiet seconds", kind: "number" },

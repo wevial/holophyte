@@ -128,18 +128,22 @@ test("workers changed to 3 and Save clicked: the PUT body is a patch of that one
 test("pull-request controls show loaded values and save their dotted keys together", async () => {
   const { fetch, puts } = daemon(TEXT, {
     ...VALUES,
-    merge: { human_threads: "park", pr_rounds: 5, pr_poll_sec: 180, pr_quiet_sec: 300 },
+    merge: { human_threads: "park", pr_style: "Keep it brief.", pr_rounds: 5, pr_poll_sec: 180, pr_quiet_sec: 300 },
     board: { label: "ready" },
   });
   await open(editable, fetch);
   const human = screen.getByRole("combobox", { name: /^Human threads/ }) as HTMLSelectElement;
   expect(Array.from(human.options, (option) => option.value)).toEqual(["", "park", "act"]);
   expect(human.value).toBe("park");
+  const style = screen.getByRole("textbox", { name: /^PR style/ }) as HTMLInputElement;
+  expect(style.type).toBe("text");
+  expect(style.value).toBe("Keep it brief.");
   for (const [label, value] of [["PR rounds", "5"], ["PR poll seconds", "180"], ["PR quiet seconds", "300"]]) {
     expect((screen.getByRole("spinbutton", { name: new RegExp(`^${label}`) }) as HTMLInputElement).value).toBe(value);
   }
   expect((screen.getByRole("textbox", { name: /^Board label/ }) as HTMLInputElement).value).toBe("ready");
   fireEvent.change(human, { target: { value: "act" } });
+  fireEvent.change(style, { target: { value: "Explain the user impact." } });
   fireEvent.change(field("merge.pr_rounds"), { target: { value: "3" } });
   fireEvent.change(field("merge.pr_poll_sec"), { target: { value: "60" } });
   fireEvent.change(field("merge.pr_quiet_sec"), { target: { value: "120" } });
@@ -148,6 +152,7 @@ test("pull-request controls show loaded values and save their dotted keys togeth
   await act(settle);
   expect(puts).toEqual([{ patch: {
     "merge.human_threads": "act",
+    "merge.pr_style": "Explain the user impact.",
     "merge.pr_rounds": 3,
     "merge.pr_poll_sec": 60,
     "merge.pr_quiet_sec": 120,
@@ -255,7 +260,7 @@ test("a daemon whose /status lacks config_edit opens the sheet read-only, every 
   expect(dialog.querySelector("[data-config-edit-off]")!.textContent).toBe(CONFIG_EDIT_OFF);
   expect(CONFIG_EDIT_OFF).toContain("[serve] config_edit");
   const controls = Array.from(dialog.querySelectorAll("[data-field]")) as (HTMLInputElement | HTMLSelectElement)[];
-  expect(controls.length).toBe(14);
+  expect(controls.length).toBe(15);
   for (const control of controls) {
     expect(control instanceof HTMLSelectElement ? control.disabled : control.readOnly).toBe(true);
   }
