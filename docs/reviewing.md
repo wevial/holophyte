@@ -132,13 +132,18 @@ One pass:
 4. **Reply.** Each addressed thread gets a reply opening `---- Comment by
    MODEL ----` (the adjudicator's route, never a constant), then what
    changed and the sha it changed in, and is resolved. Each declined thread
-   gets a reply with the reason and is left open for its author to close.
+   gets a reply with the reason. If its opening author's login ends in
+   `[bot]` or is listed in `[merge] bot_authors` (default
+   `devin-ai-integration`, `coderabbitai`, `greptile-apps`, `github-actions`),
+   it is then resolved; otherwise it stays open for its author to close.
    A `HUMAN` thread gets no reply at all. Every reply and every resolve is
    a `runEvents` row.
 5. **Park or go on.** A `HUMAN` verdict ends the pass with the run parked
-   and the thread quoted in the ticket's question; a decline parks the run
-   with the declined threads listed. Otherwise the next pass reads the PR
-   again -- new threads, the checks the fix restarted. A pass with no
+   and the thread quoted in the ticket's question; only declines left open
+   for their authors park the run with those threads listed. Resolved bot
+   declines allow the next pass to proceed toward merge if no other gate
+   holds it. The next pass reads the PR again -- new threads, the checks
+   the fix restarted. A pass with no
    thread waits for pending checks (`pr.CHECK_POLL_S` between reads, at
    most `pr.CHECK_WAIT_S`). The checks are read beside the rollup: the
    head's check runs and the contexts `main`'s rules require. A check
