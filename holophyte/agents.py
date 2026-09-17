@@ -251,9 +251,9 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 
     `adjudicate` is the terminal pass/fail round. It takes the same
     independent reviewer route as `review` — a fresh dispatch that knows only
-    the diff and the ticket — but its verdict is not enforced at the boundary:
-    a reply that names no clean verdict has to reach the loop as text so it
-    can be recorded and read as FAIL.
+    the diff and the ticket. Both roles leave verdict validation to the loop:
+    malformed reviews get one reminder, while malformed adjudications are
+    recorded and read as FAIL. Staging, execution and parsing remain guarded.
 
     A configured command replaces the role's route, so an `[agents] reviewer`
     override is also an opt-out of the hardened container the default reviewer
@@ -282,8 +282,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                     effort=effort,
                     profile=review_profile(model, effort),
                     timeout=1800,
-                    verdicts=(review_runner.REVIEW_VERDICTS
-                              if role == "review" else None),
+                    verdicts=None,
                     carry=carry_directories(target),
                 )
             except review_runner.ReviewBoundaryError as e:
