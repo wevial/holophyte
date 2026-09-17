@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import test_serve  # noqa: E402 - after the insert; the SLACK tolerance
+from bot_thread_fixture import BotFindingCases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
 from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
@@ -340,8 +341,7 @@ class ShippedTests(ServeTestCase):
         self.assertFalse(self.db.exists())
 
 
-class RunDetailTests(ServeTestCase):
-    """Run details include rounds and narrative events."""
+class RunDetailTests(BotFindingCases, ServeTestCase):
 
     FINDINGS = [
         {"path": "holophyte/serve.py", "line": 12, "severity": "p1",

@@ -1,0 +1,96 @@
+"""KO-475 cases inherited by babysitter, config and run-detail test modules."""
+from fake_agent import APPROVE, Commit, Idle, Reply
+
+import store
+
+
+class BotThreadCases:
+    def test_bot_thread_policy_routes_only_actionable_findings(self):
+        self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n'
+                       + getattr(self, "bot_policy", 'bot_threads = "advisory"\n'))
+        bot = (*self.DEFECT[:2], getattr(self, "bot_author", "review-bot"),
+               self.DEFECT[3], getattr(self, "bot_replies", ()))
+        person = ("src/app.py", 30, ("maintainer", "User"), "Fix the human finding")
+        advisory = getattr(self, "expect_advisory", True)
+        self.fake_route(states=[self.pr_state([bot, person])])
+        verdict = "THREAD 1: ADDRESS -- fix finding"
+        if not advisory:
+            verdict += "\nTHREAD 2: ADDRESS -- fix human finding"
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply(verdict), Commit("fix actionable findings"),
+                            provider=self.provider())
+        goal = fake.turns[4].goal
+        self.assertIn(person[3], goal)
+        self.assertEqual(self.DEFECT[3] in goal, not advisory)
+        calls = self.api_calls()
+        replies = [data for kind, data in calls if kind == "reply"]
+        events = self.read("SELECT summary FROM runEvents WHERE kind = 'bot_finding'")
+        if advisory:
+            self.assertTrue(replies[0]["body"].startswith("---- Comment by "))
+            self.assertIn("Noted as advisory for the maintainer; "
+                          "not acted on by the factory.",
+                          replies[0]["body"])
+            self.assertIn(("resolve", {"thread": "PRRT_1"}), calls)
+            self.assertEqual(len(events), 1)
+            self.assertIn(self.URL + "#discussion_r1", events[0][0])
+            self.assertIn(self.DEFECT[3], events[0][0])
+        else:
+            self.assertEqual(events, [])
+
+    def test_explicit_act_keeps_bot_findings_actionable(self):
+        self.bot_policy = 'bot_threads = "act"\n'
+        self.expect_advisory = False
+        self.test_bot_thread_policy_routes_only_actionable_findings()
+
+    def test_default_keeps_bot_findings_actionable(self):
+        self.bot_policy = ""
+        self.expect_advisory = False
+        self.test_bot_thread_policy_routes_only_actionable_findings()
+
+    def test_configured_login_is_advisory(self):
+        self.bot_policy = 'bot_threads = "advisory"\nbot_logins = ["service"]\n'
+        self.bot_author = ("service", "User")
+        self.test_bot_thread_policy_routes_only_actionable_findings()
+
+    def test_human_reply_escalates_advisory_bot_thread(self):
+        self.bot_replies = ((("maintainer", "User"), "Please fix this"),)
+        self.expect_advisory = False
+        self.test_bot_thread_policy_routes_only_actionable_findings()
+
+    def test_only_advisory_threads_merge_without_a_fix_round(self):
+        self.configure('[merge]\nmode = "pr"\nbot_threads = "advisory"\n'
+                       'pr_rounds = 1\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertNotIn("adjudicate", fake.roles)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+
+class BotConfigCases:
+    def test_bot_thread_config_validation(self):
+        from holophyte.config_tables import merge_config
+        self.locate('[merge]\nbot_threads = "sometimes"\n')
+        with self.assertRaisesRegex(SystemExit, '"act" or "advisory"'):
+            merge_config(self.tgt)
+        self.locate('[merge]\nbot_logins = [42]\n')
+        with self.assertRaisesRegex(SystemExit, 'bot_logins must be a list of strings'):
+            merge_config(self.tgt)
+
+
+class BotFindingCases:
+    def test_bot_findings_are_advisory_on_run_detail(self):
+        self.seed_reviewed()
+        conn = store.open(str(self.db))
+        try:
+            store.record_event(conn, self.run, "bot_finding",
+                               "https://example.test/thread: Consider a rename")
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["findings"], [{
+            "tone": "advisory",
+            "message": "https://example.test/thread: Consider a rename",
+        }])

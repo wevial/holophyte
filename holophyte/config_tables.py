@@ -393,6 +393,7 @@ MERGE_KEYS = {
     "pr_quiet_sec": 300,
     "pr_style": "",
     "human_threads": "park",
+    "bot_threads": "act", "bot_logins": (),
     "after": (),
     "bot_authors": ("devin-ai-integration", "coderabbitai",
                     "greptile-apps", "github-actions"),
@@ -403,12 +404,11 @@ MERGE_METHODS = ("merge", "squash", "rebase")
 MERGE_HUMAN_THREADS = ("park", "act")
 MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
                 "pr_merge_method": MERGE_METHODS,
-                "human_threads": MERGE_HUMAN_THREADS}
+                "human_threads": MERGE_HUMAN_THREADS,
+                "bot_threads": ("act", "advisory")}
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
-# The least `pr_poll_sec`: under this the loop would be polling GitHub for
-# a reviewer's next keystroke rather than their next comment.
+# The minimum poll interval avoids polling for each reviewer keystroke.
 PR_POLL_FLOOR = 10
-# The least value each integer [merge] key takes.
 MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
                     "pr_quiet_sec": 0}
 
@@ -417,8 +417,8 @@ def merge_config(target):
     """The target's `[merge]` knobs over the defaults.
 
     Validate enums, integer floors, instruction text, and string lists at
-    startup. `after` holds shell commands; `bot_authors` holds logins whose
-    declined threads are resolved. Refusals name the config, table and key.
+    startup. `bot_logins` supplements app detection for advisory threads;
+    `bot_authors` controls resolving declines. Refusals name the config key.
     """
     table = target.config().get("merge", {})
     if not isinstance(table, dict):
@@ -448,7 +448,7 @@ def merge_config(target):
                     f" string, got {value!r}")
             values[key] = value
             continue
-        if key in ("after", "bot_authors"):
+        if key in ("after", "bot_authors", "bot_logins"):
             if not isinstance(value, (list, tuple)) \
                     or not all(isinstance(cmd, str) for cmd in value):
                 raise SystemExit(

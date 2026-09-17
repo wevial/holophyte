@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
 from babysit_fixture import ConflictRefusalCases, SpentCapReview  # noqa: E402
+from bot_thread_fixture import BotThreadCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
@@ -39,8 +40,7 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
-class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
-    """End-to-end review, fix, and merge behavior for PR babysitting."""
+class MergeModeBabysitPassTests(BotThreadCases, ConflictRefusalCases, MergeModeFixture):
 
     def declined_thread(self, author, config=""):
         self.configure('[merge]\nmode = "pr"\n' + config)

@@ -9,6 +9,7 @@ import store.read
 from holophyte import babysitter, pr, pr_status
 from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
+from holophyte.bot_threads import route_bot_threads
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, RunFailure, run_verify
 from holophyte.pr import NO_AUTHOR
@@ -343,7 +344,6 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
         raise RunFailure(f"cannot read a pull request off {url!r};"
                          f" branch {branch} preserved at {sha[:12]}")
     model = agent_route(target, "adjudicate")
-    # A fix moves sha past the candidate covered by reviewed.
     pushed_state = None
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     for pass_no in range(1, merge.pr_rounds + 1):
@@ -600,12 +600,12 @@ class WaitExpired(Exception):
 
 
 def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None):
-    """Bound pending/quiet waiting with one deadline; return threads promptly."""
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
     deadline = monotonic() + pr.CHECK_WAIT_S
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(target, pull)
+        state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
         while (not state.threads and not state.merged and not state.closed
                and state.mergeable != "CONFLICTING"):
             if state.checks == "pending":
@@ -628,6 +628,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
                     f"{reason} exceeded {pr.CHECK_WAIT_S}s on the pull request")
             pr.SLEEP(min(nap, remaining))
             state = pr_status.pr_state(target, pull)
+            state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
     return state
 
 
@@ -643,8 +644,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     threads = state.threads
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
-    # Under `human_threads = "park"` a thread a person opened is the
-    # operator's whatever it says: HUMAN before the adjudicator is asked,
+    # Under `human_threads = "park"`, human threads are HUMAN before adjudication,
     # which sees the bots' threads alone, renumbered so its reply and
     # `parse_verdicts()` agree. Under `"act"` a person's threads are
     # judged too, but only an ADDRESS stands: anything else folds to
