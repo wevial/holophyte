@@ -246,11 +246,11 @@ class RunSnapshot:
 
 def run_snapshot(conn, run_id):
     """Read the run's clocks and budget evidence under the caller's lock.
-    Used by run-cap checks and the sweep's transactional trip recheck."""
+    Count recorded rounds, since runs.reviewRoundCount is stamped at close-out."""
     row = conn.execute(
         "SELECT id, ticketId, phase, lastHeartbeat, endedAt, startedAt,"
-        " timeBoxMs, workingMs, workStartedAt, reviewRoundCount, reviewRoundCap"
-        " FROM runs WHERE id = ?",
+        " timeBoxMs, workingMs, workStartedAt, (SELECT COUNT(*) FROM reviewRounds"
+        " WHERE runId = runs.id), reviewRoundCap FROM runs WHERE id = ?",
         (run_id,)).fetchone()
     if row is None:
         return None

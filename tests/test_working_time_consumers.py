@@ -10,6 +10,32 @@ from store.working import settle_work, working
 
 
 class WorkingConsumers(SweepTestCase):
+    def test_time_box_recheck_counts_earned_review_rounds(self):
+        run = self.a_run(budget_min=30, active_work=True)
+        for number in (1, 2):
+            store.record_review_round(
+                self.conn, run, number, "changes_requested", "reviewer",
+                started_at=T0, ended_at=T0 + MINUTE,
+            )
+        now = T0 + 100 * MINUTE
+        self.heartbeat_at(run, now)
+        trip, = supervisor.sweep(self.tgt, self.conn, now).trips
+        self.assertEqual(trip.condition, supervisor.TIME_BOX)
+        with patch("store.working.time", return_value=now / 1000):
+            self.assertTrue(supervisor.still_tripped(self.tgt, self.conn, trip))
+        # Settlement leaves 50 minutes: over one turn's 45-minute allowance,
+        # but below the 90 minutes earned by the recorded review rounds.
+        settle_work(self.conn, run, now=T0 + 50 * MINUTE)
+        outcome = supervisor.act_on_trip(self.tgt, self.conn, trip)
+        self.assertFalse(outcome.acted)
+        snapshot = store.read.run_snapshot(self.conn, run)
+        self.assertIsNone(snapshot.endedAt)
+        self.assertEqual(snapshot.phase, "working")
+        self.assertEqual(self.conn.execute(
+            "SELECT activeRunId FROM tickets WHERE id = ?",
+            (self.ticket_of[run],),
+        ).fetchone(), (run,))
+
     def test_budget_consumers_use_working_clock(self):
         run = self.a_run(budget_min=10)
         with patch("store.working.time", return_value=T0 / 1000):
