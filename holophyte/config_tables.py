@@ -348,8 +348,7 @@ def board_config(target):
 # API when it lands a green, quiet pull request under `mode = "pr"`:
 # `"merge"` (a merge commit, like the local `--no-ff` merge), `"squash"` or
 # `"rebase"`. A repository whose ruleset allows squash only, or requires
-# linear history, refuses a merge commit after every gate has passed; this
-# names the method it will take. Validated whatever the mode, like the rest.
+# linear history, refuses a merge commit. Validated whatever the mode.
 #
 # `pr_poll_sec` is the least time, in seconds, between two babysit rounds
 # the loop itself starts on one parked pull request (KO-362). Every tick
@@ -358,13 +357,11 @@ def board_config(target):
 # request that moved past what the last babysit pass recorded is sent
 # back to the babysitter as `--babysit KO-n` would send it -- but no more
 # often than this, per pull request, so a reviewer typing three comments
-# in a minute gets one round rather than three. An integer of at least
-# 10; the default is 180.
+# in a minute gets one round. An integer of at least 10; default 180.
 #
-# `pr_quiet_sec` is the quiet a green, thread-free pull request must have
-# behind it before the babysitter merges it (KO-429), from GitHub's
-# `updatedAt`. An integer of at least 0; the default is 300, `0`
-# merge-as-soon-as-green.
+# `pr_quiet_sec`: quiet since GitHub updatedAt before merging (default 300;
+# 0 merges as soon as green). `check_wait_sec`: positive pending/quiet wait
+# cap, default pr.CHECK_WAIT_S (1800), independently set per target (KO-477).
 #
 # Pull request titles and bodies are always written by one implementer turn
 # from the diff, ticket and repository conventions. `pr_style` supplies
@@ -391,6 +388,7 @@ MERGE_KEYS = {
     "pr_merge_method": "merge",
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
+    "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "pr_style": "",
     "human_threads": "park",
     "after": (),
@@ -408,9 +406,8 @@ MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
 # The least `pr_poll_sec`: under this the loop would be polling GitHub for
 # a reviewer's next keystroke rather than their next comment.
 PR_POLL_FLOOR = 10
-# The least value each integer [merge] key takes.
 MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
-                    "pr_quiet_sec": 0}
+                    "pr_quiet_sec": 0, "check_wait_sec": 1}
 
 
 def merge_config(target):
@@ -420,6 +417,7 @@ def merge_config(target):
     startup. `after` holds shell commands; `bot_authors` holds logins whose
     declined threads are resolved. Refusals name the config, table and key.
     """
+    from holophyte.pr import CHECK_WAIT_S  # Deferred: pr also reads config.
     table = target.config().get("merge", {})
     if not isinstance(table, dict):
         raise SystemExit(
@@ -431,6 +429,8 @@ def merge_config(target):
             " pull request bodies are always written")
     values = {}
     for key, default in MERGE_KEYS.items():
+        if key == "check_wait_sec":
+            default = CHECK_WAIT_S
         value = table.get(key, default)
         if key in MERGE_INT_FLOORS:
             if isinstance(value, bool) or not isinstance(value, int) \

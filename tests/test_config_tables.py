@@ -346,7 +346,7 @@ class MergeConfigTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, 300, "", "park", (),
+                         ("auto", "local", 5, "merge", 180, 300, 1800, "", "park", (),
                           ("devin-ai-integration", "coderabbitai",
                            "greptile-apps", "github-actions")))
 
