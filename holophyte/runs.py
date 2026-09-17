@@ -131,8 +131,9 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     a newer schema), it falls back to the existing connection under its
     transaction lock, shared with the caller's store writes. Waiting for that
     lock is cancellable so exit can join even inside a caller transaction.
-    A failed beat prints
-    `[holo2] heartbeat failed: ...` and the block goes on: the agent's work
+    The first failure prints `[holo2] heartbeat failed: ...`; subsequent
+    failures are quiet until recovery is reported. Failed opens retry on
+    later beats. The block goes on: the agent's work
     is not lost to a locked store. On exit the thread is signalled and joined
     before the loop's next phase write, so no beat lands after the stage the
     block was for. A `conn` or `run_id` of None makes this a no-op, like
@@ -216,30 +217,53 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat):
     returns: there is nothing left to keep alive.
     """
     own = None
-    try:
-        own = store.open(path)
-    except BaseException as e:  # noqa: BLE001 - SystemExit refuses newer stores
-        print(f"[holo2] heartbeat failed: {e}", flush=True)
-    else:
-        heartbeat = partial(_heartbeat, own, run_id, swept)
+    opening_failed = False
+    beating_failed = False
+
+    def current_heartbeat():
+        nonlocal own, opening_failed
+        if own is None:
+            try:
+                own = store.open(path)
+            except BaseException as exc:  # noqa: BLE001 - newer schema is SystemExit
+                if not opening_failed:
+                    print(f"[holo2] heartbeat failed: {exc};"
+                          " beating through the open connection", flush=True)
+                opening_failed = True
+                return heartbeat
+            if opening_failed:
+                print("[holo2] heartbeat recovered", flush=True)
+                opening_failed = False
+        return partial(_heartbeat, own, run_id, swept)
+
     try:
         while not stop.wait(interval_s):
             try:
-                if heartbeat():
+                alive = current_heartbeat()()
+                if beating_failed:
+                    print("[holo2] heartbeat recovered", flush=True)
+                    beating_failed = False
+                if alive:
                     continue
             except Exception as e:  # noqa: BLE001 - same
-                print(f"[holo2] heartbeat failed: {e}")
+                if not beating_failed:
+                    print(f"[holo2] heartbeat failed: {e}", flush=True)
+                beating_failed = True
                 continue
             # Swept: the run is over. Kill the turn, then stop beating.
-            if on_swept is not None:
-                try:
-                    on_swept()
-                except Exception as e:  # noqa: BLE001 - the raise follows
-                    print(f"[holo2] stopping the swept turn failed: {e}")
+            _notify_swept(on_swept)
             return
     finally:
         if own is not None:
             own.close()
+
+
+def _notify_swept(on_swept):
+    if on_swept is not None:
+        try:
+            on_swept()
+        except Exception as exc:  # noqa: BLE001 - the raise follows
+            print(f"[holo2] stopping the swept turn failed: {exc}")
 
 
 def _ending_of(conn, run_id):

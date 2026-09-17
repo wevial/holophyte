@@ -28,7 +28,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
     def bump(self):
         self.conn.execute(f'PRAGMA user_version = {store.SCHEMA_VERSION + 1}')
 
-    def three_beats(self, failure=None):
+    def three_beats(self, failure=None, count=3):
         """Real timer thread and writes, with three deterministic clock ticks."""
         done = threading.Event()
         beat = runs._beat
@@ -53,7 +53,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
                         observed.append(reader.execute(
                             'SELECT lastHeartbeat FROM runs WHERE id = ?',
                             (self.run,)).fetchone()[0])
-                if ticks == 3:
+                if ticks == count:
                     done.set()
                     return stop.wait(5)
                 ticks += 1
@@ -74,7 +74,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
             else:
                 with runs.heartbeat_while(self.conn, self.run, 10):
                     self.assertTrue(done.wait(5), 'heartbeat thread died')
-        self.assertEqual(observed, [3000, 4000, 5000])
+        self.assertEqual(observed, [3000 + 1000 * n for n in range(count)])
         self.assertEqual(fallbacks[0].call_count,
                          3 if connections[0] is self.conn else 0)
         return connections, out.getvalue()
@@ -88,6 +88,21 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
         self.assertTrue(all(conn is self.conn for conn in connections))
         self.assertEqual(output.count('[holo2] heartbeat failed:'), 1)
         self.assertIn(f'version {store.SCHEMA_VERSION + 1} is newer', output)
+
+    def test_three_failed_opens_then_recovery_keeps_every_beat(self):
+        opened = store.open(self.path)
+        self.addCleanup(opened.close)
+        self.bump()
+        try:
+            store.open(self.path)
+        except store.SchemaNewer as exc:
+            failure = exc
+        connections, output = self.three_beats(
+            [failure, failure, failure, opened], count=4)
+        self.assertEqual(connections, [self.conn] * 3 + [opened])
+        self.assertEqual(output.count('heartbeat failed:'), 1)
+        self.assertIn('; beating through the open connection', output)
+        self.assertEqual(output.count('heartbeat recovered'), 1)
 
     def test_missing_path_also_keeps_beating(self):
         connections, output = self.three_beats(

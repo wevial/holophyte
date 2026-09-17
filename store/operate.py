@@ -841,7 +841,7 @@ def record_loop_restart(conn, project_id, sha, now=None):
     Written by the loop just before `os.execv()` replaces it, so a restart that
     never comes back has left something a reader can see: the exec itself
     prints nothing once it has failed, and every gate before it had passed.
-    `now` is epoch milliseconds for `at`, defaulting to the clock. The row is
+    `sha`: commit or JSON {leaving, arriving}; `now`: epoch ms, default clock.
     the question "did the loop return?"; `record_loop_return()` and a claim
     are the two ways of answering yes, `unreturned_loop_restarts()` is how the
     sweep asks.

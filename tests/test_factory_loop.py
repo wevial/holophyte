@@ -1,14 +1,7 @@
 """Factory loop control flow, driven end to end with zero agent calls.
 
-The paths under test are the ones that used to need live agents to exercise:
-a clean approval that merges, both review rounds spending their findings and
-their fix rounds before a terminal PASS, the two ways adjudication refuses to
-merge, and the failure-pattern escalation that stops a ticket the loop keeps
-failing on from being claimed again. `tests/fake_agent.py` scripts the agent
-turns; everything else is real — a real throwaway repo, real worktrees, the
-real verify gate, the real `--no-ff` merge — so what these tests assert is the
-loop's behavior and not a model of it.
-
+The fake agent scripts implement/review turns; throwaway repositories,
+worktrees, verification and merges are real.
 Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 """
 from __future__ import annotations
@@ -69,6 +62,13 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class LoopTests(LoopFixture):
+    def test_startup_first_line_names_running_build(self):
+        # The factory build comes from its source checkout, even when its
+        # target is another repository. Keep the normal self-hosting decision.
+        sha = self.git("rev-parse", "--short", "HEAD", cwd=ROOT).strip()
+        output = self.main_output(Commit("banner witness"), APPROVE)
+        self.assertEqual(output.splitlines()[0], f"[holo2] factory at {sha}")
+
     # --- the clean run ---------------------------------------------------
 
     def test_a_script_ending_in_approve_merges_without_spawning_an_agent(self):
