@@ -405,7 +405,7 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.assertEqual(
             self.read("SELECT phase, candidateSha FROM runs WHERE id = 2"),
             [("awaiting_merge_approval", head)])
-        self.assertIn("a human says merge", self.question())
+        self.assertIn("waiting for a human to say merge", self.question())
 
     def test_a_tree_conflict_goes_to_the_implementer_then_parks(self):
         """KO-377: `origin/main` conflicts with the branch in the tree.

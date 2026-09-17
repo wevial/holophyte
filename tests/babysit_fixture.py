@@ -3,6 +3,7 @@ import dataclasses
 import io
 import sqlite3
 import subprocess
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import holophyte
@@ -18,6 +19,55 @@ T0 = 1_700_000_000_000
 
 
 class ConflictRefusalCases:
+    def refresh_wait(self, changed=False, checks="SUCCESS"):
+        review = self.conflict_refusal(conflict=changed)
+        (self.calls.parent / "refused").touch()  # This case reports CONFLICTING.
+        def stamp(seconds):
+            return datetime.fromtimestamp(seconds, timezone.utc).isoformat()
+        self.serve(self.pr_state(mergeable="CONFLICTING", updated_at=stamp(800)),
+                   self.pr_state(checks="PENDING", updated_at=stamp(1000)),
+                   self.pr_state(checks=checks, updated_at=stamp(1000)))
+        naps = []
+        work = self.ratchet_work() if changed else Commit("candidate")
+        fixes = [Commit("Resolve main", path="tests/test_file_sizes.py",
+                        body="branch's line\nmain's line\n"), APPROVE
+                 ] if changed else []
+        with patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch("holophyte.babysitter.time",
+                      side_effect=lambda: 1000 + sum(naps)):
+            out = self.main_output(work, review, Idle(""), *fixes,
+                                   provider=self.provider())
+        return out, naps
+
+    def test_main_refresh_carries_review_and_quiet_but_waits_for_checks(self):
+        out, naps = self.refresh_wait()
+        self.assertEqual(self.last_fake.roles, ["implement", "review", "implement"])
+        self.assertIn("green and quiet for 230s of the 300s", out)
+        self.assertEqual(sum(naps), 100)
+        head = self.pushed()[-1][1]
+        self.assertEqual(self.read("SELECT summary FROM runEvents WHERE"
+                                   " kind = 'pull_request' AND summary LIKE"
+                                   " 'main refreshed%'"),
+                         [(f"main refreshed at {head}; diff to main unchanged,"
+                           " review and quiet carried forward",)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_main_refresh_failed_checks_park(self):
+        self.refresh_wait(checks="FAILURE")
+        self.assertEqual(self.last_fake.roles, ["implement", "review", "implement"])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("checks failure on the head commit", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_changed_main_merge_restarts_review_and_quiet(self):
+        out, naps = self.refresh_wait(changed=True)
+        self.assertEqual(self.last_fake.roles,
+                         ["implement", "review", "implement", "implement", "review"])
+        self.assertIn("green and quiet for 30s of the 300s", out)
+        self.assertEqual(sum(naps), 300)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def test_conflict_push_waits_for_the_head_to_catch_up(self):
         review = self.conflict_refusal(heads=("old", "pushed"))
         naps = []
