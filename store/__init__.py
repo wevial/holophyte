@@ -1,18 +1,11 @@
 """store: the v2 durable state store, one WAL-mode SQLite file.
 
-Local-first by resolved decision (2026-08-22): all loop state lives behind
-this one module so a hosted backend later is a driver swap, not a loop
-rewrite. Stdlib ``sqlite3`` only.
+Local-first store behind one module; standard-library ``sqlite3`` only.
 
-The API so far is ``open()`` and ``init()`` for the schema,
-``ensure_project()`` for the repo's projects row, ``claim()``/``release()``
-for the per-ticket lease, ``mirror_ticket()``/``transition()`` for ticket
-status, ``pickable()`` for the pickability predicate,
-``resume()`` for the resume guidance invariant,
-``findings_fingerprint()``/``findings_overlap()`` for stuck-review
-detection, ``record_review_round()`` for the rows they read, and
-``contract_snapshot()``/``run_contract()``/``contract_drift()`` for the
-claim-time freeze of a ticket's contract and the drift check against it.
+The API covers schema migration, ticket status and pickability, per-ticket
+leases, operator resume guidance, review findings and rounds, and contract
+snapshots with drift checks. `SchemaNewer` lets live loops recognize when
+another process migrated their store.
 
 Conventions, fixed here for every later ticket to follow:
 
@@ -43,7 +36,14 @@ import json
 import socket
 import time
 
-from .schema import SCHEMA_VERSION, _transaction, init, open, transaction  # noqa: F401
+from .schema import (  # noqa: F401
+    SCHEMA_VERSION,
+    SchemaNewer,
+    _transaction,
+    init,
+    open,
+    transaction,
+)
 
 
 class ClaimConflict(Exception):

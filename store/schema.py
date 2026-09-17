@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import sqlite3
+import threading
 
 # One statement per table, in dependency order where it matters. Every
 # statement is IF NOT EXISTS, which is the whole of init()'s idempotency:
@@ -389,34 +390,41 @@ CREATE INDEX IF NOT EXISTS ledger_runId ON ledger (runId);
 """
 
 
+class SchemaNewer(SystemExit):
+    """A newer factory migrated this store; an old loop must re-execute."""
+
+    def __init__(self, path, version):
+        self.version = version
+        super().__init__(
+            f"{path}: store schema version {version} is newer than the"
+            f" version {SCHEMA_VERSION} this build understands; refusing"
+            " to open it with an older factory")
+
+
+class _Connection(sqlite3.Connection):
+    """Allow a fallback heartbeat, serialized with the caller's transactions."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._lock = threading.RLock()
+
+
 def open(path):  # noqa: A001 - the ticket names this entry point open()
     """Open the store at `path` in WAL mode and return the connection.
 
-    Reads `PRAGMA user_version` first: a store stamped newer than
-    `SCHEMA_VERSION` is refused with `SystemExit` before anything is written,
-    and one stamped older (or never stamped) is carried forward by `init()`
-    and stamped current. The three foreign-key indexes are created if absent.
-
-    WAL is not advisory here: the supervisor reads a run's state while the
-    loop is writing it, and rollback-journal mode would block one on the
-    other. A filesystem that cannot honour the pragma (a network mount, say)
-    silently leaves the database in its old mode, so the resulting mode is
-    read back and a mismatch raises rather than degrading quietly.
-
-    Shadows the builtin `open` inside this module only; callers say
-    `store.open(...)`.
-    """
-    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S)
+    Refuse a newer `user_version` with `SchemaNewer` (a `SystemExit`) before
+    writing. Migrate older stores with `init()` and create missing indexes.
+    Require WAL so supervisor reads can overlap loop writes; a filesystem
+    that cannot enable it raises rather than silently degrading."""
+    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S,
+                           check_same_thread=False, factory=_Connection)
     # Before anything that writes, including the WAL switch below: a store a
     # newer module stamped is refused without touching it, so the file is
     # still exactly what that newer build left for it to reopen.
     (version,) = conn.execute("PRAGMA user_version").fetchone()
     if version > SCHEMA_VERSION:
         conn.close()
-        raise SystemExit(
-            f"{path}: store schema version {version} is newer than the"
-            f" version {SCHEMA_VERSION} this build understands; refusing"
-            " to open it with an older factory")
+        raise SchemaNewer(path, version)
     # Referential integrity is off by default in SQLite and is per-connection,
     # so it has to be asserted on every open, not once at init().
     conn.execute("PRAGMA foreign_keys = ON")
@@ -697,40 +705,32 @@ def _widen_interventions_action(conn):
 def _transaction(conn):
     """Run the block in one `BEGIN IMMEDIATE`, or join the caller's transaction.
 
-    Every writer in this module is a read (what is there now?) followed by a
-    write (change it), which two concurrent callers must not interleave — so
-    when this owns the transaction it takes `BEGIN IMMEDIATE`, whose write
-    lock is held up front, and callers serialize in SQLite instead of racing.
-    It commits on a clean exit and rolls back on any exception, including
-    `KeyboardInterrupt` and one raised by the commit itself.
+    `BEGIN IMMEDIATE` serializes read-then-write operations across connections.
+    The connection lock serializes fallback heartbeats with their caller:
+    another thread must not join the caller's open transaction.
+    Commit on success; roll back on any exception, including commit failure.
 
-    When a transaction is *already* open the block joins it and this commits
-    and rolls back nothing: the owner does both, at its own boundary. That is
-    what lets these writers run inside a caller's `transaction()` block, which
-    owns a transaction precisely so several writes commit or roll back as one.
-    Without it, a nested `BEGIN` would raise `OperationalError: cannot start a
-    transaction within a transaction` and no caller could group them.
-
-    A joined block inherits the owner's locking, so an owner that wants the
-    serialization above must have opened its transaction IMMEDIATE too;
+    Nested calls join the owning thread's transaction without committing or
+    rolling it back. The owner must take IMMEDIATE for serialization, as
     `transaction()` and `claim()` do.
     """
-    if conn.in_transaction:
-        yield
-        return
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        yield
-        # Inside the guard: a deferred constraint the block violated is only
-        # checked at COMMIT, and SQLite leaves the
-        # transaction *open* when it fails that way. Unrolled back, the block's
-        # writes stay pending on the connection, and the next `_transaction()`
-        # would see `in_transaction` and silently join that contaminated state
-        # instead of starting clean.
-        conn.commit()
-    except BaseException:
-        conn.rollback()
-        raise
+    with getattr(conn, "_lock", contextlib.nullcontext()):
+        if conn.in_transaction:
+            yield
+            return
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            # Inside the guard: a deferred constraint the block violated is only
+            # checked at COMMIT, and SQLite leaves the
+            # transaction *open* when it fails that way. Unrolled back, the block's
+            # writes stay pending on the connection, and the next `_transaction()`
+            # would see `in_transaction` and silently join that contaminated state
+            # instead of starting clean.
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
 
 
 @contextlib.contextmanager
