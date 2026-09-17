@@ -12,6 +12,7 @@ import review_runner
 from holophyte import agents, dispatch, loop
 from holophyte.dispatch import MergeParked
 from holophyte.gates import InfraFailure, RunFailure
+from holophyte.pr import Thread
 
 
 class ReviewRefsTests(unittest.TestCase):
@@ -182,11 +183,16 @@ class ReviewRefsTests(unittest.TestCase):
                 babysitter._review_fix(
                     **common, reviewed=self.base, pull=SimpleNamespace(url="pull")
                 )
-        prompts.append(
-            babysitter.adjudication_brief(
-                SimpleNamespace(url="pull"), (), "ticket", self.first, run_id=340
-            )
-        )
+            with self.assertRaises(Captured):
+                babysitter._answer_threads(
+                    **common,
+                    pull=SimpleNamespace(url="pull"),
+                    state=SimpleNamespace(threads=(Thread(
+                        id="thread", path="app.py", line=1, author="review-bot",
+                        body="Check this change", url="thread", author_kind="bot",
+                    ),)),
+                    rnd=1, pass_no=1, model="reviewer", budget_min=10,
+                )
         self.assertEqual(len(prompts), 4)
         for prompt in prompts:
             self.assertIn("refs/review/340/base", prompt)
