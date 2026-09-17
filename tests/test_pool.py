@@ -238,7 +238,7 @@ class PoolTests(LoopFixture):
         # queue.clear() emptied the board without a claim, so the drain's
         # mirror reconcile (KO-425) walks KO-132's `ready` row to
         # `blocked_on_deps`.
-        self.assertEqual(self.out.splitlines(), [
+        self.assertEqual(self.out.splitlines()[1:], [
             "[holo2] started worker 1 as pid 5001",
             "[holo2] started worker 2 as pid 5002",
             "[holo2] worker 1 merged its ticket",

@@ -1,4 +1,5 @@
 """Operator commands and startup: probe before claim, record route failures."""
+import json
 import os
 import sys
 from pathlib import Path
@@ -27,24 +28,20 @@ from holophyte.report import report_lines
 from holophyte.runs import open_store
 from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
 
-# How the loop restarts itself after merging a change to its own code: the
-# process image is replaced, never a module reloaded. A seam so tests can
-# see the decision without exec-ing the test runner.
+# Replace the process after a self-merge; tests observe through this seam.
 EXEC = os.execv
 
 
 def self_hosted(target):
-    """Whether this loop runs against the factory's own checkout.
-
-    Such a loop re-execs after merge to load the newly merged code."""
-    # This module lives in `holophyte/`, one level below the repository; the
-    # comparison is against the repository, as it was when it lived in
-    # `factory.py`.
+    """Whether the target is the factory checkout, requiring exec after merge."""
     return Path(__file__).resolve().parent.parent == target.path.resolve()
 
 
 def main(target, provider):
     """Probe before claiming, then run serially or schedule worker children."""
+    checkout = Path(__file__).resolve().parent.parent
+    sha = sh(["git", "rev-parse", "--short", "HEAD"], checkout)
+    print(f"[holo2] factory at {sha}", flush=True)
     reset(target)
     try:
         knobs = loop_config(target)
@@ -80,10 +77,7 @@ def _record_startup_probe(target, provider, probe):
 
 
 def _serial(target, provider, knobs):
-    """Claim, mirror, lease, dispatch and close out one ticket at a time.
-
-    A `--worker` child runs the same phases once in `worker()` (KO-343).
-    """
+    """Claim and dispatch serially; `worker()` runs the same phases once."""
     from holophyte.dispatch import (
         PARKED,
         SWEPT,
@@ -95,15 +89,11 @@ def _serial(target, provider, knobs):
     restart_after_merge = self_hosted(target)
     stop_on_failure = knobs.stop_on_failure
     order = knobs.order
-    # Whether any run this pass failed, for the exit code when the loop was
-    # told to go on past failures: the shell still sees a nonzero status for
-    # a night that was not clean.
+    # Preserve a nonzero exit when continuing past failures.
     failed = False
     conn = open_store(target)
     try:
-        # The provider knows its team by name rather than by id; the column's
-        # contract is one row per Linear team, which the name keys just as
-        # well until the provider resolves the id.
+        # The team name keys the project until the provider resolves its id.
         project = store.tickets.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
         _reconcile_at_startup(target, conn, project, provider)
@@ -188,11 +178,7 @@ def _serial(target, provider, knobs):
             commit_findings(target,
                             f"Complete task {task['id']}: {task['title']}")
             if restart_after_merge:
-                # Store and Linear are terminal for this run, the lease is
-                # released and no worktree is open: the re-exec starts
-                # exactly where the next pass would, from the merged code.
-                # Only after a merge -- a failure returned above, which is
-                # the intended stop.
+                # Terminal run, released lease: restart with the merged code.
                 _reexec(target, conn, project)
                 return  # only a test's EXEC returns
     finally:
@@ -213,18 +199,32 @@ def _schema_move(target):
     return None
 
 
+def _fast_forward_checkout(target):
+    """Best effort: unsafe or diverged checkouts still execute the disk build."""
+    try:
+        if sh(["git", "branch", "--show-current"], target.path) != "main":
+            raise RuntimeError("not on main")
+        if sh(["git", "status", "--porcelain"], target.path):
+            raise RuntimeError("checkout not clean")
+        sh(["git", "fetch", "origin", "main"], target.path)
+        sh(["git", "merge", "--ff-only", "origin/main"], target.path)
+    except (RuntimeError, OSError) as exc:
+        reason = " ".join(str(exc).split())
+        print(f"[holo2] re-exec: checkout not fast-forwarded ({reason});"
+              " executing the code on disk", flush=True)
+
+
 def _reexec(target, conn, project, reason=None):
-    """Replace the process image with a fresh `factory.py` from the merged
-    code, through the `EXEC` seam. Returns only when a test's EXEC does."""
+    """Update and exec `factory.py`; returns only when a test's EXEC does."""
     sha = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
-    # The note the supervisor watches for, written before the exec because
-    # nothing can be written after a failed one: the sweep reports this
-    # restart if no claim, heartbeat or exit note follows it within the
-    # grace window.
-    store.record_loop_restart(conn, project, sha)
+    # Record before exec so the sweep can detect a restart that never returns.
+    _fast_forward_checkout(target)
+    arriving = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
+    store.record_loop_restart(conn, project, json.dumps({
+        "leaving": sha, "arriving": arriving}))
     conn.close()
-    reexec_self(reason or ("merged a change to the factory itself;"
-                           f" re-executing from {sha}"), EXEC)
+    reason = reason or "merged a change to the factory itself"
+    reexec_self(f"{reason}; re-executing at {arriving} (leaving {sha})", EXEC)
 
 
 def report(target, conn=None, out=None, now=None):

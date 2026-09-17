@@ -601,7 +601,7 @@ class SelfHostingTests(LoopFixture):
         self.assertEqual(self.execs, [("/usr/bin/python3", orig)])
         head = self.git("rev-parse", "--short", "HEAD").strip()
         self.assertIn("merged a change to the factory itself;"
-                      f" re-executing from {head}: {orig}", out)
+                      f" re-executing at {head} (leaving {head}): {orig}", out)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_the_re_exec_leaves_a_restart_note_the_sweep_can_watch(self):
@@ -616,7 +616,7 @@ class SelfHostingTests(LoopFixture):
         head = self.git("rev-parse", "--short", "HEAD").strip()
         self.assertEqual(
             self.read("SELECT sha, returnedAt, reportedAt FROM loopRestarts"),
-            [(head, None, None)])
+            [(json.dumps({"leaving": head, "arriving": head}), None, None)])
 
     def test_re_exec_resolves_a_bare_interpreter_name_on_path(self):
         """`sys.orig_argv[0]` is whatever the operator typed -- usually the
@@ -658,7 +658,7 @@ class SelfHostingTests(LoopFixture):
         self.assertFalse(holophyte.operator.self_hosted(target(ROOT / "holophyte")))
 
     def test_a_merge_into_another_repository_does_not_re_execute(self):
-        self.host_the_factory_in(self.target.parent / "elsewhere")
+        self.host_the_factory_in(ROOT)
         self.loop(Commit("the scripted work"), APPROVE)
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
