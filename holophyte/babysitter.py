@@ -1,29 +1,4 @@
-"""The babysit pass over a pull request, and the texts it reads and writes.
-
-Three verdicts, one per thread, from the adjudicator role:
-
-* `ADDRESS` -- a concrete defect; the fix round takes it, the reply names
-  the sha, the thread is resolved.
-* `DECLINE` -- asks for nothing specific, or for what the ticket puts out
-  of scope; the reply says why. Recognized bot authors have their
-  threads resolved; other authors retain the last word. A thread naming an
-  existing function, helper or constant the diff re-implements is a concrete
-  change request, not a preference: the fix is reuse, and `AGENTS.md` or
-  `CLAUDE.md` conventions are the reviewer's standard.
-* `HUMAN` -- a genuine question, a reject, or anything the adjudicator
-  will not answer for the operator: no reply is posted, the run parks and
-  the ticket's question quotes the thread. A thread the reply gives no
-  verdict for is `HUMAN` too: silence is not a licence to answer.
-
-A thread a person opened is judged only under `[merge] human_threads =
-"act"`; then its verdicts are `ADDRESS` or `HUMAN`, never `DECLINE` --
-the factory does what a person asked and says so, or hands the thread to
-the operator -- and an addressed thread is left unresolved for its
-author to close.
-
-Every reply the pass posts opens with `---- Comment by MODEL ----`, so a
-reader of the PR can tell the factory's comments from a person's.
-"""
+"""PR babysitting: adjudicate threads, verify fixes, and wait for a safe merge."""
 import re
 import subprocess
 from time import monotonic, time
@@ -257,12 +232,9 @@ def quoted(thread):
 
 
 def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
-                       sha, beat_s, pull, budget_min, reviewed=None, refusal=None):
-    """Fetch and merge origin/main, push, and wait for GitHub's head.
-
-    Conflicts get one implementer turn; unresolved merges abort and park.
-    Preserve the branch and reviewed sha. Never rebase or force-push.
-    """
+                       sha, beat_s, pull, budget_min, reviewed=None, refusal=None,
+                       previous=None, refresh=None):
+    """Merge and push main; unresolved conflicts get one turn, then park."""
     from holophyte.claim import merge_conflicts
     from holophyte.loop import _timed, sh
     from holophyte.merge_gate import _is_ancestor, _merge_ref, merge_conflict_goal
@@ -278,6 +250,7 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                            f" for the conflicting {pull.url}:"
                            f" {(fetched.stderr or fetched.stdout).strip()}"
                            f"; branch {branch} preserved at {sha[:12]}")
+    before = _diff_identity(wt, ref)
     status, detail = _merge_ref(wt, ref)
     if status == "conflicted":
         _timed(target, conn, run_id, beat_s, wt, budget_min,
@@ -311,8 +284,28 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                 " a conflict)")
         if conn is not None and run_id is not None:
             store.record_ledger(conn, run_id, "note", note)
-    return merged, _wait_for_pushed_head(
+    state = _wait_for_pushed_head(
         target, conn, run_id, provider, task_id, branch, merged, beat_s, pull, reviewed)
+    if merged != sha and before == _diff_identity(wt, ref):
+        if conn is not None and run_id is not None:
+            store.record_event(conn, run_id, "pull_request",
+                               f"main refreshed at {merged}; diff to main unchanged,"
+                               " review and quiet carried forward")
+        if reviewed == sha:
+            reviewed = merged
+        if previous is not None and refresh is not None:
+            quiet_at = refresh.get((sha, previous.updated_at), previous.updated_at)
+            refresh.clear()
+            refresh[(merged, state.updated_at)] = quiet_at
+    return merged, state, reviewed
+
+
+def _diff_identity(wt, ref):
+    """Compare the candidate against the fetched main, never a stale local main."""
+    diff = subprocess.run(["git", "diff", f"{ref}...HEAD"], cwd=wt,
+                          capture_output=True, check=True).stdout
+    return subprocess.run(["git", "patch-id", "--stable"], cwd=wt, input=diff,
+                          capture_output=True, check=True).stdout
 
 
 def _wait_for_pushed_head(target, conn, run_id, provider, task_id, branch,
@@ -352,10 +345,11 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     model = agent_route(target, "adjudicate")
     # A fix moves sha past the candidate covered by reviewed.
     pushed_state = None
+    refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     for pass_no in range(1, merge.pr_rounds + 1):
         state = _settled_or_park(
             target, conn, run_id, beat_s, pull, pushed_state, provider,
-            task_id, branch, sha, reviewed)
+            task_id, branch, sha, reviewed, refresh)
         pushed_state = None
         done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
                             sha, pull, state, reviewed)
@@ -363,9 +357,9 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             return done
         if state.mergeable == "CONFLICTING":
             # Push origin/main's merge and settle again; UNKNOWN is not conflict.
-            sha, pushed_state = _merge_origin_main(
+            sha, pushed_state, reviewed = _merge_origin_main(
                 target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
-                pull, budget_min, reviewed=reviewed)
+                pull, budget_min, reviewed=reviewed, previous=state, refresh=refresh)
             continue
         rnd = _next_round(conn, run_id)
         if state.threads:
@@ -408,17 +402,17 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                                        ticket, budget_min, merge.approve == "auto")
             except pr.MergeRefused as refused:
                 verified = sha
-                sha, pushed_state = _merge_origin_main(
+                sha, pushed_state, reviewed = _merge_origin_main(
                     target, conn, run_id, provider, task_id, branch, wt, sha,
                     beat_s, pull, budget_min, reviewed=reviewed,
-                    refusal=refused)
+                    refusal=refused, previous=state, refresh=refresh)
                 continue
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "ready to merge; waiting for a human to say merge"
                     " ([merge] approve = \"human\")", (), reviewed=reviewed)
     state = _settled_or_park(
         target, conn, run_id, beat_s, pull, pushed_state, provider,
-        task_id, branch, sha, reviewed)
+        task_id, branch, sha, reviewed, refresh)
     _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
@@ -580,18 +574,22 @@ def _next_round(conn, run_id):
     return len(store.read.rounds_of(conn, run_id)) + 1 if conn else 1
 
 
-def _quiet_left(state, quiet_ms):
+def _quiet_left(state, quiet_ms, refresh=None):
     """Quiet milliseconds remaining since the last PR update."""
-    if state.updated_at is None:
+    key = (state.head_sha, state.updated_at)
+    if refresh and key not in refresh:
+        refresh.clear()  # A later update or another head is real activity.
+    updated_at = (refresh or {}).get(key, state.updated_at)
+    if updated_at is None:
         return quiet_ms
-    return max(0, quiet_ms - (int(time() * 1000) - state.updated_at))
+    return max(0, quiet_ms - (int(time() * 1000) - updated_at))
 
 
 def _settled_or_park(target, conn, run_id, beat_s, pull, state, provider,
-                     task_id, branch, sha, reviewed):
+                     task_id, branch, sha, reviewed, refresh=None):
     from holophyte.pullrequest import _park_on_pr
     try:
-        return _settled_state(target, conn, run_id, beat_s, pull, state)
+        return _settled_state(target, conn, run_id, beat_s, pull, state, refresh)
     except WaitExpired as expired:
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
                     pull, str(expired), (), reviewed=reviewed)
@@ -601,21 +599,22 @@ class WaitExpired(Exception):
     """A continuous PR wait reached its independent liveness deadline."""
 
 
-def _settled_state(target, conn, run_id, beat_s, pull, state=None):
+def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None):
     """Bound pending/quiet waiting with one deadline; return threads promptly."""
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
     deadline = monotonic() + pr.CHECK_WAIT_S
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(target, pull)
-        while not state.threads and not state.merged and not state.closed:
+        while (not state.threads and not state.merged and not state.closed
+               and state.mergeable != "CONFLICTING"):
             if state.checks == "pending":
                 reason = "pending checks"
                 nap = pr.CHECK_POLL_S
                 print(f"[holo2] checks pending on {pull.url}; waiting"
                       f" {nap}s")
             elif state.checks == "success" \
-                    and (left := _quiet_left(state, quiet_ms)):
+                    and (left := _quiet_left(state, quiet_ms, refresh)):
                 reason = "quiet wait"
                 nap = min(merge.pr_poll_sec, left / 1000)
                 print(f"[holo2] {pull.url} is green and quiet for"
