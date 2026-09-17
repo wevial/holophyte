@@ -696,7 +696,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
 
 def launch_route_ready(target, conn, project, run_id, now, out):
     """Silently wait, then probe the exact startup route before retrying."""
-    from holophyte.agents import probe_implementer
+    from holophyte.agents import probe_diagnostic, probe_implementer
     from store import launch_backoff
 
     state = launch_backoff.current(conn, project)
@@ -709,7 +709,7 @@ def launch_route_ready(target, conn, project, run_id, now, out):
         if probe is None or probe.ok:
             launch_backoff.clear(conn, project)
             return True
-        reason = probe.describe()
+        reason = probe_diagnostic(target, probe)
     note = launch_backoff.failure(conn, project, reason, now, run_id=run_id)
     print("[holo2] " + " ".join(note.splitlines()), file=out)
     return False

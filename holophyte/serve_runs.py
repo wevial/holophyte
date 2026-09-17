@@ -450,8 +450,8 @@ def ledger(target, query):
         conn.close()
     return 200, {
         "entries": [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
-                    for e in entries] + route_rows,
-        "since": since, "limit": limit,
+                    for e in entries],
+        "active_outages": route_rows, "since": since, "limit": limit,
     }
 
 

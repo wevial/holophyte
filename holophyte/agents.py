@@ -33,6 +33,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.gates import InfraFailure, run_capped, sh
+from holophyte.redact import known_secrets, redact_prose
 
 TRANSPORT_SIGNATURES = (
     "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "getaddrinfo",
@@ -128,6 +129,11 @@ class ProbeResult:
                 "returncode": self.returncode, "timed_out": self.timed_out,
                 "launch_error": self.launch_error,
                 "timeout": self.timeout, "output": self.tail()}
+
+
+def probe_diagnostic(target, probe):
+    """Safe diagnostic for terminal output and persisted route evidence."""
+    return redact_prose(probe.describe(), known_secrets(target.config()))
 
 
 def probe_implementer(target, timeout=None):

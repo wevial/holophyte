@@ -198,3 +198,37 @@ class LaunchBackoffTests(SweepTestCase):
             start.assert_not_called()
             self.assertIsNone(launch_backoff.current(self.conn, self.project))
             self.assertIsNotNone(launch_backoff.current(self.conn, project))
+
+    def test_probe_credentials_are_redacted_in_output_and_store(self):
+        from types import SimpleNamespace
+
+        from holophyte import operator
+        from store import launch_backoff
+
+        secret = 'fixture-credential-12345'
+        self.configure(f'[service]\napi_key = "{secret}"\n')
+        for startup in (True, False):
+            for code, output in ((1, f'quota exhausted: {secret}'), (0, 'ready')):
+                with self.subTest(startup=startup, code=code):
+                    launch_backoff.clear(self.conn, self.project)
+                    probe = ProbeResult(['fake-probe', secret], code, output, 90)
+                    out = io.StringIO()
+                    with contextlib.redirect_stdout(out), \
+                            patch('holophyte.operator.probe_implementer',
+                                  return_value=probe), \
+                            patch('holophyte.agents.probe_implementer',
+                                  return_value=probe), \
+                            patch('holophyte.operator._serial', return_value=0), \
+                            patch('holophyte.supervisor.start_loop',
+                                  return_value=('loop', True, '')):
+                        if startup:
+                            operator.main(self.tgt, SimpleNamespace(team='team-1'))
+                        else:
+                            start_loop_for(self.tgt, self.conn, [(None, None)], T0, out)
+                    evidence = out.getvalue() + str(self.conn.execute(
+                        'SELECT summary FROM runEvents').fetchall()) + str(
+                        launch_backoff.current(self.conn, self.project))
+                    self.assertNotIn(secret, evidence)
+                    if code:
+                        self.assertIn('quota exhausted', evidence)
+                        self.assertIn('[redacted]', evidence)

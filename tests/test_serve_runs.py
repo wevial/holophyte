@@ -579,7 +579,7 @@ class RouteDownTests(ServeTestCase):
         code, _, body = self.request(
             'GET', f'/ledger?since={started - 10}&kind=intervention')
         self.assertEqual(code, 200)
-        outage, = [r for r in body['entries'] if r['kind'] == 'route_down']
+        outage, = body['active_outages']
         self.assertEqual(outage['at'], started)
         self.assertIsNone(outage['run'])
         self.assertIn('fake-probe: quota exhausted', outage['text'])

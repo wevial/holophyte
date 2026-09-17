@@ -19,6 +19,8 @@ export interface LedgerRow {
 
 export interface LedgerBody {
   entries: LedgerRow[];
+  /** Ongoing project outages, independent of the history window and limit. */
+  active_outages?: LedgerRow[];
   since: number;
   limit: number;
 }

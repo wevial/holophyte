@@ -6,7 +6,7 @@ from pathlib import Path
 import store
 import store.read
 import store.tickets
-from holophyte.agents import probe_implementer
+from holophyte.agents import probe_diagnostic, probe_implementer
 from holophyte.board import mirror_push, post_ledger_comment, release_lease_label
 from holophyte.claim import _claim_next
 from holophyte.config_tables import loop_config, report_config
@@ -48,7 +48,7 @@ def main(target, provider):
     try:
         probe = probe_implementer(target)
         if probe is not None:
-            print(probe.describe())
+            print(probe_diagnostic(target, probe))
             _record_startup_probe(target, provider, probe)
             if not probe.ok:
                 return 1
@@ -74,7 +74,7 @@ def _record_startup_probe(target, provider, probe):
         if probe.ok:
             launch_backoff.clear(conn, project)
         else:
-            launch_backoff.failure(conn, project, probe.describe(),
+            launch_backoff.failure(conn, project, probe_diagnostic(target, probe),
                                    int(time() * 1000), pending=True)
     finally:
         conn.close()
