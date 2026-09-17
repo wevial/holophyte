@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
-from babysit_fixture import ConflictRefusalCases  # noqa: E402
+from babysit_fixture import ConflictRefusalCases, SpentCapReview  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
@@ -40,9 +40,7 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
 class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
-    """The `[merge] mode = "pr"` tests that judge and fix the pull
-    request's threads and checks; the open, park, resume and merge are
-    `MergeModePullRequestTests` (`test_pullrequest.py`)."""
+    """End-to-end review, fix, and merge behavior for PR babysitting."""
 
     def test_conflict_push_waits_for_the_head_to_catch_up(self):
         review = self.conflict_refusal(heads=("old", "pushed"))
@@ -102,8 +100,7 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_declined_human_is_replied_to_left_open_and_parks(self):
-        # Inject the DECLINE at the reply-stage boundary: the earlier human
-        # policy normally converts it to HUMAN, which parks without replying.
+        # Exercise the reply-stage boundary after human adjudication.
         with patch("holophyte.babysitter._verdicts_by_kind",
                    return_value={1: ("DECLINE", "a naming preference")}):
             _, calls = self.declined_thread(("alice", "User"))
@@ -358,7 +355,6 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(len(merge), 1)
         fixed = merge[0]["sha"]
         self.assertNotEqual(fixed, fake.turns[1].candidate_sha)
-        # The second review judged the fix commit itself, against main.
         self.assertEqual(fake.turns[5].candidate_sha, fixed)
         self.assertEqual(fake.turns[5].base_sha, self.base)
         self.assertIn(fake.turns[1].candidate_sha[:12], fake.turns[5].goal)
@@ -410,9 +406,7 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
         self.assertIn(fixed, comment)
 
     def test_a_fix_round_the_reviewer_rejects_parks_instead_of_merging(self):
-        """The review of the fix commit asks for changes: nothing is merged
-        under `approve = "auto"`, no further fix round runs, and the run
-        parks on the PR with the reviewer's findings in the question."""
+        """An initial PR pass rejection parks; only a resume gets the allowance."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
@@ -437,40 +431,47 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
         self.assertIn(fixed[:12], question)
         self.assertIn("scripted change is incomplete", question)
 
-    def test_a_rejected_fix_is_reviewed_again_on_babysitter_re_entry(self):
-        """Regression: `--babysit` on a run parked because the review of
-        the fix asked for changes resumed with the branch's HEAD taken as
-        reviewed, so a green, quiet PR under `approve = "auto"` merged the
-        rejected fix, unchanged, with no reviewer turn. The park now
-        records the sha the last approval covered (none, here), and the
-        resumed babysitter reviews the candidate again before any merge:
-        another `REQUEST_CHANGES` parks it, unmerged, once more."""
-        self.configure('[merge]\nmode = "pr"\n')
-        self.fake_route(states=[self.pr_state([self.DEFECT]),
-                                self.pr_state()])
-        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                  Reply("THREAD 1: ADDRESS -- a real crash"),
-                  Commit("fix: default load()"), REQUEST_CHANGES,
-                  provider=self.provider())
-        fixed = self.git("rev-parse", BRANCH).strip()
-        self.assertEqual(self.read("SELECT approvedSha FROM runs"),
-                         [(None,)])
-        for path in self.api_dir.iterdir():
-            path.unlink()
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
-                                       out=io.StringIO())
+    def test_babysit_review_dispatches_one_fix_with_findings_and_note(self):
+        self.resume_rejected_fix()
+        fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE,
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertIn("scripted change is incomplete", fake.turns[1].goal)
+        self.assertIn("repair the pin", fake.turns[1].goal)
+        fixed = fake.turns[2].candidate_sha
+        self.assertNotEqual(fixed, fake.turns[0].candidate_sha)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [fixed])
+        self.assertEqual(self.read("SELECT verdict FROM reviewRounds"
+                                   " WHERE runId = 2 AND reviewerModel NOT LIKE"
+                                   " 'github:%' ORDER BY round"),
+                         [("changes_requested",), ("pass",)])
+        results = json.loads(self.read("SELECT verificationResults FROM"
+                                       " reviewRounds WHERE runId = 2"
+                                       " AND round = 3")[0][0])
+        self.assertEqual([r["exitCode"] for r in results], [0])
 
-        fake, _ = self.loop(REQUEST_CHANGES, provider=self.provider())
+    def test_babysit_gets_a_recorded_fix_round_past_the_spent_cap(self):
+        self.resume_rejected_fix()
+        review = SpentCapReview(self.db, REQUEST_CHANGES)
+        fake, _ = self.loop(review, Commit("fix past cap"), APPROVE,
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertEqual(review.count, 1)
+        self.assertEqual(self.read("SELECT reviewRoundCap, reviewRoundCount"
+                                   " FROM runs WHERE id = 2"), [(1, 4)])
+        self.assertEqual(self.read("SELECT verdict FROM reviewRounds"
+                                   " WHERE runId = 2 AND round = 3"), [("pass",)])
 
-        self.assertEqual(fake.roles, ["review"])
-        self.assertEqual(fake.turns[0].candidate_sha, fixed)
-        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
-        self.assertEqual(
-            self.read("SELECT id, phase, outcome, candidateSha, approvedSha,"
-                      " mergeSha FROM runs ORDER BY id"),
-            [(1, "failed", "abandoned", fixed, None, None),
-             (2, "awaiting_merge_approval", None, fixed, None, None)])
-        self.assertIn("scripted change is incomplete", self.question())
+    def test_babysit_second_rejection_parks_without_another_fix(self):
+        self.resume_rejected_fix()
+        fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), REQUEST_CHANGES,
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertIn("the review of the fix at "
+                      + fake.turns[2].candidate_sha[:12] + " asked for changes",
+                      self.question())
 
     def test_babysit_re_entry_merges_the_approved_sha_without_a_review(self):
         self.configure('[merge]\nmode = "pr"\n')
@@ -941,7 +942,6 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
         self.assertIn(other[:12], question)
         self.assertIn(candidate[:12], question)
         self.assertIn(BRANCH, self.branches())
-
 
 
 if __name__ == "__main__":

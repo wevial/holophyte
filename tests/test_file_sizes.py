@@ -34,7 +34,7 @@ OVER = {}
 # brought back under its ceiling: the pin caps it at the size the slice
 # left it, so the table only moves down for that file too.
 PINNED = {
-    "holophyte/babysitter.py": 835, "holophyte/board.py": 870,
+    "holophyte/babysitter.py": 833, "holophyte/board.py": 870,
     "holophyte/claim.py": 815, "holophyte/cli.py": 479,
     "holophyte/config.py": 752, "holophyte/dispatch.py": 262,
     "holophyte/config_tables.py": 556, "holophyte/findings.py": 331,
@@ -50,7 +50,7 @@ PINNED = {
     "holophyte/serve_runs.py": 515, "holophyte/supervisor.py": 927,
     "holophyte/supervisor_lock.py": 227,
     "holophyte/sweep_report.py": 236, "store/__init__.py": 975,
-    "store/operate.py": 915, "store/read.py": 941,
+    "store/operate.py": 915, "store/read.py": 940,
     "store/schema.py": 753, "store/tickets.py": 460,
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 644,
     "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 948,

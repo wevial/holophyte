@@ -1,18 +1,5 @@
 """The babysit pass over a pull request, and the texts it reads and writes.
 
-Design note 7's second half. `_babysit()` fetches a pull request's
-unresolved threads and drives the turns; the shapes in this module are
-what it hands them and what it reads back, with nothing in them that
-talks to GitHub, the store or an agent, so every one is testable on its
-own and the pass reads as the sequence Ko runs by hand: threads in,
-verdicts out, fixes, replies. What the pass calls back into the loop
-for -- the merge gate, the timed turn, the drift check, the pull-request
-stage's parks and merge -- is imported inside the functions that use it,
-the same in-function import `holophyte.pullrequest` uses for the loop,
-so this module's import edge stays one-way. The moved bodies still name
-the texts as `babysitter.<name>`; the module's self-import below keeps
-those lines verbatim.
-
 Three verdicts, one per thread, from the adjudicator role:
 
 * `ADDRESS` -- a concrete defect; the fix round takes it, the reply names
@@ -347,7 +334,7 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
 
 def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
-              criteria=(), approved=False, reviewed=None, verified=None):
+              criteria=(), approved=False, reviewed=None, verified=None, fix_note=None):
     """Watch the PR until it merges or parks, bounded by pr_rounds.
 
     Changed candidates need independent review and verification before merge;
@@ -381,7 +368,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                 target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
                 pull, budget_min, reviewed=reviewed)
             continue
-        rnd = len(store.read.rounds_of(conn, run_id)) + 1 if conn else pass_no
+        rnd = _next_round(conn, run_id)
         if state.threads:
             sha = _answer_threads(target, conn, run_id, provider, task_id,
                                   branch, wt, sha, beat_s, pull, state, rnd,
@@ -405,15 +392,13 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
         if sha != reviewed:
-            if merge.approve != "auto":
-                _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
-                            pull, f"{_moved(sha, reviewed)}, and a human"
-                            " says merge on the candidate as it stands"
-                            " ([merge] approve = \"human\")", (),
-                            reviewed=reviewed)
-            _review_fix(target, conn, run_id, provider, task_id, branch, wt,
-                        sha, reviewed, beat_s, pull, ticket, verify_cmd,
-                        contracts, criteria)
+            fixed = _review_fix(target, conn, run_id, provider, task_id, branch, wt,
+                                sha, reviewed, beat_s, pull, ticket, verify_cmd,
+                                contracts, criteria, fix_note, budget_min)
+            if fixed != sha:
+                fix_note = None  # One fix allowance per babysit, past the cap too.
+                sha = reviewed = fixed
+                continue  # Settle the pushed fix's checks and threads first.
             # The review vouches for the fix, not the gate: `verified`
             # stays behind, so the fixed candidate goes through
             # `_merge_gate()` below -- drift check and verify both --
@@ -499,25 +484,22 @@ def _moved(sha, reviewed):
 
 def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
-                criteria=()):
+                criteria=(), fix_note=None, budget_min=None):
     """The independent review of a candidate the babysitter's fix rounds
     moved from `reviewed` to `sha` (None: nothing on record covers it),
     before the merge API is called.
 
-    The fix commits are the implementer's answer to the PR's threads; the
-    reviewer's approval and the adjudicator's verdicts both came before
-    them, so nothing independent has judged the candidate as it stands.
-    The same reviewer route and brief as a review round: verify first,
-    then a read-only review of the candidate at `sha` over the frozen
-    `refs/review/*` pair, recorded as a `reviewRounds` row and held to
-    the ticket's `criteria`: an approval that leaves a criterion unmet,
-    unwitnessed, or witnessed by a test the worktree does not hold is a
-    `REQUEST_CHANGES` whatever its verdict line says. Anything but an
-    approval parks the run on the PR with the findings in the ticket's
-    question -- there is no further fix round here; the operator reads
-    the findings and answers with `--babysit` or by hand."""
+    Verify and record the independent review. A babysit resume gets one
+    fix turn, even past the cap, then a second review with no allowance.
+    Other rejections park with the findings for the operator."""
     from holophyte.loop import _verify_brief, agent, set_phase, sh
     from holophyte.pullrequest import _park_on_pr
+    if merge_config(target).approve != "auto":
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                    pull, f"{_moved(sha, reviewed)}, and a human"
+                    " says merge on the candidate as it stands"
+                    " ([merge] approve = \"human\")", (),
+                    reviewed=reviewed)
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
     with heartbeat_while(conn, run_id, beat_s):
@@ -572,11 +554,27 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"
                f"Reviewer verdict:\n{verdict}", provider)
         print(f"[holo2] the fix at {sha[:12]} is approved")
-        return
+        return sha
     ledger(conn, run_id, task_id, "round",
            f"Round {rnd}: REQUEST_CHANGES on the fix at {sha} on"
            f" {pull.url}; not merged\nReviewer findings:\n{verdict}",
            provider)
+    if fix_note is not None and (unwitnessed or
+            review_runner.terminal_verdict(verdict) == "REQUEST_CHANGES"):
+        goal = (f"Fix the pre-merge review findings on {pull.url}. The ticket"
+                f" is the contract:\n\n{ticket}\n\nReviewer findings:\n{verdict}"
+                f"\n\nOperator babysit note:\n{fix_note}\n\n"
+                "Fix the blockers on this branch and commit; keep the ticket's"
+                " verify commands passing.")
+        ledger(conn, run_id, task_id, "round",
+               f"Babysit review fix allowance after round {rnd}: one fix and"
+               " recorded re-review, even if reviewRoundCap is spent.", provider)
+        fixed = _fix_threads(target, conn, run_id, provider, task_id, branch,
+                             wt, sha, beat_s, pull, (), None, ticket, verify_cmd,
+                             contracts, budget_min, rnd, goal=goal)
+        return _review_fix(target, conn, run_id, provider, task_id, branch, wt,
+                           fixed, None, beat_s, pull, ticket, verify_cmd,
+                           contracts, criteria)
     # No `reviewed`: the judgement on record is this rejection, so the
     # resume that follows reviews the candidate again before any merge.
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
@@ -758,7 +756,7 @@ def _verdicts_by_kind(threads, judged, parsed):
 
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
-                 contracts, budget_min, pass_no):
+                 contracts, budget_min, pass_no, goal=None):
     """The fix round for the addressed threads, the push, then a reply on
     each and a resolve on each bot's; the fixed candidate's sha."""
     from holophyte.loop import (
@@ -769,7 +767,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     )
     from holophyte.redact import known_secrets
     fixes, timed_out = _transport_timed(target, conn, run_id, beat_s, wt, budget_min,
-        babysitter.fix_brief(pull, addressed, ticket))
+        goal or babysitter.fix_brief(pull, addressed, ticket))
     fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if fixed == sha:
         _record_implementer_output(conn, run_id,

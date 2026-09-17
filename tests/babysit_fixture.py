@@ -10,7 +10,7 @@ import holophyte.operator
 import holophyte.pr_status
 import store
 import store.tickets
-from tests.fake_agent import APPROVE, Commit, Idle
+from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle, Reply
 from tests.loop_fixture import BRANCH
 
 MINUTE = 60 * 1000
@@ -18,6 +18,17 @@ T0 = 1_700_000_000_000
 
 
 class ConflictRefusalCases:
+    def resume_rejected_fix(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""),
+                  Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),
+                  REQUEST_CHANGES, provider=self.provider())
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "repair the pin",
+                                         out=io.StringIO())
+
     def conflict_refusal(self, conflict=False, heads=()):
         """GitHub refuses the first merge after main moves under the PR."""
         import test_babysitter
@@ -185,3 +196,21 @@ class StoreBabysitCases:
                 'INSERT INTO interventions (runId, source, "trigger",'
                 ' "action", at) VALUES (?, \'human\', \'manual\','
                 ' \'shepherd\', ?)', (self.run, T0))
+
+
+class SpentCapReview:
+    """A reviewer reached with the live run's round allowance already spent."""
+    role = APPROVE.role
+
+    def __init__(self, db, reply):
+        self.db, self.reply = db, reply
+        self.count = None
+
+    def play(self, cwd, turn):
+        with sqlite3.connect(self.db) as conn:
+            run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+            self.count = conn.execute(
+                "SELECT COUNT(*) FROM reviewRounds WHERE runId = ?",
+                (run_id,)).fetchone()[0]
+            store.set_review_round_cap(conn, run_id, self.count)
+        return self.reply.play(cwd, turn)

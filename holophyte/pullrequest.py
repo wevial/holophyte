@@ -19,16 +19,13 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
 
     What the babysitter may merge without another review is not the branch
     as it stands but the sha an independent judgement covered: the
-    operator's `--approve` is of the sha the park recorded, and
-    `--babysit` is no judgement at all, so it carries the park's
+    operator approves the parked sha; babysit carries the park's
     `approvedSha` -- the reviewer's approval, or None when the park had
     none to record (a fix the reviewer rejected, a store older than the
     column). A branch at any other sha is reviewed again before the merge
     API is called; that is `_babysit()`'s `reviewed`.
 
-    Nothing here has verified the branch either: the park's verify was a
-    process ago, against the main of that day, and `--babysit` or
-    `--approve` vouches for a judgement, not for the tree. So the
+    The park's verify was a process ago, so the
     babysitter is told no sha is verified (`verified=None`) and runs the
     merge gate -- the ticket's verify commands, then the drift check --
     on the candidate before the merge API is called."""
@@ -60,7 +57,10 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
                                     url, f"{task}\n\n{body}" if body else task,
                                     verify_cmd, contracts, budget_min,
                                     criteria, approved=carried.approved,
-                                    reviewed=reviewed, verified=None)
+                                    reviewed=reviewed, verified=None,
+                                    fix_note=(None if carried.approved else
+                                              store.read.babysit_note(
+                                                  conn, carried.run_id)))
     return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                       merge_sha, started, budget_min, 0)
 
