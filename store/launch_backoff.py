@@ -71,3 +71,18 @@ def clear(conn, project):
         conn.execute(
             "UPDATE projects SET launchBackoffUntil=NULL, launchBackoffReason=NULL"
             " WHERE id=?", (project,))
+
+
+def owed_project(conn, owed, project_id=None):
+    """Keep a ticket's project before its first run, or the board's identity."""
+    ticket, run = next(((t, r) for t, r in owed if t is not None or r is not None),
+                       (None, None))
+    if project_id is not None:
+        return (project_id,), run
+    if ticket is not None:
+        return conn.execute("SELECT projectId FROM tickets WHERE id=?",
+                            (ticket,)).fetchone(), run
+    if run is not None:
+        return conn.execute("SELECT projectId FROM runs WHERE id=?",
+                            (run,)).fetchone(), run
+    return conn.execute("SELECT id FROM projects ORDER BY id LIMIT 1").fetchone(), None

@@ -1,4 +1,5 @@
 """A route outage backs off across passes without launching dead loops."""
+import contextlib
 import io
 import os
 import sys
@@ -146,3 +147,54 @@ class LaunchBackoffTests(SweepTestCase):
         self.assertEqual(migrated.execute(
             'SELECT id FROM runs').fetchall(), [(run,)])
         self.assertEqual(migrated.execute('PRAGMA foreign_key_check').fetchall(), [])
+
+    def test_successful_manual_startup_clears_the_outage_without_owed_work(self):
+        from types import SimpleNamespace
+
+        from holophyte import operator
+        from holophyte.serve_runs import route_down_rows
+        from store import launch_backoff
+
+        launch_backoff.failure(self.conn, self.project, 'quota exhausted', T0)
+        with contextlib.redirect_stdout(io.StringIO()), \
+                patch('holophyte.operator.probe_implementer',
+                   return_value=ProbeResult(['fake-probe'], 0, 'ready', 90)), \
+                patch('holophyte.operator._serial', return_value=0):
+            self.assertEqual(operator.main(
+                self.tgt, SimpleNamespace(team='team-1')), 0)
+        self.assertIsNone(launch_backoff.current(self.conn, self.project))
+        self.assertEqual(route_down_rows(self.conn), [])
+
+    def test_unclaimed_ticket_and_board_fallback_use_their_own_project(self):
+        from types import SimpleNamespace
+
+        import store
+        from holophyte.supervisor import reconcile_parked_pull_requests
+        from store import launch_backoff
+
+        project = store.ensure_project(self.conn, 'team-2', self.target)
+        ticket = store.mirror_ticket(
+            self.conn, project, linear_issue_id='unclaimed',
+            linear_identifier='KO-2', title='unclaimed',
+            acceptance_criteria=['Given work, then it is done'],
+            verification_commands=['echo ok'])
+        provider = SimpleNamespace(team='team-2')
+        failure = ProbeResult(['fake-probe'], 1, 'quota exhausted', 90)
+        with patch('holophyte.agents.probe_implementer', return_value=failure), \
+                patch('holophyte.supervisor.start_loop') as start, \
+                patch('holophyte.reconcile._reconcile_pull_requests'), \
+                patch('holophyte.supervisor.linear_budget_low', return_value=False), \
+                patch('holophyte.supervisor.board_ready', return_value=1) as board:
+            reconcile_parked_pull_requests(
+                self.tgt, self.conn, T0, provider, io.StringIO())
+            board.assert_not_called()
+            self.assertIsNone(launch_backoff.current(self.conn, self.project))
+            self.assertIsNotNone(launch_backoff.current(self.conn, project))
+            launch_backoff.clear(self.conn, project)
+            store.transition(self.conn, ticket, 'blocked_on_deps')
+            reconcile_parked_pull_requests(
+                self.tgt, self.conn, T0 + 1000, provider, io.StringIO())
+            board.assert_called_once()
+            start.assert_not_called()
+            self.assertIsNone(launch_backoff.current(self.conn, self.project))
+            self.assertIsNotNone(launch_backoff.current(self.conn, project))

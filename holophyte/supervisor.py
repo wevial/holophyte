@@ -680,8 +680,8 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     # team -- the key `ensure_project()` mirrors them by -- and ensuring
     # the row here gives `board_ready()` somewhere to stamp its ask, so
     # `board_ask_sec` holds even for a board nothing has mirrored yet.
+    board_project = None
     if not owed and not live:
-        board_project = None
         if provider is not None:
             board_project = store.ensure_project(conn, provider.team,
                                                  target.path)
@@ -689,7 +689,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
             conn, board_project, provider, out, now=now,
             board_ask_ms=knobs.board_ask_ms)
     if owed and not linear_budget_low(now, out) and not lease_turn_held(target):
-        start_loop_for(target, conn, owed, now, out)
+        start_loop_for(target, conn, owed, now, out, project_id=board_project)
     return asked
 
 
@@ -715,7 +715,7 @@ def launch_route_ready(target, conn, project, run_id, now, out):
     return False
 
 
-def start_loop_for(target, conn, owed, now, out):
+def start_loop_for(target, conn, owed, now, out, project_id=None):
     """Probe the route, respecting persistent backoff, then start one unit.
 
     Attempts land before systemctl. Successful starts retain the existing
@@ -724,11 +724,7 @@ def start_loop_for(target, conn, owed, now, out):
     """
     from store import launch_backoff
 
-    project = conn.execute("SELECT id FROM projects ORDER BY id LIMIT 1").fetchone()
-    run_id = next((run for _ticket, run in owed if run is not None), None)
-    if run_id is not None:
-        project = conn.execute("SELECT projectId FROM runs WHERE id=?",
-                               (run_id,)).fetchone()
+    project, run_id = launch_backoff.owed_project(conn, owed, project_id)
     if project and not launch_route_ready(
             target, conn, project[0], run_id, now, out):
         return

@@ -44,19 +44,15 @@ def self_hosted(target):
 
 
 def main(target, provider):
-    """Run serially under `workers = 1`, otherwise schedule worker children.
-
-    Probe the configured implementer before claiming (KO-357); an unavailable
-    route ends nonzero; the default route and worker children skip the probe.
-    A newer store at startup re-execs from the current checkout."""
-    probe = probe_implementer(target)
-    if probe is not None:
-        print(probe.describe())
-        if not probe.ok:
-            _record_route_down(target, provider, probe)
-            return 1
-    knobs = loop_config(target)
+    """Probe before claiming, then run serially or schedule worker children."""
     try:
+        probe = probe_implementer(target)
+        if probe is not None:
+            print(probe.describe())
+            _record_startup_probe(target, provider, probe)
+            if not probe.ok:
+                return 1
+        knobs = loop_config(target)
         if knobs.workers == 1:
             return _serial(target, provider, knobs)
         return scheduler(target, provider, knobs)
@@ -64,18 +60,22 @@ def main(target, provider):
         reexec_self(_schema_reason(moved), EXEC)
 
 
-
-def _record_route_down(target, provider, probe):
-    """Persist a failed startup before returning without a claim."""
+def _record_startup_probe(target, provider, probe):
+    """Record failure or clear an outage when startup succeeds."""
     from time import time
 
     from store import launch_backoff
 
+    if probe.ok and not target.store_path.exists():
+        return
     conn = open_store(target)
     try:
         project = store.ensure_project(conn, provider.team, target.path)
-        launch_backoff.failure(conn, project, probe.describe(),
-                               int(time() * 1000), pending=True)
+        if probe.ok:
+            launch_backoff.clear(conn, project)
+        else:
+            launch_backoff.failure(conn, project, probe.describe(),
+                                   int(time() * 1000), pending=True)
     finally:
         conn.close()
 
