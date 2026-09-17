@@ -513,6 +513,7 @@ class AgentCommandTests(ConfigTestCase):
 
         with patch.object(review_runner, "run_review") as run_review, \
                 patch.object(holophyte.agents, "publish_review_refs") as publish, \
+                patch.object(holophyte.agents, "check_review_refs"), \
                 patch.object(subprocess, "run") as run:
             run.return_value.stdout = "VERDICT: APPROVE"
             run.return_value.stderr = ""
@@ -522,15 +523,14 @@ class AgentCommandTests(ConfigTestCase):
 
         self.assertEqual(result, "VERDICT: APPROVE")
         run_review.assert_not_called()
-        # The prompt this route is handed talks about refs/review/base and
-        # refs/review/candidate, so the worktree it runs in has to have them.
-        publish.assert_called_once_with(self.WORKTREE, "1" * 40, "2" * 40)
+        publish.assert_called_once_with(self.WORKTREE, "1" * 40, "2" * 40,
+                                        run_id=None)
         run.assert_called_once_with(
             ["my-reviewer", "--diff", "review it"],
             cwd=self.WORKTREE, capture_output=True, text=True, timeout=1800,
+            env=dict(os.environ, HOLOPHYTE_REVIEW_CANDIDATE="refs/review/candidate"),
         )
-        # The adjudicator is a separate key: overriding one role leaves the
-        # other on its default route.
+        # Overriding the reviewer leaves the adjudicator on its default route.
         self.assertIsNone(
             holophyte.config.agent_command(self.tgt, "adjudicate", "adjudicate it"))
 

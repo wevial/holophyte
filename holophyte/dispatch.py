@@ -17,6 +17,7 @@ from pathlib import Path
 from time import time
 
 import store
+from holophyte.agents import cleanup_review_refs
 from holophyte.board import (
     body_problem,
     close_out_failure,
@@ -218,6 +219,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         print(f"[holo2] run crashed: {reason}")
         _record_crash(conn, run_id, e, reason)
     finally:
+        cleanup_review_refs(target.path, run_id)
         if merged is PARKED:
             # Parked, alive, lease released: the run's own outcome is still
             # open, so there is no entry to render and no failure to count.
@@ -225,9 +227,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
             # back: a parked ticket is a human's, not this writer's.
             release_lease_label(target, conn, ticket_id, provider, run_id)
         elif merged is SWEPT:
-            # Swept: ended, released, unlabelled and rendered by the sweep
-            # itself, and the swept run is over -- nothing more is written
-            # to it.
+            # The sweep already ended, released, unlabelled and rendered it.
             pass
         elif merged:
             release_run(conn, run_id, True,
