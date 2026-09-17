@@ -245,26 +245,26 @@ class RunSnapshot:
     endedAt: int | None
     startedAt: int
     timeBoxMs: int | None
+    reviewRoundCount: int = 0
+    reviewRoundCap: int | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
 
 
 def run_snapshot(conn, run_id):
-    """The run row for `run_id` as the sweep sees it, or None if there is none.
-
-    Read under the caller's lock when the caller holds one: `still_tripped`
-    and `act_on_trip` ask this at the moment of acting so the phase an
-    outcome names is the one the decision was made on.
-    """
+    """Read the run's clocks and budget evidence under the caller's lock.
+    Used by run-cap checks and the sweep's transactional trip recheck."""
     row = conn.execute(
         "SELECT id, ticketId, phase, lastHeartbeat, endedAt, startedAt,"
-        " timeBoxMs, workingMs, workStartedAt FROM runs WHERE id = ?",
+        " timeBoxMs, workingMs, workStartedAt, reviewRoundCount, reviewRoundCap"
+        " FROM runs WHERE id = ?",
         (run_id,)).fetchone()
     if row is None:
         return None
     return RunSnapshot(id=row[0], ticketId=row[1], phase=row[2],
                        lastHeartbeat=row[3], endedAt=row[4], startedAt=row[5],
-                       timeBoxMs=row[6], workingMs=row[7], workStartedAt=row[8])
+                       timeBoxMs=row[6], workingMs=row[7], workStartedAt=row[8],
+                       reviewRoundCount=row[9], reviewRoundCap=row[10])
 
 
 @dataclass(frozen=True)
@@ -442,6 +442,8 @@ class MergedRun:
     prUrl: str | None = None
     outcome: str | None = None
     outcomeReason: str | None = None
+    workingMs: int | None = None
+    workStartedAt: int | None = None
 
 
 # The range of a SQLite INTEGER, and so of any run id a cursor can name.
@@ -455,14 +457,10 @@ def merged_runs(conn, limit, before=None):
 
 
 def finished_runs(conn, limit, before=None, outcomes=None):
-    """Up to `limit` ended runs, optionally filtered by outcomes, newest end
-    first (ties by id descending), keyset-paged on `(endedAt, id)`.
+    """Read up to `limit` finished runs, optionally filtered by outcomes.
 
-    `before` is a run id: only runs that ended before that run's end (or
-    at the same instant with a smaller id) are answered, so a client pages
-    by passing the last id it saw. An id no run has is an empty page, not
-    an error: the run may have been the last on a page that is now gone.
-    """
+    Newest ends first, ties by descending id. `before` names an exclusive
+    (endedAt, id) cursor; a nonexistent or out-of-range id yields no rows."""
     if (before is not None
             and not SQLITE_INT64_MIN <= before <= SQLITE_INT64_MAX):
         # Past what an INTEGER column can hold, so no run has it; binding
@@ -482,7 +480,8 @@ def finished_runs(conn, limit, before=None, outcomes=None):
         " r.timeBoxMs, r.reviewRoundCount,"
         " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
         "    FROM reviewRounds rr WHERE rr.runId = r.id),"
-        " r.host, r.mergeSha, r.prUrl, r.outcome, r.outcomeReason"
+        " r.host, r.mergeSha, r.prUrl, r.outcome, r.outcomeReason,"
+        " r.workingMs, r.workStartedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         f" WHERE {where}"
         " ORDER BY r.endedAt DESC, r.id DESC LIMIT ?",
@@ -491,7 +490,8 @@ def finished_runs(conn, limit, before=None, outcomes=None):
                       startedAt=row[3], endedAt=row[4], timeBoxMs=row[5],
                       reviewRoundCount=row[6], findingCount=row[7],
                       host=row[8], mergeSha=row[9], prUrl=row[10],
-                      outcome=row[11], outcomeReason=row[12])
+                      outcome=row[11], outcomeReason=row[12],
+                      workingMs=row[13], workStartedAt=row[14])
             for row in rows]
 
 

@@ -38,10 +38,10 @@ class RunsTests(ServeTestCase):
         finally:
             conn.close()
         keys = ("ticket", "actual_min", "estimate_min", "ratio", "rounds",
-                "outcome", "host", "ended_ms", "merge_sha")
-        return [dict(zip(keys, row + (ended, sha)))
-                for row, ended, sha in zip(rows, self.ended_at(),
-                                           self.merge_shas())]
+                "outcome", "host", "ended_ms", "merge_sha", "wall_min")
+        return [dict(zip(keys, row + (ended, sha, (ended - started) / MIN)))
+                for row, ended, sha, started in zip(
+                    rows, self.ended_at(), self.merge_shas(), self.column("startedAt"))]
 
     def ended_at(self):
         """The oracle for `ended_ms`: `runs.endedAt` itself, in the report's
@@ -174,11 +174,8 @@ class ShippedTests(ServeTestCase):
                "criterion": None, "message": "a finding"}
 
     def seed_shipped(self):
-        """Three merged runs and one failed: KO-1 merged first with one
-        round of two findings; KO-2 failed; KO-3 merged last with two
-        rounds of one and three findings; KO-4 merged between KO-1 and
-        KO-3 by end though claimed after KO-3, with no round at all, so
-        the ledger's order is not the id order."""
+        """Seed three merges and a failure with measured work and review findings.
+        End order differs from claim order: KO-1, KO-4, KO-3 are the merges."""
         self.now = int(time() * 1000)
         H = 60 * MIN
         conn = store.open(str(self.db))
@@ -204,6 +201,9 @@ class ShippedTests(ServeTestCase):
                         conn, run, number, "changes_requested",
                         "reviewer-model", findings=[self.FINDING] * count,
                         started_at=started + number * MIN)
+                conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
+                             (started_ago - ended_ago, run))
+                conn.commit()
                 store.release(conn, run, outcome, now=self.now - ended_ago,
                               merge_sha=sha,
                               reason="verification failed" if outcome == "failed"

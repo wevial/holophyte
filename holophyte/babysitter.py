@@ -26,7 +26,7 @@ reader of the PR can tell the factory's comments from a person's.
 """
 import re
 import subprocess
-from time import time
+from time import monotonic, time
 
 import review_runner
 import store
@@ -339,12 +339,10 @@ def _wait_for_pushed_head(target, conn, run_id, provider, task_id, branch,
 def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
               criteria=(), approved=False, reviewed=None, verified=None, fix_note=None):
-    """Watch the PR until it merges or parks, bounded by pr_rounds.
+    """Watch a PR until merge or park, bounded by rounds and a no-work deadline.
 
-    Changed candidates need independent review and verification before merge;
-    human approval covers only the released candidate. Conflict recovery merges
-    origin/main and pushes before restarting the round. Main stays untouched.
-    """
+    Changed candidates need verification and independent review; human approval
+    covers only the released SHA. Conflict recovery pushes origin/main's merge."""
     from holophyte.pullrequest import _park_on_pr
     merge = merge_config(target)
     pull = pr_status.parse_pr_url(url)
@@ -352,22 +350,22 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
         raise RunFailure(f"cannot read a pull request off {url!r};"
                          f" branch {branch} preserved at {sha[:12]}")
     model = agent_route(target, "adjudicate")
-    # `reviewed`: the sha an independent judgement covers -- the reviewer's
-    # approval or the operator's release. A fix round moves `sha` past it.
+    # A fix moves sha past the candidate covered by reviewed.
     pushed_state = None
     for pass_no in range(1, merge.pr_rounds + 1):
-        state = _settled_state(target, conn, run_id, beat_s, pull, pushed_state)
+        try:
+            state = _settled_state(target, conn, run_id, beat_s, pull, pushed_state)
+        except WaitExpired as expired:
+            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                        pull, str(expired), (), reviewed=reviewed)
         pushed_state = None
         done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
                             sha, pull, state, reviewed)
         if done is not None:
             return done
         if state.mergeable == "CONFLICTING":
-            # GitHub found the pull request unmergeable: bring
-            # `origin/main` into the branch (fetch, merge, push) and let
-            # the next pass wait on the restarted checks, before any
-            # thread is judged. UNKNOWN is not a conflict -- GitHub
-            # computes `mergeable` lazily and a later pass sees it.
+            # Push a merge of origin/main, then settle its restarted checks.
+            # UNKNOWN is computed lazily and is not evidence of conflict.
             sha, pushed_state = _merge_origin_main(
                 target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
                 pull, budget_min, reviewed=reviewed)
@@ -379,9 +377,6 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                                   pass_no, model, ticket, verify_cmd,
                                   contracts, budget_min, reviewed=reviewed)
             continue
-        if state.checks == "success" and _quiet_left(
-                state, merge.pr_quiet_sec * 1000):
-            continue  # still not quiet; the next pass waits again
         reply = babysitter.round_reply(pull, pass_no, (), {}, state.checks, sha)
         record_round(target, conn, run_id, rnd, "review", reply, None, True,
                      "", started_at=int(time() * 1000),
@@ -597,33 +592,38 @@ def _quiet_left(state, quiet_ms):
     return max(0, quiet_ms - (int(time() * 1000) - state.updated_at))
 
 
-def _settled_state(target, conn, run_id, beat_s, pull, state=None):
-    """Wait under heartbeat for checks and the configured quiet interval.
+class WaitExpired(Exception):
+    """A continuous PR wait reached its independent liveness deadline."""
 
-    Bound the wait by CHECK_WAIT_S or pr_quiet_sec, whichever is longer.
-    Return threads immediately: addressing them restarts checks anyway.
-    """
+
+def _settled_state(target, conn, run_id, beat_s, pull, state=None):
+    """Wait under heartbeat for at most CHECK_WAIT_S; return threads promptly.
+    Pending/quiet transitions share one monotonic no-work deadline."""
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
-    wait_s = max(pr.CHECK_WAIT_S, quiet_ms // 1000)
-    waited = 0
+    deadline = monotonic() + pr.CHECK_WAIT_S
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(target, pull)
-        while not state.threads and not state.merged and waited < wait_s:
+        while not state.threads and not state.merged:
             if state.checks == "pending":
+                reason = "pending checks"
                 nap = pr.CHECK_POLL_S
                 print(f"[holo2] checks pending on {pull.url}; waiting"
                       f" {nap}s")
             elif state.checks == "success" \
                     and (left := _quiet_left(state, quiet_ms)):
-                nap = merge.pr_poll_sec
+                reason = "quiet wait"
+                nap = min(merge.pr_poll_sec, left / 1000)
                 print(f"[holo2] {pull.url} is green and quiet for"
                       f" {(quiet_ms - left) // 1000}s of the"
                       f" {quiet_ms // 1000}s required; waiting {nap}s")
             else:
                 break
-            pr.SLEEP(nap)
-            waited += nap
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise WaitExpired(
+                    f"{reason} exceeded {pr.CHECK_WAIT_S}s on the pull request")
+            pr.SLEEP(min(nap, remaining))
             state = pr_status.pr_state(target, pull)
     return state
 

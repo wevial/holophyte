@@ -20,7 +20,9 @@
    "heartbeat_age_ms": 4000,
    "elapsed_ms": 754000,
    "time_box_ms": 1800000,
-   "host": "writer"
+   "host": "writer",
+   "working_ms": 600000,
+   "work_started_ms": 1756899999000
   }
  ]
 }

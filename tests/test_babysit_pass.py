@@ -134,11 +134,11 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
                  - timedelta(seconds=10)).isoformat()
         self.fake_route(states=[self.pr_state(updated_at=fresh)])
         naps = []
-        # `CHECK_WAIT_S` shortened so the wait's bound is reached in a few
-        # polls; the served `updatedAt` stays fresh, so the pull request
-        # never goes quiet and the merge API is never called.
+        # A fresh PR must park at CHECK_WAIT_S, without attempting merge.
         with patch.object(holophyte.pr, "SLEEP", naps.append), \
-                patch.object(holophyte.pr, "CHECK_WAIT_S", 45):
+                patch.object(holophyte.pr, "CHECK_WAIT_S", 45), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
             out = self.main_output(Commit("the scripted work"), APPROVE, Idle(""),
                                    provider=self.provider())
 
@@ -150,7 +150,7 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
         self.assertEqual({kind for kind, _ in calls}, {"state"})
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("awaiting_merge_approval", None)])
-        self.assertIn("pr_rounds = 1", self.question())
+        self.assertIn("quiet wait exceeded 45s", self.question())
 
     def test_a_green_pr_quiet_for_pr_quiet_sec_merges(self):
         """Merge a green PR after the quiet interval has elapsed."""

@@ -300,7 +300,7 @@ test("a failed Needs You row opens its named run card with the frozen time box a
     asked.push(url);
     if (url.endsWith("/runs/436")) return Response.json({
       run: { id: 436, ticket: "KO-436", title: "Failed run", phase: "done", attempt: 1,
-        started_ms: now - 600000, ended_ms: now, outcome: "failed", time_box_ms: 1800000,
+        started_ms: now - 600000, ended_ms: now, working_ms: 600000, outcome: "failed", time_box_ms: 1800000,
         branch: "task/ko-436", host: "writer", heartbeat_age_ms: 0 },
       rounds: [{ round: 1, started_ms: now - 300000, ended_ms: now, verdict: "changes_requested", findings: [] }], events: [],
     });
@@ -313,7 +313,7 @@ test("a failed Needs You row opens its named run card with the frozen time box a
   const card = screen.getByRole("article", { name: "run 436" });
   expect(within(card).getByText(/Round 1 of/)).toBeTruthy();
   expect(card.querySelector("[data-timeline]")).not.toBeNull();
-  expect(card.querySelector("[data-box]")!.textContent).toBe("20m left in box");
+  expect(card.querySelector("[data-box]")!.textContent).toBe("20m left in working box · wall 10m");
   fireEvent.keyDown(document.querySelector('[aria-expanded="true"]')!, { key: "Enter" });
   expect(screen.queryByRole("article", { name: "run 436" })).toBeNull();
 });

@@ -26,6 +26,7 @@ const DETAIL: RunDetailBody = {
     ended_ms: null,
     outcome: null,
     time_box_ms: 30 * MINUTE,
+    working_ms: 20 * MINUTE, work_started_ms: T,
     branch: "task/ko-232",
     host: "writer",
     heartbeat_age_ms: 4_000,
@@ -139,7 +140,7 @@ test("the newest round's findings are cards pilled must, must, should, nit with 
   expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();
   expect(document.querySelector("[data-started]")!.textContent).toBe(`started ${formatClock(T)} · writer`);
   const box = document.querySelector("[data-box]")!;
-  expect(box.textContent).toBe("10m 00s left in box");
+  expect(box.textContent).toBe("10m 00s left in working box · wall 20m 00s");
   expect(box.getAttribute("data-box")).toBe("left");
   const timeline = screen.getByRole("list", { name: "Round timeline" });
   const items = Array.from(timeline.children) as HTMLElement[];
@@ -225,12 +226,12 @@ test("a finished run's box figure freezes at its end while a live run's keeps co
   // day later still reads the run's own figure.
   const finished: RunDetailBody = {
     ...DETAIL,
-    run: { ...DETAIL.run, phase: "done", ended_ms: T + 82 * MINUTE, outcome: "merged" },
+    run: { ...DETAIL.run, phase: "done", ended_ms: T + 82 * MINUTE, working_ms: 82 * MINUTE, work_started_ms: null, outcome: "merged" },
     rounds: [DETAIL.rounds[0]!, { ...DETAIL.rounds[1]!, ended_ms: T + 30 * MINUTE }],
   };
   await mount(finished, T + 82 * MINUTE + 24 * 60 * MINUTE);
   const box = document.querySelector("[data-box]")!;
-  expect(box.textContent).toBe("52m over the box");
+  expect(box.textContent).toBe("52m over the working box · wall 1h 22m");
   expect(box.getAttribute("data-box")).toBe("over");
   cleanup();
 
@@ -240,20 +241,20 @@ test("a finished run's box figure freezes at its end while a live run's keeps co
   const status: Status = { ...working, now: T + 40 * MINUTE, runs: [liveRun] };
   const seen = T + 40 * MINUTE;
   const page = (now: number) => (
-    <Now hosts={[hostOf(status, NO_ATTENTION, BASE, seen)]} project="all" now={now} deps={{ fetch: answering(DETAIL) }} />
+    <Now hosts={[hostOf(status, NO_ATTENTION, BASE, seen)]} project="all" now={now} deps={{ fetch: answering({ ...DETAIL, run: { ...DETAIL.run, working_ms: 40 * MINUTE } }) }} />
   );
   const view = render(page(seen));
   fireEvent.click(within(screen.getByRole("listitem")).getByRole("button"));
   await settle();
-  expect(document.querySelector("[data-box]")!.textContent).toBe("10m 00s over the box");
+  expect(document.querySelector("[data-box]")!.textContent).toBe("10m 00s over the working box · wall 40m 00s");
   view.rerender(page(seen + 2_000));
-  expect(document.querySelector("[data-box]")!.textContent).toBe("10m 02s over the box");
+  expect(document.querySelector("[data-box]")!.textContent).toBe("10m 02s over the working box · wall 40m 02s");
 });
 
 test("past the box the header reads 10m 00s over the box in the bad tone and the segments fill the bar", async () => {
-  await mount(DETAIL, T + 40 * MINUTE);
+  await mount({ ...DETAIL, run: { ...DETAIL.run, working_ms: 40 * MINUTE } }, T + 40 * MINUTE);
   const box = document.querySelector("[data-box]")!;
-  expect(box.textContent).toBe("10m 00s over the box");
+  expect(box.textContent).toBe("10m 00s over the working box · wall 40m 00s");
   expect(box.getAttribute("data-box")).toBe("over");
   expect(box.className).toContain("text-bad");
   const timeline = screen.getByRole("list", { name: "Round timeline" });

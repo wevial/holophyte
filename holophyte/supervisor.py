@@ -52,6 +52,7 @@ from holophyte.supervisor_lock import (
     supervisor_lock_path,
 )
 from holophyte.sweep_report import merge_lock_lines, sweep_lines
+from store.working import effective_work
 
 # How the supervisor restarts itself when the factory's code moves under it:
 # the process image is replaced, never a module reloaded. A seam so tests can
@@ -185,40 +186,13 @@ def review_overlap(conn, run_id):
 
 
 def still_tripped(target, conn, trip, knobs=None):
-    """Does `trip`'s verdict still hold of the run it was reached on?
+    """Recheck a trip under the acting transaction's write lock.
 
-    Asked again at the moment of acting, under the write lock, because the
-    classification that produced the trip committed and let the run's own
-    process back in. What that process may have done since is the whole
-    question: a run that ended is already closed out and must not be re-ended
-    over the top of its real outcome, and a run that moved on is doing
-    something and can wait for the sweep after this one -- the tally that
-    tripped it survives, so a run that is really gone trips again a minute
-    later, which is a cheap price for never failing a live one.
-
-    A stale heartbeat asks one thing more: that `lastHeartbeat` is still the
-    timestamp the verdict was read from. Any beat at all is the run answering
-    the only question the condition asked, and a run that answered is alive
-    however long it was quiet before. A blown time box asks the opposite --
-    an overrunning run heartbeats, that is what makes it an overrun rather
-    than a death -- so a fresh beat is no acquittal there and is not treated
-    as one. A stuck review is alive too, so its heartbeat says nothing; what
-    it asks instead is that the overlap still holds, recomputed over whatever
-    rounds are on file now. The phase alone cannot tell: a run that went
-    through `addressing` and back has a new finished round and the phase the
-    verdict named, and if that round cleared the reviewer's complaints the
-    review has moved and the run is acquitted. If it repeats them, the run
-    is the same stuck review with one more round on file, and the verdict
-    stands even though the rounds it now rests on are later than the ones
-    the evidence names. And a run that left the phase and came back with no
-    new round -- through `addressing` and `verifying` into its terminal
-    adjudication -- is exactly the run the condition names: the adjudication
-    is what the trip is meant to spare paying for, and a sweep arriving
-    fresh at that moment would trip it on the same two rounds.
-
-    `knobs` is the `SweepConfig` the verdict was reached under, so the
-    overlap is re-asked against the threshold that tripped it.
-    """
+    An ended run or changed phase is acquitted. A fresh heartbeat clears only
+    staleness: overrunning or stuck work can still be alive. Recompute effective
+    work and its allowance because settlement or completed review rounds may
+    change time-box evidence between observation and action. Recompute review
+    overlap against the original knobs for the same reason."""
     knobs = sweep_config(target) if knobs is None else knobs
     run = store.read.run_snapshot(conn, trip.run_id)
     if run is None:
@@ -227,6 +201,13 @@ def still_tripped(target, conn, trip, knobs=None):
         return False
     if trip.condition == STALE_HEARTBEAT:
         return run.lastHeartbeat == trip.heartbeat
+    if trip.condition == TIME_BOX:
+        spent = effective_work(run)
+        return (spent is not None and bool(run.timeBoxMs)
+                and spent > time_box_allowance(
+                    run.timeBoxMs * budget_scale(target), run.reviewRoundCount,
+                    run.reviewRoundCap or MAX_ROUNDS, knobs.budget_grace,
+                    knobs.run_cap))
     if trip.condition == REVIEW_STUCK:
         overlap = review_overlap(conn, trip.run_id)
         return (overlap is not None
@@ -407,7 +388,7 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
         for run in swept:
             run_id, ticket, phase, host = (run.id, run.linearIdentifier,
                                            run.phase, run.host)
-            heartbeat, started, time_box = (run.lastHeartbeat, run.startedAt,
+            heartbeat, time_box = (run.lastHeartbeat,
                                             run.timeBoxMs
                                             and run.timeBoxMs * scale)
             silent = now - heartbeat
@@ -423,7 +404,7 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
             else:
                 strikes = store.record_strike(
                     conn, run_id, stale, heartbeat, now)
-            elapsed = now - started
+            elapsed = effective_work(run, now)
             rounds, cap = run.reviewRoundCount, run.reviewRoundCap or MAX_ROUNDS
             turns = 1 + min(rounds, cap)
             if strikes >= strikes_needed:
@@ -431,7 +412,7 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
                     run_id, ticket, phase, STALE_HEARTBEAT,
                     f"silent for {silent / 60000:.1f} min"
                     f" over {strikes} consecutive sweeps", heartbeat, host))
-            elif time_box and elapsed > time_box_allowance(
+            elif time_box and elapsed is not None and elapsed > time_box_allowance(
                     time_box, rounds, cap, grace, run_cap):
                 trips.append(Trip(
                     run_id, ticket, phase, TIME_BOX,

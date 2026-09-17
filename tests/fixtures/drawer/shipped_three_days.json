@@ -14,7 +14,9 @@
     "estimate_min": 30.0,
     "merge_sha": "3f9c2ab0c1d2e3f4",
     "commit_url": "https://github.com/example/writer/commit/3f9c2ab0c1d2e3f4",
-    "host": "writer"
+    "host": "writer",
+    "working_ms": 1080000.0,
+    "wall_min": 18.0
    },
    {
     "id": 235,
@@ -28,7 +30,9 @@
     "estimate_min": 30.0,
     "merge_sha": "b71e04d5a6b7c8d9",
     "commit_url": null,
-    "host": "writer"
+    "host": "writer",
+    "working_ms": 540000.0,
+    "wall_min": 9.0
    },
    {
     "id": 234,
@@ -42,7 +46,9 @@
     "estimate_min": 30.0,
     "merge_sha": "9a0c5e1f2a3b4c5d",
     "commit_url": null,
-    "host": "kernel"
+    "host": "kernel",
+    "working_ms": 2280000.0,
+    "wall_min": 38.0
    },
    {
     "id": 228,
@@ -56,7 +62,9 @@
     "estimate_min": 30.0,
     "merge_sha": "7be1a40e5f6a7b8c",
     "commit_url": null,
-    "host": "writer"
+    "host": "writer",
+    "working_ms": 720000.0,
+    "wall_min": 12.0
    },
    {
     "id": 227,
@@ -70,7 +78,9 @@
     "estimate_min": 30.0,
     "merge_sha": "c02d9e7a8b9c0d1e",
     "commit_url": null,
-    "host": "kernel"
+    "host": "kernel",
+    "working_ms": 1560000.0,
+    "wall_min": 26.0
    },
    {
     "id": 224,
@@ -84,7 +94,9 @@
     "estimate_min": 30.0,
     "merge_sha": "e5d0f88b9c0d1e2f",
     "commit_url": null,
-    "host": "kernel"
+    "host": "kernel",
+    "working_ms": 1260000.0,
+    "wall_min": 21.0
    },
    {
     "id": 223,
@@ -98,7 +110,9 @@
     "estimate_min": null,
     "merge_sha": "2c8b6a3c0d1e2f3a",
     "commit_url": null,
-    "host": "writer"
+    "host": "writer",
+    "working_ms": 900000.0,
+    "wall_min": 15.0
    }
   ],
   "next_before": null,

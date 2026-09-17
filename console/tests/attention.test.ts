@@ -20,7 +20,7 @@ test("the time-box clause joins /status.runs on the run id and appears only past
   const item = { kind: "stale_run", level: "attention", run: 91, ticket: "KO-232", phase: "reviewing", heartbeat_age_ms: 421000 };
   const within = describe(item, thresholds, { runs: allKinds.status.runs });
   expect(within.body).toBe("No heartbeat for 7m 01s while reviewing");
-  const over = { ...allKinds.status.runs[0]!, elapsed_ms: 1800000 + 754000 };
+  const over = { ...allKinds.status.runs[0]!, working_ms: 1800000 + 754000 };
   expect(describe(item, thresholds, { runs: [over] }).body).toBe(
     "No heartbeat for 7m 01s while reviewing and 12m 34s over its 30m time box",
   );

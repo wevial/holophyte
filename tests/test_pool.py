@@ -718,8 +718,7 @@ class SweptTurnTests(LoopFixture):
     """A swept turn stops its worker and preserves the candidate."""
 
     def test_a_swept_run_kills_its_turn_writes_nothing_more_and_moves_on(self):
-        # 0.01 min is 600 ms of stale threshold, so the loop beats every
-        # 300 ms and notices the end within one beat.
+        # A 600 ms stale threshold gives a 300 ms beat to detect the sweep.
         self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
         knobs = holophyte.config_tables.sweep_config(self.tgt)
         db, tgt = self.db, self.tgt
@@ -736,8 +735,9 @@ class SweptTurnTests(LoopFixture):
                 conn = store.open(str(db))
                 try:
                     (run_id,) = conn.execute("SELECT id FROM runs").fetchone()
-                    # An hour on: the run is over its 5 min time box, and
-                    # one stale sighting is short of a stale trip.
+                    # The fake agent has spent an hour of work.
+                    conn.execute("UPDATE runs SET workingMs = 3600000")
+                    conn.commit()
                     result = holophyte.supervisor.sweep(
                         tgt, conn, int(time.time() * 1000) + 3_600_000,
                         act=True, knobs=knobs)

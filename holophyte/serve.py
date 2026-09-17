@@ -140,6 +140,7 @@ from holophyte.serve_runs import (
     shipped,
 )
 from holophyte.supervisor import SWEEPABLE_PHASES
+from store.working import effective_work
 
 ADDRESS_SHAPE = "PORT|HOST:PORT"
 LOOPBACK = "127.0.0.1"
@@ -204,27 +205,13 @@ def parse_address(text):
 
 
 def status(target, now=None, started_ms=None):
-    """The `/status` answer for `target`: `(http status, JSON-able body)`.
+    """Return `/status` with independent work, wall and heartbeat clocks.
 
-    A target with no store answers 503 rather than creating one -- a
-    read-only daemon that wrote an empty store into a home would shadow the
-    adoption `open_store()` performs on first need. Ages are computed here
-    against `now` (epoch milliseconds, the clock by default) so the client
-    compares one number to `thresholds.heartbeat_stale_ms` and never has to
-    agree with the writer host about the time. `started_ms` is when the
-    serving daemon started, which `StatusServer` reads once at bind and
-    passes on every request; it defaults to `now` so a caller with no
-    daemon (the tests, a REPL) gets the same shape.
-
-    Each run carries what the console's floor row draws: the ticket's
-    `title`, `started_ms` (the run's `startedAt`, so a client need not
-    guess it from `elapsed_ms`), `round` (the review rounds recorded so
-    far) and `strikes` (the sweep's tally, 0 when the run is not under
-    suspicion). `project` is the same string as `target`: the console's
-    word for it; the wire carries both for one release. `actions` is
-    `[serve] actions`, so the console knows before a click whether the
-    `POST /actions/...` routes exist here or its buttons stay disabled.
-    """
+    Ages and effective working_ms share the epoch-millisecond snapshot `now`.
+    Clients may interpolate work only when work_started_ms is set; elapsed_ms
+    remains wall duration. started_ms identifies the daemon's bind time.
+    Run title, round and strikes support floor rows. Project aliases target;
+    actions and config_edit advertise the configured write routes."""
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
     if not target.store_path.exists():
@@ -260,6 +247,8 @@ def status(target, now=None, started_ms=None):
                   "started_ms": run.startedAt,
                   "heartbeat_age_ms": now - run.lastHeartbeat,
                   "elapsed_ms": now - run.startedAt,
+                  "working_ms": effective_work(run, now),
+                  "work_started_ms": run.workStartedAt,
                   "time_box_ms": (int(run.timeBoxMs * scale)
                                   if run.timeBoxMs else run.timeBoxMs),
                   "round": run.reviewRoundCount,

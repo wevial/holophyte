@@ -248,7 +248,6 @@ class ReportStoreCase(unittest.TestCase):
         self.project = store.tickets.ensure_project(self.conn, "team-1", self.target)
 
     def completed_run(self, n, actual_min, estimate_min, rounds, outcome):
-        """One ended run of its own ticket, with the timing the test chose."""
         ticket = store.tickets.mirror_ticket(
             self.conn, self.project, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}",
@@ -258,10 +257,12 @@ class ReportStoreCase(unittest.TestCase):
         for number in range(1, rounds + 1):
             store.record_review_round(self.conn, run_id, number, "pass",
                                       "codex-sol-medium", started_at=at)
+        self.conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
+                          (actual_min * 60_000, run_id))
+        self.conn.commit()
         store.release(self.conn, run_id, outcome, now=at + actual_min * 60_000)
 
     def three_runs(self):
-        """Three finished runs whose numbers are known by hand."""
         self.completed_run(1, actual_min=5, estimate_min=25, rounds=2,
                            outcome="merged")
         self.completed_run(2, actual_min=40, estimate_min=20, rounds=1,
@@ -270,8 +271,7 @@ class ReportStoreCase(unittest.TestCase):
                            outcome="merged")
 
     def report_with_a_heartbeat(self, age_ms):
-        """`--report` as the operator runs it, over a store whose one
-        supervisor last beat `age_ms` before now."""
+        """Run --report with a supervisor heartbeat age of age_ms."""
         now = int(time.time() * 1000)
         store.record_supervisor_heartbeat(self.conn, pid=4242, started_at=now,
                                           now=now - age_ms)

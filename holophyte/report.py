@@ -8,6 +8,7 @@ import time
 
 import store.read
 from holophyte.config_tables import report_config
+from store.working import effective_work
 
 # Render timing and review counts from the store without writing or claiming.
 REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome",
@@ -48,23 +49,25 @@ def report_rows(conn):
     rounds, outcome, host. Missing estimates and ratios are None and excluded
     from averages; a missing host marks a run older than that column.
     """
-    return [row[:-2] for row in ended_rows(conn)]
+    return [row[:7] for row in ended_rows(conn)]
 
 
 def ended_rows(conn):
-    """Report tuples with ended_at (epoch ms) and merge_sha appended.
+    """Report tuples with ended_at, merge_sha and wall_min appended.
 
     The daemon uses these to show when a run ended and link its merge;
     report_rows() drops them to preserve the terminal table's shape.
     """
     rows = []
     for run in store.read.ended_runs(conn):
-        actual = (run.endedAt - run.startedAt) / 60000
+        work = effective_work(run, run.endedAt)
+        actual = work / 60000 if work is not None else None
         estimate = run.timeBoxMs / 60000 if run.timeBoxMs else None
         rows.append((run.linearIdentifier, actual, estimate,
-                     actual / estimate if estimate else None,
+                     actual / estimate if estimate and actual is not None else None,
                      run.reviewRoundCount, run.outcome or "ended", run.host,
-                     run.endedAt, run.mergeSha))
+                     run.endedAt, run.mergeSha,
+                     (run.endedAt - run.startedAt) / 60000))
     return rows
 
 
@@ -80,14 +83,10 @@ def report_summary(rows):
 
 
 def report_lines(conn, target=None):
-    """Live work, then the finished table and its summary, as lines.
+    """Render a consistent snapshot of live runs, completed work and ratios.
 
-    Columns are padded to the widest cell in them so the numbers line up in a
-    terminal; the ticket, the outcome and the host read left, everything
-    numeric reads right. A store with no ended run says so rather than printing a header
-    over nothing. `target` is where the `[report] host_label` comes from;
-    without one the host column is the hostname the store holds.
-    """
+    Unmeasured work prints n/a and is excluded from ratios. The target supplies
+    an optional host label; callers without it see the stored hostname."""
     owns_transaction = not conn.in_transaction
     if owns_transaction:
         conn.execute("BEGIN")
@@ -104,7 +103,7 @@ def report_lines(conn, target=None):
     for ticket, actual, estimate, ratio, rounds, outcome, host in rows:
         table.append((
             ticket,
-            f"{actual:.1f}",
+            f"{actual:.1f}" if actual is not None else "n/a",
             f"{estimate:.0f}" if estimate is not None else "n/a",
             f"{ratio:.2f}" if ratio is not None else "n/a",
             str(rounds),
