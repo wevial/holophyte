@@ -7,18 +7,49 @@ import sqlite3
 import sys
 from pathlib import Path
 from time import time
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import test_serve  # noqa: E402 - after the insert; the SLACK tolerance
+from fake_agent import APPROVE, Commit, Idle  # noqa: E402
+from loop_fixture import MergeModeFixture  # noqa: E402
 from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve_runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 
 SLACK = test_serve.SLACK
+
+
+class LivePullRequestTests(MergeModeFixture):
+    def test_a_fresh_pull_request_is_visible_on_the_live_run(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        observed = []
+
+        def open_and_observe(target, conn, run_id, *args, **kwargs):
+            url = holophyte.pullrequest._open_pr(
+                target, conn, run_id, *args, **kwargs)
+            observed.append(holophyte.serve_runs.run_detail(
+                target, str(run_id)))
+            return url
+
+        with patch.object(holophyte.loop, "_open_pr", open_and_observe):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+
+        self.assertEqual(len(observed), 1)
+        code, body = observed[0]
+        self.assertEqual(code, 200)
+        run = body["run"]
+        self.assertIsNone(run["ended_ms"])
+        self.assertEqual(run["phase"], "merge_gate")
+        self.assertEqual(run["pr_url"], self.URL)
 
 
 class RunsTests(ServeTestCase):
@@ -304,7 +335,6 @@ class ShippedTests(ServeTestCase):
         self.start()
 
         code, _headers, body = self.request("GET", "/shipped")
-
         self.assertEqual(code, 503)
         self.assertIn("no store", body["error"])
         self.assertFalse(self.db.exists())
@@ -335,8 +365,7 @@ class RunDetailTests(ServeTestCase):
             store.tickets.transition(conn, ticket, "in_flight")
             started = self.now - 30 * MIN
             self.run = store.claim(conn, project, ticket, now=started)
-            # `claim()` writes the first narrative rows itself; the seed's
-            # own are appended after and are what the test names.
+            # Append the seed's events after claim's narrative rows.
             self.seeded_events = [
                 ("verify", "verify passed", "narrative"),
                 ("tool_use", "ran ruff", "detail"),
@@ -374,9 +403,7 @@ class RunDetailTests(ServeTestCase):
     def test_rounds_oldest_first_with_findings_as_objects(self):
         self.seed_reviewed()
         self.start()
-
         code, headers, body = self.request("GET", f"/runs/{self.run}")
-
         self.assertEqual(code, 200)
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertEqual([r["round"] for r in body["rounds"]], [1, 2])
@@ -395,16 +422,11 @@ class RunDetailTests(ServeTestCase):
     def test_events_are_the_narrative_rows_oldest_first_without_detail(self):
         self.seed_reviewed()
         self.start()
-
         code, _headers, body = self.request("GET", f"/runs/{self.run}")
-
         self.assertEqual(code, 200)
         got = [(e["at"], e["kind"], e["summary"]) for e in body["events"]]
         self.assertEqual(got, self.stored_events("narrative"))
-        # The three the seed wrote are there, in order, among the
-        # `phase_change` rows `claim()` and `release()` write themselves; the
-        # detail one is not: a store with detail rows still answers the
-        # narrative ones.
+        # Narrative seed events remain ordered among the phase changes.
         narrative = [(k, s) for k, s, level in self.seeded_events
                      if level == "narrative"]
         self.assertEqual([(k, s) for _at, k, s in got if k != "phase_change"],
@@ -425,26 +447,21 @@ class RunDetailTests(ServeTestCase):
         finally:
             conn.close()
         self.start()
-
         code, _headers, body = self.request("GET", f"/runs/{self.run}")
-
         self.assertEqual(code, 200)
         (shown,) = [e for e in body["events"]
                     if e["kind"] == "implementer_output"]
         self.assertEqual(shown["summary"], "This contract cannot be met.")
         self.assertNotIn("payload", shown)
         self.assertNotIn("no file is named", self.raw_body)
-        # In its place in the stream: the row was appended last, so the
-        # route's `seq` order puts it last.
+        # Sequence order puts the appended event last.
         self.assertEqual(body["events"][-1]["kind"], "implementer_output")
         self.assertNotIn("ran ruff", [e["summary"] for e in body["events"]])
 
     def test_the_run_is_the_row_joined_to_its_ticket(self):
         self.seed_reviewed()
         self.start()
-
         _code, _headers, body = self.request("GET", f"/runs/{self.run}")
-
         run = body["run"]
         self.assertEqual(run["id"], self.run)
         self.assertEqual(run["ticket"], "KO-9")
@@ -456,8 +473,7 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(run["merge_sha"], MERGE_SHA)
         self.assertEqual(run["started_ms"], self.now - 30 * MIN)
         self.assertEqual(run["ended_ms"], self.now - 10 * MIN)
-        # No cap stored: a run recorded before the store carried one
-        # answers the loop's constant.
+        # Older runs without a stored cap use the loop's constant.
         self.assertEqual(run["max_rounds"],
                          holophyte.serve_runs.MAX_ROUNDS)
         self.assertIsInstance(run["max_rounds"], int)
@@ -467,9 +483,7 @@ class RunDetailTests(ServeTestCase):
         """The API reports the persisted round cap."""
         self.seed_reviewed(cap=4)
         self.start()
-
         _code, _headers, body = self.request("GET", f"/runs/{self.run}")
-
         self.assertEqual(body["run"]["max_rounds"], 4)
         self.assertNotEqual(body["run"]["max_rounds"],
                             holophyte.serve_runs.MAX_ROUNDS)
@@ -477,9 +491,7 @@ class RunDetailTests(ServeTestCase):
     def test_a_live_run_has_a_heartbeat_age_and_an_ended_one_null(self):
         self.seed()  # KO-7, live in `working`, beating 30 s ago
         self.start()
-
         code, _headers, body = self.request("GET", f"/runs/{self.run}")
-
         self.assertEqual(code, 200)
         self.assertIsNone(body["run"]["ended_ms"])
         self.assertIsNone(body["run"]["outcome"])
@@ -490,9 +502,7 @@ class RunDetailTests(ServeTestCase):
     def test_an_ended_run_has_no_heartbeat_age(self):
         self.seed_reviewed()
         self.start()
-
         code, _headers, body = self.request("GET", f"/runs/{self.run}")
-
         self.assertEqual(code, 200)
         self.assertIsNotNone(body["run"]["ended_ms"])
         self.assertIsNone(body["run"]["heartbeat_age_ms"])
@@ -500,27 +510,22 @@ class RunDetailTests(ServeTestCase):
     def test_no_such_run_is_404_and_a_non_integer_is_400(self):
         self.seed()
         self.start()
-
         code, headers, body = self.request("GET", "/runs/999")
         self.assertEqual(code, 404)
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn("error", body)
         self.assertEqual(body["run"], 999)
-
         code, headers, body = self.request("GET", "/runs/abc")
         self.assertEqual(code, 400)
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn("error", body)
-
-        # Integers no run can have are still integers: 404 carrying `run`
-        # as typed, not 400, and not a crash past SQLite's INTEGER range.
+        # Impossible integer IDs return 404, including SQLite overflow.
         code, _headers, body = self.request("GET", "/runs/-1")
         self.assertEqual(code, 404)
         self.assertEqual(body["run"], "-1")
         code, _headers, body = self.request("GET", "/runs/9223372036854775808")
         self.assertEqual(code, 404)
         self.assertEqual(body["run"], "9223372036854775808")
-
         # `/runs` and `/runs?limit=N` answer as before.
         code, _headers, body = self.request("GET", "/runs")
         self.assertEqual(code, 200)
@@ -538,12 +543,10 @@ class RunDetailTests(ServeTestCase):
         self.seed()
         self.start()
         padding = "0" * 5000
-
         code, _headers, body = self.request(
             "GET", f"/runs/{padding}{self.run}")
         self.assertEqual(code, 200)
         self.assertEqual(body["run"]["id"], self.run)
-
         code, headers, body = self.request("GET", f"/runs/1{padding}")
         self.assertEqual(code, 404)
         self.assertEqual(headers["Content-Type"], "application/json")
@@ -551,9 +554,7 @@ class RunDetailTests(ServeTestCase):
 
     def test_a_target_with_no_store_answers_503(self):
         self.start()
-
         code, _headers, body = self.request("GET", "/runs/1")
-
         self.assertEqual(code, 503)
         self.assertIn("error", body)
         self.assertFalse(self.db.exists())
@@ -564,7 +565,6 @@ class ActiveRoutesTests(ServeTestCase):
         from holophyte.agent_routes import reset
         from holophyte.agents import ProbeResult, activate_fallback
         from holophyte.target import Target
-
         self.seed()
         target = Target.locate(self.target)
         target._config = {'agents': {'implementer': 'codex exec',

@@ -130,6 +130,27 @@ class MergeModePullRequestTests(MergeModeFixture):
                       " ORDER BY round")[-1],
             (2, "pass", "github:ci"))
 
+    def test_a_fresh_open_records_its_url_and_event_before_parking(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        observed = []
+        def open_and_observe(*args, **kwargs):
+            url = holophyte.pullrequest._open_pr(*args, **kwargs)
+            observed.append((url, self.read(
+                "SELECT phase, endedAt, prUrl FROM runs"), self.read(
+                "SELECT summary FROM runEvents WHERE kind = 'pull_request'"
+                " ORDER BY seq")))
+            return url
+
+        with patch.object(holophyte.loop, "_open_pr", open_and_observe):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+
+        (url, rows, events), = observed
+        self.assertEqual(url, self.URL)
+        self.assertEqual(rows, [("merge_gate", None, url)])
+        self.assertEqual(events[-1], (f"pull request open: {url}",))
+
     def test_an_open_pull_request_on_the_branch_is_adopted_not_created(self):
         """KO-407: a run resumed on a branch its failed predecessor left
         open as a pull request -- the requeue scenario -- must not call
@@ -208,27 +229,6 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertFalse(any(c.startswith("gh pr create") for c in calls),
                          calls)
         self.assertEqual(self.read("SELECT prUrl FROM runs"), [(adopted,)])
-
-    def test_no_open_pull_request_on_the_branch_opens_one_as_today(self):
-        """The lookup answering no open pull request for the branch: the
-        push and the lookup run, then `gh pr create` opens the PR exactly
-        as before (KO-407)."""
-        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        self.fake_route()  # open_pr=None: no open pull request
-
-        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                  provider=self.provider())
-
-        calls = self.recorded()
-        self.assertEqual(calls[0], f"git push origin {BRANCH}")
-        self.assertEqual(calls[1], "gh api --hostname github.com --method"
-                                   " POST graphql --input -")
-        self.assertEqual(
-            calls[2],
-            f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
-            " --title KO-131: add a thing --body-file -")
-        self.assertEqual(self.read("SELECT prUrl FROM runs"),
-                         [(self.URL,)])
 
     AGENTS_MD = ("# Agent guide\n\nTitle starts with [Feature Name]."
                  " No testing plan.\n")
@@ -484,7 +484,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
         self.assertEqual(
             self.read("SELECT phase, outcome, mergeSha, prUrl FROM runs"),
-            [("done", "merged", self.MERGE_SHA, None)])
+            [("done", "merged", self.MERGE_SHA, self.URL)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("merged",)])
         (_, comment) = provider.comments[-1]

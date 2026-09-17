@@ -222,12 +222,11 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
                 conn, run_id, "pull_request",
                 f"adopted the branch's open pull request: {url}"
                 if adopted else f"pull request open: {url}")
-            if adopted:
-                # The hit is the run's `prUrl` from this moment, not only
-                # from a later park: a run that merges through the adopted
-                # PR without parking still names it on its row.
-                conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
-                             (url, run_id))
+            # The PR is the run's `prUrl` from this moment, not only
+            # from a later park: a run that merges without parking
+            # still names it on its row, whether opened or adopted.
+            conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
+                         (url, run_id))
     return url
 
 
