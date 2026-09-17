@@ -81,6 +81,7 @@ from holophyte.runs import (
     set_phase,
 )
 from holophyte.target import worktree_path
+from store.working import effective_work
 
 # The paths a run works against, plus the config they carry, are a `Target`
 # (below): built once by `cli()` from the command line and passed to every
@@ -512,13 +513,10 @@ def _open_findings(conn, run_id):
 
 
 def _check_run_cap(target, conn, run_id, budget_min, sha):
-    """Refuse a turn whose scaled budget would exceed the run's hard cap.
+    """Refuse dispatch when effective work plus the scaled turn exceeds the cap.
 
-    The ceiling is runs.timeBoxMs times budget_scale times supervisor.run_cap.
-    Count wall time since startedAt plus the proposed turn's scaled budget.
-    Record the candidate and open findings on refusal. Storeless calls and
-    tickets without estimates have no run ceiling to enforce.
-    """
+    The ceiling remains timeBoxMs × budget_scale × run_cap. Preserve candidate
+    and findings diagnostics; unmeasured or storeless runs have no known spend."""
     if conn is None or run_id is None:
         return
     run = store.read.run_snapshot(conn, run_id)
@@ -527,7 +525,9 @@ def _check_run_cap(target, conn, run_id, budget_min, sha):
     scale = budget_scale(target)
     cap = sweep_config(target).run_cap
     box_ms = run.timeBoxMs * scale
-    spent_ms = int(time() * 1000) - run.startedAt
+    spent_ms = effective_work(run, int(time() * 1000))
+    if spent_ms is None:
+        return
     if spent_ms + budget_min * scale * 60000 <= box_ms * cap:
         return
     reason = (f"out of time: {spent_ms / 60000:.1f} min spent of a "

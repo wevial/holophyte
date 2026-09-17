@@ -140,6 +140,7 @@ from holophyte.serve_runs import (
     shipped,
 )
 from holophyte.supervisor import SWEEPABLE_PHASES
+from store.working import effective_work
 
 ADDRESS_SHAPE = "PORT|HOST:PORT"
 LOOPBACK = "127.0.0.1"
@@ -204,14 +205,14 @@ def parse_address(text):
 
 
 def status(target, now=None, started_ms=None):
-    """Return the target's status and process-owned active routes as JSON.
+    """Return target status, process-owned routes and independent run clocks.
 
-    This is read-only: a missing store returns 503. Ages use epoch-ms `now`,
-    defaulting to the clock; `started_ms` is the serving daemon's start time.
-    Runs include title, phase, round, elapsed/heartbeat ages and sweep strikes.
-    The scaled time box and thresholds agree with the loop's budget checks.
-    `project` aliases `target`; `actions` and `config_edit` advertise which
-    authenticated daemon mutations are available."""
+    Read-only; a missing store returns 503. Ages and effective working_ms use
+    epoch-ms `now`, defaulting to the clock; started_ms is the daemon's bind time.
+    Clients interpolate work only with work_started_ms; elapsed_ms is wall time.
+    Runs include title, phase, round, heartbeat age and sweep strikes. The scaled
+    time box and thresholds agree with the loop's budget checks. `project` aliases
+    `target`; `actions` and `config_edit` advertise authenticated daemon mutations."""
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
     if not target.store_path.exists():
@@ -250,6 +251,8 @@ def status(target, now=None, started_ms=None):
                   "started_ms": run.startedAt,
                   "heartbeat_age_ms": now - run.lastHeartbeat,
                   "elapsed_ms": now - run.startedAt,
+                  "working_ms": effective_work(run, now),
+                  "work_started_ms": run.workStartedAt,
                   "time_box_ms": (int(run.timeBoxMs * scale)
                                   if run.timeBoxMs else run.timeBoxMs),
                   "round": run.reviewRoundCount,
@@ -312,9 +315,8 @@ def attention(target, now=None):
     `pr_open` when the park is a pull request waiting on a review or a
     merge (`parked_item()`); every live
     run whose heartbeat age exceeds `heartbeat_stale_ms`; every run that
-    ended `failed` within `FAILED_WINDOW_MS` and whose ticket is still
-    `in_flight` (a requeue walks it to `ready`, a later attempt merges it,
-    and either drops the failure); then the supervisor when it is not
+    ended `failed` within `FAILED_WINDOW_MS` and is its ticket's latest
+    attempt, with no different active run; then the supervisor when it is not
     live. Each item that names a run carries the run's `pr_url`
     (`runs.prUrl`, null when it opened none). Each item carries its
     `level`. `level` on the body is the worst
@@ -351,7 +353,8 @@ def attention(target, now=None):
                   "ticket": run.linearIdentifier, "reason": run.outcomeReason,
                   "ended_ms": run.endedAt, "attempt": run.attempt,
                   "pr_url": run.prUrl, "level": "attention"}
-                 for run in failed if run.ticketStatus == "in_flight")
+                 for run in failed if run.id == run.lastRunId
+                 and run.activeRunId in (None, run.id))
     supervisor = supervisor_view(target, beat, now, knobs)
     if supervisor["state"] != "live":
         items.append({"kind": "supervisor", "state": supervisor["state"],

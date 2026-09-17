@@ -7,7 +7,8 @@ import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel } from "../lib/runs";
-import { boxRemaining, buildTimeline } from "../lib/timeline";
+import { workingMs } from "../lib/runs";
+import { buildTimeline } from "../lib/timeline";
 import type { Round, RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
 import { FilesTouched } from "./FilesTouched";
@@ -82,8 +83,9 @@ function Card({
   // live run keeps counting between polls and a finished one stays put —
   // and reads at settled granularity, its seconds done counting too.
   const tickingNow = now + sinceMs;
-  const remaining = boxRemaining(run, run.ended_ms ?? tickingNow);
-  const over = remaining < 0;
+  const work = workingMs(run, run.ended_ms == null ? sinceMs : 0);
+  const remaining = work == null ? null : run.time_box_ms - work;
+  const over = remaining != null && remaining < 0;
   const finished = run.ended_ms != null;
   const boxFigure = finished ? formatSettled : formatSpan;
   const findings = openFindings(rounds);
@@ -102,7 +104,8 @@ function Card({
           data-box={over ? "over" : "left"}
           className={`ml-auto font-mono text-[12px] ${over ? "font-semibold text-bad" : "text-muted"}`}
         >
-          {over ? `${boxFigure(-remaining)} over the box` : `${boxFigure(remaining)} left in box`}
+          {remaining == null ? "working n/a" : over ? `${boxFigure(-remaining)} over the working box` : `${boxFigure(remaining)} left in working box`}
+          {" · wall "}{boxFigure((run.ended_ms ?? tickingNow) - run.started_ms)}
         </span>
       </header>
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">

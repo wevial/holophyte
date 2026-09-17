@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent } from "react";
-import { formatClock } from "../lib/format";
+import { formatClock, formatDuration } from "../lib/format";
 import type { Fetch } from "../lib/poll";
 import {
   mergedRows,
@@ -147,7 +147,10 @@ function Row({
         <span className="truncate text-[13px] text-muted">{row.project}</span>
         <span className="font-mono text-[13px] text-body">{row.rounds}</span>
         <span className="font-mono text-[13px] text-body">{row.findings}</span>
-        <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} />
+        <span>
+          {row.working_ms != null && row.actual_min != null && <span>working <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} /></span>}
+          <span className="font-mono text-[11px] text-muted">wall {formatDuration((row.wall_min ?? (row.ended_ms - row.started_ms) / 60_000) * 60_000)}</span>
+        </span>
         <span onClick={(event) => event.stopPropagation()} className="flex items-baseline">
           {row.pr_url ? <PrLink url={row.pr_url} title={row.merge_sha} /> : <Sha row={row} />}
         </span>

@@ -96,3 +96,8 @@ export function groupByProject(daemons: DaemonStatus[]): ProjectGroup[] {
 export function runKey(base: string, id: number): string {
   return `${base}#${id}`;
 }
+
+/** The API already includes active work through its snapshot time. */
+export function workingMs(run: { working_ms?: number | null; work_started_ms?: number | null }, sinceMs = 0): number | null {
+  return run.working_ms == null ? null : run.working_ms + (run.work_started_ms != null ? sinceMs : 0);
+}

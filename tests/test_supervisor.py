@@ -57,14 +57,14 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
         return holophyte.supervisor.sweep(self.tgt, self.conn, at).trips
 
     def test_a_fix_round_after_a_review_is_not_swept_as_overtime(self):
-        run_id = self.a_run(budget_min=30, phase="addressing")
+        run_id = self.a_run(active_work=True, budget_min=30, phase="addressing")
         store.set_review_round_cap(self.conn, run_id, 2)
         self.a_round(run_id)
 
         self.assertEqual(self.sweep_at_46(run_id), [])
 
     def test_the_same_run_with_no_round_trips_on_its_single_box(self):
-        run_id = self.a_run(budget_min=30, phase="working")
+        run_id = self.a_run(active_work=True, budget_min=30, phase="working")
         store.set_review_round_cap(self.conn, run_id, 2)
 
         trip, = self.sweep_at_46(run_id)
@@ -76,7 +76,7 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
     def test_a_null_cap_is_bounded_by_the_loops_default(self):
         """No `reviewRoundCap` yet: the default cap bounds the multiplier,
         so three rounds are worth the default's turns and nothing raises."""
-        run_id = self.a_run(budget_min=30, phase="addressing")
+        run_id = self.a_run(active_work=True, budget_min=30, phase="addressing")
         for number in (1, 2, 3):
             self.a_round(run_id, number, at=T0 + (10 + 5 * number) * MINUTE)
         self.assertIsNone(self.conn.execute(

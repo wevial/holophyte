@@ -31,10 +31,10 @@ class RunsTests(ServeTestCase):
         finally:
             conn.close()
         keys = ("ticket", "actual_min", "estimate_min", "ratio", "rounds",
-                "outcome", "host", "ended_ms", "merge_sha")
-        return [dict(zip(keys, row + (ended, sha)))
-                for row, ended, sha in zip(rows, self.ended_at(),
-                                           self.merge_shas())]
+                "outcome", "host", "ended_ms", "merge_sha", "wall_min")
+        return [dict(zip(keys, row + (ended, sha, (ended - started) / MIN)))
+                for row, ended, sha, started in zip(
+                    rows, self.ended_at(), self.merge_shas(), self.column("startedAt"))]
 
     def ended_at(self):
         """Read stored end times in report order."""
@@ -158,7 +158,7 @@ class ShippedTests(ServeTestCase):
                "criterion": None, "message": "a finding"}
 
     def seed_shipped(self):
-        """Seed merges out of id order, plus one failed run."""
+        """Seed out-of-id-order merges and a failure with measured work and findings."""
         self.now = int(time() * 1000)
         H = 60 * MIN
         conn = store.open(str(self.db))
@@ -184,6 +184,9 @@ class ShippedTests(ServeTestCase):
                         conn, run, number, "changes_requested",
                         "reviewer-model", findings=[self.FINDING] * count,
                         started_at=started + number * MIN)
+                conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
+                             (started_ago - ended_ago, run))
+                conn.commit()
                 store.release(conn, run, outcome, now=self.now - ended_ago,
                               merge_sha=sha,
                               reason="verification failed" if outcome == "failed"

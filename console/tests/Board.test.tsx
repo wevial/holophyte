@@ -22,9 +22,9 @@ const status: Status = {
   supervisor: { state: "live", pid: 1, heartbeat_age_ms: 1000, host: "writer" },
   thresholds: { heartbeat_stale_ms: 180_000, strikes: 3 },
   runs: [
-    { id: 91, ticket: "KO-232", phase: "reviewing", heartbeat_age_ms: 4000, elapsed_ms: 15 * MIN, time_box_ms: 30 * MIN, host: "writer" },
-    { id: 93, ticket: "KO-241", phase: "working", heartbeat_age_ms: 2000, elapsed_ms: 22.5 * MIN, time_box_ms: 30 * MIN, host: "writer", strikes: 1 },
-    { id: 94, ticket: "KO-238", phase: "verifying", heartbeat_age_ms: 9000, elapsed_ms: 33 * MIN, time_box_ms: 30 * MIN, host: "writer", strikes: 2 },
+    { id: 91, ticket: "KO-232", phase: "reviewing", heartbeat_age_ms: 4000, elapsed_ms: 15 * MIN, working_ms: 15 * MIN, time_box_ms: 30 * MIN, host: "writer" },
+    { id: 93, ticket: "KO-241", phase: "working", heartbeat_age_ms: 2000, elapsed_ms: 22.5 * MIN, working_ms: 22.5 * MIN, time_box_ms: 30 * MIN, host: "writer", strikes: 1 },
+    { id: 94, ticket: "KO-238", phase: "verifying", heartbeat_age_ms: 9000, elapsed_ms: 33 * MIN, working_ms: 33 * MIN, time_box_ms: 30 * MIN, host: "writer", strikes: 2 },
   ],
 };
 
@@ -107,7 +107,7 @@ test("cardLine() reads per state: no criteria, waits on each id, question age, t
   expect(line("KO-250")).toBe("waits on KO-244 · waits on KO-247");
   expect(line("KO-242")).toBeNull();
   expect(line("KO-240")).toBe("question open 2h 14m");
-  expect(line("KO-232")).toBe("#91 · 15m 0s / 30m · hb 4s");
+  expect(line("KO-232")).toBe("#91 · working 15m 0s / 30m · wall 15m 0s · hb 4s");
 });
 
 test("the view renders the five column headers in order with their counts, each ticket under one", async () => {
@@ -149,7 +149,7 @@ test("an in-progress card shows the phase pill, the strike pill above zero, the 
   expect(card("KO-241").querySelector("[data-strike]")!.getAttribute("data-strike")).toBe("amber");
   expect(card("KO-238").querySelector("[data-strike]")!.textContent).toBe("strike 2/3");
   expect(card("KO-238").querySelector("[data-strike]")!.getAttribute("data-strike")).toBe("red");
-  expect(card("KO-232").querySelector("[data-line]")!.textContent).toBe("#91 · 15m 0s / 30m · hb 4s");
+  expect(card("KO-232").querySelector("[data-line]")!.textContent).toBe("#91 · working 15m 0s / 30m · wall 15m 0s · hb 4s");
   expect(within(card("KO-232")).getByText("writer")).toBeTruthy();
 });
 

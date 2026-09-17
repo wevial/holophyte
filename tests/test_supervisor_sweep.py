@@ -168,7 +168,7 @@ class TimeBoxTests(SweepTestCase):
     """The budget trip: wall clock since the claim, against the run's box."""
 
     def test_a_run_past_the_grace_multiple_of_its_budget_trips(self):
-        run_id = self.a_run(budget_min=20)
+        run_id = self.a_run(active_work=True, budget_min=20)
         at = T0 + 31 * MINUTE  # 1.55x of 20 min
         self.heartbeat_at(run_id, at)  # alive, and still overdue
 
@@ -180,14 +180,14 @@ class TimeBoxTests(SweepTestCase):
 
     def test_a_run_inside_the_grace_multiple_does_not_trip(self):
         """Over its estimate is not overdue: the grace is 1.5x, not 1x."""
-        run_id = self.a_run(budget_min=20)
+        run_id = self.a_run(active_work=True, budget_min=20)
         at = T0 + 29 * MINUTE  # 1.45x of 20 min
         self.heartbeat_at(run_id, at)
 
         self.assertEqual(holophyte.supervisor.sweep(self.tgt, self.conn, at).trips, [])
 
     def test_a_run_claimed_against_no_estimate_has_no_box_to_blow(self):
-        run_id = self.a_run(budget_min=None)
+        run_id = self.a_run(active_work=True, budget_min=None)
         at = T0 + 600 * MINUTE
         self.heartbeat_at(run_id, at)
 
@@ -198,7 +198,7 @@ class TimeBoxTests(SweepTestCase):
         against: past the bare estimate's grace but inside the scaled
         box is a slower harness, not a blown budget."""
         self.configure("[agents]\nbudget_scale = 2\n")
-        run_id = self.a_run(budget_min=30)
+        run_id = self.a_run(active_work=True, budget_min=30)
         at = T0 + 50 * MINUTE  # past 30 min x 1.5 grace; inside 60 x 1.5
         self.heartbeat_at(run_id, at)  # alive, so only the box could trip it
 
@@ -209,7 +209,7 @@ class TimeBoxTests(SweepTestCase):
         """The scale is not an escape: past the scaled box's grace the
         trip fires, and the evidence names the box it was counted on."""
         self.configure("[agents]\nbudget_scale = 2\n")
-        run_id = self.a_run(budget_min=30)
+        run_id = self.a_run(active_work=True, budget_min=30)
         at = T0 + 91 * MINUTE  # past the 60 min box at 1.5 grace
         self.heartbeat_at(run_id, at)
 
@@ -223,7 +223,7 @@ class TimeBoxTests(SweepTestCase):
         30 x 3 x 1.5 = 135 min under the per-turn formula, but `run_cap`
         3 cuts the allowance to 90 -- so a run 100 minutes in trips for
         the box it blew where the per-turn formula alone would not."""
-        run_id = self.a_run(budget_min=30, phase="addressing")
+        run_id = self.a_run(active_work=True, budget_min=30, phase="addressing")
         for number in (1, 2):
             store.record_review_round(
                 self.conn, run_id, number, "changes_requested", "reviewer",

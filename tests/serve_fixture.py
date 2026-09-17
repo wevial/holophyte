@@ -93,17 +93,17 @@ class ServeTestCase(unittest.TestCase):
                     store.record_review_round(
                         conn, run, number, "pass", "reviewer-model",
                         started_at=started + number * MIN)
+                conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
+                             (took, run))
+                conn.commit()
                 store.release(conn, run, outcome, now=started + took,
                               merge_sha=sha)
         finally:
             conn.close()
 
     def start(self, config=None, console_dir=None, host="127.0.0.1"):
-        """Bind the daemon for the target on an ephemeral port at `host`,
-        loopback by default, serving `/` from `console_dir` -- an absent
-        directory under the test root by default, never the repository's
-        own build. The token is what `serve()` would resolve for the bind:
-        none on loopback, the configured file's contents otherwise."""
+        """Bind a fixture daemon on loopback with the configured console and token.
+        An absent console build under the temporary root is the default."""
         if config is not None:
             (self.db.parent / "config.toml").write_text(config)
         self.tgt = holophyte.target.Target.locate(self.target)

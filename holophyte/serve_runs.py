@@ -14,6 +14,7 @@ from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.target import worktree_path
+from store.working import effective_work
 
 # The two `origin` shapes a merge commit can link into: `https://HOST/OWNER/
 # REPO(.git)` and `git@HOST:OWNER/REPO(.git)`. Anything else is not a web
@@ -217,9 +218,9 @@ def runs(target, query=""):
                   "estimate_min": estimate, "ratio": ratio,
                   "rounds": rounds, "outcome": outcome,
                   "host": json_host(target, host), "ended_ms": ended_at,
-                  "merge_sha": merge_sha}
+                  "merge_sha": merge_sha, "wall_min": wall_min}
                  for ticket, actual, estimate, ratio, rounds, outcome, host,
-                 ended_at, merge_sha in rows],
+                 ended_at, merge_sha, wall_min in rows],
         "limit": limit,
     }
 
@@ -272,7 +273,10 @@ def shipped(target, query=""):
                   "title": run.title, "rounds": run.reviewRoundCount,
                   "findings": run.findingCount,
                   "started_ms": run.startedAt, "ended_ms": run.endedAt,
-                  "actual_min": (run.endedAt - run.startedAt) / 60000,
+                  "actual_min": (effective_work(run, run.endedAt) / 60000
+                                 if run.workingMs is not None else None),
+                  "working_ms": effective_work(run, run.endedAt),
+                  "wall_min": (run.endedAt - run.startedAt) / 60000,
                   "estimate_min": (run.timeBoxMs / 60000
                                    if run.timeBoxMs else None),
                   "merge_sha": run.mergeSha,
@@ -318,12 +322,14 @@ def locate_run(target, text):
 
 
 def run_detail(target, run_id, now=None):
-    """Return the run, review rounds and narrative events for `/runs/N`.
+    """Return `/runs/N`: run clocks, review rounds and narrative events.
 
-    Live runs carry heartbeat age and the recorded review cap; old rows use
-    MAX_ROUNDS. Include implementer_output detail summaries for no-commit
-    turns, but keep their full payload in the store. Invalid/missing runs
-    use locate_run's 400/404/503 responses."""
+    Effective working_ms includes active work through `now`; elapsed_ms is wall
+    time, frozen at endedAt. The scaled time box matches `/status`. Live runs
+    carry heartbeat age (null after completion) and the recorded review cap;
+    old rows use MAX_ROUNDS. locate_run supplies invalid/missing 400/404/503s.
+    Rounds and events are oldest first; include implementer_output summaries
+    for refusals and no-commit crashes, keeping full payloads in the store."""
     now = int(time() * 1000) if now is None else now
     failed, run = locate_run(target, run_id)
     if failed is not None:
@@ -344,6 +350,9 @@ def run_detail(target, run_id, now=None):
                 "title": run.title, "phase": run.phase,
                 "attempt": run.attempt, "started_ms": run.startedAt,
                 "ended_ms": run.endedAt, "outcome": run.outcome,
+                "elapsed_ms": (run.endedAt if not live else now) - run.startedAt,
+                "working_ms": effective_work(run, run.endedAt if not live else now),
+                "work_started_ms": run.workStartedAt,
                 "time_box_ms": (int(run.timeBoxMs * scale)
                                 if run.timeBoxMs else run.timeBoxMs),
                 "branch": run.branch,

@@ -18,7 +18,7 @@ const RUN_52: Run = {
   strikes: 0,
   started_ms: working.now - 72_000,
   heartbeat_age_ms: 71_000,
-  elapsed_ms: 72_000,
+  elapsed_ms: 72_000, working_ms: 72_000, work_started_ms: working.now,
   time_box_ms: 1_500_000,
   host: "writer",
 };
@@ -46,7 +46,7 @@ test("working.json extended with the daemon fields renders one live block and ru
   expect(within(row!).getByText(RUN_52.title!)).toBeTruthy();
   const phase = within(row!).getByText("implementing");
   expect(phase.getAttribute("data-phase")).toBe("implementing");
-  expect(within(row!).getByText("1m 12s / 25m")).toBeTruthy();
+  expect(within(row!).getByText("working 1m 12s / 25m")).toBeTruthy();
   expect(within(row!).getByRole("progressbar").getAttribute("data-tone")).toBe("teal");
   const heartbeat = within(row!).getByText("hb 1m 11s");
   expect(heartbeat.getAttribute("data-heartbeat")).toBe("live");
@@ -114,11 +114,11 @@ test("a row's heartbeat and elapsed keep counting between polls: 58s reads 1m 00
       />,
     );
     expect(within(rows()[0]!).getByText("hb 58s")).toBeTruthy();
-    expect(within(rows()[0]!).getByText("1m 12s / 25m")).toBeTruthy();
+    expect(within(rows()[0]!).getByText("working 1m 12s / 25m")).toBeTruthy();
     setSystemTime(t0 + 2_000);
     act(() => timers.fire());
     expect(within(rows()[0]!).getByText("hb 1m 00s")).toBeTruthy();
-    expect(within(rows()[0]!).getByText("1m 14s / 25m")).toBeTruthy();
+    expect(within(rows()[0]!).getByText("working 1m 14s / 25m")).toBeTruthy();
   } finally {
     setSystemTime();
     timers.restore();

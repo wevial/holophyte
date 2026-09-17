@@ -726,7 +726,7 @@ class RunCapTests(LoopFixture):
                 done.append(True)
                 with store.transaction(conn):
                     conn.execute(
-                        "UPDATE runs SET startedAt = startedAt - ?"
+                        "UPDATE runs SET workingMs = workingMs + ?"
                         " WHERE id = ?", (int(minutes * 60 * 1000), run_id))
             return real(conn, run_id, phase, note)
 

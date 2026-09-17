@@ -1,12 +1,9 @@
 """holophyte.serve_actions: the daemon's `POST /actions/...` routes (KO-395).
 
-Moved verbatim out of `holophyte/serve.py`: the `POST` body's parser
-`parse_action_body()`, the unit actions' `unit_action()`, the `requeue`
-action's `requeue_action()` with `tickets_named()` -- the
-duplicate-identifier check `--requeue` makes -- and
-`record_action_intervention()`, the interventions row an action lands
-before it acts, shared with `PUT /config`'s write. The constants the
-region owns came with it -- `ACTIONS_PREFIX`, `UNIT_ACTIONS`,
+Owns POST parsing, unit actions, and requeue with the CLI's duplicate-ticket
+check. `record_action_intervention()` records before acting and is shared
+with `PUT /config`. This module also owns the route constants:
+`ACTIONS_PREFIX`, `UNIT_ACTIONS`,
 `REQUEUE_ACTION`, `ACTIONS`, `DEFAULT_REQUEUE_NOTE` and `MAX_BODY`.
 `no_store()`, which `requeue_action()` shares with the read routes,
 lives with them in `holophyte.serve_runs`, so the import runs one way;
@@ -125,16 +122,12 @@ def tickets_named(conn, identifier):
 def requeue_action(target, body):
     """`POST /actions/requeue`: `store.requeue()` on the ticket `body`
     names, with `note` or `DEFAULT_REQUEUE_NOTE`: `(http status, JSON-able
-    body)`.
+    body)`. An optional `run` must name the ticket's latest attempt.
 
-    The store's one transaction is the whole write -- the `requeue`
-    interventions row carrying the note and the ticket walked to `ready`
-    -- exactly what `--requeue KO-n --note TEXT` does. A missing or
-    non-string `ticket` is 400; a store the target does not have is 503;
-    a ticket the store never mirrored, one it holds more than once (the
-    CLI refuses to pick one; so does the route), or one the store refuses
-    to requeue (a live run, not `in_flight`, its last run not `failed`),
-    is 200 with `ok: false` and the refusal in `detail`, nothing written.
+    The store atomically records the intervention and walks the ticket to
+    `ready`. Missing/non-string tickets are 400; a missing store is 503.
+    Unknown/ambiguous tickets and refused requeues return 200 with
+    `ok: false` and the reason in `detail`, without writing.
     """
     action = REQUEUE_ACTION
     identifier = body.get("ticket")
@@ -157,6 +150,13 @@ def requeue_action(target, body):
             return 200, {"action": action, "ok": False, "ticket": identifier,
                          "detail": f"{identifier} names {named} tickets in the"
                                    " store; refusing to pick one"}
+        attempt = store.read.ticket_by_id(conn, ticket.id)
+        latest = attempt.activeRunId or attempt.lastRunId
+        requested = body.get("run", latest)
+        if requested != latest:
+            return 200, {"action": action, "ok": False, "ticket": identifier,
+                         "detail": f"run {requested} is not {identifier}'s latest"
+                                   f" attempt; run {latest} is"}
         try:
             run_id = store.requeue(conn, ticket.id, note)
         except (store.RequeueRefused, ValueError) as refused:
