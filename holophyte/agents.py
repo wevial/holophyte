@@ -11,6 +11,7 @@ the loop or the board; a run context keeps configured review turns alive.
 Third slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import os
 import shlex
 import subprocess
 import tempfile
@@ -177,30 +178,32 @@ def agent_route(target, role):
             or review_profile(*review_route(target)))
 
 
-def publish_review_refs(repo, base_sha, candidate_sha):
-    """Name this round's two commits `refs/review/base` and
-    `refs/review/candidate` inside `repo`.
+def review_refs(run_id):
+    """The run's shared-repository names; None supports standalone reviews."""
+    prefix = "refs/review" if run_id is None else f"refs/review/{int(run_id)}"
+    return f"{prefix}/base", f"{prefix}/candidate"
 
-    The default reviewer route gets those two refs from
-    `review_runner.stage_candidate()`, which creates them in the checkout it
-    builds. A configured reviewer or adjudicator runs in the task worktree
-    instead, where nothing had ever created them — and the prompt it is handed
-    tells it to review the base and the candidate by exactly those names. So
-    the worktree gets the same two names for the same two commits, and the
-    override is asked about the frozen pair rather than about whatever HEAD
-    happens to be.
 
-    The exact-SHA requirement holds on this route too, the same way the staged
-    one enforces it: each side must be a full commit SHA that resolves here to
-    itself, and the base must be an ancestor of the candidate. A round argues
-    about one named candidate against one named base, whoever runs it.
+def cleanup_review_refs(repo, run_id):
+    """Remove this run's pair without preventing lease and board close-out."""
+    for ref in review_refs(run_id):
+        try:
+            sh(["git", "update-ref", "-d", ref], cwd=repo)
+        except (OSError, RuntimeError) as exc:
+            print(f"[holo2] review ref cleanup failed for {ref}: {exc}")
 
-    The refs live in the target repository's ref store, shared by its
-    worktrees; that is safe because the project's run lease single-threads
-    runs, and each round overwrites both refs with its own pair before
-    dispatching. They are left behind afterwards, like the branch a finished
-    run leaves for a human to look at.
-    """
+
+def check_review_refs(repo, run_id, base_sha, candidate_sha):
+    """A moved or missing boundary is a factory failure, never a verdict."""
+    for ref, sha in zip(review_refs(run_id), (base_sha, candidate_sha)):
+        result = subprocess.run(["git", "rev-parse", "--verify", ref],
+                                cwd=repo, capture_output=True, text=True)
+        if result.returncode or result.stdout.strip() != sha:
+            raise InfraFailure(f"review ref changed during turn: {ref}; expected {sha}")
+
+
+def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
+    """Publish an exact, ancestral commit pair under this run's own names."""
     for sha in (base_sha, candidate_sha):
         resolved = subprocess.run(
             ["git", "rev-parse", "--verify", f"{sha}^{{commit}}"],
@@ -212,8 +215,8 @@ def publish_review_refs(repo, base_sha, candidate_sha):
                        candidate_sha], cwd=repo).returncode:
         raise review_runner.ReviewBoundaryError(
             f"base {base_sha} is not an ancestor of {candidate_sha}")
-    for name, sha in (("base", base_sha), ("candidate", candidate_sha)):
-        sh(["git", "update-ref", f"refs/review/{name}", sha], cwd=repo)
+    for name, sha in zip(review_refs(run_id), (base_sha, candidate_sha)):
+        sh(["git", "update-ref", name, sha], cwd=repo)
 
 
 def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
@@ -256,8 +259,8 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     override is also an opt-out of the hardened container the default reviewer
     runs behind. What it does not opt out of is the pair the round is about:
     the exact-SHA requirement is enforced either way, and either way the two
-    commits reach the reviewer as `refs/review/base` and
-    `refs/review/candidate` — the names its prompt uses — the staged checkout
+    commits reach the reviewer as `refs/review/RUN/base` and
+    `refs/review/RUN/candidate` — the names its prompt uses — the staged checkout
     on the default route, the task worktree on the configured one.
     """
     if role not in AGENT_CONFIG_KEYS:
@@ -271,6 +274,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             try:
                 return review_runner.run_review(
                     repo=Path(cwd),
+                    run_id=run_id,
                     base_sha=base_sha,
                     candidate_sha=candidate_sha,
                     prompt=goal,
@@ -291,16 +295,20 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role != "implement":
-        publish_review_refs(Path(cwd), base_sha, candidate_sha)
+        publish_review_refs(Path(cwd), base_sha, candidate_sha, run_id=run_id)
     if role != "implement":
         # runs imports agent_route for round records; defer this import to
         # avoid a cycle at module load time.
         from holophyte.runs import heartbeat_while
 
         beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-        with heartbeat_while(conn, run_id, beat_s):
-            r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                               timeout=1800)
+        env = dict(os.environ, HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1])
+        try:
+            with heartbeat_while(conn, run_id, beat_s):
+                r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                                   timeout=1800, env=env)
+        finally:
+            check_review_refs(cwd, run_id, base_sha, candidate_sha)
         return (r.stdout + "\n" + r.stderr).strip()
     # `IMPL_TIMEOUT` is the scaled thirty minutes on this target: the
     # caller's `timeout` already carries `[agents] budget_scale`, and the

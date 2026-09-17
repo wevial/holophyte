@@ -100,12 +100,15 @@ def _commit(repo: Path, revision: str) -> str:
     return sha
 
 
-def _fingerprint(repo: Path) -> str:
+def _fingerprint(repo: Path, run_id=None) -> str:
+    from holophyte.agents import review_refs
+
+    base_ref, candidate_ref = review_refs(run_id)
     facts = [
         _git(repo, "rev-parse", "HEAD"),
         _git(repo, "rev-parse", "HEAD^{tree}"),
-        _git(repo, "rev-parse", "refs/review/base"),
-        _git(repo, "rev-parse", "refs/review/candidate"),
+        _git(repo, "rev-parse", base_ref),
+        _git(repo, "rev-parse", candidate_ref),
         _git(repo, "status", "--porcelain=v1", "--untracked-files=all"),
         _git(repo, "remote"),
     ]
@@ -174,6 +177,7 @@ def stage_candidate(
     base_revision: str,
     candidate_revision: str,
     carry: Sequence[str] = (),
+    run_id: int | None = None,
 ) -> StagedCandidate:
     """Create a self-contained detached, clean, zero-remote review checkout.
 
@@ -197,13 +201,16 @@ def stage_candidate(
     stage.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     _run(["git", "init", "-q", str(stage)])
     _git(stage, "fetch", "--quiet", "--no-tags", str(source), base, candidate)
-    _git(stage, "update-ref", "refs/review/base", base)
-    _git(stage, "update-ref", "refs/review/candidate", candidate)
+    from holophyte.agents import review_refs
+
+    base_ref, candidate_ref = review_refs(run_id)
+    _git(stage, "update-ref", base_ref, base)
+    _git(stage, "update-ref", candidate_ref, candidate)
     _git(stage, "checkout", "--quiet", "--detach", candidate)
     _check_clean(stage)
     _carry_into(source, stage, carry)
     _check_clean(stage)
-    return StagedCandidate(stage, base, candidate, _fingerprint(stage))
+    return StagedCandidate(stage, base, candidate, _fingerprint(stage, run_id))
 
 
 def _prepare_runtime(root: Path, auth: Path, codex: Path) -> tuple[Path, Path]:
@@ -239,6 +246,7 @@ def container_command(
     gid: int,
     model: str = MODEL,
     effort: str = EFFORT,
+    run_id: int | None = None,
 ) -> list[str]:
     """Build one fixed Docker invocation.
 
@@ -247,6 +255,8 @@ def container_command(
     it: the quoting is the shell's, so none of the three can rewrite the
     command. The effort reaches Codex as its `-c` assignment, already spelled.
     """
+    from holophyte.agents import review_refs
+
     mounts = [
         f"{workspace.expanduser().resolve(strict=True)}:/workspace:ro",
         f"{reviewer_home.expanduser().resolve(strict=True)}:/home/reviewer:rw",
@@ -258,7 +268,7 @@ def container_command(
     preflight = r'''
 mkdir -p -m 0700 "$TMPDIR"
 actual=$(git rev-parse HEAD)
-test "$actual" = "$(git rev-parse refs/review/candidate)"
+test "$actual" = "$(git rev-parse "$HOLOPHYTE_REVIEW_CANDIDATE")"
 test -z "$(git remote)"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 if touch /workspace/.holophyte-write-probe 2>/tmp/write-probe.err; then
@@ -289,6 +299,7 @@ exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
         f"--user={uid}:{gid}",
         "--workdir=/workspace",
         "--env=HOME=/home/reviewer",
+        f"--env=HOLOPHYTE_REVIEW_CANDIDATE={review_refs(run_id)[1]}",
         "--tmpfs",
         f"/tmp:rw,nosuid,nodev,noexec,size=256m,uid={uid},gid={gid},mode=1777",
     ]
@@ -489,6 +500,7 @@ def run_review(
     timeout: int = 1800,
     verdicts: Sequence[str] | None = REVIEW_VERDICTS,
     carry: Sequence[str] = (),
+    run_id: int | None = None,
 ) -> str:
     """Review `candidate_sha` against `base_sha` in the container; the reply.
 
@@ -519,7 +531,8 @@ def run_review(
     with scratch as temporary:
         root = Path(temporary)
         staged = stage_candidate(
-            repo, root / "candidate", base_sha, candidate_sha, carry=carry)
+            repo, root / "candidate", base_sha, candidate_sha,
+            carry=carry, run_id=run_id)
         image, dockerfile = image_for(staged)
         _ensure_image(image, dockerfile, candidate=staged.candidate_sha)
         home, toolchain = _prepare_runtime(root, CODEX_AUTH, Path(codex))
@@ -535,13 +548,14 @@ def run_review(
             gid=os.getgid(),
             model=model,
             effort=effort,
+            run_id=run_id,
         )
         try:
             with _removing_on_signal(name):
                 result = _run(command, timeout=timeout)
         finally:
             _remove_container(name)
-            if _fingerprint(staged.path) != staged.fingerprint:
+            if _fingerprint(staged.path, run_id) != staged.fingerprint:
                 raise ReviewBoundaryError("staged candidate changed during review")
         if "PREFLIGHT_OK" not in result.stderr:
             raise ReviewBoundaryError("review preflight did not complete")
@@ -552,6 +566,7 @@ def run_review(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--run-id", type=int)
     parser.add_argument("--base", required=True)
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--prompt-file", type=Path, required=True)
@@ -559,6 +574,7 @@ def main() -> int:
     print(
         run_review(
             repo=args.repo,
+            run_id=args.run_id,
             base_sha=args.base,
             candidate_sha=args.candidate,
             prompt=args.prompt_file.read_text(),

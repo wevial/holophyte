@@ -32,7 +32,7 @@ import review_runner
 import store
 import store.read
 from holophyte import babysitter, pr, pr_status
-from holophyte.agents import agent_route
+from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, RunFailure, run_verify
@@ -113,7 +113,7 @@ def conventions_paragraph(files):
     return "\n\n".join(parts) + "\n\n"
 
 
-def adjudication_brief(pull, threads, ticket, sha, conventions=()):
+def adjudication_brief(pull, threads, ticket, sha, conventions=(), run_id=None):
     """The adjudicator's goal: the numbered threads, the verdicts to give
     each, and the repository's conventions when it has any."""
     listing = "\n\n".join(
@@ -125,8 +125,8 @@ def adjudication_brief(pull, threads, ticket, sha, conventions=()):
         for n, t in enumerate(threads, 1))
     return (
         f"You are a READ-ONLY adjudicator of the review threads on pull "
-        f"request {pull.url}. Judge commit {sha} using refs/review/base as "
-        "the frozen base and refs/review/candidate as the candidate in this "
+        f"request {pull.url}. Judge commit {sha} using {review_refs(run_id)[0]} as "
+        f"the frozen base and {review_refs(run_id)[1]} as the candidate in this "
         "repo, against the ticket below. The ticket is the contract: a "
         "thread asking for work outside it is out of scope.\n\n"
         f"{ticket}\n\n"
@@ -521,7 +521,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     with heartbeat_while(conn, run_id, beat_s):
         verdict = agent(target, "review",
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
-            "refs/review/base as the frozen base and refs/review/candidate "
+            f"{review_refs(run_id)[0]} as the frozen base and {review_refs(run_id)[1]} "
             "as the candidate in this repo against the ticket below. The "
             + (f"candidate was approved at {reviewed[:12]} and has since "
                "been moved by fix commits answering review threads on "
@@ -659,7 +659,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
             reply = agent(target, "adjudicate",
                           babysitter.adjudication_brief(
                               pull, judged, ticket, sha,
-                              babysitter.conventions(wt)), wt, conn=conn,
+                              babysitter.conventions(wt), run_id=run_id), wt, conn=conn,
                           base_sha=base_sha, candidate_sha=sha, run_id=run_id)
     verdicts = _verdicts_by_kind(
         threads, judged, babysitter.parse_verdicts(reply, len(judged)))

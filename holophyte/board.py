@@ -18,6 +18,7 @@ import store
 import store.read
 import store.tickets
 import ticket_template
+from holophyte.agents import cleanup_review_refs
 from holophyte.findings import refresh_findings
 from holophyte.report import host_label
 from holophyte.runs import warn_on_run
@@ -719,15 +720,14 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
     was an `InfraFailure`, in which case the escalation that follows does
     not count it.
 
-    `refresh=False` leaves the window to the caller: a pool worker renders
-    it under the merge lock, where the file is not written into the
-    checkout beside a sibling's merge (the review of KO-343). The release
-    and the escalation are the same either way.
+    `refresh=False` leaves rendering to the pool worker under the merge lock
+    (KO-343); release, ref cleanup and escalation still run.
     """
     with store.transaction(conn):
         if confirm is not None and not confirm():
             return False
         release_run(conn, run_id, False, reason, outcome_class)
+    cleanup_review_refs(target.path, run_id)
     escalate(conn, ticket_id, provider)
     # The board lease goes with the store lease, in the same close-out
     # (KO-351); outside the lock for the reason the escalation is.

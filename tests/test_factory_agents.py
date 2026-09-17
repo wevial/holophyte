@@ -87,11 +87,13 @@ class AgentRouteTests(unittest.TestCase):
             self.worktree,
             base_sha=base,
             candidate_sha=candidate,
+            run_id=340,
         )
 
         self.assertEqual(result, "VERDICT: APPROVE")
         run_review.assert_called_once_with(
             repo=self.worktree,
+            run_id=340,
             base_sha=base,
             candidate_sha=candidate,
             prompt="review the candidate",

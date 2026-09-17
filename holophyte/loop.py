@@ -27,7 +27,7 @@ import review_runner
 import store
 import store.read
 from holophyte import pr_status
-from holophyte.agents import agent, transport_failure
+from holophyte.agents import agent, review_refs, transport_failure
 from holophyte.babysitter import _babysit
 from holophyte.board import (
     block_ticket,
@@ -763,8 +763,8 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
         with heartbeat_while(conn, run_id, beat_s):
             verdict, decision, first_reply = _review_reply(target,
                 f"You are a READ-ONLY code reviewer. Review commit {sha} using "
-                "refs/review/base as the frozen base and refs/review/candidate "
-                "as the candidate "
+                f"{review_refs(run_id)[0]} as the frozen base and "
+                f"{review_refs(run_id)[1]} as the candidate "
                 "in this repo against the ticket below. The ticket is the "
                 "contract, acceptance criteria included: a candidate that "
                 "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
@@ -850,8 +850,8 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
     with heartbeat_while(conn, run_id, beat_s):
         reply = agent(target, "adjudicate",
             f"You are a READ-ONLY final adjudicator. Judge commit {sha} "
-            "using refs/review/base as the frozen base and "
-            "refs/review/candidate as the candidate "
+            f"using {review_refs(run_id)[0]} as the frozen base and "
+            f"{review_refs(run_id)[1]} as the candidate "
             "in this repo against the ticket below. The ticket is the "
             "contract, acceptance criteria included: a candidate that "
             "leaves a criterion unmet or unwitnessed is not approvable.\n\n"

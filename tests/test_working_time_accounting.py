@@ -82,6 +82,7 @@ class WorkingTimeTests(SweepTestCase):
                 patch.object(gates, 'run_capped', route), \
                 patch.object(agents, 'agent_command', return_value=['script']), \
                 patch.object(agents, 'publish_review_refs'), \
+                patch.object(agents, 'check_review_refs'), \
                 patch('holophyte.runs.heartbeat_while',
                       lambda *a, **k: nullcontext()), \
                 patch.object(loop, 'heartbeat_while', lambda *a, **k: nullcontext()):
@@ -161,6 +162,7 @@ class WorkingTimeTests(SweepTestCase):
             stack.enter_context(patch.object(agents, 'agent_command',
                                              return_value=['script']))
             stack.enter_context(patch.object(agents, 'publish_review_refs'))
+            stack.enter_context(patch.object(agents, 'check_review_refs'))
             for module in (loop, babysitter, merge_gate, claim, pullrequest):
                 for name, result in (('sh', 'after'), ('ledger', None),
                                      ('record_round', None),
