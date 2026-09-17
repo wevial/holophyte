@@ -6,6 +6,7 @@ export interface Status {
   host: string;
   now: number;
   daemon?: { started_ms: number; pid: number };
+  active_routes?: Record<string, { command: string | null; fallback?: string }>;
   supervisor: Supervisor;
   thresholds: { heartbeat_stale_ms: number; strikes: number };
   /** Whether `[serve] actions = true` opened the `POST /actions/...`

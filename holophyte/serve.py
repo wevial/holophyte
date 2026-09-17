@@ -205,13 +205,14 @@ def parse_address(text):
 
 
 def status(target, now=None, started_ms=None):
-    """Return `/status` with independent work, wall and heartbeat clocks.
+    """Return target status, process-owned routes and independent run clocks.
 
-    Ages and effective working_ms share the epoch-millisecond snapshot `now`.
-    Clients may interpolate work only when work_started_ms is set; elapsed_ms
-    remains wall duration. started_ms identifies the daemon's bind time.
-    Run title, round and strikes support floor rows. Project aliases target;
-    actions and config_edit advertise the configured write routes."""
+    Read-only; a missing store returns 503. Ages and effective working_ms use
+    epoch-ms `now`, defaulting to the clock; started_ms is the daemon's bind time.
+    Clients interpolate work only with work_started_ms; elapsed_ms is wall time.
+    Runs include title, phase, round, heartbeat age and sweep strikes. The scaled
+    time box and thresholds agree with the loop's budget checks. `project` aliases
+    `target`; `actions` and `config_edit` advertise authenticated daemon mutations."""
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
     if not target.store_path.exists():
@@ -228,10 +229,13 @@ def status(target, now=None, started_ms=None):
     # scaled by `[agents] budget_scale` -- so the console's time-box bar and
     # the sweep agree with the cap the loop armed. `thresholds.run_cap` is
     # the hard ceiling in multiples of that box, so the bar can draw it.
+    from holophyte.serve_runs import active_routes
+
     scale = budget_scale(target)
     return 200, {
         "target": str(target.path),
         "project": str(target.path),
+        "active_routes": active_routes(target),
         "host": host_label(target, socket.gethostname()),
         "now": now,
         "daemon": {"started_ms": started_ms, "pid": os.getpid()},

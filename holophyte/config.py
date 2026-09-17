@@ -22,6 +22,7 @@ from pathlib import Path
 
 import review_runner
 from holophyte.config_tables import (
+    AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
     CONSOLE_KEYS,
     LOOP_KEYS,
@@ -108,7 +109,7 @@ DOCKER_PROBE_TIMEOUT = 5
 # knobs and their defaults are defined.
 KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
-              | frozenset({"budget_scale"}),
+              | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry"}),
 }
@@ -159,6 +160,7 @@ def check_config(target):
     merge_config(target)
     check_config_keys(target)
     budget_scale(target)
+    check_agent_fallbacks(target)
     sweep_config(target)
     loop_config(target)
     report_config(target)
@@ -186,7 +188,7 @@ def check_document(target):
     check_worktree_setup(target)
 
 
-def agent_command(target, role, goal):
+def agent_command(target, role, goal, *, fallback=False):
     """The configured argv for `role`, or None when the config names none.
 
     The goal is appended as the command's last argument, which is where both
@@ -200,25 +202,40 @@ def agent_command(target, role, goal):
     operator asked for a route, and quietly running the built-in one instead
     would answer a different question than the one the config asked.
     """
-    command = config_table(target, "agents").get(AGENT_CONFIG_KEYS[role])
+    key = AGENT_CONFIG_KEYS[role] + ("_fallback" if fallback else "")
+    command = config_table(target, "agents").get(key)
     if command is None:
         return None
     if not isinstance(command, str):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]} must be "
+            f"[holo2] {target.config_path}: [agents] {key} must be "
             f"a command string, got {type(command).__name__}")
     try:
         argv = shlex.split(command)
     except ValueError as bad:
         # `shlex` says "No closing quotation"; the key it was in is ours.
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]}"
+            f"[holo2] {target.config_path}: [agents] {key}"
             f" cannot be split into a command: {bad}")
     if not argv:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {AGENT_CONFIG_KEYS[role]}"
+            f"[holo2] {target.config_path}: [agents] {key}"
             " is empty")
     return argv + [goal]
+
+
+def check_agent_fallbacks(target):
+    """Fallback commands obey the primary grammar and name a distinct route."""
+    for role, key in AGENT_CONFIG_KEYS.items():
+        fallback = agent_command(target, role, "", fallback=True)
+        if fallback is None:
+            continue
+        primary = agent_command(target, role, "")
+        if fallback == primary:
+            raise SystemExit(f"[holo2] {target.config_path}: [agents] "
+                             f"{key}_fallback may not equal {key}")
+        check_command_path(target, key + "_fallback", fallback[0])
+    review_route(target)
 
 
 def review_route(target):
@@ -241,10 +258,11 @@ def review_route(target):
     agents = config_table(target, "agents")
     model_key, effort_key = REVIEW_ROUTE_KEYS
     for key in REVIEW_ROUTE_KEYS:
-        if key in agents and "reviewer" in agents:
+        if key in agents and any(k in agents for k in ("reviewer",
+                                                       *AGENT_FALLBACK_KEYS)):
             raise SystemExit(
                 f"[holo2] {target.config_path}: [agents] {key} beside [agents] "
-                f"reviewer: the reviewer command opts out of the container "
+                f"reviewer or fallback command: the command opts out of the container "
                 f"the pair routes -- drop one of the two")
     model = agents.get(model_key, REVIEW_MODEL)
     if not isinstance(model, str) or not model.strip():
@@ -295,47 +313,25 @@ def budget_scale(target):
 
 
 def check_agent_commands(target):
-    """Resolve every configured `[agents]` command before the loop claims work.
+    """Resolve configured commands and check default harness prerequisites.
 
-    Reading the config at startup only proved the file was TOML. The commands
-    it named were first looked at when a round dispatched them, which is after
-    a ticket is claimed, its branch cut and its worktree created: a typo in a
-    program name or a stray quote in `reviewer` surfaced as a mid-run
-    `FileNotFoundError`, with a run already in flight and its lease held. The
-    same mistakes are caught here, before anything is claimed, where the only
-    cost of being wrong is an error message.
+    Fallbacks are validated with their primaries. A missing primary executable
+    is left to the startup probe when a fallback exists, so the explicit
+    alternative can be tried before any ticket is claimed. Relative paths
+    containing a directory are always refused: a turn runs in a worktree.
 
-    The check parses through `agent_command()` rather than re-reading the
-    table, so a string this refuses is exactly a string a round would have
-    refused, and one it accepts splits at startup into the argv the round will
-    dispatch -- no second, kinder parser to disagree with the real one.
-
-    What it can settle here is the program: it has to resolve, on this PATH,
-    to a file that is executable. What it deliberately does not do is run it.
-    A configured route is an agent turn; probing it live would dispatch a real
-    one, against no ticket, on every startup.
-
-    A relative program path with a directory in it (`./review.sh`) is refused
-    rather than guessed at. Rounds run with `cwd` set to a task worktree that
-    does not exist yet, so that name resolves somewhere this check cannot look
-    and the operator has not named. An absolute path or a PATH lookup says
-    where it means.
-
-    A role the table does not name takes its default route, and that route is
-    held to the same bar as a configured one: the default implementer is
-    `claude` on PATH, and the default reviewer and adjudicator run inside a
-    container, so `docker` has to be on PATH and its daemon has to answer. A
-    host with Docker stopped used to claim a ticket, cut a branch and fail at
-    the first review with the lease held. `docker info` is a liveness probe of
-    the daemon, not an agent turn -- no review is staged and the image is
-    neither pulled nor built, since the runner builds it on first use; the
-    image is only looked up, so a host that has yet to build it hears so.
-    """
+    Without a fallback, the default implementer must be on PATH and the
+    default review container needs a working Docker daemon and built image.
+    PR merge mode also checks its remote and authentication prerequisites."""
     review_route(target)
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
         argv = agent_command(target, role, "")
         if argv is None:
+            if agent_command(target, role, "", fallback=True) is not None:
+                # The live startup probe settles the default route and can
+                # activate the configured fallback if its CLI is unavailable.
+                continue
             if role == "implement":
                 check_default_implementer(target)
             else:
@@ -343,7 +339,8 @@ def check_agent_commands(target):
             continue
         program = argv[0]
         check_command_path(target, key, program)
-        if shutil.which(program) is None:
+        if (shutil.which(program) is None
+                and agent_command(target, role, "", fallback=True) is None):
             raise SystemExit(
                 f"[holo2] {target.config_path}: [agents] {key}: no executable "
                 f"{program!r} on PATH")

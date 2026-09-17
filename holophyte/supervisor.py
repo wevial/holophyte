@@ -676,8 +676,8 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
 
 
 def launch_route_ready(target, conn, project, run_id, now, out):
-    """Silently wait, then probe the exact startup route before retrying."""
-    from holophyte.agents import probe_diagnostic, probe_implementer
+    """Wait out backoff, then probe a usable primary or fallback before launch."""
+    from holophyte.agents import probe_diagnostic, probe_implementer, probe_seat
     from store import launch_backoff
 
     state = launch_backoff.current(conn, project)
@@ -687,6 +687,9 @@ def launch_route_ready(target, conn, project, run_id, now, out):
         reason = state["reason"]
     else:
         probe = probe_implementer(target)
+        if (probe is not None and not probe.ok and
+                (target.config().get("agents") or {}).get("implementer_fallback")):
+            probe = probe_seat(target, "implement", fallback=True)
         if probe is None or probe.ok:
             launch_backoff.clear(conn, project)
             return True
@@ -858,17 +861,10 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
 
 
 def supervisor_liveness_line(target, conn=None, now=None):
-    """One line saying whether a supervisor is live for the target.
+    """Describe supervisor liveness for loop startup output.
 
-    `supervisor: live, last heartbeat 12s ago (pid N on HOST)` when the
-    newest beat in `supervisorHeartbeats` is younger than the target's
-    `[supervisor] heartbeat_stale_min`, the same boundary the sweep judges
-    a run's heartbeat by; `stale` past it; `none recorded` when no
-    supervisor has ever beaten -- or, with no `conn` given, when there is
-    no store to ask. Read-only: it exists so an operator can tell from
-    `--report`, or from a refused `--supervise`, whether the watcher they
-    are about to launch is already running.
-    """
+    Uses the same heartbeat threshold as the supervisor and console.
+    A missing heartbeat is distinguished from a stale one."""
     now = int(time() * 1000) if now is None else now
     owned = conn is None
     if owned:

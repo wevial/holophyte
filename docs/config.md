@@ -77,7 +77,8 @@ budget_scale = 1.5
 ```
 
 Accepted keys: `implementer`, `reviewer`, `adjudicator`, `review_model`,
-`review_effort`, `budget_scale`.
+`review_effort`, `budget_scale`, `implementer_fallback`, `reviewer_fallback`,
+`adjudicator_fallback`.
 
 `budget_scale` exists because the budget stops runaway turns, not because
 it selects a harness: an implementer that reads more and edits later can
@@ -97,13 +98,34 @@ proceeds only when it exits 0 with `ready` in its output. A route that exits
 nonzero, answers something else or does not answer in time ends the pass nonzero
 with the command, the exit code or the timeout, and the last lines it printed --
 a typo or a stale CLI is found here, not by a failed implement turn later. The
-default route is not probed this way, and neither is the reviewer. The probe
+default route is also probed when it has a fallback. Review seats with a fallback
+are also probed, in a temporary checkout so review wrappers can resolve refs. The probe
 runs when a pass starts and again when the daemon's `PUT /config` (behind
 `[serve] config_edit` and the write token, never the read token alone: the
 probe executes whatever command the key names) changes this key: the write
 lands either way, and the reply's `probe` carries the same verdict, command,
 exit code and last lines the loop would print, so a route that does not answer
 is known at the write and not at the next `factory.py` start.
+
+Each seat may name a fallback command, for example:
+
+```toml
+[agents]
+implementer = "codex exec --model gpt-5.6-sol"
+implementer_fallback = "devin -p"
+```
+
+Fallbacks use the same command-string grammar and receive the goal as the last
+argument. A fallback must differ from its primary. The loop probes the fallback
+when the primary probe fails, or when a turn emits its route's quota signature.
+Only a successful fallback probe activates the route; the interrupted turn is
+then dispatched once on it. The seat stays on fallback for the process's remaining
+turns and retries its primary at the next start. Each switch prints its reason
+and command, records a `route_fallback` project intervention and run event (a
+startup switch attaches to the first affected run), and adds a fallback chip to
+the console's project header. A failed fallback probe stops the loop without
+recording a switch. `review_model` and `review_effort` cannot accompany fallback
+keys, just as they cannot accompany `reviewer`.
 
 `review_model` and `review_effort` choose what runs inside the hardened
 container when neither review role is overridden by a command. Both reach the

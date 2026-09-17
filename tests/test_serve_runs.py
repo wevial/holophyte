@@ -559,33 +559,32 @@ class RunDetailTests(ServeTestCase):
         self.assertFalse(self.db.exists())
 
 
-
-class RouteDownTests(ServeTestCase):
-    def test_now_ledger_has_one_outage_and_hides_launches_since_its_start(self):
-        from store import launch_backoff
+class ActiveRoutesTests(ServeTestCase):
+    def test_status_shows_only_live_fallbacks_and_resets_to_primary(self):
+        from holophyte.agent_routes import reset
+        from holophyte.agents import ProbeResult, activate_fallback
+        from holophyte.target import Target
 
         self.seed()
+        target = Target.locate(self.target)
+        target._config = {'agents': {'implementer': 'codex exec',
+                                    'implementer_fallback': 'devin -p'}}
+        self.addCleanup(reset, target)
         conn = store.open(str(self.db))
         try:
-            project = conn.execute(
-                'SELECT projectId FROM runs WHERE id=?', (self.run,)).fetchone()[0]
-            started = self.now - MIN
-            store.record_intervention(conn, self.run, 'launch_loop', 'older',
-                                      source='supervisor', now=started - 1)
-            launch_backoff.failure(conn, project, 'fake-probe: quota exhausted',
-                                   started, run_id=self.run)
-            store.record_intervention(conn, self.run, 'launch_loop', 'newer',
-                                      source='supervisor', now=started + 1)
+            run, = conn.execute('SELECT id FROM runs LIMIT 1').fetchone()
+            activate_fallback(target, 'implement', 'quota exhausted', conn, run,
+                              probe=ProbeResult(['devin', '-p'], 0, 'ready', 90))
         finally:
             conn.close()
+        # The daemon constructs its own Target, proving the indicator is not
+        # accidentally reading the loop's in-memory route map.
         self.start()
-        code, _, body = self.request(
-            'GET', f'/ledger?since={started - 10}&kind=intervention')
+        code, _, body = self.request('GET', '/status')
         self.assertEqual(code, 200)
-        outage, = body['active_outages']
-        self.assertEqual(outage['at'], started)
-        self.assertIsNone(outage['run'])
-        self.assertIn('fake-probe: quota exhausted', outage['text'])
-        self.assertIn('since ', outage['text'])
-        launches = [r for r in body['entries'] if 'launch_loop:' in r['text']]
-        self.assertEqual([r['at'] for r in launches], [started - 1])
+        self.assertEqual(body['active_routes']['implementer'],
+                         {'command': 'devin', 'fallback': 'devin'})
+        self.assertNotIn('fallback', body['active_routes']['reviewer'])
+        reset(target)
+        _, _, body = self.request('GET', '/status')
+        self.assertNotIn('fallback', body['active_routes']['implementer'])

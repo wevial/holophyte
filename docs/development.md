@@ -22,6 +22,7 @@ Each module, one line:
   `split_address()`, the namedtuples and defaults they own.
 - `holophyte/gates.py` — the verify gate: a ticket's command in, a red or
   green fail-loud report out.
+- `holophyte/agent_routes.py` — process-owned route state and live console snapshots.
 - `holophyte/agents.py` — the agent routes and the `agent()` call, one turn
   of a role.
 - `holophyte/review.py` — reviewer output as structured findings and a
@@ -118,6 +119,7 @@ The store is its own package:
   `TICKET_TRANSITIONS` table and `transition()`/`walk_ticket()`,
   `mirror_ticket`, §2's `pickable()`/`pickable_tickets()` and the Mermaid
   state-graph renderer, re-exported from the package.
+- `store/agent_routes.py` — atomic fallback intervention and event records.
 - `store/launch_backoff.py` — persistent route outages, retry deadlines and
   project-owned startup evidence before a first claim (KO-466).
 - `store/working.py` — persisted work intervals, finally-safe settlement and
