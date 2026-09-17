@@ -199,23 +199,12 @@ def scheduler(target, provider, knobs):
     """`[loop] workers > 1`: keep up to `knobs.workers` `--worker` children
     running, one per claimable ticket, until the queue is empty.
 
-    The startup checks and the sweep once, then a tick per child exit:
-    mirror the board's ready listing, count the tickets a worker could
-    claim (`_claimable()`), spawn until `min(claimable, workers)` are
-    alive, block until any child exits, read its status. While the pool
-    is below the ceiling the block carries `knobs.tick_sec` as a deadline,
-    and a deadline that reaps nobody is a tick like any other: the listing
-    and the count run again for a ticket filed since (KO-353); a full pool
-    waits on exits alone. A failed worker under `stop_on_failure` stops
-    the spawning and the running workers are waited for, as the serial
-    loop stops on its first failure; a merge into the factory itself does
-    the same and re-execs once the pool has drained, so no worker ever
-    runs code newer than the scheduler's. A worker that found nothing to
-    claim is not a stop: the listing can run ahead of a claim a sibling
-    is about to make, so the tick spawns nothing and the next exit
-    recounts. Exits 0 with the queue empty and the pool drained, nonzero
-    when any worker failed or stopped for a human.
-    """
+    Mirror and refill on exits or partial-pool deadlines (`tick_sec`, KO-353).
+    A full pool waits on exits. Failure under `stop_on_failure`
+    drains and stops; a self-merge or schema move drains and re-execs.
+    An idle worker pauses spawning until the next exit recounts: a sibling
+    may have claimed ahead of it. Return zero for an empty, drained queue,
+    nonzero if any worker failed or stopped for a human."""
     from holophyte.claim import _park_unlisted
     from holophyte.dispatch import _mirror_queue, _startup_sweep
     from holophyte.operator import _reexec, self_hosted
@@ -230,6 +219,7 @@ def scheduler(target, provider, knobs):
         _reconcile_at_startup(target, conn, project, provider)
         first_tick = True
         while True:
+            state.check_schema(target)
             # Every tick, timer or exit: a pull request merged on GitHub
             # since the last one ships its parked run (KO-359). The first
             # tick asked at startup, before the mirror was repaired.
@@ -272,7 +262,7 @@ def scheduler(target, provider, knobs):
                     # nothing of the failure, spawn again and exit clean
                     # under `stop_on_failure = true`. The operator relaunches
                     # on the merged code, as after a serial failure.
-                    _reexec(target, conn, project)
+                    _reexec(target, conn, project, state.restart_reason)
                     return  # only a test's EXEC returns
                 store.record_loop_return(conn, project)
                 if listing is not None:
@@ -308,6 +298,16 @@ class _PoolState:
         self.stopped = False
         self.paused = False
         self.restart = False
+        self.restart_reason = None
+
+    def check_schema(self, target):
+        """A migration stops spawning and uses the self-merge drain path."""
+        from holophyte.operator import _schema_move
+
+        if self.spawning:
+            self.restart_reason = _schema_move(target)
+            if self.restart_reason:
+                self.restart = True
 
     @property
     def draining(self):

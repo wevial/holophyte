@@ -101,7 +101,7 @@ EXPECTED_CLASSES = [
     "RepointRefused",
     "RequeueRefused",
     "ResumeRefused",
-    "RunEnded",
+    "RunEnded", "SchemaNewer",  # KO-464: catch a migration refusal.
 ]
 
 # Alphabetical, same rule, for `store/schema.py`: KO-391 moved the schema,

@@ -21,6 +21,7 @@ which imports back the names its remaining call sites use.
 """
 import threading
 from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 from time import time
 
@@ -125,9 +126,10 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     worker -- is true again. Same shape in any runtime: a timer thread and
     one UPDATE.
 
-    The thread opens its own connection to the store `conn` is on, because a
-    SQLite connection belongs to the thread that made it and the loop's
-    `conn` is mid-use for the whole block. A beat that fails is printed as
+    The thread opens its own connection to the store `conn` is on, because the
+    loop's `conn` may be in use during the block. If opening fails (including
+    a newer schema), it falls back to the existing connection under its
+    transaction lock, shared with the caller's store writes. A failed beat prints
     `[holo2] heartbeat failed: ...` and the block goes on: the agent's work
     is not lost to a locked store. On exit the thread is signalled and joined
     before the loop's next phase write, so no beat lands after the stage the
@@ -159,7 +161,8 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     stop = threading.Event()
     swept = []  # the ended row's (outcome, reason), set once by the beat
     thread = threading.Thread(
-        target=_beat, args=(path, run_id, interval_s, stop, swept, on_swept),
+        target=_beat, args=(path, run_id, interval_s, stop, swept, on_swept,
+                           partial(_heartbeat, conn, run_id, swept)),
         name=f"heartbeat-run-{run_id}", daemon=True)
     thread.start()
     failure = None
@@ -179,24 +182,35 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
         raise failure
 
 
-def _beat(path, run_id, interval_s, stop, swept, on_swept):
+def _heartbeat(conn, run_id, swept):
+    """Beat and read an ending under the connection's transaction lock."""
+    with store.transaction(conn):
+        if store.heartbeat(conn, run_id):
+            return True
+        swept.append(_ending_of(conn, run_id))
+        return False
+
+
+def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat):
     """`heartbeat_while()`'s timer thread: beat until `stop`, or until swept.
 
-    Opens its own connection to the store at `path`. A beat that finds the
+    Opens its own connection to the store at `path`, or uses the caller's
+    locked `heartbeat` callback if opening fails. A beat that finds the
     run ended appends the ending to `swept`, calls `on_swept` once, and
     returns: there is nothing left to keep alive.
     """
+    own = None
     try:
         own = store.open(path)
-    except Exception as e:  # noqa: BLE001 - best effort; never the run's
-        print(f"[holo2] heartbeat failed: {e}")
-        return
+    except BaseException as e:  # noqa: BLE001 - SystemExit refuses newer stores
+        print(f"[holo2] heartbeat failed: {e}", flush=True)
+    else:
+        heartbeat = partial(_heartbeat, own, run_id, swept)
     try:
         while not stop.wait(interval_s):
             try:
-                if store.heartbeat(own, run_id):
+                if heartbeat():
                     continue
-                swept.append(_ending_of(own, run_id))
             except Exception as e:  # noqa: BLE001 - same
                 print(f"[holo2] heartbeat failed: {e}")
                 continue
@@ -208,7 +222,8 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept):
                     print(f"[holo2] stopping the swept turn failed: {e}")
             return
     finally:
-        own.close()
+        if own is not None:
+            own.close()
 
 
 def _ending_of(conn, run_id):

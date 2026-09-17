@@ -65,37 +65,30 @@ def self_hosted(target):
 
 
 def main(target, provider):
-    """The loop: one process working the queue a ticket at a time under
-    `[loop] workers = 1`, the default; a scheduler over a pool of
-    `--worker` children above it (KO-343). Returns the exit status.
+    """Run serially under `workers = 1`, otherwise schedule worker children.
 
-    The first thing the pass does is prove a configured `[agents]
-    implementer` answers (KO-357): `check_agent_commands()` settled that the
-    program resolves, and this settles that it runs and replies, by asking it
-    for one word under a short cap. A route that does not answer ends the
-    pass here, nonzero, with the command and what it said on the terminal --
-    before a ticket is claimed, where being wrong costs a message rather
-    than a lease held through a failed implement turn. The default route is
-    not probed, and a `--worker` child does not repeat this: it enters
-    through `worker()`, not here."""
+    Probe the configured implementer before claiming (KO-357); an unavailable
+    route ends nonzero; the default route and worker children skip the probe.
+    A newer store at startup re-execs from the current checkout."""
     probe = probe_implementer(target)
     if probe is not None:
         print(probe.describe())
         if not probe.ok:
             return 1
     knobs = loop_config(target)
-    if knobs.workers == 1:
-        return _serial(target, provider, knobs)
-    return scheduler(target, provider, knobs)
+    try:
+        if knobs.workers == 1:
+            return _serial(target, provider, knobs)
+        return scheduler(target, provider, knobs)
+    except store.SchemaNewer as moved:
+        reexec_self(_schema_reason(moved), EXEC)
 
 
 def _serial(target, provider, knobs):
-    """One pass of the factory in this process: claim, mirror, lease,
-    `run_task()`, close out, repeat. The phases are the plain functions
-    below, called in the order they ran when this was one function
-    (KO-211). The loop as it was before the pool: `[loop] workers = 1`
-    runs exactly this, and a `--worker` child runs the same phases once
-    in `worker()`."""
+    """Claim, mirror, lease, dispatch and close out one ticket at a time.
+
+    A `--worker` child runs the same phases once in `worker()` (KO-343).
+    """
     from holophyte.dispatch import (
         PARKED,
         SWEPT,
@@ -119,15 +112,15 @@ def _serial(target, provider, knobs):
         project = store.tickets.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
         _reconcile_at_startup(target, conn, project, provider)
-        # The tickets this pass has refused to claim. A blocked ticket keeps
-        # its place in the board's ready set — `blocked_on_operator` projects
-        # to Todo, the column a human picks work out of — so it is offered
-        # again the moment it is skipped. Remembering the refusal is what
-        # turns "not this one" into "the one after it" instead of the same
-        # ticket forever.
+        # Refused tickets remain on the board's ready list. Remember them so
+        # a blocked head-of-queue ticket cannot starve the tickets behind it.
         skip = set()
         first_pass = True
         while True:
+            reason = _schema_move(target)
+            if reason:
+                _reexec(target, conn, project, reason)
+                return
             # Before the claim: a pull request a person merged since the
             # last pass ships its parked run here (KO-359). The first pass
             # asked at startup, before the mirror was repaired.
@@ -139,17 +132,10 @@ def _serial(target, provider, knobs):
                                                  provider)
             first_pass = False
             _mirror_queue(target, conn, project, provider)
-            # The claim's `claim_next()` spends the same ready listing the
-            # mirror does, so a complexity budget under its tenth holds the
-            # whole pass, not just the mirror: the pass ends on the reset
-            # line `linear_budget_low()` prints once rather than asking to
-            # be refused (KO-434). Asked after the mirror, not before it:
-            # the mirror's own answer can be what pushed the budget under
-            # its tenth -- a caught 429's remembered headers included --
-            # and the mirror guards its own ask, so this one check holds
-            # both (KO-434 review). The supervisor's fallback waits out
-            # the same reset and starts the loop again once the meter
-            # refills.
+            # The claim spends the mirror's listing. Check its budget after
+            # mirroring: that request (including a caught 429) may have pushed
+            # the budget below its tenth. Stop before a refused claim; the
+            # supervisor waits for the reset before restarting (KO-434).
             if linear_budget_low():
                 store.record_loop_return(conn, project)
                 print("[holo2] the ready listing waits for the budget's"
@@ -218,7 +204,21 @@ def _serial(target, provider, knobs):
         conn.close()
 
 
-def _reexec(target, conn, project):
+def _schema_reason(moved):
+    return (f"store schema moved to {moved.version} under this process;"
+            " re-executing")
+
+
+def _schema_move(target):
+    """Probe at the pass boundary before claiming or spawning more work."""
+    try:
+        store.open(target.store_path).close()
+    except store.SchemaNewer as moved:
+        return _schema_reason(moved)
+    return None
+
+
+def _reexec(target, conn, project, reason=None):
     """Replace the process image with a fresh `factory.py` from the merged
     code, through the `EXEC` seam. Returns only when a test's EXEC does."""
     sha = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
@@ -228,8 +228,8 @@ def _reexec(target, conn, project):
     # grace window.
     store.record_loop_restart(conn, project, sha)
     conn.close()
-    reexec_self("merged a change to the factory itself;"
-                f" re-executing from {sha}", EXEC)
+    reexec_self(reason or ("merged a change to the factory itself;"
+                           f" re-executing from {sha}"), EXEC)
 
 
 def report(target, conn=None, out=None, now=None):
