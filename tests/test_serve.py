@@ -780,14 +780,12 @@ class AttentionTests(ServeTestCase):
 
         _, _, body = self.request("GET", "/attention")
 
-        # Both attempts ended inside the window, so both are items; each
-        # says which attempt it was, not how many the client has seen.
+        # Only the latest attempt needs attention, with its original number.
         failed = [(item["run"], item["attempt"])
                   for item in body["items"] if item["kind"] == "failed"]
-        self.assertEqual(failed, [(self.earlier_failed[0], 1),
-                                  (self.failed, 2)])
+        self.assertEqual(failed, [(self.failed, 2)])
 
-    def test_a_requeued_failure_drops_out(self):
+    def test_a_requeued_failure_stays_until_a_new_attempt(self):
         self.seed_attention()
         conn = store.open(str(self.db))
         try:
@@ -799,7 +797,7 @@ class AttentionTests(ServeTestCase):
         _, _, body = self.request("GET", "/attention")
 
         kinds = [item["kind"] for item in body["items"]]
-        self.assertEqual(kinds, ["blocked", "stale_run", "supervisor"])
+        self.assertEqual(kinds, ["blocked", "stale_run", "failed", "supervisor"])
 
     def test_a_failure_older_than_a_day_drops_out(self):
         self.seed_attention(failed_ago=30 * self.HOUR)
