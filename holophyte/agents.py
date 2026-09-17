@@ -16,11 +16,11 @@ import os
 import shlex
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import review_runner
-from holophyte.agent_routes import routes
+from holophyte.agent_routes import command_secrets, routes, safe_command
 from holophyte.config import (
     AGENT_CONFIG_KEYS,
     DEFAULT_IMPLEMENTER,
@@ -35,7 +35,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.gates import InfraFailure, run_capped, sh
-from holophyte.redact import known_secrets, redact_prose
+from holophyte.redact import redact_prose
 
 TRANSPORT_SIGNATURES = (
     "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "getaddrinfo",
@@ -54,11 +54,20 @@ def transport_failure(exit_code, output):
                  if sig.casefold() in tail), None)
 
 
-class ImplementerOutput(str):
+class AgentOutput(str):
+    """Turn text retaining the dispatched route for outage classification."""
+
+    def __new__(cls, output, command):
+        result = super().__new__(cls, output)
+        result.command = command
+        return result
+
+
+class ImplementerOutput(AgentOutput):
     """Output text retaining the implementer CLI's exit status."""
 
-    def __new__(cls, output, exit_code):
-        result = super().__new__(cls, output)
+    def __new__(cls, output, exit_code, command=""):
+        result = super().__new__(cls, output, command)
         result.exit_code = exit_code
         return result
 
@@ -136,7 +145,8 @@ class ProbeResult:
 
 def probe_diagnostic(target, probe):
     """Safe diagnostic for terminal output and persisted route evidence."""
-    return redact_prose(probe.describe(), known_secrets(target.config()))
+    safe = replace(probe, command=[safe_command(target, shlex.join(probe.command))])
+    return redact_prose(safe.describe(), command_secrets(target))
 
 
 def probe_implementer(target, timeout=None):
@@ -208,9 +218,11 @@ def agent_route(target, role):
     harness or model ran would be evidence of something that did not happen,
     and the rows are what FINDINGS.md and the fingerprint are built from.
     """
-    return (routes(target).commands.get(role)
+    command = (routes(target).commands.get(role)
             or (target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
-            or review_profile(*review_route(target)))
+            or (DEFAULT_IMPLEMENTER if role == "implement" else
+                review_profile(*review_route(target))))
+    return safe_command(target, command)
 
 
 def review_refs(run_id):
@@ -264,7 +276,8 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn, run_id=run_id)
         output = _agent(target, role, goal, cwd, **kwargs)
-        reason = outage_reason(target, role, output)
+        command = getattr(output, "command", agent_route(target, role))
+        reason = outage_reason(command, output)
         if reason and activate_fallback(target, role, reason, conn, run_id):
             return _agent(target, role, goal, cwd, **kwargs)
         return output
@@ -310,11 +323,12 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     command = routes(target).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(target, role, goal))
+    dispatched_route = shlex.join(cmd[:-1]) if cmd is not None else DEFAULT_IMPLEMENTER
     if cmd is None:
         if role != "implement":
             model, effort = review_route(target)
             try:
-                return review_runner.run_review(
+                return AgentOutput(review_runner.run_review(
                     repo=Path(cwd),
                     run_id=run_id,
                     base_sha=base_sha,
@@ -326,7 +340,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                     timeout=1800,
                     verdicts=None,
                     carry=carry_directories(target),
-                )
+                ), review_profile(model, effort))
             except review_runner.ReviewBoundaryError as e:
                 # The runner could not stage, start or read the reviewer —
                 # a missing CLI, an image that will not build, a container
@@ -351,7 +365,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                    timeout=1800, env=env)
         finally:
             check_review_refs(cwd, run_id, base_sha, candidate_sha)
-        return (r.stdout + "\n" + r.stderr).strip()
+        return AgentOutput((r.stdout + "\n" + r.stderr).strip(), dispatched_route)
     # `IMPL_TIMEOUT` is the scaled thirty minutes on this target: the
     # caller's `timeout` already carries `[agents] budget_scale`, and the
     # ceiling it is held under stretches with it.
@@ -362,20 +376,21 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     # sweep-time kill runs exactly the call it always did.
     hook = {"on_start": on_start} if on_start is not None else {}
     code, out = run_capped(cmd, cwd, cap, **hook)
-    return ImplementerOutput(out.strip(), code)
+    return ImplementerOutput(out.strip(), code, dispatched_route)
 
 
 # Exact substrings emitted by the supported routes. Keep causes here so the
 # event carries the matching line, rather than a guessed generic failure.
 OUTAGE_SIGNATURES = {
+    "claude": ("You've hit your limit", "Credit balance is too low"),
     "codex": ("You've hit your usage limit",),
     "devin": ("Quota exhausted", "Usage limit reached",
               "Organization usage limit reached"),
 }
 
 
-def outage_reason(target, role, output):
-    command = agent_route(target, role).lower()
+def outage_reason(command, output):
+    command = command.lower()
     signatures = tuple(sig for route, values in OUTAGE_SIGNATURES.items()
                        if route in command for sig in values)
     return next((line for line in output.splitlines()
@@ -410,8 +425,8 @@ def activate_fallback(target, role, reason, conn=None, run_id=None, *, probe=Non
         print(diagnostic)
         raise InfraFailure(diagnostic)
     evidence = {"seat": AGENT_CONFIG_KEYS[role],
-                "reason": redact_prose(reason, known_secrets(target.config())),
-                "command": redact_prose(command, known_secrets(target.config()))}
+                "reason": redact_prose(reason, command_secrets(target)),
+                "command": safe_command(target, command)}
     owned = conn is None
     conn = open_store(target) if owned else conn
     try:
@@ -434,8 +449,8 @@ def activate_fallback(target, role, reason, conn=None, run_id=None, *, probe=Non
           f"using fallback: {evidence['command']}")
     return True
 
-def startup_routes(target, provider, implementer_probe=None):
-    """Probe configured seats, activating only a fallback that answers."""
+def startup_routes(target, provider, implementer_probe=None, *, activate=True):
+    """Probe seats; schedulers use activate=False to leave route state alone."""
     import store
     from holophyte.operator import _record_startup_probe
     from holophyte.runs import open_store
@@ -452,7 +467,7 @@ def startup_routes(target, provider, implementer_probe=None):
         print(probe_diagnostic(target, probe))
         if not probe.ok and seat + "_fallback" in table:
             fallback = probe_seat(target, role, fallback=True)
-            if fallback.ok:
+            if fallback.ok and activate:
                 conn = open_store(target)
                 try:
                     routes(target).project = store.ensure_project(
@@ -461,7 +476,7 @@ def startup_routes(target, provider, implementer_probe=None):
                                       conn, probe=fallback)
                 finally:
                     conn.close()
-            else:
+            elif not fallback.ok:
                 print(probe_diagnostic(target, fallback))
             probe = fallback
         _record_startup_probe(target, provider, probe)

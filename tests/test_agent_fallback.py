@@ -17,6 +17,7 @@ from loop_fixture import (  # noqa: E402 - fixture shares the tests import path
 from sweep_fixture import SweepTestCase  # noqa: E402
 
 from holophyte import agents, operator  # noqa: E402
+from holophyte.agent_routes import reset  # noqa: E402
 
 
 class AgentFallbackTests(SweepTestCase):
@@ -95,6 +96,72 @@ class AgentFallbackTests(SweepTestCase):
             "AND kind='route_fallback'", (run,)).fetchone()
         self.assertEqual(json.loads(payload)['reason'],
                          "ERROR: You've hit your usage limit")
+
+    def test_command_credentials_never_reach_fallback_sinks(self):
+        from holophyte.serve_runs import active_routes
+
+        self.routes()
+        secret = 'command-only-credential'
+        self.configure(f'[agents]\nimplementer = "{self.primary}"\n'
+                       f'implementer_fallback = "{self.fallback} --api-key {secret}"\n')
+        run = self.a_run()
+        def turn(*_):
+            self.assertEqual(agents.agent(self.tgt, 'implement', 'work',
+                             self.target, conn=self.conn, run_id=run),
+                             'turn completed')
+            self.assertEqual(active_routes(self.tgt)['implementer'],
+                             {'command': self.fallback, 'fallback': self.fallback})
+            for path in self.tgt.holo_dir.glob('active-routes-*.json'):
+                self.assertNotIn(secret, path.read_text())
+            return 0
+        code, output = self.start(turn)
+        self.assertEqual(code, 0)
+        self.assertNotIn(secret, output)
+        for query in ("SELECT guidance FROM interventions",
+                      "SELECT summary FROM runEvents"):
+            self.assertNotIn(secret, str(self.conn.execute(query).fetchall()))
+
+    def test_default_claude_quota_dispatches_fallback(self):
+        self.routes()
+        self.configure(f'[agents]\nimplementer_fallback = "{self.fallback}"\n')
+        run = self.a_run()
+        dispatched = []
+        def execute(cmd, *_args, **_kwargs):
+            dispatched.append(cmd)
+            if cmd[0] == 'claude':
+                return 1, "You've hit your limit · resets tomorrow"
+            return 0, 'ready' if cmd[-1] == agents.PROBE_GOAL else 'completed'
+        with patch.object(agents, 'run_capped', side_effect=execute):
+            self.addCleanup(reset, self.tgt)
+            result = agents.agent(self.tgt, 'implement', 'work', self.target,
+                                  conn=self.conn, run_id=run)
+        self.assertEqual(result, 'completed')
+        self.assertEqual([cmd[0] for cmd in dispatched],
+                         ['claude', self.fallback, self.fallback])
+        self.assertEqual(dispatched[-1][-1], 'work')
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='route_fallback'"
+        ).fetchone()[0], 1)
+
+    def test_scheduler_readiness_does_not_activate_fallback(self):
+        from holophyte.agent_routes import routes
+
+        self.routes()
+        def scheduled(*_):
+            self.assertEqual(routes(self.tgt).commands, {})
+            self.assertEqual(routes(self.tgt).pending, {})
+            self.assertEqual(list(self.tgt.holo_dir.glob('active-routes-*.json')), [])
+            return 0
+        with patch.object(operator, 'loop_config',
+                          return_value=SimpleNamespace(workers=2)), \
+                patch.object(operator, 'scheduler', side_effect=scheduled):
+            self.assertEqual(operator.main(self.tgt, SimpleNamespace(team='team-1')), 0)
+        self.assertEqual(self.calls.read_text().splitlines(), [
+            'codex-primary ' + agents.PROBE_GOAL,
+            'devin-fallback ' + agents.PROBE_GOAL])
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM interventions WHERE action='route_fallback'"
+        ).fetchone()[0], 0)
 
     def test_failed_fallback_stops_without_switch_record(self):
         self.routes(fallback_fails=True)

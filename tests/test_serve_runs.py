@@ -580,7 +580,7 @@ class ActiveRoutesTests(ServeTestCase):
         code, _, body = self.request('GET', '/status')
         self.assertEqual(code, 200)
         self.assertEqual(body['active_routes']['implementer'],
-                         {'command': 'devin -p', 'fallback': 'devin -p'})
+                         {'command': 'devin', 'fallback': 'devin'})
         self.assertNotIn('fallback', body['active_routes']['reviewer'])
         reset(target)
         _, _, body = self.request('GET', '/status')

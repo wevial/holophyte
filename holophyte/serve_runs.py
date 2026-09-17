@@ -498,15 +498,13 @@ def run_files(target, run_id):
 
 def active_routes(target):
     """Current commands per seat; primary seats carry no fallback marker."""
-    from holophyte.agent_routes import active_fallbacks
+    from holophyte.agent_routes import active_fallbacks, safe_command
     from holophyte.config import AGENT_CONFIG_KEYS
-    from holophyte.redact import known_secrets, redact_prose
 
     fallback = active_fallbacks(target)
-    secrets = known_secrets(target.config())
-    table = {key: redact_prose(value, secrets)
+    table = {key: safe_command(target, value)
              for key, value in (target.config().get("agents") or {}).items()
-             if isinstance(value, str)}
+             if key in AGENT_CONFIG_KEYS.values() and isinstance(value, str)}
     return {seat: {"command": fallback.get(seat, table.get(seat)),
                    **({"fallback": fallback[seat]} if seat in fallback else {})}
             for seat in AGENT_CONFIG_KEYS.values()}

@@ -47,12 +47,12 @@ def main(target, provider):
     """Probe before claiming, then run serially or schedule worker children."""
     reset(target)
     try:
-        if not startup_routes(target, provider, probe_implementer):
-            return 1
         knobs = loop_config(target)
-        if knobs.workers == 1:
-            return _serial(target, provider, knobs)
-        return scheduler(target, provider, knobs)
+        if not startup_routes(target, provider, probe_implementer,
+                              activate=knobs.workers == 1):
+            return 1
+        run = _serial if knobs.workers == 1 else scheduler
+        return run(target, provider, knobs)
     except store.SchemaNewer as moved:
         reexec_self(_schema_reason(moved), EXEC)
     finally:
