@@ -1,25 +1,10 @@
-"""Typed read views over the store: one query, one row type, no SQL elsewhere.
+"""Typed, read-only views: explicit SQL mapped to frozen dataclasses.
 
-The loop, the supervisor sweep, `--report`, the FINDINGS renderer and the
-coming `serve` daemon all read the same tables. Until this module each of
-them carried its own `SELECT` and its own knowledge of column order, so a
-schema change had a dozen silent blast sites in `factory.py`. Here every read
-is a named function returning a frozen dataclass (or a list of them) whose
-fields are the columns it carries, spelled as the schema spells them, so a
-reader can grep `SCHEMA` for any field and a Rust port has its row structs
-drawn for it.
+Readers share one named query per row type, carrying the union of their
+column needs. Fields use the schema's spelling. Callers supply their own
+connection; these functions neither open connections nor mutate rows.
 
-Rules the module keeps:
-
-- Explicit SQL strings and explicit tuple-to-dataclass construction. No ORM,
-  no query builder, nothing reflected off `cursor.description`.
-- Functions take the connection the caller already holds -- the loop's
-  writable one or a fresh `open_readonly()` -- and never open their own.
-- Reads that fetch the same row with different column subsets are one
-  function carrying the union, so the row type is the row.
-- Nothing here writes. Writers stay in `store/__init__.py`.
-
-Run the tests: python3 -m unittest discover -s tests -p 'test_store_read*' -v
+Run: python3 -m unittest discover -s tests -p 'test_store_read*' -v
 """
 from __future__ import annotations
 
@@ -260,6 +245,8 @@ class RunSnapshot:
     endedAt: int | None
     startedAt: int
     timeBoxMs: int | None
+    workingMs: int | None = None
+    workStartedAt: int | None = None
 
 
 def run_snapshot(conn, run_id):
@@ -271,12 +258,13 @@ def run_snapshot(conn, run_id):
     """
     row = conn.execute(
         "SELECT id, ticketId, phase, lastHeartbeat, endedAt, startedAt,"
-        " timeBoxMs FROM runs WHERE id = ?", (run_id,)).fetchone()
+        " timeBoxMs, workingMs, workStartedAt FROM runs WHERE id = ?",
+        (run_id,)).fetchone()
     if row is None:
         return None
     return RunSnapshot(id=row[0], ticketId=row[1], phase=row[2],
                        lastHeartbeat=row[3], endedAt=row[4], startedAt=row[5],
-                       timeBoxMs=row[6])
+                       timeBoxMs=row[6], workingMs=row[7], workStartedAt=row[8])
 
 
 @dataclass(frozen=True)
@@ -302,6 +290,8 @@ class LiveRun:
     reviewRoundCap: int | None
     # The pull request the run opened (`runs.prUrl`), None when none.
     prUrl: str | None = None
+    workingMs: int | None = None
+    workStartedAt: int | None = None
 
 
 @dataclass(frozen=True)
@@ -325,19 +315,7 @@ class ApprovedCandidate:
 
 
 def approved_candidate(conn, ticket_id, run_id):
-    """The run whose approved candidate `run_id` should take to the gate.
-
-    The newest run of `ticket_id` other than `run_id` itself, if it ended
-    with `resumePhase` at the merge gate -- which is what `store.approve()`
-    writes on a run parked awaiting merge approval. Returns that run's id
-    with the `candidateSha` its park recorded (None on a run parked by a
-    module older than the column) and the `prUrl` the park wrote when
-    `[merge] mode = "pr"` opened a pull request for it, or None when the
-    newest prior run is anything else: the claim then starts the ticket
-    over, as it would after a failed run. `approved` is False when the
-    newest intervention on that run is `babysit` rather than `approve`;
-    `approved_sha` is the `approvedSha` the park recorded.
-    """
+    """The latest prior run released to the gate; intervention picks approval."""
     row = conn.execute(
         "SELECT id, resumePhase, candidateSha, prUrl, approvedSha FROM runs"
         " WHERE ticketId = ? AND id <> ?"
@@ -352,6 +330,17 @@ def approved_candidate(conn, ticket_id, run_id):
                              approved_sha=row[4])
 
 
+def babysit_note(conn, run_id):
+    """Read the newest babysit intervention's note from its paired event."""
+    row = conn.execute(
+        "SELECT e.summary FROM interventions i JOIN runEvents e"
+        " ON e.runId = i.runId AND e.at = i.at AND e.kind = 'intervention'"
+        " AND e.summary LIKE i.source || ' babysit: %'"
+        " WHERE i.runId = ? AND i.action = 'babysit'"
+        " ORDER BY i.id DESC, e.seq DESC LIMIT 1", (run_id,)).fetchone()
+    return row[0].partition(" babysit: ")[2] if row else ""
+
+
 def live_runs(conn, phases):
     """Every run with no `endedAt` whose phase is in `phases`, oldest id first.
 
@@ -364,7 +353,7 @@ def live_runs(conn, phases):
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
         " r.startedAt, r.timeBoxMs, r.host,"
         " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id),"
-        " r.reviewRoundCap, r.prUrl"
+        " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
         f"   AND r.phase IN ({', '.join('?' * len(phases))})"
@@ -372,7 +361,8 @@ def live_runs(conn, phases):
     return [LiveRun(id=row[0], linearIdentifier=row[1], title=row[2],
                     phase=row[3], lastHeartbeat=row[4], startedAt=row[5],
                     timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8],
-                    reviewRoundCap=row[9], prUrl=row[10])
+                    reviewRoundCap=row[9], prUrl=row[10],
+                    workingMs=row[11], workStartedAt=row[12])
             for row in rows]
 
 
@@ -398,6 +388,8 @@ class EndedRun:
     # The merge commit on main, full sha; None unless the run merged under a
     # module that wrote the column.
     mergeSha: str | None
+    workingMs: int | None = None
+    workStartedAt: int | None = None
 
 
 def newest_run_id(conn):
@@ -417,14 +409,15 @@ def ended_runs(conn):
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"
         " r.reviewRoundCount, r.outcome, r.outcomeReason, r.branch, r.host,"
-        " r.mergeSha"
+        " r.mergeSha, r.workingMs, r.workStartedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NOT NULL"
         " ORDER BY r.endedAt, r.id").fetchall()
     return [EndedRun(id=row[0], linearIdentifier=row[1], startedAt=row[2],
                      endedAt=row[3], timeBoxMs=row[4], reviewRoundCount=row[5],
                      outcome=row[6], outcomeReason=row[7], branch=row[8],
-                     host=row[9], mergeSha=row[10])
+                     host=row[9], mergeSha=row[10],
+                     workingMs=row[11], workStartedAt=row[12])
             for row in rows]
 
 
@@ -666,6 +659,8 @@ class RunDetail:
     reviewRoundCap: int | None
     # The pull request the run opened (`runs.prUrl`), None when none.
     prUrl: str | None = None
+    workingMs: int | None = None
+    workStartedAt: int | None = None
 
 
 def run_detail(conn, run_id):
@@ -673,7 +668,8 @@ def run_detail(conn, run_id):
     row = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.attempt,"
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
-        " r.branch, r.host, r.mergeSha, r.reviewRoundCap, r.prUrl"
+        " r.branch, r.host, r.mergeSha, r.reviewRoundCap, r.prUrl,"
+        " r.workingMs, r.workStartedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.id = ?", (run_id,)).fetchone()
     if row is None:
@@ -683,7 +679,7 @@ def run_detail(conn, run_id):
                      endedAt=row[6], lastHeartbeat=row[7], outcome=row[8],
                      timeBoxMs=row[9], branch=row[10], host=row[11],
                      mergeSha=row[12], reviewRoundCap=row[13],
-                     prUrl=row[14])
+                     prUrl=row[14], workingMs=row[15], workStartedAt=row[16])
 
 
 @dataclass(frozen=True)

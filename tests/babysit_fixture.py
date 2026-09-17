@@ -10,7 +10,7 @@ import holophyte.operator
 import holophyte.pr_status
 import store
 import store.tickets
-from tests.fake_agent import APPROVE, Commit, Idle
+from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle, Reply
 from tests.loop_fixture import BRANCH
 
 MINUTE = 60 * 1000
@@ -18,6 +18,58 @@ T0 = 1_700_000_000_000
 
 
 class ConflictRefusalCases:
+    def test_conflict_push_waits_for_the_head_to_catch_up(self):
+        review = self.conflict_refusal(heads=("old", "pushed"))
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("candidate"), review, Idle(""), APPROVE,
+                      provider=self.provider())
+        self.assert_conflict_merge_landed()
+        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge", "state", "state", "merge"])
+
+    def test_conflict_push_head_timeout_parks_naming_both_shas(self):
+        review = self.conflict_refusal(heads=("old",))
+        self.configure('[merge]\nmode = "pr"\npr_poll_sec = 31\n')
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("candidate"), review, Idle(""),
+                      provider=self.provider())
+        original, pushed = [sha for _, sha in self.pushed()]
+        self.assertEqual(sum(naps), 31)
+        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM runs"),
+                         [("awaiting_merge_approval", None, pushed)])
+        self.assertIn(f"the pull request's head is {original[:12]} after 31s;"
+                      f" the babysitter pushed {pushed[:12]}", self.question())
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [original])
+
+    def review_fix_propagation(self, catches_up):
+        self.resume_rejected_fix()
+        self.configure('[merge]\nmode = "pr"\npr_poll_sec = 31\n')
+        old = self.git("rev-parse", BRANCH).strip()
+        states = [self.pr_state(head=old), self.pr_state(head=old)]
+        if catches_up:
+            states += [self.pr_state(checks="PENDING"), self.pr_state()]
+        self.serve(*states)
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE,
+                                provider=self.provider())
+        return old, fake, naps
+
+    def resume_rejected_fix(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""),
+                  Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),
+                  REQUEST_CHANGES, provider=self.provider())
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "repair the pin",
+                                         out=io.StringIO())
+
     def conflict_refusal(self, conflict=False, heads=()):
         """GitHub refuses the first merge after main moves under the PR."""
         import test_babysitter
@@ -185,3 +237,21 @@ class StoreBabysitCases:
                 'INSERT INTO interventions (runId, source, "trigger",'
                 ' "action", at) VALUES (?, \'human\', \'manual\','
                 ' \'shepherd\', ?)', (self.run, T0))
+
+
+class SpentCapReview:
+    """A reviewer reached with the live run's round allowance already spent."""
+    role = APPROVE.role
+
+    def __init__(self, db, reply):
+        self.db, self.reply = db, reply
+        self.count = None
+
+    def play(self, cwd, turn):
+        with sqlite3.connect(self.db) as conn:
+            run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+            self.count = conn.execute(
+                "SELECT COUNT(*) FROM reviewRounds WHERE runId = ?",
+                (run_id,)).fetchone()[0]
+            store.set_review_round_cap(conn, run_id, self.count)
+        return self.reply.play(cwd, turn)

@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS runs (
     -- finished run change with it. The run's snapshot is what it was actually
     -- given.
     timeBoxMs         INTEGER,
+    workingMs         INTEGER, -- NULL means historical/unmeasured
+    workStartedAt     INTEGER, -- epoch milliseconds of the active work call
     -- The ticket's contract as it stood at the claim: its title and the two
     -- lists §2's pickability predicate reads, as one canonical JSON document
     -- (`contract_snapshot()` below). A run is worked to the ticket it was
@@ -360,7 +362,9 @@ CREATE TABLE IF NOT EXISTS interventions (
 # supervisor's board fallback last asked Linear for the ready listing, so
 # `[supervisor] board_ask_sec` throttles across passes and process restarts
 # (KO-434).
-SCHEMA_VERSION = 18
+# Version 19 adds `runs.workingMs` and `runs.workStartedAt`, the accumulated
+# working time and active work interval, leaving historical time NULL (KO-457).
+SCHEMA_VERSION = 19
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -439,13 +443,9 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
     return conn
 
 
-# Columns added to a table after its CREATE statement first shipped, as
-# (table, column, DDL). SCHEMA is `CREATE TABLE IF NOT EXISTS` throughout,
-# which does exactly nothing to a table that already exists — so without this
-# list a store initialized by an earlier version of the module keeps its
-# original columns forever, and the first reader of a newer one fails with
-# `no such column`. Adding a column to SCHEMA is therefore only half the
-# change; the other half is an entry here.
+# Additive migrations: (table, column, DDL). CREATE TABLE IF NOT EXISTS
+# cannot extend old tables, so every new SCHEMA column needs an entry here.
+# Historical rows retain NULL for nullable columns without a default.
 #
 # Each DDL is transcribed from that column's clause in SCHEMA so a migrated
 # database and a fresh one end up with the same column, CHECK included:
@@ -454,6 +454,8 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
 # constant default — a column needing either wants a table rebuild, not a line
 # here. The schema test holds the two databases against each other.
 ADDED_COLUMNS = (
+    ("runs", "workingMs", "workingMs INTEGER"),
+    ("runs", "workStartedAt", "workStartedAt INTEGER"),
     (
         "runs",
         "timeBoxMs",

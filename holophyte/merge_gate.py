@@ -333,7 +333,7 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
                                      branch, wt, sha, beat_s, ticket,
                                      budget_min)
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts)
+        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
