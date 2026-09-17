@@ -31,6 +31,7 @@ from holophyte.agents import agent, transport_failure
 from holophyte.babysitter import _babysit
 from holophyte.board import (
     block_ticket,
+    comment_body,
     ledger,
     mirror_key,
 )
@@ -690,11 +691,7 @@ def _verify_brief(verify_cmd, ok, out):
 
 
 def _changed_lines(wt):
-    """Insertions plus deletions of the candidate against its merge base
-    with main. The merge base rather than main itself, so a preserved
-    branch that already merged main is not charged for main's own lines.
-    Binary files show `-` in `--numstat` and count for nothing.
-    """
+    """Count changed lines against the merge base; binary files count as zero."""
     base = sh(["git", "merge-base", "main", "HEAD"], cwd=wt)
     total = 0
     for line in sh(["git", "diff", "--numstat", base, "HEAD"], cwd=wt).splitlines():
@@ -704,13 +701,7 @@ def _changed_lines(wt):
 
 
 def _review_cap(target, conn, run_id, provider, task_id, wt):
-    """The review-round cap for this run, from the candidate's size and the
-    target's `[loop]` review keys (`review_round_cap()`). Measured once,
-    before round 1, and written to the run's row and its narrative so the
-    store says how many rounds the candidate was given and why: `/runs/N`
-    serves the row's value as `max_rounds` (KO-321). A `run_task()` driven
-    with no store has no row to write.
-    """
+    """Measure and record the review cap from candidate size and configuration."""
     lines = _changed_lines(wt)
     cap = review_round_cap(lines, loop_config(target))
     print(f"[holo2] review cap {cap} for {lines} changed lines")
@@ -721,16 +712,31 @@ def _review_cap(target, conn, run_id, provider, task_id, wt):
     return cap
 
 
+def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id):
+    """Re-ask a malformed review once; keep its evidence out of the verdict."""
+    first_reply = ""
+    for attempt in range(2):
+        reply = agent(target, "review", prompt, wt, base_sha=base_sha,
+                      candidate_sha=sha, conn=conn, run_id=run_id)
+        try:
+            decision = review_runner.terminal_verdict(reply)
+        except review_runner.ReviewBoundaryError:
+            decision = "MALFORMED"
+        if decision != "MALFORMED":
+            break
+        if attempt == 0:
+            first_reply = "first reply (no verdict):\n" + comment_body(reply)
+            prompt += ("\n\nYour previous reply had no clean terminal verdict. "
+                       "Your reply must end with exactly one line, "
+                       "VERDICT: APPROVE or VERDICT: REQUEST_CHANGES, "
+                       "and nothing after it.")
+    return reply, decision, first_reply
+
+
 def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap):
-    """The review phase: up to `cap` rounds of verify, review and fix round.
-
-    Returns `(sha, rnd, approved)`: the candidate's sha after the last fix
-    round, the number of the round that ended the phase, and whether that
-    round was a clean approval. `approved` False means every round and its
-    fix is spent and the terminal adjudication is next.
-    """
+    """Verify, review and fix up to `cap` rounds; return sha, round, approval."""
     for rnd in range(1, cap + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
         if rnd == 1:
@@ -755,7 +761,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         round_started = int(time() * 1000)
         with heartbeat_while(conn, run_id, beat_s):
-            verdict = agent(target, "review",
+            verdict, decision, first_reply = _review_reply(target,
                 f"You are a READ-ONLY code reviewer. Review commit {sha} using "
                 "refs/review/base as the frozen base and refs/review/candidate "
                 "as the candidate "
@@ -769,35 +775,29 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                 "line:\n"
                 "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
                 "If REQUEST_CHANGES, list only concrete blockers.", wt,
-                base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
-        # Before the approval check, so the round that ends the loop is stored
-        # like every other one: a review the store has no row for is a round
-        # §6 cannot compare the next one against.
+                base_sha, sha, conn, run_id)
+        # Store even the round that ends the loop.
         record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                      ok, out,
-                     started_at=round_started, criteria=criteria, root=wt)
+                     started_at=round_started, criteria=criteria, root=wt,
+                     prior_reply=first_reply)
+        if decision == "MALFORMED":
+            reason = "reviewer returned no verdict line twice"
+            print(f"[holo2] round {rnd}: {reason}")
+            raise InfraFailure(f"{reason}; candidate preserved at {sha}")
 
-        # A criterion the reviewer left not met or unwitnessed is a blocker
-        # whatever the verdict line says (KO-165 was approved with one unmet),
-        # and so is one whose witness names a test the worktree does not hold:
-        # `criteria_findings()` reads that as `unwitnessed — named test not
-        # found: ...`.
+        # Unmet criteria or nonexistent named witnesses block approval.
         unwitnessed = criteria_findings(verdict, criteria, wt)
         if unwitnessed:
             print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
                   "witnessed; treating as REQUEST_CHANGES")
-        if (ok and not unwitnessed
-                and review_runner.terminal_verdict(verdict) == "APPROVE"):
-            # The approving round is a round like any other: the narrative
-            # of a clean merge is a `round` entry and then a `merge` one.
+        if ok and not unwitnessed and decision == "APPROVE":
             ledger(conn, run_id, task_id, "round",
                    f"Round {rnd}: APPROVE\nReviewer verdict:\n{verdict}",
                    provider)
             return sha, rnd, True
 
-        # 3. implementer addresses findings (same branch, new commit) --
-        # unless the run's ceiling has no room left for the turn: refused
-        # here rather than started and killed mid-edit.
+        # Refuse a fix turn if the run has no budget left.
         _check_run_cap(target, conn, run_id, budget_min, sha)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         fixes, timed_out = _timed(

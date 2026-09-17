@@ -670,11 +670,7 @@ def _finding_keys(findings):
     would make an unchanged complaint look like a new one and hide exactly the
     non-convergence the fingerprint exists to catch.
 
-    A **set**, so two findings sharing a key collapse into one. Under this key
-    they are the same complaint about the same place, and duplicates would
-    otherwise make the fingerprint depend on how many times the reviewer said
-    it. It also keeps `findings_fingerprint()` and `findings_overlap()` reading
-    the same canonical input, which is what makes them comparable at all.
+    Duplicate keys collapse, keeping fingerprints and overlap comparable.
 
     Raises `ValueError` for a finding missing `path` or `severity`, carrying a
     severity outside §2's union, citing a line below 1, or naming a path that
@@ -719,7 +715,8 @@ def _finding_keys(findings):
             raise ValueError(
                 f"finding line must be a positive integer or absent, got {line!r}"
             )
-        keys.add((path, line, severity))
+        if finding.get("evidence_only") is not True:
+            keys.add((path, line, severity))
     return keys
 
 
@@ -735,7 +732,8 @@ def findings_fingerprint(findings):
 
     State-model §2: "hash of sorted (path:line:severity) tuples". `findings` is
     the decoded `reviewRounds.findings` list — mappings with `path`, an
-    optional `line`, and a `severity`; any other keys are ignored.
+    optional `line`, and a `severity`. Rows marked `evidence_only=True`
+    are retained as evidence but excluded from comparison; other keys are ignored.
 
     Sorted before hashing, so the order the reviewer happened to emit its
     findings in cannot change the answer: two rounds that raised the same
@@ -785,6 +783,8 @@ def findings_overlap(earlier, later):
     """
     earlier_keys = _finding_keys(earlier)
     later_keys = _finding_keys(later)
+    earlier = [f for f in earlier if f.get("evidence_only") is not True]
+    later = [f for f in later if f.get("evidence_only") is not True]
     union = earlier_keys | later_keys
     if not union:
         return 1.0
