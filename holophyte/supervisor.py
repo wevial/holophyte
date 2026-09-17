@@ -257,12 +257,9 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
     handed to the next worker, because under one `BEGIN IMMEDIATE` there is no
     gap for it to do so in.
 
-    A decline is recorded too, under the same event kind: the supervisor
-    looked, found the run finished or moved on, and stood down. Without the
-    row a reader of the run's stream cannot tell a sweep that declined from
-    one that never arrived, and the summary line the operator reads is
-    derived from this same answer -- `acted` here is what happened, never
-    the flag the sweep was called with.
+    A decline is recorded under the same event kind, distinguishing a sweep
+    that stood down from one that never arrived. `acted` records what happened,
+    not the flag the sweep was called with.
 
     Nothing is signalled, killed or deleted. Freeing the lease and recording
     the failure is enough to unblock the queue, and a supervisor that also
@@ -292,6 +289,9 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
             conn, trip.run_id, SWEEP_EVENT,
             f"supervisor sweep: {trip.condition} ({trip.evidence});"
             " failing the run and releasing its leases")
+        from store.working import settle_work
+
+        settle_work(conn, trip.run_id)
         return True
 
     acted = close_out_failure(
