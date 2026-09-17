@@ -148,7 +148,7 @@ class ReviewRefsTests(unittest.TestCase):
             raise Captured
 
         common = dict(
-            target=Mock(),
+            target=Mock(config=Mock(return_value={"merge": {"approve": "auto"}})),
             conn=None,
             run_id=340,
             provider=None,
