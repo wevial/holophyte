@@ -315,19 +315,7 @@ class ApprovedCandidate:
 
 
 def approved_candidate(conn, ticket_id, run_id):
-    """The run whose approved candidate `run_id` should take to the gate.
-
-    The newest run of `ticket_id` other than `run_id` itself, if it ended
-    with `resumePhase` at the merge gate -- which is what `store.approve()`
-    writes on a run parked awaiting merge approval. Returns that run's id
-    with the `candidateSha` its park recorded (None on a run parked by a
-    module older than the column) and the `prUrl` the park wrote when
-    `[merge] mode = "pr"` opened a pull request for it, or None when the
-    newest prior run is anything else: the claim then starts the ticket
-    over, as it would after a failed run. `approved` is False when the
-    newest intervention on that run is `babysit` rather than `approve`;
-    `approved_sha` is the `approvedSha` the park recorded.
-    """
+    """The latest prior run released to the gate; intervention picks approval."""
     row = conn.execute(
         "SELECT id, resumePhase, candidateSha, prUrl, approvedSha FROM runs"
         " WHERE ticketId = ? AND id <> ?"
@@ -340,6 +328,17 @@ def approved_candidate(conn, ticket_id, run_id):
     return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
                              approved=last is None or last[0] != "babysit",
                              approved_sha=row[4])
+
+
+def babysit_note(conn, run_id):
+    """Read the newest babysit intervention's note from its paired event."""
+    row = conn.execute(
+        "SELECT e.summary FROM interventions i JOIN runEvents e"
+        " ON e.runId = i.runId AND e.at = i.at AND e.kind = 'intervention'"
+        " AND e.summary LIKE i.source || ' babysit: %'"
+        " WHERE i.runId = ? AND i.action = 'babysit'"
+        " ORDER BY i.id DESC, e.seq DESC LIMIT 1", (run_id,)).fetchone()
+    return row[0].partition(" babysit: ")[2] if row else ""
 
 
 def live_runs(conn, phases):
