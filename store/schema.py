@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS projects (
     -- ready listing, so `board_ask_sec` throttles across passes and across
     -- the supervisor's restarts. NULL until the first ask.
     boardAskedAt        INTEGER,
+    launchBackoffUntil  INTEGER,
+    launchBackoffReason TEXT,  -- JSON: reason, since, interval (seconds)
     -- §7: the per-project single-threading lease. Held here rather than
     -- inferred from runs so a concurrent claim loses on a uniqueness-style
     -- assertion instead of on a race-prone count.
@@ -203,13 +205,15 @@ CREATE TABLE IF NOT EXISTS reviewRounds (
 -- runEvents: append-only log, one stream per run (state-model §2).
 CREATE TABLE IF NOT EXISTS runEvents (
     id      INTEGER PRIMARY KEY,
-    runId   INTEGER NOT NULL REFERENCES runs (id),
+    runId   INTEGER REFERENCES runs (id),
+    projectId INTEGER REFERENCES projects (id),
     seq     INTEGER NOT NULL,  -- monotonic per run
     level   TEXT    NOT NULL CHECK (level IN ('narrative', 'detail')),
     kind    TEXT    NOT NULL,  -- 'phase_change' | 'tool_use' | 'supervisor_probe' | ...
     summary TEXT    NOT NULL,  -- human-readable, always present
     payload TEXT,              -- JSON, detail level only
     at      INTEGER NOT NULL,
+    CHECK (runId IS NOT NULL OR projectId IS NOT NULL),
     UNIQUE (runId, seq)
 );
 
@@ -299,7 +303,8 @@ CREATE TABLE IF NOT EXISTS ledger (
 _INTERVENTIONS_DDL = """
 CREATE TABLE IF NOT EXISTS interventions (
     id        INTEGER PRIMARY KEY,
-    runId     INTEGER NOT NULL REFERENCES runs (id),
+    runId     INTEGER REFERENCES runs (id),
+    projectId INTEGER REFERENCES projects (id),
     source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human')),
     "trigger" TEXT    NOT NULL
         CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
@@ -309,63 +314,17 @@ CREATE TABLE IF NOT EXISTS interventions (
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
                             'close_out', 'requeue', 'approve', 'repoint',
                             'babysit', 'reconcile', 'restart_supervisor',
-                            'launch_loop', 'config_edit')),
+                            'launch_loop', 'launch_backoff', 'config_edit')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
-    at        INTEGER NOT NULL
+    at        INTEGER NOT NULL,
+    CHECK (runId IS NOT NULL OR projectId IS NOT NULL)
 )"""
 
 
-# The schema version this module ships, stamped into `PRAGMA user_version`
-# by init() once the migration ladder has run. Version 0 is what SQLite
-# reports for any file this module never stamped: an empty one, or a store
-# made before the stamp existed. Bump this when SCHEMA or ADDED_COLUMNS
-# changes shape, so an older build refuses a store it would otherwise read
-# one column short. The ladder itself stays ADDED_COLUMNS; the number is
-# bookkeeping around it, not a replacement for it. Version 3 is the
-# `interventions` action CHECK admitting 'requeue' (KO-223); version 4 is
-# `runs.mergeSha`, the merge commit a merged run landed as (KO-246); version
-# 5 is the action CHECK admitting 'approve', the operator's answer to a run
-# parked for merge approval (KO-258); version 6 is the `ledger` table, the
-# run's narrative kept in the store ahead of its board comment (KO-250);
-# version 7 is the action CHECK admitting 'repoint', a parked candidate
-# moved to a rebuilt branch tip (KO-297); version 8 is the action CHECK
-# admitting 'shepherd', the operator's "look at the pull request again"
-# for a run parked on one (KO-262). 8 rather than a second 7: both
-# shipped as 7 on their own branches, and a store one of them stamped
-# would otherwise never be rebuilt to admit the other's value. Version 9
-# is `runs.approvedSha`, the sha the last independent judgement covered,
-# so a babysitter resumed by `--babysit` knows what still needs a review
-# (KO-262). Version 10 is `runs.reviewRoundCap`, the review-round cap the
-# loop gave the run, so `/runs/N` serves the cap the run had rather than
-# the module constant (KO-321). Version 11 is the action CHECK admitting
-# 'reconcile' and the trigger CHECK 'linear_completed': the loop's startup
-# walk of a mirrored ticket Linear has closed elsewhere (KO-329), and also
-# `tickets.body`, the Linear body the claim-time mirror stores so `/tickets/
-# KO-n` can serve it (KO-328). Both shipped as 11: the ladder adds the
-# column by its absence, not by the stamp, so a store KO-329 stamped 11
-# still gains it here. Version 12 is the action CHECK admitting
-# 'restart_supervisor' and 'launch_loop', the daemon's two unit actions
-# behind `[serve] actions = true`, each recorded before its `systemctl`
-# runs (KO-348). Version 13 is the action CHECK admitting 'config_edit',
-# the daemon's `PUT /config` behind `[serve] config_edit = true`, recorded
-# before the file is replaced (KO-356). Version 14 is `runs.prSeenAt`
-# and `runs.prSeenThreads`, what the last babysitter pass saw of the
-# pull request its run parked on, so the loop's tick can tell new
-# review activity from its own (KO-362). Version 15 is `runs.prSeenChecks`
-# and `runs.prSeenReview`, the head's checks rollup and the review decision
-# the same read saw, so `/attention`'s `pr_open` item can carry them
-# (KO-368). Version 16 renames the action 'shepherd' to 'babysit', the word
-# the operator reads everywhere else since KO-373: the CHECK swaps the value
-# and the rebuild rewrites every row that carried the old one (KO-374).
-# Version 17 admits rejected run phases and outcomes (KO-431).
-# Version 18 is `projects.boardAskedAt`, the epoch millisecond the
-# supervisor's board fallback last asked Linear for the ready listing, so
-# `[supervisor] board_ask_sec` throttles across passes and process restarts
-# (KO-434).
-# Version 19 adds `runs.workingMs` and `runs.workStartedAt`, the accumulated
-# working time and active work interval, leaving historical time NULL (KO-457).
-SCHEMA_VERSION = 19
+# Version 20 adds persistent launch backoff and project-owned startup evidence
+# before a first run exists (KO-466). Older schemas migrate through init().
+SCHEMA_VERSION = 20
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -462,6 +421,10 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
 # constant default — a column needing either wants a table rebuild, not a line
 # here. The schema test holds the two databases against each other.
 ADDED_COLUMNS = (
+    ("projects", "launchBackoffUntil", "launchBackoffUntil INTEGER"),
+    ("projects", "launchBackoffReason", "launchBackoffReason TEXT"),
+    ("runEvents", "projectId", "projectId INTEGER REFERENCES projects (id)"),
+    ("interventions", "projectId", "projectId INTEGER REFERENCES projects (id)"),
     ("runs", "workingMs", "workingMs INTEGER"),
     ("runs", "workStartedAt", "workStartedAt INTEGER"),
     (
@@ -625,6 +588,7 @@ def init(conn):
             conn.execute(sql)
         _widen_runs_outcomes(conn)
         _widen_interventions_action(conn)
+        _project_startup_events(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
         # version means.
@@ -676,7 +640,7 @@ def _widen_interventions_action(conn):
     if all(value in admitted
            for value in ("'repoint'", "'babysit'", "'reconcile'",
                          "'restart_supervisor'", "'launch_loop'",
-                         "'config_edit'")):
+                         "'config_edit'", "'launch_backoff'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -684,7 +648,7 @@ def _widen_interventions_action(conn):
     # the problem and the fix, and means the copy below cannot half-fail.
     (orphans,) = conn.execute(
         "SELECT COUNT(*) FROM interventions i LEFT JOIN runs r"
-        " ON r.id = i.runId WHERE r.id IS NULL").fetchone()
+        " ON r.id = i.runId WHERE r.id IS NULL AND i.runId IS NOT NULL").fetchone()
     if orphans:
         raise sqlite3.IntegrityError(
             f"{orphans} interventions row(s) reference runs that do not"
@@ -694,9 +658,11 @@ def _widen_interventions_action(conn):
         conn.execute(_INTERVENTIONS_DDL)
         conn.execute(
             "INSERT INTO interventions"
+            ' (id, runId, source, "trigger", "action", question, guidance, at,'
+            ' projectId)'
             ' SELECT id, runId, source, "trigger",'
             "   CASE \"action\" WHEN 'shepherd' THEN 'babysit'"
-            '   ELSE "action" END, question, guidance, at'
+            '   ELSE "action" END, question, guidance, at, projectId'
             " FROM interventions_old")
         conn.execute("DROP TABLE interventions_old")
 
@@ -753,3 +719,19 @@ def transaction(conn):
     """
     with _transaction(conn):
         yield
+
+
+def _project_startup_events(conn):
+    """Allow startup evidence before any run has claimed a ticket (KO-466)."""
+    columns = conn.execute("PRAGMA table_info(runEvents)").fetchall()
+    if not any(row[1] == "runId" and row[3] for row in columns):
+        return
+    conn.execute("ALTER TABLE runEvents RENAME TO runEvents_old")
+    ddl = SCHEMA.split("CREATE TABLE IF NOT EXISTS runEvents (", 1)[1].split(
+        ");", 1)[0]
+    conn.execute("CREATE TABLE runEvents (" + ddl + ")")
+    conn.execute(
+        "INSERT INTO runEvents (id, runId, seq, level, kind, summary, payload, at,"
+        " projectId) SELECT id, runId, seq, level, kind, summary, payload, at,"
+        " projectId FROM runEvents_old")
+    conn.execute("DROP TABLE runEvents_old")

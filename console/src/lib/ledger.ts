@@ -6,6 +6,8 @@ import type { AttentionItem } from "./types";
  *  had `waited_ms`; an older daemon leaves both out, which reads as null. */
 export interface LedgerRow {
   at: number;
+  project?: number;
+  reason?: string;
   run: number | null;
   ticket: string | null;
   kind: "merge" | "failure" | "round" | "adjudication" | "intervention" | "note" | string;
@@ -17,6 +19,8 @@ export interface LedgerRow {
 
 export interface LedgerBody {
   entries: LedgerRow[];
+  /** Ongoing project outages, independent of the history window and limit. */
+  active_outages?: LedgerRow[];
   since: number;
   limit: number;
 }

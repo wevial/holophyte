@@ -214,3 +214,21 @@ test("Enter on a question row's focused PR link follows the link instead of togg
   fireEvent.keyDown(toggle, { key: "Enter" });
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
 });
+
+test("Now identifies each project outage from one daemon, even across midnight", async () => {
+  const outage: LedgerRow = {
+    at: MIDNIGHT - min(20), run: null, ticket: null, project: 1,
+    kind: "route_down", source: "loop", reason: "fake-probe: quota exhausted",
+    text: "implementer route down",
+  };
+  render(<Now hosts={[hostOf(allKinds.status, allKinds.attention, BASE)]} project="all" now={NOW}
+    deps={{ fetch: async () => Response.json({ entries: [], active_outages: [outage, { ...outage, project: 2 }] }) }} />);
+  await act(settle);
+  const row = screen.getAllByText(/implementer route down since/);
+  expect(row).toHaveLength(2);
+  expect(row[0]!.textContent).toContain("project 1");
+  expect(row[1]!.textContent).toContain("project 2");
+  expect(row[0]!.textContent).toContain("fake-probe: quota exhausted");
+  expect(row[0]!.textContent).toContain(new Date(outage.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  expect(screen.getByRole("region", { name: "Resolved today" }).textContent).toContain("Resolved today · 0");
+});
