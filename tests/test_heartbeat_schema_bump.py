@@ -110,6 +110,40 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
         self.assertTrue(all(conn is self.conn for conn in connections))
         self.assertIn('[holo2] heartbeat failed: fake path', output)
 
+    def test_open_and_beat_failures_share_an_episode_until_a_live_beat(self):
+        for alive in (True, False):
+            with self.subTest(alive=alive):
+                opened = Mock()
+                output = io.StringIO()
+                snapshots = []
+                on_swept = Mock()
+
+                def recovered_connection_beat(*args):
+                    snapshots.append(output.getvalue())
+                    if len(snapshots) == 1:
+                        raise sqlite3.OperationalError('write still unavailable')
+                    return alive
+
+                with redirect_stdout(output), \
+                        patch.object(store, 'open', side_effect=[
+                            sqlite3.OperationalError('open unavailable'), opened]), \
+                        patch.object(runs, '_heartbeat',
+                                     side_effect=recovered_connection_beat):
+                    runs._beat(self.path, self.run, 1,
+                               Mock(wait=Mock(side_effect=[False] * 3 + [True])),
+                               [], on_swept, Mock(side_effect=
+                                   sqlite3.OperationalError('fallback unavailable')))
+
+                self.assertEqual(len(snapshots), 2)
+                for snapshot in snapshots:
+                    self.assertEqual(snapshot.count('heartbeat failed:'), 1)
+                    self.assertNotIn('heartbeat recovered', snapshot)
+                self.assertEqual(output.getvalue().count('heartbeat failed:'), 1)
+                self.assertEqual(output.getvalue().count('heartbeat recovered'),
+                                 int(alive))
+                self.assertEqual(on_swept.call_count, int(not alive))
+                opened.close.assert_called_once()
+
     def test_healthy_store_uses_only_the_threads_connection(self):
         connections, output = self.three_beats()
         self.assertTrue(all(conn is not self.conn for conn in connections))

@@ -217,38 +217,36 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat):
     returns: there is nothing left to keep alive.
     """
     own = None
-    opening_failed = False
-    beating_failed = False
+    failed = False
 
     def current_heartbeat():
-        nonlocal own, opening_failed
+        nonlocal own, failed
         if own is None:
             try:
                 own = store.open(path)
             except BaseException as exc:  # noqa: BLE001 - newer schema is SystemExit
-                if not opening_failed:
+                if not failed:
                     print(f"[holo2] heartbeat failed: {exc};"
                           " beating through the open connection", flush=True)
-                opening_failed = True
+                failed = True
                 return heartbeat
-            if opening_failed:
-                print("[holo2] heartbeat recovered", flush=True)
-                opening_failed = False
         return partial(_heartbeat, own, run_id, swept)
 
     try:
         while not stop.wait(interval_s):
             try:
                 alive = current_heartbeat()()
-                if beating_failed:
-                    print("[holo2] heartbeat recovered", flush=True)
-                    beating_failed = False
                 if alive:
+                    # A fallback beat keeps the run alive, but the open failure
+                    # persists until the timer's own connection can beat.
+                    if failed and own is not None:
+                        print("[holo2] heartbeat recovered", flush=True)
+                        failed = False
                     continue
             except Exception as e:  # noqa: BLE001 - same
-                if not beating_failed:
+                if not failed:
                     print(f"[holo2] heartbeat failed: {e}", flush=True)
-                beating_failed = True
+                failed = True
                 continue
             # Swept: the run is over. Kill the turn, then stop beating.
             _notify_swept(on_swept)
