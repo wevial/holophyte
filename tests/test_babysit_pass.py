@@ -42,33 +42,6 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
     """End-to-end review, fix, and merge behavior for PR babysitting."""
 
-    def test_conflict_push_waits_for_the_head_to_catch_up(self):
-        review = self.conflict_refusal(heads=("old", "pushed"))
-        naps = []
-        with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("candidate"), review, Idle(""), APPROVE,
-                      provider=self.provider())
-        self.assert_conflict_merge_landed()
-        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
-        self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state", "merge", "state", "state", "merge"])
-
-    def test_conflict_push_head_timeout_parks_naming_both_shas(self):
-        review = self.conflict_refusal(heads=("old",))
-        self.configure('[merge]\nmode = "pr"\npr_poll_sec = 31\n')
-        naps = []
-        with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("candidate"), review, Idle(""),
-                      provider=self.provider())
-        original, pushed = [sha for _, sha in self.pushed()]
-        self.assertEqual(sum(naps), 31)
-        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM runs"),
-                         [("awaiting_merge_approval", None, pushed)])
-        self.assertIn(f"the pull request's head is {original[:12]} after 31s;"
-                      f" the babysitter pushed {pushed[:12]}", self.question())
-        self.assertEqual([v["sha"] for kind, v in self.api_calls()
-                          if kind == "merge"], [original])
-
     def declined_thread(self, author, config=""):
         self.configure('[merge]\nmode = "pr"\n' + config)
         thread = (*self.NIT[:2], author, self.NIT[3])
@@ -450,6 +423,28 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
                                        " reviewRounds WHERE runId = 2"
                                        " AND round = 3")[0][0])
         self.assertEqual([r["exitCode"] for r in results], [0])
+
+    def test_babysit_review_fix_waits_for_head_and_checks_before_merging(self):
+        old, fake, naps = self.review_fix_propagation(catches_up=True)
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        fixed = fake.turns[2].candidate_sha
+        self.assertNotEqual(old, fixed)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
+                         [fixed])
+        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S] * 2)
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 2"),
+                         [("merged",)])
+
+    def test_babysit_review_fix_head_timeout_parks_naming_both_shas(self):
+        old, fake, naps = self.review_fix_propagation(catches_up=False)
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        fixed = fake.turns[2].candidate_sha
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertEqual(sum(naps), 31)
+        self.assertIn(f"the pull request's head is {old[:12]} after 31s;"
+                      f" the babysitter pushed {fixed[:12]}", self.question())
+        self.assertEqual(self.read("SELECT phase, candidateSha FROM runs WHERE id = 2"),
+                         [("awaiting_merge_approval", fixed)])
 
     def test_babysit_gets_a_recorded_fix_round_past_the_spent_cap(self):
         self.resume_rejected_fix()

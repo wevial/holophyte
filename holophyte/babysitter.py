@@ -311,25 +311,29 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                 " a conflict)")
         if conn is not None and run_id is not None:
             store.record_ledger(conn, run_id, "note", note)
-    # GitHub can still report the pre-push head. Wait only for this known
-    # push; the normal terminal check still rejects unrelated head changes.
-    # Hand the matching state to the next round to settle its checks and
-    # quiet interval. On timeout, preserve the pushed candidate for the operator.
+    return merged, _wait_for_pushed_head(
+        target, conn, run_id, provider, task_id, branch, merged, beat_s, pull, reviewed)
+
+
+def _wait_for_pushed_head(target, conn, run_id, provider, task_id, branch,
+                          sha, beat_s, pull, reviewed):
+    """Bound propagation of our known push, then hand its state to settling."""
+    from holophyte.pullrequest import _park_on_pr
     waited = 0
     wait_s = merge_config(target).pr_poll_sec
     with heartbeat_while(conn, run_id, beat_s):
         state = pr_status.pr_state(target, pull)
-        while state.head_sha != merged and waited < wait_s:
+        while state.head_sha != sha and waited < wait_s:
             nap = min(pr.CHECK_POLL_S, wait_s - waited)
             pr.SLEEP(nap)
             waited += nap
             state = pr_status.pr_state(target, pull)
-    if state.head_sha != merged:
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, merged, pull,
+    if state.head_sha != sha:
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     f"the pull request's head is {(state.head_sha or '?')[:12]}"
-                    f" after {waited}s; the babysitter pushed {merged[:12]}", (),
+                    f" after {waited}s; the babysitter pushed {sha[:12]}", (),
                     reviewed=reviewed)
-    return merged, state
+    return state
 
 
 def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
@@ -398,6 +402,9 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             if fixed != sha:
                 fix_note = None  # One fix allowance per babysit, past the cap too.
                 sha = reviewed = fixed
+                pushed_state = _wait_for_pushed_head(
+                    target, conn, run_id, provider, task_id, branch, sha,
+                    beat_s, pull, reviewed)
                 continue  # Settle the pushed fix's checks and threads first.
             # The review vouches for the fix, not the gate: `verified`
             # stays behind, so the fixed candidate goes through
@@ -485,13 +492,8 @@ def _moved(sha, reviewed):
 def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None):
-    """The independent review of a candidate the babysitter's fix rounds
-    moved from `reviewed` to `sha` (None: nothing on record covers it),
-    before the merge API is called.
-
-    Verify and record the independent review. A babysit resume gets one
-    fix turn, even past the cap, then a second review with no allowance.
-    Other rejections park with the findings for the operator."""
+    """Verify and review before merging; a babysit gets one fix past the cap.
+    A second rejection parks with findings and no further fix allowance."""
     from holophyte.loop import _verify_brief, agent, set_phase, sh
     from holophyte.pullrequest import _park_on_pr
     if merge_config(target).approve != "auto":
@@ -596,13 +598,11 @@ def _quiet_left(state, quiet_ms):
 
 
 def _settled_state(target, conn, run_id, beat_s, pull, state=None):
-    """One read of the PR, re-read while its checks are pending and it has
-    no thread to answer -- every `pr.CHECK_POLL_S`, for at most
-    `pr.CHECK_WAIT_S` -- and, since KO-429, while it is green and
-    thread-free but younger than `[merge] pr_quiet_sec` -- every
-    `pr_poll_sec`, so a merge lands only once the pull request has been
-    quiet that long -- under the heartbeat. Threads are answered without
-    waiting: the fix they call for restarts the checks anyway."""
+    """Wait under heartbeat for checks and the configured quiet interval.
+
+    Bound the wait by CHECK_WAIT_S or pr_quiet_sec, whichever is longer.
+    Return threads immediately: addressing them restarts checks anyway.
+    """
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
     wait_s = max(pr.CHECK_WAIT_S, quiet_ms // 1000)
