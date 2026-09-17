@@ -20,7 +20,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import review_runner
-from holophyte.agent_routes import command_secrets, routes, safe_command
+from holophyte.agent_routes import route_prose, routes, safe_command
 from holophyte.config import (
     AGENT_CONFIG_KEYS,
     DEFAULT_IMPLEMENTER,
@@ -35,7 +35,6 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.gates import InfraFailure, run_capped, sh
-from holophyte.redact import redact_prose
 
 TRANSPORT_SIGNATURES = (
     "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "getaddrinfo",
@@ -146,7 +145,7 @@ class ProbeResult:
 def probe_diagnostic(target, probe):
     """Safe diagnostic for terminal output and persisted route evidence."""
     safe = replace(probe, command=[safe_command(target, shlex.join(probe.command))])
-    return redact_prose(safe.describe(), command_secrets(target))
+    return route_prose(target, safe.describe())
 
 
 def probe_implementer(target, timeout=None):
@@ -425,7 +424,7 @@ def activate_fallback(target, role, reason, conn=None, run_id=None, *, probe=Non
         print(diagnostic)
         raise InfraFailure(diagnostic)
     evidence = {"seat": AGENT_CONFIG_KEYS[role],
-                "reason": redact_prose(reason, command_secrets(target)),
+                "reason": route_prose(target, reason),
                 "command": safe_command(target, command)}
     owned = conn is None
     conn = open_store(target) if owned else conn

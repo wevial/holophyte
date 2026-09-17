@@ -6,12 +6,13 @@ The store keeps history; this small file is only the console's live indicator.
 """
 import fcntl
 import json
+import re
 import shlex
 import tempfile
 from pathlib import Path
 
 from holophyte.config import AGENT_CONFIG_KEYS
-from holophyte.redact import known_secrets, redact_prose
+from holophyte.redact import REDACTED, known_secrets, redact_prose
 
 
 def command_secrets(target):
@@ -32,6 +33,26 @@ def safe_command(target, command):
     if not command:
         return command
     return redact_prose(shlex.split(command)[0], command_secrets(target))
+
+
+def route_prose(target, text):
+    """Hide arbitrary argument echoes without damaging surrounding words.
+
+    Command arguments are not necessarily credentials: `exec` must not eat
+    `execution`. Match complete values in prose, including quoted values and
+    flag assignments. Ambiguous standalone echoes stay private regardless of
+    flag name or value entropy. Known credentials still redact substrings.
+    Command fields use safe_command instead and never expose arguments.
+    """
+    secrets = known_secrets(target.config())
+    text = redact_prose(text, secrets)
+    arguments = command_secrets(target) - secrets
+    if arguments:
+        pattern = r'(?<!\w)(?:' + '|'.join(
+            re.escape(value) for value in sorted(arguments, key=len, reverse=True)
+        ) + r')(?!\w)'
+        text = re.sub(pattern, lambda _: REDACTED, text)
+    return text
 
 
 class ActiveRoutes:

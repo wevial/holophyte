@@ -121,6 +121,34 @@ class AgentFallbackTests(SweepTestCase):
                       "SELECT summary FROM runEvents"):
             self.assertNotIn(secret, str(self.conn.execute(query).fetchall()))
 
+    def test_command_arguments_do_not_corrupt_diagnostic_words(self):
+        self.routes()
+        self.configure('[agents]\nimplementer = "codex exec --value plain"\n'
+                       f'implementer_fallback = "{self.fallback}"\n')
+        run = self.a_run()
+        reason = ("ERROR: You've hit your usage limit; execution failed; "
+                  "explanation: argument 'plain', command: codex exec")
+        probe = agents.ProbeResult(
+            command=['codex', 'exec', '--value', 'plain'], returncode=1,
+            output=reason, timeout=90)
+        diagnostic = agents.probe_diagnostic(self.tgt, probe)
+        out = io.StringIO()
+        self.addCleanup(reset, self.tgt)
+        with contextlib.redirect_stdout(out):
+            agents.activate_fallback(self.tgt, 'implement', reason,
+                                     self.conn, run)
+        evidence = [diagnostic, out.getvalue()]
+        for query, column in (("SELECT guidance FROM interventions", 'reason'),
+                              ("SELECT summary FROM runEvents "
+                               "WHERE kind='route_fallback'", 'reason')):
+            evidence.extend(json.loads(row[0])[column]
+                            for row in self.conn.execute(query))
+        self.assertEqual(len(evidence), 4)
+        for text in evidence:
+            self.assertIn('execution failed; explanation:', text)
+            self.assertNotIn("'plain'", text)
+            self.assertNotIn('codex exec', text)
+
     def test_default_claude_quota_dispatches_fallback(self):
         self.routes()
         self.configure(f'[agents]\nimplementer_fallback = "{self.fallback}"\n')
