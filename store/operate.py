@@ -673,29 +673,19 @@ INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
                         "close_out", "requeue", "approve", "repoint",
                         "babysit", "reconcile", "restart_supervisor",
-                        "launch_loop", "launch_backoff", "config_edit")
+                        "launch_loop", "launch_backoff", "route_fallback",
+                        "config_edit")
 
 
 def record_intervention(conn, run_id, action, note, source="human",
                         trigger="manual", question=None, guidance=None,
                         now=None):
-    """Record one operator/supervisor decision on `run_id`; return its id.
+    """Record an operator/supervisor decision and its narrative atomically.
 
-    §2 keeps interventions out of runEvents because they are queryable
-    decisions — but the only writer was `resume()`, so every other human
-    action was either unrecorded or falsely recorded as a resume (the KO-146
-    incident's four mislabeled rows). This is the general writer: the row and
-    a narrative runEvent carrying `note` land in one `_transaction()`, so the
-    record-before-acting discipline is one call — and a caller that wants the
-    record atomic with the change it describes opens `transaction()` around
-    both, which this joins.
-
-    `question` is required for a redirect (§2 pairs the two; a redirect row
-    with nothing asked would be semantically invalid with no way to repair
-    it) and `guidance` carries a human's answer where one exists. `note` is
-    the narrative and deliberately lands in the event stream, not the row:
-    the columns keep their §2 meanings instead of doubling as a notes field.
-    """
+    Return the intervention id. `note` goes into a narrative event and ledger
+    entry, while question/guidance retain their intervention meanings. Redirect
+    requires a question. `now` defaults to current epoch milliseconds.
+    An enclosing transaction joins the event and row to the caller's write."""
     if action not in INTERVENTION_ACTIONS:
         raise ValueError(f"unknown intervention action {action!r}")
     if source not in INTERVENTION_SOURCES:

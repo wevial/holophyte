@@ -318,22 +318,12 @@ def locate_run(target, text):
 
 
 def run_detail(target, run_id, now=None):
-    """The `/runs/N` answer: `(http status, JSON-able body)`.
+    """Return the run, review rounds and narrative events for `/runs/N`.
 
-    `run` is the row joined to its ticket, with `heartbeat_age_ms` computed
-    here against `now` while the run is live and null once it has ended --
-    an ended run's heartbeat is history, not a liveness signal -- and
-    `max_rounds`, the loop's review-round cap, so a client can say "round 2
-    of 3" without knowing the constant, and `commit_url` and `pr_url` as
-    `/shipped` carries them. `rounds` is oldest first, each with
-    its findings decoded once here into objects; `events` is the narrative
-    level of the stream, oldest first, without the detail rows -- except
-    the `implementer_output` row a no-commit turn leaves (KO-375), whose
-    summary is the implementer's first line and is what tells a refusal
-    from a crash; its payload stays in the store. `run_id`
-    that is not an integer is 400; an integer with no run is 404 carrying
-    `run` (`locate_run()`).
-    """
+    Live runs carry heartbeat age and the recorded review cap; old rows use
+    MAX_ROUNDS. Include implementer_output detail summaries for no-commit
+    turns, but keep their full payload in the store. Invalid/missing runs
+    use locate_run's 400/404/503 responses."""
     now = int(time() * 1000) if now is None else now
     failed, run = locate_run(target, run_id)
     if failed is not None:
@@ -476,21 +466,13 @@ def route_down_rows(conn):
 
 
 def run_files(target, run_id):
-    """The `/runs/N/files` answer: `(http status, JSON-able body)`.
+    """Return paths changed by a run, with status and line counts.
 
-    The paths the run touched with a status letter and line counts, from
-    `holophyte.files.touched_files()`: a merged run's merge commit against
-    its first parent in the target's checkout; a live run's worktree (found
-    from its branch as the loop names it, `target.worktree_path()`) against
-    the merge base with main, uncommitted edits and untracked files
-    included, an empty list when nothing changed yet; a run whose branch
-    survives without a worktree, that branch against its merge base.
-    `files` is sorted by path and capped at `files.MAX_FILES` with
-    `truncated` set past that; the totals are over the whole diff. 400, 404
-    and 503 as `/runs/N`; 409 carrying `error` when the run has no range to
-    diff (no branch and no merge sha, or a branch with neither a worktree
-    nor a ref); 504 when git outlives its cap.
-    """
+    Live runs use their worktree against main's merge base, including
+    uncommitted and untracked files. Ended runs use the merge commit or
+    surviving branch. Paths are sorted and capped at files.MAX_FILES.
+    Invalid/missing runs return 400/404; missing stores return 503, absent
+    ranges 409, and a Git timeout 504."""
     failed, run = locate_run(target, run_id)
     if failed is not None:
         return failed
@@ -512,3 +494,19 @@ def run_files(target, run_id):
         "total_deleted": touched.total_deleted,
         "truncated": touched.truncated,
     }
+
+
+def active_routes(target):
+    """Current commands per seat; primary seats carry no fallback marker."""
+    from holophyte.agent_routes import active_fallbacks
+    from holophyte.config import AGENT_CONFIG_KEYS
+    from holophyte.redact import known_secrets, redact_prose
+
+    fallback = active_fallbacks(target)
+    secrets = known_secrets(target.config())
+    table = {key: redact_prose(value, secrets)
+             for key, value in (target.config().get("agents") or {}).items()
+             if isinstance(value, str)}
+    return {seat: {"command": fallback.get(seat, table.get(seat)),
+                   **({"fallback": fallback[seat]} if seat in fallback else {})}
+            for seat in AGENT_CONFIG_KEYS.values()}

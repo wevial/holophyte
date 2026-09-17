@@ -54,6 +54,11 @@ export function ProjectBlock({
           on <strong className="font-bold">{status.host}</strong> · supervisor {stale ? "stale" : supervisor.state} ·{" "}
           {heartbeat}
         </span>
+        {Object.entries(status.active_routes ?? {}).filter(([, route]) => route.fallback).map(([seat, route]) => (
+          <span key={seat} title={route.command ?? ""} className="rounded-chip border border-chip-border px-2 py-[2px] text-[12px] text-ink">
+            {seat}: fallback ({/devin/i.test(route.command ?? "") ? "Devin" : /codex/i.test(route.command ?? "") ? "Codex" : route.command})
+          </span>
+        ))}
         <button
           ref={settingsButton}
           type="button"

@@ -314,7 +314,8 @@ CREATE TABLE IF NOT EXISTS interventions (
         CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
                             'close_out', 'requeue', 'approve', 'repoint',
                             'babysit', 'reconcile', 'restart_supervisor',
-                            'launch_loop', 'launch_backoff', 'config_edit')),
+                            'launch_loop', 'launch_backoff', 'route_fallback',
+                            'config_edit')),
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL,
@@ -322,9 +323,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 )"""
 
 
-# Version 20 adds persistent launch backoff and project-owned startup evidence
-# before a first run exists (KO-466). Older schemas migrate through init().
-SCHEMA_VERSION = 20
+# Version 21 admits explicit route_fallback interventions (KO-467).
+SCHEMA_VERSION = 21
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -640,7 +640,7 @@ def _widen_interventions_action(conn):
     if all(value in admitted
            for value in ("'repoint'", "'babysit'", "'reconcile'",
                          "'restart_supervisor'", "'launch_loop'",
-                         "'config_edit'", "'launch_backoff'")):
+                         "'config_edit'", "'launch_backoff'", "'route_fallback'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —

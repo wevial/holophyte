@@ -6,7 +6,12 @@ from pathlib import Path
 import store
 import store.read
 import store.tickets
-from holophyte.agents import probe_diagnostic, probe_implementer
+from holophyte.agent_routes import reset, routes
+from holophyte.agents import (
+    probe_diagnostic,
+    probe_implementer,
+    startup_routes,
+)
 from holophyte.board import mirror_push, post_ledger_comment, release_lease_label
 from holophyte.claim import _claim_next
 from holophyte.config_tables import loop_config, report_config
@@ -29,14 +34,9 @@ EXEC = os.execv
 
 
 def self_hosted(target):
-    """Whether `target` is the repository this very module was imported from.
+    """Whether this loop runs against the factory's own checkout.
 
-    Decided once at startup by `main()`: a loop working on the factory's own
-    checkout keeps running the pre-merge code after every merge, so each
-    dogfooded fix is invisible to the loop that merged it until someone
-    restarts it (the writer host, 2026-09-02: run 17 cut a worktree without the
-    ticket id run 16 had just merged support for).
-    """
+    Such a loop re-execs after merge to load the newly merged code."""
     # This module lives in `holophyte/`, one level below the repository; the
     # comparison is against the repository, as it was when it lived in
     # `factory.py`.
@@ -45,19 +45,18 @@ def self_hosted(target):
 
 def main(target, provider):
     """Probe before claiming, then run serially or schedule worker children."""
+    reset(target)
     try:
-        probe = probe_implementer(target)
-        if probe is not None:
-            print(probe_diagnostic(target, probe))
-            _record_startup_probe(target, provider, probe)
-            if not probe.ok:
-                return 1
+        if not startup_routes(target, provider, probe_implementer):
+            return 1
         knobs = loop_config(target)
         if knobs.workers == 1:
             return _serial(target, provider, knobs)
         return scheduler(target, provider, knobs)
     except store.SchemaNewer as moved:
         reexec_self(_schema_reason(moved), EXEC)
+    finally:
+        reset(target)
 
 
 def _record_startup_probe(target, provider, probe):
@@ -172,7 +171,7 @@ def _serial(target, provider, knobs):
                 # The regenerated window stays uncommitted, like the preserved
                 # branch it describes: a human closes both out. Nonzero so the
                 # shell — and anything supervising it — sees the failure.
-                if stop_on_failure:
+                if stop_on_failure or routes(target).failed:
                     return 1  # stop on first failure; ticket stays In Progress
                 # `[loop] stop_on_failure = false`: the run is closed out
                 # exactly as above, and the loop goes on to the next ready

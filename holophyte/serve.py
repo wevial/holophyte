@@ -204,27 +204,14 @@ def parse_address(text):
 
 
 def status(target, now=None, started_ms=None):
-    """The `/status` answer for `target`: `(http status, JSON-able body)`.
+    """Return the target's status and process-owned active routes as JSON.
 
-    A target with no store answers 503 rather than creating one -- a
-    read-only daemon that wrote an empty store into a home would shadow the
-    adoption `open_store()` performs on first need. Ages are computed here
-    against `now` (epoch milliseconds, the clock by default) so the client
-    compares one number to `thresholds.heartbeat_stale_ms` and never has to
-    agree with the writer host about the time. `started_ms` is when the
-    serving daemon started, which `StatusServer` reads once at bind and
-    passes on every request; it defaults to `now` so a caller with no
-    daemon (the tests, a REPL) gets the same shape.
-
-    Each run carries what the console's floor row draws: the ticket's
-    `title`, `started_ms` (the run's `startedAt`, so a client need not
-    guess it from `elapsed_ms`), `round` (the review rounds recorded so
-    far) and `strikes` (the sweep's tally, 0 when the run is not under
-    suspicion). `project` is the same string as `target`: the console's
-    word for it; the wire carries both for one release. `actions` is
-    `[serve] actions`, so the console knows before a click whether the
-    `POST /actions/...` routes exist here or its buttons stay disabled.
-    """
+    This is read-only: a missing store returns 503. Ages use epoch-ms `now`,
+    defaulting to the clock; `started_ms` is the serving daemon's start time.
+    Runs include title, phase, round, elapsed/heartbeat ages and sweep strikes.
+    The scaled time box and thresholds agree with the loop's budget checks.
+    `project` aliases `target`; `actions` and `config_edit` advertise which
+    authenticated daemon mutations are available."""
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
     if not target.store_path.exists():
@@ -241,10 +228,13 @@ def status(target, now=None, started_ms=None):
     # scaled by `[agents] budget_scale` -- so the console's time-box bar and
     # the sweep agree with the cap the loop armed. `thresholds.run_cap` is
     # the hard ceiling in multiples of that box, so the bar can draw it.
+    from holophyte.serve_runs import active_routes
+
     scale = budget_scale(target)
     return 200, {
         "target": str(target.path),
         "project": str(target.path),
+        "active_routes": active_routes(target),
         "host": host_label(target, socket.gethostname()),
         "now": now,
         "daemon": {"started_ms": started_ms, "pid": os.getpid()},

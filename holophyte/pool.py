@@ -42,23 +42,10 @@ WAIT_POLL_S = 0.5
 
 
 def _wait_any(children, timeout):
-    """Block until any child exits, or `timeout` seconds pass; return
-    `(pid, exit_code)`, or `(None, None)` when the deadline passed with no
-    exit (KO-353). `timeout` is `None` for no deadline.
-
-    `children` is the pool's live `Popen` objects by pid. The scheduler
-    holds them for as long as the workers live: a `Popen` dropped while
-    its child runs goes on the module's housekeeping list and the next
-    `Popen()` reaps whatever on it has exited, out from under this
-    `os.wait()` -- the worker becomes a phantom the pool waits on forever
-    and its exit status is lost (the review of KO-343 reproduced it with
-    two real children) -- so the one reaped here is told its status and
-    is not put on that list when the pool drops it. Under a deadline the
-    wait is `os.waitpid(-1, WNOHANG)` every `WAIT_POLL_S` until a child
-    is reported or the deadline passes: there is no `os.wait()` with a
-    timeout, and a signal-driven one would race a child that exited
-    before the alarm was set.
-    """
+    """Wait for a child exit, returning (pid, code), or (None, None) on timeout.
+    Retain each Popen until reaped and set its returncode so Popen's cleanup
+    cannot reap a child behind the scheduler's back. A deadline uses WNOHANG
+    polling; None uses blocking os.wait()."""
     if timeout is None:
         pid, status = os.wait()
     else:
@@ -83,15 +70,28 @@ NOTHING_SEEN = Sweep(0, (), False, (), ())
 
 
 def worker(target, provider):
-    """One `--worker` child: claim one ticket, run it, close it out, exit.
+    """Worker processes own and probe their fallback routes independently."""
+    from holophyte.agent_routes import reset, routes
+    from holophyte.agents import startup_routes
+    from holophyte.config_tables import AGENT_FALLBACK_KEYS
 
-    The serial loop's phases once, less what the scheduler has already
-    done -- the startup sweep, the reconcile, the queue mirror -- and
-    less what is the scheduler's alone: no re-exec after a self-merge
-    (the scheduler restarts once the pool has drained, so this worker
-    finishes on the code it started with) and no exit note. Returns one
-    of the `WORKER_*` statuses; the scheduler reads it from the exit code.
-    """
+    configured = target.config().get("agents") or {}
+    reset(target)
+    try:
+        if any(key in configured for key in AGENT_FALLBACK_KEYS):
+            if not startup_routes(target, provider):
+                return WORKER_STOP
+        result = _worker(target, provider)
+        return WORKER_STOP if routes(target).failed else result
+    finally:
+        reset(target)
+
+
+def _worker(target, provider):
+    """Claim and dispatch one ticket, then return its worker exit status.
+
+    The scheduler owns startup reconciliation, queue mirroring and re-exec.
+    This child owns the claim, lease, phases and close-out for one ticket."""
     from holophyte.claim import _claim_next
     from holophyte.dispatch import PARKED, _dispatch
 

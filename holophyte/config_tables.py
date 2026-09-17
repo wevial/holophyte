@@ -1,17 +1,14 @@
-"""holophyte.config_tables: the per-table config readers (KO-397).
+"""Per-table config keys, defaults and validated readers.
 
-Moved verbatim out of `holophyte/config.py`: the `[supervisor]`,
-`[loop]`, `[board]`, `[merge]`, `[report]` and `[console]` key tables,
-the namedtuples they fill and the readers over them -- `sweep_config()`,
-`loop_config()`, `board_config()`, `merge_config()`, `report_config()`
-and `split_address()` -- with the module constants the tables take their
-defaults from. The `KNOWN_KEYS` entry each table registers stays in
-`holophyte/config.py` beside the dict it fills, which imports the
-readers back for `check_config()` and the startup checks that stayed:
-the import runs one way.
+The key sets are registered in config.KNOWN_KEYS; readers take a Target and
+refuse invalid values with the table, key and constraint. Importing runs no
+host checks. The loop and daemon share these readers (KO-397).
 """
 import collections
 import math
+
+AGENT_FALLBACK_KEYS = ("implementer_fallback", "reviewer_fallback",
+                       "adjudicator_fallback")
 
 # How old a heartbeat has to be before a sighting counts as silent, and how
 # many consecutive silent sightings trip the run. Two, from the v1 TUI mining:
