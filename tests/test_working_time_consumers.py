@@ -52,14 +52,26 @@ class WorkingConsumers(SweepTestCase):
         )
 
     def test_pending_and_quiet_waits_are_bounded(self):
-        self.configure("[merge]\npr_quiet_sec = 3600\npr_poll_sec = 13\n")
+        self.configure(
+            "[merge]\npr_quiet_sec = 3600\npr_poll_sec = 13\npr_rounds = 1\n"
+        )
         pull = pr.PullRequest(
             "github.com", "owner", "repo", 1, "https://github.com/owner/repo/pull/1"
         )
-        for checks in ("pending", "success", "alternating"):
+        for checks, final_fix in (
+            ("pending", False),
+            ("success", False),
+            ("alternating", False),
+            ("pending", True),
+            ("success", True),
+        ):
             clock = [0]
+            first = [final_fix]
 
             def state(*args):
+                if first[0]:
+                    first[0] = False
+                    return pr.PrState(("thread",), "success", "sha")
                 check = (
                     ("pending" if clock[0] < 10 else "success")
                     if checks == "alternating"
@@ -78,6 +90,7 @@ class WorkingConsumers(SweepTestCase):
                 patch.object(pr, "CHECK_WAIT_S", 20),
                 patch.object(pr, "SLEEP", side_effect=nap),
                 patch.object(babysitter.pr_status, "pr_state", side_effect=state),
+                patch.object(babysitter, "_answer_threads", return_value="sha") as fix,
                 patch(
                     "holophyte.pullrequest._park_on_pr",
                     side_effect=loop.MergeParked("parked"),
@@ -105,6 +118,7 @@ class WorkingConsumers(SweepTestCase):
                 reason = park.call_args.args[8]
                 self.assertRegex(reason, "pending checks|quiet wait")
                 self.assertNotIn("out of time", reason)
+                self.assertEqual(fix.call_count, int(final_fix))
             self.assertEqual(clock[0], 20)
         thread = pr.PrState(("thread",), "pending", "sha")
         with (

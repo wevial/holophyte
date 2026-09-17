@@ -353,19 +353,16 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     # A fix moves sha past the candidate covered by reviewed.
     pushed_state = None
     for pass_no in range(1, merge.pr_rounds + 1):
-        try:
-            state = _settled_state(target, conn, run_id, beat_s, pull, pushed_state)
-        except WaitExpired as expired:
-            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
-                        pull, str(expired), (), reviewed=reviewed)
+        state = _settled_or_park(
+            target, conn, run_id, beat_s, pull, pushed_state, provider,
+            task_id, branch, sha, reviewed)
         pushed_state = None
         done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
                             sha, pull, state, reviewed)
         if done is not None:
             return done
         if state.mergeable == "CONFLICTING":
-            # Push a merge of origin/main, then settle its restarted checks.
-            # UNKNOWN is computed lazily and is not evidence of conflict.
+            # Push origin/main's merge and settle again; UNKNOWN is not conflict.
             sha, pushed_state = _merge_origin_main(
                 target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
                 pull, budget_min, reviewed=reviewed)
@@ -401,10 +398,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                     target, conn, run_id, provider, task_id, branch, sha,
                     beat_s, pull, reviewed)
                 continue  # Settle the pushed fix's checks and threads first.
-            # The review vouches for the fix, not the gate: `verified`
-            # stays behind, so the fixed candidate goes through
-            # `_merge_gate()` below -- drift check and verify both --
-            # before the merge API is called.
+            # Keep verified behind: the reviewed fix still needs the merge gate.
             reviewed = sha
         if merge.approve == "auto" or approved:
             try:
@@ -422,7 +416,9 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "ready to merge; waiting for a human to say merge"
                     " ([merge] approve = \"human\")", (), reviewed=reviewed)
-    state = _settled_state(target, conn, run_id, beat_s, pull, pushed_state)
+    state = _settled_or_park(
+        target, conn, run_id, beat_s, pull, pushed_state, provider,
+        task_id, branch, sha, reviewed)
     _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
@@ -585,11 +581,20 @@ def _next_round(conn, run_id):
 
 
 def _quiet_left(state, quiet_ms):
-    """Milliseconds of `quiet_ms` still ahead of `state` -- `updatedAt`
-    moves on every comment, review, push and check; none waits in full."""
+    """Quiet milliseconds remaining since the last PR update."""
     if state.updated_at is None:
         return quiet_ms
     return max(0, quiet_ms - (int(time() * 1000) - state.updated_at))
+
+
+def _settled_or_park(target, conn, run_id, beat_s, pull, state, provider,
+                     task_id, branch, sha, reviewed):
+    from holophyte.pullrequest import _park_on_pr
+    try:
+        return _settled_state(target, conn, run_id, beat_s, pull, state)
+    except WaitExpired as expired:
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                    pull, str(expired), (), reviewed=reviewed)
 
 
 class WaitExpired(Exception):
@@ -597,8 +602,7 @@ class WaitExpired(Exception):
 
 
 def _settled_state(target, conn, run_id, beat_s, pull, state=None):
-    """Wait under heartbeat for at most CHECK_WAIT_S; return threads promptly.
-    Pending/quiet transitions share one monotonic no-work deadline."""
+    """Bound pending/quiet waiting with one deadline; return threads promptly."""
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
     deadline = monotonic() + pr.CHECK_WAIT_S
@@ -631,14 +635,10 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None):
 def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                     beat_s, pull, state, rnd, pass_no, model, ticket,
                     verify_cmd, contracts, budget_min, reviewed=None):
-    """One pass over the PR's unresolved threads; return the candidate's
-    sha after the fix round, or park.
-
-    Record the adjudication, fix ADDRESSes, then reply to DECLINEs. Resolve
-    declines from configured bot logins or logins ending in `[bot]`; park
-    with the other declined threads left open. Human ADDRESSes under `act`
-    are answered but stay open; other human verdicts park without a reply.
-    """
+    """Adjudicate threads, fix ADDRESSes, then reply to DECLINEs; return sha or park.
+    Resolve declines only for configured bots or `[bot]` logins. Other declines
+    park open. Human ADDRESSes under act are answered but stay open; other
+    human verdicts park without a reply."""
     from holophyte.loop import agent, sh
     from holophyte.pullrequest import _park_human, _park_on_pr
     threads = state.threads
