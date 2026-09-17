@@ -322,9 +322,8 @@ def attention(target, now=None):
     `pr_open` when the park is a pull request waiting on a review or a
     merge (`parked_item()`); every live
     run whose heartbeat age exceeds `heartbeat_stale_ms`; every run that
-    ended `failed` within `FAILED_WINDOW_MS` and whose ticket is still
-    `in_flight` (a requeue walks it to `ready`, a later attempt merges it,
-    and either drops the failure); then the supervisor when it is not
+    ended `failed` within `FAILED_WINDOW_MS` and is its ticket's latest
+    attempt, with no different active run; then the supervisor when it is not
     live. Each item that names a run carries the run's `pr_url`
     (`runs.prUrl`, null when it opened none). Each item carries its
     `level`. `level` on the body is the worst
@@ -361,7 +360,8 @@ def attention(target, now=None):
                   "ticket": run.linearIdentifier, "reason": run.outcomeReason,
                   "ended_ms": run.endedAt, "attempt": run.attempt,
                   "pr_url": run.prUrl, "level": "attention"}
-                 for run in failed if run.ticketStatus == "in_flight")
+                 for run in failed if run.id == run.lastRunId
+                 and run.activeRunId in (None, run.id))
     supervisor = supervisor_view(target, beat, now, knobs)
     if supervisor["state"] != "live":
         items.append({"kind": "supervisor", "state": supervisor["state"],

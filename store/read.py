@@ -529,10 +529,8 @@ def failed_attempts_since(conn, ticket_id, since):
 class RecentFailedRun:
     """One run that ended `failed`, with where its ticket stands now.
 
-    `ticketStatus` is the ticket's current `tickets.status`: a reader that
-    lists failures the operator has not dealt with keeps the `in_flight`
-    ones (a failed run leaves its ticket there with no active run) and
-    drops one whose ticket has since been requeued (`ready`) or merged.
+    `lastRunId` and `activeRunId` let attention readers exclude failures
+    superseded by a newer attempt, independently of `ticketStatus`.
     `attempt` is `runs.attempt`, 1-based, so a client can say "strike 2 of
     3" without counting failures it has not seen.
     """
@@ -542,6 +540,8 @@ class RecentFailedRun:
     outcomeReason: str | None
     endedAt: int
     ticketStatus: str
+    lastRunId: int | None
+    activeRunId: int | None
     attempt: int = 0
     # The pull request the run opened before failing (`runs.prUrl`), None
     # when none.
@@ -556,14 +556,14 @@ def recent_failed_runs(conn, since_ms):
     """
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status, r.attempt, r.prUrl"
+        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.outcome = 'failed' AND r.endedAt > ?"
         " ORDER BY r.endedAt, r.id", (since_ms,)).fetchall()
     return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
                             outcomeReason=row[2], endedAt=row[3],
                             ticketStatus=row[4], attempt=row[5],
-                            prUrl=row[6])
+                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8])
             for row in rows]
 
 

@@ -40,7 +40,8 @@ class FailedRunCardTests(ServeTestCase):
             conn.close()
         code, _, attention = self.request("GET", "/attention")
         self.assertEqual(code, 200)
-        self.assertFalse(any(item["kind"] == "failed" for item in attention["items"]))
+        self.assertEqual([item["run"] for item in attention["items"]
+                          if item["kind"] == "failed"], [self.run])
         code, _, retained = self.request("GET", path)
         self.assertEqual(code, 200)
         self.assertEqual(retained["run"]["id"], self.run)
