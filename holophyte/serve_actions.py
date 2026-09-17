@@ -1,24 +1,14 @@
-"""holophyte.serve_actions: the daemon's `POST /actions/...` routes (KO-395).
-
-Owns POST parsing, unit actions, and requeue with the CLI's duplicate-ticket
-check. `record_action_intervention()` records before acting and is shared
-with `PUT /config`. This module also owns the route constants:
-`ACTIONS_PREFIX`, `UNIT_ACTIONS`,
-`REQUEUE_ACTION`, `ACTIONS`, `DEFAULT_REQUEUE_NOTE` and `MAX_BODY`.
-`no_store()`, which `requeue_action()` shares with the read routes,
-lives with them in `holophyte.serve_runs`, so the import runs one way;
-`holophyte.serve_config`'s `_write_config()` reaches
-`record_action_intervention()` here through a deferred
-`from holophyte.serve_actions import`.
-"""
+"""holophyte.serve_actions: the daemon's `POST /actions/...` routes (KO-395)."""
 from __future__ import annotations
 
 import json
 
 import store.read
+from holophyte.config import serve_config
 from holophyte.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.runs import open_store
 from holophyte.serve_runs import no_store
+from store.operator_notes import send_back
 
 # The token-gated `POST` routes `[serve] actions = true` opens (KO-348),
 # each the operator-ladder step it maps to. The two unit actions name the
@@ -31,7 +21,7 @@ UNIT_ACTIONS = {
     "restart-supervisor": ("restart", SUPERVISOR_UNIT, "restart_supervisor"),
     "launch-loop": ("start", LOOP_UNIT, "launch_loop")}
 REQUEUE_ACTION = "requeue"
-ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION}
+ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION, "send-back"}
 # The note a requeue records when the request carries none: the store
 # refuses an empty one, and the CLI's `--note` is the operator's reason.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
@@ -57,21 +47,7 @@ def parse_action_body(raw):
 
 def unit_action(target, action, unit_name):
     """Run the `systemctl --user` step `action` names against the unit
-    instance `unit_name`: `(http status, JSON-able body)`.
-
-    The interventions row lands first (`store.record_intervention()`, the
-    operator ladder's record-before-acting call), on the store's newest run
-    (`store.read.newest_run_id()`) since interventions are keyed by run. A
-    target with no store, or a store with no run yet, has nothing to record
-    against and the step does not run: 200 with `ok: false` saying so,
-    since an unrecorded hand on the units is what the ladder forbids.
-    `systemctl` exiting non-zero, being absent or outliving
-    `holophyte.reexec.SYSTEMCTL_TIMEOUT` is 200 with `ok: false` and the
-    reason in `detail`: the operator asked for a thing and is told what
-    happened, which is not a server error. `launch-loop` starts the unit
-    through `start_loop()`, the call the supervisor's sweep makes when a
-    ticket is ready and no loop is live (KO-376, widened by KO-409).
-    """
+    instance `unit_name`: `(http status, JSON-able body)`."""
     verb, template, intervention = UNIT_ACTIONS[action]
     unit = template + unit_name
     note = f"operator asked the daemon to {verb} {unit} (POST /actions/{action})"
@@ -167,3 +143,22 @@ def requeue_action(target, body):
     return 200, {"action": action, "ok": True, "ticket": identifier,
                  "detail": f"{identifier} requeued after run {run_id}",
                  "run": run_id}
+
+
+def send_back_action(target, run_id, note, author):
+    """Release a parked PR with a private maintainer instruction."""
+    if not serve_config(target).actions:
+        return 404, {"error": "actions are disabled"}
+    if type(run_id) is not int or not 0 < run_id < 2**63:
+        return 400, {"error": "run must be a positive integer"}
+    if not target.store_path.exists():
+        return 503, no_store(target)
+    conn = open_store(target)
+    try:
+        event_id = send_back(conn, run_id, note, author)
+    except (store.ApproveRefused, ValueError) as refused:
+        return 200, {"ok": False, "detail": str(refused)}
+    finally:
+        conn.close()
+    return 200, {"ok": True, "run": run_id, "event_id": event_id,
+                 "detail": f"Sent back with operator_note event {event_id}"}

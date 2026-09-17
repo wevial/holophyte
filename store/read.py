@@ -289,9 +289,7 @@ class LiveRun:
 
 @dataclass(frozen=True)
 class ApprovedCandidate:
-    """The prior run an approval released, the sha it was parked on, and
-    the pull request `[merge] mode = "pr"` opened for it (None when the park
-    opened none)."""
+    """The released run, its parked sha, and its PR (None for local mode)."""
 
     run_id: int
     sha: str | None
@@ -319,7 +317,8 @@ def approved_candidate(conn, ticket_id, run_id):
         'SELECT "action" FROM interventions WHERE runId = ?'
         " ORDER BY id DESC LIMIT 1", (row[0],)).fetchone()
     return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
-                             approved=last is None or last[0] != "babysit",
+                             approved=last is None or last[0] not in (
+                                 "babysit", "operator_note"),
                              approved_sha=row[4])
 
 

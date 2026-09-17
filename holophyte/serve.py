@@ -46,18 +46,9 @@ key is a startup error naming it. `/`, the console's files and `/peers`
 stay open so the page can load and learn where its peers are. A loopback
 bind ignores the key for its reads. The token is never printed or logged.
 
-`[serve] actions = true` (KO-348) is the one exception to read-only: it
-opens three `POST /actions/...` routes behind the token, each a legal
-rung of the operator ladder -- `restart-supervisor` and `launch-loop` run
-`systemctl --user` against the deploy units named by `[serve] name`, and
-`requeue` is `store.requeue()`, what `--requeue KO-n --note TEXT` does.
-The actions demand the token on every bind, loopback included -- a bind
-address guards reads, not a hand on the units -- so the opt-in needs
-`[serve] token_file` and binding without one is a startup error. Each
-records its `store.record_intervention()` row before it acts and answers
-`{"action", "ok", "detail"}`; a `systemctl` that fails is `ok: false`
-carrying its stderr, never a 500, and an action that cannot be recorded
-does not run. Off, every `/actions/` path is 404 and this module still
+`[serve] actions = true` opens token-gated operator actions. Each records
+an intervention before acting; send-back records private maintainer feedback.
+
 opens no write connection.
 
 `[serve] config_edit = true` (KO-356) opens the target's own `config.toml`
@@ -118,6 +109,7 @@ from holophyte.serve_actions import (
     REQUEUE_ACTION,
     parse_action_body,
     requeue_action,
+    send_back_action,
     unit_action,
 )
 from holophyte.serve_config import (
@@ -687,7 +679,11 @@ class StatusHandler(BaseHTTPRequestHandler):
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
-        if action == REQUEUE_ACTION:
+        if action == "send-back":
+            code, body = send_back_action(self.server.target, body.get("run"),
+                                          body.get("note"),
+                                          body.get("author", "maintainer"))
+        elif action == REQUEUE_ACTION:
             code, body = requeue_action(self.server.target, body)
         else:
             code, body = unit_action(self.server.target, action,
