@@ -290,6 +290,16 @@ rows carry the operator's answer text. A missing or non-integer `since`,
 a bad `limit` or an unknown `kind` is 400 with an `error` naming the
 parameter.
 
+The separate `active_outages` array contains one `route_down` row per project
+with an uncleared launch backoff. These ongoing outages are independent of
+`since` and `limit`, so an outage begun before midnight remains visible even
+when `entries` fills its historical limit. Each outage carries `project`, `at`
+(the outage's start in epoch milliseconds), `reason`, `text`, `kind`, `source`,
+and null `run` and `ticket`. The array is empty for ticket-filtered requests
+or kinds other than `intervention`; it is included for unfiltered requests.
+Launch-loop interventions at or after an ongoing outage's start are suppressed
+from history.
+
 ## `GET /attention`
 
 What needs the operator, computed where the store is:

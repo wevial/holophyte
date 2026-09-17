@@ -673,7 +673,7 @@ INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
 INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
                         "close_out", "requeue", "approve", "repoint",
                         "babysit", "reconcile", "restart_supervisor",
-                        "launch_loop", "config_edit")
+                        "launch_loop", "launch_backoff", "config_edit")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

@@ -1,27 +1,10 @@
-"""holophyte.serve_runs: the daemon's run and ledger read routes (KO-395).
-
-Moved verbatim out of `holophyte/serve.py`: the `/runs`, `/shipped`,
-`/ledger`, `/runs/N`, `/runs/N/ledger` and `/runs/N/files` answers --
-`runs()`, `shipped()`, `ledger()`, `run_detail()`, `run_ledger()` and
-`run_files()` -- with the helpers only they call: the query parsers
-`parse_limit()`, `parse_since()`, `parse_filter()` and `parse_before()`,
-`parse_run_id()` and the `locate_run()` every `/runs/N` route answers
-through, `no_store()`, `json_host()` and the `origin_web_url()` /
-`commit_url()` pair that links a merge sha to its page on `origin`.
-The constants the region owns came with it: the `RUN_PATH`,
-`RUN_FILES_PATH` and `RUN_LEDGER_PATH` shapes `holophyte.serve`'s
-`SHAPED_ROUTES` pairs with the handlers, the `SEGMENT`, `REMOTE_SHAPES`,
-`RUN_ID` and `INTEGER` patterns, the `SQLITE_MAX_INT`/`SQLITE_MAX_DIGITS`
-bound `parse_run_id()` judges on length before `int()` sees the digits,
-and the `SHIPPED_*`/`LEDGER_*` page defaults and caps.
-`holophyte.serve_actions`' `requeue_action()` borrows `no_store()` from
-here; the import runs one way.
-"""
+"""Run, shipped and ledger HTTP reads, including project startup outages."""
 from __future__ import annotations
 
 import json
 import re
 import subprocess
+from datetime import datetime, timezone
 from time import time
 from urllib.parse import parse_qs
 
@@ -442,17 +425,10 @@ LEDGER_CAP = 1000
 def ledger(target, query):
     """The `/ledger` answer: `(http status, JSON-able body)`.
 
-    The ledger across runs, newest first, from `since` (epoch
-    milliseconds, required) on: the console's "resolved today" fold is one
-    window over the store's ledger table, and a blocked ticket's thread is
-    the same window narrowed with `ticket=KO-n` to the entries since the
-    question was asked -- the `intervention` rows carry the operator's
-    answer. `kind` narrows to one of `store.LEDGER_KINDS`. `limit` defaults
-    to `LEDGER_LIMIT` and is capped at `LEDGER_CAP`. Each entry is its
-    `at`, `run`, `ticket`, `kind`, `source` and `text`, as `/runs/N/ledger`
-    spells them, an `intervention` entry with `cleared` and `waited_ms`
-    too (`ledger_entry()`). A missing or non-integer `since`, a bad `limit` or an
-    unknown `kind` is 400 naming the parameter.
+    Read entries since the required epoch-ms cursor, narrowed by kind/ticket
+    and capped by limit. The Now window also carries ongoing project outages,
+    even across midnight, and suppresses their repeated launch interventions.
+    Invalid query parameters return 400; absent stores return 503.
     """
     try:
         since = parse_since(query)
@@ -466,14 +442,37 @@ def ledger(target, query):
     conn = store.read.open_readonly(target.store_path)
     try:
         entries = store.read.ledger_since(conn, since, kind=kind,
-                                          ticket=ticket, limit=limit)
+                                          ticket=ticket, limit=limit,
+                                          hide_launch_backoff=True)
+        route_rows = (route_down_rows(conn)
+                      if ticket is None and kind in (None, "intervention") else [])
     finally:
         conn.close()
     return 200, {
         "entries": [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
                     for e in entries],
-        "since": since, "limit": limit,
+        "active_outages": route_rows, "since": since, "limit": limit,
     }
+
+
+
+def route_down_rows(conn):
+    """One ongoing outage per project, including one begun before midnight."""
+    from store import launch_backoff
+
+    rows = []
+    for (project,) in conn.execute(
+            "SELECT id FROM projects WHERE launchBackoffReason IS NOT NULL"):
+        state = launch_backoff.current(conn, project)
+        started = datetime.fromtimestamp(
+            state["since"] / 1000, timezone.utc).strftime("%H:%M")
+        rows.append({
+            "project": project, "run": None, "ticket": None,
+            "kind": "route_down", "source": "loop", "at": state["since"],
+            "reason": state["reason"],
+            "text": f"implementer route down since {started} UTC: {state['reason']}",
+        })
+    return rows
 
 
 def run_files(target, run_id):

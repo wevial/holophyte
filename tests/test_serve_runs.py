@@ -1,9 +1,4 @@
-"""`GET /runs`, `GET /runs/N` and `GET /shipped` (`holophyte.serve_runs`):
-the report table as JSON, one run's row with its rounds and narrative
-events, and the merge ledger paged by `before`.
-
-Run: python3 -m unittest discover -s tests -p 'test_serve_runs*' -v
-"""
+"""HTTP run, shipped and startup-outage read regressions."""
 from __future__ import annotations
 
 import json
@@ -23,8 +18,6 @@ import holophyte.serve_runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 
-# The clock tolerance the run routes share with the other daemon tests:
-# the daemon stamps its own `now`, so an age is "about" the seeded distance.
 SLACK = test_serve.SLACK
 
 
@@ -44,8 +37,7 @@ class RunsTests(ServeTestCase):
                                            self.merge_shas())]
 
     def ended_at(self):
-        """The oracle for `ended_ms`: `runs.endedAt` itself, in the report's
-        order, read straight from the table rather than through the report."""
+        """Read stored end times in report order."""
         return self.column("endedAt")
 
     def merge_shas(self):
@@ -68,9 +60,6 @@ class RunsTests(ServeTestCase):
         code, _headers, body = self.request("GET", "/runs")
 
         self.assertEqual(code, 200)
-        # The sha the seed released KO-3 with, whole, not the seven
-        # characters FINDINGS prints; KO-1 merged without one and the failed
-        # KO-2 never has one.
         self.assertEqual([r["merge_sha"] for r in body["rows"]],
                          [None, None, MERGE_SHA])
         self.assertEqual(len(MERGE_SHA), 40)
@@ -88,8 +77,6 @@ class RunsTests(ServeTestCase):
         expected = self.expected_rows()
         self.assertEqual(len(expected), 3)
         self.assertEqual(body["rows"], expected)
-        # The three the seed planned, oldest first, so a wrong order or a
-        # merged/failed mix-up would not pass on equality alone.
         self.assertEqual([r["ticket"] for r in body["rows"]],
                          ["KO-1", "KO-2", "KO-3"])
         self.assertEqual([r["outcome"] for r in body["rows"]],
@@ -106,9 +93,6 @@ class RunsTests(ServeTestCase):
         code, _headers, body = self.request("GET", "/runs")
 
         self.assertEqual(code, 200)
-        # The seed released each run `took` after its start: KO-1 ten
-        # minutes after starting ten hours ago, and so on -- integers, in
-        # epoch milliseconds, equal to the table's own `endedAt`.
         ended = [r["ended_ms"] for r in body["rows"]]
         self.assertEqual(ended, self.ended_at())
         self.assertTrue(all(isinstance(ms, int) for ms in ended), ended)
@@ -174,11 +158,7 @@ class ShippedTests(ServeTestCase):
                "criterion": None, "message": "a finding"}
 
     def seed_shipped(self):
-        """Three merged runs and one failed: KO-1 merged first with one
-        round of two findings; KO-2 failed; KO-3 merged last with two
-        rounds of one and three findings; KO-4 merged between KO-1 and
-        KO-3 by end though claimed after KO-3, with no round at all, so
-        the ledger's order is not the id order."""
+        """Seed merges out of id order, plus one failed run."""
         self.now = int(time() * 1000)
         H = 60 * MIN
         conn = store.open(str(self.db))
@@ -305,8 +285,6 @@ class ShippedTests(ServeTestCase):
                     self.assertIn("bogus", body["error"])
                 self.assertNotIn("rows", body)
 
-        # An integer no run has is an empty page, whichever side of the id
-        # range it falls on: negative, or past what SQLite can bind.
         for cursor in ("99999", "-1", "0", str(2 ** 63), str(-(2 ** 63) - 1)):
             with self.subTest(before=cursor):
                 code, _headers, body = self.request(
@@ -330,8 +308,7 @@ class ShippedTests(ServeTestCase):
 
 
 class RunDetailTests(ServeTestCase):
-    """`/runs/N`: one run's row, rounds with findings as objects, and the
-    narrative half of its event stream."""
+    """Run details include rounds and narrative events."""
 
     FINDINGS = [
         {"path": "holophyte/serve.py", "line": 12, "severity": "p1",
@@ -341,10 +318,7 @@ class RunDetailTests(ServeTestCase):
     ]
 
     def seed_reviewed(self, cap=None):
-        """One merged run: two ended rounds, `changes_requested` with two
-        findings then `pass`; three narrative events and one detail event.
-        `cap` is the review-round cap the loop gave the run; None leaves the
-        row as a run recorded before the store carried one."""
+        """Seed a merged run with two review rounds and optional round cap."""
         self.now = int(time() * 1000)
         conn = store.open(str(self.db))
         try:
@@ -384,8 +358,7 @@ class RunDetailTests(ServeTestCase):
             conn.close()
 
     def stored_events(self, level):
-        """The oracle: the run's `runEvents` rows of `level` in `seq` order,
-        read straight from the table."""
+        """Read stored events of the requested level in sequence order."""
         conn = sqlite3.connect(str(self.db))
         try:
             return conn.execute(
@@ -437,9 +410,7 @@ class RunDetailTests(ServeTestCase):
         self.assertNotIn("ran ruff", [s for _at, _k, s in got])
 
     def test_a_no_commit_turns_output_is_among_the_events(self):
-        """KO-375: the `implementer_output` row is `detail` for its payload,
-        but its summary is the run's story -- the one detail kind the
-        route answers, in its place, without the payload."""
+        """KO-375: include implementer output in the narrative without its payload."""
         self.seed_reviewed()
         conn = store.open(str(self.db))
         try:
@@ -490,9 +461,7 @@ class RunDetailTests(ServeTestCase):
         self.assertIn("branch", run)
 
     def test_max_rounds_is_the_cap_the_loop_gave_the_run(self):
-        """A run the loop gave four rounds answers `max_rounds` 4, not the
-        module constant, so the console's timeline is divided by the cap
-        this run had (KO-321)."""
+        """The API reports the persisted round cap."""
         self.seed_reviewed(cap=4)
         self.start()
 
@@ -586,3 +555,34 @@ class RunDetailTests(ServeTestCase):
         self.assertIn("error", body)
         self.assertFalse(self.db.exists())
 
+
+
+class RouteDownTests(ServeTestCase):
+    def test_now_ledger_has_one_outage_and_hides_launches_since_its_start(self):
+        from store import launch_backoff
+
+        self.seed()
+        conn = store.open(str(self.db))
+        try:
+            project = conn.execute(
+                'SELECT projectId FROM runs WHERE id=?', (self.run,)).fetchone()[0]
+            started = self.now - MIN
+            store.record_intervention(conn, self.run, 'launch_loop', 'older',
+                                      source='supervisor', now=started - 1)
+            launch_backoff.failure(conn, project, 'fake-probe: quota exhausted',
+                                   started, run_id=self.run)
+            store.record_intervention(conn, self.run, 'launch_loop', 'newer',
+                                      source='supervisor', now=started + 1)
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request(
+            'GET', f'/ledger?since={started - 10}&kind=intervention')
+        self.assertEqual(code, 200)
+        outage, = body['active_outages']
+        self.assertEqual(outage['at'], started)
+        self.assertIsNone(outage['run'])
+        self.assertIn('fake-probe: quota exhausted', outage['text'])
+        self.assertIn('since ', outage['text'])
+        launches = [r for r in body['entries'] if 'launch_loop:' in r['text']]
+        self.assertEqual([r['at'] for r in launches], [started - 1])

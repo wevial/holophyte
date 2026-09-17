@@ -18,7 +18,7 @@ DOCUMENTED_COLUMNS = {
         # Store-owned: when the supervisor's board fallback last asked
         # Linear for the ready listing, so `board_ask_sec` throttles
         # across passes and restarts (KO-434).
-        "boardAskedAt",
+        "boardAskedAt", "launchBackoffUntil", "launchBackoffReason",
     },
     "tickets": {
         "id", "projectId", "linearIssueId", "linearIdentifier", "title",
@@ -76,11 +76,11 @@ DOCUMENTED_COLUMNS = {
         "findingsFingerprint", "reviewerModel", "startedAt", "endedAt",
     },
     "runEvents": {
-        "id", "runId", "seq", "level", "kind", "summary", "payload", "at",
+        "id", "runId", "projectId", "seq", "level", "kind", "summary", "payload", "at",
     },
     "interventions": {
-        "id", "runId", "source", "trigger", "action", "question", "guidance",
-        "at",
+        "id", "runId", "projectId", "source", "trigger", "action", "question",
+        "guidance", "at",
     },
     "linearDeliveries": {"deliveryId", "processedAt"},
     # Store-owned, not a documented table: the supervisor sweep's per-run

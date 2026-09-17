@@ -8,6 +8,7 @@ import { defaultPollDeps, type Fetch } from "../lib/poll";
  *  than the endpoint (404), which the band then renders without threads. */
 export interface HostLedger {
   rows: LedgerRow[];
+  activeOutages?: LedgerRow[];
   threads: Record<string, LedgerRow[]>;
   absent: boolean;
 }
@@ -16,14 +17,14 @@ export interface HostLedger {
  *  first answer lands. */
 export type Ledgers = Record<string, HostLedger>;
 
-/** One `/ledger` page: its rows, `404` for a daemon without the endpoint,
+/** One `/ledger` page: history and active outages, `404` for a daemon without the endpoint,
  *  null for any other failure. */
-async function page(fetch: Fetch, url: string): Promise<LedgerRow[] | 404 | null> {
+async function page(fetch: Fetch, url: string): Promise<LedgerBody | 404 | null> {
   try {
     const response = await fetch(url, { headers: { accept: "application/json" } });
     if (response.status === 404) return 404;
     if (!response.ok) return null;
-    return ((await response.json()) as LedgerBody).entries ?? [];
+    return (await response.json()) as LedgerBody;
   } catch {
     return null;
   }
@@ -40,11 +41,11 @@ async function hostLedger(fetch: Fetch, base: string, midnight: number, asks: { 
   await Promise.all(
     asks.map(async ({ ticket, since }) => {
       const thread = await page(fetch, threadUrl(base, ticket, since));
-      if (Array.isArray(thread)) threads[ticket] = thread;
+      if (thread != null && thread !== 404) threads[ticket] = thread.entries ?? [];
       else if (previous?.threads[ticket]) threads[ticket] = previous.threads[ticket]!;
     }),
   );
-  return { rows, threads, absent: false };
+  return { rows: rows.entries ?? [], activeOutages: rows.active_outages ?? [], threads, absent: false };
 }
 
 /**
