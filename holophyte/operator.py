@@ -1,25 +1,4 @@
-"""The operator commands and the loop's entry point (KO-390).
-
-`main()` drives one pass of the factory -- claim, mirror, lease,
-`run_task()`, close out, repeat -- under `[loop] workers = 1`, or hands
-the queue to `holophyte.pool`'s `scheduler()` above it; a loop that
-merged a change to the factory itself re-executes through `_reexec()`
-and the `EXEC` seam once `self_hosted()` says the target is this
-repository. `report()` is `--report`'s whole body. `requeue()`,
-`approve()`, `babysit_ticket()`, `repoint()` and `close_ticket()` are the operator
-verbs behind `--requeue`, `--approve`, `--babysit`, `--repoint` and `--close`:
-each opens the store through `_operator_store()`, resolves the ticket
-through `_ticket_by_identifier()`, does its one `store` transaction and
-exits.
-
-Moved verbatim out of `holophyte/loop.py`; the run stages, the
-dispatcher and the startup sweep and queue mirror the serial pass
-shares with the pool's scheduler stay there, and `PARKED`, `SWEPT`,
-`_dispatch`, `_mirror_queue` and `_startup_sweep` are imported back
-inside `_serial()`, the house pattern for a back-import
-(`holophyte/pool.py`, `holophyte/claim.py`), so a `holophyte.loop`
-attribute patch still lands.
-"""
+"""Operator commands and startup: probe before claim, record route failures."""
 import os
 import sys
 from pathlib import Path
@@ -74,6 +53,7 @@ def main(target, provider):
     if probe is not None:
         print(probe.describe())
         if not probe.ok:
+            _record_route_down(target, provider, probe)
             return 1
     knobs = loop_config(target)
     try:
@@ -82,6 +62,22 @@ def main(target, provider):
         return scheduler(target, provider, knobs)
     except store.SchemaNewer as moved:
         reexec_self(_schema_reason(moved), EXEC)
+
+
+
+def _record_route_down(target, provider, probe):
+    """Persist a failed startup before returning without a claim."""
+    from time import time
+
+    from store import launch_backoff
+
+    conn = open_store(target)
+    try:
+        project = store.ensure_project(conn, provider.team, target.path)
+        launch_backoff.failure(conn, project, probe.describe(),
+                               int(time() * 1000), pending=True)
+    finally:
+        conn.close()
 
 
 def _serial(target, provider, knobs):

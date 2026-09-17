@@ -42,6 +42,13 @@ export function Now({
   const resolved = served.flatMap((host) => resolvedSince(ledgers[host.address]!.rows, midnight)).sort((a, b) => b.at - a.at);
   return (
     <>
+      {served.flatMap((host) => ledgers[host.address]!.rows
+        .filter((row) => row.kind === "route_down")
+        .map((row) => (
+          <p key={`${host.address}:route:${row.project}`} className="px-6 py-3 text-sm text-muted">
+            {host.address} · implementer route down since {new Date(row.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: {row.reason}
+          </p>
+        )))}
       <NeedsYou hosts={shown} project={project} now={now} ledgers={ledgers} />
       {served.length > 0 && (
         <ResolvedFold rows={resolved} open={resolvedOpen} onToggle={() => setResolvedOpen((previous) => !previous)} />

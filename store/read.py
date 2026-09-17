@@ -1,11 +1,4 @@
-"""Typed, read-only views: explicit SQL mapped to frozen dataclasses.
-
-Readers share one named query per row type, carrying the union of their
-column needs. Fields use the schema's spelling. Callers supply their own
-connection; these functions neither open connections nor mutate rows.
-
-Run: python3 -m unittest discover -s tests -p 'test_store_read*' -v
-"""
+"""Typed, read-only queries over the durable store."""
 from __future__ import annotations
 
 import json
@@ -829,13 +822,20 @@ class LedgerWindowEntry:
     waitedMs: int | None = None
 
 
-def ledger_since(conn, since, kind=None, ticket=None, limit=200):
+def ledger_since(conn, since, kind=None, ticket=None, limit=200,
+                 hide_launch_backoff=False):
     """Ledger entries at or after `since` (epoch ms) across every run,
-    newest first, at most `limit`; narrowed to one `kind` or one ticket
-    identifier (`KO-n`) when given. Two entries in the same millisecond
-    come back in reverse write order, so the window is a stable page.
+    newest first; filter by kind/ticket, cap by limit, ties by reverse id.
     """
     where = ["ledger.at >= ?"]
+    if hide_launch_backoff:
+        where.append(
+            "NOT (ledger.kind = 'intervention' AND"
+            " (ledger.text LIKE 'supervisor launch_loop:%' OR"
+            " ledger.text LIKE 'supervisor launch_backoff:%') AND EXISTS"
+            " (SELECT 1 FROM projects p WHERE p.id = tickets.projectId"
+            " AND p.launchBackoffReason IS NOT NULL"
+            " AND ledger.at >= json_extract(p.launchBackoffReason, '$.since')))")
     args = [since]
     if kind is not None:
         where.append("ledger.kind = ?")
