@@ -123,13 +123,16 @@ class AgentFallbackTests(SweepTestCase):
 
     def test_command_arguments_do_not_corrupt_diagnostic_words(self):
         self.routes()
-        self.configure('[agents]\nimplementer = "codex exec --value plain"\n'
+        self.configure('[agents]\nimplementer = "codex exec --value plain '
+                       '--api-key=-secret"\n'
                        f'implementer_fallback = "{self.fallback}"\n')
         run = self.a_run()
         reason = ("ERROR: You've hit your usage limit; execution failed; "
-                  "explanation: argument 'plain', command: codex exec")
+                  "explanation: argument 'plain', command: codex exec; "
+                  "--api-key rejected '-secret'")
         probe = agents.ProbeResult(
-            command=['codex', 'exec', '--value', 'plain'], returncode=1,
+            command=['codex', 'exec', '--value', 'plain', '--api-key=-secret'],
+            returncode=1,
             output=reason, timeout=90)
         diagnostic = agents.probe_diagnostic(self.tgt, probe)
         out = io.StringIO()
@@ -148,6 +151,8 @@ class AgentFallbackTests(SweepTestCase):
             self.assertIn('execution failed; explanation:', text)
             self.assertNotIn("'plain'", text)
             self.assertNotIn('codex exec', text)
+            self.assertNotIn('-secret', text)
+            self.assertIn('--api-key', text)
 
     def test_default_claude_quota_dispatches_fallback(self):
         self.routes()

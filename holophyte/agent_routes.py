@@ -22,8 +22,12 @@ def command_secrets(target):
     for seat in AGENT_CONFIG_KEYS.values():
         for key in (seat, seat + '_fallback'):
             for arg in shlex.split(table.get(key, ''))[1:]:
+                # An assignment's value may start with a dash; only bare
+                # option names are excluded from argument redaction.
+                if arg.startswith('-') and '=' not in arg:
+                    continue
                 value = arg.split('=', 1)[-1]
-                if value and not value.startswith('-'):
+                if value:
                     secrets.add(value)
     return secrets
 
