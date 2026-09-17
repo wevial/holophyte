@@ -608,7 +608,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None):
     deadline = monotonic() + pr.CHECK_WAIT_S
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(target, pull)
-        while not state.threads and not state.merged:
+        while not state.threads and not state.merged and not state.closed:
             if state.checks == "pending":
                 reason = "pending checks"
                 nap = pr.CHECK_POLL_S

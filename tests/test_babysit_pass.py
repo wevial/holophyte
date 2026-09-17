@@ -85,13 +85,18 @@ class MergeModeBabysitPassTests(ConflictRefusalCases, MergeModeFixture):
 
     def test_closed_pr_is_rejected_mid_pass(self):
         self.configure('[merge]\nmode = "pr"\n')
-        state = self.pr_state()
+        state = self.pr_state(checks="PENDING")
         node = state["data"]["repository"]["pullRequest"]
         node.update(state="CLOSED", timelineItems={"nodes": [
             {"actor": {"login": "alice"}}]})
         self.fake_route(states=[state])
-        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                  provider=self.provider())
+        with patch.object(
+            holophyte.pr, "SLEEP",
+            side_effect=AssertionError("closed PR must not wait"),
+        ) as sleep:
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        sleep.assert_not_called()
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("rejected", "rejected")])
         self.assertTrue(self.read("SELECT blockedQuestion FROM tickets")
