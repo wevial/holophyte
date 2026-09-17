@@ -394,22 +394,22 @@ def run_capped(cmd, cwd, timeout, on_start=None):
         return proc.returncode, out
 
 
-def run_verify(cmd, cwd, contracts=None, timeout=None):
+def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None):
+    """Account for a mechanical verification, preserving its tuple interface."""
+    from store.working import working
+
+    with working(conn, run_id):
+        return _run_verify(cmd, cwd, contracts, timeout)
+
+
+def _run_verify(cmd, cwd, contracts=None, timeout=None):
     """Mechanical acceptance check. Returns (ok, output). Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
 
-    A failure is always attributable: a top-level `&&` chain is marked clause
-    by clause inside one shell, and the report points at the clause that
-    exited non-zero, including when that clause failed without printing
-    anything. An exit-0 run that reports zero collected tests is failed as
-    `vacuous-green` rather than passed. A command that runs past
-    the cap -- `timeout`, or `VERIFY_TIMEOUT` when the caller names none --
-    is RED too, naming the cap and the clause that was running; it never
-    raises `TimeoutExpired` at the caller.
+    Literal contracts run first. Reports reject drift and zero-test discovery.
+    Timeout is a failed gate, after run_capped has reaped the process group;
+    the caller receives the same (ok, output) tuple on every normal return.
 
-    Literal contract checks declared on the ticket run first: they are
-    deterministic, need no subprocess, and a drifted literal is a RED result
-    even when the command itself passes. A ticket declaring none is unaffected.
     """
     drifted = contract_report(contracts, cwd)
     if drifted:

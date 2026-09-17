@@ -118,6 +118,8 @@ The store is its own package:
   `TICKET_TRANSITIONS` table and `transition()`/`walk_ticket()`,
   `mirror_ticket`, §2's `pickable()`/`pickable_tickets()` and the Mermaid
   state-graph renderer, re-exported from the package.
+- `store/working.py` — persisted work intervals, finally-safe settlement and
+  non-mutating effective-work reads; excludes orchestration waits.
 - `store/read.py` — typed read views over the store: one query, one row
   type, no SQL elsewhere.
 

@@ -218,6 +218,17 @@ def publish_review_refs(repo, base_sha, candidate_sha):
 
 def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None):
+    """Account for one role call, including timeout and exceptional returns."""
+    from store.working import working
+
+    with working(conn, run_id):
+        return _agent(target, role, goal, cwd, base_sha=base_sha,
+                      candidate_sha=candidate_sha, timeout=timeout,
+                      on_start=on_start, conn=conn, run_id=run_id)
+
+
+def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
+          timeout=None, on_start=None, conn=None, run_id=None):
     """Run one agent turn for a role. Returns combined output text.
 
     An `implement` turn runs in a process group of its own under `timeout`
