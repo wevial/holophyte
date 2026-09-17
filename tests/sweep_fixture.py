@@ -83,20 +83,11 @@ class SweepTestCase(unittest.TestCase):
         return store.tickets.ensure_project(self.conn, f"team-{self.projects}", repo)
 
     def a_run(self, budget_min=25, claimed_at=T0, phase="working",
-              project=None, ticket=None):
-        """One live run of its own ticket, claimed at `claimed_at`.
+              project=None, ticket=None, active_work=False):
+        """Claim one ticket at claimed_at, optionally doing uninterrupted work.
 
-        `claim()` stamps `startedAt` and `lastHeartbeat` together, so a fresh
-        run's heartbeat is its claim time until a stage boundary moves it;
-        `heartbeat_at()` below is how a test moves it.
-
-        The ticket is specced and moved to `in_flight`, which is what the loop
-        does to a ticket it claims: a run in flight whose ticket says anything
-        else is a store state the loop cannot produce, and the escalation the
-        acting sweep feeds is only defined on an in-flight ticket. `ticket`
-        re-claims one an earlier run already used, for the tests about a
-        ticket's second failure.
-        """
+        An existing ticket can be reclaimed; otherwise create an in_flight ticket.
+        active_work opens a persisted interval for budget-boundary fixtures."""
         project = self.project if project is None else project
         if ticket is None:
             self.tickets += 1
@@ -112,6 +103,10 @@ class SweepTestCase(unittest.TestCase):
         self.ticket_of[run_id] = ticket
         if phase != "claimed":
             store.set_phase(self.conn, run_id, phase, now=claimed_at)
+        if active_work:
+            self.conn.execute('UPDATE runs SET workStartedAt = ? WHERE id = ?',
+                              (claimed_at, run_id))
+            self.conn.commit()
         return run_id
 
     def heartbeat_at(self, run_id, at):

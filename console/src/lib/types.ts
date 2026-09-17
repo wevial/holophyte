@@ -31,6 +31,8 @@ export interface Run {
   phase: string;
   heartbeat_age_ms: number;
   elapsed_ms: number;
+  working_ms?: number | null;
+  work_started_ms?: number | null;
   time_box_ms: number;
   host: string;
   title?: string;
@@ -83,6 +85,9 @@ export interface RunDetailBody {
     attempt?: number;
     started_ms: number;
     ended_ms: number | null;
+    elapsed_ms?: number;
+    working_ms?: number | null;
+    work_started_ms?: number | null;
     outcome?: string | null;
     time_box_ms: number;
     branch?: string | null;
@@ -139,7 +144,9 @@ export interface ShippedRow {
   findings: number;
   started_ms: number;
   ended_ms: number;
-  actual_min: number;
+  actual_min: number | null;
+  working_ms?: number | null;
+  wall_min?: number;
   estimate_min: number | null;
   merge_sha: string | null;
   /** The merge commit's page on the repository's origin when the sha has

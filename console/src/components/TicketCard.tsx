@@ -1,3 +1,4 @@
+import { workingMs } from "../lib/runs";
 import { cardLine, type BoardCard } from "../lib/board";
 import { ActionButton } from "./ActionButton";
 import { KindPill } from "./KindPill";
@@ -38,7 +39,7 @@ export function TicketCard({ card, open = false, onOpen }: { card: BoardCard; op
         <span className="ml-auto truncate text-[11px] text-faint">{card.project}</span>
       </div>
       <p className="text-[13px] leading-[1.4] text-ink">{card.title ?? ""}</p>
-      {card.status === "in_flight" && run && <BoxBar elapsedMs={run.elapsed_ms} boxMs={run.time_box_ms} height={5} />}
+      {card.status === "in_flight" && run && <BoxBar elapsedMs={workingMs(run)} boxMs={run.time_box_ms} height={5} />}
       {line && (
         <p data-line className="font-mono text-[11px] text-faint">
           {line}

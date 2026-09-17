@@ -108,7 +108,7 @@ test("days=1 keeps only today's group", () => {
 });
 
 test("the bar's fill and delta take the ok, warn and over tones at 24/30, 25/30, 30/30 and 38/30", () => {
-  const at = (actual: number): ShippedRow => ({ ...ROWS[0]!, id: actual, actual_min: actual, estimate_min: 30 });
+  const at = (actual: number): ShippedRow => ({ ...ROWS[0]!, id: actual, actual_min: actual, working_ms: actual * 60_000, estimate_min: 30 });
   render(<ShippedTable rows={[24, 25, 30, 38].map(at)} now={now} tz="UTC" />);
   const bars = screen.getAllByRole("progressbar");
   expect(bars.map((bar) => bar.getAttribute("data-tone"))).toEqual(["ok", "warn", "warn", "over"]);

@@ -14,6 +14,7 @@ from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.target import worktree_path
+from store.working import effective_work
 
 # The two `origin` shapes a merge commit can link into: `https://HOST/OWNER/
 # REPO(.git)` and `git@HOST:OWNER/REPO(.git)`. Anything else is not a web
@@ -217,9 +218,9 @@ def runs(target, query=""):
                   "estimate_min": estimate, "ratio": ratio,
                   "rounds": rounds, "outcome": outcome,
                   "host": json_host(target, host), "ended_ms": ended_at,
-                  "merge_sha": merge_sha}
+                  "merge_sha": merge_sha, "wall_min": wall_min}
                  for ticket, actual, estimate, ratio, rounds, outcome, host,
-                 ended_at, merge_sha in rows],
+                 ended_at, merge_sha, wall_min in rows],
         "limit": limit,
     }
 
@@ -272,7 +273,10 @@ def shipped(target, query=""):
                   "title": run.title, "rounds": run.reviewRoundCount,
                   "findings": run.findingCount,
                   "started_ms": run.startedAt, "ended_ms": run.endedAt,
-                  "actual_min": (run.endedAt - run.startedAt) / 60000,
+                  "actual_min": (effective_work(run, run.endedAt) / 60000
+                                 if run.workingMs is not None else None),
+                  "working_ms": effective_work(run, run.endedAt),
+                  "wall_min": (run.endedAt - run.startedAt) / 60000,
                   "estimate_min": (run.timeBoxMs / 60000
                                    if run.timeBoxMs else None),
                   "merge_sha": run.mergeSha,
@@ -318,22 +322,14 @@ def locate_run(target, text):
 
 
 def run_detail(target, run_id, now=None):
-    """The `/runs/N` answer: `(http status, JSON-able body)`.
+    """Return `/runs/N`: run clocks, review rounds and narrative events.
 
-    `run` is the row joined to its ticket, with `heartbeat_age_ms` computed
-    here against `now` while the run is live and null once it has ended --
-    an ended run's heartbeat is history, not a liveness signal -- and
-    `max_rounds`, the loop's review-round cap, so a client can say "round 2
-    of 3" without knowing the constant, and `commit_url` and `pr_url` as
-    `/shipped` carries them. `rounds` is oldest first, each with
-    its findings decoded once here into objects; `events` is the narrative
-    level of the stream, oldest first, without the detail rows -- except
-    the `implementer_output` row a no-commit turn leaves (KO-375), whose
-    summary is the implementer's first line and is what tells a refusal
-    from a crash; its payload stays in the store. `run_id`
-    that is not an integer is 400; an integer with no run is 404 carrying
-    `run` (`locate_run()`).
-    """
+    Effective working_ms includes any active interval through `now`; elapsed_ms
+    is wall duration, frozen at endedAt on completed runs. The scaled time box
+    matches `/status`. Heartbeat age is null after completion. max_rounds falls
+    back to the loop default for old runs. locate_run handles invalid ids.
+    Rounds and events are oldest first; include implementer_output for refusals
+    and no-commit crashes, whose full payload stays in the store."""
     now = int(time() * 1000) if now is None else now
     failed, run = locate_run(target, run_id)
     if failed is not None:
@@ -354,6 +350,9 @@ def run_detail(target, run_id, now=None):
                 "title": run.title, "phase": run.phase,
                 "attempt": run.attempt, "started_ms": run.startedAt,
                 "ended_ms": run.endedAt, "outcome": run.outcome,
+                "elapsed_ms": (run.endedAt if not live else now) - run.startedAt,
+                "working_ms": effective_work(run, run.endedAt if not live else now),
+                "work_started_ms": run.workStartedAt,
                 "time_box_ms": (int(run.timeBoxMs * scale)
                                 if run.timeBoxMs else run.timeBoxMs),
                 "branch": run.branch,
