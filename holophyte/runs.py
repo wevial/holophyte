@@ -129,7 +129,9 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     The thread opens its own connection to the store `conn` is on, because the
     loop's `conn` may be in use during the block. If opening fails (including
     a newer schema), it falls back to the existing connection under its
-    transaction lock, shared with the caller's store writes. A failed beat prints
+    transaction lock, shared with the caller's store writes. Waiting for that
+    lock is cancellable so exit can join even inside a caller transaction.
+    A failed beat prints
     `[holo2] heartbeat failed: ...` and the block goes on: the agent's work
     is not lost to a locked store. On exit the thread is signalled and joined
     before the loop's next phase write, so no beat lands after the stage the
@@ -162,7 +164,8 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     swept = []  # the ended row's (outcome, reason), set once by the beat
     thread = threading.Thread(
         target=_beat, args=(path, run_id, interval_s, stop, swept, on_swept,
-                           partial(_heartbeat, conn, run_id, swept)),
+                           partial(_fallback_heartbeat, conn, run_id, swept,
+                                   stop)),
         name=f"heartbeat-run-{run_id}", daemon=True)
     thread.start()
     failure = None
@@ -180,6 +183,19 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
         raise RunSwept(run_id, outcome, reason) from failure
     if failure is not None:
         raise failure
+
+
+def _fallback_heartbeat(conn, run_id, swept, stop):
+    """Wait for the caller's lock only while the timer is still needed."""
+    while not stop.is_set():
+        if conn._lock.acquire(blocking=False):
+            try:
+                return _heartbeat(conn, run_id, swept)
+            finally:
+                conn._lock.release()
+        stop.wait(0.05)
+    # Cancellation is not a swept run; let the timer observe stop and exit.
+    return True
 
 
 def _heartbeat(conn, run_id, swept):

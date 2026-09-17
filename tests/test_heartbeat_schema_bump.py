@@ -103,7 +103,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
     def test_fallback_waits_for_the_callers_transaction(self):
         self.bump()
         attempted, completed = threading.Event(), threading.Event()
-        heartbeat = runs._heartbeat
+        heartbeat = runs._fallback_heartbeat
 
         def fallback(*args):
             attempted.set()
@@ -114,7 +114,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
         # Keep the beat context alive until after the caller commits, so its
         # thread can finish the blocked beat before the context joins it.
         with ExitStack() as stack, redirect_stdout(io.StringIO()), \
-                patch.object(runs, '_heartbeat', fallback), \
+                patch.object(runs, '_fallback_heartbeat', fallback), \
                 patch('store.time.time', return_value=5):
             with store.transaction(self.conn):
                 stack.enter_context(runs.heartbeat_while(
@@ -127,6 +127,39 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
                 self.assertEqual(reader.execute(
                     'SELECT lastHeartbeat FROM runs WHERE id = ?',
                     (self.run,)).fetchone()[0], 5000)
+
+    def test_fallback_shutdown_inside_callers_transaction(self):
+        self.bump()
+        attempted = threading.Event()
+        beat, join = runs._beat, threading.Thread.join
+        threads = []
+        on_swept = Mock()
+
+        def timer(path, run_id, interval, stop, swept, callback, heartbeat):
+            def fallback():
+                attempted.set()
+                return heartbeat()
+            beat(path, run_id, interval, stop, swept, callback, fallback)
+
+        def bounded_join(thread):
+            # Bound a broken shutdown so the regression fails instead of
+            # hanging the suite; unwind the transaction before final cleanup.
+            threads.append(thread)
+            join(thread, timeout=1)
+            self.assertFalse(thread.is_alive(), 'heartbeat shutdown deadlocked')
+
+        try:
+            with redirect_stdout(io.StringIO()), \
+                    patch.object(runs, '_beat', timer), \
+                    patch.object(threading.Thread, 'join', bounded_join):
+                with store.transaction(self.conn):
+                    with runs.heartbeat_while(
+                            self.conn, self.run, 0.001, on_swept):
+                        self.assertTrue(attempted.wait(5))
+                on_swept.assert_not_called()
+        finally:
+            for thread in threads:
+                join(thread, timeout=5)
 
 
 class LoopSchemaBumpTests(LoopFixture):
