@@ -16,6 +16,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from time import localtime, strftime, time
 
@@ -230,7 +231,7 @@ query($project: String!, $after: String) {
     ) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        identifier id url title description
+        identifier id url title description updatedAt
         estimate priority
         labels { nodes { id name } }
         state { type name }
@@ -539,7 +540,9 @@ def ready_issues(project_id, label=None):
     the same filtered queue the claim does. Reads only; nothing is written
     to Linear.
     """
-    return [parse_task(issue)
+    return [dict(parse_task(issue), updatedAt=(
+                int(datetime.fromisoformat(issue["updatedAt"].replace("Z", "+00:00"))
+                    .timestamp() * 1000) if issue.get("updatedAt") else None))
             for issue in list_ready_issues(project_id, label=label)]
 
 
