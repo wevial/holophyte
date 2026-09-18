@@ -75,6 +75,33 @@ class TicketUrlMigrationTests(unittest.TestCase):
         assert_schema_url(self)
 
 
+class BoardStateMigrationTests(unittest.TestCase):
+    def test_version_24_adds_nullable_board_state_to_existing_ticket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "store.db"
+            conn = sqlite3.connect(path)
+            previous = "\n".join(
+                line for line in store.schema.SCHEMA.splitlines()
+                if not line.strip().startswith("boardState "))
+            conn.executescript(previous)
+            project = store.tickets.ensure_project(conn, "team", "/repo")
+            conn.execute("INSERT INTO tickets (projectId, linearIssueId,"
+                         " linearIdentifier, title, status, mirroredAt, affinity)"
+                         " VALUES (?, 'issue', 'KO-1', 'old', 'ready', 1, 'any')",
+                         (project,))
+            conn.execute("PRAGMA user_version = 24")
+            conn.commit()
+            conn.close()
+            conn = store.open(path)
+            try:
+                self.assertEqual(conn.execute(
+                    "SELECT boardState FROM tickets").fetchone(), (None,))
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                                 (store.schema.SCHEMA_VERSION,))
+            finally:
+                conn.close()
+
+
 class StoreSchemaTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

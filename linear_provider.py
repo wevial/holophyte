@@ -347,12 +347,13 @@ def parse_task(issue):
             "budget_min": int(issue.get("estimate") or 20),
             "priority": issue.get("priority"),
             "url": issue.get("url"),
+            "board_state": (issue.get("state") or {}).get("name"),
             "labels": label_names(issue)}
 
 
 ISSUE_QUERY = """
 query($id: String!) {
-  issue(id: $id) { identifier id url title description estimate }
+  issue(id: $id) { identifier id url title description estimate state { name } }
 }"""
 
 

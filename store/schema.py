@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     projectId            INTEGER NOT NULL REFERENCES projects (id),
     linearIssueId        TEXT    NOT NULL UNIQUE,
     url                  TEXT,
+    boardState           TEXT,
     linearIdentifier     TEXT    NOT NULL,  -- e.g. "HOL-142", for humans
     title                TEXT    NOT NULL,
     -- The Linear body the loop last read at claim time, so what the daemon
@@ -334,7 +335,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 
 # Version 23 mirrors Linear issue URLs for console ticket links (KO-478).
 # Version 24 records the process responsible for schema migrations (KO-495).
-SCHEMA_VERSION = 24
+# Version 25 mirrors board state names for attention and requeue (KO-503).
+SCHEMA_VERSION = 25
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -442,6 +444,7 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # ALTER TABLE preserves CHECK; UNIQUE and NOT NULL without a default require
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
+    ("tickets", "boardState", "boardState TEXT"),
     ("tickets", "url", "url TEXT"),
     ("projects", "launchBackoffUntil", "launchBackoffUntil INTEGER"),
     ("projects", "launchBackoffReason", "launchBackoffReason TEXT"),

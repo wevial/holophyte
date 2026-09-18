@@ -18,7 +18,7 @@ DOCUMENTED_COLUMNS = {
         # the daemon serves the contract the run worked from (KO-328).
         "body",
         # Claim-time Linear issue URL for console ticket links (KO-478).
-        "url",
+        "url", "boardState",
     },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",

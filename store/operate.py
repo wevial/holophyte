@@ -214,18 +214,22 @@ def requeue(conn, ticket_id, note, now=None):
     command that applies instead.
 
     Refuses, with `RequeueRefused` and no write, anything else: an unknown
-    ticket, one with an active run, one not `in_flight` (already `ready`,
+    ticket, one shelved on the board, one with an active run,
+    one not `in_flight` (already `ready`,
     say), or one whose last run ended some other way (merged) or never
     ended. Touches no board state: the loop mirrors the Linear status when
     it claims.
     """
     with _transaction(conn):
         row = conn.execute(
-            "SELECT linearIdentifier, status, activeRunId, lastRunId"
+            "SELECT linearIdentifier, status, activeRunId, lastRunId, boardState"
             " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         if row is None:
             raise RequeueRefused(f"ticket {ticket_id} does not exist")
-        identifier, status, active_run_id, last_run_id = row
+        identifier, status, active_run_id, last_run_id, board_state = row
+        if board_state in ("Backlog", "Canceled", "Done"):
+            raise RequeueRefused(
+                f"{identifier}: board state is {board_state}; nothing to requeue")
         if active_run_id is not None:
             raise RequeueRefused(
                 f"{identifier}: run {active_run_id} is still live;"
