@@ -87,3 +87,64 @@ class PrBodyStubTests(unittest.TestCase):
             self.assertTrue(body.endswith("Linear: KO-131"))
             self.assertNotIn("Partial text", body)
             self.assertNotIn("## Acceptance criteria", body)
+
+
+class RequiredStatusContextTests(unittest.TestCase):
+    def read_status(self, status, more=False):
+        from holophyte import pr_status
+        pull = pr.PullRequest("github.com", "example", "repo", 7,
+                              "https://github.com/example/repo/pull/7")
+        run = {"name": "vitest", "status": "completed", "conclusion": "success"}
+        contexts = [{"__typename": "CheckRun", "name": "vitest",
+                     "status": "COMPLETED", "conclusion": "SUCCESS"}]
+        status_node = {"__typename": "StatusContext", "context": "Vercel",
+                       "state": status}
+        if status and not more:
+            contexts.append(status_node)
+        rollup = {"state": "SUCCESS", "contexts": {
+            "nodes": contexts,
+            "pageInfo": {"hasNextPage": more, "endCursor": "cursor"}}}
+        node = {"headRefOid": "head", "commits": {"nodes": [
+            {"commit": {"statusCheckRollup": rollup}}]}}
+        responses = [{"repository": {"pullRequest": node}}]
+        if more:
+            responses.append({"repository": {"object": {"statusCheckRollup": {
+                "contexts": {"nodes": [status_node],
+                             "pageInfo": {"hasNextPage": False}}}}}})
+        rules = [{"type": "required_status_checks", "parameters": {
+            "required_status_checks": [{"context": "Vercel"},
+                                       {"context": "vitest"}]}}]
+        with patch.object(pr_status, "graphql", side_effect=responses), \
+                patch.object(pr_status, "rest", side_effect=[
+                    {"total_count": 1, "check_runs": [run]}, rules]), \
+                patch.object(pr_status, "fold_checks",
+                             wraps=pr_status.fold_checks) as fold:
+            state = pr_status.pr_state(SimpleNamespace(), pull)
+        return state, fold.call_args.args[1], pull
+
+    def test_required_status_states_and_missing_context(self):
+        for status, expected in (("SUCCESS", "success"), ("PENDING", "pending"),
+                                 ("EXPECTED", "pending"), ("ERROR", "failure"),
+                                 ("FAILURE", "failure"), (None, "pending")):
+            with self.subTest(status=status):
+                state, runs, _ = self.read_status(status)
+                self.assertEqual(state.checks, expected)
+                if status:
+                    self.assertEqual([r["name"] for r in runs],
+                                     ["vitest", "Vercel"])
+
+    def test_pending_status_is_named_in_parked_reason(self):
+        from holophyte import babysitter
+        state, runs, pull = self.read_status("PENDING")
+        self.assertIn({"name": "Vercel", "status": "pending",
+                       "conclusion": "pending"}, runs)
+        target = SimpleNamespace(config=lambda: {})
+        with patch.object(babysitter, "monotonic", side_effect=[0, 999999]), \
+                self.assertRaisesRegex(babysitter.WaitExpired,
+                                       r"pending checks.*Vercel.*exceeded"):
+            babysitter._settled_state(target, None, None, 1, pull, state)
+
+    def test_status_context_on_later_rollup_page(self):
+        state, runs, _ = self.read_status("SUCCESS", more=True)
+        self.assertEqual(state.checks, "success")
+        self.assertEqual([r["name"] for r in runs], ["vitest", "Vercel"])
