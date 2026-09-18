@@ -1,4 +1,4 @@
-"""PR conflict and send-back fixtures shared by the KO-440 regressions."""
+"""Shared PR babysitting fixtures, conflict cases, and operator-note cases."""
 import dataclasses
 import io
 import sqlite3
@@ -18,7 +18,8 @@ MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
 
 
-class ConflictRefusalCases:
+class BabysitHelpers:
+    """Shared pass setup and assertions; no discoverable test cases."""
     def refresh_wait(self, changed=False, checks="SUCCESS"):
         review = self.conflict_refusal(conflict=changed)
         (self.calls.parent / "refused").touch()  # This case reports CONFLICTING.
@@ -38,62 +39,6 @@ class ConflictRefusalCases:
             out = self.main_output(work, review, Idle(""), *fixes,
                                    provider=self.provider())
         return out, naps
-
-    def test_main_refresh_carries_review_and_quiet_but_waits_for_checks(self):
-        out, naps = self.refresh_wait()
-        self.assertEqual(self.last_fake.roles, ["implement", "review", "implement"])
-        self.assertIn("green and quiet for 230s of the 300s", out)
-        self.assertEqual(sum(naps), 100)
-        head = self.pushed()[-1][1]
-        self.assertEqual(self.read("SELECT summary FROM runEvents WHERE"
-                                   " kind = 'pull_request' AND summary LIKE"
-                                   " 'main refreshed%'"),
-                         [(f"main refreshed at {head}; diff to main unchanged,"
-                           " review and quiet carried forward",)])
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-
-    def test_main_refresh_failed_checks_park(self):
-        self.refresh_wait(checks="FAILURE")
-        self.assertEqual(self.last_fake.roles, ["implement", "review", "implement"])
-        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
-                         [("awaiting_merge_approval", None)])
-        self.assertIn("checks failure on the head commit", self.question())
-        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
-
-    def test_changed_main_merge_restarts_review_and_quiet(self):
-        out, naps = self.refresh_wait(changed=True)
-        self.assertEqual(self.last_fake.roles,
-                         ["implement", "review", "implement", "implement", "review"])
-        self.assertIn("green and quiet for 30s of the 300s", out)
-        self.assertEqual(sum(naps), 300)
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-
-    def test_conflict_push_waits_for_the_head_to_catch_up(self):
-        review = self.conflict_refusal(heads=("old", "pushed"))
-        naps = []
-        with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("candidate"), review, Idle(""), APPROVE,
-                      provider=self.provider())
-        self.assert_conflict_merge_landed()
-        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
-        self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state", "merge", "state", "state", "merge"])
-
-    def test_conflict_push_head_timeout_parks_naming_both_shas(self):
-        review = self.conflict_refusal(heads=("old",))
-        self.configure('[merge]\nmode = "pr"\npr_poll_sec = 31\n')
-        naps = []
-        with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("candidate"), review, Idle(""),
-                      provider=self.provider())
-        original, pushed = [sha for _, sha in self.pushed()]
-        self.assertEqual(sum(naps), 31)
-        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM runs"),
-                         [("awaiting_merge_approval", None, pushed)])
-        self.assertIn(f"the pull request's head is {original[:12]} after 31s;"
-                      f" the babysitter pushed {pushed[:12]}", self.question())
-        self.assertEqual([v["sha"] for kind, v in self.api_calls()
-                          if kind == "merge"], [original])
 
     def review_fix_propagation(self, catches_up):
         self.resume_rejected_fix()
@@ -172,6 +117,72 @@ class ConflictRefusalCases:
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
+    def _state_with_rest(self, rest):
+        pull = holophyte.pr_status.parse_pr_url(self.URL)
+        with patch.object(holophyte.pr_status, "graphql",
+                          lambda *a, **k: self.pr_state(checks="SUCCESS")
+                          ["data"]), \
+                patch.object(holophyte.pr_status, "rest", rest):
+            return holophyte.pr_status.pr_state(self.tgt, pull)
+
+
+class ConflictRefusalCases(BabysitHelpers):
+    def test_main_refresh_carries_review_and_quiet_but_waits_for_checks(self):
+        out, naps = self.refresh_wait()
+        self.assertEqual(self.last_fake.roles, ["implement", "review", "implement"])
+        self.assertIn("green and quiet for 230s of the 300s", out)
+        self.assertEqual(sum(naps), 100)
+        head = self.pushed()[-1][1]
+        self.assertEqual(self.read("SELECT summary FROM runEvents WHERE"
+                                   " kind = 'pull_request' AND summary LIKE"
+                                   " 'main refreshed%'"),
+                         [(f"main refreshed at {head}; diff to main unchanged,"
+                           " review and quiet carried forward",)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_main_refresh_failed_checks_park(self):
+        self.refresh_wait(checks="FAILURE")
+        self.assertEqual(self.last_fake.roles, ["implement", "review", "implement"])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("checks failure on the head commit", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_changed_main_merge_restarts_review_and_quiet(self):
+        out, naps = self.refresh_wait(changed=True)
+        self.assertEqual(self.last_fake.roles,
+                         ["implement", "review", "implement", "implement", "review"])
+        self.assertIn("green and quiet for 30s of the 300s", out)
+        self.assertEqual(sum(naps), 300)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_conflict_push_waits_for_the_head_to_catch_up(self):
+        review = self.conflict_refusal(heads=("old", "pushed"))
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("candidate"), review, Idle(""), APPROVE,
+                      provider=self.provider())
+        self.assert_conflict_merge_landed()
+        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "merge", "state", "state", "merge"])
+
+    def test_conflict_push_head_timeout_parks_naming_both_shas(self):
+        review = self.conflict_refusal(heads=("old",))
+        self.configure('[merge]\nmode = "pr"\npr_poll_sec = 31\n')
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("candidate"), review, Idle(""),
+                      provider=self.provider())
+        original, pushed = [sha for _, sha in self.pushed()]
+        self.assertEqual(sum(naps), 31)
+        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM runs"),
+                         [("awaiting_merge_approval", None, pushed)])
+        self.assertIn(f"the pull request's head is {original[:12]} after 31s;"
+                      f" the babysitter pushed {pushed[:12]}", self.question())
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [original])
+
     def test_human_approval_conflict_refusal_preserves_the_candidate(self):
         review = self.conflict_refusal()
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
@@ -222,14 +233,6 @@ class ConflictRefusalCases:
         self.assertIn(self.refusal, self.question())
         self.assertEqual(len(self.pushed()), 1)
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), self.pushed()[0][1])
-
-    def _state_with_rest(self, rest):
-        pull = holophyte.pr_status.parse_pr_url(self.URL)
-        with patch.object(holophyte.pr_status, "graphql",
-                          lambda *a, **k: self.pr_state(checks="SUCCESS")
-                          ["data"]), \
-                patch.object(holophyte.pr_status, "rest", rest):
-            return holophyte.pr_status.pr_state(self.tgt, pull)
 
 
 @dataclasses.dataclass
