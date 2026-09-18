@@ -664,6 +664,11 @@ class MigrationFeedTests(ServeTestCase):
         self.assertEqual(rows[0]["tone"], "neutral")
         self.assertIsNone(rows[0]["run"])
         self.assertIn("store schema", rows[0]["text"])
+        self.assertEqual(rows[0]["schema_from"], 0)
+        self.assertEqual(rows[0]["schema_to"], store.SCHEMA_VERSION)
+        self.assertEqual(rows[0]["project"], str(target.path))
+        _, status_body = holophyte.serve.status(target)
+        self.assertEqual(status_body["schema_version"], store.SCHEMA_VERSION)
         for query in ("since=0&ticket=KO-7", "since=0&kind=merge",
                       f"since={rows[0]['at'] + 1}"):
             _, filtered = holophyte.serve_runs.ledger(
