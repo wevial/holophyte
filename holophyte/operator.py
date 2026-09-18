@@ -214,11 +214,11 @@ def _fast_forward_checkout(target):
               " executing the code on disk", flush=True)
 
 
-def _reexec(target, conn, project, reason=None):
+def _reexec(target, conn, project, reason=None, *, prepared_sha=None):
     """Update and exec `factory.py`; returns only when a test's EXEC does."""
-    sha = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
-    # Record before exec so the sweep can detect a restart that never returns.
-    _fast_forward_checkout(target)
+    sha = prepared_sha or sh(["git", "rev-parse", "--short", "HEAD"], target.path)
+    if prepared_sha is None:
+        _fast_forward_checkout(target)
     arriving = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
     store.record_loop_restart(conn, project, json.dumps({
         "leaving": sha, "arriving": arriving}))

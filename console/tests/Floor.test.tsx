@@ -190,3 +190,12 @@ test("run #52 on two daemons of one project is two rows; expanding one leaves th
   expect(detail.every((url) => url.startsWith(`${SECOND}/runs/52`))).toBe(true);
   expect(detail.length).toBeGreaterThan(0);
 });
+
+
+test("the project header names previous-build workers until the count reaches zero", () => {
+  const view = (count: number) => <Floor daemons={on({ ...extended, workers_on_previous_build: count })} project="all" expandedRun={null} onToggleRun={noop} />;
+  const { rerender } = render(view(1));
+  expect(screen.getByText("1 worker on previous build")).toBeTruthy();
+  rerender(view(0));
+  expect(screen.queryByText(/workers? on previous build/)).toBeNull();
+});

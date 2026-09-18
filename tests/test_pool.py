@@ -36,6 +36,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     StubProvider,
     a_task,
 )
+from pool_restart_cases import PoolRestartCases  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
@@ -153,11 +154,10 @@ class GateConflictRequeueTests(LoopFixture):
                          [(0,)])
 
 
-class PoolTests(LoopFixture):
+class PoolTests(PoolRestartCases, LoopFixture):
     """`[loop] workers > 1`: the main process schedules a pool of
     `--worker` children sized to the claimable queue (KO-343); spawn and
     wait go through seams, so no process is started."""
-
     def run_scheduler(self, workers, provider, exits, stop_on_failure=True,
                       tick_sec=None):
         tick = f"tick_sec = {tick_sec}\n" if tick_sec is not None else ""
@@ -440,21 +440,21 @@ class PoolTests(LoopFixture):
         self.assertEqual(self.rc, 1)
 
     def test_a_self_merge_re_execs_after_the_pool_drains(self):
-        """A worker merged a change to the factory itself: nothing new is
-        spawned, the other worker finishes on the code it started with, and
-        only then does the scheduler re-exec."""
-        provider = StubProvider(*(a_task(n) for n in range(1, 4)))
+        """A schema-changing merge drains all three workers before exec."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 5)))
+        self.write_schema(store.schema.SCHEMA_VERSION + 1)
         execs = []
         with patch.object(holophyte.operator, "EXEC",
                           lambda *args: execs.append(args)), \
                 patch.object(holophyte.operator, "__file__",
                              str(self.target / "holophyte" / "operator.py")):
-            pool = self.run_scheduler(2, provider, [
-                (holophyte.pool.WORKER_MERGED, None),
-                (holophyte.pool.WORKER_MERGED, None),
+            pool = self.run_scheduler(3, provider, [
+                (holophyte.pool.WORKER_MERGED, lambda: self.assertEqual(execs, [])),
+                (holophyte.pool.WORKER_MERGED, lambda: self.assertEqual(execs, [])),
+                (holophyte.pool.WORKER_MERGED, lambda: self.assertEqual(execs, [])),
             ])
 
-        self.assertEqual(len(pool.spawned), 2)
+        self.assertEqual(len(pool.spawned), 3)
         self.assertEqual(pool.alive, [])
         self.assertEqual(len(execs), 1)
         self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(1,)])

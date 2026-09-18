@@ -11,14 +11,14 @@ from urllib.parse import parse_qs
 import store.read
 from holophyte.config import budget_scale
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
+from holophyte.pool_handoff import workers_on_previous_build  # noqa: F401
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.target import worktree_path
 from store.working import effective_work
 
-# The two `origin` shapes a merge commit can link into: `https://HOST/OWNER/
-# REPO(.git)` and `git@HOST:OWNER/REPO(.git)`. Anything else is not a web
-# page the daemon can name, so its rows carry no link. Each segment is one
+# Accepted origins: https://HOST/OWNER/REPO and git@HOST:OWNER/REPO(.git).
+# Other origins carry no link. Each segment must be one
 # plain path segment: a `?`, `#`, `@`, `:` or whitespace in it would ride
 # into the link as a query, fragment or credential, so it disqualifies the
 # remote rather than being copied through.
