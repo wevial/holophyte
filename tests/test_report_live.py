@@ -140,4 +140,5 @@ class MigrationReportTests(ReportStoreCase):
         self.conn.execute("ALTER TABLE interventions DROP COLUMN note")
         self.conn.commit()
         self.assertEqual(report.migration_header(self.conn), [])
-        self.assertEqual(holophyte.serve_runs.migration_rows(self.conn, 0, 10), [])
+        self.assertEqual(
+            holophyte.serve_runs.migration_rows(self.conn, 0, 10, self.project), [])
