@@ -139,6 +139,16 @@ function Card({
               )}
             </>
           )}
+          {(body.findings ?? []).length > 0 && (
+            <ul aria-label="Advisory findings" className="mt-3 flex flex-col gap-2">
+              {body.findings!.map((finding, index) => (
+                <li key={index} className="rounded border border-line bg-card px-3 py-2 text-[13px] text-muted">
+                  <span className="mr-2 font-semibold">advisory</span>
+                  {finding.message}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <FilesTouched files={files.files} error={files.error} status={files.status} loading={files.loading} />
       </div>
