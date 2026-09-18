@@ -40,7 +40,13 @@ from time import time
 import holophyte
 import store
 import store.read
-from holophyte.board import close_out_failure, lease_turn_held, mirror_key
+from holophyte.board import (
+    body_problem,
+    close_out_failure,
+    lease_turn_held,
+    mirror_key,
+    mirror_task,
+)
 from holophyte.config import budget_scale, serve_config
 from holophyte.config_tables import BOARD_ASK_SEC, sweep_config
 from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
@@ -529,38 +535,16 @@ def linear_budget_low(now=None, out=None):
 
 
 def board_ready(conn, project, provider, out, now=None, board_ask_ms=None):
-    """How many of the board's ready issues are owed a loop, or 0 when it
-    cannot be asked or has none: the KO-411 fall-through for a mirror
-    that has no row for the ticket at all, less the rows the mirror
-    already holds in a non-ready status (KO-420).
+    """Count ready board issues owed a loop when the store has no ready work.
 
-    The store mirrors a ticket only once a loop pass has seen it, so a
-    ticket that became ready while no loop ran -- one filed with
-    `--file-ticket`, one moved from Backlog to Todo -- has no row for
-    `ready_tickets()` to find. An empty mirror therefore asks the board
-    the same question the loop's claim asks, through the provider the
-    pass was handed; for the Linear board that call is
-    `linear_provider.ready_issues()` on the target's `[board]
-    project_id`. The board's answer is its whole ready column, though,
-    and that column keeps a ticket the store holds `blocked_on_operator`,
-    `in_flight` or terminal -- the board never learns about a park, so a
-    ticket parked on its pull request counted forever, and every pass
-    started a loop whose claim could only refuse it (KO-420). Each issue
-    is therefore checked against the row `mirror_task()` mirrors it
-    under, `mirror_key()`'s `linearIssueId` in the board's project: no
-    row, or a row still `ready` with no live run holding it, is owed a
-    start; any other status is the loop's own claim to refuse and is not
-    owed one. A board that cannot be asked is one printed line and a
-    "no", as the reconcile's GitHub errors are: the next pass asks again.
-    No provider is no board to ask, and asks nothing.
+    No mirror row, or `ready` with no active run, is owed a start (KO-411).
+    Only edited `needs_spec`/`blocked_on_deps` rows are re-mirrored through
+    the loop's validation; a fresh `ready` row is owed a start (KO-472).
+    Parked, running and terminal rows remain untouched (KO-420).
 
-    Two guards spend the listing only on purpose (KO-434): Linear's
-    complexity budget low -- under a tenth of its limit -- waits for the
-    reset it names, once per reset rather than once per pass; and the
-    last ask stamped on the project's row holds the next off for
-    `board_ask_ms`, so a mirror that stays empty is not re-asked every
-    sweep interval. The stamp lands before the ask rather than after it,
-    so an ask that failed still spent the interval's one listing.
+    No provider or a failed listing returns zero. The low Linear budget
+    guard and pre-listing `boardAskedAt` stamp bound reads (KO-434).
+    Re-mirroring uses this listing without any additional board reads.
     """
     if provider is None:
         return 0
@@ -585,15 +569,31 @@ def board_ready(conn, project, provider, out, now=None, board_ask_ms=None):
         print(f"[holo2] the board could not be asked for its ready tickets"
               f" ({e}); the next pass asks again", file=out)
         return 0
-    owed = 0
-    for issue in issues:
+    return sum(_board_issue_owed(conn, project, issue, out) for issue in issues)
+
+
+def _board_issue_owed(conn, project, issue, out):
+    """Refresh only edited, unowned refusals on the existing board ask."""
+    with store.transaction(conn):
         row = conn.execute(
-            "SELECT status, activeRunId FROM tickets"
+            "SELECT status, activeRunId, mirroredAt FROM tickets"
             " WHERE linearIssueId = ? AND projectId = ?",
             (mirror_key(issue), project)).fetchone()
-        if row is None or (row[0] == "ready" and row[1] is None):
-            owed += 1
-    return owed
+        if row is None:
+            return True
+        status, active_run, mirrored_at = row
+        updated_at = issue.get("updatedAt")
+        if (status in ("needs_spec", "blocked_on_deps")
+                and updated_at is not None and updated_at > mirrored_at):
+            repo = conn.execute("SELECT repoPath FROM projects WHERE id = ?",
+                                (project,)).fetchone()[0]
+            ticket_id = mirror_task(conn, project, issue,
+                                    specced=body_problem(issue, repo) is None)
+            fresh = store.read.ticket_by_id(conn, ticket_id)
+            print(f"[holo2] re-mirrored {issue['id']}: {status} -> {fresh.status}",
+                  file=out)
+            status, active_run = fresh.status, fresh.activeRunId
+        return status == "ready" and active_run is None
 
 
 def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
