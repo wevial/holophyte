@@ -13,6 +13,7 @@ from holophyte.bot_threads import route_bot_threads
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, RunFailure, run_verify
 from holophyte.pr import NO_AUTHOR
+from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import heartbeat_while, record_round
 
@@ -329,7 +330,8 @@ def _wait_for_pushed_head(target, conn, run_id, provider, task_id, branch,
 
 def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
-              criteria=(), approved=False, reviewed=None, verified=None, fix_note=None):
+              criteria=(), approved=False, reviewed=None, verified=None, fix_note=None,
+              just_pushed=False):
     """Watch a PR until merge or park, bounded by rounds and a no-work deadline.
     Changed candidates need verification and independent review; human approval
     covers only the released SHA. Conflict recovery pushes origin/main's merge."""
@@ -341,7 +343,9 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                          f" branch {branch} preserved at {sha[:12]}")
     model = agent_route(target, "adjudicate")
     # A fix moves sha past the candidate covered by reviewed.
-    pushed_state = None
+    pushed_state = (_just_pushed_state(
+        target, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
+        reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     for pass_no in range(1, merge.pr_rounds + 1):
         state = _settled_or_park(
@@ -429,35 +433,6 @@ def _verified_merge(target, conn, run_id, provider, task_id, issue_id, branch,
                     sync_main=False)
     return _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha,
                      beat_s, pull, reviewed=reviewed, retry_conflicts=retry_conflicts)
-
-
-def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
-                 pull, state, reviewed):
-    """Handle a terminal PR or park a head that differs from the candidate."""
-    from holophyte.pullrequest import _park_on_pr
-    if state.merged:
-        print(f"[holo2] {pull.url} is already merged as"
-              f" {(state.merge_sha or '?')[:12]}")
-        return state.merge_sha
-    if state.closed:
-        from holophyte.board import release_lease_label
-        from holophyte.gates import MergeParked
-        from holophyte.reconcile import _reject_pr
-        if conn is not None and run_id is not None:
-            _reject_pr(conn, run_id, pull, state.closed_by, branch, sha)
-            ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-            release_lease_label(target, conn, ticket_id, provider, run_id)
-        raise MergeParked(f"rejected: {pull.url} closed by"
-                          f" {state.closed_by or 'unknown'}")
-    if state.head_sha and state.head_sha != sha:
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
-                    pull,
-                    f"the pull request's head is {state.head_sha[:12]},"
-                    f" not the candidate {sha[:12]} this run pushed;"
-                    " someone else pushed to the branch, and the"
-                    " babysitter does not judge or merge their commit",
-                    state.threads, reviewed=reviewed)
-    return None
 
 
 def _moved(sha, reviewed):

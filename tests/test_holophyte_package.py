@@ -205,6 +205,7 @@ DEFINED = {
         "_written_pr_text",
     ],
     # KO-386: the babysit pass joins the texts it drives.
+    _module("pr_head"): ["_pr_terminal"],
     _module("babysitter"): [
         "_answer_threads", "_decline_threads",
         "_babysit",
@@ -213,7 +214,6 @@ DEFINED = {
         "_moved",
         "_next_round",
         "_post",
-        "_pr_terminal",
         "_review_fix",
         "_settled_state",
         "_verdicts_by_kind",

@@ -277,7 +277,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     merge_sha = _babysit(target, conn, run_id, provider, task_id,
                           issue_id, task, branch, wt, sha, beat_s, url,
                           ticket, verify_cmd, contracts, budget_min,
-                          criteria, reviewed=sha, verified=sha)
+                          criteria, reviewed=sha, verified=sha, just_pushed=True)
     return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
                       merge_sha, started, budget_min, rnd)
 
