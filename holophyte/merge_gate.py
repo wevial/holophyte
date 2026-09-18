@@ -27,10 +27,10 @@ from holophyte.gates import (
     MergeLockHeld,
     MergeParked,
     RunFailure,
-    merge_lock,
     run_verify,
     sh,
 )
+from holophyte.merge_lock import live_merge_lock
 from holophyte.pullrequest import _landed_pr, _open_pr, _resume_on_pr
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 
@@ -164,9 +164,8 @@ def _gate_lock(target, conn, run_id, provider, task_id, branch, sha, beat_s):
     wait, and a wait that runs out parks the ticket naming the holder before
     the `MergeLockHeld` ends the run (an infra failure: no strike spent,
     branch and worktree untouched)."""
-    beat = (lambda: store.heartbeat(conn, run_id)) if run_id is not None else None
     try:
-        with merge_lock(target, run_id, on_wait=beat):
+        with live_merge_lock(target, conn, run_id, beat_s):
             yield
     except MergeLockHeld as e:
         _park_at_gate(conn, run_id, provider, task_id, branch, sha,

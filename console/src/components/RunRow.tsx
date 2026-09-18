@@ -3,7 +3,7 @@ import { useRunDetail } from "../hooks/useRunDetail";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import type { ReactNode } from "react";
 import { isStale } from "../lib/derive";
-import { workingMs } from "../lib/runs";
+import { mergeLockNote, workingMs } from "../lib/runs";
 import { formatDuration, formatSpan } from "../lib/format";
 import type { Run } from "../lib/types";
 import { PhasePill } from "./PhasePill";
@@ -36,10 +36,10 @@ export function RunRow({
    *  row adds it so they keep counting between polls. */
   sinceMs?: number;
 }) {
-  // /status omits the PR URL; read it from the existing detail endpoint
-  // while the merge gate is active, including when the row is collapsed.
+  // Read PR and merge-lock wait events while the gate is active, including
+  // when the row is collapsed.
   const { detail: prDetail } = useRunDetail(
-    base, run.phase === "merge_gate" && run.pr_url === undefined ? run.id : null, polls, deps,
+    base, run.phase === "merge_gate" ? run.id : null, polls, deps,
   );
   const heartbeatAge = run.heartbeat_age_ms + sinceMs;
   const stale = isStale(heartbeatAge, thresholds.heartbeat_stale_ms);
@@ -69,7 +69,7 @@ export function RunRow({
           <StrikePill strikes={run.strikes ?? 0} max={thresholds.strikes} />
         </span>
         <span>
-          <PhasePill phase={run.phase} pr_url={run.pr_url ?? prDetail?.run.pr_url} />
+          <PhasePill note={mergeLockNote(prDetail?.events)} phase={run.phase} pr_url={run.pr_url ?? prDetail?.run.pr_url} />
         </span>
         <span><TimeBoxBar elapsedMs={workingMs(run, sinceMs)} boxMs={run.time_box_ms} />
           <span className="font-mono text-[12px] text-muted">wall {formatDuration(run.elapsed_ms + sinceMs)}</span></span>
