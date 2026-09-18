@@ -46,6 +46,7 @@ from holophyte.board import (
     lease_turn_held,
     mirror_key,
     mirror_task,
+    refresh_board_states,
 )
 from holophyte.config import budget_scale, serve_config
 from holophyte.config_tables import BOARD_ASK_SEC, sweep_config
@@ -540,11 +541,12 @@ def board_ready(conn, project, provider, out, now=None, board_ask_ms=None):
     No mirror row, or `ready` with no active run, is owed a start (KO-411).
     Only edited `needs_spec`/`blocked_on_deps` rows are re-mirrored through
     the loop's validation; a fresh `ready` row is owed a start (KO-472).
-    Parked, running and terminal rows remain untouched (KO-420).
+    Parked, running and terminal statuses remain untouched (KO-420).
 
     No provider or a failed listing returns zero. The low Linear budget
     guard and pre-listing `boardAskedAt` stamp bound reads (KO-434).
-    Re-mirroring uses this listing without any additional board reads.
+    Open mirrors also refresh board state by identifier, including tickets
+    absent from the ready listing because the operator shelved them.
     """
     if provider is None:
         return 0
@@ -569,6 +571,7 @@ def board_ready(conn, project, provider, out, now=None, board_ask_ms=None):
         print(f"[holo2] the board could not be asked for its ready tickets"
               f" ({e}); the next pass asks again", file=out)
         return 0
+    refresh_board_states(conn, project, provider)
     return sum(_board_issue_owed(conn, project, issue, out) for issue in issues)
 
 

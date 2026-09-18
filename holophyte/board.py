@@ -298,6 +298,29 @@ def merge_drift(conn, run_id, provider, issue_id):
         claimed, store.contract_snapshot(*task_contract(live)))
 
 
+def refresh_board_states(conn, project, provider):
+    """Refresh workflow names even for tickets absent from the ready listing.
+
+    Fetching by identifier can see Backlog, unlike the claim query. Only
+    boardState is refreshed: neither the frozen contract nor claim status
+    follows this read. A missing issue or failed read preserves the cache.
+    """
+    if project is None:
+        return
+    for ticket in store.read.open_tickets(conn, project):
+        try:
+            task = provider.fetch_task(ticket.linearIdentifier)
+        except Exception as error:  # any transport failure leaves the cache intact
+            print(f"[holo2] board state refresh skipped {ticket.linearIdentifier}:"
+                  f" {error}")
+            continue
+        state = task.get("board_state") if task else None
+        if state is not None:
+            with store.transaction(conn):
+                conn.execute("UPDATE tickets SET boardState = ? WHERE id = ?",
+                             (state, ticket.id))
+
+
 def mirror_task(conn, project, task, specced=True):
     """Mirror the offered ticket's live body into the store; return its id.
 
