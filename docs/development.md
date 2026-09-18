@@ -107,6 +107,7 @@ Each module, one line:
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
   the reads spend from.
+- `holophyte/startup.py` — eager package imports, build identity and live-worker checkout guard.
 - `holophyte/pool_handoff.py` — schema-aware restart and child ownership across exec.
 - `holophyte/pool.py` — the worker pool and its scheduler (KO-343):
   `scheduler()` over `factory.py --worker` children under
