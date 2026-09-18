@@ -37,6 +37,75 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                                  cases.BabysitHelpers, MergeModeFixture):
     """Thread judgment, bot policy, operator notes, and fix rounds."""
+    def test_latest_mention_is_fixed_without_judgment_and_resolved(self):
+        self.mentioned_thread_is_fixed(("reviewer", "User"))
+
+    def test_advisory_bot_with_human_mention_is_an_instruction(self):
+        self.mentioned_thread_is_fixed(("review-bot", "Bot"))
+
+    def mentioned_thread_is_fixed(self, opener):
+        self.configure('[merge]\nmode = "pr"\nbot_threads = "advisory"\n')
+        thread = ("src/app.py", 30, opener, "Which token?",
+                  ((("operator", "User"),
+                    "@HoLoPhYtE drop guestTokenId and use the path tokenId"),))
+        self.fake_route(states=[self.pr_state([thread]), self.pr_state()])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: use path token"), APPROVE,
+                            provider=self.provider())
+        self.assertNotIn("adjudicate", fake.roles)
+        self.assertEqual(fake.roles[:4],
+                         ["implement", "review", "implement", "implement"])
+        goal = fake.turns[3].goal
+        self.assertIn("Instruction from @operator on the pull request:", goal)
+        self.assertIn("drop guestTokenId and use the path tokenId", goal)
+        replies = [data for kind, data in self.api_calls() if kind == "reply"]
+        self.assertEqual(len(replies), 1)
+        self.assertIn("Addressed in ", replies[0]["body"])
+        self.assertIn(("resolve", {"thread": "PRRT_1"}), self.api_calls())
+
+    def test_unmentioned_latest_reply_is_judged_with_whole_conversation(self):
+        self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
+        threads = [
+            ("src/app.py", 30, ("reviewer", "User"), "Which token?",
+             ((("operator", "User"), "Use the path tokenId"),)),
+            ("src/app.py", 40, ("reviewer", "User"), "@holophyte rename it",
+             ((("operator", "User"), "Which name should we use?"),)),
+        ]
+        self.fake_route(states=[self.pr_state(threads)])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- use path tokenId\n"
+                                  "THREAD 2: HUMAN -- a question"),
+                            Commit("fix: use path token"), provider=self.provider())
+        goal = fake.turns[3].goal
+        self.assertLess(goal.index("@reviewer: Which token?"),
+                        goal.index("@operator: Use the path tokenId"))
+        self.assertIn("@reviewer: @holophyte rename it", goal)
+        self.assertIn("@operator: Which name should we use?", goal)
+        self.assertIn("a concrete change stated by a later reply "
+                      "is the thread's request", goal)
+        self.assertIn("use path tokenId", fake.turns[4].goal)
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state", "reply"])
+
+    def test_custom_handle_routes_only_its_exact_latest_mention(self):
+        self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n'
+                       'mention_handle = "factory-bot"\n')
+        threads = [("src/app.py", 30, ("operator", "User"),
+                    "@factory-bot use path tokenId"),
+                   ("src/app.py", 40, ("reviewer", "User"),
+                    "@holophyte @factory-bot-extra @factory-bot2 which token?")]
+        self.fake_route(states=[self.pr_state(threads)])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: HUMAN -- a question"),
+                            Commit("fix: use path token"), provider=self.provider())
+        self.assertNotIn("use path tokenId", fake.turns[3].goal)
+        self.assertIn(threads[1][3], fake.turns[3].goal)
+        self.assertIn("Instruction from @operator on the pull request:\n"
+                      "use path tokenId",
+                      fake.turns[4].goal)
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "resolve"])
+        self.assertIn("needs a human's answer", self.question())
+
     def declined_thread(self, author, config=""):
         self.configure('[merge]\nmode = "pr"\n' + config)
         thread = (*self.NIT[:2], author, self.NIT[3])

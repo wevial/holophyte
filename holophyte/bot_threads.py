@@ -4,6 +4,7 @@ from dataclasses import replace
 import store
 from holophyte import maintainer_notes
 from holophyte.agents import agent_route
+from holophyte.thread_mentions import classify
 
 
 def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
@@ -14,7 +15,8 @@ def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
 
     threads = []
     for thread in state.threads:
-        if maintainer_notes.is_note(thread):
+        mentioned = classify(thread, merge.mention_handle).classification == "MENTIONED"
+        if maintainer_notes.is_note(thread) or mentioned:
             threads.append(thread)
             continue
         is_bot = thread.author_kind == "bot" or thread.author in merge.bot_logins

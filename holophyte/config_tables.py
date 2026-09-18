@@ -391,6 +391,7 @@ MERGE_KEYS = {
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "pr_style": "",
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
+    "mention_handle": "holophyte",
     "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
                                "greptile-apps", "github-actions"),
 }
@@ -441,7 +442,7 @@ def merge_config(target):
                     f" got {value!r}")
             values[key] = value
             continue
-        if key == "pr_style":
+        if key in ("pr_style", "mention_handle"):
             if not isinstance(value, str):
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be a"

@@ -100,7 +100,12 @@ One pass:
    A head that is not the candidate this run pushed -- someone else pushed
    to the branch -- parks the run naming both shas: the checks and threads
    are about their commit, and the babysitter judges and merges only its own.
-2. **Verdict.** A thread a person opened -- its opening author is a
+2. **Verdict.** A thread whose latest comment mentions `@holophyte`
+   (case-insensitive; configurable with `[merge] mention_handle`) is an
+   instruction. It bypasses adjudication, is fixed using that comment's
+   request, then receives an `Addressed in SHA` reply and is resolved. This
+   also applies to a bot thread with a human mention reply. Otherwise,
+   a thread a person opened -- its opening author is a
    GitHub `User`, or an account GitHub no longer names -- is `HUMAN`,
    "opened by a person", before the adjudicator is asked: bots get
    replies, people do not, and no reviewer is named to tell them apart.

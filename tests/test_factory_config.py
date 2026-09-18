@@ -47,6 +47,14 @@ from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
 class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
+    def test_merge_mention_handle(self):
+        self.locate("")
+        self.assertEqual(holophyte.config.merge_config(self.tgt).mention_handle,
+                         "holophyte")
+        self.locate('[merge]\nmention_handle = "factory-bot"\n')
+        self.assertEqual(holophyte.config.merge_config(self.tgt).mention_handle,
+                         "factory-bot")
+
     def test_merge_check_wait_default_override_and_validation(self):
         for value, expected in ((None, 1800), ("3600", 3600)):
             self.locate("" if value is None else f"[merge]\ncheck_wait_sec = {value}\n")
