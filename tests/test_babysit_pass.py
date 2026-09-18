@@ -13,16 +13,11 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-# `fake_agent` is a helper, not a test module: discovery never imports it, and
-# how this file is imported decides whether `tests/` is on the path at all.
+# Discovery never imports `fake_agent`; put its `tests/` directory on the path.
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
-from babysit_fixture import (  # noqa: E402
-    ConflictRefusalCases,
-    OperatorNoteCase,
-    SpentCapReview,
-)
+import babysit_fixture as cases  # noqa: E402
 from bot_thread_fixture import BotThreadCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
@@ -44,15 +39,9 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
-class MergeModeBabysitPassTests(OperatorNoteCase, BotThreadCases,
-                              ConflictRefusalCases, MergeModeFixture):
+class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
+                              cases.ConflictRefusalCases, MergeModeFixture):
     """End-to-end review, fix, and merge behavior for PR babysitting."""
-    def test_operator_note_drives_fix_without_public_posts_or_judgment(self):
-        self.operator_note_pass(False)
-
-    def test_operator_note_joins_two_judged_bot_threads(self):
-        self.operator_note_pass(True)
-
     def declined_thread(self, author, config=""):
         self.configure('[merge]\nmode = "pr"\n' + config)
         thread = (*self.NIT[:2], author, self.NIT[3])
@@ -464,7 +453,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, BotThreadCases,
 
     def test_babysit_gets_a_recorded_fix_round_past_the_spent_cap(self):
         self.resume_rejected_fix()
-        review = SpentCapReview(self.db, REQUEST_CHANGES)
+        review = cases.SpentCapReview(self.db, REQUEST_CHANGES)
         fake, _ = self.loop(review, Commit("fix past cap"), APPROVE,
                             provider=self.provider())
         self.assertEqual(fake.roles, ["review", "implement", "review"])

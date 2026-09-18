@@ -308,6 +308,12 @@ class SpentCapReview:
 
 
 class OperatorNoteCase:
+    def test_operator_note_drives_fix_without_public_posts_or_judgment(self):
+        self.operator_note_pass(False)
+
+    def test_operator_note_joins_two_judged_bot_threads(self):
+        self.operator_note_pass(True)
+
     def test_operator_note_stays_private_when_author_is_a_configured_bot(self):
         self.operator_note_pass(
             False, 'bot_threads = "advisory"\nbot_logins = ["maintainer"]\n')
