@@ -69,10 +69,8 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
         provider = self.provider()
-
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=provider)
-
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
         # The seventh is the park reading the pull request once more, after
@@ -141,11 +139,9 @@ class MergeModePullRequestTests(MergeModeFixture):
                 "SELECT summary FROM runEvents WHERE kind = 'pull_request'"
                 " ORDER BY seq")))
             return url
-
         with patch.object(holophyte.loop, "_open_pr", open_and_observe):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
-
         (url, rows, events), = observed
         self.assertEqual(url, self.URL)
         self.assertEqual(rows, [("merge_gate", None, url)])
@@ -163,12 +159,10 @@ class MergeModePullRequestTests(MergeModeFixture):
         adopted = "https://github.com/example/repo/pull/2177"
         self.fake_route(open_pr=adopted)
         provider = self.provider()
-
         with patch.object(holophyte.pr, "SLEEP") as sleep:
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 provider=provider)
         sleep.assert_not_called()
-
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
@@ -447,7 +441,9 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(filled.replace(part, ""), base)
 
     def refresh(self, answer, answered="ADDRESS: replace correlated subquery"):
-        with patch.object(holophyte.loop, "_timed", return_value=answer) as turn:
+        with patch.object(holophyte.loop, "_timed",
+                          side_effect=answer if callable(answer) else
+                          lambda *args: answer) as turn:
             holophyte.pullrequest.refresh_pr_text(
                 self.tgt, None, None, "KO-131", "add a thing", BRANCH,
                 self.BODY, 60, self.target, 5,
@@ -461,8 +457,12 @@ class MergeModePullRequestTests(MergeModeFixture):
                      "## Evidence\n\n![capture](https://example/screen.png)\n\n"
                      "<!-- greptile_comment -->\nBot's appended block.\n")
         self.pr_body.write_text("Original subquery description.\n\n" + preserved)
-        prompt = self.refresh(
-            ("TITLE: Ignored title\nGrouped join description.", False))
+        appended = "\n<!-- new bot -->\nAppended during writing.\n"
+        def write_and_append(*args):
+            self.pr_body.write_text(self.pr_body.read_text() + appended)
+            return "TITLE: Ignored title\nGrouped join description.", False
+        prompt = self.refresh(write_and_append)
+        preserved += appended
         first = self.pr_body.read_text()
         self.assertTrue(first.endswith(preserved))
         self.assertTrue(first.startswith("Grouped join description."))

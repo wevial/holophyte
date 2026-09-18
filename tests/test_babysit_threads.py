@@ -289,6 +289,24 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual([r["exitCode"] for r in results], [0])
 
 
+    def test_allowance_refresh_keeps_original_address_and_retry_context(self):
+        self.resume_rejected_fix()
+        self.serve(self.pr_state([self.DEFECT]), self.pr_state())
+        fake, _ = self.loop(
+            Reply("THREAD 1: ADDRESS -- preserve missing input"),
+            Commit("thread fix on resume"), REQUEST_CHANGES,
+            Commit("review fix"), APPROVE,
+            Idle("TITLE: Updated description\nBoth defects fixed."),
+            provider=self.provider())
+
+        prompt = fake.turns[-1].goal
+        body = self.pr_body.read_text()
+        for text in ("ADDRESS: preserve missing input",
+                     "scripted change is incomplete", "repair the pin"):
+            self.assertIn(text, prompt)
+            self.assertIn(text, body)
+        self.assertIn("## Changes since first review\n- Round 1:", body)
+
     def test_babysit_review_fix_waits_for_head_and_checks_before_merging(self):
         old, fake, naps = self.review_fix_propagation(catches_up=True)
         self.assertEqual(fake.roles, ["review", "implement", "review", "implement"])

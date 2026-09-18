@@ -187,7 +187,6 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
     return title, (text if refresh is not None else
                    pr.pr_body_written(text, task_id, issue_url))
 
-
 CHANGES_HEADING = "## Changes since first review"
 
 
@@ -204,9 +203,9 @@ def _without_changes(text):
 def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
                     beat_s, wt, budget_min, pull, answered):
     """One bounded writing turn after approval; refusal never overwrites prose."""
+    endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
-        current = pr.rest(target, pull, "GET",
-                          f"repos/{pull.repo}/pulls/{pull.number}")["body"] or ""
+        current = pr.rest(target, pull, "GET", endpoint)["body"] or ""
     own, _, _, _ = pr.split_pr_body(current)
     written = _written_pr_text(
         target, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
@@ -219,7 +218,8 @@ def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
     history.append(f"- Round {len(history) + 1}: {' '.join(answered.split())}")
     text = description.rstrip() + "\n\n" + CHANGES_HEADING + "\n" + "\n".join(history)
     with heartbeat_while(conn, run_id, beat_s):
-        pr.edit_pr_body(target, pull, pr.replace_pr_text(current, text))
+        latest = pr.rest(target, pull, "GET", endpoint)["body"] or ""
+        pr.edit_pr_body(target, pull, pr.replace_pr_text(latest, text))
 
 
 def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,

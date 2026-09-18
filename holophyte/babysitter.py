@@ -455,8 +455,7 @@ def _moved(sha, reviewed):
 
 def _fix_answers(conn, run_id, rnd, fix_note):
     """Recover addressed adjudications since the preceding independent pass."""
-    lines = []
-    rounds = store.read.rounds_of(conn, run_id) if conn is not None else []
+    lines, rounds = [], store.read.rounds_of(conn, run_id) if conn is not None else []
     for recorded in reversed(rounds):
         if recorded.round >= rnd:
             continue
@@ -532,12 +531,13 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
               "witnessed by the review of the fix; treating as "
               "REQUEST_CHANGES")
         verdict += "\n\n" + "\n".join(f["message"] for f in unwitnessed)
+    recovered = _fix_answers(conn, run_id, rnd, fix_note)
+    answered = "\n".join(part for part in (fix_context, recovered) if part)
     if not unwitnessed and review_runner.terminal_verdict(verdict) == "APPROVE":
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"
                f"Reviewer verdict:\n{verdict}", provider)
         print(f"[holo2] the fix at {sha[:12]} is approved")
-        answered = fix_context or _fix_answers(conn, run_id, rnd, fix_note)
         if not answered:
             answered = sh(["git", "log", "--format=%s",
                            f"{reviewed or base_sha}..{sha}"], cwd=wt)
@@ -564,7 +564,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
         return _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                            fixed, None, beat_s, pull, ticket, verify_cmd,
                            contracts, criteria, budget_min=budget_min,
-                           fix_context=f"{verdict}\nOperator babysit note: {fix_note}")
+                           fix_context=f"{answered}\n{verdict}")
     # No `reviewed`: the judgement on record is this rejection, so the
     # resume that follows reviews the candidate again before any merge.
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
