@@ -173,6 +173,6 @@ class OffBoardMirrorTests(LoopFixture):
         # One worker for the relisted ticket; without the mirror-path
         # recovery the count was zero and nothing spawned.
         self.assertEqual(len(pool.spawned), 1)
-        self.assertIsNone(self.rc)
+        self.assertEqual(self.rc, 0)
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("merged",)])

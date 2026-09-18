@@ -205,7 +205,8 @@ def scheduler(target, provider, knobs):
     drains and stops; only a schema move drains before re-exec.
     An idle worker pauses spawning until the next exit recounts: a sibling
     may have claimed ahead of it. Return zero for an empty, drained queue,
-    nonzero if any worker failed or stopped for a human."""
+    one if a worker failed, stopped for a human, or a board listing failed.
+    A failed startup probe returns one before the scheduler is entered."""
     from holophyte.claim import _park_unlisted
     from holophyte.dispatch import _startup_sweep
     from holophyte.operator import _reexec, self_hosted
@@ -276,7 +277,7 @@ def scheduler(target, provider, knobs):
                     _park_unlisted(conn, project,
                                    [task["id"] for task in listing])
                 print("[holo2] Linear has no ready tickets. done.")
-                return 1 if state.failed else None
+                return 1 if state.failed else 0
             timeout = None if len(pool) >= knobs.workers else knobs.tick_sec
             pid, code = WAIT({pid: child for pid, (_, child) in pool.items()},
                              timeout)

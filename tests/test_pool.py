@@ -198,16 +198,31 @@ class PoolTests(PoolRestartCases, LoopFixture):
         self.assertEqual(len(pool.spawned), 4)
         self.assertEqual(len(pool.reaped), 4)
         self.assertEqual(pool.alive, [])
-        self.assertIsNone(self.rc)
+        self.assertEqual(self.rc, 0)
         # Each child is this command line plus `--worker`, with the slot in
         # its environment for the `[holo2 wN]` prefix.
         self.assertEqual([argv[1:] for argv in pool.spawned],
                          [["-u", "factory.py", str(self.target), "--worker"]] * 4)
         self.assertEqual([env[holophyte.pool.WORKER_SLOT_ENV]
                           for env in pool.envs], ["1", "2", "3", "4"])
-        self.assertIn("[holo2] Linear has no ready tickets. done.", self.out)
+        self.assertEqual(self.out.splitlines()[-1],
+                         "[holo2] Linear has no ready tickets. done.")
         # The exit note a re-exec'd scheduler leaves for the sweep.
         self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(0,)])
+
+    def test_a_failed_startup_probe_exits_nonzero_without_spawning(self):
+        provider = StubProvider(a_task(1))
+        probe = holophyte.agents.ProbeResult(
+            ["implementer"], 1, "broken harness", 90)
+
+        with patch.object(holophyte.operator, "probe_implementer",
+                          return_value=probe):
+            pool = self.run_scheduler(2, provider, [])
+
+        self.assertEqual(self.rc, 1)
+        self.assertEqual(pool.spawned, [])
+        self.assertIn("implementer probe failed (exit 1)", self.out)
+        self.assertNotIn("Linear has no ready tickets", self.out)
 
     def test_a_timer_tick_with_a_slot_free_spawns_for_a_ticket_filed_since(self):
         """A timer tick fills a free slot with newly ready work."""
@@ -232,7 +247,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         self.assertEqual(len(pool.spawned), 2)
         self.assertEqual(len(pool.reaped), 2)
         self.assertEqual(pool.timeouts, [45, 45, 45])
-        self.assertIsNone(self.rc)
+        self.assertEqual(self.rc, 0)
         # The tick itself printed nothing; only the spawn it made shows.
         # queue.clear() emptied the board without a claim, so the drain's
         # mirror reconcile (KO-425) walks KO-132's `ready` row to
@@ -261,7 +276,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
 
         self.assertEqual(len(pool.spawned), 3)
         self.assertEqual(pool.timeouts, [None, 120, 120])
-        self.assertIsNone(self.rc)
+        self.assertEqual(self.rc, 0)
 
     def test_the_pool_refills_while_live_workers_hold_their_leases(self):
         """Live leases do not prevent free slots from being refilled."""
@@ -288,7 +303,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         # Three at the first tick, a fourth at the second: two free tickets
         # and two live workers make a pool of three, one short.
         self.assertEqual(len(pool.spawned), 4)
-        self.assertIsNone(self.rc)
+        self.assertEqual(self.rc, 0)
 
     def test_a_leased_ticket_is_not_counted_as_claimable(self):
         """Two ready tickets, one already held by a live run on this
@@ -305,7 +320,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         ])
 
         self.assertEqual(len(pool.spawned), 1)
-        self.assertIsNone(self.rc)
+        self.assertEqual(self.rc, 0)
 
     def test_the_claimable_count_is_one_store_read_per_tick(self):
         """Count claimable tickets with one store read per tick."""
@@ -348,7 +363,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         ])
 
         self.assertEqual(len(pool.spawned), 1)
-        self.assertIsNone(self.rc)
+        self.assertEqual(self.rc, 0)
 
     def test_a_listing_failure_is_not_an_empty_queue(self):
         """The board cannot be asked: nothing is spawned, and the scheduler
