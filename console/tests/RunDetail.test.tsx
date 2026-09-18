@@ -540,3 +540,17 @@ test("a 404 says the run is not in the store and the Floor row still collapses a
   await settle();
   expect(row.querySelector("[data-detail-error]")!.textContent).toBe("run 91 is not in the store");
 });
+
+test("bot findings stay visible as advisory on active and completed run cards", async () => {
+  for (const ended_ms of [null, T + 20 * MINUTE]) {
+    await mount({
+      ...DETAIL,
+      run: { ...DETAIL.run, ended_ms },
+      findings: [{ tone: "advisory", message: "https://example.test/thread: Consider a rename" }],
+    }, T + 20 * MINUTE);
+    const findings = screen.getByRole("list", { name: "Advisory findings" });
+    expect(within(findings).getByText("advisory")).toBeTruthy();
+    expect(findings.textContent).toContain("https://example.test/thread: Consider a rename");
+    cleanup();
+  }
+});

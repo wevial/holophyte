@@ -102,6 +102,7 @@ export interface RunDetailBody {
     /** The loop's review-round cap; a body without it falls back to the rounds seen. */
     max_rounds?: number;
   };
+  findings?: { tone: "advisory"; message: string }[];
   rounds: Round[];
   events: RunEvent[];
 }
