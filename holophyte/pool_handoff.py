@@ -56,7 +56,7 @@ def _schema_changed(target):
     return True
 
 
-def prepare_restart(state, target):
+def prepare_restart(state, target, pool):
     """Update once, then decide against the exact tree exec will load."""
     from holophyte.operator import _fast_forward_checkout, sh
 
@@ -65,7 +65,9 @@ def prepare_restart(state, target):
     if state.prepared_sha is None:
         state.prepared_sha = sh(["git", "rev-parse", "--short", "HEAD"],
                                target.path)
-        _fast_forward_checkout(target)
+        # Ordinary restarts preserve workers; they are not a schema drain.
+        # A drain reaches _reexec only after the pool is empty.
+        _fast_forward_checkout(target, pool)
         state.schema_changed = _schema_changed(target)
     return not state.schema_changed
 

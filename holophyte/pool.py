@@ -17,6 +17,7 @@ from holophyte.gates import MergeLockHeld, merge_lock
 from holophyte.reconcile import _reconcile_at_startup, _reconcile_pull_requests
 from holophyte.reexec import reexec_command
 from holophyte.runs import open_store
+from holophyte.startup import banner
 from holophyte.supervisor import Sweep, linear_budget_low
 
 # --- the pool (KO-343) -------------------------------------------------------
@@ -76,6 +77,13 @@ def worker(target, provider):
     from holophyte.agents import startup_routes
     from holophyte.config_tables import AGENT_FALLBACK_KEYS
 
+    slot = os.environ.get(WORKER_SLOT_ENV)
+    if slot:
+        # Both streams: a traceback or a verify line's stderr lands in the
+        # same shared log, attributable to this worker only by the prefix.
+        sys.stdout = _PrefixedOut(sys.stdout, f"[holo2 w{slot}]")
+        sys.stderr = _PrefixedOut(sys.stderr, f"[holo2 w{slot}]")
+    banner()
     configured = target.config().get("agents") or {}
     reset(target)
     try:
@@ -90,18 +98,10 @@ def worker(target, provider):
 
 def _worker(target, provider):
     """Claim and dispatch one ticket, then return its worker exit status.
-
-    The scheduler owns startup reconciliation, queue mirroring and re-exec.
-    This child owns the claim, lease, phases and close-out for one ticket."""
+    The scheduler mirrors, reconciles and re-execs; this child owns one run."""
     from holophyte.claim import _claim_next
     from holophyte.dispatch import PARKED, _dispatch
 
-    slot = os.environ.get(WORKER_SLOT_ENV)
-    if slot:
-        # Both streams: a traceback or a verify line's stderr lands in the
-        # same shared log, attributable to this worker only by the prefix.
-        sys.stdout = _PrefixedOut(sys.stdout, f"[holo2 w{slot}]")
-        sys.stderr = _PrefixedOut(sys.stderr, f"[holo2 w{slot}]")
     knobs = loop_config(target)
     conn = open_store(target)
     try:
@@ -223,7 +223,7 @@ def scheduler(target, provider, knobs):
         first_tick = True
         while True:
             state.check_schema(target)
-            if pool_handoff.prepare_restart(state, target):
+            if pool_handoff.prepare_restart(state, target, pool):
                 pool_handoff.save(target, pool, state.failed)
                 _reexec(target, conn, project, state.restart_reason,
                         prepared_sha=state.prepared_sha)

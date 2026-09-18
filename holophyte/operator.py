@@ -26,10 +26,10 @@ from holophyte.reconcile import (
 from holophyte.reexec import reexec_self
 from holophyte.report import report_lines
 from holophyte.runs import open_store
+from holophyte.startup import banner, checkout_blocked
 from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
 
-# Replace the process after a self-merge; tests observe through this seam.
-EXEC = os.execv
+EXEC = os.execv  # Replace after a self-merge; tests observe through this seam.
 
 
 def self_hosted(target):
@@ -39,9 +39,7 @@ def self_hosted(target):
 
 def main(target, provider):
     """Probe before claiming, then run serially or schedule worker children."""
-    checkout = Path(__file__).resolve().parent.parent
-    sha = sh(["git", "rev-parse", "--short", "HEAD"], checkout)
-    print(f"[holo2] factory at {sha}", flush=True)
+    banner()
     reset(target)
     try:
         knobs = loop_config(target)
@@ -199,8 +197,10 @@ def _schema_move(target):
     return None
 
 
-def _fast_forward_checkout(target):
+def _fast_forward_checkout(target, worker_pids=(), *, draining=False):
     """Best effort: unsafe or diverged checkouts still execute the disk build."""
+    if checkout_blocked(worker_pids, draining):
+        return
     try:
         if sh(["git", "branch", "--show-current"], target.path) != "main":
             raise RuntimeError("not on main")
