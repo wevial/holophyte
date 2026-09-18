@@ -292,6 +292,51 @@ def pr_body_written(body, task_id, issue_url):
     return f"{body}\n\n{link}" if body else link
 
 
+def split_pr_body(body):
+    """Split loop text, Linear line, Evidence block and appended tail losslessly.
+
+    Whitespace following a preserved section belongs to that section. The
+    first HTML comment after Linear always starts externally owned text.
+    """
+    linear = re.search(r"^Linear:[^\n]*(?:\n|$)", body, re.MULTILINE)
+    if linear is None:
+        return body, "", "", ""
+    own, link = body[:linear.start()], linear.group()
+    rest = body[linear.end():]
+    space = len(rest) - len(rest.lstrip("\r\n"))
+    link += rest[:space]
+    rest = rest[space:]
+    if not rest.startswith("## Evidence"):
+        return own, link, "", rest
+    end = re.search(r"<!--|^## (?!Evidence(?:\r?$))", rest, re.MULTILINE)
+    cut = end.start() if end else len(rest)
+    return own, link, rest[:cut], rest[cut:]
+
+
+def replace_pr_text(body, text):
+    """Replace only the loop's prose, retaining the preserved slices verbatim."""
+    _, link, evidence, tail = split_pr_body(body)
+    return text.rstrip() + ("\n\n" if link else "") + link + evidence + tail
+
+
+def edit_pr_body(target, pull, body):
+    """Edit only the body through the configured GitHub route."""
+    if shutil.which(GH) is None:
+        rest(target, pull, "PATCH", f"repos/{pull.repo}/pulls/{pull.number}",
+             {"body": body})
+        return
+    try:
+        result = subprocess.run(
+            [GH, "pr", "edit", pull.url, "--body-file", "-"],
+            cwd=target.path, input=body, capture_output=True, text=True,
+            timeout=PR_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise InfraFailure(f"{GH} pr edit did not answer in {PR_TIMEOUT}s") from None
+    if result.returncode:
+        detail = " ".join((result.stderr or result.stdout).split())[-500:]
+        raise InfraFailure(f"{GH} pr edit failed: {detail}")
+
+
 def push_branch(target, branch):
     """`git push origin BRANCH` from the target checkout; a refusal is an
     `InfraFailure` naming the remote's answer, with the branch untouched."""

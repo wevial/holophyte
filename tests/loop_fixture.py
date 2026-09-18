@@ -553,7 +553,11 @@ class MergeModeFixture(LoopFixture):
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
             '    *"GET repos/example/repo/pulls/"*) '
-            'echo \'{"title":"feat(x): do y (KO-1)","body":""}\'; exit 0;;\n'
+            "python3 -c 'import json,pathlib; "
+            f'p=pathlib.Path("{self.pr_body}"); '
+            'print(json.dumps(dict(title="feat(x): do y (KO-1)", '
+            'body=p.read_text() if p.exists() else "")))'
+            "'; exit 0;;\n"
             '  esac\n'
             f'  n=$(ls "{self.api_dir}" | wc -l); n=$((n+1))\n'
             f'  body="{self.api_dir}/$n.json"; cat > "$body"\n'

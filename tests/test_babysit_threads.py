@@ -50,7 +50,7 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                     "@HoLoPhYtE drop guestTokenId and use the path tokenId"),))
         self.fake_route(states=[self.pr_state([thread]), self.pr_state()])
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            Commit("fix: use path token"), APPROVE,
+                            Commit("fix: use path token"), APPROVE, Idle(""),
                             provider=self.provider())
         self.assertNotIn("adjudicate", fake.roles)
         self.assertEqual(fake.roles[:4],
@@ -195,7 +195,7 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                                 self.pr_state()])
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
-                            Commit("fix: default load()"), APPROVE,
+                            Commit("fix: default load()"), APPROVE, Idle(""),
                             provider=self.provider())
 
         self.assertNotEqual(fake.turns[1].candidate_sha,
@@ -214,11 +214,12 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
 
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
-                            Commit("fix: default load()"), APPROVE,
+                            Commit("fix: default load()"), APPROVE, Idle(""),
                             provider=self.provider())
 
         self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
-                                      "implement", "review"])
+                                      "implement", "review", "implement"])
+        self.assertIn("ADDRESS: a real crash", fake.turns[6].goal)
         merge = [v for kind, v in self.api_calls() if kind == "merge"]
         self.assertEqual(len(merge), 1)
         fixed = merge[0]["sha"]
@@ -268,11 +269,12 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
 
     def test_babysit_review_dispatches_one_fix_with_findings_and_note(self):
         self.resume_rejected_fix()
-        fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE,
+        fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE, Idle(""),
                             provider=self.provider())
-        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertEqual(fake.roles, ["review", "implement", "review", "implement"])
         self.assertIn("scripted change is incomplete", fake.turns[1].goal)
         self.assertIn("repair the pin", fake.turns[1].goal)
+        self.assertIn("repair the pin", fake.turns[3].goal)
         fixed = fake.turns[2].candidate_sha
         self.assertNotEqual(fixed, fake.turns[0].candidate_sha)
         self.assertEqual([v["sha"] for kind, v in self.api_calls()
@@ -289,7 +291,7 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
 
     def test_babysit_review_fix_waits_for_head_and_checks_before_merging(self):
         old, fake, naps = self.review_fix_propagation(catches_up=True)
-        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertEqual(fake.roles, ["review", "implement", "review", "implement"])
         fixed = fake.turns[2].candidate_sha
         self.assertNotEqual(old, fixed)
         self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
@@ -301,7 +303,7 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
 
     def test_babysit_review_fix_head_timeout_parks_naming_both_shas(self):
         old, fake, naps = self.review_fix_propagation(catches_up=False)
-        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertEqual(fake.roles, ["review", "implement", "review", "implement"])
         fixed = fake.turns[2].candidate_sha
         self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
         self.assertEqual(sum(naps), 31)
@@ -314,9 +316,9 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
     def test_babysit_gets_a_recorded_fix_round_past_the_spent_cap(self):
         self.resume_rejected_fix()
         review = cases.SpentCapReview(self.db, REQUEST_CHANGES)
-        fake, _ = self.loop(review, Commit("fix past cap"), APPROVE,
+        fake, _ = self.loop(review, Commit("fix past cap"), APPROVE, Idle(""),
                             provider=self.provider())
-        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertEqual(fake.roles, ["review", "implement", "review", "implement"])
         self.assertEqual(review.count, 1)
         self.assertEqual(self.read("SELECT reviewRoundCap, reviewRoundCount"
                                    " FROM runs WHERE id = 2"), [(1, 4)])

@@ -446,6 +446,58 @@ class MergeModePullRequestTests(MergeModeFixture):
                         filled.index("Style instructions"))
         self.assertEqual(filled.replace(part, ""), base)
 
+    def refresh(self, answer, answered="ADDRESS: replace correlated subquery"):
+        with patch.object(holophyte.loop, "_timed", return_value=answer) as turn:
+            holophyte.pullrequest.refresh_pr_text(
+                self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                self.BODY, 60, self.target, 5,
+                holophyte.pr_status.parse_pr_url(self.URL), answered)
+        return turn.call_args.args[-1]
+
+    def test_refresh_preserves_metadata_and_accumulates_fix_rounds(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        preserved = ("Linear: KO-131 (https://linear.app/example/KO-131)\n\n"
+                     "## Evidence\n\n![capture](https://example/screen.png)\n\n"
+                     "<!-- greptile_comment -->\nBot's appended block.\n")
+        self.pr_body.write_text("Original subquery description.\n\n" + preserved)
+        prompt = self.refresh(
+            ("TITLE: Ignored title\nGrouped join description.", False))
+        first = self.pr_body.read_text()
+        self.assertTrue(first.endswith(preserved))
+        self.assertTrue(first.startswith("Grouped join description."))
+        self.assertIn("## Changes since first review\n- Round 1: "
+                      "ADDRESS: replace correlated subquery", first)
+        self.assertIn("the description as it stands", prompt)
+        self.assertIn("Original subquery description.", prompt)
+        self.assertIn("what this fix answered", prompt)
+        self.assertIn("git diff main...HEAD", prompt)
+        self.refresh(("TITLE: Still ignored\nJoin with null handling.", False),
+                     "ADDRESS: preserve null rows")
+        second = self.pr_body.read_text()
+        self.assertTrue(second.endswith(preserved))
+        self.assertIn("## Changes since first review\n"
+                      "- Round 1: ADDRESS: replace correlated subquery\n"
+                      "- Round 2: ADDRESS: preserve null rows", second)
+        edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
+        self.assertEqual(edits, [f"gh pr edit {self.URL} --body-file -"] * 2)
+
+    def test_refresh_refusal_leaves_body_untouched(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        original = ("Good description.\n\nLinear: KO-131\n\n## Evidence\n"
+                    "Capture\n<!-- bot -->tail\n")
+        self.pr_body.write_text(original)
+        for answer, reason in [(("", True), "ran out of time"),
+                               (("No title line", False), "no `TITLE:` line")]:
+            with self.subTest(reason=reason), patch(
+                    "sys.stdout", new_callable=io.StringIO) as out:
+                self.refresh(answer)
+                self.assertEqual(self.pr_body.read_text(), original)
+                self.assertEqual(len(out.getvalue().splitlines()), 1)
+                self.assertIn(reason, out.getvalue())
+        self.assertFalse(any(c.startswith("gh pr edit") for c in self.recorded()))
+
     def test_a_squash_only_repository_merges_with_its_configured_method(self):
         """Squash uses PR metadata, pins the candidate and records the landed sha."""
         self.configure('[merge]\nmode = "pr"\npr_merge_method = "squash"\n')
@@ -599,12 +651,12 @@ class MergeModePullRequestTests(MergeModeFixture):
         theirs = self.publish(clone, bare)
         self.assertNotEqual(theirs, approved)
 
-        fake, _ = self.loop(APPROVE, provider=self.provider())
+        fake, _ = self.loop(APPROVE, self.WRITTEN, provider=self.provider())
 
         # The merged run removes the worktree and branch at close-out, so
         # the fast-forward is witnessed by what the review was handed and
         # the sha the merge recorded, not by a branch that no longer exists.
-        self.assertEqual(fake.roles, ["review"])
+        self.assertEqual(fake.roles, ["review", "implement"])
         self.assertEqual(fake.turns[0].candidate_sha, theirs)
         # The new head is judged against the sha the reviewer approved,
         # as a fix round's commit is: the brief names that approval, and

@@ -1,4 +1,5 @@
 """PR babysitting: adjudicate threads, verify fixes, and wait for a safe merge."""
+import json
 import re
 import subprocess
 from time import monotonic, time
@@ -452,12 +453,29 @@ def _moved(sha, reviewed):
             f" {sha[:12]}; the release covered {reviewed[:12]}")
 
 
+def _fix_answers(conn, run_id, rnd, fix_note):
+    """Recover addressed adjudications since the preceding independent pass."""
+    lines = []
+    rounds = store.read.rounds_of(conn, run_id) if conn is not None else []
+    for recorded in reversed(rounds):
+        if recorded.round >= rnd:
+            continue
+        if not recorded.reviewerModel.startswith("github:"):
+            break
+        lines[:0] = [line for finding in json.loads(recorded.findings)
+                     for line in finding["message"].splitlines()
+                     if "ADDRESS:" in line]
+    if fix_note:
+        lines.append(f"Operator babysit note: {fix_note}")
+    return "\n".join(lines)
+
+
 def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
-                criteria=(), fix_note=None, budget_min=None):
+                criteria=(), fix_note=None, budget_min=None, *, fix_context=""):
     """Verify and review; allow one fix past the cap, then park on rejection."""
     from holophyte.loop import _verify_brief, agent, set_phase, sh
-    from holophyte.pullrequest import _park_on_pr
+    from holophyte.pullrequest import _park_on_pr, refresh_pr_text
     if merge_config(target).approve != "auto":
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
                     pull, f"{_moved(sha, reviewed)}, and a human"
@@ -519,6 +537,12 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"
                f"Reviewer verdict:\n{verdict}", provider)
         print(f"[holo2] the fix at {sha[:12]} is approved")
+        answered = fix_context or _fix_answers(conn, run_id, rnd, fix_note)
+        if not answered:
+            answered = sh(["git", "log", "--format=%s",
+                           f"{reviewed or base_sha}..{sha}"], cwd=wt)
+        refresh_pr_text(target, conn, run_id, task_id, ticket.splitlines()[0],
+                        branch, ticket, beat_s, wt, budget_min, pull, answered)
         return sha
     ledger(conn, run_id, task_id, "round",
            f"Round {rnd}: REQUEST_CHANGES on the fix at {sha} on"
@@ -539,7 +563,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                              contracts, budget_min, rnd, goal=goal)
         return _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                            fixed, None, beat_s, pull, ticket, verify_cmd,
-                           contracts, criteria)
+                           contracts, criteria, budget_min=budget_min,
+                           fix_context=f"{verdict}\nOperator babysit note: {fix_note}")
     # No `reviewed`: the judgement on record is this rejection, so the
     # resume that follows reviews the candidate again before any merge.
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
