@@ -432,7 +432,8 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
 
         self.seed_reviewed()
         mentioned = thread_mentions.classify(pr.Thread(
-            "T1", "app.py", 1, "operator", "@holophyte use the path tokenId",
+            "T1", "app.py", 1, "operator", "@holophyte use the path tokenId\n"
+            "- Drop guestTokenId\n- Preserve token validation",
             "https://github.com/example/repo/pull/1#discussion_r1"), "holophyte")
         finding = pr.Thread("T2", "app.py", 2, "reviewer", "Handle empty tokens",
                             "https://github.com/example/repo/pull/1#discussion_r2")
@@ -453,7 +454,8 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertEqual(code, 200)
         rnd = body["rounds"][-1]
         self.assertEqual(len(rnd["instructions"]), 1)
-        self.assertIn("use the path tokenId", rnd["instructions"][0]["message"])
+        self.assertIn("use the path tokenId - Drop guestTokenId "
+                      "- Preserve token validation", rnd["instructions"][0]["message"])
         self.assertEqual(len(rnd["findings"]), 1)
         self.assertIn("Handle empty tokens", rnd["findings"][0]["message"])
 

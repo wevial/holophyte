@@ -207,7 +207,7 @@ def round_reply(pull, pass_no, threads, verdicts, checks, sha):
              f" {len(threads)} unresolved thread(s), checks {checks}."]
     lines += [f"- {where(t)} @{t.author}: {gist(t.body)}"
               f" -- {t.classification + ': ' if t.classification else ''}"
-              f"{verdicts[n][0]}: {verdicts[n][1]}"
+              f"{verdicts[n][0]}: {' '.join(verdicts[n][1].split())}"
               for n, t in enumerate(threads, 1)]
     lines.append("VERDICT: " + ("APPROVE" if not threads
                                 else "REQUEST_CHANGES"))
