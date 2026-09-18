@@ -96,7 +96,7 @@ class LiveReportTests(ReportStoreCase):
             out = io.StringIO()
             with patch.object(sys, "stdout", out):
                 holophyte.cli.cli(["--report", str(self.target)])
-        self.assertEqual(out.getvalue().splitlines()[:3], expected)
+        self.assertEqual(out.getvalue().splitlines()[1:4], expected)
 
     def test_no_unfinished_runs(self):
         self.assertEqual(report.report_lines(self.conn),
@@ -111,3 +111,33 @@ class LiveReportTests(ReportStoreCase):
             f"KO-455  merge_gate  19m  hb 12s  {URL}",
             "KO-454  working      9m  hb 12s",
         ])
+
+
+class MigrationReportTests(ReportStoreCase):
+    def test_cli_header_describes_latest_migration(self):
+        import json
+        self.conn.execute(
+            "UPDATE interventions SET note = ? WHERE action = 'migrate'",
+            (json.dumps({"from": 21, "to": store.SCHEMA_VERSION,
+                         "build": "abc1234", "pid": 4321,
+                         "argv": ["factory.py", "--report"], "at": NOW}),))
+        self.conn.commit()
+        self.completed_run(1, 5, 25, 0, "merged")
+        run = self.conn.execute("SELECT id FROM runs").fetchone()[0]
+        store.record_intervention(self.conn, run, "migrate", "operator note")
+        out = io.StringIO()
+        with patch.object(sys, "stdout", out):
+            holophyte.cli.cli(["--report", str(self.target)])
+        line = next(line for line in out.getvalue().splitlines()
+                    if line.startswith("store schema"))
+        self.assertIn(
+            f"store schema {store.SCHEMA_VERSION} (migrated from 21 at ", line)
+        self.assertIn("by abc1234, pid 4321, factory.py)", line)
+
+    def test_readers_allow_a_store_without_migration_history(self):
+        import holophyte.serve_runs
+        self.conn.execute("DELETE FROM interventions WHERE action = 'migrate'")
+        self.conn.execute("ALTER TABLE interventions DROP COLUMN note")
+        self.conn.commit()
+        self.assertEqual(report.migration_header(self.conn), [])
+        self.assertEqual(holophyte.serve_runs.migration_rows(self.conn, 0, 10), [])

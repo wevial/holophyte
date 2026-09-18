@@ -232,3 +232,18 @@ test("Now identifies each project outage from one daemon, even across midnight",
   expect(row[0]!.textContent).toContain(new Date(outage.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
   expect(screen.getByRole("region", { name: "Resolved today" }).textContent).toContain("Resolved today · 0");
 });
+
+test("Now renders a migration once in neutral text without counting it as resolved", async () => {
+  const migration: LedgerRow = {
+    at: NOW, run: null, ticket: null, kind: "intervention", source: "factory",
+    action: "migrate", tone: "neutral", text: "store schema 23 (migrated from 22)",
+  };
+  render(<Now hosts={[hostOf(allKinds.status, allKinds.attention, BASE)]} project="all" now={NOW}
+    deps={{ fetch: ledgerFetch(allKinds.attention, [migration]) }} />);
+  await act(settle);
+  const row = screen.getByText(/store schema 23/);
+  expect(row.className).toContain("text-muted");
+  fireEvent.click(screen.getByRole("button", { name: /resolved today/i }));
+  expect(screen.getAllByText(/store schema 23/).length).toBe(1);
+  expect(screen.getByText("Nothing resolved yet today")).toBeTruthy();
+});

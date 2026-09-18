@@ -665,7 +665,7 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
 # §2's intervention unions, transcribed from `_INTERVENTIONS_DDL` so a caller
 # can validate before the INSERT answers with a constraint name instead of
 # the value that was wrong. The schema test holds these against the database.
-INTERVENTION_SOURCES = ("supervisor", "human")
+INTERVENTION_SOURCES = ("supervisor", "human", "factory")
 INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
                          "review_stuck", "linear_cancelled", "linear_completed",
                          "manual")
@@ -673,7 +673,7 @@ INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
                         "close_out", "requeue", "approve", "repoint",
                         "babysit", "reconcile", "restart_supervisor",
                         "launch_loop", "launch_backoff", "route_fallback",
-                        "config_edit", "operator_note")
+                        "config_edit", "operator_note", "migrate")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

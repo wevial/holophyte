@@ -191,12 +191,11 @@ class ConfigEditTests(ServeTestCase):
         try:
             rows = conn.execute(
                 'SELECT runId, source, "trigger", "action" FROM interventions'
-            ).fetchall()
+                " WHERE action != 'migrate'").fetchall()
         finally:
             conn.close()
         self.assertEqual(rows, [(self.run, "human", "manual", "config_edit")])
         self.assertEqual(body["recorded"], self.run)
-        # And the written file is what the loop will read at its next start.
         tgt = holophyte.target.Target.locate(self.target)
         self.assertEqual(holophyte.config_tables.loop_config(tgt).workers, 3)
 
@@ -586,7 +585,8 @@ class ConfigPatchTests(ServeTestCase):
         conn = store.read.open_readonly(self.db)
         try:
             rows = conn.execute(
-                'SELECT "action" FROM interventions').fetchall()
+                'SELECT "action" FROM interventions'
+                " WHERE action != 'migrate'").fetchall()
             notes = conn.execute(
                 "SELECT summary FROM runEvents WHERE summary LIKE"
                 " '%PUT /config patch%'").fetchall()

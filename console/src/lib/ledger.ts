@@ -6,6 +6,8 @@ import type { AttentionItem } from "./types";
  *  had `waited_ms`; an older daemon leaves both out, which reads as null. */
 export interface LedgerRow {
   at: number;
+  action?: string;
+  tone?: string;
   project?: number;
   reason?: string;
   run: number | null;

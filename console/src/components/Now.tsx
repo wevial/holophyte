@@ -48,6 +48,13 @@ export function Now({
             {host.address} · project {row.project} · implementer route down since {new Date(row.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: {row.reason}
           </p>
         )))}
+      {served.flatMap((host) => ledgers[host.address]!.rows
+        .filter((row) => row.action === "migrate")
+        .map((row) => (
+          <p key={`${host.address}:migrate:${row.at}`} className="px-6 py-3 text-sm text-muted">
+            {host.address} · {row.text}
+          </p>
+        )))}
       <NeedsYou hosts={shown} project={project} now={now} ledgers={ledgers} />
       {served.length > 0 && (
         <ResolvedFold rows={resolved} open={resolvedOpen} onToggle={() => setResolvedOpen((previous) => !previous)} />
