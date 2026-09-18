@@ -619,6 +619,11 @@ class ActiveRoutesTests(ServeTestCase):
 class MigrationFeedTests(ServeTestCase):
     def test_now_includes_one_neutral_migration_and_respects_filters(self):
         self.seed()
+        conn = store.open(str(self.db))
+        try:
+            store.record_intervention(conn, self.run, "migrate", "operator note")
+        finally:
+            conn.close()
         target = holophyte.target.Target.locate(self.target)
         status, body = holophyte.serve_runs.ledger(target, "since=0")
         self.assertEqual(status, 200)

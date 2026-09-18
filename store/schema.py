@@ -554,10 +554,24 @@ BACKFILLS = (
 
 
 def init(conn):
-    """Create tables, apply the migration ladder, and stamp the schema atomically.
+    """Create every table the state model defines, if absent, and migrate.
 
-    Existing columns and backfilled values survive repeated calls. The audit
-    row is written only when the version advances, in the same transaction."""
+    Three steps, because `CREATE TABLE IF NOT EXISTS` alone would only ever
+    bootstrap an empty file: the tables are created, then every `ADDED_COLUMNS`
+    entry missing from an existing table is added, then every `BACKFILLS`
+    statement repairs the rows an older version of this module left with a
+    value it never filled in. The second step is what carries a store created
+    by an earlier version forward instead of leaving it one column short of
+    the code that reads it; the third is what keeps that store's history from
+    reading as a confident zero.
+
+    Idempotent: safe to call on an already-initialized database, where it
+    creates nothing, adds nothing, and touches only rows a backfill finds
+    still disagreeing with what it recomputes — none, on the second call, and
+    none ever on a store this module wrote from the start. Not a downgrade
+    path — an older module opening a newer store sees columns it does not know
+    about, which is harmless, while the reverse is what this repairs.
+    """
     conn.executescript(SCHEMA)
     foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
     foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
@@ -687,9 +701,17 @@ def _widen_interventions_action(conn):
 
 @contextlib.contextmanager
 def _transaction(conn):
-    """Join the caller's transaction or own an immediate transaction.
+    """Run the block in one `BEGIN IMMEDIATE`, or join the caller's transaction.
 
-    Roll back owned transactions on failure; never commit a caller's work."""
+    `BEGIN IMMEDIATE` serializes read-then-write operations across connections.
+    The connection lock serializes fallback heartbeats with their caller:
+    another thread must not join the caller's open transaction.
+    Commit on success; roll back on any exception, including commit failure.
+
+    Nested calls join the owning thread's transaction without committing or
+    rolling it back. The owner must take IMMEDIATE for serialization, as
+    `transaction()` and `claim()` do.
+    """
     with getattr(conn, "_lock", contextlib.nullcontext()):
         if conn.in_transaction:
             yield
@@ -711,9 +733,22 @@ def _transaction(conn):
 
 @contextlib.contextmanager
 def transaction(conn):
-    """Public transaction boundary for operator actions spanning store APIs.
+    """`_transaction()` for callers outside this module; same guarantees.
 
-    Nested store calls join this transaction; failures roll back owned work."""
+    A reader that has to *decide* something from what it reads and then write
+    the decision down cannot do the two in separate statements: between them
+    another connection commits, and the write records a verdict on a state
+    that no longer holds. The supervisor sweep is exactly that shape -- it
+    reads a run's heartbeat, classifies it and records the sighting -- and it
+    lives in `factory.py`, so the module's own writers' `BEGIN IMMEDIATE`
+    needs a name that is not private to reach it.
+
+    Under it, this module's writers join instead of opening their own, so a
+    block may read, classify and call `record_strike()` (or any other writer)
+    and have the whole thing commit or roll back once. The write lock is held
+    from the first statement, so a concurrent writer waits rather than
+    interleaving -- keep the block short for that reason.
+    """
     with _transaction(conn):
         yield
 

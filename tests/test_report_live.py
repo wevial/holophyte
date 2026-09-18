@@ -122,6 +122,9 @@ class MigrationReportTests(ReportStoreCase):
                          "build": "abc1234", "pid": 4321,
                          "argv": ["factory.py", "--report"], "at": NOW}),))
         self.conn.commit()
+        self.completed_run(1, 5, 25, 0, "merged")
+        run = self.conn.execute("SELECT id FROM runs").fetchone()[0]
+        store.record_intervention(self.conn, run, "migrate", "operator note")
         out = io.StringIO()
         with patch.object(sys, "stdout", out):
             holophyte.cli.cli(["--report", str(self.target)])

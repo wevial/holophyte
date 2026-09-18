@@ -1,4 +1,8 @@
-"""Read-only run reports; callers in operator and supervisor open the store."""
+"""Live runs and the finished estimate-vs-actual table, read-only.
+
+The report shares age and host formatting with supervisor and sweep output.
+Opening the store belongs to the callers in operator and supervisor.
+"""
 import json
 import statistics
 import time
@@ -8,6 +12,7 @@ import store.read
 from holophyte.config_tables import report_config
 from store.working import effective_work
 
+# Render timing and review counts from the store without writing or claiming.
 REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome",
                   "rejected", "host")
 REPORT_GAP = "  "
@@ -28,7 +33,7 @@ def migration_header(conn):
         return []
     row = conn.execute(
         "SELECT note FROM interventions WHERE action = 'migrate'"
-        " ORDER BY id DESC LIMIT 1").fetchone()
+        " AND note IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
     if row is None:
         return []
     version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -72,7 +77,11 @@ def report_rows(conn):
 
 
 def ended_rows(conn):
-    """Return report tuples with ended_at, merge_sha and wall_min appended."""
+    """Report tuples with ended_at, merge_sha and wall_min appended.
+
+    The daemon uses these to show when a run ended and link its merge;
+    report_rows() drops them to preserve the terminal table's shape.
+    """
     rows = []
     for run in store.read.ended_runs(conn):
         work = effective_work(run, run.endedAt)
@@ -98,7 +107,10 @@ def report_summary(rows):
 
 
 def report_lines(conn, target=None):
-    """Render a consistent snapshot; unmeasured work is n/a and not averaged."""
+    """Render a consistent snapshot of live runs, completed work and ratios.
+
+    Unmeasured work prints n/a and is excluded from ratios. The target supplies
+    an optional host label; callers without it see the stored hostname."""
     owns_transaction = not conn.in_transaction
     if owns_transaction:
         conn.execute("BEGIN")
@@ -136,7 +148,10 @@ def report_lines(conn, target=None):
 
 
 def format_age(ms):
-    """Render milliseconds as whole seconds, minutes or hours."""
+    """An age in milliseconds as an operator reads one: `12s`, `9m`, `3h`.
+
+    Whole units, largest that fits: distinguish a quiet minute from an evening.
+    """
     seconds = max(0, int(ms // 1000))
     if seconds < 60:
         return f"{seconds}s"
@@ -151,8 +166,17 @@ def host_name(host):
 
 
 def host_label(target, host):
-    """Render the configured host label, retaining ? for an unknown host.
+    """A `host` column as a rendering shows it: the label, or `host_name()`.
 
-    Without a target or configured label, use the recorded hostname."""
+    `[report] host_label` in `target`'s config replaces the hostname wherever
+    the factory renders one -- the report and sweep tables and the
+    supervisor's lines; the FINDINGS window a public repository commits has
+    no host column to replace -- while the store goes on holding the real
+    hostname for the supervisor's own-host checks.
+    With no label (or no `target`), this is `host_name(host)` exactly; so
+    is a `host` of None, label or not: a row older than the column has no
+    recorded host, and calling it the writer would state something the
+    store does not know.
+    """
     label = report_config(target).host_label if target is not None else None
     return host_name(host) if host is None or label is None else label

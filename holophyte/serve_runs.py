@@ -380,7 +380,17 @@ def run_detail(target, run_id, now=None):
 
 
 def run_ledger(target, run_id):
-    """Return a run's ledger oldest first, including intervention wait fields."""
+    """The `/runs/N/ledger` answer: `(http status, JSON-able body)`.
+
+    The run's narrative as the store holds it (design note 9): `entries`
+    oldest first, each its `at` in epoch milliseconds, `kind` (one of
+    `store.LEDGER_KINDS`), `text` and `source` (`loop` or `operator`), with
+    `run_id` and the run's `ticket`. An `intervention` entry also carries
+    `cleared` and `waited_ms` (`ledger_entry()`). A merged run with no rows
+    answers an empty list. `run_id` parses as on `/runs/N`
+    (`locate_run()`): a non-integer is 400, an integer with no run is 404
+    carrying `run`.
+    """
     failed, run = locate_run(target, run_id)
     if failed is not None:
         return failed
@@ -396,7 +406,13 @@ def run_ledger(target, run_id):
 
 
 def ledger_entry(entry, head):
-    """Render shared ledger fields and intervention clearance/wait evidence."""
+    """One ledger entry as both ledger endpoints spell it: `head`'s
+    fields first, then `at`, `kind`, `source` and `text`, and on an
+    `intervention` entry `cleared` and `waited_ms` (KO-308) -- what the
+    operator's step cleared (`question` or `failed`) and how long that had
+    waited, both null when nothing was waiting. The store's rule
+    (`store.read._cleared_by()`) decides; the wire only names the fields.
+    """
     body = {**head, "at": entry.at, "kind": entry.kind,
             "source": entry.source, "text": entry.text}
     if entry.kind == "intervention":
@@ -410,7 +426,13 @@ LEDGER_CAP = 1000
 
 
 def ledger(target, query):
-    """Return the filtered Now feed, migrations and ongoing project outages."""
+    """The `/ledger` answer: `(http status, JSON-able body)`.
+
+    Read entries since the required epoch-ms cursor, narrowed by kind/ticket
+    and capped by limit. The Now window also carries ongoing project outages,
+    even across midnight, and suppresses their repeated launch interventions.
+    Invalid query parameters return 400; absent stores return 503.
+    """
     try:
         since = parse_since(query)
         kind = parse_filter(query, "kind", allowed=store.LEDGER_KINDS)
@@ -448,8 +470,9 @@ def migration_rows(conn, since, limit):
     if "note" not in {r[1] for r in conn.execute("PRAGMA table_info(interventions)")}:
         return []
     rows = conn.execute(
-        "SELECT note, at FROM interventions WHERE action = 'migrate' AND at >= ?"
-        " ORDER BY at DESC, id DESC LIMIT ?", (since, limit)).fetchall()
+        "SELECT note, at FROM interventions WHERE action = 'migrate'"
+        " AND note IS NOT NULL"
+        " AND at >= ? ORDER BY at DESC, id DESC LIMIT ?", (since, limit)).fetchall()
     return [{"at": at, "run": None, "ticket": None, "kind": "intervention",
              "source": "factory", "action": "migrate", "tone": "neutral",
              "text": migration_line(note, json.loads(note)["to"]),

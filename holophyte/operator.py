@@ -230,7 +230,9 @@ def _reexec(target, conn, project, reason=None, *, prepared_sha=None):
 def report(target, conn=None, out=None, now=None):
     """Print the target store's estimate-vs-actual table. Returns nothing.
 
-    Read and print without claiming work or importing a provider.
+    `--report`'s whole body: it reads rows and prints them, so no ticket is
+    claimed, no worktree is cut and no provider is imported -- which is what
+    makes it safe to run against the store of a loop that is still working.
 
     The one write it can make is `open_store()`'s migration: a store older
     than the run row's estimate column is brought up to the schema this
