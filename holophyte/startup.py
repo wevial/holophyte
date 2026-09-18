@@ -1,6 +1,5 @@
 """Pin the factory's Python modules and build identity before dispatch."""
 import importlib
-import os
 import pkgutil
 from pathlib import Path
 
@@ -32,23 +31,3 @@ def eager_import():
 
 def banner():
     print(f'[holo2] factory at {build_sha()}', flush=True)
-
-
-def _worker_alive(pid):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass  # An inaccessible process is still alive.
-    return True
-
-
-def checkout_blocked(worker_pids, draining):
-    """A non-draining pool keeps its live workers on their startup build."""
-    live = sum(_worker_alive(pid) for pid in worker_pids)
-    if live and not draining:
-        print(f"[holo2] checkout not fast-forwarded: {live} worker(s) still on"
-              f" {build_sha()}", flush=True)
-        return True
-    return False

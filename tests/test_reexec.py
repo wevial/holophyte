@@ -1,18 +1,18 @@
 """The checkout is updated before the restart note and process replacement."""
 import io
 import json
-import subprocess
-import sys
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import Mock, patch
 
-from holophyte import operator, startup
+from holophyte import operator
+from store.schema import SCHEMA_VERSION
 from tests.loop_fixture import LoopFixture
 
 
 class ReexecTests(LoopFixture):
-    def restart(self, branch='main', dirty='', failure=None, untracked=''):
+    def restart(self, branch='main', dirty='', failure=None, untracked='',
+                workers=None):
         events = []
         head = ['old1234']
         conn = Mock()
@@ -23,6 +23,10 @@ class ReexecTests(LoopFixture):
             events.append(args)
             if args == ['git', 'rev-parse', '--short', 'HEAD']:
                 return head[0]
+            if args == ['git', 'show', 'origin/main:store/schema.py']:
+                return f'SCHEMA_VERSION = {SCHEMA_VERSION}\n'
+            if args == ['git', 'rev-parse', '--short', 'origin/main']:
+                return 'new5678'
             if args == ['git', 'branch', '--show-current']:
                 return branch
             if args == ['git', 'status', '--porcelain']:
@@ -42,32 +46,24 @@ class ReexecTests(LoopFixture):
                 patch.object(operator.store, 'record_loop_restart', note), \
                 patch.object(operator, 'EXEC', lambda *a: events.append('EXEC')), \
                 redirect_stdout(out):
-            operator._reexec(self.tgt, conn, 1)
+            operator._reexec(self.tgt, conn, 1, worker_pids=workers or {})
         return events, out.getvalue()
 
-    def test_live_pool_worker_blocks_checkout_move(self):
-        from holophyte import pool_handoff
-        from holophyte.pool import _PoolState
-
-        state = _PoolState(True, True)
-        state.restart = True
-        with subprocess.Popen([sys.executable, '-c',
-                               'import sys; sys.stdin.read()'],
-                              stdin=subprocess.PIPE) as child:
-            try:
-                pool = {child.pid: (1, child)}
-                out = io.StringIO()
-                with patch.object(operator, 'sh', return_value='old1234') as git, \
-                        patch.object(startup, 'build_sha', return_value='start42'), \
-                        redirect_stdout(out):
-                    pool_handoff.prepare_restart(state, self.tgt, pool)
-                self.assertFalse(any(call.args[0][:2] == ['git', 'merge']
-                                     for call in git.call_args_list))
-                self.assertIn('checkout not fast-forwarded: 1 worker(s) still on'
-                              ' start42', out.getvalue())
-            finally:
-                child.stdin.close()
-                child.wait(timeout=10)
+    def test_unchanged_schema_fast_forwards_under_two_live_workers(self):
+        workers = {5001: Mock(), 5002: Mock()}
+        with patch("os.kill") as signal_worker, \
+                patch("holophyte.pool.WAIT") as wait:
+            events, output = self.restart(workers=workers)
+        signal_worker.assert_not_called()
+        wait.assert_not_called()
+        self.assertLess(events.index(['git', 'fetch', 'origin', 'main']),
+                        events.index(['git', 'show', 'origin/main:store/schema.py']))
+        self.assertIn(['git', 'merge', '--ff-only', 'origin/main'], events)
+        self.assertEqual(events[-1], 'EXEC')
+        self.assertIn(f'schema unchanged ({SCHEMA_VERSION}); fast-forwarding'
+                      ' to new5678 under 2 live worker(s)', output)
+        for worker in workers.values():
+            self.assertEqual(worker.mock_calls, [])
 
     def test_fast_forward_precedes_note_and_exec(self):
         events, output = self.restart()
@@ -86,7 +82,7 @@ class ReexecTests(LoopFixture):
             with self.subTest(reason=reason):
                 events, output = self.restart(**kwargs)
                 self.assertNotIn(['git', 'merge', '--ff-only', 'origin/main'], events)
-                self.assertNotIn(['git', 'fetch', 'origin', 'main'], events)
+                self.assertIn(['git', 'fetch', 'origin', 'main'], events)
                 self.assertEqual(output.count('checkout not fast-forwarded'), 1)
                 self.assertIn(reason, output)
                 self.assertEqual(events[-1], 'EXEC')
