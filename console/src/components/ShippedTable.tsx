@@ -1,3 +1,4 @@
+import { TicketLink } from "./TicketLink";
 import { useState, type KeyboardEvent } from "react";
 import { formatClock, formatDuration } from "../lib/format";
 import type { Fetch } from "../lib/poll";
@@ -137,7 +138,7 @@ function Row({
         className={`${GRID} ${CHEVRON} cursor-pointer py-[11px] hover:bg-hover`}
       >
         <span className="font-mono text-[12px] text-muted">{formatClock(row.ended_ms)}</span>
-        <span className="truncate font-mono text-[13px] font-semibold text-ink">{row.ticket}</span>
+        <span className="truncate font-mono text-[13px] font-semibold text-ink"><TicketLink ticket={row.ticket} ticket_url={row.ticket_url} /></span>
         <span className="min-w-0 text-[13px] text-body">
           <span className="flex items-center gap-2"><span className="truncate">{row.title ?? ""}</span><PhasePill phase={row.outcome ?? "merged"} /></span>
           {row.outcome && row.outcome !== "merged" && row.outcome_reason && (

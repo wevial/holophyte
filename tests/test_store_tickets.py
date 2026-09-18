@@ -1,9 +1,4 @@
-"""`tickets.body`: the claim-time mirror keeps the Linear body the loop read,
-`ticket_by_identifier()` reads it back, and a schema-10 store gains the
-column on open (KO-328).
-
-Run: python3 -m unittest discover -s tests -p 'test_store_tickets*' -v
-"""
+"""Ticket body and URL mirrors, including additive migration of older stores."""
 from __future__ import annotations
 
 import sqlite3
@@ -17,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.ticket_url_fixture import assert_mirror_url
 
 
 class MirroredBodyTests(unittest.TestCase):
@@ -36,6 +32,10 @@ class MirroredBodyTests(unittest.TestCase):
                     verification_commands=["echo ok"], time_box_ms=1_500_000)
         args.update(overrides)
         return store.tickets.mirror_ticket(self.conn, self.project, body=body, **args)
+
+    def test_board_mirror_stores_and_refreshes_url(self):
+        assert_mirror_url(self)
+
 
     def test_a_re_mirror_replaces_the_body_and_leaves_the_status_alone(self):
         ticket_id = self.mirror("first", now=1_700_000_000_000)

@@ -1,3 +1,4 @@
+import { TicketLink } from "./TicketLink";
 import { useState, type KeyboardEvent } from "react";
 import { ACTIONS_OFF, NOT_WIRED, ROUTES, postAction } from "../lib/actions";
 import { OPEN_PR, type Description, type Tone } from "../lib/attention";
@@ -79,6 +80,7 @@ export function AttentionRow({
   thread,
   attempts,
   prUrl,
+  ticketUrl,
   daemon,
   runId,
   now = Date.now(),
@@ -89,6 +91,7 @@ export function AttentionRow({
   thread?: ThreadProps;
   attempts?: AttemptsProps;
   prUrl?: string | null;
+  ticketUrl?: string | null;
   daemon?: RowDaemon;
   runId?: number;
   now?: number;
@@ -148,7 +151,7 @@ export function AttentionRow({
         </div>
         <div className="min-w-0">
           <div className="truncate font-mono text-[13px] font-semibold text-ink">
-            {ticket ?? "—"}
+            <TicketLink ticket={ticket ?? "—"} ticket_url={ticketUrl} />
             {attempts && (
               <span data-attempts className="ml-1.5 rounded-[6px] bg-bad-bg px-1.5 text-[11px] font-semibold text-bad-text">
                 ×{attempts.runs.length}

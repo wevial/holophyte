@@ -1,3 +1,4 @@
+import { TicketLink } from "./TicketLink";
 import { useRunDetail } from "../hooks/useRunDetail";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import type { ReactNode } from "react";
@@ -44,17 +45,25 @@ export function RunRow({
   const stale = isStale(heartbeatAge, thresholds.heartbeat_stale_ms);
   return (
     <li data-run={run.id} className="border-t border-line-faint">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         aria-expanded={expanded}
         onClick={onToggle}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
         className="grid w-full grid-cols-[20px_64px_110px_1fr_120px_220px_90px] items-center gap-3 px-4 py-[11px] text-left hover:bg-hover"
       >
         <span aria-hidden="true" className="text-[12px] text-faint">
           {expanded ? "▾" : "▸"}
         </span>
         <span className="font-mono text-[12px] text-muted">#{run.id}</span>
-        <span className="truncate font-mono text-[13px] font-semibold text-ink">{run.ticket}</span>
+        <span className="truncate font-mono text-[13px] font-semibold text-ink"><TicketLink ticket={run.ticket} ticket_url={run.ticket_url} /></span>
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[14px] text-body">{run.title ?? ""}</span>
           <StrikePill strikes={run.strikes ?? 0} max={thresholds.strikes} />
@@ -70,7 +79,7 @@ export function RunRow({
         >
           hb {formatSpan(heartbeatAge)}
         </span>
-      </button>
+      </div>
       {expanded && (detail ?? <div data-detail className="border-t border-line-faint px-4 py-3" />)}
     </li>
   );

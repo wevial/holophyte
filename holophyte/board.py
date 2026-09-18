@@ -354,10 +354,10 @@ def mirror_task(conn, project, task, specced=True):
         acceptance_criteria=criteria,
         verification_commands=commands,
         time_box_ms=task["budget_min"] * 60 * 1000,
-        # The body the loop read, so the store serves the contract the run
-        # worked from (KO-328); a task with none (`body_problem()` treats
-        # that as nothing to validate) mirrors as empty.
+        # Serve the body the loop read (KO-328); a task without one
+        # mirrors as empty, as body_problem() expects.
         body=task.get("body") or "",
+        url=task.get("url"),
     )
     if criteria and commands:
         with store.transaction(conn):

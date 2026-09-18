@@ -10,6 +10,7 @@ from pathlib import Path
 import store
 import store.schema
 import store.tickets
+from tests.ticket_url_fixture import assert_schema_url
 
 DOCUMENTED_COLUMNS = {
     "projects": {
@@ -25,17 +26,15 @@ DOCUMENTED_COLUMNS = {
         "status", "acceptanceCriteria", "verificationCommands", "timeBoxMs",
         "affinity", "dependsOn", "activeRunId", "lastRunId", "blockedQuestion",
         "splitDepth", "mirroredAt",
-        # Store-owned: the Linear body the claim-time mirror last read, so
-        # the daemon serves the contract the run worked from (KO-328).
-        "body",
+        # Claim-time Linear body (KO-328) and issue URL (KO-478).
+        "body", "url",
     },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
         "providerSessionId", "branch", "prUrl", "startedAt", "lastHeartbeat",
         "endedAt", "reviewRoundCount", "outcome", "outcomeReason",
         "workingMs", "workStartedAt",
-        # Store-owned: the merge commit a merged run landed on main as, so
-        # the ticket-to-commit link is a column and not a grep of git log.
+        # The merge commit, for ticket-to-commit links.
         "mergeSha",
         "candidateSha",
         "approvedSha",
@@ -44,13 +43,10 @@ DOCUMENTED_COLUMNS = {
         "reviewRoundCap",
         "prSeenAt",
         "prSeenThreads",
-        # Store-owned: the checks rollup and review decision the same read
-        # saw, so `/attention`'s `pr_open` item carries them (KO-368).
+        # Last PR checks/review for attention items (KO-368).
         "prSeenChecks",
         "prSeenReview",
-        # Store-owned, not a documented field: §5 requires a resume to
-        # "re-enter the phase it left" and leaves the mechanism to us, so
-        # `resume()` reads the parked phase from this column.
+        # §5: resume() re-enters this parked phase.
         "resumePhase",
         # Store-owned too: the ticket's estimate as it stood at the claim, so
         # a finished run's estimate-vs-actual does not move when the ticket's
@@ -147,6 +143,11 @@ CREATE TABLE IF NOT EXISTS runs (
 """
 
 
+class TicketUrlMigrationTests(unittest.TestCase):
+    def test_version_22_adds_nullable_url_to_existing_ticket(self):
+        assert_schema_url(self)
+
+
 class StoreSchemaTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -159,7 +160,6 @@ class StoreSchemaTests(unittest.TestCase):
         return conn
 
     def raw(self):
-        """A plain sqlite3 connection to the file, bypassing store.open()."""
         conn = sqlite3.connect(self.path)
         self.addCleanup(conn.close)
         return conn

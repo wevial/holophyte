@@ -1,3 +1,4 @@
+import { TicketLink } from "./TicketLink";
 import { useState } from "react";
 import { useRunDetail } from "../hooks/useRunDetail";
 import { useRunFiles, type RunFilesState } from "../hooks/useRunFiles";
@@ -93,6 +94,7 @@ function Card({
   return (
     <article aria-label={`run ${run.id}`} className="rounded-[10px] border border-line bg-card px-4 py-3">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <TicketLink ticket={run.ticket} ticket_url={run.ticket_url} />
         <span className="text-[13px] font-semibold text-ink">{roundLine(body)}</span>
         <span data-started className="text-[12px] text-muted">
           started {formatClock(run.started_ms)}

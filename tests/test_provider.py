@@ -1,7 +1,4 @@
-"""Board conformance: shared claim and contract assertions for both providers.
-
-FileProvider uses seeded files; LinearProvider uses canned GraphQL replies.
-"""
+"""Board conformance for file and Linear providers with fake transport."""
 from __future__ import annotations
 
 import contextlib
@@ -20,8 +17,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-# `loop_fixture` is a helper, not a test module: `tests/` goes on the path
-# only when a file puts it there.
+# Make the test helpers importable for direct module invocation.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import LoopFixture, no_agent_processes  # noqa: E402
 from provider_fence_fixture import FenceConformanceMixin  # noqa: E402
@@ -30,6 +26,7 @@ import holophyte.operator  # noqa: E402
 import linear_provider  # noqa: E402
 import provider as board_seam  # noqa: E402
 import ticket_template  # noqa: E402
+from tests.ticket_url_fixture import assert_provider_url  # noqa: E402
 
 TITLE = "do the thing"
 CRITERION = "Given a claim, when it lands, then the mirror exists."
@@ -386,6 +383,9 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
 
     def issue_id(self, identifier):
         return self.board.issues[identifier]["id"]
+
+    def test_listing_and_single_fetch_keep_linears_issue_url(self):
+        assert_provider_url(self)
 
     def test_priority_order_claims_the_most_urgent_first_and_unprioritised_last(self):
         """`order="priority"`: Linear's 1 (urgent) before 3 before 0 (none),

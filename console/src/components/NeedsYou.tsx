@@ -175,6 +175,7 @@ export function NeedsYou({
               thread={threadOf(item, key)}
               attempts={attemptsOf(entry, key)}
               prUrl={item.pr_url}
+              ticketUrl={item.ticket_url}
               daemon={daemonOf(item)}
             />
           );
