@@ -41,6 +41,7 @@ export const FIELDS: readonly Field[] = [
   { table: "merge", key: "pr_style", label: "PR style", kind: "text" },
   { table: "merge", key: "pr_rounds", label: "PR rounds", kind: "number" },
   { table: "merge", key: "pr_poll_sec", label: "PR poll seconds", kind: "number" },
+  { table: "merge", key: "check_wait_sec", label: "Check wait seconds", kind: "number" },
   { table: "merge", key: "pr_quiet_sec", label: "PR quiet seconds", kind: "number" },
   { table: "merge", key: "after", label: "After merge", kind: "lines" },
   { table: "board", key: "label", label: "Board label", kind: "text" },

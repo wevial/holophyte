@@ -73,7 +73,6 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_declined_human_is_replied_to_left_open_and_parks(self):
-        # Exercise the reply-stage boundary after human adjudication.
         with patch("holophyte.babysitter._verdicts_by_kind",
                    return_value={1: ("DECLINE", "a naming preference")}):
             _, calls = self.declined_thread(("alice", "User"))
@@ -116,8 +115,21 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
                          [("rejected", "rejected")])
         self.assertIsNone(self.rc)
 
+    def test_pending_checks_expire_at_the_configured_deadline(self):
+        self.configure('[merge]\nmode = "pr"\ncheck_wait_sec = 60\n')
+        self.fake_route(states=[self.pr_state(checks="PENDING")])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual(sum(naps), 60)
+        self.assertIn("pending checks exceeded 60s on the pull request",
+                      self.question())
+        self.assertEqual({kind for kind, _ in self.api_calls()}, {"state"})
+
     def test_pending_checks_are_waited_for_before_the_verdict(self):
-        """Wait for pending checks and merge once the next poll is green."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state(checks="PENDING"),
                                 self.pr_state(checks="SUCCESS")])
@@ -133,15 +145,12 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
                          [("merged", self.MERGE_SHA)])
 
     def test_a_green_pr_quieter_than_pr_quiet_sec_is_not_merged(self):
-        """A recently updated green PR waits for its configured quiet interval."""
-        self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
+        self.configure('[merge]\nmode = "pr"\npr_rounds = 1\ncheck_wait_sec = 45\n')
         fresh = (datetime.now(timezone.utc)
                  - timedelta(seconds=10)).isoformat()
         self.fake_route(states=[self.pr_state(updated_at=fresh)])
         naps = []
-        # A fresh PR must park at CHECK_WAIT_S, without attempting merge.
         with patch.object(holophyte.pr, "SLEEP", naps.append), \
-                patch.object(holophyte.pr, "CHECK_WAIT_S", 45), \
                 patch.object(holophyte.babysitter, "monotonic",
                              side_effect=lambda: sum(naps)):
             out = self.main_output(Commit("the scripted work"), APPROVE, Idle(""),
@@ -158,7 +167,6 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn("quiet wait exceeded 45s", self.question())
 
     def test_a_green_pr_quiet_for_pr_quiet_sec_merges(self):
-        """Merge a green PR after the quiet interval has elapsed."""
         self.configure('[merge]\nmode = "pr"\n')
         quiet = (datetime.now(timezone.utc)
                  - timedelta(seconds=301)).isoformat()
@@ -175,7 +183,6 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
                          [("merged", self.MERGE_SHA)])
 
     def test_pr_quiet_sec_zero_merges_a_green_pr_on_the_first_pass(self):
-        """A zero quiet interval permits merging on the first green poll."""
         self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
         self.fake_route(states=[self.pr_state(
             updated_at=datetime.now(timezone.utc).isoformat())])
@@ -191,7 +198,6 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
                          [("merged", self.MERGE_SHA)])
 
     def test_a_check_runs_read_the_babysitter_cannot_make_is_pending(self):
-        """An unreadable check-runs response remains pending."""
         def raising_rest(target, pull, method, path, payload=None):
             raise holophyte.pr.InfraFailure(f"GitHub refused GET {path}")
         pull = holophyte.pr_status.parse_pr_url(self.URL)
@@ -241,7 +247,6 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual(self._state_with_rest(odd_rest).checks, "pending")
 
     def test_a_rules_answer_the_babysitter_cannot_read_is_pending(self):
-        """Malformed required-check rules leave the PR pending."""
         def runs_then(rules):
             def odd_rest(target, pull, method, path, payload=None):
                 if "check-runs" in path:
@@ -257,8 +262,7 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
                 rest = runs_then([dict(rule, parameters=parameters)])
                 self.assertEqual(self._state_with_rest(rest).checks,
                                  "pending")
-        # A rule of another type, and a rule with no contexts, are not
-        # pending: they require nothing.
+        # Other rule types and rules without contexts require nothing.
         rest = runs_then([{"type": "deletion"},
                           dict(rule, parameters={"required_status_checks": []})])
         self.assertEqual(self._state_with_rest(rest).checks, "success")

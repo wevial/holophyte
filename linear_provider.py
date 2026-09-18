@@ -333,7 +333,7 @@ def parse_task(issue):
     `in_flight`, which is the status the board is a projection of.
     """
     desc = issue.get("description", "") or ""
-    m = re.search(r"## Verify command\(s\)\s*```\n(.*?)```", desc, re.S)
+    m = re.search(r"## Verify command\(s\)\s*```[^\n]*\n(.*?)```", desc, re.S)
     verify = m.group(1).strip() if m else None
     parsed = ticket_template.parse(desc)
     return {"id": issue["identifier"], "issue_id": issue.get("id"),

@@ -604,7 +604,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
     """Bound pending/quiet waiting with one deadline; return threads promptly."""
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
-    deadline = monotonic() + pr.CHECK_WAIT_S
+    deadline = monotonic() + merge.check_wait_sec
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(target, pull)
         state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
@@ -629,7 +629,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
             remaining = deadline - monotonic()
             if remaining <= 0:
                 raise WaitExpired(
-                    f"{reason} exceeded {pr.CHECK_WAIT_S}s on the pull request")
+                    f"{reason} exceeded {merge.check_wait_sec}s on the pull request")
             pr.SLEEP(min(nap, remaining))
             state = pr_status.pr_state(target, pull)
             state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
