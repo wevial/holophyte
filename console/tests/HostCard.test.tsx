@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { HostCard } from "../src/components/HostCard";
 import { groupByHost, type HostRecord } from "../src/lib/hosts";
 import type { Status } from "../src/lib/types";

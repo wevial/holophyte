@@ -46,12 +46,16 @@ test("working and wall clocks: Shipped measured and historical durations", () =>
   expect(screen.getByText("wall 30m 0s")).toBeTruthy();
   expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("40");
   view.rerender(<ShippedTable rows={[{ ...row, actual_min: null, working_ms: null }]} now={1_800_000} />);
-  expect(screen.getByText("wall 30m 0s")).toBeTruthy();
-  expect(screen.queryByRole("progressbar")).toBeNull();
+  expect(screen.getByText("wall")).toBeTruthy();
+  expect(screen.queryByText("wall 30m 0s")).toBeNull();
+  expect(screen.getByText("30m / 10m")).toBeTruthy();
+  expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
   // An older daemon's actual_min was wall time, so it cannot imply measured work.
   view.rerender(<ShippedTable rows={[{ ...row, actual_min: 30, working_ms: undefined }]} now={1_800_000} />);
-  expect(screen.getByText("wall 30m 0s")).toBeTruthy();
-  expect(screen.queryByRole("progressbar")).toBeNull();
+  expect(screen.getByText("wall")).toBeTruthy();
+  expect(screen.queryByText("wall 30m 0s")).toBeNull();
+  expect(screen.getByText("30m / 10m")).toBeTruthy();
+  expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
 });
 
 test("working and wall clocks: Board budget agrees with the run row", () => {
