@@ -92,6 +92,7 @@ Each module, one line:
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.
+- `holophyte/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysitter.py` — the babysit pass over a pull request: the
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round
