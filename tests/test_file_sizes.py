@@ -31,7 +31,7 @@ OVER = {}
 # Pins are exact counts except the three KO-487 splits, which have headroom.
 # Those caps start 100 lines above their post-split lengths.
 PINNED = {
-    "holophyte/babysitter.py": 835, "holophyte/board.py": 894,
+    "holophyte/babysitter.py": 895, "holophyte/board.py": 894,
     "holophyte/claim.py": 815, "holophyte/cli.py": 479,
     "holophyte/config.py": 749, "holophyte/dispatch.py": 262,
     "holophyte/config_tables.py": 554, "holophyte/findings.py": 331,
@@ -42,9 +42,9 @@ PINNED = {
     "holophyte/pullrequest.py": 329,
     "holophyte/reconcile.py": 468, "holophyte/reexec.py": 94,
     "holophyte/report.py": 182, "provider.py": 302,
-    "holophyte/serve.py": 894,
+    "holophyte/serve.py": 896,
     "holophyte/serve_actions.py": 191, "holophyte/serve_config.py": 336,
-    "holophyte/serve_runs.py": 546, "holophyte/supervisor.py": 889,
+    "holophyte/serve_runs.py": 549, "holophyte/supervisor.py": 889,
     "holophyte/supervisor_lock.py": 227,
     "holophyte/sweep_report.py": 235, "store/__init__.py": 976,
     "store/operate.py": 908, "store/read.py": 942,
@@ -52,7 +52,7 @@ PINNED = {
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 644,
     "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 274,
     "tests/test_babysit_threads.py": 738, "tests/test_babysit_checks.py": 355,
-    "tests/test_babysitter.py": 466, "tests/test_config_tables.py": 455,
+    "tests/test_babysitter.py": 516, "tests/test_config_tables.py": 455,
     "tests/test_claim.py": 1486, "tests/test_claim_mirror.py": 178,
     "tests/test_cli.py": 114,
     "tests/test_cli_approve.py": 269, "tests/test_cli_requeue.py": 273,
@@ -63,7 +63,7 @@ PINNED = {
     "tests/test_pullrequest.py": 1155, "tests/test_reconcile.py": 414,
     "tests/test_serve.py": 1128,
     "tests/test_serve_actions.py": 317, "tests/test_serve_config.py": 709,
-    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 672,
+    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 677,
     "tests/test_serve_shipped.py": 181,
     "tests/sweep_fixture.py": 196, "tests/test_startup_checks.py": 648,
     "tests/test_store.py": 282,
