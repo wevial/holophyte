@@ -160,10 +160,10 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
                             CommitAndEditTheTicket("fix: default load()"),
-                            APPROVE, provider=provider)
+                            APPROVE, Idle(""), provider=provider)
 
         self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
-                                      "implement", "review"])
+                                      "implement", "review", "implement"])
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "reply", "resolve", "state"])
         fixed = self.git("rev-parse", BRANCH).strip()

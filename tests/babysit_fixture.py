@@ -31,7 +31,7 @@ class BabysitHelpers:
         naps = []
         work = self.ratchet_work() if changed else Commit("candidate")
         fixes = [Commit("Resolve main", path="tests/test_file_sizes.py",
-                        body="branch's line\nmain's line\n"), APPROVE
+                        body="branch's line\nmain's line\n"), APPROVE, Idle("")
                  ] if changed else []
         with patch.object(holophyte.pr, "SLEEP", naps.append), \
                 patch("holophyte.babysitter.time",
@@ -51,7 +51,7 @@ class BabysitHelpers:
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append):
             fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE,
-                                provider=self.provider())
+                                Idle(""), provider=self.provider())
         return old, fake, naps
 
     def resume_rejected_fix(self):
@@ -151,7 +151,8 @@ class ConflictRefusalCases(BabysitHelpers):
     def test_changed_main_merge_restarts_review_and_quiet(self):
         out, naps = self.refresh_wait(changed=True)
         self.assertEqual(self.last_fake.roles,
-                         ["implement", "review", "implement", "implement", "review"])
+                         ["implement", "review", "implement", "implement", "review",
+                          "implement"])
         self.assertIn("green and quiet for 30s of the 300s", out)
         self.assertEqual(sum(naps), 300)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
@@ -160,7 +161,7 @@ class ConflictRefusalCases(BabysitHelpers):
         review = self.conflict_refusal(heads=("old", "pushed"))
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("candidate"), review, Idle(""), APPROVE,
+            self.loop(Commit("candidate"), review, Idle(""), APPROVE, Idle(""),
                       provider=self.provider())
         self.assert_conflict_merge_landed()
         self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
@@ -200,7 +201,7 @@ class ConflictRefusalCases(BabysitHelpers):
 
     def test_conflict_refusal_merges_main_pushes_and_retries(self):
         review = self.conflict_refusal()
-        self.loop(Commit("the scripted work"), review, Idle(""), APPROVE,
+        self.loop(Commit("the scripted work"), review, Idle(""), APPROVE, Idle(""),
                   provider=self.provider())
         self.assert_conflict_merge_landed()
 
@@ -210,9 +211,9 @@ class ConflictRefusalCases(BabysitHelpers):
         fake, _ = self.loop(self.ratchet_work(), review, Idle(""),
                             Commit("Merge main: retain both ratchets", path=path,
                                    body="branch's line\nmain's line\n"), APPROVE,
-                            provider=self.provider())
+                            Idle(""), provider=self.provider())
         self.assertEqual(fake.roles, ["implement", "review", "implement",
-                                      "implement", "review"])
+                                      "implement", "review", "implement"])
         self.assertIn(path, fake.turns[3].goal)
         self.assertIn("mid-merge", fake.turns[3].goal)
         self.assertEqual(fake.turns[3].cwd, self.worktrees / "ko-131-add-a-thing")

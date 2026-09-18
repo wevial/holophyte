@@ -1,3 +1,4 @@
+import re
 from time import monotonic
 
 import store
@@ -99,10 +100,11 @@ def _pr_template(wt):
 
 
 def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
-                     beat_s, wt, started, budget_min, issue_url):
+                     beat_s, wt, started, budget_min, issue_url, *, refresh=None):
     """One implementer turn writes the PR title and body from the diff.
     Return `(title, body)`, using a Summary stub when the reply is unusable
-    or the turn runs out of time, with one printed line saying so.
+    or the turn runs out of time, with one printed line saying so. A refresh
+    returns None on refusal so its caller keeps the existing body.
 
     The turn is given the diff against `main` (capped at `PR_TEXT_DIFF_CAP`,
     with a note when cut), the ticket, the repository's `AGENTS.md` and
@@ -149,6 +151,16 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
     parts.append(f"The ticket:\n\n{body or task}")
     parts.append(f"The diff against main (`git diff main...HEAD`):\n\n"
                  f"```diff\n{diff}\n```")
+    if refresh is not None:
+        current, answered = refresh
+        parts.extend([
+            "the description as it stands:\n\n" + current,
+            "what this fix answered:\n\n" + answered,
+            "Rewrite the description to match the current full diff. The title"
+            " will be ignored. Do not include Linear, Evidence, or appended bot"
+            " blocks. The loop preserves and extends the Changes since first"
+            " review list; omit that section from your reply.",
+        ])
     goal = "\n\n".join(parts)
     left = budget_min - (monotonic() - started) / 60
     minutes = max(1, min(PR_TEXT_BUDGET_MIN, int(left)))
@@ -163,12 +175,51 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         why = ("the turn ran out of time" if timed_out
                else "the reply has no `TITLE:` line, an empty title, or a"
                f" title over {pr.PR_TITLE_MAX} characters, or an empty body")
+        if refresh is not None:
+            print(f"[holo2] written PR text refused for {task_id}: {why};"
+                  " leaving the pull request body unchanged")
+            return None
         print(f"[holo2] written PR text refused for {task_id}: {why};"
               " opening the pull request with the ticket's title and a stub")
         return pr.pr_title(task_id, task), pr.pr_body_stub(
             {"id": task_id, "body": body}, why, issue_url)
     title, text = parsed
-    return title, pr.pr_body_written(text, task_id, issue_url)
+    return title, (text if refresh is not None else
+                   pr.pr_body_written(text, task_id, issue_url))
+
+CHANGES_HEADING = "## Changes since first review"
+
+
+def _without_changes(text):
+    """Separate the maintained history from the description's other sections."""
+    match = re.search(r"^## Changes since first review\s*\n(.*?)(?=^## |\Z)",
+                      text, re.MULTILINE | re.DOTALL)
+    if match is None:
+        return text, []
+    lines = [line for line in match[1].splitlines() if line.startswith("- ")]
+    return text[:match.start()] + text[match.end():], lines
+
+
+def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
+                    beat_s, wt, budget_min, pull, answered):
+    """One bounded writing turn after approval; refusal never overwrites prose."""
+    endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
+    with heartbeat_while(conn, run_id, beat_s):
+        current = pr.rest(target, pull, "GET", endpoint)["body"] or ""
+    own, _, _, _ = pr.split_pr_body(current)
+    written = _written_pr_text(
+        target, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
+        monotonic(), budget_min or PR_TEXT_BUDGET_MIN, None,
+        refresh=(own, answered))
+    if written is None:
+        return
+    _, history = _without_changes(own)
+    description, _ = _without_changes(written[1])
+    history.append(f"- Round {len(history) + 1}: {' '.join(answered.split())}")
+    text = description.rstrip() + "\n\n" + CHANGES_HEADING + "\n" + "\n".join(history)
+    with heartbeat_while(conn, run_id, beat_s):
+        latest = pr.rest(target, pull, "GET", endpoint)["body"] or ""
+        pr.edit_pr_body(target, pull, pr.replace_pr_text(latest, text))
 
 
 def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
