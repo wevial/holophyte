@@ -345,8 +345,11 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     # `run_verify()` reports a pass/fail gate rather than a raw status — the
     # failing clause and its exit code live in the output it builds — so the
     # exit code stored here is that verdict, and `output` is the detail.
-    results = ([{"command": verify_cmd, "exitCode": 0 if ok else 1,
-                 "output": out}] if verify_cmd else [])
+    results = getattr(out, "results", None)
+    if results is None:
+        results = ([{"source": "ticket", "command": verify_cmd,
+                     "exitCode": 0 if ok else 1,
+                     "output": out}] if verify_cmd else [])
     store.record_review_round(conn, run_id, rnd, verdict,
                               route or agent_route(target, role),
                               findings=findings, verification_results=results,

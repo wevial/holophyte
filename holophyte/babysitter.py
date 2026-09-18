@@ -14,7 +14,14 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
 from holophyte.config_tables import merge_config
-from holophyte.gates import InfraFailure, RunFailure, run_verify
+from holophyte.gates import (
+    InfraFailure,
+    RunFailure,
+    VerificationOutput,
+    record_unreviewed_verification,
+    run_verify,
+    with_baseline,
+)
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.review import criteria_brief, criteria_findings, evidence_brief
@@ -316,9 +323,14 @@ def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
     started = int(time() * 1000)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(command, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = with_baseline(target, wt, command, ok, out,
+                               conn, run_id)
+    out.results = [dict(row, output=f"Tree {sha}\n{row['output']}")
+                   for row in out.results]
     record_round(target, conn, run_id, _next_round(conn, run_id), "review",
                  "VERDICT: " + ("APPROVE" if ok else "REQUEST_CHANGES"),
-                 command, ok, f"Tree {sha}\n{out}", started_at=started,
+                 command, ok, VerificationOutput(f"Tree {sha}\n{out}", out.results),
+                 started_at=started,
                  route="mechanical:main-refresh")
     return ok, out
 
@@ -545,7 +557,10 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
               " before its review")
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                               conn, run_id)
     if not ok:
+        record_unreviewed_verification(conn, run_id, out)
         ledger(conn, run_id, task_id, "failure",
                f"FAILED verify before the review of the fix at {sha} on"
                f" {pull.url}; branch {branch} preserved, not merged\n\n{out}",
@@ -878,6 +893,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     fixed = maintainer_notes.cite_commits(wt, sha, fixed, addressed, sh)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                               conn, run_id)
+    record_unreviewed_verification(conn, run_id, out)
     if not ok:
         print(f"[holo2] verify FAILED after the fix round for {pull.url};"
               f" leaving branch {branch} at {fixed} for a human:\n{out}")

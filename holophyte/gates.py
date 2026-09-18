@@ -658,3 +658,89 @@ def remove_dead_merge_lock(path):
             return "removed"
         finally:
             os.close(fd)
+
+
+class VerificationOutput(str):
+    """Human-readable output carrying the rows for the review's existing record."""
+
+    def __new__(cls, output, results):
+        value = super().__new__(cls, output)
+        value.results = results
+        return value
+
+
+def run_baseline(target, wt, tier, conn=None, run_id=None):
+    """Run one baseline tier in order, stopping at its first failed command."""
+    from holophyte.config_tables import verify_config
+
+    config = verify_config(target)
+    if tier not in ("always", "before_merge"):
+        raise ValueError(f"unknown verify tier: {tier}")
+    results, reports = [], []
+    ok = True
+    for command in getattr(config, tier):
+        ok, out = run_verify(command, wt, timeout=config.timeout_sec,
+                             conn=conn, run_id=run_id)
+        results.append({"source": "baseline", "tier": tier,
+                        "command": command, "exitCode": 0 if ok else 1,
+                        "output": str(out)})
+        reports.append(f"[baseline:{tier}] {command}\n{out}")
+        if not ok:
+            break
+    return ok, VerificationOutput("\n".join(reports), results)
+
+
+def with_baseline(target, wt, command, ok, out, conn=None, run_id=None,
+                  *, before_merge=False):
+    """Complete a ticket verify with the applicable target baseline tiers.
+
+    Review rounds own verificationResults. The output carries these rows into
+    the next review; at the merge gate append the final checks to that review.
+    An event also preserves checks that fail before a review can be recorded.
+    """
+    import json
+
+    import store
+
+    results = ([{"source": "ticket", "command": command,
+                 "exitCode": 0 if ok else 1, "output": str(out)}]
+               if command else [])
+    reports = [str(out)]
+    for tier in (("always", "before_merge") if before_merge else ("always",)):
+        if not ok:
+            break
+        ok, baseline = run_baseline(target, wt, tier, conn, run_id)
+        results.extend(baseline.results)
+        if baseline:
+            reports.append(str(baseline))
+    has_baseline = any(row["source"] == "baseline" for row in results)
+    if has_baseline and conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "verification",
+                           "Mechanical verification " + ("passed" if ok else "failed"),
+                           level="detail",
+                           payload=json.dumps({"verificationResults": results}))
+    output = VerificationOutput("\n".join(reports), results)
+    if before_merge:
+        record_unreviewed_verification(conn, run_id, output)
+    return ok, output
+
+
+def record_unreviewed_verification(conn, run_id, output):
+    """Attach checks with no subsequent review to the run's latest round.
+
+    This includes the merge gate and failures that abort before the next review.
+    Targets without a baseline keep their existing review records.
+    """
+    import json
+
+    results = getattr(output, "results", [])
+    if (conn is None or run_id is None
+            or not any(row["source"] == "baseline" for row in results)):
+        return
+    with conn:
+        row = conn.execute(
+            "SELECT id, verificationResults FROM reviewRounds WHERE runId = ?"
+            " ORDER BY round DESC LIMIT 1", (run_id,)).fetchone()
+        if row:
+            conn.execute("UPDATE reviewRounds SET verificationResults = ? WHERE id = ?",
+                         (json.dumps(json.loads(row[1]) + results), row[0]))

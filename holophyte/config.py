@@ -35,6 +35,7 @@ from holophyte.config_tables import (
     report_config,
     split_address,
     sweep_config,
+    verify_config,
 )
 
 
@@ -108,6 +109,7 @@ DOCKER_PROBE_TIMEOUT = 5
 # `[supervisor]`'s entry is filled in beside `SUPERVISOR_KEYS`, where those
 # knobs and their defaults are defined.
 KNOWN_KEYS = {
+    "verify": frozenset({"always", "before_merge", "timeout_sec"}),
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
@@ -158,6 +160,7 @@ def check_config(target):
     what startup would accept. Each check exits naming the file, the table
     and the key, so a refusal is one sentence about the value to fix."""
     merge_config(target)
+    verify_config(target)
     check_config_keys(target)
     budget_scale(target)
     check_agent_fallbacks(target)

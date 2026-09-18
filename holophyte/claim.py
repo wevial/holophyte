@@ -92,11 +92,10 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
     no phase, so an absent table leaves the run byte-identical to today's.
     """
     commands = setup_commands(target)
-    if not commands:
-        return True, ""
     timeout = setup_timeout(target)
-    set_phase(conn, run_id, "working",
-              f"worktree setup: {len(commands)} command(s) in {wt}")
+    if commands:
+        set_phase(conn, run_id, "working",
+                  f"worktree setup: {len(commands)} command(s) in {wt}")
     for n, command in enumerate(commands, 1):
         try:
             ok, out = run_verify(command, wt, timeout=timeout)
@@ -106,6 +105,8 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
             return False, (f"[holo2] worktree setup command {n} of "
                            f"{len(commands)} FAILED: {command}\n{out}")
         print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
+    if (Path(wt) / ".githooks").is_dir():
+        sh(["git", "config", "core.hooksPath", ".githooks"], wt)
     return True, ""
 
 

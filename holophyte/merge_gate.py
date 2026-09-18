@@ -29,6 +29,7 @@ from holophyte.gates import (
     RunFailure,
     run_verify,
     sh,
+    with_baseline,
 )
 from holophyte.merge_lock import live_merge_lock
 from holophyte.pullrequest import _landed_pr, _open_pr, _resume_on_pr
@@ -333,6 +334,8 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
                                      budget_min)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                               conn, run_id, before_merge=True)
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
