@@ -605,8 +605,15 @@ after = ["bun --cwd=console run build"]
 ```
 
 Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`,
-`pr_poll_sec`, `pr_quiet_sec`, `pr_style`, `human_threads`,
+`pr_poll_sec`, `pr_quiet_sec`, `pr_style`, `human_threads`, `mention_handle`,
 `after`, `bot_authors`.
+
+`mention_handle` defaults to `"holophyte"` (without `@`). A review thread's
+latest comment mentioning `@holophyte`, case-insensitively, is an instruction:
+the factory fixes it without adjudication, replies with the commit SHA, and
+resolves it. Set `mention_handle = "factory-bot"` to use `@factory-bot` instead.
+Earlier mentions do not make a thread an instruction. Unmentioned threads
+retain the `human_threads` and `bot_threads` policies.
 
 `bot_authors` is a list of login strings, defaulting to
 `["devin-ai-integration", "coderabbitai", "greptile-apps", "github-actions"]`.

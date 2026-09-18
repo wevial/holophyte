@@ -140,6 +140,13 @@ class Thread:
     # bot's thread and leaves a person's to the operator; `"unknown"` --
     # the default, and a deleted account -- is treated as a person's.
     author_kind: str = "unknown"
+    classification: str = ""
+    request: str = ""
+
+    @property
+    def comments(self):
+        """The complete conversation, oldest first, with account kinds."""
+        return (Comment(self.author, self.body, self.author_kind),) + self.replies
 
 
 @dataclass(frozen=True)

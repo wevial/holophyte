@@ -426,6 +426,39 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         finally:
             conn.close()
 
+    def test_mentioned_thread_is_an_instruction_separate_from_findings(self):
+        from holophyte import babysitter, pr, thread_mentions
+        from holophyte.review import parse_findings
+
+        self.seed_reviewed()
+        mentioned = thread_mentions.classify(pr.Thread(
+            "T1", "app.py", 1, "operator", "@holophyte use the path tokenId\n"
+            "- Drop guestTokenId\n- Preserve token validation",
+            "https://github.com/example/repo/pull/1#discussion_r1"), "holophyte")
+        finding = pr.Thread("T2", "app.py", 2, "reviewer", "Handle empty tokens",
+                            "https://github.com/example/repo/pull/1#discussion_r2")
+        reply = babysitter.round_reply(
+            pr.PullRequest("github.com", "example", "repo", 1,
+                           "https://github.com/example/repo/pull/1"),
+            1, (mentioned, finding),
+            {1: ("ADDRESS", mentioned.request), 2: ("ADDRESS", "handle empty tokens")},
+            "success", "abc123")
+        conn = store.open(str(self.db))
+        try:
+            store.record_review_round(conn, self.run, 3, "changes_requested",
+                                      "github:reviewer", findings=parse_findings(reply))
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200)
+        rnd = body["rounds"][-1]
+        self.assertEqual(len(rnd["instructions"]), 1)
+        self.assertIn("use the path tokenId - Drop guestTokenId "
+                      "- Preserve token validation", rnd["instructions"][0]["message"])
+        self.assertEqual(len(rnd["findings"]), 1)
+        self.assertIn("Handle empty tokens", rnd["findings"][0]["message"])
+
     def test_rounds_oldest_first_with_findings_as_objects(self):
         self.seed_reviewed()
         self.start()

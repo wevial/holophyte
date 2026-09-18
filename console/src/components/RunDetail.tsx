@@ -118,6 +118,14 @@ function Card({
             now={tickingNow}
           />
           {rounds.flatMap((round) => (round.operator_notes ?? []).map((note) => <p key={note.event_id} className="mt-2 whitespace-pre-wrap text-sm">Round {round.round} · operator_note event {note.event_id} · {note.author}: {note.note}</p>))}
+          {rounds.some((round) => (round.instructions ?? []).length > 0) && (
+            <section className="mt-4">
+              <h3 className="text-sm font-semibold">Instructions</h3>
+              {rounds.flatMap((round) => (round.instructions ?? []).map((instruction, index) => (
+                <p key={`${round.round}-${index}`} className="mt-2 whitespace-pre-wrap text-sm">{instruction.message}</p>
+              )))}
+            </section>
+          )}
           {finished ? (
             <FindingsSection rounds={rounds} ledger={ledger} />
           ) : (
