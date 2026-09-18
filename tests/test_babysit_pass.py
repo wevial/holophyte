@@ -47,7 +47,6 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 class MergeModeBabysitPassTests(OperatorNoteCase, BotThreadCases,
                               ConflictRefusalCases, MergeModeFixture):
     """End-to-end review, fix, and merge behavior for PR babysitting."""
-
     def test_operator_note_drives_fix_without_public_posts_or_judgment(self):
         self.operator_note_pass(False)
 
