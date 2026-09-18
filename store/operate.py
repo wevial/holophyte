@@ -175,8 +175,8 @@ class RequeueRefused(Exception):
     """A requeue `requeue()` will not do; nothing was written.
 
     The ticket does not exist, still has a live run, is neither `in_flight`
-    nor `blocked_on_operator` on the one ground `requeue()` admits (a
-    merge-gate conflict), or its last run did not end `failed` -- each is
+    nor `blocked_on_operator` after a failed or rejected run, or its last
+    run did not end `failed` or `rejected` -- each is
     the same answer to the operator: this is not a failed ticket waiting
     to go back in the queue, so the message names which and the command
     line exits on it.
@@ -184,10 +184,8 @@ class RequeueRefused(Exception):
 
 
 # The outcome reason the merge gate fails a run with when merging `main`
-# into the branch conflicts (KO-342): `is_gate_conflict()` recognises it,
-# and `requeue()` admits a `blocked_on_operator` ticket on that ground
-# alone (KO-365). The loop composes the reason from this prefix so the two
-# cannot drift apart.
+# into the branch conflicts (KO-342): `is_gate_conflict()` recognises it.
+# The loop composes the reason from this prefix so the two cannot drift apart.
 GATE_CONFLICT_REASON = "merging main into "
 
 
@@ -209,13 +207,11 @@ def requeue(conn, ticket_id, note, now=None):
     the operator's reason, rather than the mislabeled `close_out` those
     sessions wrote.
 
-    One more admission (KO-365): a ticket parked `blocked_on_operator`
-    because the merge gate's merge of `main` into the branch conflicted
-    (`is_gate_conflict()` on the newest run's reason). The run failed and
-    the branch was preserved; the operator resolves the merge on the branch
-    and this is the way back -- `--repoint` refuses a failed run. The block
-    is cleared with the same row and walk. Any other `blocked_on_operator`
-    park (a pull request, `merge?`, a strike-out) keeps the refusal.
+    A ticket parked `blocked_on_operator` after a failed or rejected run
+    is admitted too (KO-497), unless its run awaits merge approval. Clear
+    its question in the same transaction as the intervention and walk.
+    Candidates and pull requests still awaiting approval name the operator
+    command that applies instead.
 
     Refuses, with `RequeueRefused` and no write, anything else: an unknown
     ticket, one with an active run, one not `in_flight` (already `ready`,
@@ -234,16 +230,16 @@ def requeue(conn, ticket_id, note, now=None):
             raise RequeueRefused(
                 f"{identifier}: run {active_run_id} is still live;"
                 " a requeue is for a ticket whose run has ended")
-        run = (conn.execute("SELECT outcome, outcomeReason FROM runs"
+        run = (conn.execute("SELECT outcome, phase, prUrl FROM runs"
                             " WHERE id = ?", (last_run_id,)).fetchone()
                if last_run_id is not None else None)
-        parked_on_conflict = status == "blocked_on_operator" \
-            and run is not None and run[0] == "failed" \
-            and is_gate_conflict(run[1])
-        rejected = run is not None and run[0] == "rejected"
-        if status != "in_flight" and not (parked_on_conflict or
-                                          status == "blocked_on_operator"
-                                          and rejected):
+        parked = status == "blocked_on_operator"
+        if parked and run is not None and run[1] == "awaiting_merge_approval":
+            command = "--babysit" if run[2] else "--approve or --babysit"
+            raise RequeueRefused(
+                f"{identifier} is parked awaiting merge approval; use {command}")
+        if status != "in_flight" and not (
+                parked and run is not None and run[0] in ("failed", "rejected")):
             raise RequeueRefused(
                 f"{identifier} is {status}, not in_flight; nothing to requeue")
         if run is None:
@@ -254,9 +250,8 @@ def requeue(conn, ticket_id, note, now=None):
                 f"{identifier}: run {last_run_id} ended {run[0]},"
                 " not failed or rejected; nothing to requeue")
         record_intervention(conn, last_run_id, "requeue", note, now=now)
-        if parked_on_conflict or rejected:
-            conn.execute("UPDATE tickets SET blockedQuestion = NULL"
-                         " WHERE id = ?", (ticket_id,))
+        conn.execute("UPDATE tickets SET blockedQuestion = NULL"
+                     " WHERE id = ?", (ticket_id,))
         walk_ticket(conn, ticket_id, "ready")
     return last_run_id
 

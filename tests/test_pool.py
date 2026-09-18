@@ -143,8 +143,8 @@ class GateConflictRequeueTests(LoopFixture):
 
         self.assertEqual(
             str(refused.exception),
-            "[holo2] KO-131 is blocked_on_operator, not in_flight; nothing"
-            " to requeue")
+            "[holo2] KO-131 is parked awaiting merge approval;"
+            " use --babysit")
         self.assertEqual(
             self.read("SELECT status, blockedQuestion FROM tickets"),
             [("blocked_on_operator", f"PR open: {url}")])

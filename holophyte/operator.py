@@ -317,13 +317,13 @@ def _requeue_candidate(conn, ticket_id):
     if ticket is None or ticket.activeRunId is not None \
             or ticket.lastRunId is None:
         return None
-    row = conn.execute("SELECT outcome, outcomeReason, prUrl FROM runs"
+    row = conn.execute("SELECT outcome, phase, prUrl FROM runs"
                        " WHERE id = ?", (ticket.lastRunId,)).fetchone()
     if not row or row[0] != "failed":
         return None
     if ticket.status == "in_flight" or (
             ticket.status == "blocked_on_operator"
-            and store.is_gate_conflict(row[1])):
+            and row[1] != "awaiting_merge_approval"):
         return ticket.lastRunId, row[2]
     return None
 
