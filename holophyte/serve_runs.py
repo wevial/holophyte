@@ -323,11 +323,15 @@ def locate_run(target, text):
 
 
 def run_detail(target, run_id, now=None):
-    """Return run clocks, rounds (including private notes), and narrative events.
+    """Return `/runs/N`: run clocks, review rounds and narrative events.
 
-    Working time includes active work; wall time freezes at endedAt. Invalid or
-    missing runs use locate_run's errors. Rounds and events are oldest first.
-    """
+    Effective working_ms includes active work through `now`; elapsed_ms is wall
+    time, frozen at endedAt. The scaled time box matches `/status`. Live runs
+    carry heartbeat age (null after completion) and the recorded review cap;
+    old rows use MAX_ROUNDS. locate_run supplies invalid/missing 400/404/503s.
+    Rounds include the private operator notes they consumed.
+    Rounds and events are oldest first; include implementer_output summaries
+    for refusals and no-commit crashes, keeping full payloads in the store."""
     now = int(time() * 1000) if now is None else now
     failed, run = locate_run(target, run_id)
     if failed is not None:

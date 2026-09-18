@@ -46,9 +46,21 @@ key is a startup error naming it. `/`, the console's files and `/peers`
 stay open so the page can load and learn where its peers are. A loopback
 bind ignores the key for its reads. The token is never printed or logged.
 
-`[serve] actions = true` opens token-gated operator actions. Each records
-an intervention before acting; send-back records private maintainer feedback.
-
+`[serve] actions = true` (KO-348) is the one exception to read-only: it
+opens four `POST /actions/...` routes behind the token, each a legal
+rung of the operator ladder -- `restart-supervisor` and `launch-loop` run
+`systemctl --user` against the deploy units named by `[serve] name`, and
+`requeue` is `store.requeue()`, what `--requeue KO-n --note TEXT` does.
+`send-back` records a private maintainer note and releases the parked
+candidate for another babysit pass, without posting the note to GitHub.
+The actions demand the token on every bind, loopback included -- a bind
+address guards reads, not a hand on the units -- so the opt-in needs
+`[serve] token_file` and binding without one is a startup error. Each
+records its `store.record_intervention()` row before it acts. Unit actions
+and requeue answer `{"action", "ok", "detail"}`; send-back success returns
+`{"ok", "run", "event_id"}`. A `systemctl` that fails is `ok: false`
+carrying its stderr, never a 500, and an action that cannot be recorded
+does not run. Off, every `/actions/` path is 404 and this module still
 opens no write connection.
 
 `[serve] config_edit = true` (KO-356) opens the target's own `config.toml`

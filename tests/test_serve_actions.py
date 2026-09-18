@@ -107,6 +107,9 @@ class ActionsTests(UnitActionCases, ServeTestCase):
             conn.close()
 
     def test_a_preflight_for_an_action_grants_the_post_and_its_json_body(self):
+        # The console on another daemon's page asks before posting an
+        # action with the bearer and a JSON Content-Type; a preflight
+        # that named only GET would have the browser block the click.
         self.seed()
         self.start(self.token_config("actions = true\n"), host="0.0.0.0")
 
@@ -127,11 +130,16 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         opened.assert_not_called()
 
     def test_status_advertises_the_opt_in(self):
+        # KO-349: the console reads `actions` before a click, so a daemon
+        # without the routes draws its buttons disabled instead of
+        # posting into a 404.
         self.seed()
         self.start(self.token_config('actions = true\nname = "writer-a"\n'))
         code, _, body = self.request("GET", "/status")
         self.assertEqual(code, 200)
         self.assertIs(body["actions"], True)
+        # KO-358: the settings sheet reads `config_edit` the same way and
+        # draws itself read-only, naming the key, without it.
         self.assertIs(body["config_edit"], False)
 
     def test_a_loopback_bind_demands_the_token_for_actions(self):
@@ -196,6 +204,7 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertIs(body["ok"], False)
         self.assertIsNone(body["recorded"])
         self.assertIn("no run to record", body["detail"])
+        # The same config, a second daemon, and no store at all.
         self.db.unlink()
         self.start()
         with patch.object(subprocess, "run") as run:
@@ -218,6 +227,7 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertEqual(body["action"], "launch-loop")
         self.assertIs(body["ok"], False)
         self.assertIn(stderr, body["detail"])
+        # The instance defaults to the target directory's name.
         self.assertEqual(run.call_args.args[0],
                          ["systemctl", "--user", "start", "holophyte-loop@repo"])
 
@@ -243,6 +253,8 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertIn("the verify was flaky", entries[0].text)
         self.assertEqual(entries[0].source, "operator")
 
+        # A merged ticket is refused by the store, and that is `ok: false`
+        # with the refusal, not a 500; an unmirrored one the same.
         for ticket_id, fragment in (("KO-1", "merged"), ("KO-99", "no such")):
             with self.subTest(ticket=ticket_id):
                 code, _, body = self.request("POST", "/actions/requeue",
@@ -257,6 +269,8 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertIn("ticket", body["error"])
 
     def test_requeue_refuses_an_identifier_the_store_holds_twice(self):
+        # The CLI's `--requeue` refuses to pick one of two tickets named
+        # alike; the route must refuse the same way, and neither may move.
         self.seed_ended()
         conn = store.open(str(self.db))
         try:

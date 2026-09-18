@@ -289,7 +289,9 @@ class LiveRun:
 
 @dataclass(frozen=True)
 class ApprovedCandidate:
-    """The released run, its parked sha, and its PR (None for local mode)."""
+    """The prior run an approval released, the sha it was parked on, and
+    the pull request `[merge] mode = "pr"` opened for it (None when the park
+    opened none)."""
 
     run_id: int
     sha: str | None

@@ -13,9 +13,10 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-# Put helpers on the import path for both discovery and module-qualified
-# unittest commands. They live under tests but are not test modules; discovery
-# does not import them itself.
+# `fake_agent` is a helper, not a test module: discovery never imports it, and
+# how this file is imported decides whether `tests/` is on the path at all.
+# Putting it there explicitly makes `discover -s tests` and `-m unittest
+# tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
 from babysit_fixture import (  # noqa: E402
     ConflictRefusalCases,
@@ -83,6 +84,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_declined_human_is_replied_to_left_open_and_parks(self):
+        # Exercise the reply-stage boundary after human adjudication.
         with patch("holophyte.babysitter._verdicts_by_kind",
                    return_value={1: ("DECLINE", "a naming preference")}):
             _, calls = self.declined_thread(("alice", "User"))
@@ -148,6 +150,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
                  - timedelta(seconds=10)).isoformat()
         self.fake_route(states=[self.pr_state(updated_at=fresh)])
         naps = []
+        # A fresh PR must park at CHECK_WAIT_S, without attempting merge.
         with patch.object(holophyte.pr, "SLEEP", naps.append), \
                 patch.object(holophyte.pr, "CHECK_WAIT_S", 45), \
                 patch.object(holophyte.babysitter, "monotonic",
@@ -265,6 +268,8 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
                 rest = runs_then([dict(rule, parameters=parameters)])
                 self.assertEqual(self._state_with_rest(rest).checks,
                                  "pending")
+        # A rule of another type, and a rule with no contexts, are not
+        # pending: they require nothing.
         rest = runs_then([{"type": "deletion"},
                           dict(rule, parameters={"required_status_checks": []})])
         self.assertEqual(self._state_with_rest(rest).checks, "success")
@@ -571,6 +576,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
 
         self.assertEqual(fake.roles, ["implement", "review", "implement",
                                       "adjudicate", "implement"])
+        # The adjudicator judged the candidate as pushed, against main.
         self.assertEqual(fake.turns[3].base_sha, self.base)
         self.assertIn(self.URL, fake.turns[3].goal)
         self.assertIn(self.DEFECT[3], fake.turns[3].goal)
@@ -578,6 +584,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
         self.assertNotEqual(fixed, fake.turns[3].candidate_sha)
         self.assertIn("fix: default load() to an empty thing",
                       self.subjects(BRANCH))
+        # Two pushes: the candidate, then the fix.
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"] * 2)
         calls = self.api_calls()
@@ -597,6 +604,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
                       " ORDER BY round"),
             [(1, "pass", holophyte.agents.agent_route(self.tgt, "review")),
              (2, "changes_requested", "github:review-bot+style-bot")])
+        # Every reply and resolve is on the run's stream.
         events = [summary for (summary,) in self.read(
             "SELECT summary FROM runEvents WHERE kind = 'pull_request'"
             " ORDER BY seq")]
@@ -630,6 +638,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
 
         self.assertEqual(fake.roles, ["implement", "review", "implement",
                                       "adjudicate", "implement"])
+        # The candidate's push only; the fix never left the machine.
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"])
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
@@ -744,6 +753,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
         self.assertNotIn(person[3], goal)
         self.assertNotIn("wevial", goal)
         self.assertNotIn("THREAD 2", goal)
+        # Nothing posted: no reply, no resolve, no fix pushed.
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"])
@@ -789,6 +799,7 @@ class MergeModeBabysitPassTests(OperatorNoteCase, ConflictRefusalCases,
         self.assertIn(person[3], goal)
         self.assertIn("opened by a person", goal)
         self.assertIn("Never DECLINE a person's thread", goal)
+        # The fix round was given the person's thread.
         self.assertIn(person[3], fake.turns[4].goal)
         self.assertIn("@wevial", fake.turns[4].goal)
         fixed = self.git("rev-parse", BRANCH).strip()

@@ -685,6 +685,13 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     by_verdict = {v: [(n, t, verdicts[n][1]) for n, t in
                       enumerate(threads, 1) if verdicts[n][0] == v]
                   for v in babysitter.VERDICTS}
+    # A HUMAN verdict on a bot's thread ends the pass before anything is
+    # posted, under either setting -- bot handling does not move. Only a
+    # person's HUMAN under `act` waits: the bots' threads and the
+    # person's ADDRESSes are fixed and answered first; the pass then
+    # parks with that thread quoted, unanswered, and any addressed one
+    # listed as left open for them to close -- so the next pass does not
+    # judge it again.
     if by_verdict["HUMAN"] and (not act or any(
             t.author_kind == "bot" for _, t, _ in by_verdict["HUMAN"])):
         _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
@@ -717,6 +724,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
 
 
 def _decline_threads(target, conn, run_id, beat_s, pull, declined, model):
+    """Reply before resolving bot declines; return the threads left open."""
     bot_authors = merge_config(target).bot_authors
     left_open = []
     for _, thread, reason in declined:
@@ -780,6 +788,11 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(f"fix round for {pull.url} timed out or made no"
                          f" progress; branch {branch} preserved at"
                          f" {sha[:12]}")
+    # The verify runs over the working tree, so it vouches for the
+    # commit only when the tree is that commit: a fix half committed and
+    # half left in the tree would verify green and push a commit that
+    # does not hold it -- and resolve the thread on it. The tree is left
+    # for a human; nothing is committed, deleted or pushed.
     unclean = _candidate_drift(wt, branch, fixed)
     if unclean:
         ledger(conn, run_id, task_id, "failure",
@@ -806,6 +819,8 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         pr.push_branch(target, branch)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
     summaries = babysitter.parse_summaries(fixes)
+    # A person's thread is theirs to close: the reply names the fix and
+    # the sha, and the thread is left unresolved for its author.
     for n, thread, reason in addressed:
         if maintainer_notes.is_note(thread):
             continue

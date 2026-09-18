@@ -142,6 +142,17 @@ def host_name(host):
 
 
 def host_label(target, host):
-    """A `host` column as a rendering shows it: the label, or `host_name()`."""
+    """A `host` column as a rendering shows it: the label, or `host_name()`.
+
+    `[report] host_label` in `target`'s config replaces the hostname wherever
+    the factory renders one -- the report and sweep tables and the
+    supervisor's lines; the FINDINGS window a public repository commits has
+    no host column to replace -- while the store goes on holding the real
+    hostname for the supervisor's own-host checks.
+    With no label (or no `target`), this is `host_name(host)` exactly; so
+    is a `host` of None, label or not: a row older than the column has no
+    recorded host, and calling it the writer would state something the
+    store does not know.
+    """
     label = report_config(target).host_label if target is not None else None
     return host_name(host) if host is None or label is None else label

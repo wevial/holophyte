@@ -1,4 +1,17 @@
-"""holophyte.serve_actions: the daemon's `POST /actions/...` routes (KO-395)."""
+"""holophyte.serve_actions: the daemon's `POST /actions/...` routes (KO-395).
+
+Owns POST parsing, unit actions, private maintainer send-back notes,
+and requeue with the CLI's duplicate-ticket
+check. `record_action_intervention()` records before acting and is shared
+with `PUT /config`. This module also owns the route constants:
+`ACTIONS_PREFIX`, `UNIT_ACTIONS`,
+`REQUEUE_ACTION`, `ACTIONS`, `DEFAULT_REQUEUE_NOTE` and `MAX_BODY`.
+`no_store()`, which `requeue_action()` shares with the read routes,
+lives with them in `holophyte.serve_runs`, so the import runs one way;
+`holophyte.serve_config`'s `_write_config()` reaches
+`record_action_intervention()` here through a deferred
+`from holophyte.serve_actions import`.
+"""
 from __future__ import annotations
 
 import json
@@ -47,7 +60,21 @@ def parse_action_body(raw):
 
 def unit_action(target, action, unit_name):
     """Run the `systemctl --user` step `action` names against the unit
-    instance `unit_name`: `(http status, JSON-able body)`."""
+    instance `unit_name`: `(http status, JSON-able body)`.
+
+    The interventions row lands first (`store.record_intervention()`, the
+    operator ladder's record-before-acting call), on the store's newest run
+    (`store.read.newest_run_id()`) since interventions are keyed by run. A
+    target with no store, or a store with no run yet, has nothing to record
+    against and the step does not run: 200 with `ok: false` saying so,
+    since an unrecorded hand on the units is what the ladder forbids.
+    `systemctl` exiting non-zero, being absent or outliving
+    `holophyte.reexec.SYSTEMCTL_TIMEOUT` is 200 with `ok: false` and the
+    reason in `detail`: the operator asked for a thing and is told what
+    happened, which is not a server error. `launch-loop` starts the unit
+    through `start_loop()`, the call the supervisor's sweep makes when a
+    ticket is ready and no loop is live (KO-376, widened by KO-409).
+    """
     verb, template, intervention = UNIT_ACTIONS[action]
     unit = template + unit_name
     note = f"operator asked the daemon to {verb} {unit} (POST /actions/{action})"

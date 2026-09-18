@@ -28,6 +28,9 @@ class UnitActionCases:
                                 "holophyte-supervise@writer-a"])
         self.assertEqual(run.call_args.kwargs["timeout"], 20)
         self.assertEqual(body["recorded"], self.run)
+        # The row lands before the unit is touched: a human
+        # `restart_supervisor` intervention on the store's newest run, its
+        # ledger copy naming the unit and the route.
         conn = store.read.open_readonly(self.db)
         try:
             rows = conn.execute(
@@ -42,4 +45,3 @@ class UnitActionCases:
                          [("intervention", "operator")])
         self.assertIn("holophyte-supervise@writer-a", entries[0].text)
         self.assertIn("restart-supervisor", entries[0].text)
-

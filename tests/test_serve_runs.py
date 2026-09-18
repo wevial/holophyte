@@ -72,6 +72,7 @@ class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
 class RunsTests(ServeTestCase):
 
     def expected_rows(self):
+        """The oracle: `report_rows()` over the same store, named by column."""
         conn = store.open(str(self.db))
         try:
             rows = holophyte.report.report_rows(conn)
@@ -84,9 +85,11 @@ class RunsTests(ServeTestCase):
                     rows, self.ended_at(), self.merge_shas(), self.column("startedAt"))]
 
     def ended_at(self):
+        """Read stored end times in report order."""
         return self.column("endedAt")
 
     def merge_shas(self):
+        """The oracle for `merge_sha`: `runs.mergeSha` itself, same order."""
         return self.column("mergeSha")
 
     def column(self, name):
@@ -379,6 +382,7 @@ class RunDetailTests(ServeTestCase):
             store.tickets.transition(conn, ticket, "in_flight")
             started = self.now - 30 * MIN
             self.run = store.claim(conn, project, ticket, now=started)
+            # Append the seed's events after claim's narrative rows.
             self.seeded_events = [
                 ("verify", "verify passed", "narrative"),
                 ("tool_use", "ran ruff", "detail"),
@@ -424,6 +428,7 @@ class RunDetailTests(ServeTestCase):
                          ["changes_requested", "pass"])
         self.assertEqual([r["reviewer_model"] for r in body["rounds"]],
                          ["reviewer-a", "reviewer-b"])
+        # Objects, not the stored JSON string, and the two the seed wrote.
         self.assertEqual(body["rounds"][0]["findings"], self.FINDINGS)
         self.assertEqual(body["rounds"][1]["findings"], [])
         self.assertLess(body["rounds"][0]["started_ms"],
@@ -438,6 +443,7 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(code, 200)
         got = [(e["at"], e["kind"], e["summary"]) for e in body["events"]]
         self.assertEqual(got, self.stored_events("narrative"))
+        # Narrative seed events remain ordered among the phase changes.
         narrative = [(k, s) for k, s, level in self.seeded_events
                      if level == "narrative"]
         self.assertEqual([(k, s) for _at, k, s in got if k != "phase_change"],
@@ -465,6 +471,7 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(shown["summary"], "This contract cannot be met.")
         self.assertNotIn("payload", shown)
         self.assertNotIn("no file is named", self.raw_body)
+        # Sequence order puts the appended event last.
         self.assertEqual(body["events"][-1]["kind"], "implementer_output")
         self.assertNotIn("ran ruff", [e["summary"] for e in body["events"]])
 
@@ -483,6 +490,7 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(run["merge_sha"], MERGE_SHA)
         self.assertEqual(run["started_ms"], self.now - 30 * MIN)
         self.assertEqual(run["ended_ms"], self.now - 10 * MIN)
+        # Older runs without a stored cap use the loop's constant.
         self.assertEqual(run["max_rounds"],
                          holophyte.serve_runs.MAX_ROUNDS)
         self.assertIsInstance(run["max_rounds"], int)
@@ -528,12 +536,14 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(code, 400)
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn("error", body)
+        # Impossible integer IDs return 404, including SQLite overflow.
         code, _headers, body = self.request("GET", "/runs/-1")
         self.assertEqual(code, 404)
         self.assertEqual(body["run"], "-1")
         code, _headers, body = self.request("GET", "/runs/9223372036854775808")
         self.assertEqual(code, 404)
         self.assertEqual(body["run"], "9223372036854775808")
+        # `/runs` and `/runs?limit=N` answer as before.
         code, _headers, body = self.request("GET", "/runs")
         self.assertEqual(code, 200)
         self.assertEqual(body["rows"], [])
@@ -542,6 +552,11 @@ class RunDetailTests(ServeTestCase):
         self.assertEqual(body["limit"], 2)
 
     def test_a_run_id_of_thousands_of_digits_answers_not_disconnects(self):
+        # Regression: `int()` refuses strings past Python's digit limit
+        # (4300 by default), and the handler used to die on the ValueError
+        # and drop the connection. Leading zeros are normalized away, so
+        # the padded existing id is that run; an id of that many
+        # significant digits is 404 like any other absent one.
         self.seed()
         self.start()
         padding = "0" * 5000
@@ -579,6 +594,8 @@ class ActiveRoutesTests(ServeTestCase):
                               probe=ProbeResult(['devin', '-p'], 0, 'ready', 90))
         finally:
             conn.close()
+        # The daemon constructs its own Target, proving the indicator is not
+        # accidentally reading the loop's in-memory route map.
         self.start()
         code, _, body = self.request('GET', '/status')
         self.assertEqual(code, 200)

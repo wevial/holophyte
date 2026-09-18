@@ -332,8 +332,12 @@ def babysit(conn, ticket_id, note, now=None, source="human"):
 def _release_parked(conn, ticket_id, action, note, reason, now,
                     require_pr=False, source="human", guidance=None,
                     before_release=None):
-    """Record the intervention, abandon at the merge gate, and ready the ticket.
-    `require_pr` refuses parks without a PR; the hook records before release."""
+    """The transaction `approve()` and `babysit()` share: the intervention
+    row with `action`, the parked run ended `abandoned` for `reason` with
+    its resume point at the merge gate, the ticket walked to `ready`.
+    `require_pr` refuses, before the first write, a parked run that has no
+    `prUrl`. `before_release`, when supplied, records additional evidence
+    after the intervention and before release, in the same transaction."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
