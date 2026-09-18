@@ -93,6 +93,13 @@ Each module, one line:
 - `holophyte/pr_status.py` — reading a pull request's state (KO-426), out
   of `holophyte/pr.py`: `pull_status()` for the parked-run reconcile,
   `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.
+- `holophyte/pr_media.py` — user-facing diff matching, timed capture, orphan
+  media publishing and evidence shared by PR descriptions and review prompts.
+  Configure `[merge] ui_paths` with repository-relative globs and `ui_capture`
+  with a non-interactive command (shell-style quoting, no shell evaluation).
+  The command receives one output-directory argument and has five minutes to
+  write PNG, WebM or MP4 files. Configure both keys together; absent keys
+  leave PRs unchanged.
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.

@@ -669,3 +669,21 @@ class ReviewerImageTests(unittest.TestCase):
         self.assertIsNotNone(gotmpdir, "Dockerfile sets no GOTMPDIR")
         self.assertEqual(tmpdir.group(1), gotmpdir.group(1))
         self.assertTrue(tmpdir.group(1).startswith("/home/reviewer/"))
+
+
+class VisualEvidencePromptTests(unittest.TestCase):
+    def test_failed_capture_is_shared_by_review_and_pr(self):
+        from holophyte.review import evidence_brief
+        from tests.test_pr_media import MediaTests
+
+        fixture = MediaTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.config['merge']['mode'] = 'pr'
+        fixture.candidate(script='raise SystemExit(7)')
+        brief = evidence_brief(fixture.target, fixture.repo, 'KO-505')
+        body = fixture.open()
+        failure = 'Capture command `python3 capture.py` failed (exit 7).'
+        self.assertIn(failure, body)
+        self.assertIn(failure, brief)
+        self.assertIn('counts against the candidate', brief)

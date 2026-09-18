@@ -2,7 +2,7 @@ from time import monotonic
 
 import store
 import store.read
-from holophyte import babysitter, pr
+from holophyte import babysitter, pr, pr_media
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
 from holophyte.gates import MergeParked, RunFailure, sh
@@ -132,6 +132,10 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         " a link to the ticket -- the loop appends one. Do not edit, commit"
         " or run anything: answer with the text only.",
     ]
+    if merge_config(target).ui_paths:
+        parts.append("The loop appends captured Evidence after this turn. Do not"
+                     " describe screenshots you have not seen or add an"
+                     " Evidence section.")
     template = _pr_template(wt)
     if template:
         parts.append("Pull request template, fill its sections:\n\n"
@@ -178,26 +182,22 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     not the ticket, so no strike is spent and the branch and worktree stay
     exactly as after a refused merge. Nothing touches main.
 
-    Between the two, one GraphQL read asks whether the branch is already
-    the head of an open pull request (KO-407): a run requeued onto a
-    branch its failed predecessor opened as a PR would otherwise be
-    refused by the create with everything else done right. A hit is the
-    run's `pr_url`, adopted rather than opened again -- the babysit pass
-    that follows is the same one a created PR gets, and a park through
-    `_park_on_pr()` records it like every other PR park.
+    Adopt an existing open PR on this branch instead of creating a duplicate
+    (KO-407). The babysit pass and park then proceed as for a new PR.
 
-    Before the push, `_written_pr_text()` writes the title and body from
-    the diff. An unusable reply falls back to the ticket title and a short
-    Summary stub explaining the failure, followed by the Linear link.
+    Before pushing, write the PR text, falling back to a stub on failure.
 
     Both calls leave the machine and block for as long as the remote takes,
     so they run under `heartbeat_while()` like every other wait: a slow push
     is not a dead loop for the supervisor to sweep before the URL is on the
     run (KO-259 review round 1).
     """
+    with heartbeat_while(conn, run_id, beat_s):
+        evidence = pr_media.prepare(target, wt, task_id)
     title, text = _written_pr_text(target, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,
                                    budget_min, issue_url)
+    text = pr_media.append(text, evidence)
     # Still the `merge_gate` phase: the push and the create are the mode's
     # way out of the gate, named on the stream rather than as a phase move.
     if conn is not None and run_id is not None:

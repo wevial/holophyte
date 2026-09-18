@@ -535,3 +535,15 @@ def round_verdict(reply, verdicts):
                     review_runner.terminal_verdict(reply, verdicts)]
     except review_runner.ReviewBoundaryError:
         return "error"
+
+
+def evidence_brief(target, wt, task_id):
+    """Give the reviewer the same evidence receipt the PR will carry."""
+    from holophyte import pr_media
+    from holophyte.config_tables import merge_config
+
+    if merge_config(target).mode != "pr":
+        return ""
+    section = pr_media.prepare(target, wt, task_id)
+    return ("\n\n" + section + "\n\nMissing or failed visual evidence counts against "
+            "the candidate; report it as a review finding.\n" if section else "")
