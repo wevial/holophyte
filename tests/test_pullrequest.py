@@ -164,8 +164,10 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.fake_route(open_pr=adopted)
         provider = self.provider()
 
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            provider=provider)
+        with patch.object(holophyte.pr, "SLEEP") as sleep:
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                                provider=provider)
+        sleep.assert_not_called()
 
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
@@ -185,6 +187,9 @@ class MergeModePullRequestTests(MergeModeFixture):
         # The adopted PR is babysat like an opened one: the state read is
         # the pass's, the round is stamped, and the park names the PR.
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual(self.read(
+            "SELECT summary FROM runEvents WHERE summary LIKE"
+            " 'pull request head settled%'"), [])
         self.assertEqual(
             self.read("SELECT phase, prUrl, candidateSha FROM runs"),
             [("awaiting_merge_approval", adopted,
@@ -200,6 +205,52 @@ class MergeModePullRequestTests(MergeModeFixture):
             self.read("SELECT verdict, reviewerModel FROM reviewRounds"
                       " ORDER BY round")[-1],
             ("pass", "github:ci"))
+
+    def test_adopted_head_settles_before_waiting_for_checks(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(open_pr=self.URL, states=[
+            self.pr_state(head=self.base),
+            self.pr_state(checks="PENDING"), self.pr_state()])
+        observed = []
+
+        def sleep(seconds):
+            observed.append((seconds, self.read("SELECT phase FROM runs")))
+
+        with patch.object(holophyte.pr, "SLEEP", sleep):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                                provider=self.provider())
+
+        sha = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.read(
+            "SELECT summary FROM runEvents WHERE summary LIKE"
+            " 'pull request head settled%'"),
+            [(f"pull request head settled to {sha} after 2 reads",)])
+        self.assertEqual(observed, [
+            (5, [("merge_gate",)]),
+            (holophyte.pr.CHECK_POLL_S, [("merge_gate",)])])
+        self.assertIn("ready to merge", self.question())
+
+    def test_adopted_foreign_head_parks_after_bounded_reads(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(open_pr=self.URL, states=[self.pr_state(head=self.base)])
+        with patch.object(holophyte.pr, "SLEEP") as sleep:
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                                provider=self.provider())
+
+        sha, question = self.git("rev-parse", BRANCH).strip(), self.question()
+        self.assertIn(f"head is {self.base[:12]}", question)
+        self.assertIn(f"not the candidate {sha[:12]} this run pushed", question)
+        self.assertIn("(3 reads over 15 s)", question)
+        self.assertEqual([call.args for call in sleep.call_args_list],
+                         [(5,), (5,), (5,)])
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state"] * 4)
+        self.assertEqual(self.read("SELECT phase FROM runs"),
+                         [("awaiting_merge_approval",)])
+        self.assertEqual(self.read(
+            "SELECT summary FROM runEvents WHERE summary LIKE"
+            " 'pull request head settled%'"), [])
 
     def test_an_open_pull_request_is_adopted_through_a_slashed_origin(self):
         """An `origin` ending in `/` -- `https://github.com/example/repo/`

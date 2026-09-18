@@ -929,15 +929,15 @@ class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn(self.DEFECT[3], self.question())
 
     def test_a_head_that_is_not_the_candidate_parks_instead_of_merging(self):
+        self.enterContext(patch.object(holophyte.pr, "SLEEP"))
         self.configure('[merge]\nmode = "pr"\n')
         other = "a" * 40
         self.fake_route(states=[self.pr_state(head=other)])
-
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=self.provider())
 
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
-        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"] * 4)
         candidate = self.git("rev-parse", BRANCH).strip()
         self.assertEqual(
             self.read("SELECT phase, outcome, candidateSha FROM runs"),
