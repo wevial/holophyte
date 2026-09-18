@@ -455,7 +455,7 @@ def ledger(target, query):
         feed = [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
                 for e in entries]
         if ticket is None and kind in (None, "intervention"):
-            feed.extend(migration_rows(conn, since, limit))
+            feed.extend(migration_rows(conn, since, limit, str(target.path)))
         feed.sort(key=lambda row: row["at"], reverse=True)
     finally:
         conn.close()
@@ -466,7 +466,7 @@ def ledger(target, query):
 
 
 
-def migration_rows(conn, since, limit):
+def migration_rows(conn, since, limit, project):
     """Store-wide evidence has no ticket or run to join to the ledger."""
     from holophyte.report import migration_line
 
@@ -478,8 +478,11 @@ def migration_rows(conn, since, limit):
         " AND at >= ? ORDER BY at DESC, id DESC LIMIT ?", (since, limit)).fetchall()
     return [{"at": at, "run": None, "ticket": None, "kind": "intervention",
              "source": "factory", "action": "migrate", "tone": "neutral",
-             "text": migration_line(note, json.loads(note)["to"]),
-             "cleared": None, "waited_ms": None} for note, at in rows]
+             "text": migration_line(note, detail["to"]),
+             "schema_to": detail["to"], "schema_from": detail["from"],
+             "project": project,
+             "cleared": None, "waited_ms": None} for note, at in rows
+            for detail in [json.loads(note)]]
 
 
 def route_down_rows(conn):

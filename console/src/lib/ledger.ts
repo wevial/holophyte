@@ -8,7 +8,9 @@ export interface LedgerRow {
   at: number;
   action?: string;
   tone?: string;
-  project?: number;
+  project?: number | string;
+  schema_to?: number;
+  schema_from?: number;
   reason?: string;
   run: number | null;
   ticket: string | null;

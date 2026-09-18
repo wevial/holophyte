@@ -236,14 +236,14 @@ test("Now identifies each project outage from one daemon, even across midnight",
 test("Now renders a migration once in neutral text without counting it as resolved", async () => {
   const migration: LedgerRow = {
     at: NOW, run: null, ticket: null, kind: "intervention", source: "factory",
-    action: "migrate", tone: "neutral", text: "store schema 23 (migrated from 22)",
+    action: "migrate", schema_to: 23, schema_from: 22, tone: "neutral", text: "store schema 23 (migrated from 22)",
   };
   render(<Now hosts={[hostOf(allKinds.status, allKinds.attention, BASE)]} project="all" now={NOW}
     deps={{ fetch: ledgerFetch(allKinds.attention, [migration]) }} />);
   await act(settle);
-  const row = screen.getByText(/store schema 23/);
-  expect(row.className).toContain("text-muted");
+  const row = screen.getByText(/store at schema 23/);
+  expect(row.parentElement!.className).toContain("text-muted");
   fireEvent.click(screen.getByRole("button", { name: /resolved today/i }));
-  expect(screen.getAllByText(/store schema 23/).length).toBe(1);
+  expect(screen.getAllByText(/store at schema 23/).length).toBe(1);
   expect(screen.getByText("Nothing resolved yet today")).toBeTruthy();
 });

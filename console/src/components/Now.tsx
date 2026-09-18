@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLedger } from "../hooks/useLedger";
 import type { ProjectChoice } from "../lib/attention";
 import { sinceSeen, visibleHosts, type HostRecord } from "../lib/hosts";
+import { migrationLines } from "../lib/migrations";
 import { localMidnight } from "../lib/ledger";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { resolvedSince } from "../lib/resolved";
@@ -40,21 +41,16 @@ export function Now({
   const served = shown.filter((host) => ledgers[host.address] && !ledgers[host.address]!.absent);
   const midnight = localMidnight(now);
   const resolved = served.flatMap((host) => resolvedSince(ledgers[host.address]!.rows, midnight)).sort((a, b) => b.at - a.at);
+  const notices = served.flatMap((host) => (ledgers[host.address]!.activeOutages ?? [])
+    .map((row) => `${host.address} · project ${row.project} · implementer route down since ${new Date(row.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${row.reason}`));
+  notices.push(...migrationLines(served, ledgers, now));
   return (
     <>
-      {served.flatMap((host) => (ledgers[host.address]!.activeOutages ?? [])
-        .map((row) => (
-          <p key={`${host.address}:route:${row.project}`} className="px-6 py-3 text-sm text-muted">
-            {host.address} · project {row.project} · implementer route down since {new Date(row.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: {row.reason}
-          </p>
-        )))}
-      {served.flatMap((host) => ledgers[host.address]!.rows
-        .filter((row) => row.action === "migrate")
-        .map((row) => (
-          <p key={`${host.address}:migrate:${row.at}`} className="px-6 py-3 text-sm text-muted">
-            {host.address} · {row.text}
-          </p>
-        )))}
+      {notices.length > 0 && (
+        <div aria-label="Host notices" className="space-y-1 px-6 py-3 text-sm text-muted">
+          {notices.map((text) => <div key={text}>{text}</div>)}
+        </div>
+      )}
       <NeedsYou hosts={shown} project={project} now={now} ledgers={ledgers} />
       {served.length > 0 && (
         <ResolvedFold rows={resolved} open={resolvedOpen} onToggle={() => setResolvedOpen((previous) => !previous)} />
