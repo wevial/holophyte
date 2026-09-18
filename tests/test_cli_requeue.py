@@ -20,8 +20,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import holophyte.board
 import holophyte.cli
 import holophyte.target
+import linear_provider
 import store
 import store.read
 import store.tickets
@@ -102,6 +104,20 @@ class RequeueCliTests(unittest.TestCase):
         return self.conn.execute(
             "SELECT status FROM tickets WHERE id = ?",
             (self.ticket,)).fetchone()[0]
+
+    def test_shelved_board_state_refuses_requeue_without_writes(self):
+        self.fail_the_run()
+        for state in ("Backlog", "Canceled", "Done"):
+            with self.subTest(state=state):
+                task = linear_provider.parse_task({
+                    "identifier": "KO-1", "id": "issue-1", "title": "a ticket",
+                    "description": "", "state": {"name": state}})
+                holophyte.board.mirror_task(self.conn, self.project, task)
+                before = list(self.conn.iterdump())
+                with self.assertRaisesRegex(SystemExit, state):
+                    self.cli("--requeue", "KO-1", "--note", "retry")
+                self.assertEqual(list(self.conn.iterdump()), before)
+                self.assertEqual(StubBoard.instance.unlabelled, [])
 
     def test_requeue_walks_the_failed_ticket_to_ready_with_its_row(self):
         self.fail_the_run()

@@ -358,6 +358,7 @@ def mirror_task(conn, project, task, specced=True):
         # mirrors as empty, as body_problem() expects.
         body=task.get("body") or "",
         url=task.get("url"),
+        board_state=task.get("board_state"),
     )
     if criteria and commands:
         with store.transaction(conn):
