@@ -657,7 +657,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                       " candidateSha, mergeSha FROM runs ORDER BY id"),
             [(1, "failed", "abandoned", "merge_gate", self.URL, approved,
               None),
-             (2, "done", "merged", None, None, None, self.MERGE_SHA)])
+             (2, "done", "merged", None, self.URL, approved, self.MERGE_SHA)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("merged",)])
 

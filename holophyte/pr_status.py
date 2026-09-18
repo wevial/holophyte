@@ -16,6 +16,7 @@ from holophyte.pr import (
     graphql,
     rest,
 )
+from holophyte.pr_contexts import CONTEXTS_FIELDS, status_contexts_of
 
 # The shape of a pull request URL, `gh pr create`'s and the API's alike; the
 # host is kept so an Enterprise PR is answered on its own API.
@@ -30,9 +31,8 @@ CHECK_STATES = {None: "success", "SUCCESS": "success",
 # A check run's `conclusion` that is red; `neutral`, `skipped`, `success`
 # and the rest are not.
 RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
-                   "startup_failure"}
-# The check-runs read's page size: past this many runs on one commit the
-# babysitter reads the first page only.
+                   "startup_failure", "error"}
+# Page size for the check-runs and rollup-context reads.
 CHECK_RUNS_PAGE = 100
 
 # One page of threads per call; `$after` walks the rest, so a PR with more
@@ -43,14 +43,15 @@ THREADS_PAGE = 100
 # read to its last page (`THREAD_COMMENTS_QUERY`) before it is judged.
 COMMENTS_PAGE = 50
 STATE_QUERY = """
-query($owner: String!, $name: String!, $number: Int!, $after: String) {
+query($owner: String!, $name: String!, $number: Int!, $after: String,
+      $contextsAfter: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
       state merged headRefOid mergeable mergeCommit { oid } updatedAt
-      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       reviewThreads(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -63,7 +64,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
       }
     }
   }
-}""" % (THREADS_PAGE, COMMENTS_PAGE)
+}""" % (CONTEXTS_FIELDS, THREADS_PAGE, COMMENTS_PAGE)
 THREAD_COMMENTS_QUERY = """
 query($thread: ID!, $after: String) {
   node(id: $thread) {
@@ -240,13 +241,16 @@ def pr_state(target, pull):
             break
         node = _pull_request_page(target, pull, info["endCursor"])
     runs, required = _check_reads(target, pull, first_page.get("headRefOid"))
+    if runs is not None:
+        try:
+            runs += status_contexts_of(target, pull, first_page, graphql)
+        except InfraFailure:
+            runs = None
     return _state_of(first_page, threads, runs, required)
 
 
 def _check_reads(target, pull, sha):
-    """The head's check runs and `main`'s required contexts, two REST
-    reads; either one unreadable is None, which `fold_checks()` takes as
-    pending: a check it cannot see is never a check that passed."""
+    """Read runs and required contexts; unreadable REST data stays pending."""
     runs = required = None
     if sha:
         with contextlib.suppress(InfraFailure):
@@ -259,11 +263,7 @@ def _check_reads(target, pull, sha):
 
 
 def _check_runs_of(target, pull, sha):
-    """Every check run of commit `sha`, walked page by page
-    (`CHECK_RUNS_PAGE` a page) until the answer's `total_count` is in
-    hand, or None when the answer is not readable as check runs or a page
-    did not come back: a head with more runs than one page holds must not
-    be read as green on the page alone."""
+    """Every check run of `sha`, paged to `total_count`; None if incomplete."""
     base = (f"repos/{pull.owner}/{pull.name}/commits/{sha}"
             f"/check-runs?per_page={CHECK_RUNS_PAGE}")
     runs, page = [], 1
@@ -319,15 +319,11 @@ def fold_checks(rollup, runs, required):
     """The head's checks as one of "success", "pending" or "failure".
 
     `rollup` is `statusCheckRollup.state`; `runs` the head commit's check
-    runs (each with `name`, `status` and `conclusion`) and `required` the
-    contexts `main`'s rules require -- either None when the babysitter
-    could not read it. Red first: a red rollup, or any completed run with
-    a red conclusion. Then pending: a pending rollup, a run still queued
-    or in progress, a required context with no completed run, a read that
-    did not come back, or check data that is not readable as runs. Green
-    is what is left: every run completed without a red conclusion and
-    every required context reported. No rules and no runs is green, as
-    the rollup alone said."""
+    runs and normalised statuses (`name`, `status`, `conclusion`);
+    `required` names the contexts main requires. Unreadable data is pending.
+    Red wins; otherwise unfinished or missing required contexts are pending.
+    Green means every run completed without red and every requirement reported.
+    No rules and no runs is green, as the rollup alone said."""
     state = CHECK_STATES.get(rollup, "failure")
     if state == "failure":
         return state
@@ -433,7 +429,11 @@ def _state_of(node, threads, runs, required):
                    mergeable=mergeable
                    if isinstance(mergeable, str) and mergeable
                    else "UNKNOWN",
-                   updated_at=_iso_ms(node.get("updatedAt")))
+                   updated_at=_iso_ms(node.get("updatedAt")),
+                   pending_contexts=tuple(r["name"] for r in (runs or [])
+                                          if isinstance(r, dict)
+                                          and r.get("name")
+                                          and r.get("status") != "completed"))
 
 
 def _closed_by(node):

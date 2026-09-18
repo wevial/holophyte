@@ -1,6 +1,7 @@
 """HTTP run, shipped and startup-outage read regressions."""
 from __future__ import annotations
 
+import io
 import json
 import socket
 import sqlite3
@@ -49,6 +50,33 @@ class LivePullRequestTests(MergeModeFixture):
         code, body = observed[0]
         self.assertEqual(code, 200)
         run = body["run"]
+        self.assertIsNone(run["ended_ms"])
+        self.assertEqual(run["phase"], "merge_gate")
+        self.assertEqual(run["pr_url"], self.URL)
+
+    def test_a_resumed_pull_request_is_visible_on_the_live_run(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("candidate"), APPROVE, Idle(""),
+                  provider=self.provider())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", "look again", out=io.StringIO())
+        observed = []
+        babysit = holophyte.pullrequest.babysitter._babysit
+
+        def observe_resume(target, conn, run_id, *args, **kwargs):
+            observed.append(holophyte.serve_runs.run_detail(target, str(run_id)))
+            return babysit(target, conn, run_id, *args, **kwargs)
+
+        with patch.object(holophyte.pullrequest.babysitter, "_babysit",
+                          observe_resume):
+            self.loop(provider=self.provider())
+
+        self.assertEqual(len(observed), 1)
+        code, body = observed[0]
+        self.assertEqual(code, 200)
+        run = body["run"]
+        self.assertEqual(run["id"], 2)
         self.assertIsNone(run["ended_ms"])
         self.assertEqual(run["phase"], "merge_gate")
         self.assertEqual(run["pr_url"], self.URL)
