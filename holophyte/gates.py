@@ -514,10 +514,8 @@ def sh(args, cwd=None):
 # 11). A file rather than an flock so the supervisor, a separate process, can
 # see who holds it and clear one whose run has ended.
 
-# How long a second gate waits on the lock before parking, and how often it
-# looks. A gate is a verify and a merge -- minutes, not hours -- so a lock
-# held longer than this is a run that died at the gate, and the sweep's
-# stale rule (`sweep_report.merge_lock_lines`) is the backstop that clears it.
+# Default wait for a holder whose liveness cannot be established. The gate
+# may extend this bound while its holder is healthy (KO-496).
 MERGE_LOCK_WAIT_SEC = 180
 MERGE_LOCK_POLL_SEC = 1.0
 
@@ -550,9 +548,11 @@ def read_merge_lock(path):
 
 
 @contextlib.contextmanager
-def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
+def merge_lock(target, run_id, wait=None, poll=None, on_wait=None,
+               extend_wait=None):
     """Hold `target`'s merge lock for the block; raise `MergeLockHeld` if it
-    cannot be had within `wait` seconds.
+    cannot be had within `wait` seconds. `extend_wait(holder, elapsed)` may
+    return a positive poll delay to keep waiting past that default bound.
 
     Create-then-check, never check-then-create: `O_EXCL` makes the create
     the arbitration, and a create that fails means someone holds it. The
@@ -564,12 +564,14 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
     and only if the file is still ours: a sweep that judged this run dead
     and cleared the lock may have let another gate take it since.
     """
+    from holophyte.merge_lock import lock_nap
+
     wait = MERGE_LOCK_WAIT_SEC if wait is None else wait
     poll = MERGE_LOCK_POLL_SEC if poll is None else poll
     path = merge_lock_path(target)
     path.parent.mkdir(parents=True, exist_ok=True)
     stamp = f"{run_id if run_id is not None else '-'} {time():.3f}\n"
-    deadline = monotonic() + wait
+    started = monotonic()
     while True:
         try:
             with merge_lock_arbiter(path):
@@ -583,17 +585,11 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None):
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 os.write(fd, stamp.encode())
         except FileExistsError:
-            if monotonic() >= deadline:
-                holder = read_merge_lock(path)
-                who = (f"run {holder[0]}" if holder and holder[0] is not None
-                       else "a run it does not name")
-                raise MergeLockHeld(
-                    f"merge lock {path} held by {who} for longer than the"
-                    f" {wait:.0f}s wait; the gate did not run. A holder whose"
-                    " run has ended is cleared by --sweep --act")
+            nap = lock_nap(path, monotonic() - started, wait, poll,
+                           extend_wait)
             if on_wait is not None:
                 on_wait()
-            sleep(poll)
+            sleep(nap)
             continue
         break
     try:

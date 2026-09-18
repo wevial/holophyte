@@ -1,5 +1,5 @@
 import { projectName } from "./derive";
-import type { Run, Status } from "./types";
+import type { Run, RunEvent, Status } from "./types";
 
 /** The Floor's phase pills. Store phases fold into three working words;
  *  anything else keeps its own name on the neutral pill. */
@@ -16,9 +16,23 @@ const PHASE_LABELS: Record<string, Exclude<PhaseTone, "neutral">> = {
 /** `working`/`addressing` → implementing, `verifying`/`merge_gate` →
  *  verifying (or monitoring PR once a PR exists), `reviewing` → reviewing;
  *  any other phase is its own label. */
-export function phaseLabel(phase: string, pr_url?: string | null): string {
+export function phaseLabel(phase: string, pr_url?: string | null, note?: string | null): string {
+  if (phase === "merge_gate" && note?.startsWith("waiting for merge lock (run ")) return "waiting for merge lock";
   if (phase === "merge_gate" && pr_url) return "monitoring PR";
   return PHASE_LABELS[phase] ?? phase;
+}
+
+/** An end event closes the wait even while the run remains at the gate. */
+export function mergeLockNote(events: RunEvent[] = []): string | null {
+  const event = events.findLast((event) => event.kind === "merge_lock_wait");
+  if (!event) return null;
+  try {
+    const wait = JSON.parse(event.summary);
+    return wait.state === "begin" && Number.isInteger(wait.holder)
+      ? `waiting for merge lock (run ${wait.holder})` : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The pill wash for a label: the three working words have one each. */
