@@ -166,11 +166,11 @@ def cli(argv=None):
         "--requeue", metavar="KO-n",
         help="put the ticket back in the queue after its run failed: records "
              "a 'requeue' intervention on that run carrying --note and walks "
-             "the ticket to ready, in one transaction; accepts a ticket left "
-             "in_flight by a failed run, or one parked blocked_on_operator "
-             "by a merge-gate conflict once the branch is resolved; refuses "
-             "a ticket with a live run, one in any other state, or one whose "
-             "last run did not fail, and writes nothing then")
+             "the ticket to ready and clears its question in one transaction; "
+             "accepts in_flight or blocked_on_operator after a failed or "
+             "rejected run; refuses live runs and other states or outcomes; "
+             "for parked candidates use --approve or --babysit, for parked "
+             "pull requests use --babysit; refusals write nothing")
     # The operator's answer to `merge?`: the same rung-3 pair as `--requeue`
     # for a ticket parked by `[merge] approve = "human"`, so the loop's next
     # claim takes the preserved candidate straight to the merge gate.
