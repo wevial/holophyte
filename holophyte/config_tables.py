@@ -319,30 +319,11 @@ def board_config(target):
     return BoardConfig(**values)
 
 
-# Who says "merge" once the reviewer has approved and the pre-merge verify
-# has passed. `"auto"` is the loop as it has always been: a clean gate merges.
-# `"human"` parks the approved run in `awaiting_merge_approval` instead, moves
-# its ticket to `blocked_on_operator` with `merge?` as the question `/attention`
-# shows, preserves the branch and worktree, and releases the lease so the loop
-# can claim the next ticket. Nothing merges until an operator says so (design
-# note 8). Per target, because whether a person signs off on a merge is a
-# property of the repository, not of the host running the factory.
-#
-# `mode` is where an approved, verified candidate goes (design note 7).
-# `"local"` is the `--no-ff` merge into main the loop has always made.
-# `"pr"` pushes the task branch to `origin` and opens a pull request instead
-# -- the ticket body and the run's FINDINGS entry as its body -- so the
-# repository's own review bots and CI see the change before it lands; the run
-# then parks in `awaiting_merge_approval` exactly as `approve = "human"`
-# does, with the PR's URL on the run and in the question the ticket asks.
-# "The factory never pushes" becomes "the factory never pushes `main`".
-#
-# `pr_rounds` caps the babysit passes the loop makes over an open pull
-# request -- threads read, verdicted, fixed and answered, checks awaited --
-# before it parks the run for the operator with the open threads listed: the
-# cap that keeps the loop from arguing with a review bot forever (design
-# note 7). An integer of at least 1; `pr_rounds = 1` is one pass and then
-# the park.
+# `approve = "auto"` merges a green, approved candidate; `"human"` parks it
+# awaiting operator approval. `mode = "local"` merges into local main;
+# `"pr"` pushes the task branch to origin and opens a PR for bots and CI.
+# The factory never pushes main. `pr_rounds` (at least 1) caps babysit passes
+# before parking the PR on its unresolved threads for the operator.
 #
 # `pr_merge_method` is the `merge_method` the babysitter sends GitHub's merge
 # API when it lands a green, quiet pull request under `mode = "pr"`:
@@ -390,6 +371,7 @@ MERGE_KEYS = {
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "pr_style": "",
+    "ui_paths": (), "ui_capture": "",
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
     "mention_handle": "holophyte",
     "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
@@ -416,7 +398,6 @@ def merge_config(target):
     Validate enums, integer floors, instruction text, and string lists at
     startup. `after` holds shell commands; `bot_authors` holds logins whose
     declined threads are resolved. Refusals name the config, table and key.
-    `bot_logins` supplements app detection for advisory threads.
     """
     from holophyte.pr import CHECK_WAIT_S  # Deferred: pr also reads config.
     table = target.config().get("merge", {})
@@ -442,14 +423,14 @@ def merge_config(target):
                     f" got {value!r}")
             values[key] = value
             continue
-        if key in ("pr_style", "mention_handle"):
+        if key in ("pr_style", "mention_handle", "ui_capture"):
             if not isinstance(value, str):
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be a"
                     f" string, got {value!r}")
             values[key] = value
             continue
-        if key in ("after", "bot_authors", "bot_logins"):
+        if key in ("after", "bot_authors", "bot_logins", "ui_paths"):
             if not isinstance(value, (list, tuple)) \
                     or not all(isinstance(cmd, str) for cmd in value):
                 raise SystemExit(
@@ -463,7 +444,26 @@ def merge_config(target):
                 f"[holo2] {target.config_path}: [merge] {key} must be one of "
                 f"{allowed}, got {value!r}")
         values[key] = value
+    _validate_ui(values)
     return MergeConfig(**values)
+
+
+def _validate_ui(values):
+    import shlex
+    from pathlib import PurePosixPath
+
+    paths, command = values["ui_paths"], values["ui_capture"]
+    if bool(paths) != bool(command.strip()):
+        raise SystemExit("[merge] ui_paths and ui_capture must be configured together")
+    if any(not p.strip() or PurePosixPath(p).is_absolute()
+           or ".." in PurePosixPath(p).parts for p in paths):
+        raise SystemExit("[merge] ui_paths must be non-empty repository-relative globs")
+    try:
+        args = shlex.split(command)
+    except ValueError as error:
+        raise SystemExit(f"[merge] ui_capture: {error}") from None
+    if command and (not args or not args[0]):
+        raise SystemExit("[merge] ui_capture must name a command")
 
 
 # What the factory prints where it would print the writer host's hostname:

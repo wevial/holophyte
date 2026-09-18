@@ -72,7 +72,7 @@ from holophyte.pullrequest import (
     _park_on_pr,
 )
 from holophyte.redact import known_secrets, redact_prose
-from holophyte.review import criteria_brief, criteria_findings
+from holophyte.review import criteria_brief, criteria_findings, evidence_brief
 from holophyte.runs import (
     RunSwept,
     heartbeat_while,
@@ -740,8 +740,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
     for rnd in range(1, cap + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
         if rnd == 1:
-            # The merge `reuse_leftover()` left for the implementer is owed
-            # as its first commit; a tree still mid-merge here is the park
+            # A tree left mid-merge by `reuse_leftover()` is the park
             # the handoff replaced, failed with the branch preserved.
             unresolved = merge_conflicts(wt)
             if unresolved:
@@ -771,6 +770,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                 f"{ticket}\n\n"
                 + _verify_brief(verify_cmd, ok, out)
                 + criteria_brief(criteria)
+                + evidence_brief(target, wt, task_id)
                 + "Do not modify anything. End your reply with exactly one "
                 "line:\n"
                 "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"

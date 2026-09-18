@@ -14,7 +14,7 @@ from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, RunFailure, run_verify
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
-from holophyte.review import criteria_brief, criteria_findings
+from holophyte.review import criteria_brief, criteria_findings, evidence_brief
 from holophyte.runs import heartbeat_while, record_round
 
 # Quote conventions in brief order, capped per file, so rules aren't guessed.
@@ -455,8 +455,7 @@ def _moved(sha, reviewed):
 def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None):
-    """Verify and review before merging; a babysit gets one fix past the cap.
-    A second rejection parks with findings and no further fix allowance."""
+    """Verify and review; allow one fix past the cap, then park on rejection."""
     from holophyte.loop import _verify_brief, agent, set_phase, sh
     from holophyte.pullrequest import _park_on_pr
     if merge_config(target).approve != "auto":
@@ -498,6 +497,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"{ticket}\n\n"
             + _verify_brief(verify_cmd, ok, out)
             + criteria_brief(criteria)
+            + evidence_brief(target, wt, task_id)
             + "Do not modify anything. End your reply with exactly one "
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
