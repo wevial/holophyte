@@ -390,18 +390,17 @@ MERGE_KEYS = {
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "pr_style": "",
-    "human_threads": "park",
-    "after": (),
-    "bot_authors": ("devin-ai-integration", "coderabbitai",
-                    "greptile-apps", "github-actions"),
+    "human_threads": "park", "bot_threads": "act", "bot_logins": (),
+    "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
+                               "greptile-apps", "github-actions"),
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
 MERGE_METHODS = ("merge", "squash", "rebase")
 MERGE_HUMAN_THREADS = ("park", "act")
 MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
-                "pr_merge_method": MERGE_METHODS,
-                "human_threads": MERGE_HUMAN_THREADS}
+               "pr_merge_method": MERGE_METHODS,
+               "human_threads": MERGE_HUMAN_THREADS, "bot_threads": ("act", "advisory")}
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
 # The least `pr_poll_sec`: under this the loop would be polling GitHub for
 # a reviewer's next keystroke rather than their next comment.
@@ -416,6 +415,7 @@ def merge_config(target):
     Validate enums, integer floors, instruction text, and string lists at
     startup. `after` holds shell commands; `bot_authors` holds logins whose
     declined threads are resolved. Refusals name the config, table and key.
+    `bot_logins` supplements app detection for advisory threads.
     """
     from holophyte.pr import CHECK_WAIT_S  # Deferred: pr also reads config.
     table = target.config().get("merge", {})
@@ -448,7 +448,7 @@ def merge_config(target):
                     f" string, got {value!r}")
             values[key] = value
             continue
-        if key in ("after", "bot_authors"):
+        if key in ("after", "bot_authors", "bot_logins"):
             if not isinstance(value, (list, tuple)) \
                     or not all(isinstance(cmd, str) for cmd in value):
                 raise SystemExit(

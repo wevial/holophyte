@@ -84,12 +84,15 @@ Each module, one line:
   route check, the push, the pull request and its body, the babysitter's
   replies and resolves, the merge through the PR API, and the `gh`/API
   transport they ride on.
+- `holophyte/pr_contexts.py` — page the head rollup's commit statuses and
+  normalise them beside check runs for required-context folding (KO-485).
 - `holophyte/pr_status.py` — reading a pull request's state (KO-426), out
   of `holophyte/pr.py`: `pull_status()` for the parked-run reconcile,
   `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.
+- `holophyte/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysitter.py` — the babysit pass over a pull request: the
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round

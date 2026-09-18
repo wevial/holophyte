@@ -9,16 +9,14 @@ import store.read
 from holophyte import babysitter, pr, pr_status
 from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
+from holophyte.bot_threads import route_bot_threads
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, RunFailure, run_verify
 from holophyte.pr import NO_AUTHOR
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import heartbeat_while, record_round
 
-# The repository's conventions files, in the order the brief quotes them,
-# and the most of each the brief carries: the rule they back is one
-# sentence, the excerpt is there so "the repository asks for DRY" is read
-# from the file, not guessed.
+# Quote conventions in brief order, capped per file, so rules aren't guessed.
 CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
 CONVENTIONS_CAP = 4000
 
@@ -333,7 +331,6 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
               criteria=(), approved=False, reviewed=None, verified=None, fix_note=None):
     """Watch a PR until merge or park, bounded by rounds and a no-work deadline.
-
     Changed candidates need verification and independent review; human approval
     covers only the released SHA. Conflict recovery pushes origin/main's merge."""
     from holophyte.pullrequest import _park_on_pr
@@ -606,10 +603,13 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
     deadline = monotonic() + merge.check_wait_sec
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(target, pull)
+        state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
         while (not state.threads and not state.merged and not state.closed
                and state.mergeable != "CONFLICTING"):
             if state.checks == "pending":
                 reason = "pending checks"
+                if state.pending_contexts:
+                    reason += f" ({', '.join(state.pending_contexts)})"
                 nap = pr.CHECK_POLL_S
                 print(f"[holo2] checks pending on {pull.url}; waiting"
                       f" {nap}s")
@@ -628,6 +628,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
                     f"{reason} exceeded {merge.check_wait_sec}s on the pull request")
             pr.SLEEP(min(nap, remaining))
             state = pr_status.pr_state(target, pull)
+            state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
     return state
 
 
@@ -643,13 +644,12 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     threads = state.threads
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
-    # Under `human_threads = "park"` a thread a person opened is the
-    # operator's whatever it says: HUMAN before the adjudicator is asked,
-    # which sees the bots' threads alone, renumbered so its reply and
-    # `parse_verdicts()` agree. Under `"act"` a person's threads are
-    # judged too, but only an ADDRESS stands: anything else folds to
-    # HUMAN -- a person is never declined. A deleted account reads as a
-    # person: silence is the safe side.
+    # Under `human_threads = "park"` a thread a person opened is the operator's whatever
+    # it says: HUMAN before the adjudicator is asked, which sees the bots' threads
+    # alone, renumbered so its reply and `parse_verdicts()` agree. Under `"act"` a
+    # person's threads are judged too, but only an ADDRESS stands: anything else folds
+    # to HUMAN -- a person is never declined. A deleted account reads as a person:
+    # silence is the safe side.
     act = merge_config(target).human_threads == "act"
     judged = tuple(t for t in threads if act or t.author_kind == "bot")
     reply = "(no bot opened a thread; the adjudicator was not asked)"

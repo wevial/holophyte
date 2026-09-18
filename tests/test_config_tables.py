@@ -346,8 +346,8 @@ class MergeConfigTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, 300, 1800, "", "park", (),
-                          ("devin-ai-integration", "coderabbitai",
+                         ("auto", "local", 5, "merge", 180, 300, 1800, "", "park",
+                          "act", (), (), ("devin-ai-integration", "coderabbitai",
                            "greptile-apps", "github-actions")))
 
     def test_after_is_read_as_a_list_of_commands(self):
