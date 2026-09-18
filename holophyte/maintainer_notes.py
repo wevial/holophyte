@@ -1,4 +1,5 @@
 """Adapt private store instructions to the babysitter's addressed threads."""
+import re
 from dataclasses import replace
 
 from holophyte.pr import Thread
@@ -50,7 +51,8 @@ def cite_commits(wt, sha, fixed, addressed, sh):
     if not refs:
         return fixed
     messages = sh(["git", "log", "--format=%B", f"{sha}..{fixed}"], cwd=wt)
-    missing = [ref for ref in refs if ref not in messages]
+    missing = [ref for ref in refs
+               if re.search(rf"{re.escape(ref)}(?!\d)", messages) is None]
     if missing:
         message = sh(["git", "log", "-1", "--format=%B"], cwd=wt)
         sh(["git", "commit", "--amend", "-m",

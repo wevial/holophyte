@@ -90,7 +90,9 @@ def report_lines(conn):
         note = conn.execute("SELECT payload FROM runEvents WHERE id = ?",
                             (data["event_id"],)).fetchone()
         instruction = json.loads(note[0])
+        # Escape control characters so private text cannot create report rows.
+        author = repr(instruction["author"])[1:-1]
+        text = repr(instruction["note"])[1:-1]
         lines.append(f"Run {run_id} round {data['round']}: operator_note event "
-                     f"{data['event_id']} by {instruction['author']}: "
-                     f"{instruction['note']}")
+                     f"{data['event_id']} by {author}: {text}")
     return lines
