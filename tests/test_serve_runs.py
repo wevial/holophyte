@@ -15,6 +15,7 @@ import test_serve  # noqa: E402 - after the insert; the SLACK tolerance
 from bot_thread_fixture import BotFindingCases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
+from pool_restart_cases import PreviousBuildCases  # noqa: E402
 from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
@@ -53,8 +54,7 @@ class LivePullRequestTests(MergeModeFixture):
         self.assertEqual(run["pr_url"], self.URL)
 
 
-class RunsTests(ServeTestCase):
-
+class RunsTests(PreviousBuildCases, ServeTestCase):
     def expected_rows(self):
         """The oracle: `report_rows()` over the same store, named by column."""
         conn = store.open(str(self.db))
