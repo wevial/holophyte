@@ -6,7 +6,7 @@ from time import monotonic, time
 import review_runner
 import store
 import store.read
-from holophyte import babysitter, maintainer_notes, pr, pr_status
+from holophyte import babysitter, maintainer_notes, pr, pr_status, thread_mentions
 from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
@@ -51,13 +51,14 @@ def where(thread):
     return f"{thread.path}:{thread.line}" if thread.line else thread.path
 
 
-def conversation(thread):
+def conversation(thread, *, label_all=False):
     """A thread's text as the adjudicator and implementer read it: the
     opening comment, then each follow-up under a line naming who wrote it
     -- a later rejection or question is judged, not the opener alone."""
+    if label_all:
+        return "\n\n".join(f"@{c.author}: {c.body.strip()}" for c in thread.comments)
     parts = [thread.body.strip()]
-    parts.extend(f"@{c.author} replied:\n{c.body.strip()}"
-                 for c in thread.replies)
+    parts.extend(f"@{c.author} replied:\n{c.body.strip()}" for c in thread.replies)
     return "\n\n".join(parts)
 
 
@@ -95,7 +96,7 @@ def adjudication_brief(pull, threads, ticket, sha, conventions=(), run_id=None):
         + (" (outdated: the lines it was left on have changed)"
            if t.outdated else "")
         + (f" ({len(t.replies)} follow-up(s))" if t.replies else "")
-        + f"\n{conversation(t)}"
+        + f"\n{conversation(t, label_all=True)}"
         for n, t in enumerate(threads, 1))
     return (
         f"You are a READ-ONLY adjudicator of the review threads on pull "
@@ -123,7 +124,8 @@ def adjudication_brief(pull, threads, ticket, sha, conventions=(), run_id=None):
         "nothing specific, or asks for what the ticket puts out of scope. "
         "HUMAN is for a genuine question, a rejection of the approach, or "
         "anything you would not answer on the operator's behalf. Judge each "
-        "thread by its whole conversation: a follow-up can withdraw, "
+        "thread by its whole conversation: a concrete change stated by a later reply "
+        "is the thread's request. A follow-up can withdraw, "
         "sharpen, or turn a finding into a question. Do not modify "
         "anything.")
 
@@ -167,6 +169,7 @@ def fix_brief(pull, addressed, ticket):
     listing = "\n\n".join(
         f"THREAD {n} -- {where(t)} by @{t.author}\n{conversation(t)}\n"
         + (maintainer_notes.instruction(t) if maintainer_notes.is_note(t)
+         else thread_mentions.instruction(t) if t.classification == "MENTIONED"
          else f"Adjudicator: {reason}")
         for n, t, reason in addressed)
     return (
@@ -203,7 +206,8 @@ def round_reply(pull, pass_no, threads, verdicts, checks, sha):
     lines = [f"Babysit pass {pass_no} over {pull.url} at {sha[:12]}:"
              f" {len(threads)} unresolved thread(s), checks {checks}."]
     lines += [f"- {where(t)} @{t.author}: {gist(t.body)}"
-              f" -- {verdicts[n][0]}: {verdicts[n][1]}"
+              f" -- {t.classification + ': ' if t.classification else ''}"
+              f"{verdicts[n][0]}: {' '.join(verdicts[n][1].split())}"
               for n, t in enumerate(threads, 1)]
     lines.append("VERDICT: " + ("APPROVE" if not threads
                                 else "REQUEST_CHANGES"))
@@ -620,7 +624,9 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     human verdicts park without a reply."""
     from holophyte.loop import agent, sh
     from holophyte.pullrequest import _park_human, _park_on_pr
-    threads = state.threads
+    merge = merge_config(target)
+    threads = tuple(thread_mentions.classify(t, merge.mention_handle)
+                    for t in state.threads)
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
     # Under `human_threads = "park"` a thread a person opened is the operator's whatever
@@ -629,8 +635,9 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     # person's threads are judged too, but only an ADDRESS stands: anything else folds
     # to HUMAN -- a person is never declined. A deleted account reads as a person:
     # silence is the safe side.
-    act = merge_config(target).human_threads == "act"
+    act = merge.human_threads == "act"
     judged = tuple(t for t in threads if not maintainer_notes.is_note(t)
+                   and t.classification != "MENTIONED"
                    and (act or t.author_kind == "bot"))
     reply = "(no bot opened a thread; the adjudicator was not asked)"
     if judged:
@@ -647,7 +654,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                                       state.checks, sha),
                  None, True, "", started_at=round_started,
                  route=babysitter.route_of(threads))
-    people = sum(t.author_kind not in ("bot", "maintainer") for t in threads)
+    people = sum(t.author_kind not in ("bot", "maintainer")
+                 and t.classification != "MENTIONED" for t in threads)
     ledger(conn, run_id, task_id, "round",
            f"Babysit pass {pass_no} over {pull.url}: {len(threads)}"
            f" unresolved thread(s), checks {state.checks}\n"
@@ -680,7 +688,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                                      by_verdict["DECLINE"], model)
     left_open = declined_open + tuple(
         t for _, t, _ in by_verdict["ADDRESS"]
-        if t.author_kind != "bot" and not maintainer_notes.is_note(t))
+        if t.author_kind != "bot" and not maintainer_notes.is_note(t)
+        and t.classification != "MENTIONED")
     if by_verdict["HUMAN"]:
         _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
                     by_verdict["HUMAN"],
@@ -727,6 +736,9 @@ def _verdicts_by_kind(threads, judged, parsed):
         if maintainer_notes.is_note(t):
             verdicts[n] = ("ADDRESS",
                            f"operator_note event {maintainer_notes.event_id(t)}")
+            continue
+        if t.classification == "MENTIONED":
+            verdicts[n] = ("ADDRESS", t.request)
             continue
         if t not in judged:
             verdicts[n] = ("HUMAN", "opened by a person")
@@ -802,7 +814,8 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         _post(target, conn, run_id, beat_s, pull, thread,
               babysitter.addressed_reply(model, summaries.get(n, reason),
                                        fixed),
-              resolve=thread.author_kind == "bot")
+              resolve=(thread.author_kind == "bot"
+                       or thread.classification == "MENTIONED"))
     return fixed
 
 

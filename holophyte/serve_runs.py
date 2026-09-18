@@ -369,7 +369,10 @@ def run_detail(target, run_id, now=None):
         "rounds": [{"round": r.round, "started_ms": r.startedAt,
                     "ended_ms": r.endedAt, "verdict": r.verdict,
                     "reviewer_model": r.reviewerModel,
-                    "findings": json.loads(r.findings),
+                    "findings": [f for f in json.loads(r.findings)
+                                 if " -- MENTIONED: ADDRESS: " not in f["message"]],
+                    "instructions": [f for f in json.loads(r.findings)
+                                     if " -- MENTIONED: ADDRESS: " in f["message"]],
                     "operator_notes": notes[r.round]}
                    for r in rounds],
         "findings": [{"tone": "advisory", "message": e.summary}

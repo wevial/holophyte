@@ -77,6 +77,7 @@ export interface Round {
   verdict: "pass" | "changes_requested" | "error" | string;
   reviewer_model?: string | null;
   findings: Finding[];
+  instructions?: Finding[];
   operator_notes?: { kind: "operator_note"; event_id: number; note: string; author: string }[];
 }
 

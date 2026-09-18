@@ -347,8 +347,8 @@ class MergeConfigTests(ConfigTestCase):
 
         self.assertEqual(config_tables.merge_config(self.tgt),
                          ("auto", "local", 5, "merge", 180, 300, 1800, "", "park",
-                          "act", (), (), ("devin-ai-integration", "coderabbitai",
-                           "greptile-apps", "github-actions")))
+                          "act", (), "holophyte", (), ("devin-ai-integration",
+                           "coderabbitai", "greptile-apps", "github-actions")))
 
     def test_after_is_read_as_a_list_of_commands(self):
         """`after` is the console build the daemon's bundle depends on, in
