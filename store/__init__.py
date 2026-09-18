@@ -6,6 +6,7 @@ The API covers schema migration, ticket status and pickability, per-ticket
 leases, operator resume guidance, review findings and rounds, and contract
 snapshots with drift checks. `SchemaNewer` lets live loops recognize when
 another process migrated their store.
+
 Conventions, fixed here for every later ticket to follow:
 
 * **camelCase** table and column names, matching the field names in the

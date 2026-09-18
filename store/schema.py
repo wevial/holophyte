@@ -5,9 +5,16 @@ import contextlib
 import sqlite3
 import threading
 
-# Tables are created in dependency order. IF NOT EXISTS preserves existing
-# tables, so new columns also need an ADDED_COLUMNS entry below.
-# `trigger` and `action` retain their contract names and need SQLite quoting.
+# One statement per table, in dependency order where it matters. Every
+# statement is IF NOT EXISTS, which is the whole of init()'s idempotency:
+# re-running it on a populated database is a no-op, not a rebuild. That same
+# no-op is why a column added to a table here has to be added to
+# ADDED_COLUMNS below as well — an existing table is never re-created, so
+# nothing else would ever give it the column.
+#
+# `trigger` and `action` are SQLite keywords, so those two column names are
+# quoted; they are the contract's names and renaming them to dodge the
+# quoting would break the mirror.
 SCHEMA = """
 -- projects: a repo + its autonomy policy (state-model §2).
 CREATE TABLE IF NOT EXISTS projects (
@@ -319,8 +326,14 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 22 admits private operator_note interventions (KO-479).
 SCHEMA_VERSION = 22
 
-# Both openers use this writer-lock timeout: five seconds was too short for
-# concurrent heartbeats, phase changes and sweeps (KO-273). Longer holds fail.
+# How long a connection waits for another writer's lock before raising
+# `database is locked`. WAL admits one writer at a time, and the loop's
+# heartbeat thread, its phase changes and the supervisor's sweep are three
+# writers on one file; the sqlite3 default of five seconds is shorter than a
+# sweep under load, and run 103 (KO-273) died at a phase change on exactly
+# that timing. Both `open()` and `store.read.open_readonly()` open with this
+# value so the two agree. A lock held past it still raises; nothing here
+# masks a real deadlock. Patch it below a second to witness the bound.
 BUSY_TIMEOUT_S = 30
 
 # Index hot foreign-key joins and per-run ledger reads. Idempotent DDL,
