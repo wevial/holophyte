@@ -46,6 +46,7 @@ class Ticket:
     # What a `blocked_on_operator` ticket asks; None otherwise. The admit
     # step's skip line reads it to say why the ticket is parked (KO-345).
     blockedQuestion: str | None = None
+    boardState: str | None = None
 
 
 def ticket_by_id(conn, ticket_id):
@@ -56,13 +57,14 @@ def ticket_by_id(conn, ticket_id):
     """
     row = conn.execute(
         "SELECT id, linearIssueId, linearIdentifier, status,"
-        " activeRunId, lastRunId, blockedQuestion FROM tickets WHERE id = ?",
+        " activeRunId, lastRunId, blockedQuestion, boardState"
+        " FROM tickets WHERE id = ?",
         (ticket_id,)).fetchone()
     if row is None:
         return None
     return Ticket(id=row[0], linearIssueId=row[1], linearIdentifier=row[2],
                   status=row[3], activeRunId=row[4], lastRunId=row[5],
-                  blockedQuestion=row[6])
+                  blockedQuestion=row[6], boardState=row[7])
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,7 @@ class BlockedTicket:
     prSeenReview: str | None = None
     prSeenThreads: int | None = None
     ticketUrl: str | None = None
+    boardState: str | None = None
 
 
 def blocked_tickets(conn, project_id=None):
@@ -107,14 +110,15 @@ def blocked_tickets(conn, project_id=None):
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
-        " r.prSeenThreads, t.url"
+        " r.prSeenThreads, t.url, t.boardState"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
                           blockedQuestion=row[2], runId=row[3],
                           askedMs=row[4] if row[4] is not None else row[5],
                           prUrl=row[6], prSeenChecks=row[7],
-                          prSeenReview=row[8], prSeenThreads=row[9], ticketUrl=row[10])
+                          prSeenReview=row[8], prSeenThreads=row[9], ticketUrl=row[10],
+                          boardState=row[11])
             for row in rows]
 
 
@@ -277,6 +281,7 @@ class LiveRun:
     workingMs: int | None = None
     workStartedAt: int | None = None
     ticketUrl: str | None = None
+    boardState: str | None = None
 
 
 @dataclass(frozen=True)
@@ -339,7 +344,7 @@ def live_runs(conn, phases):
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
         " r.startedAt, r.timeBoxMs, r.host,"
         " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id),"
-        " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url"
+        " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url, t.boardState"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
         f"   AND r.phase IN ({', '.join('?' * len(phases))})"
@@ -348,7 +353,8 @@ def live_runs(conn, phases):
                     phase=row[3], lastHeartbeat=row[4], startedAt=row[5],
                     timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8],
                     reviewRoundCap=row[9], prUrl=row[10],
-                    workingMs=row[11], workStartedAt=row[12], ticketUrl=row[13])
+                    workingMs=row[11], workStartedAt=row[12], ticketUrl=row[13],
+                    boardState=row[14])
             for row in rows]
 
 
@@ -541,6 +547,7 @@ class RecentFailedRun:
     # when none.
     prUrl: str | None = None
     ticketUrl: str | None = None
+    boardState: str | None = None
 
 
 def recent_failed_runs(conn, since_ms):
@@ -551,7 +558,7 @@ def recent_failed_runs(conn, since_ms):
     """
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url"
+        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url, t.boardState"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.outcome = 'failed' AND r.endedAt > ?"
         " ORDER BY r.endedAt, r.id", (since_ms,)).fetchall()
@@ -559,7 +566,7 @@ def recent_failed_runs(conn, since_ms):
                             outcomeReason=row[2], endedAt=row[3],
                             ticketStatus=row[4], attempt=row[5],
                             prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
-                            ticketUrl=row[9])
+                            ticketUrl=row[9], boardState=row[10])
             for row in rows]
 
 

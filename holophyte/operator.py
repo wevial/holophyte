@@ -304,7 +304,8 @@ def _requeue_candidate(conn, ticket_id):
     note can name it."""
     ticket = store.read.ticket_by_id(conn, ticket_id)
     if ticket is None or ticket.activeRunId is not None \
-            or ticket.lastRunId is None:
+            or ticket.lastRunId is None \
+            or ticket.boardState in ("Backlog", "Canceled", "Done"):
         return None
     row = conn.execute("SELECT outcome, phase, prUrl FROM runs"
                        " WHERE id = ?", (ticket.lastRunId,)).fetchone()

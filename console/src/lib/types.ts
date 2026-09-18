@@ -3,6 +3,7 @@
 export interface Status {
   target: string;
   project?: string;
+  schema_version?: number;
   host: string;
   now: number;
   daemon?: { started_ms: number; pid: number };

@@ -25,7 +25,7 @@ import store
 import store.read
 import store.tickets
 from holophyte import pr_status
-from holophyte.board import ledger, mirror_push
+from holophyte.board import ledger, mirror_push, refresh_board_states
 from holophyte.config_tables import merge_config
 from holophyte.findings import refresh_findings
 from holophyte.gates import sh
@@ -62,7 +62,8 @@ def _reconcile_at_startup(target, conn, project, provider):
 
 def _reconcile_mirror(conn, project, provider):
     """Walk the mirrored tickets Linear has since closed to their terminal
-    status, one printed line each; nothing is written to Linear.
+    status, one printed line each; nothing is written to Linear. Board state
+    names refresh first for all open mirrors, including live and parked runs.
 
     The mirror is written when the loop claims a ticket and hears nothing
     when Linear later closes it elsewhere -- a ticket another target
@@ -93,6 +94,7 @@ def _reconcile_mirror(conn, project, provider):
     and the loop goes on as before: this is a repair of the mirror, not a
     gate on the work.
     """
+    refresh_board_states(conn, project, provider)
     tickets = []
     for ticket in store.read.open_tickets(conn, project):
         if ticket.activeRunId is not None:

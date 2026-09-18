@@ -226,6 +226,7 @@ def status(target, now=None, started_ms=None):
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
         strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
         beat = store.read.supervisor_beat(conn)
+        schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
     finally:
         conn.close()
     knobs = sweep_config(target)
@@ -238,6 +239,7 @@ def status(target, now=None, started_ms=None):
     return 200, {
         "target": str(target.path),
         "project": str(target.path),
+        "schema_version": schema_version,
         "active_routes": active_routes(target),
         "workers_on_previous_build": workers_on_previous_build(target),
         "host": host_label(target, socket.gethostname()),
@@ -348,10 +350,12 @@ def attention(target, now=None):
     finally:
         conn.close()
     knobs = sweep_config(target)
-    items = [parked_item(ticket) for ticket in blocked]
+    items = [parked_item(ticket) for ticket in blocked
+             if ticket.boardState not in ("Backlog", "Canceled", "Done")]
     for run in runs:
         age = now - run.lastHeartbeat
-        if age > knobs.heartbeat_stale_ms:
+        if (age > knobs.heartbeat_stale_ms
+                and run.boardState not in ("Backlog", "Canceled", "Done")):
             items.append({"kind": "stale_run", "run": run.id,
                           "ticket": run.linearIdentifier,
                           "ticket_url": run.ticketUrl, "phase": run.phase,
@@ -363,7 +367,9 @@ def attention(target, now=None):
                   "ended_ms": run.endedAt, "attempt": run.attempt,
                   "pr_url": run.prUrl, "level": "attention"}
                  for run in failed if run.id == run.lastRunId
-                 and run.activeRunId in (None, run.id))
+                 and run.activeRunId is None
+                 and run.ticketStatus in ("ready", "in_flight", "blocked_on_operator")
+                 and run.boardState not in ("Backlog", "Canceled", "Done"))
     supervisor = supervisor_view(target, beat, now, knobs)
     if supervisor["state"] != "live":
         items.append({"kind": "supervisor", "state": supervisor["state"],

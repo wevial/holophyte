@@ -57,6 +57,10 @@ class StubProvider:
                 return self.queue.pop(i)
         return None
 
+    def fetch_task(self, issue_id):
+        return next((dict(task) for task in self.queue
+                     if issue_id in (task["id"], task["issue_id"])), None)
+
     # The board lease label (KO-351): what the loop labelled and unlabelled,
     # per issue, so the stub answers the claim's and the close-out's calls.
     def label_issue(self, issue_id, name):
