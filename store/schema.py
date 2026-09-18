@@ -336,11 +336,8 @@ SCHEMA_VERSION = 22
 # masks a real deadlock. Patch it below a second to witness the bound.
 BUSY_TIMEOUT_S = 30
 
-# Every join the loop, the sweep and the FINDINGS renderer perform goes
-# through one of these foreign keys; without an index each is a full
-# scan of the child table. `ledger_runId` is for the read view, which is
-# always per run. Idempotent DDL, run on every open() after the
-# tables exist.
+# Index hot foreign-key joins and per-run ledger reads. Idempotent DDL,
+# applied after table creation only when open() permits migration.
 INDEXES = """
 CREATE INDEX IF NOT EXISTS runs_ticketId ON runs (ticketId);
 CREATE INDEX IF NOT EXISTS reviewRounds_runId ON reviewRounds (runId);
@@ -360,6 +357,17 @@ class SchemaNewer(SystemExit):
             " to open it with an older factory")
 
 
+class SchemaOlder(SystemExit):
+    """A read-only command needs the store's lifecycle owner to migrate it."""
+
+    def __init__(self, path, version, expected):
+        self.version = version
+        super().__init__(
+            f"store at {path} is schema {version}; this build expects {expected};"
+            " start the loop or the serve daemon to migrate it, or run the"
+            " command from the build that wrote it")
+
+
 class _Connection(sqlite3.Connection):
     """Allow a fallback heartbeat, serialized with the caller's transactions."""
 
@@ -368,13 +376,14 @@ class _Connection(sqlite3.Connection):
         self._lock = threading.RLock()
 
 
-def open(path):  # noqa: A001 - the ticket names this entry point open()
+def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry point open()
     """Open the store at `path` in WAL mode and return the connection.
 
     Refuse a newer `user_version` with `SchemaNewer` (a `SystemExit`) before
     writing. Migrate older stores with `init()` and create missing indexes.
-    Require WAL so supervisor reads can overlap loop writes; a filesystem
-    that cannot enable it raises rather than silently degrading."""
+    With `migrate=False`, refuse older stores with `SchemaOlder` and skip
+    index creation. Require WAL so supervisor reads can overlap loop writes;
+    a filesystem that cannot enable it raises rather than silently degrading."""
     conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S,
                            check_same_thread=False, factory=_Connection)
     # Before anything that writes, including the WAL switch below: a store a
@@ -398,6 +407,10 @@ def open(path):  # noqa: A001 - the ticket names this entry point open()
             f"{path}: could not enable WAL mode (journal_mode is {mode!r})"
         )
     try:
+        if not migrate:
+            if version < SCHEMA_VERSION:
+                raise SchemaOlder(path, version, SCHEMA_VERSION)
+            return conn
         if version < SCHEMA_VERSION:
             # 0 is every store made before the stamp existed, and a fresh
             # file; either way the ladder in init() carries it to the

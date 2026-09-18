@@ -164,6 +164,44 @@ class StoreSchemaTests(unittest.TestCase):
         self.addCleanup(conn.close)
         return conn
 
+    def test_non_migrating_open_refuses_older_without_changing_version(self):
+        self.open().close()
+        older = store.SCHEMA_VERSION - 1
+        self.raw().execute(f"PRAGMA user_version = {older}")
+        with self.assertRaises(store.SchemaOlder) as caught:
+            store.open(self.path, migrate=False)
+        self.assertEqual(
+            str(caught.exception),
+            f"store at {self.path} is schema {older}; this build expects "
+            f"{store.SCHEMA_VERSION}; start the loop or the serve daemon to "
+            "migrate it, or run the command from the build that wrote it")
+        self.assertEqual(self.raw().execute("PRAGMA user_version").fetchone(),
+                         (older,))
+
+    def test_non_migrating_open_refuses_newer_identically(self):
+        newer = store.SCHEMA_VERSION + 1
+        self.raw().execute(f"PRAGMA user_version = {newer}")
+        before = self.path.read_bytes()
+        messages = []
+        for migrate in (True, False):
+            with self.assertRaises(store.SchemaNewer) as caught:
+                store.open(self.path, migrate=migrate)
+            messages.append(str(caught.exception))
+        self.assertEqual(messages[0], messages[1])
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_non_migrating_open_does_not_recreate_missing_indexes(self):
+        conn = self.open()
+        conn.execute("DROP INDEX runs_ticketId")
+        conn.close()
+        conn = store.open(self.path, migrate=False)
+        self.addCleanup(conn.close)
+        self.assertEqual(conn.execute(
+            "SELECT name FROM sqlite_master WHERE name = 'runs_ticketId'"
+        ).fetchall(), [])
+        self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone(), (1,))
+        self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone(), ("wal",))
+
     def test_init_creates_the_documented_tables_and_columns(self):
         conn = self.open()
 
