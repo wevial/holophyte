@@ -11,6 +11,7 @@ from time import time
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_serve  # noqa: E402 - after the insert; the SLACK tolerance
 from babysit_fixture import OperatorNoteCase  # noqa: E402
@@ -166,9 +167,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
     def test_each_run_carries_its_end_as_ended_ms(self):
         self.seed_ended()
         self.start()
-
         code, _headers, body = self.request("GET", "/runs")
-
         self.assertEqual(code, 200)
         ended = [r["ended_ms"] for r in body["rows"]]
         self.assertEqual(ended, self.ended_at())
@@ -180,12 +179,10 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
     def test_limit_keeps_the_first_rows_and_a_bad_limit_is_400(self):
         self.seed_ended()
         self.start()
-
         code, _headers, body = self.request("GET", "/runs?limit=2")
         self.assertEqual(code, 200)
         self.assertEqual(body["limit"], 2)
         self.assertEqual(body["rows"], self.expected_rows()[:2])
-
         for query in ("limit=0", "limit=abc", "limit=-1", "limit="):
             with self.subTest(query=query):
                 code, headers, body = self.request("GET", f"/runs?{query}")
@@ -198,9 +195,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
     def test_a_configured_host_label_is_every_host_in_the_rows(self):
         self.seed_ended()
         self.start('[report]\nhost_label = "writer-1"\n')
-
         code, _headers, body = self.request("GET", "/runs")
-
         self.assertEqual(code, 200)
         self.assertEqual(len(body["rows"]), 3)
         self.assertEqual({r["host"] for r in body["rows"]}, {"writer-1"})
@@ -210,9 +205,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
         self.seed_ended()
         self.null_host(2)
         self.start('[report]\nhost_label = "writer-1"\n')
-
         code, _headers, body = self.request("GET", "/runs")
-
         self.assertEqual(code, 200)
         self.assertEqual([r["host"] for r in body["rows"]],
                          ["writer-1", None, "writer-1"])
@@ -220,9 +213,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
 
     def test_runs_without_a_store_is_503_and_creates_none(self):
         self.start()
-
         code, _headers, body = self.request("GET", "/runs")
-
         self.assertEqual(code, 503)
         self.assertIn("no store", body["error"])
         self.assertFalse(self.db.exists())
@@ -275,9 +266,7 @@ class ShippedTests(ServeTestCase):
     def test_merged_runs_newest_end_first_with_findings_counted(self):
         self.seed_shipped()
         self.start()
-
         code, headers, body = self.request("GET", "/shipped")
-
         self.assertEqual(code, 200)
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertEqual(headers["Cache-Control"], "no-store")
@@ -304,7 +293,6 @@ class ShippedTests(ServeTestCase):
     def test_all_outcomes_preserve_finished_runs_and_bound_the_reason(self):
         self.seed_shipped()
         self.start()
-
         code, _headers, body = self.request("GET", "/shipped?outcome=all")
         self.assertEqual(code, 200)
         self.assertEqual([r["ticket"] for r in body["rows"]],
@@ -320,7 +308,6 @@ class ShippedTests(ServeTestCase):
         code, _headers, explicit = self.request("GET", "/shipped?outcome=merged")
         self.assertEqual(code, 200)
         self.assertEqual(explicit, default)
-
         conn = store.open(str(self.db))
         try:
             conn.execute("UPDATE runs SET outcomeReason = ? WHERE id = ?",
@@ -335,14 +322,12 @@ class ShippedTests(ServeTestCase):
     def test_a_client_pages_to_the_end_with_next_before(self):
         self.seed_shipped()
         self.start()
-
         code, _headers, first = self.request("GET", "/shipped?limit=2")
         self.assertEqual(code, 200)
         self.assertEqual(first["limit"], 2)
         self.assertEqual([r["ticket"] for r in first["rows"]],
                          ["KO-3", "KO-4"])
         self.assertEqual(first["next_before"], self.runs["KO-4"])
-
         code, _headers, second = self.request(
             "GET", f"/shipped?limit=2&before={first['next_before']}")
         self.assertEqual(code, 200)
@@ -352,7 +337,6 @@ class ShippedTests(ServeTestCase):
     def test_bad_parameters_are_400_and_an_unknown_before_is_empty(self):
         self.seed_shipped()
         self.start()
-
         for query, name in (("limit=0", "limit"), ("limit=x", "limit"),
                             ("before=x", "before"),
                             ("outcome=bogus", "outcome")):
@@ -364,7 +348,6 @@ class ShippedTests(ServeTestCase):
                 if name == "outcome":
                     self.assertIn("bogus", body["error"])
                 self.assertNotIn("rows", body)
-
         for cursor in ("99999", "-1", "0", str(2 ** 63), str(-(2 ** 63) - 1)):
             with self.subTest(before=cursor):
                 code, _headers, body = self.request(
@@ -372,14 +355,12 @@ class ShippedTests(ServeTestCase):
                 self.assertEqual(code, 200)
                 self.assertEqual(body["rows"], [])
                 self.assertIsNone(body["next_before"])
-
         code, _headers, body = self.request("GET", "/shipped?limit=500")
         self.assertEqual(code, 200)
         self.assertEqual(body["limit"], 200)
 
     def test_shipped_without_a_store_is_503_and_creates_none(self):
         self.start()
-
         code, _headers, body = self.request("GET", "/shipped")
         self.assertEqual(code, 503)
         self.assertIn("no store", body["error"])
@@ -633,3 +614,22 @@ class ActiveRoutesTests(ServeTestCase):
         reset(target)
         _, _, body = self.request('GET', '/status')
         self.assertNotIn('fallback', body['active_routes']['implementer'])
+
+
+class MigrationFeedTests(ServeTestCase):
+    def test_now_includes_one_neutral_migration_and_respects_filters(self):
+        self.seed()
+        target = holophyte.target.Target.locate(self.target)
+        status, body = holophyte.serve_runs.ledger(target, "since=0")
+        self.assertEqual(status, 200)
+        rows = [r for r in body["entries"] if r.get("action") == "migrate"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["tone"], "neutral")
+        self.assertIsNone(rows[0]["run"])
+        self.assertIn("store schema", rows[0]["text"])
+        for query in ("since=0&ticket=KO-7", "since=0&kind=merge",
+                      f"since={rows[0]['at'] + 1}"):
+            _, filtered = holophyte.serve_runs.ledger(
+                target, query)
+            self.assertFalse(any(r.get("action") == "migrate"
+                                 for r in filtered["entries"]))

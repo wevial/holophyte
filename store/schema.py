@@ -2,8 +2,15 @@
 from __future__ import annotations
 
 import contextlib
+import getpass
+import json
+import os
 import sqlite3
+import subprocess
+import sys
 import threading
+import time
+from pathlib import Path
 
 # One statement per table, in dependency order where it matters. Every
 # statement is IF NOT EXISTS, which is the whole of init()'s idempotency:
@@ -305,7 +312,7 @@ CREATE TABLE IF NOT EXISTS interventions (
     id        INTEGER PRIMARY KEY,
     runId     INTEGER REFERENCES runs (id),
     projectId INTEGER REFERENCES projects (id),
-    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human')),
+    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human', 'factory')),
     "trigger" TEXT    NOT NULL
         CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
                              'review_stuck', 'linear_cancelled',
@@ -315,16 +322,17 @@ CREATE TABLE IF NOT EXISTS interventions (
                             'close_out', 'requeue', 'approve', 'repoint',
                             'babysit', 'reconcile', 'restart_supervisor',
                             'launch_loop', 'launch_backoff', 'route_fallback',
-                            'config_edit', 'operator_note')),
+                            'config_edit', 'operator_note', 'migrate')),
+    note      TEXT,  -- store-level migration evidence as JSON
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL,
-    CHECK (runId IS NOT NULL OR projectId IS NOT NULL)
+    CHECK (runId IS NOT NULL OR projectId IS NOT NULL OR "action" = 'migrate')
 )"""
 
 
-# Version 22 admits private operator_note interventions (KO-479).
-SCHEMA_VERSION = 22
+# Version 23 records the process responsible for schema migrations (KO-495).
+SCHEMA_VERSION = 23
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -424,6 +432,7 @@ ADDED_COLUMNS = (
     ("projects", "launchBackoffUntil", "launchBackoffUntil INTEGER"),
     ("projects", "launchBackoffReason", "launchBackoffReason TEXT"),
     ("runEvents", "projectId", "projectId INTEGER REFERENCES projects (id)"),
+    ("interventions", "note", "note TEXT"),
     ("interventions", "projectId", "projectId INTEGER REFERENCES projects (id)"),
     ("runs", "workingMs", "workingMs INTEGER"),
     ("runs", "workStartedAt", "workStartedAt INTEGER"),
@@ -545,24 +554,10 @@ BACKFILLS = (
 
 
 def init(conn):
-    """Create every table the state model defines, if absent, and migrate.
+    """Create tables, apply the migration ladder, and stamp the schema atomically.
 
-    Three steps, because `CREATE TABLE IF NOT EXISTS` alone would only ever
-    bootstrap an empty file: the tables are created, then every `ADDED_COLUMNS`
-    entry missing from an existing table is added, then every `BACKFILLS`
-    statement repairs the rows an older version of this module left with a
-    value it never filled in. The second step is what carries a store created
-    by an earlier version forward instead of leaving it one column short of
-    the code that reads it; the third is what keeps that store's history from
-    reading as a confident zero.
-
-    Idempotent: safe to call on an already-initialized database, where it
-    creates nothing, adds nothing, and touches only rows a backfill finds
-    still disagreeing with what it recomputes — none, on the second call, and
-    none ever on a store this module wrote from the start. Not a downgrade
-    path — an older module opening a newer store sees columns it does not know
-    about, which is harmless, while the reverse is what this repairs.
-    """
+    Existing columns and backfilled values survive repeated calls. The audit
+    row is written only when the version advances, in the same transaction."""
     conn.executescript(SCHEMA)
     foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
     foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
@@ -574,6 +569,7 @@ def init(conn):
     # `_transaction()`'s docstring warns joined writers about.
     try:
         conn.execute("BEGIN IMMEDIATE")
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.execute(_INTERVENTIONS_DDL)
         for table, column, ddl in ADDED_COLUMNS:
             # A misspelled table name leaves `columns` empty and the ALTER
@@ -592,6 +588,8 @@ def init(conn):
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
         # version means.
+        if version < SCHEMA_VERSION:
+            _record_migration(conn, version)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
         if conn.execute("PRAGMA foreign_key_check").fetchall() != foreign_key_errors:
             raise sqlite3.IntegrityError("foreign key violation during migration")
@@ -623,6 +621,25 @@ def _widen_runs_outcomes(conn):
             conn.execute(sql)
 
 
+def _record_migration(conn, version):
+    """Identify the running code and process inside the migration transaction."""
+    try:
+        build = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True, text=True, check=True, timeout=5,
+        ).stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        build = "unknown"
+    at = int(time.time() * 1000)
+    note = json.dumps({"from": version, "to": SCHEMA_VERSION, "build": build,
+                       "pid": os.getpid(), "ppid": os.getppid(),
+                       "argv": sys.argv, "user": getpass.getuser(), "at": at})
+    conn.execute(
+        'INSERT INTO interventions (source, "trigger", action, note, at)'
+        " VALUES ('factory', 'manual', 'migrate', ?, ?)", (note, at))
+
+
 def _widen_interventions_action(conn):
     """Rebuild `interventions` when its action CHECK predates 'repoint',
     'shepherd', 'reconcile', the daemon's unit actions, 'config_edit' or
@@ -640,7 +657,8 @@ def _widen_interventions_action(conn):
     if all(value in admitted
            for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
                          "'restart_supervisor'", "'launch_loop'",
-                         "'config_edit'", "'launch_backoff'", "'route_fallback'")):
+                         "'config_edit'", "'launch_backoff'", "'route_fallback'",
+                         "'migrate'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -659,27 +677,19 @@ def _widen_interventions_action(conn):
         conn.execute(
             "INSERT INTO interventions"
             ' (id, runId, source, "trigger", "action", question, guidance, at,'
-            ' projectId)'
+            ' projectId, note)'
             ' SELECT id, runId, source, "trigger",'
             "   CASE \"action\" WHEN 'shepherd' THEN 'babysit'"
-            '   ELSE "action" END, question, guidance, at, projectId'
+            '   ELSE "action" END, question, guidance, at, projectId, note'
             " FROM interventions_old")
         conn.execute("DROP TABLE interventions_old")
 
 
 @contextlib.contextmanager
 def _transaction(conn):
-    """Run the block in one `BEGIN IMMEDIATE`, or join the caller's transaction.
+    """Join the caller's transaction or own an immediate transaction.
 
-    `BEGIN IMMEDIATE` serializes read-then-write operations across connections.
-    The connection lock serializes fallback heartbeats with their caller:
-    another thread must not join the caller's open transaction.
-    Commit on success; roll back on any exception, including commit failure.
-
-    Nested calls join the owning thread's transaction without committing or
-    rolling it back. The owner must take IMMEDIATE for serialization, as
-    `transaction()` and `claim()` do.
-    """
+    Roll back owned transactions on failure; never commit a caller's work."""
     with getattr(conn, "_lock", contextlib.nullcontext()):
         if conn.in_transaction:
             yield
@@ -701,22 +711,9 @@ def _transaction(conn):
 
 @contextlib.contextmanager
 def transaction(conn):
-    """`_transaction()` for callers outside this module; same guarantees.
+    """Public transaction boundary for operator actions spanning store APIs.
 
-    A reader that has to *decide* something from what it reads and then write
-    the decision down cannot do the two in separate statements: between them
-    another connection commits, and the write records a verdict on a state
-    that no longer holds. The supervisor sweep is exactly that shape -- it
-    reads a run's heartbeat, classifies it and records the sighting -- and it
-    lives in `factory.py`, so the module's own writers' `BEGIN IMMEDIATE`
-    needs a name that is not private to reach it.
-
-    Under it, this module's writers join instead of opening their own, so a
-    block may read, classify and call `record_strike()` (or any other writer)
-    and have the whole thing commit or roll back once. The write lock is held
-    from the first statement, so a concurrent writer waits rather than
-    interleaving -- keep the block short for that reason.
-    """
+    Nested store calls join this transaction; failures roll back owned work."""
     with _transaction(conn):
         yield
 

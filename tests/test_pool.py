@@ -115,7 +115,8 @@ class GateConflictRequeueTests(LoopFixture):
                       " FROM tickets"),
             [("ready", None, None)])
         self.assertEqual(
-            self.read("SELECT runId, action FROM interventions"),
+            self.read('SELECT runId, action FROM interventions'
+                      " WHERE action != 'migrate'"),
             [(run_id, "requeue")])
         noted = self.read(
             "SELECT summary FROM runEvents WHERE summary LIKE"
@@ -150,7 +151,8 @@ class GateConflictRequeueTests(LoopFixture):
         self.assertEqual(
             self.read("SELECT status, blockedQuestion FROM tickets"),
             [("blocked_on_operator", f"PR open: {url}")])
-        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+        self.assertEqual(self.read('SELECT COUNT(*) FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(0,)])
 
 
@@ -763,14 +765,12 @@ class SweptTurnTests(LoopFixture):
                     proc.wait()
                     seen["returncode"] = "the loop never killed the turn"
                 return "killed"
-
         fake.script = [BlockUntilKilled(), Commit("the next work"), APPROVE]
         provider = StubProvider(a_task(1), a_task(2))
         out = io.StringIO()
         with patch.object(sys, "stdout", out):
             self.loop(provider=provider, fake=fake)
         out = out.getvalue()
-
         # The sweep tripped the time box and ended the run.
         self.assertEqual(seen["trips"], ["time_box"])
         self.assertEqual(seen["row"][0], "failed")

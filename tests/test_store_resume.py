@@ -176,7 +176,8 @@ class ResumeTests(unittest.TestCase):
             store.resume(self.conn, 404)
 
         self.assertEqual(
-            self.conn.execute("SELECT COUNT(*) FROM interventions").fetchone(),
+            self.conn.execute('SELECT COUNT(*) FROM interventions'
+                              " WHERE action != 'migrate'").fetchone(),
             (0,),
         )
 
@@ -193,7 +194,6 @@ class ResumeTests(unittest.TestCase):
         run_id = self.a_run("failed")
 
         store.resume(self.conn, run_id, source="supervisor")
-
         self.assertEqual(
             self.interventions(run_id), [("supervisor", "manual", "resume", None)]
         )

@@ -380,17 +380,7 @@ def run_detail(target, run_id, now=None):
 
 
 def run_ledger(target, run_id):
-    """The `/runs/N/ledger` answer: `(http status, JSON-able body)`.
-
-    The run's narrative as the store holds it (design note 9): `entries`
-    oldest first, each its `at` in epoch milliseconds, `kind` (one of
-    `store.LEDGER_KINDS`), `text` and `source` (`loop` or `operator`), with
-    `run_id` and the run's `ticket`. An `intervention` entry also carries
-    `cleared` and `waited_ms` (`ledger_entry()`). A merged run with no rows
-    answers an empty list. `run_id` parses as on `/runs/N`
-    (`locate_run()`): a non-integer is 400, an integer with no run is 404
-    carrying `run`.
-    """
+    """Return a run's ledger oldest first, including intervention wait fields."""
     failed, run = locate_run(target, run_id)
     if failed is not None:
         return failed
@@ -406,13 +396,7 @@ def run_ledger(target, run_id):
 
 
 def ledger_entry(entry, head):
-    """One ledger entry as both ledger endpoints spell it: `head`'s
-    fields first, then `at`, `kind`, `source` and `text`, and on an
-    `intervention` entry `cleared` and `waited_ms` (KO-308) -- what the
-    operator's step cleared (`question` or `failed`) and how long that had
-    waited, both null when nothing was waiting. The store's rule
-    (`store.read._cleared_by()`) decides; the wire only names the fields.
-    """
+    """Render shared ledger fields and intervention clearance/wait evidence."""
     body = {**head, "at": entry.at, "kind": entry.kind,
             "source": entry.source, "text": entry.text}
     if entry.kind == "intervention":
@@ -426,13 +410,7 @@ LEDGER_CAP = 1000
 
 
 def ledger(target, query):
-    """The `/ledger` answer: `(http status, JSON-able body)`.
-
-    Read entries since the required epoch-ms cursor, narrowed by kind/ticket
-    and capped by limit. The Now window also carries ongoing project outages,
-    even across midnight, and suppresses their repeated launch interventions.
-    Invalid query parameters return 400; absent stores return 503.
-    """
+    """Return the filtered Now feed, migrations and ongoing project outages."""
     try:
         since = parse_since(query)
         kind = parse_filter(query, "kind", allowed=store.LEDGER_KINDS)
@@ -449,14 +427,33 @@ def ledger(target, query):
                                           hide_launch_backoff=True)
         route_rows = (route_down_rows(conn)
                       if ticket is None and kind in (None, "intervention") else [])
+        feed = [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
+                for e in entries]
+        if ticket is None and kind in (None, "intervention"):
+            feed.extend(migration_rows(conn, since, limit))
+        feed.sort(key=lambda row: row["at"], reverse=True)
     finally:
         conn.close()
     return 200, {
-        "entries": [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
-                    for e in entries],
+        "entries": feed[:limit],
         "active_outages": route_rows, "since": since, "limit": limit,
     }
 
+
+
+def migration_rows(conn, since, limit):
+    """Store-wide evidence has no ticket or run to join to the ledger."""
+    from holophyte.report import migration_line
+
+    if "note" not in {r[1] for r in conn.execute("PRAGMA table_info(interventions)")}:
+        return []
+    rows = conn.execute(
+        "SELECT note, at FROM interventions WHERE action = 'migrate' AND at >= ?"
+        " ORDER BY at DESC, id DESC LIMIT ?", (since, limit)).fetchall()
+    return [{"at": at, "run": None, "ticket": None, "kind": "intervention",
+             "source": "factory", "action": "migrate", "tone": "neutral",
+             "text": migration_line(note, json.loads(note)["to"]),
+             "cleared": None, "waited_ms": None} for note, at in rows]
 
 
 def route_down_rows(conn):

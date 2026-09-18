@@ -24,7 +24,7 @@ from holophyte.reconcile import (
     _reconcile_pull_requests,
 )
 from holophyte.reexec import reexec_self
-from holophyte.report import report_lines
+from holophyte.report import migration_header, report_lines
 from holophyte.runs import open_store
 from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
 
@@ -230,9 +230,7 @@ def _reexec(target, conn, project, reason=None, *, prepared_sha=None):
 def report(target, conn=None, out=None, now=None):
     """Print the target store's estimate-vs-actual table. Returns nothing.
 
-    `--report`'s whole body: it reads rows and prints them, so no ticket is
-    claimed, no worktree is cut and no provider is imported -- which is what
-    makes it safe to run against the store of a loop that is still working.
+    Read and print without claiming work or importing a provider.
 
     The one write it can make is `open_store()`'s migration: a store older
     than the run row's estimate column is brought up to the schema this
@@ -255,6 +253,8 @@ def report(target, conn=None, out=None, now=None):
     owned = conn is None
     conn = conn if conn is not None else open_store(target)
     try:
+        for line in migration_header(conn):
+            print(line, file=out)
         print("\n".join(report_lines(conn, target)), file=out)
         print(f"findings: {report_config(target).findings}", file=out)
         print(supervisor_liveness_line(target, conn, now), file=out)

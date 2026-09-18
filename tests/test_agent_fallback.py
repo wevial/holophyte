@@ -117,7 +117,8 @@ class AgentFallbackTests(SweepTestCase):
         code, output = self.start(turn)
         self.assertEqual(code, 0)
         self.assertNotIn(secret, output)
-        for query in ("SELECT guidance FROM interventions",
+        for query in ('SELECT guidance FROM interventions'
+                      " WHERE action != 'migrate'",
                       "SELECT summary FROM runEvents"):
             self.assertNotIn(secret, str(self.conn.execute(query).fetchall()))
 
@@ -141,7 +142,8 @@ class AgentFallbackTests(SweepTestCase):
             agents.activate_fallback(self.tgt, 'implement', reason,
                                      self.conn, run)
         evidence = [diagnostic, out.getvalue()]
-        for query, column in (("SELECT guidance FROM interventions", 'reason'),
+        for query, column in (('SELECT guidance FROM interventions'
+                               " WHERE action != 'migrate'", 'reason'),
                               ("SELECT summary FROM runEvents "
                                "WHERE kind='route_fallback'", 'reason')):
             evidence.extend(json.loads(row[0])[column]

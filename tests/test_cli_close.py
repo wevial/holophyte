@@ -64,7 +64,8 @@ class CloseFlagTests(unittest.TestCase):
         self.assertIn("KO-1", out)
         self.assertIn(URL, out)
         self.assertEqual(self.conn.execute(
-            'SELECT runId, action FROM interventions').fetchall(),
+            'SELECT runId, action FROM interventions'
+            " WHERE action != 'migrate'").fetchall(),
             [(self.run, "close_out")])
         self.assertIn(URL, str(self.conn.execute(
             "SELECT * FROM runEvents WHERE runId = ?", (self.run,)).fetchall()))
@@ -122,7 +123,8 @@ class CloseFlagTests(unittest.TestCase):
                 self.assertIn(reason, str(raised.exception))
                 self.assertEqual(list(self.conn.iterdump()), before)
                 self.assertEqual(self.conn.execute(
-                    "SELECT COUNT(*) FROM interventions").fetchone(), (0,))
+                    'SELECT COUNT(*) FROM interventions'
+                    " WHERE action != 'migrate'").fetchone(), (0,))
                 self.assertEqual(self.board.mock_calls, [])
 
     def test_walk_failure_rolls_back_intervention_before_board_calls(self):

@@ -95,7 +95,8 @@ class RequeueCliTests(unittest.TestCase):
 
     def interventions(self):
         return self.conn.execute(
-            'SELECT runId, "action" FROM interventions').fetchall()
+            'SELECT runId, "action" FROM interventions'
+            " WHERE action != 'migrate'").fetchall()
 
     def status(self):
         return self.conn.execute(
@@ -189,7 +190,6 @@ class RequeueCliTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as unknown:
             self.cli("--requeue", "KO-404", "--note", "who?")
         self.assertIn("KO-404", str(unknown.exception))
-
         for raised in (live, ready, unknown):
             self.assertNotEqual(raised.exception.code, 0)
         self.assertEqual(self.interventions(), before)

@@ -1,100 +1,22 @@
 """Schema bootstrap contract for the v2 store."""
 from __future__ import annotations
 
+import getpass
+import json
+import os
 import socket
 import sqlite3
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import store
 import store.schema
 import store.tickets
-
-DOCUMENTED_COLUMNS = {
-    "projects": {
-        "id", "linearTeamId", "repoPath", "defaultBranch", "autonomyProfile",
-        "highRiskPaths", "verificationDefault", "activeRunId",
-        # Store-owned: when the supervisor's board fallback last asked
-        # Linear for the ready listing, so `board_ask_sec` throttles
-        # across passes and restarts (KO-434).
-        "boardAskedAt", "launchBackoffUntil", "launchBackoffReason",
-    },
-    "tickets": {
-        "id", "projectId", "linearIssueId", "linearIdentifier", "title",
-        "status", "acceptanceCriteria", "verificationCommands", "timeBoxMs",
-        "affinity", "dependsOn", "activeRunId", "lastRunId", "blockedQuestion",
-        "splitDepth", "mirroredAt",
-        # Store-owned: the Linear body the claim-time mirror last read, so
-        # the daemon serves the contract the run worked from (KO-328).
-        "body",
-    },
-    "runs": {
-        "id", "ticketId", "projectId", "attempt", "phase", "workerId",
-        "providerSessionId", "branch", "prUrl", "startedAt", "lastHeartbeat",
-        "endedAt", "reviewRoundCount", "outcome", "outcomeReason",
-        "workingMs", "workStartedAt",
-        # Store-owned: the merge commit a merged run landed on main as, so
-        # the ticket-to-commit link is a column and not a grep of git log.
-        "mergeSha",
-        "candidateSha",
-        "approvedSha",
-        # Store-owned: the review-round cap the loop gave the run, so the
-        # console sizes the round timeline by it rather than a constant.
-        "reviewRoundCap",
-        "prSeenAt",
-        "prSeenThreads",
-        # Store-owned: the checks rollup and review decision the same read
-        # saw, so `/attention`'s `pr_open` item carries them (KO-368).
-        "prSeenChecks",
-        "prSeenReview",
-        # Store-owned, not a documented field: §5 requires a resume to
-        # "re-enter the phase it left" and leaves the mechanism to us, so
-        # `resume()` reads the parked phase from this column.
-        "resumePhase",
-        # Store-owned too: the ticket's estimate as it stood at the claim, so
-        # a finished run's estimate-vs-actual does not move when the ticket's
-        # own `timeBoxMs` is later re-mirrored.
-        "timeBoxMs",
-        # Store-owned as well: the ticket's contract frozen at the claim, so
-        # the merge gate can tell a body edited mid-run from the one the run
-        # was worked to.
-        "ticketSnapshot",
-        # Store-owned: whether a failure is evidence about the ticket
-        # (`work`) or about the factory's own plumbing (`infra`), so the
-        # escalation count can leave the second kind out.
-        "outcomeClass",
-        # Store-owned: the hostname that claimed the run, so a store read on
-        # another machine can say where each live run is executing.
-        "host",
-    },
-    "ledger": {
-        "id", "runId", "ticketId", "at", "kind", "text", "source",
-    },
-    "reviewRounds": {
-        "id", "runId", "round", "verificationResults", "verdict", "findings",
-        "findingsFingerprint", "reviewerModel", "startedAt", "endedAt",
-    },
-    "runEvents": {
-        "id", "runId", "projectId", "seq", "level", "kind", "summary", "payload", "at",
-    },
-    "interventions": {
-        "id", "runId", "projectId", "source", "trigger", "action", "question",
-        "guidance", "at",
-    },
-    "linearDeliveries": {"deliveryId", "processedAt"},
-    # Store-owned, not a documented table: the supervisor sweep's per-run
-    # strike tally, which exists because "silent on two consecutive sweeps"
-    # has to survive between two sweep invocations.
-    "sweepStrikes": {"runId", "strikes", "lastSeen"},
-    # Store-owned as well: one row per `--supervise` process, bumped on every
-    # pass, so a reader can tell a live watcher from a dead one.
-    "supervisorHeartbeats": {"pid", "startedAt", "lastBeat", "passes", "host"},
-    # And one row per self-merge re-exec of the loop, so the sweep can tell a
-    # restart that came back from one that died in the exec.
-    "loopRestarts": {"id", "projectId", "sha", "at", "returnedAt",
-                     "reportedAt"},
-}
+from tests.schema_fixture import DOCUMENTED_COLUMNS
 
 A_PROJECT = (
     "linearTeamId, repoPath, defaultBranch, autonomyProfile",
@@ -452,6 +374,69 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
 
+    def test_migration_records_process_once_and_reopen_is_quiet(self):
+        conn = store.open(self.path)
+        conn.execute("DELETE FROM interventions WHERE action = 'migrate'")
+        conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
+        conn.commit()
+        conn.close()
+        before = int(time.time() * 1000)
+        conn = store.open(self.path)
+        committed = int(time.time() * 1000)
+        rows = conn.execute(
+            "SELECT runId, source, note, at FROM interventions"
+            " WHERE action = 'migrate'").fetchall()
+        self.assertEqual(len(rows), 1)
+        run, source, note, at = rows[0]
+        detail = json.loads(note)
+        self.assertIsNone(run)
+        self.assertEqual(source, "factory")
+        self.assertEqual(detail["from"], store.SCHEMA_VERSION - 1)
+        self.assertEqual(detail["to"], store.SCHEMA_VERSION)
+        self.assertTrue(detail["build"])
+        self.assertEqual(detail["pid"], os.getpid())
+        self.assertEqual(detail["ppid"], os.getppid())
+        self.assertEqual(detail["argv"], sys.argv)
+        self.assertEqual(detail["user"], getpass.getuser())
+        self.assertEqual(detail["at"], at)
+        self.assertLessEqual(before, at)
+        self.assertLessEqual(at, committed)
+        conn.close()
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+        store.init(conn)
+        self.assertEqual(conn.execute(
+            "SELECT COUNT(*) FROM interventions WHERE action = 'migrate'"
+        ).fetchone()[0], 1)
+
+    def test_migration_evidence_rolls_back_with_failed_stamp_and_without_git(self):
+        conn = store.open(self.path)
+        conn.execute("DELETE FROM interventions WHERE action = 'migrate'")
+        conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
+        conn.commit()
+        self.addCleanup(conn.close)
+        # Refuse only the version write, after the audit INSERT has run.
+        def deny_stamp(action, name, value, database, context):
+            if action == sqlite3.SQLITE_PRAGMA and name == "user_version" and value:
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        conn.set_authorizer(deny_stamp)
+        with patch("store.schema.subprocess.run", side_effect=FileNotFoundError):
+            with self.assertRaises(sqlite3.DatabaseError):
+                store.init(conn)
+            conn.set_authorizer(None)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
+                             store.SCHEMA_VERSION - 1)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM interventions WHERE action = 'migrate'"
+            ).fetchone()[0], 0)
+            store.init(conn)
+        note = conn.execute(
+            "SELECT note FROM interventions WHERE action = 'migrate'"
+        ).fetchone()[0]
+        self.assertEqual(json.loads(note)["build"], "unknown")
+
     def test_version_16_accepts_rejection_after_migration(self):
         raw = self.raw()
         old = store.schema.SCHEMA.replace(", 'rejected'", "")
@@ -583,13 +568,15 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         self.assertEqual(
             conn.execute('SELECT runId, "action" FROM interventions'
+                         " WHERE action != 'migrate'"
                          " ORDER BY id").fetchall(),
             [(run_id, "requeue")])
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM ledger")
                          .fetchone(), (0,))
         store.record_intervention(conn, run_id, "approve", "ok")
         self.assertEqual(
-            conn.execute('SELECT "action" FROM interventions ORDER BY id')
+            conn.execute('SELECT "action" FROM interventions'
+                         " WHERE action != 'migrate' ORDER BY id")
             .fetchall(), [("requeue",), ("approve",)])
         self.assertEqual(
             conn.execute("SELECT runId, ticketId, kind, source FROM ledger")
@@ -713,7 +700,8 @@ class Version6MigrationTests(unittest.TestCase):
         self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         store.record_intervention(conn, run_id, "repoint", "rebuilt")
         self.assertEqual(
-            conn.execute('SELECT "action" FROM interventions ORDER BY id')
+            conn.execute('SELECT "action" FROM interventions'
+                         " WHERE action != 'migrate' ORDER BY id")
             .fetchall(), [("approve",), ("repoint",)])
 
 
@@ -821,6 +809,7 @@ class Version10MigrationTests(unittest.TestCase):
                                   source="supervisor", trigger="linear_completed")
         self.assertEqual(
             conn.execute('SELECT "action", "trigger" FROM interventions'
+                         " WHERE action != 'migrate'"
                          " ORDER BY id").fetchall(),
             [("babysit", "manual"), ("reconcile", "linear_completed")])
 
@@ -881,6 +870,7 @@ class Version11MigrationTests(unittest.TestCase):
                                   "launch asked over HTTP")
         self.assertEqual(
             conn.execute('SELECT "action", "trigger" FROM interventions'
+                         " WHERE action != 'migrate'"
                          " ORDER BY id").fetchall(),
             [("reconcile", "linear_completed"), ("restart_supervisor", "manual"),
              ("launch_loop", "manual")])
@@ -940,6 +930,7 @@ class Version12MigrationTests(unittest.TestCase):
                                   "config replaced over HTTP")
         self.assertEqual(
             conn.execute('SELECT "action", "trigger" FROM interventions'
+                         " WHERE action != 'migrate'"
                          " ORDER BY id").fetchall(),
             [("launch_loop", "manual"), ("config_edit", "manual")])
 
@@ -999,6 +990,7 @@ class Version15MigrationTests(unittest.TestCase):
         self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
         self.assertEqual(
             conn.execute('SELECT id, source, "action", at FROM interventions'
+                         " WHERE action != 'migrate'"
                          " ORDER BY id").fetchall(),
             [(1, "human", "babysit", 1_700_000_120_000),
              (2, "supervisor", "launch_loop", 1_700_000_130_000),
@@ -1006,7 +998,8 @@ class Version15MigrationTests(unittest.TestCase):
         store.record_intervention(conn, run_id, "babysit", "look again")
         self.assertEqual(
             conn.execute('SELECT "action" FROM interventions'
-                         " WHERE id = 4").fetchall(), [("babysit",)])
+                         " WHERE action != 'migrate'"
+                         " ORDER BY id DESC LIMIT 1").fetchall(), [("babysit",)])
         with self.assertRaises(sqlite3.IntegrityError):
             conn.execute(
                 'INSERT INTO interventions (runId, source, "trigger",'

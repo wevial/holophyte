@@ -278,7 +278,8 @@ class StoreBabysitCases:
                       now=T0 + 3 * MINUTE)
 
         self.assertEqual(
-            self.rows('SELECT runId, source, "action" FROM interventions'),
+            self.rows('SELECT runId, source, "action" FROM interventions'
+                      " WHERE action != 'migrate'"),
             [(self.run, "human", "babysit")])
         self.assertEqual(self.rows("SELECT status, blockedQuestion FROM tickets"),
                          [("ready", None)])
