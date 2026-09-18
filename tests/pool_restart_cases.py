@@ -15,6 +15,24 @@ import store.schema
 
 
 class PoolRestartCases:
+    def fetched_git(self, version, events):
+        original_sh = holophyte.operator.sh
+
+        def fetched(args, cwd):
+            if args[:2] == ['git', 'fetch']:
+                events.append('fetch')
+                return ''
+            if args == ['git', 'show', 'origin/main:store/schema.py']:
+                return f'SCHEMA_VERSION = {version}\n'
+            if args == ['git', 'rev-parse', '--short', 'origin/main']:
+                return 'new5678'
+            if args[:2] == ['git', 'merge']:
+                events.append('merge')
+                return ''
+            return original_sh(args, cwd)
+
+        return fetched
+
     def write_schema(self, version):
         schema = self.target / "store" / "schema.py"
         schema.parent.mkdir(exist_ok=True)
@@ -29,11 +47,12 @@ class PoolRestartCases:
         schema.parent.mkdir()
         schema.write_text(f"SCHEMA_VERSION = {store.schema.SCHEMA_VERSION + 1}\n")
 
-        def update_checkout(_target, _pool):
-            schema.write_text(f"SCHEMA_VERSION = {store.schema.SCHEMA_VERSION}\n")
-
-        with patch.object(holophyte.operator, "_fast_forward_checkout",
-                          side_effect=update_checkout) as update, \
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        with patch.object(holophyte.operator, "_fetch_main",
+                          return_value=True) as update, \
+                patch.object(holophyte.pool_handoff, "fetched_schema",
+                             return_value=store.schema.SCHEMA_VERSION), \
+                patch.object(holophyte.operator, "_ff_main"), \
                 patch.object(holophyte.pool, "SPAWN", fake.spawn), \
                 patch.object(holophyte.pool, "WAIT", fake.wait), \
                 patch.object(holophyte.operator, "EXEC", lambda *a: execs.append(a)), \

@@ -19,6 +19,7 @@ from holophyte.config_tables import loop_config, report_config
 from holophyte.findings import commit_findings
 from holophyte.gates import sh
 from holophyte.pool import scheduler
+from holophyte.pool_handoff import _fetch_main, _ff_main, _prepare_reexec  # noqa: F401
 from holophyte.reconcile import (
     _reconcile_at_startup,
     _reconcile_pull_requests,
@@ -26,7 +27,7 @@ from holophyte.reconcile import (
 from holophyte.reexec import reexec_self
 from holophyte.report import migration_header, report_lines
 from holophyte.runs import open_store
-from holophyte.startup import banner, checkout_blocked
+from holophyte.startup import banner
 from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
 
 EXEC = os.execv  # Replace after a self-merge; tests observe through this seam.
@@ -197,28 +198,16 @@ def _schema_move(target):
     return None
 
 
-def _fast_forward_checkout(target, worker_pids=(), *, draining=False):
-    """Best effort: unsafe or diverged checkouts still execute the disk build."""
-    if checkout_blocked(worker_pids, draining):
-        return
-    try:
-        if sh(["git", "branch", "--show-current"], target.path) != "main":
-            raise RuntimeError("not on main")
-        if st := sh("git status --porcelain --untracked-files=no".split(), target.path):
-            raise RuntimeError("checkout not clean: " + ", ".join(
-                line.split(maxsplit=1)[1] for line in st.splitlines()[:3]))
-        sh(["git", "fetch", "origin", "main"], target.path)
-        sh(["git", "merge", "--ff-only", "origin/main"], target.path)
-    except (RuntimeError, OSError) as exc:
-        print("[holo2] re-exec: checkout not fast-forwarded "
-              f"({' '.join(str(exc).split())}); executing the code on disk", flush=True)
-
-
-def _reexec(target, conn, project, reason=None, *, prepared_sha=None):
-    """Update and exec `factory.py`; returns only when a test's EXEC does."""
+def _reexec(target, conn, project, reason=None, *, prepared_sha=None,
+            can_ff=None, worker_pids=()):
+    """Update and exec; a schema move with workers asks the caller to drain."""
     sha = prepared_sha or sh(["git", "rev-parse", "--short", "HEAD"], target.path)
-    if prepared_sha is None:
-        _fast_forward_checkout(target)
+    if can_ff is None:
+        can_ff, schema_moves = _prepare_reexec(target, worker_pids)
+        if schema_moves and worker_pids:
+            return False
+    if can_ff:
+        _ff_main(target)
     arriving = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
     store.record_loop_restart(conn, project, json.dumps({
         "leaving": sha, "arriving": arriving}))

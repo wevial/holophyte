@@ -4,8 +4,6 @@ import json
 import os
 from types import SimpleNamespace
 
-from store.schema import SCHEMA_VERSION
-
 
 def read(target):
     try:
@@ -39,36 +37,36 @@ def next_slot(pool):
     return max((slot for slot, _ in pool.values()), default=0) + 1
 
 
-def _schema_changed(target):
+def fetched_schema(target):
     """Read the arriving constant without importing or migrating its store.
 
     An unreadable/unknown version conservatively keeps the existing drain.
     """
+    from holophyte.operator import sh
+
     try:
-        tree = ast.parse((target.path / "store" / "schema.py").read_text())
+        tree = ast.parse(sh(["git", "show", "origin/main:store/schema.py"],
+                            target.path))
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(
                     isinstance(name, ast.Name) and name.id == "SCHEMA_VERSION"
                     for name in node.targets):
-                return ast.literal_eval(node.value) != SCHEMA_VERSION
-    except (OSError, SyntaxError, ValueError):
+                return ast.literal_eval(node.value)
+    except (OSError, RuntimeError, SyntaxError, ValueError):
         pass
-    return True
+    return None
 
 
 def prepare_restart(state, target, pool):
-    """Update once, then decide against the exact tree exec will load."""
-    from holophyte.operator import _fast_forward_checkout, sh
+    """Fetch once and defer checkout movement until any schema drain ends."""
+    from holophyte.operator import sh
 
     if not state.restart or state.stopped or state.restart_reason:
         return False
     if state.prepared_sha is None:
         state.prepared_sha = sh(["git", "rev-parse", "--short", "HEAD"],
                                target.path)
-        # Ordinary restarts preserve workers; they are not a schema drain.
-        # A drain reaches _reexec only after the pool is empty.
-        _fast_forward_checkout(target, pool)
-        state.schema_changed = _schema_changed(target)
+        state.can_ff, state.schema_changed = _prepare_reexec(target, pool)
     return not state.schema_changed
 
 
@@ -90,3 +88,56 @@ def workers_on_previous_build(target):
     except (OSError, ValueError):
         return 0
     return sum(bool(worker.get("previous")) for worker in data.get("workers", []))
+
+
+def _checkout_refused(exc):
+    print("[holo2] re-exec: checkout not fast-forwarded "
+          f"({' '.join(str(exc).split())}); executing the code on disk", flush=True)
+
+
+def _prepare_reexec(target, worker_pids):
+    from holophyte.operator import _fetch_main, sh
+    from store.schema import SCHEMA_VERSION
+
+    can_ff = _fetch_main(target)
+    if not can_ff:
+        return False, False
+    version = fetched_schema(target)
+    schema_moves = version != SCHEMA_VERSION
+    arriving = sh(["git", "rev-parse", "--short", "origin/main"], target.path)
+    if schema_moves:
+        decision = (f"schema {SCHEMA_VERSION} -> {version}; draining"
+                    f" {len(worker_pids)} worker(s) before fast-forward to {arriving}")
+    else:
+        decision = (f"schema unchanged ({SCHEMA_VERSION}); fast-forwarding to"
+                    f" {arriving} under {len(worker_pids)} live worker(s)")
+    leaving = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
+    print(f"[holo2] re-exec: {decision} (leaving {leaving})", flush=True)
+    return can_ff, schema_moves
+
+
+def _fetch_main(target):
+    """Fetch even with live workers or a checkout that cannot fast-forward."""
+    from holophyte.operator import sh
+
+    try:
+        sh(["git", "fetch", "origin", "main"], target.path)
+        if sh(["git", "branch", "--show-current"], target.path) != "main":
+            raise RuntimeError("not on main")
+        if st := sh("git status --porcelain --untracked-files=no".split(), target.path):
+            raise RuntimeError("checkout not clean: " + ", ".join(
+                line.split(maxsplit=1)[1] for line in st.splitlines()[:3]))
+        return True
+    except (RuntimeError, OSError) as exc:
+        _checkout_refused(exc)
+        return False
+
+
+def _ff_main(target):
+    """Best effort: a diverged checkout still executes the disk build."""
+    from holophyte.operator import sh
+
+    try:
+        sh(["git", "merge", "--ff-only", "origin/main"], target.path)
+    except (RuntimeError, OSError) as exc:
+        _checkout_refused(exc)

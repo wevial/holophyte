@@ -439,24 +439,24 @@ class PoolTests(PoolRestartCases, LoopFixture):
         self.assertEqual(self.rc, 1)
 
     def test_a_self_merge_re_execs_after_the_pool_drains(self):
-        """A schema-changing merge drains all three workers before exec."""
         provider = StubProvider(*(a_task(n) for n in range(1, 5)))
-        self.write_schema(store.schema.SCHEMA_VERSION + 1)
-        execs = []
+        version = store.schema.SCHEMA_VERSION + 1
+        events = []
         with patch.object(holophyte.operator, "EXEC",
-                          lambda *args: execs.append(args)), \
-                patch.object(holophyte.operator, "__file__",
-                             str(self.target / "holophyte" / "operator.py")):
+                          lambda *args: events.append("EXEC")), \
+                patch.object(holophyte.operator, "sh",
+                             self.fetched_git(version, events)), \
+                patch.object(holophyte.operator, "self_hosted", return_value=True):
             pool = self.run_scheduler(3, provider, [
-                (holophyte.pool.WORKER_MERGED, lambda: self.assertEqual(execs, [])),
-                (holophyte.pool.WORKER_MERGED, lambda: self.assertEqual(execs, [])),
-                (holophyte.pool.WORKER_MERGED, lambda: self.assertEqual(execs, [])),
+                (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
+                (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
+                (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
             ])
 
+        self.assertEqual(events, ["exit", "fetch", "exit", "exit", "merge", "EXEC"])
+        self.assertIn(f"schema {version - 1} -> {version}; draining 2 worker(s)",
+                      self.out)
         self.assertEqual(len(pool.spawned), 3)
-        self.assertEqual(pool.alive, [])
-        self.assertEqual(len(execs), 1)
-        self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(1,)])
 
     def test_a_failure_under_stop_on_failure_is_not_lost_to_a_self_merge(self):
         """`workers = 2`, `stop_on_failure = true`, self-hosted: one worker

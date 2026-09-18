@@ -226,7 +226,7 @@ def scheduler(target, provider, knobs):
             if pool_handoff.prepare_restart(state, target, pool):
                 pool_handoff.save(target, pool, state.failed)
                 _reexec(target, conn, project, state.restart_reason,
-                        prepared_sha=state.prepared_sha)
+                        prepared_sha=state.prepared_sha, can_ff=state.can_ff)
                 return  # only a test's EXEC returns
             # Every tick, timer or exit: a pull request merged on GitHub
             # since the last one ships its parked run (KO-359). The first
@@ -264,11 +264,10 @@ def scheduler(target, provider, knobs):
                           " board answers")
                     return 1
                 if state.restart and not state.stopped:
-                    # Not after a stop: a restarted scheduler would know
-                    # nothing of the failure, spawn again and exit clean
-                    # under `stop_on_failure = true`. The operator relaunches
-                    # on the merged code, as after a serial failure.
-                    _reexec(target, conn, project, state.restart_reason)
+                    # A stop takes priority: restarting would lose the failure.
+                    # The operator relaunches, as after a serial failure.
+                    _reexec(target, conn, project, state.restart_reason,
+                            prepared_sha=state.prepared_sha, can_ff=state.can_ff)
                     return  # only a test's EXEC returns
                 store.record_loop_return(conn, project)
                 if listing is not None:
@@ -302,6 +301,7 @@ class _PoolState:
         self.restart = False
         self.restart_reason = None
         self.prepared_sha = None
+        self.can_ff = None
 
     def check_schema(self, target):
         """A migration stops spawning and uses the self-merge drain path."""
