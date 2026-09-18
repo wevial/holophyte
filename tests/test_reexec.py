@@ -10,7 +10,7 @@ from tests.loop_fixture import LoopFixture
 
 
 class ReexecTests(LoopFixture):
-    def restart(self, branch='main', dirty='', failure=None):
+    def restart(self, branch='main', dirty='', failure=None, untracked=''):
         events = []
         head = ['old1234']
         conn = Mock()
@@ -24,7 +24,9 @@ class ReexecTests(LoopFixture):
             if args == ['git', 'branch', '--show-current']:
                 return branch
             if args == ['git', 'status', '--porcelain']:
-                return dirty
+                return '\n'.join(filter(None, (dirty, untracked))).strip()
+            if args == ['git', 'status', '--porcelain', '--untracked-files=no']:
+                return dirty.strip()
             if failure and args == failure:
                 raise RuntimeError('git failed: refused\nsecond line')
             if args == ['git', 'merge', '--ff-only', 'origin/main']:
@@ -52,8 +54,9 @@ class ReexecTests(LoopFixture):
         self.assertIn('re-executing at new5678', output)
 
     def test_unsafe_checkouts_refuse_once_and_still_exec(self):
-        for kwargs, reason in (({'branch': 'topic'}, 'not on main'),
-                               ({'dirty': ' M tracked'}, 'not clean')):
+        for kwargs, reason in (
+                ({'branch': 'topic'}, 'not on main'),
+                ({'dirty': ' M tracked'}, 'checkout not clean: tracked')):
             with self.subTest(reason=reason):
                 events, output = self.restart(**kwargs)
                 self.assertNotIn(['git', 'merge', '--ff-only', 'origin/main'], events)
@@ -61,6 +64,19 @@ class ReexecTests(LoopFixture):
                 self.assertEqual(output.count('checkout not fast-forwarded'), 1)
                 self.assertIn(reason, output)
                 self.assertEqual(events[-1], 'EXEC')
+
+    def test_untracked_files_allow_fast_forward(self):
+        events, output = self.restart(untracked='?? .env.bak-2026-09-03')
+        self.assertIn(['git', 'status', '--porcelain', '--untracked-files=no'], events)
+        self.assertIn(['git', 'fetch', 'origin', 'main'], events)
+        self.assertIn(['git', 'merge', '--ff-only', 'origin/main'], events)
+        self.assertNotIn('checkout not fast-forwarded', output)
+
+    def test_dirty_refusal_names_at_most_three_paths(self):
+        events, output = self.restart(dirty=' M first\n M second\n M third\n M fourth')
+        self.assertIn('(checkout not clean: first, second, third)', output)
+        self.assertNotIn('fourth', output)
+        self.assertNotIn(['git', 'merge', '--ff-only', 'origin/main'], events)
 
     def test_git_failure_still_executes_disk_build(self):
         for command in (['git', 'fetch', 'origin', 'main'],

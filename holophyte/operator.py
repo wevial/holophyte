@@ -204,8 +204,11 @@ def _fast_forward_checkout(target):
     try:
         if sh(["git", "branch", "--show-current"], target.path) != "main":
             raise RuntimeError("not on main")
-        if sh(["git", "status", "--porcelain"], target.path):
-            raise RuntimeError("checkout not clean")
+        status = sh(["git", "status", "--porcelain", "--untracked-files=no"],
+                    target.path)
+        if status:
+            paths = [line.split(maxsplit=1)[1] for line in status.splitlines()[:3]]
+            raise RuntimeError(f"checkout not clean: {', '.join(paths)}")
         sh(["git", "fetch", "origin", "main"], target.path)
         sh(["git", "merge", "--ff-only", "origin/main"], target.path)
     except (RuntimeError, OSError) as exc:
@@ -228,11 +231,8 @@ def _reexec(target, conn, project, reason=None, *, prepared_sha=None):
 
 
 def report(target, conn=None, out=None, now=None):
-    """Print the target store's estimate-vs-actual table. Returns nothing.
-
-    `--report`'s whole body: it reads rows and prints them, so no ticket is
-    claimed, no worktree is cut and no provider is imported -- which is what
-    makes it safe to run against the store of a loop that is still working.
+    """Print estimate-vs-actual rows; return nothing. No claims, worktrees or
+    provider imports: safe to run while the loop is working.
 
     The one write it can make is `open_store()`'s migration: a store older
     than the run row's estimate column is brought up to the schema this
