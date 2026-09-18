@@ -204,14 +204,14 @@ def _fast_forward_checkout(target):
     try:
         if sh(["git", "branch", "--show-current"], target.path) != "main":
             raise RuntimeError("not on main")
-        if sh(["git", "status", "--porcelain"], target.path):
-            raise RuntimeError("checkout not clean")
+        if st := sh("git status --porcelain --untracked-files=no".split(), target.path):
+            raise RuntimeError("checkout not clean: " + ", ".join(
+                line.split(maxsplit=1)[1] for line in st.splitlines()[:3]))
         sh(["git", "fetch", "origin", "main"], target.path)
         sh(["git", "merge", "--ff-only", "origin/main"], target.path)
     except (RuntimeError, OSError) as exc:
-        reason = " ".join(str(exc).split())
-        print(f"[holo2] re-exec: checkout not fast-forwarded ({reason});"
-              " executing the code on disk", flush=True)
+        print("[holo2] re-exec: checkout not fast-forwarded "
+              f"({' '.join(str(exc).split())}); executing the code on disk", flush=True)
 
 
 def _reexec(target, conn, project, reason=None, *, prepared_sha=None):
