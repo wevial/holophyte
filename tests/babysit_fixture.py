@@ -308,10 +308,14 @@ class SpentCapReview:
 
 
 class OperatorNoteCase:
-    def operator_note_pass(self, bots):
+    def test_operator_note_stays_private_when_author_is_a_configured_bot(self):
+        self.operator_note_pass(
+            False, 'bot_threads = "advisory"\nbot_logins = ["maintainer"]\n')
+
+    def operator_note_pass(self, bots, config=""):
         import store
         from store.operator_notes import notes, send_back
-        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + config)
         self.fake_route(states=[self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         with store.open(str(self.tgt.store_path)) as conn:
