@@ -232,14 +232,14 @@ def status(target, now=None, started_ms=None):
     # `time_box_ms` is the box the run is counted against -- the estimate
     # scaled by `[agents] budget_scale` -- so the console's time-box bar and
     # the sweep agree with the cap the loop armed. `thresholds.run_cap` is
-    # the hard ceiling in multiples of that box, so the bar can draw it.
-    from holophyte.serve_runs import active_routes
+    from holophyte.serve_runs import active_routes, workers_on_previous_build
 
     scale = budget_scale(target)
     return 200, {
         "target": str(target.path),
         "project": str(target.path),
         "active_routes": active_routes(target),
+        "workers_on_previous_build": workers_on_previous_build(target),
         "host": host_label(target, socket.gethostname()),
         "now": now,
         "daemon": {"started_ms": started_ms, "pid": os.getpid()},

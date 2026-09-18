@@ -1,6 +1,6 @@
 """Worker pool: the scheduler mirrors and reconciles; children claim one task.
 
-The pool drains before re-exec after a self-merge (KO-343, KO-388).
+The pool drains for schema moves; ordinary self-merges preserve children.
 SPAWN and WAIT are the process seams; worker exit codes report outcomes.
 """
 import os
@@ -10,6 +10,7 @@ from time import monotonic, sleep
 
 import store
 import store.tickets
+from holophyte import pool_handoff
 from holophyte.config_tables import loop_config
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import MergeLockHeld, merge_lock
@@ -201,18 +202,20 @@ def scheduler(target, provider, knobs):
 
     Mirror and refill on exits or partial-pool deadlines (`tick_sec`, KO-353).
     A full pool waits on exits. Failure under `stop_on_failure`
-    drains and stops; a self-merge or schema move drains and re-execs.
+    drains and stops; only a schema move drains before re-exec.
     An idle worker pauses spawning until the next exit recounts: a sibling
     may have claimed ahead of it. Return zero for an empty, drained queue,
     nonzero if any worker failed or stopped for a human."""
     from holophyte.claim import _park_unlisted
-    from holophyte.dispatch import _mirror_queue, _startup_sweep
+    from holophyte.dispatch import _startup_sweep
     from holophyte.operator import _reexec, self_hosted
 
     conn = open_store(target)
-    pool = {}  # pid -> (slot number, Popen), the live workers
-    slots = iter(range(1, sys.maxsize))
+    pool, failed = pool_handoff.restore(target)
+    previous = set(pool)
+    slots = iter(range(pool_handoff.next_slot(pool), sys.maxsize))
     state = _PoolState(self_hosted(target), knobs.stop_on_failure)
+    state.failed = failed
     try:
         project = store.tickets.ensure_project(conn, provider.team, target.path)
         _startup_sweep(target, conn)
@@ -220,6 +223,11 @@ def scheduler(target, provider, knobs):
         first_tick = True
         while True:
             state.check_schema(target)
+            if pool_handoff.prepare_restart(state, target):
+                pool_handoff.save(target, pool, state.failed)
+                _reexec(target, conn, project, state.restart_reason,
+                        prepared_sha=state.prepared_sha)
+                return  # only a test's EXEC returns
             # Every tick, timer or exit: a pull request merged on GitHub
             # since the last one ships its parked run (KO-359). The first
             # tick asked at startup, before the mirror was repaired.
@@ -228,9 +236,7 @@ def scheduler(target, provider, knobs):
             first_tick = False
             listing = None
             if state.spawning:
-                listing = _mirror_queue(target, conn, project, provider)
-                if linear_budget_low():
-                    listing = None
+                listing = pool_handoff.listing(target, conn, project, provider)
                 if listing is None:
                     # The board could not be asked: an empty listing would
                     # end the loop reporting a queue it never saw. Nothing
@@ -277,19 +283,15 @@ def scheduler(target, provider, knobs):
                              timeout)
             if pid in pool:  # else the supervisor, another child, or a tick
                 state.exited(pool.pop(pid)[0], code)
+                previous.discard(pid)
+                pool_handoff.save(target, pool, state.failed, previous)
     finally:
         conn.close()
 
 
 class _PoolState:
-    """What the scheduler has learnt from its workers' exits: whether any
-    failed (the exit status), whether it may still spawn, and whether it
-    restarts once the pool has drained. A drain is for good -- a failure
-    under `stop_on_failure`, a stop for a human, a self-merge -- while an
-    idle worker only holds the next tick's spawning, since the listing
-    can run ahead of a claim a sibling is about to make. The first two
-    are a `stopped` drain: the loop ends nonzero when the pool is in, and
-    a self-merge seen alongside does not restart it."""
+    """Exit outcomes: failures may stop, idle pauses, self-merges restart.
+    A stop takes priority over any pending restart."""
 
     def __init__(self, restart_after_merge, stop_on_failure):
         self.restart_after_merge = restart_after_merge
@@ -299,6 +301,7 @@ class _PoolState:
         self.paused = False
         self.restart = False
         self.restart_reason = None
+        self.prepared_sha = None
 
     def check_schema(self, target):
         """A migration stops spawning and uses the self-merge drain path."""
@@ -328,9 +331,6 @@ class _PoolState:
         if code == WORKER_MERGED:
             print(f"[holo2] worker {slot} merged its ticket")
             if self.restart_after_merge:
-                # Workers mid-run finish on the code they started with; none
-                # is started on it, and the scheduler restarts from the
-                # merged code once the last one is in.
                 self.restart = True
         elif code == WORKER_PARKED:
             print(f"[holo2] worker {slot} parked its ticket awaiting"
