@@ -34,7 +34,8 @@ ROOT = HERE.parent
 # `waiting` is a helper, not a test module: discovery never imports it, and
 # how this file is imported decides whether `tests/` is on the path at all.
 sys.path.insert(0, str(HERE))
-# Importing the thin entry point by path must not choose a target.
+# The thin entry point, by path: `test_importing_the_module_names_no_target`
+# executes it fresh to show that importing `factory` chooses no target.
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
 from bot_thread_fixture import BotConfigCases  # noqa: E402
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
@@ -48,7 +49,6 @@ from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
     def test_an_absent_config_file_loads_as_empty(self):
         target = self.locate().path
-
         self.assertEqual(self.tgt.config_path,
                          holophyte.target.state_dir(target) / "config.toml")
         self.assertFalse(self.tgt.config_path.exists())

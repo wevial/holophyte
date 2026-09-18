@@ -5,6 +5,26 @@ import store
 
 
 class BotThreadCases:
+    def test_storeless_advisory_thread_is_replied_and_resolved(self):
+        from loop_fixture import BRANCH
+
+        from holophyte import babysitter, pr_status
+
+        self.configure('[merge]\nmode = "pr"\nbot_threads = "advisory"\n')
+        person = ("src/app.py", 30, ("maintainer", "User"), "Fix human finding")
+        self.fake_route(states=[self.pr_state([self.DEFECT, person])])
+        self.git("branch", BRANCH)
+        pull = pr_status.parse_pr_url(self.URL)
+        state = babysitter._settled_state(self.tgt, None, None, 1, pull)
+        self.assertEqual([thread.body for thread in state.threads], [person[3]])
+        calls = self.api_calls()
+        replies = [data for kind, data in calls if kind == "reply"]
+        self.assertEqual(len(replies), 1)
+        self.assertTrue(replies[0]["body"].startswith("---- Comment by "))
+        self.assertIn("Noted as advisory for the maintainer; "
+                      "not acted on by the factory.", replies[0]["body"])
+        self.assertIn(("resolve", {"thread": "PRRT_1"}), calls)
+
     def test_bot_thread_policy_routes_only_actionable_findings(self):
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n'
                        + getattr(self, "bot_policy", 'bot_threads = "advisory"\n'))

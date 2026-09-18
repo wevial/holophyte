@@ -392,23 +392,22 @@ MERGE_KEYS = {
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
     "pr_style": "",
-    "human_threads": "park",
-    "bot_threads": "act", "bot_logins": (),
-    "after": (),
-    "bot_authors": ("devin-ai-integration", "coderabbitai",
-                    "greptile-apps", "github-actions"),
+    "human_threads": "park", "bot_threads": "act", "bot_logins": (),
+    "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
+                               "greptile-apps", "github-actions"),
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
 MERGE_METHODS = ("merge", "squash", "rebase")
 MERGE_HUMAN_THREADS = ("park", "act")
 MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
-                "pr_merge_method": MERGE_METHODS,
-                "human_threads": MERGE_HUMAN_THREADS,
-                "bot_threads": ("act", "advisory")}
+               "pr_merge_method": MERGE_METHODS,
+               "human_threads": MERGE_HUMAN_THREADS, "bot_threads": ("act", "advisory")}
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
-# The minimum poll interval avoids polling for each reviewer keystroke.
+# The least `pr_poll_sec`: under this the loop would be polling GitHub for
+# a reviewer's next keystroke rather than their next comment.
 PR_POLL_FLOOR = 10
+# The least value each integer [merge] key takes.
 MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
                     "pr_quiet_sec": 0}
 
@@ -417,8 +416,9 @@ def merge_config(target):
     """The target's `[merge]` knobs over the defaults.
 
     Validate enums, integer floors, instruction text, and string lists at
-    startup. `bot_logins` supplements app detection for advisory threads;
-    `bot_authors` controls resolving declines. Refusals name the config key.
+    startup. `after` holds shell commands; `bot_authors` holds logins whose
+    declined threads are resolved. Refusals name the config, table and key.
+    `bot_logins` supplements app detection for advisory threads.
     """
     table = target.config().get("merge", {})
     if not isinstance(table, dict):

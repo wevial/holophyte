@@ -16,10 +16,9 @@ from holophyte.pr import NO_AUTHOR
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import heartbeat_while, record_round
 
-# The repository's conventions files, in the order the brief quotes them,
-# and the most of each the brief carries: the rule they back is one
-# sentence, the excerpt is there so "the repository asks for DRY" is read
-# from the file, not guessed.
+# The repository's conventions files, in the order the brief quotes them, and the most
+# of each the brief carries: the rule they back is one sentence, the excerpt is there so
+# "the repository asks for DRY" is read from the file, not guessed.
 CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
 CONVENTIONS_CAP = 4000
 
@@ -334,7 +333,6 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
               criteria=(), approved=False, reviewed=None, verified=None, fix_note=None):
     """Watch a PR until merge or park, bounded by rounds and a no-work deadline.
-
     Changed candidates need verification and independent review; human approval
     covers only the released SHA. Conflict recovery pushes origin/main's merge."""
     from holophyte.pullrequest import _park_on_pr
@@ -344,6 +342,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
         raise RunFailure(f"cannot read a pull request off {url!r};"
                          f" branch {branch} preserved at {sha[:12]}")
     model = agent_route(target, "adjudicate")
+    # A fix moves sha past the candidate covered by reviewed.
     pushed_state = None
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     for pass_no in range(1, merge.pr_rounds + 1):
@@ -600,6 +599,7 @@ class WaitExpired(Exception):
 
 
 def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None):
+    """Bound pending/quiet waiting with one deadline; return threads promptly."""
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
     deadline = monotonic() + pr.CHECK_WAIT_S
@@ -644,12 +644,12 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     threads = state.threads
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
-    # Under `human_threads = "park"`, human threads are HUMAN before adjudication,
-    # which sees the bots' threads alone, renumbered so its reply and
-    # `parse_verdicts()` agree. Under `"act"` a person's threads are
-    # judged too, but only an ADDRESS stands: anything else folds to
-    # HUMAN -- a person is never declined. A deleted account reads as a
-    # person: silence is the safe side.
+    # Under `human_threads = "park"` a thread a person opened is the operator's whatever
+    # it says: HUMAN before the adjudicator is asked, which sees the bots' threads
+    # alone, renumbered so its reply and `parse_verdicts()` agree. Under `"act"` a
+    # person's threads are judged too, but only an ADDRESS stands: anything else folds
+    # to HUMAN -- a person is never declined. A deleted account reads as a person:
+    # silence is the safe side.
     act = merge_config(target).human_threads == "act"
     judged = tuple(t for t in threads if act or t.author_kind == "bot")
     reply = "(no bot opened a thread; the adjudicator was not asked)"

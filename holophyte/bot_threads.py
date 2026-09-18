@@ -28,6 +28,7 @@ def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
                     " not acted on by the factory.")
             _post(target, conn, run_id, beat_s, pull, thread, body, resolve=True)
             first_line = thread.body.splitlines()[0] if thread.body else ""
-            store.record_event(conn, run_id, "bot_finding",
-                               f"{thread.url}: {first_line}")
+            if conn is not None and run_id is not None:
+                store.record_event(conn, run_id, "bot_finding",
+                                   f"{thread.url}: {first_line}")
     return replace(state, threads=tuple(threads))

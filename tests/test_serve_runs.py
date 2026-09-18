@@ -342,7 +342,7 @@ class ShippedTests(ServeTestCase):
 
 
 class RunDetailTests(BotFindingCases, ServeTestCase):
-
+    """Run details include rounds and narrative events."""
     FINDINGS = [
         {"path": "holophyte/serve.py", "line": 12, "severity": "p1",
          "criterion": "AC1", "message": "the route is unmatched"},

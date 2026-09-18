@@ -328,7 +328,8 @@ def run_detail(target, run_id, now=None):
     time, frozen at endedAt. The scaled time box matches `/status`. Live runs
     carry heartbeat age (null after completion) and the recorded review cap;
     old rows use MAX_ROUNDS. locate_run supplies invalid/missing 400/404/503s.
-    Rounds and events are oldest first; include implementer_output summaries."""
+    Rounds and events are oldest first; include implementer_output summaries
+    for refusals and no-commit crashes, keeping full payloads in the store."""
     now = int(time() * 1000) if now is None else now
     failed, run = locate_run(target, run_id)
     if failed is not None:
@@ -351,17 +352,16 @@ def run_detail(target, run_id, now=None):
                 "ended_ms": run.endedAt, "outcome": run.outcome,
                 "elapsed_ms": (run.endedAt if not live else now) - run.startedAt,
                 "working_ms": effective_work(run, run.endedAt if not live else now),
-                "work_started_ms": run.workStartedAt,
                 "time_box_ms": (int(run.timeBoxMs * scale)
                                 if run.timeBoxMs else run.timeBoxMs),
-                "branch": run.branch,
-                "host": json_host(target, run.host),
+                "branch": run.branch, "host": json_host(target, run.host),
                 "heartbeat_age_ms": now - run.lastHeartbeat if live else None,
                 "merge_sha": run.mergeSha,
                 "commit_url": commit_url(target, run.mergeSha,
                                          origin_web_url(target)),
-                "pr_url": run.prUrl,
-                # Old runs without a recorded cap answer the constant.
+                "pr_url": run.prUrl, "work_started_ms": run.workStartedAt,
+                # The cap the loop gave this run; a run recorded before the
+                # store carried one answers the constant.
                 "max_rounds": run.reviewRoundCap or MAX_ROUNDS},
         "rounds": [{"round": r.round, "started_ms": r.startedAt,
                     "ended_ms": r.endedAt, "verdict": r.verdict,

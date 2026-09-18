@@ -41,7 +41,7 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
 class MergeModeBabysitPassTests(BotThreadCases, ConflictRefusalCases, MergeModeFixture):
-
+    """End-to-end review, fix, and merge behavior for PR babysitting."""
     def declined_thread(self, author, config=""):
         self.configure('[merge]\nmode = "pr"\n' + config)
         thread = (*self.NIT[:2], author, self.NIT[3])
