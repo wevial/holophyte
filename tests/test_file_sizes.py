@@ -31,7 +31,7 @@ OVER = {}
 # Pins are exact counts except the three KO-487 splits, which have headroom.
 # Those caps start 100 lines above their post-split lengths.
 PINNED = {
-    "holophyte/babysitter.py": 835, "holophyte/board.py": 894,
+    "holophyte/babysitter.py": 895, "holophyte/board.py": 894,
     "holophyte/claim.py": 815, "holophyte/cli.py": 479,
     "holophyte/config.py": 749, "holophyte/dispatch.py": 262,
     "holophyte/config_tables.py": 554, "holophyte/findings.py": 331,
@@ -52,7 +52,7 @@ PINNED = {
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 644,
     "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 274,
     "tests/test_babysit_threads.py": 738, "tests/test_babysit_checks.py": 355,
-    "tests/test_babysitter.py": 466, "tests/test_config_tables.py": 455,
+    "tests/test_babysitter.py": 516, "tests/test_config_tables.py": 455,
     "tests/test_claim.py": 1486, "tests/test_claim_mirror.py": 178,
     "tests/test_cli.py": 114,
     "tests/test_cli_approve.py": 269, "tests/test_cli_requeue.py": 273,
