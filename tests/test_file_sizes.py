@@ -6,10 +6,8 @@ with the suite. `CEILING` sets the caps — 1000 lines a source module,
 cap. The walk fails the suite when a listed file grows past its entry,
 when an unlisted file passes its ceiling, and when a listed file is back
 under the ceiling — a stale entry. `PINNED` holds a file a slice brought
-back under its ceiling at the tighter size the slice left it. A second
-check holds the table to exactly what `wc -l` measures — membership and
-counts — so an entry is the file's current count and the table can only
-shrink.
+back under its ceiling. KO-487 gives the three split babysitter test files
+100 lines of initial headroom; all other pins equal their measured counts.
 
 Run: python3 -m unittest discover -s tests -p 'test_file_sizes*' -v
 """
@@ -30,9 +28,8 @@ CEILING = {"source": 1000, "test": 1500}
 # back under its ceiling leaves the table.
 OVER = {}
 
-# Repo-relative path to the file's `wc -l` count, for a file a slice
-# brought back under its ceiling: the pin caps it at the size the slice
-# left it, so the table only moves down for that file too.
+# Pins are exact counts except the three KO-487 splits, which have headroom.
+# Those caps start 100 lines above their post-split lengths.
 PINNED = {
     "holophyte/babysitter.py": 822, "holophyte/board.py": 870,
     "holophyte/claim.py": 815, "holophyte/cli.py": 479,
@@ -53,7 +50,8 @@ PINNED = {
     "store/operate.py": 909, "store/read.py": 938,
     "store/schema.py": 750, "store/tickets.py": 460,
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 644,
-    "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 952,
+    "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 274,
+    "tests/test_babysit_threads.py": 738, "tests/test_babysit_checks.py": 355,
     "tests/test_babysitter.py": 466, "tests/test_config_tables.py": 455,
     "tests/test_claim.py": 1486, "tests/test_claim_mirror.py": 178,
     "tests/test_cli.py": 114,
@@ -155,14 +153,16 @@ class FileSizeRatchet(unittest.TestCase):
         self.assertEqual(violations(tracked_counts()), [])
 
     def test_the_table_is_exactly_what_wc_l_measures(self):
-        """The acceptance witness: the table's membership and counts are
-        `wc -l`'s, so an inflated or stale entry fails like a missing
-        one."""
+        """Exact pins stay exact; KO-487 split pins allow bounded growth."""
         counts = wc_counts()
         self.assertEqual(OVER, expected_over(counts))
-        self.assertEqual(PINNED,
-                         {name: counts[name] for name in PINNED
-                          if name in counts})
+        flexible = {f"tests/test_babysit_{part}.py"
+                    for part in ("pass", "threads", "checks")}
+        self.assertEqual({n: p for n, p in PINNED.items() if n not in flexible},
+                         {n: counts[n] for n in PINNED
+                          if n in counts and n not in flexible})
+        for name in flexible:
+            self.assertLessEqual(counts[name], PINNED[name])
 
 
 class RatchetSelfTests(unittest.TestCase):
