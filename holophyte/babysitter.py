@@ -16,9 +16,7 @@ from holophyte.pr import NO_AUTHOR
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import heartbeat_while, record_round
 
-# The repository's conventions files, in the order the brief quotes them, and the most
-# of each the brief carries: the rule they back is one sentence, the excerpt is there so
-# "the repository asks for DRY" is read from the file, not guessed.
+# Quote conventions in brief order, capped per file, so rules aren't guessed.
 CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
 CONVENTIONS_CAP = 4000
 
@@ -610,6 +608,8 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
                and state.mergeable != "CONFLICTING"):
             if state.checks == "pending":
                 reason = "pending checks"
+                if state.pending_contexts:
+                    reason += f" ({', '.join(state.pending_contexts)})"
                 nap = pr.CHECK_POLL_S
                 print(f"[holo2] checks pending on {pull.url}; waiting"
                       f" {nap}s")
