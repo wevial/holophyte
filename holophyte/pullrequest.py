@@ -43,11 +43,14 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
                          f" not babysitting {url}")
     sha = _sync_branch_from_origin(target, conn, run_id, provider, task_id,
                                    branch, wt, url, reviewed)
-    store.record_event(conn, run_id, "pull_request",
-                       f"resuming run {carried.run_id}'s candidate {branch}"
-                       f" at {sha[:12]} on {url}"
-                       + (" after an approval" if carried.approved
-                          else " for another babysit pass"))
+    with store.transaction(conn):
+        conn.execute("UPDATE runs SET prUrl = ?, candidateSha = ? WHERE id = ?",
+                     (url, carried.sha, run_id))
+        store.record_event(conn, run_id, "pull_request",
+                           f"resuming run {carried.run_id}'s candidate {branch}"
+                           f" at {sha[:12]} on {url}"
+                           + (" after an approval" if carried.approved
+                              else " for another babysit pass"))
     print(f"[holo2] {task_id}: candidate {branch} is open as {url};"
           " babysitting it")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
