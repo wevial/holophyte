@@ -24,6 +24,7 @@ def status_contexts_of(target, pull, node, graphql):
     rollup = ((commits[-1].get("commit") or {}).get("statusCheckRollup")
               if commits else None) or {}
     runs = []
+    previous_cursor = None
     while True:
         page = rollup.get("contexts") or {}
         for context in page.get("nodes") or []:
@@ -39,6 +40,9 @@ def status_contexts_of(target, pull, node, graphql):
             return runs
         if not info.get("endCursor"):
             raise InfraFailure("GitHub omitted the status-context page cursor")
+        if info["endCursor"] == previous_cursor:
+            raise InfraFailure("GitHub repeated the status-context page cursor")
+        previous_cursor = info["endCursor"]
         data = graphql(target, pull, STATUS_CONTEXTS_QUERY,
                        {"owner": pull.owner, "name": pull.name,
                         "sha": node["headRefOid"],

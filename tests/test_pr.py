@@ -148,3 +148,22 @@ class RequiredStatusContextTests(unittest.TestCase):
         state, runs, _ = self.read_status("SUCCESS", more=True)
         self.assertEqual(state.checks, "success")
         self.assertEqual([r["name"] for r in runs], ["vitest", "Vercel"])
+
+    def test_status_context_pagination_rejects_repeated_cursor(self):
+        from unittest.mock import Mock
+
+        from holophyte.gates import InfraFailure
+        from holophyte.pr_contexts import status_contexts_of
+
+        rollup = {"contexts": {"nodes": [], "pageInfo": {
+            "hasNextPage": True, "endCursor": "same-cursor"}}}
+        node = {"headRefOid": "head", "commits": {"nodes": [
+            {"commit": {"statusCheckRollup": rollup}}]}}
+        graphql = Mock(side_effect=[
+            {"repository": {"object": {"statusCheckRollup": rollup}}},
+            AssertionError("Repeated cursor caused another request"),
+        ])
+        pull = SimpleNamespace(owner="example", name="repo")
+        with self.assertRaisesRegex(InfraFailure, "repeated.*cursor"):
+            status_contexts_of(SimpleNamespace(), pull, node, graphql)
+        self.assertEqual(graphql.call_count, 1)

@@ -16,10 +16,7 @@ from holophyte.pr import NO_AUTHOR
 from holophyte.review import criteria_brief, criteria_findings
 from holophyte.runs import heartbeat_while, record_round
 
-# Conventions files in brief order, and the excerpt cap per file:
-# quote the repository's rules rather than guessing them.
-# The rule they back is one sentence; the excerpt is there so
-# "the repository asks for DRY" is read from the file, not guessed.
+# Quote conventions in brief order, capped per file, so rules aren't guessed.
 CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
 CONVENTIONS_CAP = 4000
 
