@@ -16,12 +16,17 @@ def build_sha():
 
 
 def eager_import():
-    """Load both complete packages before a moving checkout can mix builds."""
+    """Load the packages and root modules before a checkout can mix builds."""
     global BUILD
     BUILD = build_sha()
     for name in ('holophyte', 'store'):
         package = importlib.import_module(name)
         for module in pkgutil.walk_packages(package.__path__, name + '.'):
+            importlib.import_module(module.name)
+    # Board calls also lazily import root modules such as linear_provider.
+    root = Path(__file__).resolve().parents[1]
+    for module in pkgutil.iter_modules([str(root)]):
+        if not module.ispkg:
             importlib.import_module(module.name)
 
 
