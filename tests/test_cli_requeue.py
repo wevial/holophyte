@@ -156,6 +156,49 @@ class RequeueCliTests(unittest.TestCase):
         self.assertEqual(entries[-1].kind, "intervention")
         self.assertIn(url, entries[-1].text)
 
+    def test_requeue_clears_a_question_after_a_failed_merge_gate(self):
+        store.set_phase(self.conn, self.run, "merge_gate", now=T0)
+        store.release(self.conn, self.run, "failed", "merge lock timed out",
+                      now=T0 + MINUTE)
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                          ("Retry the merge lock wait?", self.ticket))
+        # Also cover the contract's failed row retaining its work phase.
+        self.conn.execute("UPDATE runs SET phase = 'merge_gate' WHERE id = ?",
+                          (self.run,))
+        self.conn.commit()
+
+        self.cli("--requeue", "KO-1", "--note", "lock released")
+
+        self.assertEqual(self.conn.execute(
+            "SELECT status, blockedQuestion FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone(), ("ready", None))
+        self.assertEqual(self.interventions(), [(self.run, "requeue")])
+        self.assertEqual(self.board.unlabelled[0][0], "issue-1")
+        self.assertIn("lock released", store.read.ledger(self.conn, self.run)[-1].text)
+
+    def test_requeue_refuses_parked_candidates_and_pull_requests_without_writes(self):
+        store.park(self.conn, self.run, "awaiting_merge_approval",
+                   "merge?", candidate_sha="a" * 40, now=T0)
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.execute("UPDATE tickets SET blockedQuestion = 'merge?' WHERE id = ?",
+                          (self.ticket,))
+        for pr_url, guidance in (
+                (None, "--approve or --babysit"),
+                ("https://github.com/example/repo/pull/1", "--babysit")):
+            with self.subTest(pr_url=pr_url):
+                self.conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
+                                  (pr_url, self.run))
+                self.conn.commit()
+                before = list(self.conn.iterdump())
+                with self.assertRaises(SystemExit) as raised:
+                    self.cli("--requeue", "KO-1", "--note", "retry")
+                self.assertIn(
+                    f"KO-1 is parked awaiting merge approval; use {guidance}",
+                    str(raised.exception))
+                self.assertEqual(list(self.conn.iterdump()), before)
+                self.assertEqual(StubBoard.instance.unlabelled, [])
+
     def test_a_target_with_no_board_exits_naming_the_key_and_writes_nothing(self):
         self.fail_the_run()
         self.target.config_path.unlink()
