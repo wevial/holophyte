@@ -1,11 +1,6 @@
-"""`--serve PORT|HOST:PORT`: `/status` and `/runs` over a read-only connection
-per request.
-
-A seeded temporary store under a `HOLOPHYTE_HOME` of the test's own, served
-on a loopback ephemeral port, and read back over `http.client`. The store is
-written only through the public write API; the daemon is reached only over
-the socket, so what is asserted is what a drawer on another host would see.
-
+"""`--serve`: read APIs over a loopback ephemeral HTTP daemon.
+Fixtures use temporary HOLOPHYTE_HOME stores written through the public API.
+Assertions read over the socket, as an operator's console would.
 Run: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
 from __future__ import annotations
@@ -532,7 +527,8 @@ class TicketTests(ServeTestCase):
         self.assertEqual(code, 200)
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertEqual(body, {
-            "ticket": "KO-7", "title": "ticket 7", "status": "in_flight",
+            "ticket": "KO-7", "ticket_url": None,
+            "title": "ticket 7", "status": "in_flight",
             "body": self.BODY,
             "acceptance_criteria": ["Given KO-7, then it is worked"],
             "verification_commands": ["echo ok"],
@@ -657,6 +653,7 @@ class AttentionTests(ServeTestCase):
         self.assertEqual(kinds, ["blocked", "stale_run", "failed", "supervisor"])
         blocked, stale_run, failed, supervisor = body["items"]
         self.assertEqual(blocked, {"kind": "blocked", "ticket": "KO-8",
+                                   "ticket_url": None,
                                    "question": "Which branch is canonical?",
                                    "run": self.blocked_run,
                                    "asked_ms": self.asked, "pr_url": None,
@@ -726,7 +723,8 @@ class AttentionTests(ServeTestCase):
         self.assertEqual(by_ticket["KO-8"]["question"],
                          "Which branch is canonical?")
         self.assertEqual(by_ticket["KO-10"], {
-            "kind": "pr_open", "ticket": "KO-10", "run": run, "pr_url": url,
+            "kind": "pr_open", "ticket": "KO-10", "ticket_url": None,
+            "run": run, "pr_url": url,
             "reason": "review requested from a coworker"
                       "\n1. src/x.py:3 by @coworker",
             "asked_ms": self.now - 2 * MIN,
@@ -916,12 +914,14 @@ class BoardTests(ServeTestCase):
         by_state = {column["state"]: column["tickets"]
                     for column in body["columns"]}
         self.assertEqual(by_state["blocked_on_deps"], [
-            {"ticket": "KO-3", "title": "ticket 3", "time_box_ms": 25 * MIN,
+            {"ticket": "KO-3", "ticket_url": None,
+             "title": "ticket 3", "time_box_ms": 25 * MIN,
              "run": None, "question": None,
              "waits_on": ["KO-2", "issue-never-seen"],
              "mirrored_ms": self.now - 5 * MIN}])
         self.assertEqual(by_state["in_flight"], [
-            {"ticket": "KO-5", "title": "ticket 5", "time_box_ms": 25 * MIN,
+            {"ticket": "KO-5", "ticket_url": None,
+             "title": "ticket 5", "time_box_ms": 25 * MIN,
              "run": self.run, "question": None, "waits_on": [],
              "mirrored_ms": self.now - 5 * MIN}])
         self.assertEqual(by_state["blocked_on_operator"][0]["question"],

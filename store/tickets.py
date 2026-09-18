@@ -240,13 +240,13 @@ def mirror_ticket(
     depends_on=None,
     now=None,
     body="",
+    url=None,
 ):
     """Upsert the Holophyte mirror of a Linear issue; return its ticket id.
 
-    `body` is the issue's text as the caller read it; it is written on
-    insert and on every re-mirror, so the stored body is always the last
-    one the loop read, and `ticket_by_identifier()` serves that rather than
-    whatever Linear holds now. Empty when the caller has none.
+    `body` and `url` are refreshed on every mirror. The body is the text the
+    loop read, served by `ticket_by_identifier()` rather than live Linear.
+    A missing body is empty; a missing URL is null.
 
     The routing rule, state-model §2: a ticket lacking acceptance criteria or
     a verification command is **not pickable**, so a new one lands in
@@ -306,12 +306,12 @@ def mirror_ticket(
                 "INSERT INTO tickets"
                 " (projectId, linearIssueId, linearIdentifier, title, body,"
                 "  status, acceptanceCriteria, verificationCommands, timeBoxMs,"
-                "  affinity, dependsOn, mirroredAt)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "  affinity, dependsOn, mirroredAt, url)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     project_id, linear_issue_id, linear_identifier, title,
                     body, derived, criteria, commands, time_box_ms, affinity,
-                    "[]" if depends is None else depends, now,
+                    "[]" if depends is None else depends, now, url,
                 ),
             ).lastrowid
         else:
@@ -322,11 +322,11 @@ def mirror_ticket(
                 "UPDATE tickets SET linearIdentifier = ?, title = ?, body = ?,"
                 " status = ?, acceptanceCriteria = ?, verificationCommands = ?,"
                 " timeBoxMs = ?, affinity = ?,"
-                " dependsOn = COALESCE(?, dependsOn), mirroredAt = ?"
+                " dependsOn = COALESCE(?, dependsOn), mirroredAt = ?, url = ?"
                 " WHERE id = ?",
                 (
                     linear_identifier, title, body, status, criteria, commands,
-                    time_box_ms, affinity, depends, now, ticket_id,
+                    time_box_ms, affinity, depends, now, url, ticket_id,
                 ),
             )
     return ticket_id

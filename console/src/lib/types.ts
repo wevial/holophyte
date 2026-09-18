@@ -30,6 +30,7 @@ export interface Run {
   pr_url?: string | null;
   id: number;
   ticket: string;
+  ticket_url?: string | null;
   phase: string;
   heartbeat_age_ms: number;
   elapsed_ms: number;
@@ -51,6 +52,7 @@ export interface Attention {
 }
 
 export interface AttentionItem {
+  ticket_url?: string | null;
   kind: string;
   level: string;
   /** On an item that names a run: the pull request it opened, else null. */
@@ -83,6 +85,7 @@ export interface RunDetailBody {
   run: {
     id: number;
     ticket: string;
+    ticket_url?: string | null;
     title?: string | null;
     phase: string;
     attempt?: number;
@@ -143,6 +146,7 @@ export interface ShippedRow {
   outcome_reason?: string | null;
   id: number;
   ticket: string;
+  ticket_url?: string | null;
   title: string | null;
   rounds: number;
   findings: number;
@@ -189,6 +193,7 @@ export type BoardState = "needs_spec" | "blocked_on_deps" | "ready" | "blocked_o
  *  `waits_on` the open tickets its dependencies name. */
 export interface BoardWireTicket {
   ticket: string;
+  ticket_url?: string | null;
   title: string | null;
   time_box_ms: number | null;
   run: number | null;

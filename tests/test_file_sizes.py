@@ -50,7 +50,7 @@ PINNED = {
     "holophyte/serve_runs.py": 523, "holophyte/supervisor.py": 886,
     "holophyte/supervisor_lock.py": 227,
     "holophyte/sweep_report.py": 235, "store/__init__.py": 976,
-    "store/operate.py": 909, "store/read.py": 938,
+    "store/operate.py": 909, "store/read.py": 935,
     "store/schema.py": 750, "store/tickets.py": 460,
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 644,
     "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 952,

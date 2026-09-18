@@ -23,6 +23,7 @@ export interface BoardCard {
   /** The daemon's base and the ticket: the same ticket on two daemons is two cards. */
   key: string;
   ticket: string;
+  ticket_url?: string | null;
   title: string | null;
   status: BoardState;
   project: string;
@@ -54,6 +55,7 @@ export function cardsOf(host: Pick<HostRecord, "base" | "project" | "status" | "
       cards.push({
         key: `${host.base}#${ticket.ticket}`,
         ticket: ticket.ticket,
+        ticket_url: ticket.ticket_url,
         title: ticket.title,
         status: column.state,
         project,
