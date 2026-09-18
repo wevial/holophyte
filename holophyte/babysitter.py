@@ -2,6 +2,8 @@
 import json
 import re
 import subprocess
+import tempfile
+from pathlib import Path
 from time import monotonic, time
 
 import review_runner
@@ -238,7 +240,8 @@ def quoted(thread):
 
 def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                        sha, beat_s, pull, budget_min, reviewed=None, refusal=None,
-                       previous=None, refresh=None):
+                       previous=None, refresh=None, verify_cmd=None, contracts=(),
+                       ticket=""):
     """Merge and push main; unresolved conflicts get one turn, then park."""
     from holophyte.claim import merge_conflicts
     from holophyte.loop import _timed, sh
@@ -289,6 +292,9 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                 " a conflict)")
         if conn is not None and run_id is not None:
             store.record_ledger(conn, run_id, "note", note)
+    merged = _verify_main_refresh(
+        target, conn, run_id, provider, task_id, branch, wt, merged, beat_s,
+        pull, budget_min, verify_cmd, contracts, ticket, ref)
     state = _wait_for_pushed_head(
         target, conn, run_id, provider, task_id, branch, merged, beat_s, pull, reviewed)
     if merged != sha and before == _diff_identity(wt, ref):
@@ -303,6 +309,58 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
             refresh.clear()
             refresh[(merged, state.updated_at)] = quiet_at
     return merged, state, reviewed
+
+
+def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
+    """Record the checked tree beside its mechanical result, including red main."""
+    started = int(time() * 1000)
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, out = run_verify(command, wt, contracts, conn=conn, run_id=run_id)
+    record_round(target, conn, run_id, _next_round(conn, run_id), "review",
+                 "VERDICT: " + ("APPROVE" if ok else "REQUEST_CHANGES"),
+                 command, ok, f"Tree {sha}\n{out}", started_at=started,
+                 route="mechanical:main-refresh")
+    return ok, out
+
+
+def _verify_detached_main(target, conn, run_id, beat_s, wt, ref, command, contracts):
+    """Check the fetched main once in an isolated sibling, then remove it."""
+    from holophyte.loop import sh
+    sha = sh(["git", "rev-parse", ref], wt)
+    with tempfile.TemporaryDirectory(prefix="main-verify-", dir=wt.parent) as tmp:
+        detached = Path(tmp) / "tree"
+        sh(["git", "worktree", "add", "--detach", str(detached), sha], wt)
+        try:
+            ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
+                                      sha, command, contracts)
+        finally:
+            sh(["git", "worktree", "remove", "--force", str(detached)], wt)
+    return sha, ok, out
+
+
+def _verify_main_refresh(target, conn, run_id, provider, task_id, branch, wt,
+                         sha, beat_s, pull, budget_min, command, contracts, ticket,
+                         ref):
+    """Verify before carrying review forward; diagnose red once before a fix."""
+    from holophyte.pullrequest import _park_on_pr
+    ok, out = _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts)
+    if ok:
+        return sha
+    main_sha, main_ok, main_out = _verify_detached_main(
+        target, conn, run_id, beat_s, wt, ref, command, contracts)
+    if not main_ok:
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+                    f"main is red at {main_sha}; verify command: {command}\n"
+                    f"Merged tree:\n{out}\nMain:\n{main_out}\n"
+                    "Fix main and send this run back through babysit.", ())
+    goal = (f"The merge of main introduced a verification failure on {pull.url}; "
+            f"main at {main_sha} passes. Failing verify command: {command}\n{out}\n"
+            f"The ticket is the contract:\n{ticket}\n"
+            "Fix this failure on this branch and commit; keep the ticket's verify "
+            "commands passing. This is one implementer fix turn.")
+    return _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
+                        beat_s, pull, (), None, ticket, command, contracts,
+                        budget_min, _next_round(conn, run_id), goal=goal)
 
 
 def _diff_identity(wt, ref):
@@ -367,7 +425,8 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             # Push origin/main's merge and settle again; UNKNOWN is not conflict.
             sha, pushed_state, reviewed = _merge_origin_main(
                 target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
-                pull, budget_min, reviewed=reviewed, previous=state, refresh=refresh)
+                pull, budget_min, reviewed=reviewed, previous=state, refresh=refresh,
+                verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
             continue
         rnd = _next_round(conn, run_id)
         if state.threads:
@@ -413,7 +472,8 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                 sha, pushed_state, reviewed = _merge_origin_main(
                     target, conn, run_id, provider, task_id, branch, wt, sha,
                     beat_s, pull, budget_min, reviewed=reviewed,
-                    refusal=refused, previous=state, refresh=refresh)
+                    refusal=refused, previous=state, refresh=refresh,
+                    verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
                 continue
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "ready to merge; waiting for a human to say merge"

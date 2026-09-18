@@ -10,6 +10,7 @@ ignored rather than filed against a thread that does not exist.
 Run: python3 -m unittest discover -s tests -p 'test_babysit*' -v
 """
 import io
+import json
 import os
 import subprocess
 import sys
@@ -406,6 +407,55 @@ class ConflictingPullRequestTests(MergeModeFixture):
             self.read("SELECT phase, candidateSha FROM runs WHERE id = 2"),
             [("awaiting_merge_approval", head)])
         self.assertIn("waiting for a human to say merge", self.question())
+
+    def merge_verify(self, main_red):
+        calls = []
+
+        def verify(command, cwd, *args, **kwargs):
+            sha = self.git("rev-parse", "HEAD", cwd=cwd).strip()
+            calls.append((command, Path(cwd), sha))
+            ok = (Path(cwd) / "FIXED.md").exists() or (
+                not main_red and not (Path(cwd) / "THING.md").exists())
+            return ok, "ok" if ok else "[verify] FAILED: full command: echo ok"
+
+        return calls, patch("holophyte.gates._run_verify", side_effect=verify)
+
+    def test_red_merged_tree_and_red_main_park_before_review(self):
+        self.parked_on_a_nit(Commit("candidate", path="THING.md"))
+        moved = self.remote_main("MOVED.md", "main moved\n")
+        self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
+        calls, verify = self.merge_verify(main_red=True)
+        with verify:
+            fake, _ = self.resume()
+        self.assertEqual(fake.roles, [])
+        self.assertIn("main is red at " + moved, self.question())
+        self.assertIn("echo ok", self.question())
+        results = [result for (raw,) in self.read(
+            "SELECT verificationResults FROM reviewRounds WHERE runId = 2")
+            for result in json.loads(raw)]
+        self.assertEqual(len(results), 2)
+        self.assertEqual([r["exitCode"] for r in results], [1, 1])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1][2], moved)
+        self.assertNotEqual(calls[0][1], calls[1][1])
+        self.assertFalse(calls[1][1].exists())
+        for result, (_, _, sha) in zip(results, calls):
+            self.assertIn(sha, result["output"])
+
+    def test_red_merged_tree_and_green_main_get_one_fix_and_verify(self):
+        self.parked_on_a_nit(Commit("candidate", path="THING.md"))
+        moved = self.remote_main("MOVED.md", "main moved\n")
+        self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
+        calls, verify = self.merge_verify(main_red=False)
+        with verify:
+            fake, _ = self.resume(Commit("fix merge", path="FIXED.md"))
+        self.assertEqual(fake.roles, ["implement"])
+        self.assertIn("echo ok", fake.turns[0].goal)
+        self.assertGreaterEqual(len(calls), 3)
+        self.assertEqual(calls[1][2], moved)
+        self.assertEqual(calls[2][1], calls[0][1])
+        self.assertNotEqual(calls[2][2], calls[0][2])
+        self.assertEqual(self.pushed()[-1][1], calls[2][2])
 
     def test_a_tree_conflict_goes_to_the_implementer_then_parks(self):
         """KO-377: `origin/main` conflicts with the branch in the tree.
