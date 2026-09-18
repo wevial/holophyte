@@ -117,7 +117,7 @@ PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|<[^<>\n\s][^<>\n]*>")
 # angle-bracket text outside a link target is still a placeholder.
 MD_LINK_RE = re.compile(r"\[([^\[\]\n]*)\]\((?:<[^<>\n]*>|[^()\s]*)\)")
 COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
-FENCE_RE = re.compile(r"^```\w*\s*$")
+FENCE_RE = re.compile(r"^```([^\n]*)$")
 # One literal contract declaration: a relative path, a colon, and the exact
 # value that must appear in that file. Literal only — no regex, no shell.
 CONTRACT_RE = re.compile(r"^(\S+?):\s*(.*)$")
@@ -178,6 +178,23 @@ def _fenced_lines(body):
         if in_fence and s:
             out.append(s)
     return out
+
+
+def _fence_advisories(t):
+    advisories = []
+    for section, label in (("Verify command(s)", "verify"),
+                           ("Contract checks", "contract checks")):
+        in_fence = False
+        for line in t.sections.get(section, "").splitlines():
+            match = FENCE_RE.match(line.strip())
+            if match:
+                tag = match.group(1).strip()
+                if not in_fence and tag:
+                    advisories.append(
+                        f"{ADVISORY_PREFIX}{label} fence carries a language tag "
+                        f"({tag}); the factory ignores it")
+                in_fence = not in_fence
+    return advisories
 
 
 def _verify_commands(body):
@@ -544,6 +561,7 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
             p.append(f"{ADVISORY_PREFIX}verify command uses bare {token!r} "
                      f"(template rule: activate the venv or use "
                      f".venv/bin/{token} if the project has one): {cmd}")
+    p.extend(_fence_advisories(t))
     p.extend(_operator_witness_advisories(t))
     if repo is not None:
         p.extend(_gitignored_path_problems(t, repo))

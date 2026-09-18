@@ -32,12 +32,7 @@ import store.read  # noqa: E402 - after the sys.path insert above
 
 
 class ConfigEditTests(ServeTestCase):
-    """`GET /config` and `PUT /config` (KO-356): 404 without `[serve]
-    config_edit = true`; with it, behind the token on every bind, the file
-    redacted on the way out, the secret put back and the document held to
-    the loader on the way in, the previous text kept beside it. `[serve]`
-    accepts no secret value of its own, so the secret sits in a table the
-    loader leaves alone, as a later version's key would."""
+    """Authenticated config reads, validation, and persisted edits."""
 
     TOKEN = test_serve.TokenTests.TOKEN
     BEARER = test_serve.TokenTests.BEARER
@@ -216,6 +211,7 @@ class ConfigEditTests(ServeTestCase):
             ("merge.pr_rounds", 3),
             ("merge.pr_poll_sec", 60),
             ("merge.pr_quiet_sec", 120),
+            ("merge.check_wait_sec", 3600),
             ("board.label", "holophyte"),
         ):
             with self.subTest(key=key):
@@ -225,6 +221,8 @@ class ConfigEditTests(ServeTestCase):
                 self.assertEqual(code, 200, body)
                 self.assertIs(body["ok"], True)
                 table, name = key.split(".")
+                _, _, shown = self.request("GET", "/config", self.BEARER)
+                self.assertEqual(shown["values"][table][name], value)
                 self.assertEqual(tomllib.loads(self.on_disk())[table][name],
                                  value)
 

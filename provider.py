@@ -69,7 +69,7 @@ import ticket_template
 
 # The same fence `linear_provider.parse_task()` reads, so a body parsed by
 # either board yields the same `verify`.
-VERIFY_RE = re.compile(r"## Verify command\(s\)\s*```\n(.*?)```", re.S)
+VERIFY_RE = re.compile(r"## Verify command\(s\)\s*```[^\n]*\n(.*?)```", re.S)
 DEFAULT_BUDGET_MIN = 20
 DEFAULT_STATE = "Todo"
 # The file board's closed state names and the Linear state *type* each one

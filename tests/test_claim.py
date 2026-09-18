@@ -8,6 +8,7 @@ import threading
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -56,11 +57,39 @@ class BabysitClaimTests(MergeModeFixture):
         holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
                                          out=io.StringIO())
         self.assertEqual(self.read("SELECT blockedQuestion FROM tickets"), [(None,)])
-        output = self.main_output(provider=self.provider())
+        observed = []
+        set_phase = holophyte.pullrequest.set_phase
+
+        def observe_resume(conn, run_id, phase, note):
+            observed.append(self.read(
+                "SELECT prUrl, candidateSha, phase, endedAt FROM runs"
+                f" WHERE id = {run_id}"))
+            self.assertTrue(self.read(
+                "SELECT summary FROM runEvents"
+                f" WHERE runId = {run_id} AND summary LIKE 'resuming run %'"))
+            return set_phase(conn, run_id, phase, note)
+
+        with patch.object(holophyte.pullrequest, "set_phase", observe_resume):
+            output = self.main_output(provider=self.provider())
+        self.assertEqual(observed, [[(self.URL, candidate, "claimed", None)]])
         self.assertNotIn("parked on PR", output)
         self.assertEqual(self.read("SELECT id, candidateSha FROM runs ORDER BY id"),
                          [(1, candidate), (2, candidate)])
         self.assertEqual([k for k, _ in self.api_calls()], ["state", "state"])
+
+    def test_fresh_claim_has_no_pull_request_or_candidate(self):
+        observed = []
+        cut = holophyte.loop._cut_worktree
+
+        def observe_claim(target, conn, run_id, *args):
+            observed.append(self.read(
+                "SELECT prUrl, candidateSha, phase FROM runs"
+                f" WHERE id = {run_id}"))
+            return cut(target, conn, run_id, *args)
+
+        with patch.object(holophyte.loop, "_cut_worktree", observe_claim):
+            self.loop(Commit("fresh candidate"), APPROVE)
+        self.assertEqual(observed, [[(None, None, "claimed")]])
 
 
 class WorktreeSetupLoopTests(LoopFixture):

@@ -3,14 +3,8 @@
 Moved verbatim out of `holophyte/serve.py`: `GET /config`'s
 `read_config()` with `config_text()` and `config_values()`; `PUT
 /config`'s `write_config()` with `validate_config()` and the
-`_write_config()`/`next_backup()` write a `text` body and a `patch`
-body share; the `{"patch": ...}` edit itself -- `PatchError`,
-`patch_config()`, `apply_patch()`, `check_patch_value()`,
-`set_patched()` and `require_tomlkit()`; and `implementer_of()` with
-`probe_changed_implementer()`, the probe a write that changes
-`[agents] implementer` answers with. The constants the region owns
-came with it -- `CONFIG_PATH`, `CONFIG_ACTION`, `CONFIG_APPLIES`,
-`CONFIG_LOCK`, `BACKUP_STAMP`, `PATCH_VALUE_TYPES`, `TOMLKIT_MISSING`.
+`_write_config()`/`next_backup()` write path shared by text and patch
+bodies; patch validation; and probing changes to `[agents] implementer`.
 `record_action_intervention()`, shared with the `POST /actions/...`
 routes, stays home: `holophyte.serve` imports this module's handlers
 for its route table, so `_write_config()` reaches the name back through
@@ -62,7 +56,7 @@ def config_text(target):
 
 def read_config(target):
     """`GET /config`: the file's text, secrets redacted, the same text as
-    parsed `values` (KO-364), its path, and when a change to it applies. A
+    parsed `values` with the check-wait default, its path and applicability. A
     text `redact()` cannot vouch for is 500 with its sentence and no text:
     better no page than a secret on it."""
     try:
@@ -74,14 +68,20 @@ def read_config(target):
 
 
 def config_values(text):
-    """`text` parsed with `tomllib`, as the JSON the reply carries: a
-    quoted table or a triple-quoted string is an ordinary key or value
-    here. None when the text does not parse -- the page still gets the
-    text to show, and a `PUT` of it is refused by the loader."""
+    """Parse response values, supplying the effective check wait for the UI.
+
+    Quoted tables and triple-quoted strings become ordinary JSON values.
+    Explicit values, including invalid shapes, remain visible for correction.
+    Invalid TOML returns None; raw text and persisted patches stay unchanged.
+    """
+    from holophyte.pr import CHECK_WAIT_S
     try:
         document = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
         return None
+    merge = document.setdefault("merge", {})
+    if isinstance(merge, dict):
+        merge.setdefault("check_wait_sec", CHECK_WAIT_S)
     return json.loads(json.dumps(document, default=str))
 
 

@@ -128,7 +128,7 @@ test("workers changed to 3 and Save clicked: the PUT body is a patch of that one
 test("pull-request controls show loaded values and save their dotted keys together", async () => {
   const { fetch, puts } = daemon(TEXT, {
     ...VALUES,
-    merge: { human_threads: "park", pr_style: "Keep it brief.", pr_rounds: 5, pr_poll_sec: 180, pr_quiet_sec: 300 },
+    merge: { human_threads: "park", pr_style: "Keep it brief.", pr_rounds: 5, pr_poll_sec: 180, pr_quiet_sec: 300, check_wait_sec: 1800 },
     board: { label: "ready" },
   });
   await open(editable, fetch);
@@ -138,7 +138,7 @@ test("pull-request controls show loaded values and save their dotted keys togeth
   const style = screen.getByRole("textbox", { name: /^PR style/ }) as HTMLInputElement;
   expect(style.type).toBe("text");
   expect(style.value).toBe("Keep it brief.");
-  for (const [label, value] of [["PR rounds", "5"], ["PR poll seconds", "180"], ["PR quiet seconds", "300"]]) {
+  for (const [label, value] of [["PR rounds", "5"], ["PR poll seconds", "180"], ["PR quiet seconds", "300"], ["Check wait seconds", "1800"]]) {
     expect((screen.getByRole("spinbutton", { name: new RegExp(`^${label}`) }) as HTMLInputElement).value).toBe(value);
   }
   expect((screen.getByRole("textbox", { name: /^Board label/ }) as HTMLInputElement).value).toBe("ready");
@@ -147,6 +147,7 @@ test("pull-request controls show loaded values and save their dotted keys togeth
   fireEvent.change(field("merge.pr_rounds"), { target: { value: "3" } });
   fireEvent.change(field("merge.pr_poll_sec"), { target: { value: "60" } });
   fireEvent.change(field("merge.pr_quiet_sec"), { target: { value: "120" } });
+  fireEvent.change(field("merge.check_wait_sec"), { target: { value: "3600" } });
   fireEvent.change(field("board.label"), { target: { value: "holophyte" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await act(settle);
@@ -156,6 +157,7 @@ test("pull-request controls show loaded values and save their dotted keys togeth
     "merge.pr_rounds": 3,
     "merge.pr_poll_sec": 60,
     "merge.pr_quiet_sec": 120,
+    "merge.check_wait_sec": 3600,
     "board.label": "holophyte",
   } }]);
 });
@@ -260,7 +262,7 @@ test("a daemon whose /status lacks config_edit opens the sheet read-only, every 
   expect(dialog.querySelector("[data-config-edit-off]")!.textContent).toBe(CONFIG_EDIT_OFF);
   expect(CONFIG_EDIT_OFF).toContain("[serve] config_edit");
   const controls = Array.from(dialog.querySelectorAll("[data-field]")) as (HTMLInputElement | HTMLSelectElement)[];
-  expect(controls.length).toBe(15);
+  expect(controls.length).toBe(16);
   for (const control of controls) {
     expect(control instanceof HTMLSelectElement ? control.disabled : control.readOnly).toBe(true);
   }

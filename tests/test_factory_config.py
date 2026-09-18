@@ -47,6 +47,18 @@ from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
 class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
+    def test_merge_check_wait_default_override_and_validation(self):
+        for value, expected in ((None, 1800), ("3600", 3600)):
+            self.locate("" if value is None else f"[merge]\ncheck_wait_sec = {value}\n")
+            holophyte.config.check_document(self.tgt)
+            self.assertEqual(holophyte.config.merge_config(self.tgt).check_wait_sec,
+                             expected)
+        for value in ("0", "-5", "true", "1.5", '"60"'):
+            with self.subTest(value=value), \
+                    self.assertRaisesRegex(SystemExit, "check_wait_sec"):
+                self.locate(f"[merge]\ncheck_wait_sec = {value}\n")
+                holophyte.config.check_document(self.tgt)
+
     def test_an_absent_config_file_loads_as_empty(self):
         target = self.locate().path
         self.assertEqual(self.tgt.config_path,
@@ -67,9 +79,6 @@ class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
         self.assertIn("line 2", message)
 
     def test_the_config_is_read_for_the_target_the_command_line_names(self):
-        # Not at import, and not for the default target: a broken config file
-        # sitting next to some other repository is that repository's problem.
-        # `cli()` reads the one the run named, before it claims anything.
         target = self.locate().path
         self.write_config("[agents\n")
 
@@ -79,9 +88,6 @@ class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
         self.assertIn(str(self.tgt.config_path), str(raised.exception))
 
     def test_two_targets_in_one_process_each_read_their_own_config(self):
-        # The point of a value over module state: the `serve` daemon and the
-        # supervisor both want two targets live at once, and the config one
-        # of them reads must not become the other's.
         self.locate()
         targets = []
         for name in ("one", "two"):
@@ -98,8 +104,6 @@ class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
                          "harness-one run")
         self.assertEqual(second.config()["agents"]["implementer"],
                          "harness-two run")
-        # Reading the second changed nothing about the first, and what each
-        # routes to is what its own file says.
         self.assertEqual(first.config()["agents"]["implementer"],
                          "harness-one run")
         self.assertEqual(holophyte.config.agent_command(first, "implement", "go"),
@@ -108,9 +112,6 @@ class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
                          ["harness-two", "run", "go"])
 
     def test_importing_the_module_names_no_target(self):
-        # No module-level target, no module-level config, and nothing under
-        # the home: a target is something `cli()` builds from the command
-        # line, and importing this module is not a command line.
         home = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, home)
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}):
@@ -979,7 +980,6 @@ class WorktreeSetupTests(ConfigTestCase):
                 message = str(raised.exception)
                 self.assertIn(str(self.tgt.config_path), message)
                 self.assertIn("[worktree] branch_prefix", message)
-                # The key is known; the refusal is about its value.
                 self.assertNotIn("unknown key", message)
 
 
