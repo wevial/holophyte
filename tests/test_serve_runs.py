@@ -27,6 +27,7 @@ import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve_runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.ticket_url_fixture import assert_api_url
 
 SLACK = test_serve.SLACK
 
@@ -101,8 +102,10 @@ class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
 
 
 class RunsTests(PreviousBuildCases, ServeTestCase):
+    def test_url_on_live_attention_board_detail_and_shipped(self):
+        assert_api_url(self)
+
     def expected_rows(self):
-        """The oracle: `report_rows()` over the same store, named by column."""
         conn = store.open(str(self.db))
         try:
             rows = holophyte.report.report_rows(conn)
@@ -110,16 +113,15 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
             conn.close()
         keys = ("ticket", "actual_min", "estimate_min", "ratio", "rounds",
                 "outcome", "host", "ended_ms", "merge_sha", "wall_min")
-        return [dict(zip(keys, row + (ended, sha, (ended - started) / MIN)))
+        return [dict(zip(keys, row + (ended, sha, (ended - started) / MIN)),
+                     ticket_url=None)
                 for row, ended, sha, started in zip(
                     rows, self.ended_at(), self.merge_shas(), self.column("startedAt"))]
 
     def ended_at(self):
-        """Read stored end times in report order."""
         return self.column("endedAt")
 
     def merge_shas(self):
-        """The oracle for `merge_sha`: `runs.mergeSha` itself, same order."""
         return self.column("mergeSha")
 
     def column(self, name):
@@ -220,7 +222,6 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
 
 
 class ShippedTests(ServeTestCase):
-    """`/shipped`: the merge ledger newest end first, paged by `before`."""
 
     FINDING = {"path": "holophyte/serve.py", "line": 1, "severity": "p2",
                "criterion": None, "message": "a finding"}
@@ -368,7 +369,6 @@ class ShippedTests(ServeTestCase):
 
 
 class RunDetailTests(BotFindingCases, ServeTestCase):
-    """Run details include rounds and narrative events."""
     FINDINGS = [
         {"path": "holophyte/serve.py", "line": 12, "severity": "p1",
          "criterion": "AC1", "message": "the route is unmatched"},
@@ -506,7 +506,6 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertIn("branch", run)
 
     def test_max_rounds_is_the_cap_the_loop_gave_the_run(self):
-        """The API reports the persisted round cap."""
         self.seed_reviewed(cap=4)
         self.start()
         _code, _headers, body = self.request("GET", f"/runs/{self.run}")

@@ -199,3 +199,17 @@ test("the project header names previous-build workers until the count reaches ze
   rerender(view(0));
   expect(screen.queryByText(/workers? on previous build/)).toBeNull();
 });
+
+test("a run ticket opens Linear without expanding the row", () => {
+  let toggles = 0;
+  const ticket_url = "https://linear.app/team/issue/KO-219";
+  render(<Floor daemons={on({ ...extended, runs: [{ ...RUN_52, ticket_url }] })}
+    project="all" expandedRun={null} onToggleRun={() => toggles++} />);
+  const link = screen.getByRole("link", { name: "KO-219" });
+  expect(link.getAttribute("href")).toBe(ticket_url);
+  fireEvent.click(link);
+  fireEvent.keyDown(link, { key: "Enter" });
+  expect(toggles).toBe(0);
+  fireEvent.click(within(rows()[0]!).getByRole("button"));
+  expect(toggles).toBe(1);
+});

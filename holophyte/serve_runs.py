@@ -191,15 +191,10 @@ def commit_url(target, sha, origin):
 
 
 def runs(target, query=""):
-    """The `/runs` answer: `--report`'s rows as JSON, first `limit` of them.
-
-    Same rows, same order as `report_rows()` -- oldest first -- with the
-    tuple's positions named, plus `ended_ms`: the run's `endedAt` in epoch
-    milliseconds, which the table never prints and a drawer's "last merge
-    KO-n · 2h ago" is read from against `/status`'s `now`, and `merge_sha`:
-    the full merge commit a merged run landed on main as, null for any
-    other outcome or a row older than the column. `host` is None for a row
-    older than the column, label or not, as on `/status`.
+    """The `/runs` answer: `--report` rows as JSON, oldest first, with a limit.
+    Add ticket_url, ended_ms, merge_sha and wall_min to the report fields.
+    URLs and merge SHAs are null for older mirrors/runs without them.
+    Host labels match `/status`; a missing recorded host stays null.
     """
     try:
         limit = parse_limit(query)
@@ -210,12 +205,15 @@ def runs(target, query=""):
     conn = store.read.open_readonly(target.store_path)
     try:
         rows = ended_rows(conn)
+        ticket_urls = dict(conn.execute(
+            "SELECT linearIdentifier, url FROM tickets"))
     finally:
         conn.close()
     if limit is not None:
         rows = rows[:limit]
     return 200, {
-        "rows": [{"ticket": ticket, "actual_min": actual,
+        "rows": [{"ticket": ticket, "ticket_url": ticket_urls.get(ticket),
+                  "actual_min": actual,
                   "estimate_min": estimate, "ratio": ratio,
                   "rounds": rounds, "outcome": outcome,
                   "host": json_host(target, host), "ended_ms": ended_at,
@@ -271,6 +269,7 @@ def shipped(target, query=""):
     origin = origin_web_url(target)
     return 200, {
         "rows": [{"id": run.id, "ticket": run.linearIdentifier,
+                  "ticket_url": run.ticketUrl,
                   "title": run.title, "rounds": run.reviewRoundCount,
                   "findings": run.findingCount,
                   "started_ms": run.startedAt, "ended_ms": run.endedAt,
@@ -350,6 +349,7 @@ def run_detail(target, run_id, now=None):
     scale = budget_scale(target)
     return 200, {
         "run": {"id": run.id, "ticket": run.linearIdentifier,
+                "ticket_url": run.ticketUrl,
                 "title": run.title, "phase": run.phase,
                 "attempt": run.attempt, "started_ms": run.startedAt,
                 "ended_ms": run.endedAt, "outcome": run.outcome,
@@ -400,7 +400,7 @@ def run_ledger(target, run_id):
     finally:
         conn.close()
     return 200, {
-        "run_id": run.id, "ticket": run.linearIdentifier,
+        "run_id": run.id, "ticket": run.linearIdentifier, "ticket_url": run.ticketUrl,
         "entries": [ledger_entry(e, {}) for e in entries],
     }
 

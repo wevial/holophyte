@@ -89,19 +89,14 @@ class BlockedTicket:
     prSeenChecks: str | None = None
     prSeenReview: str | None = None
     prSeenThreads: int | None = None
+    ticketUrl: str | None = None
 
 
 def blocked_tickets(conn, project_id=None):
-    """Every ticket whose status is `blocked_on_operator`, oldest id first;
-    `project_id` narrows it to one project's.
+    """Tickets parked `blocked_on_operator`, oldest first, optionally scoped.
 
-    The `serve` daemon's `/attention` read: a parked ticket is the one thing
-    the operator must answer, and `blockedQuestion` is what it asks. None
-    when the ticket was parked without one. The parked run and the moment
-    of asking ride along so the band can age the question and name the run
-    without deriving either from the poll time. The loop's pull-request
-    reconcile reads the same rows for its project and asks GitHub about
-    each `prUrl` (KO-359).
+    `/attention` uses the question, run, URL and asked time to render the
+    waiting ticket. Reconcile uses the same rows' prUrl for GitHub (KO-359).
     """
     where, params = "t.status = 'blocked_on_operator'", ()
     if project_id is not None:
@@ -112,14 +107,14 @@ def blocked_tickets(conn, project_id=None):
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
-        " r.prSeenThreads"
+        " r.prSeenThreads, t.url"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
                           blockedQuestion=row[2], runId=row[3],
                           askedMs=row[4] if row[4] is not None else row[5],
                           prUrl=row[6], prSeenChecks=row[7],
-                          prSeenReview=row[8], prSeenThreads=row[9])
+                          prSeenReview=row[8], prSeenThreads=row[9], ticketUrl=row[10])
             for row in rows]
 
 
@@ -143,26 +138,21 @@ class OpenTicket:
     blockedQuestion: str | None
     waitsOn: tuple[str, ...]
     mirroredAt: int
+    ticketUrl: str | None = None
 
 
 def open_tickets(conn, project_id=None):
-    """Every ticket whose status is not `merged` or `abandoned`, ordered
-    by identifier; only `project_id`'s tickets when one is given.
+    """Open tickets ordered by identifier, optionally scoped to a project.
 
-    The `serve` daemon's `/board` read across every project: the store's
-    mirror of Linear's columns, grouped by the caller. The loop's startup
-    reconcile (KO-329) reads it scoped to its own project, since the
-    provider it asks knows only that project's team. `dependsOn` names
-    Linear issue ids; each is resolved to an identifier through the open
-    rows, dropped when it names a closed ticket (a merged dependency is
-    no longer a wait), and kept as-is when the store has never mirrored
-    it.
+    Used by `/board` and startup reconcile (KO-329). Resolve dependsOn's
+    Linear issue ids to mirrored identifiers, omit closed dependencies,
+    and preserve unknown ids. The caller groups the mirrored columns.
     """
     scope = "" if project_id is None else " AND projectId = ?"
     params = () if project_id is None else (project_id,)
     rows = conn.execute(
         "SELECT id, linearIssueId, linearIdentifier, title, status,"
-        " timeBoxMs, activeRunId, blockedQuestion, dependsOn, mirroredAt"
+        " timeBoxMs, activeRunId, blockedQuestion, dependsOn, mirroredAt, url"
         " FROM tickets WHERE status NOT IN ('merged', 'abandoned')"
         + scope + " ORDER BY linearIdentifier", params).fetchall()
     # The closed ids are read too, so a dependency on a merged ticket is
@@ -177,7 +167,7 @@ def open_tickets(conn, project_id=None):
                        waitsOn=tuple(mirrored.get(dep, dep)
                                      for dep in json.loads(row[8])
                                      if dep not in closed),
-                       mirroredAt=row[9])
+                       mirroredAt=row[9], ticketUrl=row[10])
             for row in rows]
 
 
@@ -197,6 +187,7 @@ class MirroredTicket:
     timeBoxMs: int | None
     activeRunId: int | None
     mirroredAt: int
+    ticketUrl: str | None = None
 
 
 def ticket_by_identifier(conn, identifier):
@@ -211,7 +202,7 @@ def ticket_by_identifier(conn, identifier):
     row = conn.execute(
         "SELECT id, linearIdentifier, title, status, body,"
         " acceptanceCriteria, verificationCommands, timeBoxMs, activeRunId,"
-        " mirroredAt FROM tickets WHERE linearIdentifier = ?",
+        " mirroredAt, url FROM tickets WHERE linearIdentifier = ?",
         (identifier,)).fetchone()
     if row is None:
         return None
@@ -220,7 +211,7 @@ def ticket_by_identifier(conn, identifier):
                           acceptanceCriteria=tuple(json.loads(row[5])),
                           verificationCommands=tuple(json.loads(row[6])),
                           timeBoxMs=row[7], activeRunId=row[8],
-                          mirroredAt=row[9])
+                          mirroredAt=row[9], ticketUrl=row[10])
 
 
 # --- runs --------------------------------------------------------------------
@@ -285,6 +276,7 @@ class LiveRun:
     prUrl: str | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
+    ticketUrl: str | None = None
 
 
 @dataclass(frozen=True)
@@ -347,7 +339,7 @@ def live_runs(conn, phases):
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
         " r.startedAt, r.timeBoxMs, r.host,"
         " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id),"
-        " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt"
+        " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
         f"   AND r.phase IN ({', '.join('?' * len(phases))})"
@@ -356,7 +348,7 @@ def live_runs(conn, phases):
                     phase=row[3], lastHeartbeat=row[4], startedAt=row[5],
                     timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8],
                     reviewRoundCap=row[9], prUrl=row[10],
-                    workingMs=row[11], workStartedAt=row[12])
+                    workingMs=row[11], workStartedAt=row[12], ticketUrl=row[13])
             for row in rows]
 
 
@@ -438,6 +430,7 @@ class MergedRun:
     outcomeReason: str | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
+    ticketUrl: str | None = None
 
 
 # The range of a SQLite INTEGER, and so of any run id a cursor can name.
@@ -475,7 +468,7 @@ def finished_runs(conn, limit, before=None, outcomes=None):
         " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
         "    FROM reviewRounds rr WHERE rr.runId = r.id),"
         " r.host, r.mergeSha, r.prUrl, r.outcome, r.outcomeReason,"
-        " r.workingMs, r.workStartedAt"
+        " r.workingMs, r.workStartedAt, t.url"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         f" WHERE {where}"
         " ORDER BY r.endedAt DESC, r.id DESC LIMIT ?",
@@ -485,7 +478,7 @@ def finished_runs(conn, limit, before=None, outcomes=None):
                       reviewRoundCount=row[6], findingCount=row[7],
                       host=row[8], mergeSha=row[9], prUrl=row[10],
                       outcome=row[11], outcomeReason=row[12],
-                      workingMs=row[13], workStartedAt=row[14])
+                      workingMs=row[13], workStartedAt=row[14], ticketUrl=row[15])
             for row in rows]
 
 
@@ -547,6 +540,7 @@ class RecentFailedRun:
     # The pull request the run opened before failing (`runs.prUrl`), None
     # when none.
     prUrl: str | None = None
+    ticketUrl: str | None = None
 
 
 def recent_failed_runs(conn, since_ms):
@@ -557,14 +551,15 @@ def recent_failed_runs(conn, since_ms):
     """
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId"
+        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.outcome = 'failed' AND r.endedAt > ?"
         " ORDER BY r.endedAt, r.id", (since_ms,)).fetchall()
     return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
                             outcomeReason=row[2], endedAt=row[3],
                             ticketStatus=row[4], attempt=row[5],
-                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8])
+                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
+                            ticketUrl=row[9])
             for row in rows]
 
 
@@ -655,6 +650,7 @@ class RunDetail:
     prUrl: str | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
+    ticketUrl: str | None = None
 
 
 def run_detail(conn, run_id):
@@ -663,7 +659,7 @@ def run_detail(conn, run_id):
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.attempt,"
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
         " r.branch, r.host, r.mergeSha, r.reviewRoundCap, r.prUrl,"
-        " r.workingMs, r.workStartedAt"
+        " r.workingMs, r.workStartedAt, t.url"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.id = ?", (run_id,)).fetchone()
     if row is None:
@@ -673,7 +669,8 @@ def run_detail(conn, run_id):
                      endedAt=row[6], lastHeartbeat=row[7], outcome=row[8],
                      timeBoxMs=row[9], branch=row[10], host=row[11],
                      mergeSha=row[12], reviewRoundCap=row[13],
-                     prUrl=row[14], workingMs=row[15], workStartedAt=row[16])
+                     prUrl=row[14], workingMs=row[15], workStartedAt=row[16],
+                     ticketUrl=row[17])
 
 
 @dataclass(frozen=True)

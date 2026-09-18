@@ -17,6 +17,8 @@ DOCUMENTED_COLUMNS = {
         # Store-owned: the Linear body the claim-time mirror last read, so
         # the daemon serves the contract the run worked from (KO-328).
         "body",
+        # Claim-time Linear issue URL for console ticket links (KO-478).
+        "url",
     },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",

@@ -250,6 +250,7 @@ def status(target, now=None, started_ms=None):
         "actions": serve_config(target).actions,
         "config_edit": serve_config(target).config_edit,
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,
+                  "ticket_url": run.ticketUrl,
                   "title": run.title,
                   "phase": run.phase,
                   "started_ms": run.startedAt,
@@ -298,6 +299,7 @@ def parked_item(ticket):
         _, _, reason = question.partition("\n")
         match = PR_URL_RE.match(ticket.prUrl)
         return {"kind": "pr_open", "ticket": ticket.linearIdentifier,
+                "ticket_url": ticket.ticketUrl,
                 "run": ticket.runId, "pr_url": ticket.prUrl,
                 "reason": reason, "asked_ms": ticket.askedMs,
                 "pr": {"number": int(match.group(4)) if match else None,
@@ -306,6 +308,7 @@ def parked_item(ticket):
                        "threads": ticket.prSeenThreads},
                 "level": "attention"}
     return {"kind": "blocked", "ticket": ticket.linearIdentifier,
+            "ticket_url": ticket.ticketUrl,
             "question": ticket.blockedQuestion,
             "run": ticket.runId, "asked_ms": ticket.askedMs,
             "pr_url": ticket.prUrl, "level": "attention"}
@@ -350,11 +353,13 @@ def attention(target, now=None):
         age = now - run.lastHeartbeat
         if age > knobs.heartbeat_stale_ms:
             items.append({"kind": "stale_run", "run": run.id,
-                          "ticket": run.linearIdentifier, "phase": run.phase,
+                          "ticket": run.linearIdentifier,
+                          "ticket_url": run.ticketUrl, "phase": run.phase,
                           "heartbeat_age_ms": age, "pr_url": run.prUrl,
                           "level": "attention"})
     items.extend({"kind": "failed", "run": run.id,
-                  "ticket": run.linearIdentifier, "reason": run.outcomeReason,
+                  "ticket": run.linearIdentifier,
+                  "ticket_url": run.ticketUrl, "reason": run.outcomeReason,
                   "ended_ms": run.endedAt, "attempt": run.attempt,
                   "pr_url": run.prUrl, "level": "attention"}
                  for run in failed if run.id == run.lastRunId
@@ -402,7 +407,8 @@ def board(target, now=None):
     columns = {state: [] for state in BOARD_STATES}
     for ticket in tickets:
         columns[ticket.status].append({
-            "ticket": ticket.linearIdentifier, "title": ticket.title,
+            "ticket": ticket.linearIdentifier,
+            "ticket_url": ticket.ticketUrl, "title": ticket.title,
             "time_box_ms": ticket.timeBoxMs, "run": ticket.activeRunId,
             "question": ticket.blockedQuestion,
             "waits_on": list(ticket.waitsOn),
@@ -414,15 +420,8 @@ def board(target, now=None):
 
 def ticket_detail(target, identifier):
     """The `/tickets/KO-n` answer: `(http status, JSON-able body)`.
-
-    One mirrored ticket by identifier: `ticket`, `title`, `status`, `body`
-    (the Linear text the loop last read at claim, served as it is, not
-    rendered), `acceptance_criteria`, `verification_commands`,
-    `time_box_ms`, `run` (the active run's id, null when none) and
-    `mirrored_ms`. An identifier the store has never mirrored is 404 with
-    an empty object, like an absent run. The store's mirror is the whole
-    answer; nothing here calls the provider.
-    """
+    Serve the mirrored contract, URL and active run without calling Linear.
+    An unknown identifier returns 404 with an empty object."""
     if not target.store_path.exists():
         return 503, no_store(target)
     conn = store.read.open_readonly(target.store_path)
@@ -432,7 +431,8 @@ def ticket_detail(target, identifier):
         conn.close()
     if ticket is None:
         return 404, {}
-    return 200, {"ticket": ticket.linearIdentifier, "title": ticket.title,
+    return 200, {"ticket": ticket.linearIdentifier,
+                 "ticket_url": ticket.ticketUrl, "title": ticket.title,
                  "status": ticket.status, "body": ticket.body,
                  "acceptance_criteria": list(ticket.acceptanceCriteria),
                  "verification_commands": list(ticket.verificationCommands),

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     id                   INTEGER PRIMARY KEY,
     projectId            INTEGER NOT NULL REFERENCES projects (id),
     linearIssueId        TEXT    NOT NULL UNIQUE,
+    url                  TEXT,
     linearIdentifier     TEXT    NOT NULL,  -- e.g. "HOL-142", for humans
     title                TEXT    NOT NULL,
     -- The Linear body the loop last read at claim time, so what the daemon
@@ -331,8 +332,9 @@ CREATE TABLE IF NOT EXISTS interventions (
 )"""
 
 
-# Version 23 records the process responsible for schema migrations (KO-495).
-SCHEMA_VERSION = 23
+# Version 23 mirrors Linear issue URLs for console ticket links (KO-478).
+# Version 24 records the process responsible for schema migrations (KO-495).
+SCHEMA_VERSION = 24
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -437,11 +439,10 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 #
 # Each DDL is transcribed from that column's clause in SCHEMA so a migrated
 # database and a fresh one end up with the same column, CHECK included:
-# SQLite's ALTER TABLE ADD COLUMN takes a CHECK constraint and enforces it on
-# every later write. What it will not take is UNIQUE, or a NOT NULL without a
-# constant default — a column needing either wants a table rebuild, not a line
-# here. The schema test holds the two databases against each other.
+# ALTER TABLE preserves CHECK; UNIQUE and NOT NULL without a default require
+# rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
+    ("tickets", "url", "url TEXT"),
     ("projects", "launchBackoffUntil", "launchBackoffUntil INTEGER"),
     ("projects", "launchBackoffReason", "launchBackoffReason TEXT"),
     ("runEvents", "projectId", "projectId INTEGER REFERENCES projects (id)"),

@@ -1,3 +1,4 @@
+import { TicketLink } from "./TicketLink";
 import { workingMs } from "../lib/runs";
 import { cardLine, type BoardCard } from "../lib/board";
 import { ActionButton } from "./ActionButton";
@@ -24,15 +25,23 @@ export function TicketCard({ card, open = false, onOpen }: { card: BoardCard; op
       className="flex flex-col gap-[6px] rounded-[8px] border border-line bg-card px-3 py-[10px] shadow-card"
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-[6px]">
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           data-open-ticket
           aria-pressed={open}
           onClick={() => onOpen?.(card)}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onOpen?.(card);
+            }
+          }}
           className="rounded-[4px] font-mono text-[12px] font-semibold text-ink underline-offset-2 hover:underline"
         >
-          {card.ticket}
-        </button>
+          <TicketLink ticket={card.ticket} ticket_url={card.ticket_url} />
+        </div>
         {card.status === "blocked_on_operator" && <KindPill kind="blocked">question</KindPill>}
         {card.status === "in_flight" && run && <PhasePill phase={run.phase} pr_url={run.pr_url} />}
         {card.status === "in_flight" && run && <StrikePill strikes={run.strikes ?? 0} max={card.strikesMax} />}

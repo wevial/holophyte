@@ -1,3 +1,4 @@
+import { TicketLink } from "./TicketLink";
 import { useState, type KeyboardEvent } from "react";
 import { formatClock, formatDuration } from "../lib/format";
 import type { Fetch } from "../lib/poll";
@@ -117,6 +118,8 @@ function Row({
   polls: number;
   deps?: { fetch: Fetch };
 }) {
+  const measured = row.working_ms != null;
+  const wallMin = row.wall_min ?? (row.ended_ms - row.started_ms) / 60_000;
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // Only keys aimed at the row itself toggle it: Enter on the focused sha
     // anchor must follow the link, not bubble up and be swallowed here.
@@ -137,7 +140,7 @@ function Row({
         className={`${GRID} ${CHEVRON} cursor-pointer py-[11px] hover:bg-hover`}
       >
         <span className="font-mono text-[12px] text-muted">{formatClock(row.ended_ms)}</span>
-        <span className="truncate font-mono text-[13px] font-semibold text-ink">{row.ticket}</span>
+        <span className="truncate font-mono text-[13px] font-semibold text-ink"><TicketLink ticket={row.ticket} ticket_url={row.ticket_url} /></span>
         <span className="min-w-0 text-[13px] text-body">
           <span className="flex items-center gap-2"><span className="truncate">{row.title ?? ""}</span><PhasePill phase={row.outcome ?? "merged"} /></span>
           {row.outcome && row.outcome !== "merged" && row.outcome_reason && (
@@ -147,9 +150,12 @@ function Row({
         <span className="truncate text-[13px] text-muted">{row.project}</span>
         <span className="font-mono text-[13px] text-body">{row.rounds}</span>
         <span className="font-mono text-[13px] text-body">{row.findings}</span>
-        <span>
-          {row.working_ms != null && row.actual_min != null && <span>working <ActualVsBox actualMin={row.actual_min} estimateMin={row.estimate_min} /></span>}
-          <span className="font-mono text-[11px] text-muted">wall {formatDuration((row.wall_min ?? (row.ended_ms - row.started_ms) / 60_000) * 60_000)}</span>
+        <span className="flex min-h-[52px] flex-col">
+          <span className="flex flex-col" title={measured ? "working time against the box" : "wall time against the box (run predates the working clock)"}>
+            <span className="font-mono text-[11px] text-muted">{measured ? "working" : "wall"}</span>
+            <ActualVsBox actualMin={measured ? (row.actual_min ?? row.working_ms! / 60_000) : wallMin} estimateMin={row.estimate_min} />
+          </span>
+          {measured && <span className="font-mono text-[11px] text-muted">wall {formatDuration(wallMin * 60_000)}</span>}
         </span>
         <span onClick={(event) => event.stopPropagation()} className="flex items-baseline">
           {row.pr_url ? <PrLink url={row.pr_url} title={row.merge_sha} /> : <Sha row={row} />}

@@ -127,6 +127,35 @@ test("the bar's fill and delta take the ok, warn and over tones at 24/30, 25/30,
   ]);
 });
 
+test("measured and historical rows each show one labelled clock bar in equal-height cells", () => {
+  const measured: ShippedRow = { ...ROWS[0]!, actual_min: 4, working_ms: 240_000, wall_min: 9, estimate_min: 10 };
+  const historical: ShippedRow = { ...ROWS[1]!, actual_min: null, working_ms: null, wall_min: 6, estimate_min: 10 };
+  render(<ShippedTable rows={[measured, historical]} now={now} tz="UTC" />);
+  const cells = [measured, historical].map((row) => rowToggle(row.id).children[6] as HTMLElement);
+  const [workingCell, wallCell] = cells as [HTMLElement, HTMLElement];
+  expect(within(workingCell).getAllByRole("progressbar")).toHaveLength(1);
+  expect(within(workingCell).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("40");
+  expect(within(wallCell).getAllByRole("progressbar")).toHaveLength(1);
+  expect(within(wallCell).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("60");
+  const labelClass = "font-mono text-[11px] text-muted";
+  expect(within(workingCell).getByText("working").className).toBe(labelClass);
+  expect(within(workingCell).getByText("wall 9m 0s").className).toBe(labelClass);
+  expect(within(wallCell).getByText("wall").className).toBe(labelClass);
+  expect(within(wallCell).queryByText(/^wall .+/)).toBeNull();
+  expect(within(workingCell).getByTitle("working time against the box").contains(within(workingCell).getByRole("progressbar"))).toBe(true);
+  expect(within(wallCell).getByTitle("wall time against the box (run predates the working clock)").contains(within(wallCell).getByRole("progressbar"))).toBe(true);
+  expect(workingCell.className).toContain("min-h-[52px]");
+  expect(wallCell.className).toBe(workingCell.className);
+});
+
+test("historical rows without wall_min use elapsed wall time, even with an old actual_min", () => {
+  const row: ShippedRow = { ...ROWS[0]!, working_ms: undefined, actual_min: 1, wall_min: undefined, started_ms: now - 180_000, ended_ms: now, estimate_min: 10 };
+  render(<ShippedTable rows={[row]} now={now} tz="UTC" />);
+  expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("30");
+  expect(screen.getByText("3m / 10m")).toBeTruthy();
+  expect(screen.getByText("wall")).toBeTruthy();
+});
+
 test("a row without a box has an empty bar, Nm / — and no delta", () => {
   render(<ShippedTable rows={[ROWS[6]!]} now={now} tz="UTC" />);
   const bar = screen.getByRole("progressbar");

@@ -17,6 +17,7 @@ import store
 import store.schema
 import store.tickets
 from tests.schema_fixture import DOCUMENTED_COLUMNS
+from tests.ticket_url_fixture import assert_schema_url
 
 A_PROJECT = (
     "linearTeamId, repoPath, defaultBranch, autonomyProfile",
@@ -69,6 +70,11 @@ CREATE TABLE IF NOT EXISTS runs (
 """
 
 
+class TicketUrlMigrationTests(unittest.TestCase):
+    def test_version_22_adds_nullable_url_to_existing_ticket(self):
+        assert_schema_url(self)
+
+
 class StoreSchemaTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -81,7 +87,6 @@ class StoreSchemaTests(unittest.TestCase):
         return conn
 
     def raw(self):
-        """A plain sqlite3 connection to the file, bypassing store.open()."""
         conn = sqlite3.connect(self.path)
         self.addCleanup(conn.close)
         return conn

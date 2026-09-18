@@ -352,7 +352,7 @@ def parse_task(issue):
 
 ISSUE_QUERY = """
 query($id: String!) {
-  issue(id: $id) { identifier id title description estimate }
+  issue(id: $id) { identifier id url title description estimate }
 }"""
 
 
