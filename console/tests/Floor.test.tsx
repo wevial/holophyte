@@ -213,3 +213,17 @@ test("a run ticket opens Linear without expanding the row", () => {
   fireEvent.click(within(rows()[0]!).getByRole("button"));
   expect(toggles).toBe(1);
 });
+
+test("an open merge_lock_wait event labels the phase until its end event", async () => {
+  const run = { ...RUN_52, phase: "merge_gate", pr_url: "https://example.test/pull/1" };
+  const begin = { at: working.now, kind: "merge_lock_wait", summary: JSON.stringify({ state: "begin", holder: 380, since: working.now / 1000, waited: 180 }) };
+  for (const ended of [false, true]) {
+    cleanup();
+    const events = ended ? [begin, { ...begin, summary: JSON.stringify({ state: "end", holder: 380, waited: 420 }) }] : [begin];
+    const fetch = async () => new Response(JSON.stringify({ run, rounds: [], events }));
+    render(<Floor daemons={on({ ...extended, runs: [run] })} project="all" expandedRun={null} onToggleRun={noop} deps={{ fetch }} />);
+    await act(async () => { await settle(); });
+    expect(within(rows()[0]!).getByText(ended ? "monitoring PR" : "waiting for merge lock")).toBeTruthy();
+    if (!ended) expect(screen.getByTitle("waiting for merge lock (run 380)")).toBeTruthy();
+  }
+});
