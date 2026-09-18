@@ -170,7 +170,8 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         conn = store.read.open_readonly(self.db)
         try:
             (count,) = conn.execute(
-                "SELECT COUNT(*) FROM interventions").fetchone()
+                'SELECT COUNT(*) FROM interventions'
+                " WHERE action != 'migrate'").fetchone()
         finally:
             conn.close()
         self.assertEqual(count, 1)
@@ -297,7 +298,6 @@ class ActionsTests(UnitActionCases, ServeTestCase):
             finally:
                 conn.close()
             return statuses, entries
-
         before = twins()
         self.assertEqual(len(before[0]), 2)
         self.assertNotIn("ready", before[0])

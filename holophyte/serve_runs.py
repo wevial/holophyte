@@ -449,14 +449,34 @@ def ledger(target, query):
                                           hide_launch_backoff=True)
         route_rows = (route_down_rows(conn)
                       if ticket is None and kind in (None, "intervention") else [])
+        feed = [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
+                for e in entries]
+        if ticket is None and kind in (None, "intervention"):
+            feed.extend(migration_rows(conn, since, limit))
+        feed.sort(key=lambda row: row["at"], reverse=True)
     finally:
         conn.close()
     return 200, {
-        "entries": [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
-                    for e in entries],
+        "entries": feed[:limit],
         "active_outages": route_rows, "since": since, "limit": limit,
     }
 
+
+
+def migration_rows(conn, since, limit):
+    """Store-wide evidence has no ticket or run to join to the ledger."""
+    from holophyte.report import migration_line
+
+    if "note" not in {r[1] for r in conn.execute("PRAGMA table_info(interventions)")}:
+        return []
+    rows = conn.execute(
+        "SELECT note, at FROM interventions WHERE action = 'migrate'"
+        " AND note IS NOT NULL"
+        " AND at >= ? ORDER BY at DESC, id DESC LIMIT ?", (since, limit)).fetchall()
+    return [{"at": at, "run": None, "ticket": None, "kind": "intervention",
+             "source": "factory", "action": "migrate", "tone": "neutral",
+             "text": migration_line(note, json.loads(note)["to"]),
+             "cleared": None, "waited_ms": None} for note, at in rows]
 
 
 def route_down_rows(conn):

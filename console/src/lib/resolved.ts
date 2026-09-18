@@ -37,7 +37,7 @@ const num = (value: unknown): number | null => (typeof value === "number" && Num
  *  fields is a `step` that "waited —". */
 export function resolvedSince(rows: LedgerRow[], midnight: number): ResolvedRow[] {
   return rows
-    .filter((row) => row.kind === "intervention" && row.at >= midnight)
+    .filter((row) => row.kind === "intervention" && row.action !== "migrate" && row.at >= midnight)
     .sort((a, b) => b.at - a.at)
     .map((row) => ({
       kind: (row.cleared != null && CLEARED_KIND[row.cleared]) || "step",

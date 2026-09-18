@@ -734,7 +734,8 @@ class MergeModePullRequestTests(MergeModeFixture):
             [(1, "failed", "abandoned", self.URL),
              (2, "awaiting_merge_approval", None, self.URL)])
         self.assertEqual(
-            self.read('SELECT "action" FROM interventions'), [("babysit",)])
+            self.read('SELECT "action" FROM interventions'
+                      " WHERE action != 'migrate'"), [("babysit",)])
 
 
     # What GitHub says about a parked pull request when the reconcile asks
@@ -811,7 +812,8 @@ class MergeModePullRequestTests(MergeModeFixture):
             self.read("SELECT status, blockedQuestion FROM tickets"),
             [("merged", None)])
         self.assertEqual(provider.states, [("iss-131", "Done")])
-        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+        self.assertEqual(self.read('SELECT "action" FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [("approve",)])
         (merge_line,) = [text for (text,) in self.read(
             "SELECT text FROM ledger WHERE kind = 'merge'")]
@@ -842,7 +844,8 @@ class MergeModePullRequestTests(MergeModeFixture):
             [("done", "merged", self.MERGE_SHA)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("merged",)])
-        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+        self.assertEqual(self.read('SELECT "action" FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [("approve",)])
 
     def test_a_github_error_leaves_the_parked_run_for_the_next_pass(self):
@@ -869,7 +872,8 @@ class MergeModePullRequestTests(MergeModeFixture):
             [("awaiting_merge_approval", None, None)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("blocked_on_operator",)])
-        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+        self.assertEqual(self.read('SELECT COUNT(*) FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(0,)])
 
         again = StubProvider()
@@ -883,7 +887,8 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("merged",)])
         self.assertEqual(again.states, [("iss-131", "Done")])
-        self.assertEqual(self.read('SELECT "action" FROM interventions'),
+        self.assertEqual(self.read('SELECT "action" FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [("approve",)])
 
     def test_an_open_pull_request_is_asked_about_once_and_left_alone(self):
@@ -899,7 +904,8 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT * FROM runs"), runs)
         self.assertEqual(self.read("SELECT * FROM tickets"), tickets)
         self.assertEqual(provider.states, [])
-        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+        self.assertEqual(self.read('SELECT COUNT(*) FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(0,)])
 
     # The open pull request as it reads with review activity on it (KO-362):
@@ -966,7 +972,8 @@ class MergeModePullRequestTests(MergeModeFixture):
              (2, "awaiting_merge_approval", None, self.T3, 1, "success",
               "approved")])
         self.assertEqual(
-            self.read('SELECT "action", source FROM interventions'),
+            self.read('SELECT "action", source FROM interventions'
+                      " WHERE action != 'migrate'"),
             [("babysit", "supervisor")])
         self.assertEqual(
             self.read("SELECT summary FROM runEvents"
@@ -985,7 +992,8 @@ class MergeModePullRequestTests(MergeModeFixture):
 
         self.assertEqual(len(asked), 4)
         self.assertNotIn("new review activity", again)
-        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+        self.assertEqual(self.read('SELECT COUNT(*) FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(1,)])
         self.assertEqual(self.read("SELECT phase, prSeenAt FROM runs"
                                    " WHERE id = 2"),
@@ -1001,7 +1009,6 @@ class MergeModePullRequestTests(MergeModeFixture):
 
         first = self.main_output(provider=StubProvider())
         second = self.main_output(provider=StubProvider())
-
         self.assertEqual(len(asked), 2)
         self.assertNotIn("review activity", first + second)
         # No `reviewDecision` in the answer is a null review, not an error.
@@ -1009,7 +1016,8 @@ class MergeModePullRequestTests(MergeModeFixture):
             self.read("SELECT phase, outcome, prSeenAt, prSeenThreads,"
                       " prSeenChecks, prSeenReview FROM runs"),
             [("awaiting_merge_approval", None, self.T1, 0, "success", None)])
-        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+        self.assertEqual(self.read('SELECT COUNT(*) FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(0,)])
 
     def test_an_unchanged_pull_request_still_refreshes_its_facts(self):
@@ -1027,16 +1035,15 @@ class MergeModePullRequestTests(MergeModeFixture):
         conn.close()
         self.fake_client(self.open_pull(self.T1, 0, checks="SUCCESS",
                                         review="APPROVED"))
-
         out = self.main_output(provider=StubProvider())
-
         self.assertNotIn("review activity", out)
         self.assertEqual(
             self.read("SELECT phase, prSeenAt, prSeenThreads, prSeenChecks,"
                       " prSeenReview FROM runs"),
             [("awaiting_merge_approval", self.T1, 0, "success",
               "approved")])
-        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+        self.assertEqual(self.read('SELECT COUNT(*) FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(0,)])
 
     def test_activity_within_the_poll_interval_waits(self):
@@ -1049,15 +1056,14 @@ class MergeModePullRequestTests(MergeModeFixture):
                          (self.T1,))
         conn.close()
         self.fake_client(self.open_pull(self.T2, 1))
-
         out = self.main_output(provider=StubProvider())
-
         self.assertIn(f"KO-131: {self.URL} has new review activity; the next"
                       " babysit round waits", out)
         self.assertIn("([merge] pr_poll_sec)", out)
         self.assertEqual(self.read("SELECT phase, prSeenAt FROM runs"),
                          [("awaiting_merge_approval", self.T1)])
-        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+        self.assertEqual(self.read('SELECT COUNT(*) FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(0,)])
 
     def test_a_low_github_budget_stops_the_pull_request_reads(self):
@@ -1069,10 +1075,8 @@ class MergeModePullRequestTests(MergeModeFixture):
         reset = "2999-01-01T00:00:00Z"
         asked = self.fake_client(self.open_pull(self.T2, 1),
                                  rate={"remaining": 200, "resetAt": reset})
-
         first = self.main_output(provider=self.provider())
         second = self.main_output(provider=self.provider())
-
         self.assertEqual(len(asked), 1)
         line = ("[holo2] GitHub's GraphQL budget is down to 200 points; no"
                 f" parked pull request is read until it resets at {reset}")
@@ -1081,7 +1085,8 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertNotIn("sent back to the babysitter", first + second)
         self.assertEqual(self.read("SELECT phase, prSeenAt FROM runs"),
                          [("awaiting_merge_approval", self.T1)])
-        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"),
+        self.assertEqual(self.read('SELECT COUNT(*) FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(0,)])
 
     def test_the_scheduler_ships_a_merged_pull_request_on_a_timer_tick(
@@ -1101,7 +1106,6 @@ class MergeModePullRequestTests(MergeModeFixture):
                 patch.object(holophyte.pool, "WAIT", pool.wait), \
                 patch.object(sys, "stdout", out):
             rc = holophyte.operator.main(self.tgt, provider)
-
         self.assertIsNone(rc)
         self.assertEqual(len(asked), 2)
         self.assertEqual(pool.timeouts, [30, 30])
@@ -1122,9 +1126,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         and nothing is recorded as a PR."""
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(push_exit=1)
-
         self.loop(Commit("the scripted work"), APPROVE, Idle(""))
-
         self.assertEqual(self.recorded(), [f"git push origin {BRANCH}"])
         self.assertFalse(self.pr_body.exists())
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
@@ -1141,9 +1143,7 @@ class MergeModePullRequestTests(MergeModeFixture):
     def test_local_merges_as_today_and_pushes_nothing(self):
         self.configure('[merge]\nmode = "local"\n')
         self.fake_route()
-
         self.loop(Commit("the scripted work"), APPROVE)
-
         self.assertEqual(self.recorded(), [])
         self.assertIn("the scripted work", self.subjects())
         self.assertNotIn(BRANCH, self.branches())

@@ -3,8 +3,10 @@
 The report shares age and host formatting with supervisor and sweep output.
 Opening the store belongs to the callers in operator and supervisor.
 """
+import json
 import statistics
 import time
+from datetime import datetime, timezone
 
 import store.read
 from holophyte.config_tables import report_config
@@ -14,6 +16,28 @@ from store.working import effective_work
 REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome",
                   "rejected", "host")
 REPORT_GAP = "  "
+
+
+def migration_line(note, version):
+    detail = json.loads(note)
+    at = datetime.fromtimestamp(detail["at"] / 1000, timezone.utc).isoformat()
+    argv = detail["argv"]
+    return (f"store schema {version} (migrated from {detail['from']} at {at}"
+            f" by {detail['build']}, pid {detail['pid']},"
+            f" {argv[0] if argv else 'unknown'})")
+
+
+def migration_header(conn):
+    """The latest recorded migration, absent on stores with no such history."""
+    if "note" not in {r[1] for r in conn.execute("PRAGMA table_info(interventions)")}:
+        return []
+    row = conn.execute(
+        "SELECT note FROM interventions WHERE action = 'migrate'"
+        " AND note IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+    if row is None:
+        return []
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    return [migration_line(row[0], version)]
 
 
 def live_rows(conn):

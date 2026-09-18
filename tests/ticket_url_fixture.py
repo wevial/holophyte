@@ -49,7 +49,8 @@ def assert_schema_url(case):
                 "PRAGMA table_info(tickets)")])
             case.assertEqual(conn.execute("SELECT url FROM tickets").fetchone(),
                              (None,))
-            case.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (23,))
+            case.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                             (store.schema.SCHEMA_VERSION,))
         finally:
             conn.close()
 

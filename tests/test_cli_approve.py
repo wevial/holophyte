@@ -87,7 +87,8 @@ class ApproveCliTests(unittest.TestCase):
 
     def interventions(self):
         return self.conn.execute(
-            'SELECT runId, "action" FROM interventions').fetchall()
+            'SELECT runId, "action" FROM interventions'
+            " WHERE action != 'migrate'").fetchall()
 
     def ticket_row(self):
         return self.conn.execute(
@@ -251,7 +252,6 @@ class ApproveCliTests(unittest.TestCase):
                                      "HOLO2_TEAM": "T"}), \
                 self.assertRaises(SystemExit) as raised:
             self.cli("--approve", "KO-1")
-
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("[board] project_id", str(raised.exception))
         self.assertEqual(self.ticket_row()[0], "blocked_on_operator")

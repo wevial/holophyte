@@ -101,7 +101,8 @@ class LedgerWindowTests(ServeTestCase):
         started = self.now - 60 * MIN
         self.t1, self.t2, self.t3 = (started + 5 * MIN, started + 10 * MIN,
                                      started + 20 * MIN)
-        conn = store.open(str(self.db))
+        with patch("store.schema.time.time", return_value=started / 1000):
+            conn = store.open(str(self.db))
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -221,7 +222,8 @@ class LedgerWaitTests(ServeTestCase):
 
     @staticmethod
     def interventions(entries):
-        return [e for e in entries if e["kind"] == "intervention"]
+        return [e for e in entries if e["kind"] == "intervention"
+                and e.get("action") != "migrate"]
 
     def test_a_resume_clears_the_question_and_the_redirect_pairs_with_nothing(self):
         now = int(time() * 1000)
@@ -414,12 +416,10 @@ class RunFilesTests(ServeTestCase):
         self.assertEqual(code, 409, body)
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn(self.branch, body["error"])
-
         self.set_branch(None)
         code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
         self.assertEqual(code, 409, body)
         self.assertIn("error", body)
-
         code, _headers, body = self.request("GET", "/runs/999/files")
         self.assertEqual(code, 404)
         self.assertEqual(body, {"error": "no such run", "run": 999})

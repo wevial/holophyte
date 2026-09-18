@@ -87,16 +87,15 @@ class RepointFlagTests(unittest.TestCase):
 
     def test_repoint_moves_the_sha_and_prints_both(self):
         self.park()
-
         out, _ = self.cli("--repoint", "KO-1", NEW_SHA,
                           "--note", "rebased onto the filtered main")
-
         self.assertIn(OLD_SHA, out)
         self.assertIn(NEW_SHA, out)
         self.assertEqual(self.candidate_sha(), NEW_SHA)
         self.assertEqual(
             self.conn.execute('SELECT runId, "action", guidance'
-                              " FROM interventions").fetchall(),
+                              ' FROM interventions'
+                              " WHERE action != 'migrate'").fetchall(),
             [(self.run, "repoint", "rebased onto the filtered main")])
 
     def test_a_refusal_exits_non_zero_naming_the_ticket_and_writes_nothing(self):
@@ -106,7 +105,8 @@ class RepointFlagTests(unittest.TestCase):
         self.assertIn("KO-1", str(raised.exception))
         self.assertIsNone(self.candidate_sha())
         self.assertEqual(
-            self.conn.execute("SELECT COUNT(*) FROM interventions")
+            self.conn.execute('SELECT COUNT(*) FROM interventions'
+                              " WHERE action != 'migrate'")
             .fetchone(), (0,))
 
 

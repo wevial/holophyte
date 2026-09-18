@@ -35,6 +35,7 @@ class UnitActionCases:
         try:
             rows = conn.execute(
                 'SELECT runId, source, "trigger", "action" FROM interventions'
+                " WHERE action != 'migrate'"
             ).fetchall()
             entries = store.read.ledger(conn, self.run)
         finally:

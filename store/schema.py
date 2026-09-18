@@ -2,8 +2,15 @@
 from __future__ import annotations
 
 import contextlib
+import getpass
+import json
+import os
 import sqlite3
+import subprocess
+import sys
 import threading
+import time
+from pathlib import Path
 
 # One statement per table, in dependency order where it matters. Every
 # statement is IF NOT EXISTS, which is the whole of init()'s idempotency:
@@ -306,7 +313,7 @@ CREATE TABLE IF NOT EXISTS interventions (
     id        INTEGER PRIMARY KEY,
     runId     INTEGER REFERENCES runs (id),
     projectId INTEGER REFERENCES projects (id),
-    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human')),
+    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human', 'factory')),
     "trigger" TEXT    NOT NULL
         CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
                              'review_stuck', 'linear_cancelled',
@@ -316,16 +323,18 @@ CREATE TABLE IF NOT EXISTS interventions (
                             'close_out', 'requeue', 'approve', 'repoint',
                             'babysit', 'reconcile', 'restart_supervisor',
                             'launch_loop', 'launch_backoff', 'route_fallback',
-                            'config_edit', 'operator_note')),
+                            'config_edit', 'operator_note', 'migrate')),
+    note      TEXT,  -- store-level migration evidence as JSON
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL,
-    CHECK (runId IS NOT NULL OR projectId IS NOT NULL)
+    CHECK (runId IS NOT NULL OR projectId IS NOT NULL OR "action" = 'migrate')
 )"""
 
 
 # Version 23 mirrors Linear issue URLs for console ticket links (KO-478).
-SCHEMA_VERSION = 23
+# Version 24 records the process responsible for schema migrations (KO-495).
+SCHEMA_VERSION = 24
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -437,6 +446,7 @@ ADDED_COLUMNS = (
     ("projects", "launchBackoffUntil", "launchBackoffUntil INTEGER"),
     ("projects", "launchBackoffReason", "launchBackoffReason TEXT"),
     ("runEvents", "projectId", "projectId INTEGER REFERENCES projects (id)"),
+    ("interventions", "note", "note TEXT"),
     ("interventions", "projectId", "projectId INTEGER REFERENCES projects (id)"),
     ("runs", "workingMs", "workingMs INTEGER"),
     ("runs", "workStartedAt", "workStartedAt INTEGER"),
@@ -587,6 +597,7 @@ def init(conn):
     # `_transaction()`'s docstring warns joined writers about.
     try:
         conn.execute("BEGIN IMMEDIATE")
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.execute(_INTERVENTIONS_DDL)
         for table, column, ddl in ADDED_COLUMNS:
             # A misspelled table name leaves `columns` empty and the ALTER
@@ -605,6 +616,8 @@ def init(conn):
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
         # version means.
+        if version < SCHEMA_VERSION:
+            _record_migration(conn, version)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
         if conn.execute("PRAGMA foreign_key_check").fetchall() != foreign_key_errors:
             raise sqlite3.IntegrityError("foreign key violation during migration")
@@ -636,6 +649,25 @@ def _widen_runs_outcomes(conn):
             conn.execute(sql)
 
 
+def _record_migration(conn, version):
+    """Identify the running code and process inside the migration transaction."""
+    try:
+        build = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True, text=True, check=True, timeout=5,
+        ).stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        build = "unknown"
+    at = int(time.time() * 1000)
+    note = json.dumps({"from": version, "to": SCHEMA_VERSION, "build": build,
+                       "pid": os.getpid(), "ppid": os.getppid(),
+                       "argv": sys.argv, "user": getpass.getuser(), "at": at})
+    conn.execute(
+        'INSERT INTO interventions (source, "trigger", action, note, at)'
+        " VALUES ('factory', 'manual', 'migrate', ?, ?)", (note, at))
+
+
 def _widen_interventions_action(conn):
     """Rebuild `interventions` when its action CHECK predates 'repoint',
     'shepherd', 'reconcile', the daemon's unit actions, 'config_edit' or
@@ -653,7 +685,8 @@ def _widen_interventions_action(conn):
     if all(value in admitted
            for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
                          "'restart_supervisor'", "'launch_loop'",
-                         "'config_edit'", "'launch_backoff'", "'route_fallback'")):
+                         "'config_edit'", "'launch_backoff'", "'route_fallback'",
+                         "'migrate'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -672,10 +705,10 @@ def _widen_interventions_action(conn):
         conn.execute(
             "INSERT INTO interventions"
             ' (id, runId, source, "trigger", "action", question, guidance, at,'
-            ' projectId)'
+            ' projectId, note)'
             ' SELECT id, runId, source, "trigger",'
             "   CASE \"action\" WHEN 'shepherd' THEN 'babysit'"
-            '   ELSE "action" END, question, guidance, at, projectId'
+            '   ELSE "action" END, question, guidance, at, projectId, note'
             " FROM interventions_old")
         conn.execute("DROP TABLE interventions_old")
 

@@ -25,7 +25,7 @@ from holophyte.reconcile import (
     _reconcile_pull_requests,
 )
 from holophyte.reexec import reexec_self
-from holophyte.report import report_lines
+from holophyte.report import migration_header, report_lines
 from holophyte.runs import open_store
 from holophyte.startup import banner
 from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
@@ -241,6 +241,8 @@ def report(target, conn=None, out=None, now=None):
     owned = conn is None
     conn = conn if conn is not None else store.open(target.store_path, migrate=False)
     try:
+        for line in migration_header(conn):
+            print(line, file=out)
         print("\n".join(report_lines(conn, target)), file=out)
         print(f"findings: {report_config(target).findings}", file=out)
         print(supervisor_liveness_line(target, conn, now), file=out)
@@ -304,13 +306,13 @@ def _requeue_candidate(conn, ticket_id):
     if ticket is None or ticket.activeRunId is not None \
             or ticket.lastRunId is None:
         return None
-    row = conn.execute("SELECT outcome, outcomeReason, prUrl FROM runs"
+    row = conn.execute("SELECT outcome, phase, prUrl FROM runs"
                        " WHERE id = ?", (ticket.lastRunId,)).fetchone()
     if not row or row[0] != "failed":
         return None
     if ticket.status == "in_flight" or (
             ticket.status == "blocked_on_operator"
-            and store.is_gate_conflict(row[1])):
+            and row[1] != "awaiting_merge_approval"):
         return ticket.lastRunId, row[2]
     return None
 

@@ -67,12 +67,14 @@ class RecordInterventionTests(InterventionFixture):
             "operator closed the run out by hand", now=T0 + MINUTE)
 
         (row,) = self.rows(
-            'SELECT runId, source, "trigger", "action", at FROM interventions')
+            'SELECT runId, source, "trigger", "action", at FROM interventions'
+            " WHERE action != 'migrate'")
         self.assertEqual(row, (self.run, "human", "manual", "close_out",
                                T0 + MINUTE))
         # The id handed back is the interventions row's, not the runEvent's
         # — the hazard of reading lastrowid after a second INSERT.
-        self.assertEqual(self.rows("SELECT id FROM interventions"), [(rid,)])
+        self.assertEqual(self.rows('SELECT id FROM interventions'
+                                   " WHERE action != 'migrate'"), [(rid,)])
         (summary,) = [s for (s,) in self.rows(
             "SELECT summary FROM runEvents WHERE kind = 'intervention'")]
         self.assertIn("human close_out", summary)
@@ -90,7 +92,8 @@ class RecordInterventionTests(InterventionFixture):
         with self.assertRaises(ValueError):
             store.record_intervention(self.conn, 999, "close_out", "no run")
 
-        self.assertEqual(self.rows("SELECT * FROM interventions"), [])
+        self.assertEqual(self.rows('SELECT * FROM interventions'
+                                   " WHERE action != 'migrate'"), [])
         self.assertEqual(
             self.rows("SELECT * FROM runEvents WHERE kind = 'intervention'"),
             [])
@@ -99,7 +102,8 @@ class RecordInterventionTests(InterventionFixture):
         store.record_intervention(self.conn, self.run, "close_out",
                                   "swept", source="supervisor")
 
-        self.assertEqual(self.rows("SELECT source FROM interventions"),
+        self.assertEqual(self.rows('SELECT source FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [("supervisor",)])
 
     def test_a_redirect_requires_and_records_its_question(self):
@@ -113,7 +117,8 @@ class RecordInterventionTests(InterventionFixture):
             trigger="off_criteria", question="is this in scope?")
 
         self.assertEqual(
-            self.rows('SELECT "action", question FROM interventions'),
+            self.rows('SELECT "action", question FROM interventions'
+                      " WHERE action != 'migrate'"),
             [("redirect", "is this in scope?")])
 
     def test_the_python_unions_match_the_database_checks(self):
@@ -147,7 +152,8 @@ class MigrationTests(InterventionFixture):
         store.record_intervention(self.conn, self.run, "close_out", "repair")
 
         self.assertEqual(
-            self.rows('SELECT "action" FROM interventions ORDER BY id'),
+            self.rows('SELECT "action" FROM interventions'
+                      " WHERE action != 'migrate' ORDER BY id"),
             [("resume",), ("close_out",)])
 
     def test_a_second_init_leaves_the_rebuilt_table_alone(self):
@@ -187,7 +193,8 @@ class MigrationTests(InterventionFixture):
             store.init(self.conn)  # the retry fails the same way
 
         self.assertIn("reference runs", str(caught.exception))
-        self.assertEqual(self.rows('SELECT runId, "action" FROM interventions'),
+        self.assertEqual(self.rows('SELECT runId, "action" FROM interventions'
+                                   " WHERE action != 'migrate'"),
                          [(999, "resume")])
         self.assertEqual(self.rows("SELECT name FROM sqlite_master"
                                    " WHERE name = 'interventions_old'"), [])
@@ -214,14 +221,12 @@ class WalkTicketTests(InterventionFixture):
 
         with self.assertRaises(store.tickets.IllegalTransition):
             store.tickets.walk_ticket(self.conn, ticket, "ready")
-
         self.assertEqual(
             self.rows(f"SELECT status FROM tickets WHERE id = {ticket}"),
             [("merged",)])
 
     def test_walking_to_the_current_status_is_a_no_op(self):
         ticket = self.a_ticket("KO-4")
-
         self.assertEqual(store.tickets.walk_ticket(self.conn, ticket, "ready"), ())
 
     def test_an_unknown_status_is_refused(self):
@@ -280,16 +285,15 @@ class RequeueTests(InterventionFixture):
     def test_a_failed_ticket_is_requeued_with_its_intervention_row(self):
         self.fail_the_run()
         self.assertFalse(store.tickets.pickable(self.conn, self.ticket))
-
         run_id = store.requeue(self.conn, self.ticket, "contract fixed",
                                now=T0 + 2 * MINUTE)
-
         self.assertEqual(run_id, self.run)
         self.assertEqual(self.ticket_status(), "ready")
         self.assertTrue(store.tickets.pickable(self.conn, self.ticket))
         self.assertEqual(
             self.rows('SELECT runId, "action", source, "trigger", at'
-                      " FROM interventions"),
+                      ' FROM interventions'
+                      " WHERE action != 'migrate'"),
             [(self.run, "requeue", "human", "manual", T0 + 2 * MINUTE)])
         (summary,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
@@ -302,50 +306,48 @@ class RequeueTests(InterventionFixture):
         # active run, the case a requeue must never touch.
         with self.assertRaises(store.RequeueRefused) as refused:
             store.requeue(self.conn, self.ticket, "too soon")
-
         self.assertIn(f"run {self.run} is still live", str(refused.exception))
         self.assertEqual(self.ticket_status(), "in_flight")
-        self.assertEqual(self.rows("SELECT * FROM interventions"), [])
+        self.assertEqual(self.rows('SELECT * FROM interventions'
+                                   " WHERE action != 'migrate'"), [])
 
     def test_a_ticket_already_ready_is_refused_and_nothing_is_written(self):
         self.fail_the_run()
         store.requeue(self.conn, self.ticket, "contract fixed")
-        before = self.rows("SELECT * FROM interventions")
-
+        before = self.rows('SELECT * FROM interventions'
+                           " WHERE action != 'migrate'")
         with self.assertRaises(store.RequeueRefused) as refused:
             store.requeue(self.conn, self.ticket, "again")
-
         self.assertIn("is ready, not in_flight", str(refused.exception))
-        self.assertEqual(self.rows("SELECT * FROM interventions"), before)
+        self.assertEqual(self.rows('SELECT * FROM interventions'
+                                   " WHERE action != 'migrate'"), before)
 
     def test_an_unknown_ticket_is_refused_and_nothing_is_written(self):
         with self.assertRaises(store.RequeueRefused) as refused:
             store.requeue(self.conn, 999, "who?")
-
         self.assertIn("999", str(refused.exception))
-        self.assertEqual(self.rows("SELECT * FROM interventions"), [])
+        self.assertEqual(self.rows('SELECT * FROM interventions'
+                                   " WHERE action != 'migrate'"), [])
 
     def test_a_ticket_whose_last_run_merged_is_refused(self):
         # Out of scope by name: a merged run is not a failure to recover
         # from, so the status stays where the merge left it.
         store.release(self.conn, self.run, "merged", now=T0 + MINUTE)
         store.tickets.transition(self.conn, self.ticket, "merged")
-
         with self.assertRaises(store.RequeueRefused) as refused:
             store.requeue(self.conn, self.ticket, "why not")
-
         self.assertIn("merged", str(refused.exception))
         self.assertEqual(self.ticket_status(), "merged")
-        self.assertEqual(self.rows("SELECT * FROM interventions"), [])
+        self.assertEqual(self.rows('SELECT * FROM interventions'
+                                   " WHERE action != 'migrate'"), [])
 
     def test_a_blank_note_is_refused_and_nothing_is_written(self):
         self.fail_the_run()
-
         with self.assertRaises(ValueError):
             store.requeue(self.conn, self.ticket, "   ")
-
         self.assertEqual(self.ticket_status(), "in_flight")
-        self.assertEqual(self.rows("SELECT * FROM interventions"), [])
+        self.assertEqual(self.rows('SELECT * FROM interventions'
+                                   " WHERE action != 'migrate'"), [])
 
 
 class RequeueMigrationTests(InterventionFixture):
@@ -364,7 +366,6 @@ class RequeueMigrationTests(InterventionFixture):
         self.conn.commit()
         self.conn.close()
         path = str(self.root / "store.sqlite3")
-
         conn = store.open(path)
         self.addCleanup(conn.close)
         # And `open()` on a stamped-2 file runs the ladder itself; a second
@@ -372,10 +373,9 @@ class RequeueMigrationTests(InterventionFixture):
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
                          store.SCHEMA_VERSION)
         store.requeue(conn, self.ticket, "contract fixed")
-
         self.assertEqual(
             conn.execute('SELECT runId, "action" FROM interventions'
-                         " ORDER BY id").fetchall(),
+                         " WHERE action != 'migrate' ORDER BY id").fetchall(),
             [(self.run, "close_out"), (self.run, "requeue")])
         self.assertEqual(
             conn.execute("SELECT status FROM tickets WHERE id = ?",

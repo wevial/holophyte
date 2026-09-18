@@ -353,7 +353,7 @@ class ReportTests(ReportStoreCase):
             with no_network(), patch.object(sys, "stdout", out):
                 holophyte.cli.cli(["--report", str(self.target)])
 
-        printed = out.getvalue().splitlines()
+        printed = out.getvalue().splitlines()[1:]
         self.assertEqual(printed[:2], ["in flight: none", ""])
         # The table is the five lines it always was, and below it the
         # `[report] findings` mode -- the default, nothing configured -- and
@@ -424,7 +424,7 @@ class HostLabelTests(ReportStoreCase):
         self.assertNotIn(hostname, rendered)
         # Every recorded host is the label; the NULL row stays unknown, as
         # the store does not know the pre-column run ran on this writer.
-        self.assertEqual([line.split()[-1] for line in printed[3:6]],
+        self.assertEqual([line.split()[-1] for line in printed[4:7]],
                          [self.LABEL, "?", self.LABEL])
         self.assertRegex(printed[-1],
                          rf"^supervisor: live, .* \(pid 4242 on {self.LABEL}\)$")
