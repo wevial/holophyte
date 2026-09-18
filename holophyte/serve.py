@@ -47,15 +47,18 @@ stay open so the page can load and learn where its peers are. A loopback
 bind ignores the key for its reads. The token is never printed or logged.
 
 `[serve] actions = true` (KO-348) is the one exception to read-only: it
-opens three `POST /actions/...` routes behind the token, each a legal
+opens four `POST /actions/...` routes behind the token, each a legal
 rung of the operator ladder -- `restart-supervisor` and `launch-loop` run
 `systemctl --user` against the deploy units named by `[serve] name`, and
 `requeue` is `store.requeue()`, what `--requeue KO-n --note TEXT` does.
+`send-back` records a private maintainer note and releases the parked
+candidate for another babysit pass, without posting the note to GitHub.
 The actions demand the token on every bind, loopback included -- a bind
 address guards reads, not a hand on the units -- so the opt-in needs
 `[serve] token_file` and binding without one is a startup error. Each
-records its `store.record_intervention()` row before it acts and answers
-`{"action", "ok", "detail"}`; a `systemctl` that fails is `ok: false`
+records its `store.record_intervention()` row before it acts. Unit actions
+and requeue answer `{"action", "ok", "detail"}`; send-back success returns
+`{"ok", "run", "event_id"}`. A `systemctl` that fails is `ok: false`
 carrying its stderr, never a 500, and an action that cannot be recorded
 does not run. Off, every `/actions/` path is 404 and this module still
 opens no write connection.
@@ -118,6 +121,7 @@ from holophyte.serve_actions import (
     REQUEUE_ACTION,
     parse_action_body,
     requeue_action,
+    send_back_action,
     unit_action,
 )
 from holophyte.serve_config import (
@@ -228,14 +232,14 @@ def status(target, now=None, started_ms=None):
     # `time_box_ms` is the box the run is counted against -- the estimate
     # scaled by `[agents] budget_scale` -- so the console's time-box bar and
     # the sweep agree with the cap the loop armed. `thresholds.run_cap` is
-    # the hard ceiling in multiples of that box, so the bar can draw it.
-    from holophyte.serve_runs import active_routes
+    from holophyte.serve_runs import active_routes, workers_on_previous_build
 
     scale = budget_scale(target)
     return 200, {
         "target": str(target.path),
         "project": str(target.path),
         "active_routes": active_routes(target),
+        "workers_on_previous_build": workers_on_previous_build(target),
         "host": host_label(target, socket.gethostname()),
         "now": now,
         "daemon": {"started_ms": started_ms, "pid": os.getpid()},
@@ -687,7 +691,11 @@ class StatusHandler(BaseHTTPRequestHandler):
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
-        if action == REQUEUE_ACTION:
+        if action == "send-back":
+            code, body = send_back_action(self.server.target, body.get("run"),
+                                          body.get("note"),
+                                          body.get("author", "maintainer"))
+        elif action == REQUEUE_ACTION:
             code, body = requeue_action(self.server.target, body)
         else:
             code, body = unit_action(self.server.target, action,

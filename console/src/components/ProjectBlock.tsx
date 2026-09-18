@@ -54,6 +54,11 @@ export function ProjectBlock({
           on <strong className="font-bold">{status.host}</strong> · supervisor {stale ? "stale" : supervisor.state} ·{" "}
           {heartbeat}
         </span>
+        {(status.workers_on_previous_build ?? 0) > 0 && (
+          <span className="text-[12px] text-faint">
+            {status.workers_on_previous_build} {status.workers_on_previous_build === 1 ? "worker" : "workers"} on previous build
+          </span>
+        )}
         {Object.entries(status.active_routes ?? {}).filter(([, route]) => route.fallback).map(([seat, route]) => (
           <span key={seat} title={route.command ?? ""} className="rounded-chip border border-chip-border px-2 py-[2px] text-[12px] text-ink">
             {seat}: fallback ({/devin/i.test(route.command ?? "") ? "Devin" : /codex/i.test(route.command ?? "") ? "Codex" : route.command})

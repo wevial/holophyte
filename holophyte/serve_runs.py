@@ -11,14 +11,15 @@ from urllib.parse import parse_qs
 import store.read
 from holophyte.config import budget_scale
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
+from holophyte.pool_handoff import workers_on_previous_build  # noqa: F401
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.target import worktree_path
+from store.operator_notes import round_notes
 from store.working import effective_work
 
-# The two `origin` shapes a merge commit can link into: `https://HOST/OWNER/
-# REPO(.git)` and `git@HOST:OWNER/REPO(.git)`. Anything else is not a web
-# page the daemon can name, so its rows carry no link. Each segment is one
+# Accepted origins: https://HOST/OWNER/REPO and git@HOST:OWNER/REPO(.git).
+# Other origins carry no link. Each segment must be one
 # plain path segment: a `?`, `#`, `@`, `:` or whitespace in it would ride
 # into the link as a query, fragment or credential, so it disqualifies the
 # remote rather than being copied through.
@@ -328,6 +329,7 @@ def run_detail(target, run_id, now=None):
     time, frozen at endedAt. The scaled time box matches `/status`. Live runs
     carry heartbeat age (null after completion) and the recorded review cap;
     old rows use MAX_ROUNDS. locate_run supplies invalid/missing 400/404/503s.
+    Rounds include the private operator notes they consumed.
     Rounds and events are oldest first; include implementer_output summaries
     for refusals and no-commit crashes, keeping full payloads in the store."""
     now = int(time() * 1000) if now is None else now
@@ -337,6 +339,7 @@ def run_detail(target, run_id, now=None):
     conn = store.read.open_readonly(target.store_path)
     try:
         rounds = store.read.rounds_of(conn, run.id)
+        notes = {r.round: round_notes(conn, run.id, r.round) for r in rounds}
         events = store.read.narrative_events(
             conn, run.id, detail_kinds=("implementer_output",))
     finally:
@@ -366,7 +369,8 @@ def run_detail(target, run_id, now=None):
         "rounds": [{"round": r.round, "started_ms": r.startedAt,
                     "ended_ms": r.endedAt, "verdict": r.verdict,
                     "reviewer_model": r.reviewerModel,
-                    "findings": json.loads(r.findings)}
+                    "findings": json.loads(r.findings),
+                    "operator_notes": notes[r.round]}
                    for r in rounds],
         "findings": [{"tone": "advisory", "message": e.summary}
                      for e in events if e.kind == "bot_finding"],

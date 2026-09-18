@@ -94,6 +94,8 @@ def report_lines(conn, target=None):
         # Both sections describe one snapshot while WAL writers keep working.
         live = live_lines(conn, int(time.time() * 1000)) + [""]
         rows = report_rows(conn)
+        from store.operator_notes import report_lines as note_lines
+        live += note_lines(conn)
     finally:
         if owns_transaction:
             conn.rollback()  # Release only our read transaction, even on errors.

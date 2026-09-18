@@ -94,6 +94,10 @@ Each module, one line:
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.
+- `holophyte/maintainer_notes.py` — private maintainer instructions as pre-approved
+  babysitter threads, contract amendments, and commit event references.
+- `store/operator_notes.py` — atomic send-back and append-only note consumption
+  evidence across attempts on the same pull request.
 - `holophyte/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysitter.py` — the babysit pass over a pull request: the
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
@@ -103,6 +107,7 @@ Each module, one line:
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
   the reads spend from.
+- `holophyte/pool_handoff.py` — schema-aware restart and child ownership across exec.
 - `holophyte/pool.py` — the worker pool and its scheduler (KO-343):
   `scheduler()` over `factory.py --worker` children under
   `[loop] workers > 1`, `worker()` as one child, the spawn and wait

@@ -340,3 +340,18 @@ test("a failed ticket's attempts affordance opens only its attempts card", async
   fireEvent.click(screen.getByText("hide attempts ▴"));
   expect(document.querySelector("[data-attempts-card]")).toBeNull();
 });
+
+
+test("parked run sends a private maintainer note to its daemon", async () => {
+  const item: AttentionItem = { kind: "pr_open", level: "attention", run: 47, ticket: "KO-7", pr_url: "https://github.com/o/r/pull/7" };
+  const { seen, fetchImpl } = fakeFetch({ ok: true, detail: "Sent back" });
+  render(<ul><AttentionRow kind="pr_open" project="repo" runId={47}
+    description={describe(item, thresholds, { now: allKinds.status.now })}
+    daemon={{ base: BASE, actions: true, fetch: fetchImpl }} /></ul>);
+  await act(async () => { fireEvent.click(button("Send back with note")); });
+  fireEvent.change(screen.getByRole("textbox", { name: "Maintainer's note" }), { target: { value: "remove the subheader" } });
+  await act(async () => { fireEvent.click(button("Send")); await settle(); });
+  expect(seen).toEqual([{ url: `${BASE}/actions/send-back`, method: "POST",
+    authorization: `Bearer ${TOKEN}`, body: { run: 47, note: "remove the subheader" } }]);
+  expect(screen.getByRole("status").textContent).toBe("Sent back");
+});

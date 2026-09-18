@@ -5,6 +5,7 @@ import { formatAge } from "../lib/format";
 import type { Fetch } from "../lib/poll";
 import type { ThreadRow } from "../lib/threads";
 import type { AttentionItem } from "../lib/types";
+import { SendBackNote } from "./SendBackNote";
 import { ActionButton } from "./ActionButton";
 import { AttemptsCard } from "./AttemptsCard";
 import { KindPill } from "./KindPill";
@@ -208,6 +209,7 @@ export function AttentionRow({
               </ActionButton>
             ))}
           </div>
+          {kind === "pr_open" && daemon?.actions && runId != null && <SendBackNote daemon={daemon} runId={runId} />}
           {detail && (
             <p
               data-action-detail

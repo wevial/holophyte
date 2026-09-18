@@ -6,6 +6,7 @@ export interface Status {
   host: string;
   now: number;
   daemon?: { started_ms: number; pid: number };
+  workers_on_previous_build?: number;
   active_routes?: Record<string, { command: string | null; fallback?: string }>;
   supervisor: Supervisor;
   thresholds: { heartbeat_stale_ms: number; strikes: number };
@@ -74,6 +75,7 @@ export interface Round {
   verdict: "pass" | "changes_requested" | "error" | string;
   reviewer_model?: string | null;
   findings: Finding[];
+  operator_notes?: { kind: "operator_note"; event_id: number; note: string; author: string }[];
 }
 
 /** The daemon's `/runs/N` body (holophyte/serve.py `run_detail()`). */

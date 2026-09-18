@@ -115,6 +115,7 @@ function Card({
             run={run}
             now={tickingNow}
           />
+          {rounds.flatMap((round) => (round.operator_notes ?? []).map((note) => <p key={note.event_id} className="mt-2 whitespace-pre-wrap text-sm">Round {round.round} · operator_note event {note.event_id} · {note.author}: {note.note}</p>))}
           {finished ? (
             <FindingsSection rounds={rounds} ledger={ledger} />
           ) : (

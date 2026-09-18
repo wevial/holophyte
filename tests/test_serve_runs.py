@@ -13,9 +13,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import test_serve  # noqa: E402 - after the insert; the SLACK tolerance
+from babysit_fixture import OperatorNoteCase  # noqa: E402
 from bot_thread_fixture import BotFindingCases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
+from pool_restart_cases import PreviousBuildCases  # noqa: E402
 from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
@@ -81,8 +83,23 @@ class LivePullRequestTests(MergeModeFixture):
         self.assertEqual(run["pr_url"], self.URL)
 
 
-class RunsTests(ServeTestCase):
+class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
+    def test_consuming_round_lists_private_note_and_report_cites_event(self):
+        run_id, event_id = self.operator_note_pass(False)
+        code, body = holophyte.serve_runs.run_detail(self.tgt, str(run_id))
+        self.assertEqual(code, 200)
+        notes = [n for r in body["rounds"] for n in r["operator_notes"]]
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(notes[0]["kind"], "operator_note")
+        self.assertEqual(notes[0]["note"], "remove the subheader")
+        self.assertEqual(notes[0]["event_id"], event_id)
+        with store.open(str(self.tgt.store_path)) as conn:
+            report = "\n".join(holophyte.report.report_lines(conn))
+        self.assertIn(f"Run {run_id} round 1: operator_note event {event_id}", report)
+        self.assertIn("remove the subheader", report)
 
+
+class RunsTests(PreviousBuildCases, ServeTestCase):
     def expected_rows(self):
         """The oracle: `report_rows()` over the same store, named by column."""
         conn = store.open(str(self.db))

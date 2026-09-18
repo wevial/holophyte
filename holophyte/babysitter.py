@@ -6,7 +6,7 @@ from time import monotonic, time
 import review_runner
 import store
 import store.read
-from holophyte import babysitter, pr, pr_status
+from holophyte import babysitter, maintainer_notes, pr, pr_status
 from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
@@ -166,7 +166,8 @@ def fix_brief(pull, addressed, ticket):
     numbered as the adjudicator saw them, and the summary line for each."""
     listing = "\n\n".join(
         f"THREAD {n} -- {where(t)} by @{t.author}\n{conversation(t)}\n"
-        f"Adjudicator: {reason}"
+        + (maintainer_notes.instruction(t) if maintainer_notes.is_note(t)
+         else f"Adjudicator: {reason}")
         for n, t, reason in addressed)
     return (
         f"Review threads on pull request {pull.url} were accepted as "
@@ -341,6 +342,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
     if pull is None:
         raise RunFailure(f"cannot read a pull request off {url!r};"
                          f" branch {branch} preserved at {sha[:12]}")
+    ticket = maintainer_notes.amended_ticket(conn, run_id, ticket, url)
     model = agent_route(target, "adjudicate")
     # A fix moves sha past the candidate covered by reviewed.
     pushed_state = (_just_pushed_state(
@@ -561,6 +563,8 @@ def _settled_or_park(target, conn, run_id, beat_s, pull, state, provider,
                      task_id, branch, sha, reviewed, refresh=None):
     from holophyte.pullrequest import _park_on_pr
     try:
+        state = state or pr_status.pr_state(target, pull)
+        state = maintainer_notes.pending_state(conn, run_id, state, pull.url)
         return _settled_state(target, conn, run_id, beat_s, pull, state, refresh)
     except WaitExpired as expired:
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
@@ -626,7 +630,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     # to HUMAN -- a person is never declined. A deleted account reads as a person:
     # silence is the safe side.
     act = merge_config(target).human_threads == "act"
-    judged = tuple(t for t in threads if act or t.author_kind == "bot")
+    judged = tuple(t for t in threads if not maintainer_notes.is_note(t)
+                   and (act or t.author_kind == "bot"))
     reply = "(no bot opened a thread; the adjudicator was not asked)"
     if judged:
         with heartbeat_while(conn, run_id, beat_s):
@@ -642,13 +647,14 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                                       state.checks, sha),
                  None, True, "", started_at=round_started,
                  route=babysitter.route_of(threads))
+    people = sum(t.author_kind not in ("bot", "maintainer") for t in threads)
     ledger(conn, run_id, task_id, "round",
            f"Babysit pass {pass_no} over {pull.url}: {len(threads)}"
            f" unresolved thread(s), checks {state.checks}\n"
-           + (f"{len(threads) - len(judged)} opened by a person, HUMAN"
+           + (f"{people} opened by a person, HUMAN"
               " before the adjudicator was asked\n" if not act else
-              f"{sum(t.author_kind != 'bot' for t in threads)} opened by a"
-              " person, judged (human_threads = act): ADDRESS is fixed and"
+              f"{people} opened by a person, judged (human_threads = act):"
+              " ADDRESS is fixed and"
               " answered, anything else is HUMAN\n")
            + f"Adjudicator verdicts:\n{reply}", provider)
     by_verdict = {v: [(n, t, verdicts[n][1]) for n, t in
@@ -673,7 +679,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     declined_open = _decline_threads(target, conn, run_id, beat_s, pull,
                                      by_verdict["DECLINE"], model)
     left_open = declined_open + tuple(
-        t for _, t, _ in by_verdict["ADDRESS"] if t.author_kind != "bot")
+        t for _, t, _ in by_verdict["ADDRESS"]
+        if t.author_kind != "bot" and not maintainer_notes.is_note(t))
     if by_verdict["HUMAN"]:
         _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
                     by_verdict["HUMAN"],
@@ -717,6 +724,10 @@ def _verdicts_by_kind(threads, judged, parsed):
     pending = iter(sorted(parsed))
     verdicts = {}
     for n, t in enumerate(threads, 1):
+        if maintainer_notes.is_note(t):
+            verdicts[n] = ("ADDRESS",
+                           f"operator_note event {maintainer_notes.event_id(t)}")
+            continue
         if t not in judged:
             verdicts[n] = ("HUMAN", "opened by a person")
             continue
@@ -740,6 +751,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         sh,
     )
     from holophyte.redact import known_secrets
+    maintainer_notes.start_fix(conn, run_id, addressed)
     fixes, timed_out = _transport_timed(target, conn, run_id, beat_s, wt, budget_min,
         goal or babysitter.fix_brief(pull, addressed, ticket))
     fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
@@ -766,6 +778,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(f"fix round for {pull.url} left the worktree"
                          f" unclean ({unclean.splitlines()[0]}); branch"
                          f" {branch} preserved at {fixed[:12]}")
+    fixed = maintainer_notes.cite_commits(wt, sha, fixed, addressed, sh)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
     if not ok:
@@ -784,6 +797,8 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     # A person's thread is theirs to close: the reply names the fix and
     # the sha, and the thread is left unresolved for its author.
     for n, thread, reason in addressed:
+        if maintainer_notes.is_note(thread):
+            continue
         _post(target, conn, run_id, beat_s, pull, thread,
               babysitter.addressed_reply(model, summaries.get(n, reason),
                                        fixed),
