@@ -1,7 +1,6 @@
 """Board conformance: shared claim and contract assertions for both providers.
 
-FileProvider uses seeded files; LinearProvider uses canned GraphQL replies
-below the provider seam, exercising parsing, workflow states and mutations.
+FileProvider uses seeded files; LinearProvider uses canned GraphQL replies.
 """
 from __future__ import annotations
 
@@ -25,6 +24,7 @@ sys.path.insert(0, str(ROOT))
 # only when a file puts it there.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import LoopFixture, no_agent_processes  # noqa: E402
+from provider_fence_fixture import FenceConformanceMixin  # noqa: E402
 
 import holophyte.operator  # noqa: E402
 import linear_provider  # noqa: E402
@@ -50,7 +50,7 @@ def ticket_body(title=TITLE, summary="The thing gets done.", criterion=CRITERION
             "min · Depends on: none\n\n## Open questions\n\n- None\n")
 
 
-class ConformanceMixin:
+class ConformanceMixin(FenceConformanceMixin):
     """The protocol's observable behavior; a board supplies `seed`, `edit`,
     `comments_on` and `self.provider`."""
 
