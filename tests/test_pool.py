@@ -16,10 +16,7 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-# `fake_agent` is a helper, not a test module: discovery never imports it, and
-# how this file is imported decides whether `tests/` is on the path at all.
-# Putting it there explicitly makes `discover -s tests` and `-m unittest
-# tests.<name>` resolve the harness the same way.
+# Resolve the harness equally under discovery and explicit module selection.
 sys.path.insert(0, str(HERE))
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
@@ -641,8 +638,10 @@ class WorkerTests(LoopFixture):
         self.assertFalse(lock.exists())
 
     def test_a_worker_with_nothing_to_claim_exits_idle(self):
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True).strip()
         rc, out = self.worker(provider=StubProvider())
-
+        self.assertEqual(out.splitlines()[0], f"[holo2 w2] factory at {sha}")
         self.assertEqual(rc, holophyte.pool.WORKER_IDLE)
         self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])
 

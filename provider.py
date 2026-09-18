@@ -94,7 +94,7 @@ class Provider(Protocol):
 
     def ready_issues(self) -> list[dict]:
         """Every task `claim_next()` would choose from, parsed, in no
-        promised order. Raise when the board cannot be asked."""
+        promised order; `updatedAt` is epoch ms or None. Raise on read failure."""
         ...
 
     def fetch_task(self, issue_id) -> dict | None:
@@ -237,6 +237,7 @@ class FileProvider:
             return None
         task = _parse(issue_id, self._path(issue_id).read_text())
         task["labels"] = self._labels(issue_id)
+        task["updatedAt"] = self._path(issue_id).stat().st_mtime_ns // 1_000_000
         return task
 
     def _labels(self, identifier):
@@ -285,7 +286,6 @@ class FileProvider:
 
 def _parse(identifier, text):
     """A ticket file as the task dict, key for key as `parse_task()` builds it.
-
     Mirrored rather than called because `linear_provider` cannot be imported
     without a configured project, which is the file board's whole case; the
     conformance suite holds the two parses to each other.

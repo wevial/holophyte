@@ -18,7 +18,6 @@ import review_runner
 import store.read
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
 from holophyte.report import REPORT_GAP, host_label
-from holophyte.runs import open_store
 
 
 def merge_lock_lines(target, conn, act=False):
@@ -193,7 +192,7 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
         return
     print("\n".join(review_container_lines(act)), file=out)
     owned = conn is None
-    conn = conn if conn is not None else open_store(target)
+    conn = conn if conn is not None else store.open(target.store_path, migrate=act)
     try:
         if now is None:
             now = int(time() * 1000)

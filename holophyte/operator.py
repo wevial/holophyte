@@ -26,10 +26,10 @@ from holophyte.reconcile import (
 from holophyte.reexec import reexec_self
 from holophyte.report import migration_header, report_lines
 from holophyte.runs import open_store
+from holophyte.startup import banner, checkout_blocked
 from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
 
-# Replace the process after a self-merge; tests observe through this seam.
-EXEC = os.execv
+EXEC = os.execv  # Replace after a self-merge; tests observe through this seam.
 
 
 def self_hosted(target):
@@ -39,9 +39,7 @@ def self_hosted(target):
 
 def main(target, provider):
     """Probe before claiming, then run serially or schedule worker children."""
-    checkout = Path(__file__).resolve().parent.parent
-    sha = sh(["git", "rev-parse", "--short", "HEAD"], checkout)
-    print(f"[holo2] factory at {sha}", flush=True)
+    banner()
     reset(target)
     try:
         knobs = loop_config(target)
@@ -199,8 +197,10 @@ def _schema_move(target):
     return None
 
 
-def _fast_forward_checkout(target):
+def _fast_forward_checkout(target, worker_pids=(), *, draining=False):
     """Best effort: unsafe or diverged checkouts still execute the disk build."""
+    if checkout_blocked(worker_pids, draining):
+        return
     try:
         if sh(["git", "branch", "--show-current"], target.path) != "main":
             raise RuntimeError("not on main")
@@ -234,12 +234,9 @@ def report(target, conn=None, out=None, now=None):
     claimed, no worktree is cut and no provider is imported -- which is what
     makes it safe to run against the store of a loop that is still working.
 
-    The one write it can make is `open_store()`'s migration: a store older
-    than the run row's estimate column is brought up to the schema this
-    queries instead of failing on the missing column, and the round counts an
-    older module never stamped are recomputed from the rounds themselves
-    rather than reported as zero. A target with no store at all is not created
-    for the sake of an empty table; it is reported.
+    An older store is refused until the loop or serve daemon migrates it.
+    A target with no store at all is not created for the sake of an empty
+    table; it is reported.
 
     Below the table, one line naming the `[report] findings` mode, so an
     operator can see whether this target has opted into rendering
@@ -253,7 +250,7 @@ def report(target, conn=None, out=None, now=None):
         print(f"[holo2] no store at {target.store_path}", file=out)
         return
     owned = conn is None
-    conn = conn if conn is not None else open_store(target)
+    conn = conn if conn is not None else store.open(target.store_path, migrate=False)
     try:
         for line in migration_header(conn):
             print(line, file=out)

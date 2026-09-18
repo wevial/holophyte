@@ -39,6 +39,7 @@ import time
 from .schema import (  # noqa: F401
     SCHEMA_VERSION,
     SchemaNewer,
+    SchemaOlder,
     _transaction,
     init,
     open,

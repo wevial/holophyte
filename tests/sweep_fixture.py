@@ -28,10 +28,10 @@ T0 = 1_700_000_000_000  # an epoch-millisecond wall clock the tests do sums on
 
 
 class Tripwire:
-    """Stands in for a module nothing may touch: every attribute raises."""
+    """Allow startup imports, but reject every attempted module API access."""
 
     def __init__(self, what):
-        object.__setattr__(self, "what", what)
+        self.what, self.__spec__ = what, None
 
     def __getattr__(self, name):
         raise AssertionError(f"{self.what}.{name} was reached")

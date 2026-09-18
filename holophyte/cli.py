@@ -13,9 +13,7 @@ is built once from the command line and handed down, and the board
 Importing this module locates no target, reads no config and touches no
 `HOLOPHYTE_HOME`.
 
-Seventh and last slice of the phase-2 module split; moved verbatim from
-`factory.py`, which keeps only `from holophyte.cli import cli` and the
-`__main__` guard.
+`factory.py` calls `cli()` through its `__main__` guard.
 """
 import argparse
 import subprocess
@@ -44,6 +42,7 @@ from holophyte.operator import (
 )
 from holophyte.pool import worker
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
+from holophyte.startup import eager_import
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
@@ -306,6 +305,7 @@ def cli(argv=None):
              "state, priority and relations stay as they are, and the stored "
              "body is read back and validated as on filing")
     args = parser.parse_args(argv)
+    eager_import()
     _file_ticket_only(parser, args)
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "

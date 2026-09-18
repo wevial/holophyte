@@ -29,7 +29,7 @@ class PoolRestartCases:
         schema.parent.mkdir()
         schema.write_text(f"SCHEMA_VERSION = {store.schema.SCHEMA_VERSION + 1}\n")
 
-        def update_checkout(_target):
+        def update_checkout(_target, _pool):
             schema.write_text(f"SCHEMA_VERSION = {store.schema.SCHEMA_VERSION}\n")
 
         with patch.object(holophyte.operator, "_fast_forward_checkout",
