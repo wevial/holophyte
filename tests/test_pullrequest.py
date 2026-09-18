@@ -1158,7 +1158,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                 patch.object(holophyte.pool, "WAIT", pool.wait), \
                 patch.object(sys, "stdout", out):
             rc = holophyte.operator.main(self.tgt, provider)
-        self.assertIsNone(rc)
+        self.assertEqual(rc, 0)
         self.assertEqual(len(asked), 2)
         self.assertEqual(pool.timeouts, [30, 30])
         self.assertEqual(len(pool.spawned), 1)

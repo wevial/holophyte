@@ -205,17 +205,17 @@ def scheduler(target, provider, knobs):
     drains and stops; only a schema move drains before re-exec.
     An idle worker pauses spawning until the next exit recounts: a sibling
     may have claimed ahead of it. Return zero for an empty, drained queue,
-    nonzero if any worker failed or stopped for a human."""
+    nonzero for a broken worker process, a human stop, or an unavailable
+    board with no live workers. Ticket run failures do not make it nonzero."""
     from holophyte.claim import _park_unlisted
     from holophyte.dispatch import _startup_sweep
     from holophyte.operator import _reexec, self_hosted
 
     conn = open_store(target)
-    pool, failed = pool_handoff.restore(target)
+    pool = pool_handoff.restore(target)
     previous = set(pool)
     slots = iter(range(pool_handoff.next_slot(pool), sys.maxsize))
     state = _PoolState(self_hosted(target), knobs.stop_on_failure)
-    state.failed = failed
     try:
         project = store.tickets.ensure_project(conn, provider.team, target.path)
         _startup_sweep(target, conn)
@@ -224,7 +224,7 @@ def scheduler(target, provider, knobs):
         while True:
             state.check_schema(target)
             if pool_handoff.prepare_restart(state, target, pool):
-                pool_handoff.save(target, pool, state.failed)
+                pool_handoff.save(target, pool)
                 _reexec(target, conn, project, state.restart_reason,
                         prepared_sha=state.prepared_sha, can_ff=state.can_ff)
                 return  # only a test's EXEC returns
@@ -237,14 +237,7 @@ def scheduler(target, provider, knobs):
             listing = None
             if state.spawning:
                 listing = pool_handoff.listing(target, conn, project, provider)
-                if listing is None:
-                    # The board could not be asked: an empty listing would
-                    # end the loop reporting a queue it never saw. Nothing
-                    # is spawned on it; a live pool recounts at its next
-                    # exit, an empty one ends the loop nonzero, as the
-                    # serial loop's claim ends it when the board is down.
-                    state.unlisted()
-                else:
+                if listing is not None:
                     # The claimable count leaves out the tickets the live
                     # workers hold -- a claim is a lease -- so the pool the
                     # queue can fill is the workers running plus what is
@@ -264,8 +257,8 @@ def scheduler(target, provider, knobs):
                           " board answers")
                     return 1
                 if state.restart and not state.stopped:
-                    # A stop takes priority: restarting would lose the failure.
-                    # The operator relaunches, as after a serial failure.
+                    # A stop takes priority: restarting would spawn again.
+                    # The operator decides when to relaunch.
                     _reexec(target, conn, project, state.restart_reason,
                             prepared_sha=state.prepared_sha, can_ff=state.can_ff)
                     return  # only a test's EXEC returns
@@ -276,26 +269,27 @@ def scheduler(target, provider, knobs):
                     _park_unlisted(conn, project,
                                    [task["id"] for task in listing])
                 print("[holo2] Linear has no ready tickets. done.")
-                return 1 if state.failed else None
+                return 1 if state.broken else 0
             timeout = None if len(pool) >= knobs.workers else knobs.tick_sec
             pid, code = WAIT({pid: child for pid, (_, child) in pool.items()},
                              timeout)
             if pid in pool:  # else the supervisor, another child, or a tick
                 state.exited(pool.pop(pid)[0], code)
                 previous.discard(pid)
-                pool_handoff.save(target, pool, state.failed, previous)
+                pool_handoff.save(target, pool, previous)
     finally:
         conn.close()
 
 
 class _PoolState:
     """Exit outcomes: failures may stop, idle pauses, self-merges restart.
-    A stop takes priority over any pending restart."""
+    A stop takes priority over any pending restart. `broken` means a worker
+    stopped for a human or exited by signal/unknown code, not a failed run."""
 
     def __init__(self, restart_after_merge, stop_on_failure):
         self.restart_after_merge = restart_after_merge
         self.stop_on_failure = stop_on_failure
-        self.failed = False
+        self.broken = False
         self.stopped = False
         self.paused = False
         self.restart = False
@@ -320,11 +314,6 @@ class _PoolState:
     def spawning(self):
         return not (self.draining or self.paused)
 
-    def unlisted(self):
-        """This tick's listing failed: no verdict on the queue, no spawn,
-        and the loop's exit is nonzero whatever the pool goes on to do."""
-        self.failed = True
-
     def exited(self, slot, code):
         """Read worker `slot`'s exit `code`; one printed line each."""
         self.paused = False
@@ -340,10 +329,11 @@ class _PoolState:
             self.paused = True
         elif code == WORKER_STOP:
             print(f"[holo2] worker {slot} stopped for a human")
-            self.failed = self.stopped = True
+            self.broken = self.stopped = True
         else:
             print(f"[holo2] worker {slot} failed (exit {code})")
-            self.failed = True
+            if code != WORKER_FAILED:
+                self.broken = True
             if self.stop_on_failure:
                 self.stopped = True
 
