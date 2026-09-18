@@ -21,14 +21,15 @@ def _just_pushed_state(target, conn, run_id, provider, task_id, branch,
         store.record_event(conn, run_id, "pull_request",
                            f"pull request head settled to {sha} after"
                            f" {reads} reads")
+    # KO-491: the park suffix counts re-reads; the settled event counts all reads.
     if state.head_sha != sha:
         _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
-                     pull, state, reviewed, head_reads=reads)
+                     pull, state, reviewed, head_rereads=reads - 1)
     return state
 
 
 def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
-                 pull, state, reviewed, head_reads=None):
+                 pull, state, reviewed, head_rereads=None):
     """Handle a terminal PR or park a head that differs from the candidate."""
     from holophyte.pullrequest import _park_on_pr
     if state.merged:
@@ -52,6 +53,7 @@ def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                     f" not the candidate {sha[:12]} this run pushed;"
                     " someone else pushed to the branch, and the"
                     " babysitter does not judge or merge their commit"
-                    + (f" ({head_reads} reads over 15 s)" if head_reads else ""),
+                    + (f" ({head_rereads} reads over 15 s)"
+                       if head_rereads else ""),
                     state.threads, reviewed=reviewed)
     return None

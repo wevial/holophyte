@@ -1,4 +1,14 @@
-"""End-to-end pull request tests using the real-repo, fake-GitHub fixture."""
+"""`holophyte.pullrequest` under `[merge] mode = "pr"`, driven end to end.
+
+The push and the open, the park on the pull request and the skip line it
+earns, the written PR text, the resume on the pull request, the parked
+pull request's fate on GitHub and on the tick, and the merge through the
+pull request's API. `MergeModeFixture` (`loop_fixture.py`) is the shared
+base: a real throwaway repo with a fake `gh` and a scripted GitHub. The
+pass over threads and checks lives in `test_babysit_pass.py`.
+
+Run: python3 -m unittest discover -s tests -p 'test_pullrequest*' -v
+"""
 from __future__ import annotations
 
 import io
@@ -14,7 +24,10 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-# Resolve fixture imports in both discovery and module invocation.
+# `fake_agent` is a helper, not a test module: discovery never imports it, and
+# how this file is imported decides whether `tests/` is on the path at all.
+# Putting it there explicitly makes `discover -s tests` and `-m unittest
+# tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
@@ -42,10 +55,17 @@ import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
 
 
 class MergeModePullRequestTests(MergeModeFixture):
-    """Opening, adopting, parking, resuming and merging pull requests."""
+    """The `[merge] mode = "pr"` tests that open, park, resume and merge
+    the pull request; the passes over threads and checks are
+    `MergeModeBabysitPassTests` (`test_babysit_pass.py`)."""
 
     def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
-        """Push, create, then park ready for human approval with main untouched."""
+        """Push, then create with the ticket title and Summary stub.
+        With green checks and `approve = "human"`, park ready to merge: the
+        URL `gh` printed is the run's `prUrl` and heads the ticket's
+        question; main is untouched, the branch and worktree stay, and the
+        run is parked alive in `awaiting_merge_approval` with its lease
+        released -- the `approve = "human"` park, with a URL."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
         provider = self.provider()
@@ -55,18 +75,28 @@ class MergeModePullRequestTests(MergeModeFixture):
 
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
+        # The seventh is the park reading the pull request once more, after
+        # the pass's own writes, for the activity mark it records (KO-362);
+        # the eighth is the pass after the park asking GitHub whether the
+        # parked pull request has been merged (KO-359).
         self.assertEqual(len(calls), 8, calls)
         self.assertEqual(calls[6:], ["gh api --hostname github.com --method"
                                      " POST graphql --input -"] * 2)
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        # Between the push and the create, the open step's lookup of an
+        # open pull request on the branch (KO-407) -- answered none here.
         self.assertEqual(calls[1], "gh api --hostname github.com --method"
                                    " POST graphql --input -")
+        # Beside the state query: the head's check runs and main's rules,
+        # so a rollup that says success before the checks have reported is
+        # not read as green.
         tip = self.git("rev-parse", BRANCH).strip()
         self.assertEqual(calls[4:6], [
             "gh api --hostname github.com --method GET"
             f" repos/example/repo/commits/{tip}/check-runs?per_page=100",
             "gh api --hostname github.com --method GET"
             " repos/example/repo/rules/branches/main"])
+        # Pin the repository to the push destination, not gh's default.
         self.assertEqual(
             calls[2],
             f"gh pr create --repo {self.ORIGIN} --base main --head {BRANCH}"
@@ -94,6 +124,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         (_, comment) = provider.comments[-1]
         self.assertIn("PR OPEN", comment)
         self.assertIn(self.URL, comment)
+        # The pass is a round of the run, stamped as the checks' pass.
         self.assertEqual(
             self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
                       " ORDER BY round")[-1],
@@ -121,7 +152,13 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(events[-1], (f"pull request open: {url}",))
 
     def test_an_open_pull_request_on_the_branch_is_adopted_not_created(self):
-        """Adopt an existing PR and reach the normal ready-to-merge park."""
+        """KO-407: a run resumed on a branch its failed predecessor left
+        open as a pull request -- the requeue scenario -- must not call
+        `gh pr create`: GitHub refuses a second open PR for one head, and
+        the run used to fail after doing everything right. The open step
+        asks GitHub first; a hit is adopted -- `runs.prUrl` is that PR --
+        and the run goes straight into a babysit pass, which here finds
+        green checks and no threads and parks "ready to merge"."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         adopted = "https://github.com/example/repo/pull/2177"
         self.fake_route(open_pr=adopted)
@@ -135,6 +172,8 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
+        # The lookup, between the push and where the create would be --
+        # and no `gh pr create` follows it.
         self.assertEqual(calls[1], "gh api --hostname github.com --method"
                                    " POST graphql --input -")
         body = json.loads((self.api_dir / "1.json").read_text())
@@ -145,6 +184,8 @@ class MergeModePullRequestTests(MergeModeFixture):
                           "branch": BRANCH})
         self.assertFalse(any(c.startswith("gh pr create") for c in calls),
                          calls)
+        # The adopted PR is babysat like an opened one: the state read is
+        # the pass's, the round is stamped, and the park names the PR.
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
         self.assertEqual(self.read(
             "SELECT summary FROM runEvents WHERE summary LIKE"
@@ -199,7 +240,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         sha, question = self.git("rev-parse", BRANCH).strip(), self.question()
         self.assertIn(f"head is {self.base[:12]}", question)
         self.assertIn(f"not the candidate {sha[:12]} this run pushed", question)
-        self.assertIn("(4 reads over 15 s)", question)
+        self.assertIn("(3 reads over 15 s)", question)
         self.assertEqual([call.args for call in sleep.call_args_list],
                          [(5,), (5,), (5,)])
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
@@ -212,7 +253,13 @@ class MergeModePullRequestTests(MergeModeFixture):
             " 'pull request head settled%'"), [])
 
     def test_an_open_pull_request_is_adopted_through_a_slashed_origin(self):
-        """Normalize a trailing origin slash before looking up an open PR."""
+        """An `origin` ending in `/` -- `https://github.com/example/repo/`
+        is a URL `git remote add` accepts -- must still reach GitHub:
+        `_origin_pull()` gluing `/pull/0` onto the slash would hand
+        `PR_URL_RE` a doubled slash it refuses, the lookup would return
+        None without asking, and `gh pr create` would fire and fail just
+        as before KO-407. With the slash normalized the branch's open PR
+        is found and adopted."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         adopted = "https://github.com/example/repo/pull/2177"
         self.fake_route(open_pr=adopted)
@@ -242,7 +289,8 @@ class MergeModePullRequestTests(MergeModeFixture):
                    " anything else.\n\nThe thing file is what changed.\n")
 
     def written_target(self):
-        """Put PR style and agent instructions on main for the worktree."""
+        """A style line, and an `AGENTS.md` on
+        main for the worktree to carry."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        'pr_style = "No ticket identifier in the title."\n')
         (self.target / "AGENTS.md").write_text(self.AGENTS_MD)
@@ -255,7 +303,10 @@ class MergeModePullRequestTests(MergeModeFixture):
             url="https://linear.app/example/issue/KO-131/add-a-thing"))
 
     def test_a_ticket_parked_on_a_pr_is_skipped_by_its_url(self):
-        """Skip the parked ticket by PR URL and merge the next ready ticket."""
+        """The park keeps the ticket in Todo, so the next pass is offered it
+        first. The skip line names the pull request and the `--approve`
+        that merges it -- not a failure -- and the ticket behind it is
+        claimed and merged in the same pass."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
