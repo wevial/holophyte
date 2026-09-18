@@ -1,5 +1,7 @@
 """Pool restart cases collected by test_pool and test_serve_runs."""
+import io
 import json
+import os
 import subprocess
 import sys
 from unittest.mock import patch
@@ -94,6 +96,74 @@ class PoolRestartCases:
         self.assertEqual(handoff["workers"], [])
 
 
+    def test_a_self_merge_re_execs_after_the_pool_drains(self):
+        provider = StubProvider(*(a_task(n) for n in range(1, 5)))
+        version = store.schema.SCHEMA_VERSION + 1
+        events = []
+        with patch.object(holophyte.operator, "EXEC",
+                          lambda *args: events.append("EXEC")), \
+                patch.object(holophyte.operator, "sh",
+                             self.fetched_git(version, events)), \
+                patch.object(holophyte.operator, "self_hosted", return_value=True):
+            pool = self.run_scheduler(3, provider, [
+                (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
+                (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
+                (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
+            ])
+
+        self.assertEqual(events, ["exit", "fetch", "exit", "exit", "merge", "EXEC"])
+        self.assertIn(f"schema {version - 1} -> {version}; draining 2 worker(s)",
+                      self.out)
+        self.assertEqual(len(pool.spawned), 3)
+
+    def test_a_failure_under_stop_on_failure_is_not_lost_to_a_self_merge(self):
+        """`workers = 2`, `stop_on_failure = true`, self-hosted: one worker
+        fails and the other merges a change to the factory itself. The stop
+        wins: no re-exec -- a restarted scheduler would spawn again and exit
+        clean -- and the stop still exits zero."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 5)))
+        execs = []
+        with patch.object(holophyte.operator, "EXEC",
+                          lambda *args: execs.append(args)), \
+                patch.object(holophyte.operator, "__file__",
+                             str(self.target / "holophyte" / "operator.py")):
+            pool = self.run_scheduler(2, provider, [
+                (holophyte.pool.WORKER_FAILED, None),
+                (holophyte.pool.WORKER_MERGED, None),
+            ])
+
+        self.assertEqual(len(pool.spawned), 2)
+        self.assertEqual(pool.alive, [])
+        self.assertEqual(execs, [])
+        self.assertEqual(self.rc, 0)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM loopRestarts"), [(0,)])
+
+
+    def test_every_spawned_worker_is_reported_by_wait(self):
+        """Real children through the real seams: a worker that exited before
+        the next spawn is still reported by `WAIT`, with its own exit code.
+        (The reviewer's reproduction: with only the pid kept, `Popen`'s
+        housekeeping reaped the first child and the second wait raised.)"""
+        children = {}  # pid -> Popen, as the scheduler hands them to WAIT
+        script = ("import os, sys;"
+                  f" sys.exit(int(os.environ['{holophyte.pool.WORKER_SLOT_ENV}']))")
+        with patch.object(sys, "orig_argv", [sys.executable, "-c", script]), \
+                patch.object(sys, "stdout", io.StringIO()):
+            first = holophyte.pool._spawn_worker(self.tgt, 1)
+            children[first.pid] = first
+            # Exited but unreaped when the second is spawned.
+            os.waitid(os.P_PID, first.pid, os.WEXITED | os.WNOWAIT)
+            second = holophyte.pool._spawn_worker(self.tgt, 2)
+            children[second.pid] = second
+            reaped = {}
+            for _ in range(2):
+                pid, code = holophyte.pool.WAIT(children, None)
+                reaped[children.pop(pid)] = code
+
+        self.assertEqual(reaped, {first: 1, second: 2})
+        self.assertEqual((first.returncode, second.returncode), (1, 2))
+
+
 class PreviousBuildCases:
     def test_previous_build_count_clears_when_inherited_child_is_reaped(self):
         self.seed()
@@ -104,7 +174,7 @@ class PreviousBuildCases:
                                  stdin=subprocess.PIPE)
         try:
             holophyte.pool_handoff.save(target, {child.pid: (1, child)})
-            inherited, _ = holophyte.pool_handoff.restore(target)
+            inherited = holophyte.pool_handoff.restore(target)
             code, _, body = self.request("GET", "/status")
             self.assertEqual(code, 200)
             self.assertEqual(body["workers_on_previous_build"], 1)

@@ -12,9 +12,9 @@ def read(target):
         return {}
 
 
-def save(target, pool, failed=False, previous=None):
+def save(target, pool, previous=None):
     previous = set(pool) if previous is None else previous
-    data = {"parent": os.getpid(), "failed": failed, "workers": [
+    data = {"parent": os.getpid(), "workers": [
         {"pid": pid, "slot": slot, "previous": pid in previous}
         for pid, (slot, _) in pool.items()]}
     path = target.store_path.with_name("pool.json")
@@ -26,11 +26,11 @@ def save(target, pool, failed=False, previous=None):
 def restore(target):
     data = read(target)
     if data.get("parent") != os.getpid():
-        return {}, False
+        return {}
     # exec preserves both pid and child ownership, including exited children
     # awaiting waitpid. Do not probe/reap them here and lose their exit status.
     return {w["pid"]: (w["slot"], SimpleNamespace(pid=w["pid"], returncode=None))
-            for w in data.get("workers", [])}, data.get("failed", False)
+            for w in data.get("workers", [])}
 
 
 def next_slot(pool):
