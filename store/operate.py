@@ -330,12 +330,14 @@ def babysit(conn, ticket_id, note, now=None, source="human"):
 
 
 def _release_parked(conn, ticket_id, action, note, reason, now,
-                    require_pr=False, source="human"):
+                    require_pr=False, source="human", guidance=None,
+                    before_release=None):
     """The transaction `approve()` and `babysit()` share: the intervention
     row with `action`, the parked run ended `abandoned` for `reason` with
     its resume point at the merge gate, the ticket walked to `ready`.
     `require_pr` refuses, before the first write, a parked run that has no
-    `prUrl`."""
+    `prUrl`. `before_release`, when supplied, records additional evidence
+    after the intervention and before release, in the same transaction."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -374,13 +376,15 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
                 " there are no threads to shepherd, and a release here would"
                 " merge the candidate -- that is --approve's to say")
         record_intervention(conn, last_run_id, action, note, now=now,
-                            source=source)
+                            source=source, guidance=guidance)
+        if before_release is not None:
+            before_release()
         release(conn, last_run_id, "abandoned", reason, now=now)
         # `release()` records a resume point for failed runs only; this one
         # is the operator's, written once the ending is stamped.
         conn.execute("UPDATE runs SET resumePhase = ? WHERE id = ?",
                      (APPROVED_RESUME_PHASE, last_run_id))
-        if action == "babysit":
+        if action in ("babysit", "operator_note"):
             conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
                          (ticket_id,))
         walk_ticket(conn, ticket_id, "ready")
@@ -674,7 +678,7 @@ INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
                         "close_out", "requeue", "approve", "repoint",
                         "babysit", "reconcile", "restart_supervisor",
                         "launch_loop", "launch_backoff", "route_fallback",
-                        "config_edit")
+                        "config_edit", "operator_note")
 
 
 def record_intervention(conn, run_id, action, note, source="human",

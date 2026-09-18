@@ -13,8 +13,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
+from serve_action_fixture import UnitActionCases  # noqa: E402
 from serve_fixture import MIN, ServeTestCase  # noqa: E402 - after the insert
 
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
@@ -24,7 +26,7 @@ import store.read  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 
 
-class ActionsTests(ServeTestCase):
+class ActionsTests(UnitActionCases, ServeTestCase):
     """`POST /actions/...` (KO-348): 404 on every daemon without `[serve]
     actions = true`; with it, the unit actions run `systemctl --user`
     against the `[serve] name` instance behind the token -- on a loopback
@@ -41,6 +43,47 @@ class ActionsTests(ServeTestCase):
         path.chmod(0o600)
         return f'[serve]\ntoken_file = "{path}"\n{extra}'
 
+    def test_send_back_records_note_and_refuses_without_writes(self):
+        self.seed()
+        self.start(self.token_config('actions = true\n'))
+        def send(note):
+            return self.request("POST", "/actions/send-back", self.BEARER,
+                                body={"run": self.run, "note": note,
+                                      "author": "maintainer"})
+        with store.open(str(self.db)) as conn:
+            before = conn.execute("SELECT COUNT(*) FROM runEvents").fetchone()
+        self.assertFalse(send("remove the subheader")[2].get("ok", False))
+        with store.open(str(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM runEvents").fetchone(),
+                             before)
+            for phase in ("verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, self.run, phase)
+            store.park(conn, self.run, "awaiting_merge_approval",
+                       pr_url="https://example.test/org/repo/pull/1")
+            store.tickets.transition(conn, 1, "blocked_on_operator")
+            before = conn.execute("SELECT COUNT(*) FROM runEvents").fetchone()
+        self.assertFalse(send("   ")[2].get("ok", False))
+        with store.open(str(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM runEvents").fetchone(),
+                             before)
+        code, _, result = send("remove the subheader")
+        self.assertEqual(code, 200)
+        self.assertTrue(result["ok"], result)
+        with store.open(str(self.db)) as conn:
+            import json
+            guidance, = conn.execute(
+                "SELECT guidance FROM interventions"
+                " WHERE action = 'operator_note'").fetchone()
+            self.assertEqual(json.loads(guidance),
+                             {"note": "remove the subheader", "author": "maintainer"})
+            payload, = conn.execute(
+                "SELECT payload FROM runEvents WHERE kind = 'operator_note'").fetchone()
+            self.assertEqual(json.loads(payload)["author"], "maintainer")
+            self.assertEqual(conn.execute("SELECT status FROM tickets").fetchone(),
+                             ("ready",))
+            self.assertEqual(conn.execute("SELECT outcome FROM runs").fetchone(),
+                             ("abandoned",))
+
     def completed(self, argv, returncode=0, stderr=""):
         return subprocess.CompletedProcess(argv, returncode, stdout="",
                                            stderr=stderr)
@@ -49,7 +92,7 @@ class ActionsTests(ServeTestCase):
         self.seed()
         self.start(self.token_config(), host="0.0.0.0")
         with patch.object(subprocess, "run") as run:
-            for action in ("restart-supervisor", "launch-loop", "requeue"):
+            for action in ("restart-supervisor", "launch-loop", "requeue", "send-back"):
                 with self.subTest(action=action):
                     code, _, body = self.request(
                         "POST", f"/actions/{action}", self.BEARER,
@@ -62,45 +105,6 @@ class ActionsTests(ServeTestCase):
             self.assertEqual(store.read.ledger(conn, self.run), [])
         finally:
             conn.close()
-
-    def test_restart_supervisor_runs_systemctl_against_the_named_instance(self):
-        self.seed()
-        self.start(self.token_config('actions = true\nname = "writer-a"\n'),
-                   host="0.0.0.0")
-        with patch.object(subprocess, "run") as run:
-            code, _, body = self.request("POST", "/actions/restart-supervisor")
-            self.assertEqual(code, 401)
-            self.assertEqual(body, {})
-            run.assert_not_called()
-
-            run.side_effect = lambda argv, **kw: self.completed(argv)
-            code, _, body = self.request("POST", "/actions/restart-supervisor",
-                                         self.BEARER)
-        self.assertEqual(code, 200)
-        self.assertEqual(body["action"], "restart-supervisor")
-        self.assertIs(body["ok"], True)
-        argv = run.call_args.args[0]
-        self.assertEqual(argv, ["systemctl", "--user", "restart",
-                                "holophyte-supervise@writer-a"])
-        self.assertEqual(run.call_args.kwargs["timeout"], 20)
-        self.assertEqual(body["recorded"], self.run)
-        # The row lands before the unit is touched: a human
-        # `restart_supervisor` intervention on the store's newest run, its
-        # ledger copy naming the unit and the route.
-        conn = store.read.open_readonly(self.db)
-        try:
-            rows = conn.execute(
-                'SELECT runId, source, "trigger", "action" FROM interventions'
-            ).fetchall()
-            entries = store.read.ledger(conn, self.run)
-        finally:
-            conn.close()
-        self.assertEqual(rows, [(self.run, "human", "manual",
-                                 "restart_supervisor")])
-        self.assertEqual([(e.kind, e.source) for e in entries],
-                         [("intervention", "operator")])
-        self.assertIn("holophyte-supervise@writer-a", entries[0].text)
-        self.assertIn("restart-supervisor", entries[0].text)
 
     def test_a_preflight_for_an_action_grants_the_post_and_its_json_body(self):
         # The console on another daemon's page asks before posting an

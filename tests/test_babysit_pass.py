@@ -13,8 +13,11 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
+# Discovery never imports `fake_agent`; put its `tests/` directory on the path.
+# Putting it there explicitly makes `discover -s tests` and `-m unittest
+# tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
-from babysit_fixture import ConflictRefusalCases, SpentCapReview  # noqa: E402
+import babysit_fixture as cases  # noqa: E402
 from bot_thread_fixture import BotThreadCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
@@ -36,7 +39,8 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
-class MergeModeBabysitPassTests(BotThreadCases, ConflictRefusalCases, MergeModeFixture):
+class MergeModeBabysitPassTests(cases.OperatorNoteCase, BotThreadCases,
+                              cases.ConflictRefusalCases, MergeModeFixture):
     """End-to-end review, fix, and merge behavior for PR babysitting."""
     def declined_thread(self, author, config=""):
         self.configure('[merge]\nmode = "pr"\n' + config)
@@ -453,7 +457,7 @@ class MergeModeBabysitPassTests(BotThreadCases, ConflictRefusalCases, MergeModeF
 
     def test_babysit_gets_a_recorded_fix_round_past_the_spent_cap(self):
         self.resume_rejected_fix()
-        review = SpentCapReview(self.db, REQUEST_CHANGES)
+        review = cases.SpentCapReview(self.db, REQUEST_CHANGES)
         fake, _ = self.loop(review, Commit("fix past cap"), APPROVE,
                             provider=self.provider())
         self.assertEqual(fake.roles, ["review", "implement", "review"])

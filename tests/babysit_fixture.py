@@ -305,3 +305,58 @@ class SpentCapReview:
                 (run_id,)).fetchone()[0]
             store.set_review_round_cap(conn, run_id, self.count)
         return self.reply.play(cwd, turn)
+
+
+class OperatorNoteCase:
+    def test_operator_note_drives_fix_without_public_posts_or_judgment(self):
+        self.operator_note_pass(False)
+
+    def test_operator_note_joins_two_judged_bot_threads(self):
+        self.operator_note_pass(True)
+
+    def test_operator_note_stays_private_when_author_is_a_configured_bot(self):
+        self.operator_note_pass(
+            False, 'bot_threads = "advisory"\nbot_logins = ["maintainer"]\n')
+
+    def operator_note_pass(self, bots, config=""):
+        import store
+        from store.operator_notes import notes, send_back
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + config)
+        self.fake_route(states=[self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
+        with store.open(str(self.tgt.store_path)) as conn:
+            run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+            note_id = send_back(conn, run_id, "remove the subheader", "maintainer")
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        threads = [self.DEFECT, self.NIT] if bots else []
+        self.serve(self.pr_state(threads), self.pr_state())
+        verdict = ([Reply("THREAD 1: ADDRESS -- crash\nTHREAD 2: ADDRESS -- style")]
+                   if bots else [])
+        fake, _ = self.loop(*verdict, Commit("apply requested changes"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, (["adjudicate"] if bots else []) + ["implement"])
+        brief = fake.turns[-1].goal
+        self.assertIn("Maintainer's instruction "
+                      "(amends the ticket where they conflict):",
+                      brief)
+        self.assertIn("remove the subheader", brief)
+        self.assertIn(f"operator_note event {note_id}",
+                      self.git("log", "-1", "--format=%B", BRANCH))
+        posts = [(kind, value) for kind, value in self.api_calls()
+                 if kind in ("reply", "resolve")]
+        self.assertEqual(len(posts), 4 if bots else 0)
+        if bots:
+            self.assertIn(self.DEFECT[3], brief)
+            self.assertIn(self.NIT[3], brief)
+            self.assertNotIn("THREAD 3 --", fake.turns[0].goal)
+            self.assertTrue(all("remove the subheader" not in str(value)
+                                for _, value in posts))
+        with store.open(str(self.tgt.store_path)) as conn:
+            current = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+            instruction, = notes(conn, current)
+            self.assertTrue(instruction["consumed"])
+            self.assertEqual(instruction["run_id"], current)
+            self.assertEqual(notes(conn, current, pending=True), [])
+
+        return current, note_id

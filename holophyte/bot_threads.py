@@ -2,6 +2,7 @@
 from dataclasses import replace
 
 import store
+from holophyte import maintainer_notes
 from holophyte.agents import agent_route
 
 
@@ -13,6 +14,9 @@ def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
 
     threads = []
     for thread in state.threads:
+        if maintainer_notes.is_note(thread):
+            threads.append(thread)
+            continue
         is_bot = thread.author_kind == "bot" or thread.author in merge.bot_logins
         human_reply = any(
             c.author_kind != "bot" and c.author not in merge.bot_logins
