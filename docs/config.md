@@ -433,6 +433,7 @@ See [the loop](loop.md) for verify points and automatic `.githooks` enablement.
 | `check_wait_sec` | Default: `1800` seconds | Integer at least 1; increase the pending-check and quiet-period wait cap for slow CI. |
 | `pr_style` | Default: `""` | String; set instructions for the title and description writer to follow repository conventions. |
 | `ui_paths` | Default: `[]` | List of non-empty repository-relative globs without `..`; set with ui_capture to identify changes needing visual evidence. |
+| `ui_capture_dir` | Default: `"e2e/capture"` | Directory named in the implementer brief for ticket capture scripts. |
 | `ui_capture` | Default: `""` | Command string with shell-style quoting but no shell evaluation; set with ui_paths to capture evidence non-interactively. |
 | `media_repo` | Default: `""` (target repository) | Empty string or GitHub `owner/name`; set a separate repository to keep evidence out of the target's git storage. |
 | `media_bucket` | Default: Absent (git publishing) | Table described under [merge.media_bucket](#mergemedia_bucket) below; set to publish evidence in S3-compatible object storage instead. |
@@ -622,7 +623,17 @@ Visual evidence is captured when the diff matches `ui_paths`. Configure it
 together with `ui_capture`; leaving both absent leaves PRs unchanged. The
 capture command receives one output-directory argument and has five minutes
 to write PNG, WebM or MP4 files. Evidence is shared with review prompts and
-PR descriptions. MB means 1,048,576 bytes: oversized files are omitted, then
+PR descriptions. A ticket may list up to six states under optional `## Evidence`,
+one per line. With capture configured, the implementer is told to add or update
+a script under `ui_capture_dir`, producing `01-slug.png`, `02-slug.png`, etc.
+in state order, plus a recording when the states describe a flow. The command
+receives `HOLOPHYTE_TICKET` and, only when states are listed,
+`HOLOPHYTE_EVIDENCE_STATES` joined with newlines. The target's own harness
+selects and runs that ticket's script. Numbered images receive state captions;
+missing images are marked "not captured" in the PR and reviewer prompt.
+Tickets without the section keep the default capture.
+
+MB means 1,048,576 bytes: oversized files are omitted, then
 videos are dropped first to fit the total cap, with each omission listed in
 Evidence. Without a bucket, `media_repo` selects a separate GitHub repository;
 otherwise evidence goes to the target repository on `pr-media/KO-n`. Image

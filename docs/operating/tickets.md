@@ -13,7 +13,8 @@ validates it. Sections, in order: an H1 title; Summary; What / Why / How
 accepted); In scope (at most three entries); Out of scope; Acceptance
 criteria (at most five, each `Given … when … then …`); Verify command(s)
 (a fenced block of relative-path, non-interactive commands; exit 0 is
-pass); optional Contract checks (`relative/path: exact literal`);
+pass); optional Contract checks (`relative/path: exact literal`); optional
+Evidence (at most six states to capture, one per line);
 Implementation notes; Estimate & dependencies (`Estimate: N min · Depends
 on: KO-n` or `none`, 30 minutes at most); Open questions (exactly
 `- None` to be claimable).

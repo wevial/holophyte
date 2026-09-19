@@ -65,14 +65,15 @@ class MediaTests(unittest.TestCase):
         file.write_text("changed")
         (self.repo / "capture.py").write_text(
             script
-            or "import sys\nfrom pathlib import Path\n"
+            or "import os, sys\nfrom pathlib import Path\n"
+            'assert "HOLOPHYTE_EVIDENCE_STATES" not in os.environ\n'
             'Path("captured").touch()\n'
             f'Path(sys.argv[1], "screen.png").write_bytes({PNG!r})\n'
         )
         self.git("add", ".")
         self.git("commit", "-qm", "candidate")
 
-    def open(self, private=False, error=None):
+    def open(self, private=False, error=None, ticket=""):
         with (
             patch(
                 "holophyte.loop._timed",
@@ -95,7 +96,7 @@ class MediaTests(unittest.TestCase):
                 "KO-505",
                 "task",
                 "candidate",
-                "",
+                ticket,
                 1,
                 self.repo,
                 monotonic(),
@@ -104,6 +105,44 @@ class MediaTests(unittest.TestCase):
         self.visibility = visibility
         self.ledger = ledger
         return create.call_args.args[3]
+
+    def test_ticket_states_reach_capture_and_review(self):
+        from holophyte.review import evidence_brief
+
+        self.config["merge"]["mode"] = "pr"
+        states = ["Guest rename dialog open", "Guest renamed"]
+        self.candidate(script="import os, sys\nfrom pathlib import Path\n"
+                       'assert os.environ["HOLOPHYTE_TICKET"] == "KO-522"\n'
+                       'assert os.environ["HOLOPHYTE_EVIDENCE_STATES"] == '
+                       f'{chr(10).join(states)!r}\n'
+                       f'Path(sys.argv[1], "01-first.png").write_bytes({PNG!r})\n')
+        with (
+            patch("holophyte.pr_media.repo_is_private", return_value=False),
+            patch("holophyte.pr.origin_url",
+                  return_value="https://github.com/example/repo.git"),
+        ):
+            section = pr_media.prepare(self.target, self.repo, "KO-522",
+                                       evidence_states=states)
+            prompt = evidence_brief(self.target, self.repo, "KO-522",
+                                    evidence_states=states)
+        self.assertIn("![Guest rename dialog open]", section)
+        for line in ("Guest rename dialog open — captured",
+                     "Guest renamed — not captured"):
+            self.assertIn(line, section)
+            self.assertIn(line, prompt)
+
+    def test_capture_brief_names_directory_and_flow_requirement(self):
+        from holophyte.loop import _capture_brief
+
+        body = "## Evidence\n\nDialog open\nName saved\n"
+        brief = _capture_brief(self.target, body)
+        self.assertIn("e2e/capture", brief)
+        self.assertIn("01: Dialog open\n02: Name saved", brief)
+        self.assertIn("NN-slug.png", brief)
+        self.assertIn("recording", brief)
+        self.config["merge"]["ui_capture_dir"] = "tests/screens"
+        self.assertIn("tests/screens", _capture_brief(self.target, body))
+        self.assertEqual(_capture_brief(self.target, "No evidence section"), "")
 
     def test_bucket_precedes_git_publishers_and_keeps_credentials_out_of_ledger(self):
         self.config["merge"]["media_repo"] = "example/media"
@@ -140,7 +179,10 @@ class MediaTests(unittest.TestCase):
     def test_missing_bucket_credentials_reach_evidence_and_review_without_http(self):
         from holophyte.review import evidence_brief
 
-        self.candidate()
+        states = ["Rename dialog open", "Name saved"]
+        ticket = "## Evidence\n\n" + "\n".join(states)
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       f'Path(sys.argv[1], "01-dialog.png").write_bytes({PNG!r})\n')
         self.config["merge"].update(mode="pr", media_bucket={
             "endpoint": "https://objects.example.invalid", "bucket": "evidence",
             "public_base": "https://media.example.invalid"})
@@ -151,8 +193,11 @@ class MediaTests(unittest.TestCase):
                     os.environ.pop(name, None)
                 # Each candidate needs a fresh receipt; review and PR share it.
                 self.git("commit", "-qm", f"candidate {index}", "--allow-empty")
-                brief = evidence_brief(self.target, self.repo, "KO-505")
-                body = self.open()
+                brief = evidence_brief(self.target, self.repo, "KO-505", states)
+                body = self.open(ticket=ticket)
+                for state in states:
+                    self.assertIn(f"{state} — not captured", body)
+                    self.assertIn(f"{state} — not captured", brief)
                 request.assert_not_called()
                 failure = next(line for line in body.splitlines()
                                if "failed to publish evidence to media bucket" in line)

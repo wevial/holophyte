@@ -346,8 +346,8 @@ class MergeConfigTests(ConfigTestCase):
     def test_an_absent_table_is_auto_and_local(self):
         self.locate()
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, 300, 1800, "", (), "", "",
-                          None, 10, 20,
+                         ("auto", "local", 5, "merge", 180, 300, 1800, "", (), "",
+                          "e2e/capture", "", None, 10, 20,
                           "park", "act", (), "holophyte", (), ("devin-ai-integration",
                            "coderabbitai", "greptile-apps", "github-actions")))
 

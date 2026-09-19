@@ -209,10 +209,9 @@ def store_status(conn, ticket_id):
 
 
 def task_contract(task):
-    """A provider task's contract as `(title, criteria, commands)`.
+    """A provider task's contract as `(title, criteria, commands, evidence_states)`.
 
-    The one mapping from the provider's shape to the store's, used by both
-    sides of the drift check: `mirror_task()` mirrors the ticket through it, so
+    Both sides use this mapping: `mirror_task()` mirrors the ticket, so
     the snapshot `store.claim()` freezes off that row is this contract, and
     `merge_drift()` snapshots the live ticket the same way. Two hand-rolled
     mappings would eventually disagree about, say, a ticket carrying no verify
@@ -221,7 +220,8 @@ def task_contract(task):
     """
     return (task["title"],
             list(task.get("criteria") or ()),
-            [task["verify"]] if task.get("verify") else [])
+            [task["verify"]] if task.get("verify") else [],
+            ticket_template.parse(task.get("body") or "").evidence_states)
 
 
 def body_problem(task, repo=None):
@@ -365,7 +365,7 @@ def mirror_task(conn, project, task, specced=True):
     `pickable()` re-parks one still blocked. `blocked_on_operator` is a
     human's and never moved.
     """
-    title, criteria, commands = task_contract(task)
+    title, criteria, commands, _states = task_contract(task)
     if not specced:
         criteria, commands = [], []
     ticket_id = store.tickets.mirror_ticket(

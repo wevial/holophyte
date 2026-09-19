@@ -9,6 +9,7 @@ from time import monotonic, time
 import review_runner
 import store
 import store.read
+import ticket_template
 from holophyte import babysitter, maintainer_notes, pr, pr_status, thread_mentions
 from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
@@ -39,8 +40,7 @@ CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
 CONVENTIONS_CAP = 4000
 
 VERDICTS = ("ADDRESS", "DECLINE", "HUMAN")
-# `THREAD 2: ADDRESS -- the null check is missing`, one per thread; the
-# separator after the verdict is whatever the model reached for.
+# Per-thread verdicts accept the model's choice of separator.
 VERDICT_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(ADDRESS|DECLINE|HUMAN)\b"
     r"\s*(?:[-–—:,]+\s*)?(.*?)\s*$", re.IGNORECASE | re.MULTILINE)
@@ -50,8 +50,7 @@ SUMMARY_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE)
 COMMENT_HEADER = "---- Comment by {model} ----"
-# How much of a thread's body the round row, the ledger and the parked
-# question carry: enough to recognise it, not the whole thread.
+# Limit thread excerpts in rounds, the ledger and parked questions.
 GIST_CHARS = 200
 
 
@@ -614,7 +613,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"{ticket}\n\n"
             + _verify_brief(verify_cmd, ok, out)
             + criteria_brief(criteria)
-            + evidence_brief(target, wt, task_id)
+            + evidence_brief(target, wt, task_id,
+                                 ticket_template.parse(ticket).evidence_states)
             + "Do not modify anything. End your reply with exactly one "
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"

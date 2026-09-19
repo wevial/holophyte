@@ -372,7 +372,8 @@ MERGE_KEYS = {
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "pr_style": "",
-    "ui_paths": (), "ui_capture": "", "media_repo": "",
+    "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
+    "media_repo": "",
     "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
     "mention_handle": "holophyte",
@@ -387,8 +388,6 @@ MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
                "pr_merge_method": MERGE_METHODS,
                "human_threads": MERGE_HUMAN_THREADS, "bot_threads": ("act", "advisory")}
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
-# The least `pr_poll_sec`: under this the loop would be polling GitHub for
-# a reviewer's next keystroke rather than their next comment.
 PR_POLL_FLOOR = 10
 MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
                     "pr_quiet_sec": 0, "check_wait_sec": 1}
@@ -422,7 +421,8 @@ def merge_config(target):
                     f" got {value!r}")
             values[key] = value
             continue
-        if key in ("pr_style", "mention_handle", "ui_capture", "media_repo"):
+        if key in ("pr_style", "mention_handle", "ui_capture",
+                   "ui_capture_dir", "media_repo"):
             if not isinstance(value, str):
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be a"
