@@ -20,6 +20,8 @@ Each module, one line:
   `holophyte/config.py` (KO-397): the `[supervisor]`, `[loop]`, `[board]`,
   `[merge]` and `[report]` tables with `CONSOLE_KEYS` and
   `split_address()`, the namedtuples and defaults they own.
+- `holophyte/failure_reason.py` — bounded failure reasons and their structured
+  event facts for verify, adjudication and fix rounds.
 - `holophyte/gates.py` — the verify gate: a ticket's command in, a red or
   green fail-loud report out.
 - `holophyte/agent_routes.py` — process-owned route state and live console snapshots.

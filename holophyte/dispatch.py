@@ -205,7 +205,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         merged = PARKED
         print(f"[holo2] run parked: {e}")
     except RunFailure as e:
-        reason = str(e)
+        reason = e.reason
         outcome_class = outcome_class_of(e)
         print(f"[holo2] run failed: {reason}")
     except Exception as e:  # noqa: BLE001 - crash containment
