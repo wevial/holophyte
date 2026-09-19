@@ -225,27 +225,20 @@ class MergeModePullRequestTests(MergeModeFixture):
             (holophyte.pr.CHECK_POLL_S, [("merge_gate",)])])
         self.assertIn("ready to merge", self.question())
 
-    def test_adopted_foreign_head_parks_after_bounded_reads(self):
+    def test_adopted_stale_head_continues_after_bounded_reads(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
         self.fake_route(open_pr=self.URL, states=[self.pr_state(head=self.base)])
         with patch.object(holophyte.pr, "SLEEP") as sleep:
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 provider=self.provider())
 
-        sha, question = self.git("rev-parse", BRANCH).strip(), self.question()
-        self.assertIn(f"head is {self.base[:12]}", question)
-        self.assertIn(f"not the candidate {sha[:12]} this run pushed", question)
-        self.assertIn("(3 reads over 15 s)", question)
+        sha = self.pushed()[-1][1]
         self.assertEqual([call.args for call in sleep.call_args_list],
                          [(5,), (5,), (5,)])
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
-        self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state"] * 4)
-        self.assertEqual(self.read("SELECT phase FROM runs"),
-                         [("awaiting_merge_approval",)])
-        self.assertEqual(self.read(
-            "SELECT summary FROM runEvents WHERE summary LIKE"
-            " 'pull request head settled%'"), [])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
+                         [sha])
 
     def test_an_open_pull_request_is_adopted_through_a_slashed_origin(self):
         """An `origin` ending in `/` -- `https://github.com/example/repo/`

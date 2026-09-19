@@ -21,10 +21,11 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
 
     What the babysitter may merge without another review is not the branch
     as it stands but the sha an independent judgement covered: the
-    operator approves the parked sha; babysit carries the park's
-    `approvedSha` -- the reviewer's approval, or None when the park had
-    none to record (a fix the reviewer rejected, a store older than the
-    column). A branch at any other sha is reviewed again before the merge
+    operator approves the parked sha; babysit reads the ticket's
+    latest independent verdict and its run's `approvedSha`. GitHub rounds
+    never approve a candidate; a rejection or missing coverage requires
+    another review even if the carried approval metadata says otherwise.
+    A branch at any other sha is reviewed again before the merge
     API is called; that is `_babysit()`'s `reviewed`.
 
     The park's verify was a process ago, so the
@@ -34,7 +35,11 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
     from holophyte.loop import _sync_branch_from_origin
 
     url = carried.pr_url
-    reviewed = carried.sha if carried.approved else carried.approved_sha
+    reviewed = carried.sha if carried.approved else None
+    if not carried.approved:
+        ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+        verdict = store.read.last_independent_verdict(conn, ticket_id)
+        reviewed = verdict[1] if verdict and verdict[0] == "pass" else None
     if sh(["git", "status", "--porcelain"], cwd=wt):
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to babysit {url} for: {task}\nthe worktree holds"
