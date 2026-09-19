@@ -169,6 +169,9 @@ CREATE TABLE IF NOT EXISTS runs (
     -- the merge API is called rather than merging on the branch's word.
     -- NULL on every run parked with no judgement to record.
     approvedSha       TEXT,
+    -- Explicit operator consent; babysit and requeue clear both (KO-513).
+    approvedAt        INTEGER,
+    approvedBy        TEXT,
     -- The review-round cap the loop gave this run: its `[loop]` review
     -- keys applied to the candidate's size, measured once before round 1
     -- (KO-299). Written by `set_review_round_cap()` where the loop computes
@@ -336,7 +339,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 23 mirrors Linear issue URLs for console ticket links (KO-478).
 # Version 24 records the process responsible for schema migrations (KO-495).
 # Version 25 mirrors board state names for attention and requeue (KO-503).
-SCHEMA_VERSION = 25
+# Version 26 records explicit human merge approval on runs (KO-513).
+SCHEMA_VERSION = 26
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -444,6 +448,8 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # ALTER TABLE preserves CHECK; UNIQUE and NOT NULL without a default require
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
+    ("runs", "approvedAt", "approvedAt INTEGER"),
+    ("runs", "approvedBy", "approvedBy TEXT"),
     ("tickets", "boardState", "boardState TEXT"),
     ("tickets", "url", "url TEXT"),
     ("projects", "launchBackoffUntil", "launchBackoffUntil INTEGER"),

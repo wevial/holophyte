@@ -363,6 +363,7 @@ def run_detail(target, run_id, now=None):
                 "commit_url": commit_url(target, run.mergeSha,
                                          origin_web_url(target)),
                 "pr_url": run.prUrl, "work_started_ms": run.workStartedAt,
+                "approved_at": run.approvedAt, "approved_by": run.approvedBy,
                 # The cap the loop gave this run; a run recorded before the
                 # store carried one answers the constant.
                 "max_rounds": run.reviewRoundCap or MAX_ROUNDS},
