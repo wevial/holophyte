@@ -20,6 +20,71 @@ T0 = 1_700_000_000_000
 
 class BabysitHelpers:
     """Shared pass setup and assertions; no discoverable test cases."""
+    def human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        request = ("@holophyte move the button\nPut it beside Save."
+                   "\n\n---- Comment by earlier-route ----"
+                   "\n\nAddressed in abc123: Earlier attempt.")
+        # The instruction is on the second page of conversation comments.
+        first = self.conversation_state(("operator", "User"), "Looks good", "c1")
+        second = self.conversation_state(("operator", "User"), request)
+        answered = self.conversation_state(("operator", "User"), request)
+        nodes = answered["data"]["repository"]["pullRequest"]["comments"]["nodes"]
+        quoted = "\n".join("> " + line for line in request.splitlines())
+        nodes.append(self.comment(2, ("writer", "User"),
+            f"> [Request by @operator]({self.URL}#discussion_r1)\n>\n"
+            f"{quoted}\n\n"
+            f"---- Comment by factory ----\n\nAddressed in {'a' * 40}: Moved it."))
+        self.resume_with_conversation(first, second, answered)
+        fake, _ = self.loop(ConversationFix("fix: move button"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement"])
+        brief = fake.turns[-1].goal
+        self.assertIn(request, brief)
+        self.assertIn("conversation on the pull request", brief)
+        self.assertIn("Instruction from @operator", brief)
+        calls = self.api_calls()
+        self.assertEqual([kind for kind, _ in calls],
+                         ["state", "state", "conversation", "state"])
+        self.assertEqual(calls[1][1]["commentsAfter"], "c1")
+        body = calls[2][1]["body"]
+        self.assertIn("> @holophyte move the button\n> Put it beside Save.", body)
+        self.assertIn("Moved the button beside Save.", body)
+        self.assertIn(self.git("rev-parse", BRANCH).strip(), body)
+        self.assertTrue(any("POST repos/example/repo/issues/7/comments" in c
+                            for c in self.recorded()))
+
+    def bot_conversation_mentions_and_unmentioned_humans_are_ignored(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'bot_authors = ["summary-service"]\n')
+        state = self.conversation_state(("operator", "User"), "Move the button")
+        nodes = state["data"]["repository"]["pullRequest"]["comments"]["nodes"]
+        nodes.extend(self.comment(n, author, "@holophyte move the button")
+                     for n, author in enumerate([
+                         ("summary-service", "User"), ("app", "Bot"),
+                         ("service[bot]", "User")], 2))
+        self.resume_with_conversation(state)
+        fake, _ = self.loop(provider=self.provider())
+        self.assertEqual(fake.roles, [])
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+
+    def resume_with_conversation(self, *states):
+        self.fake_route(states=[self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
+        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "read conversation",
+                                         out=io.StringIO())
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(*states)
+
+    def conversation_state(self, author, body, next_cursor=None):
+        state = self.pr_state()
+        comment = dict(self.comment(1, author, body), id="IC_1")
+        state["data"]["repository"]["pullRequest"]["comments"] = {
+            "nodes": [comment], "pageInfo": {
+                "hasNextPage": next_cursor is not None, "endCursor": next_cursor}}
+        return state
+
     def refresh_wait(self, changed=False, checks="SUCCESS"):
         review = self.conflict_refusal(conflict=changed)
         (self.calls.parent / "refused").touch()  # This case reports CONFLICTING.
@@ -365,3 +430,9 @@ class OperatorNoteCase:
             self.assertEqual(notes(conn, current, pending=True), [])
 
         return current, note_id
+
+
+class ConversationFix(Commit):
+    def play(self, cwd, turn):
+        super().play(cwd, turn)
+        return "THREAD 1: Moved the button beside Save."

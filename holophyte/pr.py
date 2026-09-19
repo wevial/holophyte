@@ -110,10 +110,7 @@ class PullRequest:
 
 @dataclass(frozen=True)
 class Comment:
-    """One comment in a thread: who wrote it, what kind of account GitHub
-    says that is (`author_kind`: `"user"` for a person, `"bot"` for an
-    App, `"unknown"` for a deleted account or an answer without a type),
-    and what it says."""
+    """Comment text and author, whose kind is user, bot, or unknown."""
 
     author: str
     body: str
@@ -122,11 +119,7 @@ class Comment:
 
 @dataclass(frozen=True)
 class Thread:
-    """One unresolved review thread: where it is, who opened it, what it
-    says (the opening comment's body), where to read it, and the
-    follow-ups (`replies`, oldest first) -- the conversation as it stands,
-    since a thread's latest comment may turn a finding into a question or
-    a rejection that the opening comment alone does not show."""
+    """A review thread or conversation instruction, with replies oldest first."""
 
     id: str
     path: str
@@ -140,6 +133,7 @@ class Thread:
     # bot's thread and leaves a person's to the operator; `"unknown"` --
     # the default, and a deleted account -- is treated as a person's.
     author_kind: str = "unknown"
+    kind: str = "review"
     classification: str = ""
     request: str = ""
 
@@ -531,6 +525,12 @@ def _comment_url(node):
 def reply_thread(target, pull, thread_id, body):
     """Post `body` as a reply on review thread `thread_id`."""
     graphql(target, pull, REPLY_MUTATION, {"thread": thread_id, "body": body})
+
+
+def comment_on_pull(target, pull, body):
+    """Post a new conversation comment on the pull request."""
+    rest(target, pull, "POST",
+         f"repos/{pull.repo}/issues/{pull.number}/comments", {"body": body})
 
 
 def resolve_thread(target, pull, thread_id):

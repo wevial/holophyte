@@ -14,6 +14,7 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
 from holophyte.config_tables import merge_config
+from holophyte.conversation_comments import quote_request
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -61,7 +62,9 @@ def gist(text, limit=GIST_CHARS):
 
 
 def where(thread):
-    """`path:line` for a thread, or the path alone, or `(no file)`."""
+    """A review location or pull request conversation label."""
+    if thread.kind == "conversation":
+        return "conversation on the pull request"
     if not thread.path:
         return "(no file)"
     return f"{thread.path}:{thread.line}" if thread.line else thread.path
@@ -739,12 +742,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                     for t in state.threads)
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
-    # Under `human_threads = "park"` a thread a person opened is the operator's whatever
-    # it says: HUMAN before the adjudicator is asked, which sees the bots' threads
-    # alone, renumbered so its reply and `parse_verdicts()` agree. Under `"act"` a
-    # person's threads are judged too, but only an ADDRESS stands: anything else folds
-    # to HUMAN -- a person is never declined. A deleted account reads as a person:
-    # silence is the safe side.
+    # Park unmentioned human threads unless human_threads = "act".
+    # Mentions are instructions; bots alone enter adjudication under park.
     act = merge.human_threads == "act"
     judged = tuple(t for t in threads if not maintainer_notes.is_note(t)
                    and t.classification != "MENTIONED"
@@ -936,8 +935,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         pr.push_branch(target, branch)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
     summaries = babysitter.parse_summaries(fixes)
-    # A person's thread is theirs to close: the reply names the fix and
-    # the sha, and the thread is left unresolved for its author.
+    # Human review threads stay open unless explicitly addressed to the factory.
     for n, thread, reason in addressed:
         if maintainer_notes.is_note(thread):
             continue
@@ -950,17 +948,19 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
 
 
 def _post(target, conn, run_id, beat_s, pull, thread, body, resolve):
-    """Reply `body` on `thread`, resolving it when `resolve`; each landed
-    call is a `runEvents` row for an interrupted pass to read back."""
+    """Reply and optionally resolve a review thread; record each landed call."""
     with heartbeat_while(conn, run_id, beat_s):
-        pr.reply_thread(target, pull, thread.id, body)
+        if thread.kind == "conversation":
+            pr.comment_on_pull(target, pull, f"{quote_request(thread)}\n\n{body}")
+        else:
+            pr.reply_thread(target, pull, thread.id, body)
         if thread.classification == "MENTIONED":
             record_instruction_reply(conn, run_id, thread.url, "changed", body)
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "pull_request",
                                f"replied on thread {thread.url}:"
                                f" {babysitter.gist(body.splitlines()[-1])}")
-        if resolve:
+        if resolve and thread.kind != "conversation":
             pr.resolve_thread(target, pull, thread.id)
             if conn is not None and run_id is not None:
                 store.record_event(conn, run_id, "pull_request",
