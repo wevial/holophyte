@@ -344,18 +344,25 @@ class MergeConfigTests(ConfigTestCase):
     """Merge defaults, overrides, and startup validation."""
     def test_an_absent_table_is_auto_and_local(self):
         self.locate()
-
         self.assertEqual(config_tables.merge_config(self.tgt),
-                         ("auto", "local", 5, "merge", 180, 300, 1800, "", (), "",
+                         ("auto", "local", 5, "merge", 180, 300, 1800, "", (), "", "",
                           "park", "act", (), "holophyte", (), ("devin-ai-integration",
                            "coderabbitai", "greptile-apps", "github-actions")))
+
+    def test_media_repo_validation(self):
+        for value in ('"not-a-repo"', '"../repo"', '"owner/.."', '3'):
+            message = refused(self, f"[merge]\nmedia_repo = {value}\n")
+            self.assertIn("media_repo", message)
+            self.assertIn("owner/name", message)
+        self.locate('[merge]\nmedia_repo = "example/media"\n')
+        self.assertEqual(config_tables.merge_config(self.tgt).media_repo,
+                         "example/media")
 
     def test_after_is_read_as_a_list_of_commands(self):
         """`after` is the console build the daemon's bundle depends on, in
         order; absent, nothing runs after a merge (KO-347)."""
         self.locate('[merge]\nafter = ["bun --cwd=console run build",'
                     ' "sh -c true"]\n')
-
         self.assertEqual(config_tables.merge_config(self.tgt).after,
                          ("bun --cwd=console run build", "sh -c true"))
 
@@ -374,7 +381,6 @@ class MergeConfigTests(ConfigTestCase):
         """`human_threads = "act"` lets the babysitter act on a person's
         thread; absent, it is `"park"`, KO-327's rule."""
         self.locate('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
-
         self.assertEqual(
             config_tables.merge_config(self.tgt).human_threads, "act")
 
@@ -382,7 +388,6 @@ class MergeConfigTests(ConfigTestCase):
         """A squash-only repository names its method; absent, it is
         `"merge"`, the merge commit the babysitter has always asked for."""
         self.locate('[merge]\nmode = "pr"\npr_merge_method = "squash"\n')
-
         self.assertEqual(
             config_tables.merge_config(self.tgt).pr_merge_method, "squash")
 
@@ -390,7 +395,6 @@ class MergeConfigTests(ConfigTestCase):
         """The least interval between two loop-started babysit rounds on
         one pull request; absent, three minutes (KO-362)."""
         self.locate('[merge]\nmode = "pr"\npr_poll_sec = 60\n')
-
         self.assertEqual(
             config_tables.merge_config(self.tgt).pr_poll_sec, 60)
 
@@ -408,23 +412,19 @@ class MergeConfigTests(ConfigTestCase):
         """How long a green, thread-free pull request must have stood
         before the babysitter merges it; absent, five minutes (KO-429)."""
         self.locate('[merge]\nmode = "pr"\npr_quiet_sec = 60\n')
-
         self.assertEqual(
             config_tables.merge_config(self.tgt).pr_quiet_sec, 60)
 
     def test_pr_rounds_is_read(self):
         self.locate('[merge]\nmode = "pr"\npr_rounds = 2\n')
-
         self.assertEqual(config_tables.merge_config(self.tgt).pr_rounds, 2)
 
     def test_pr_is_read(self):
         self.locate('[merge]\nmode = "pr"\n')
-
         self.assertEqual(config_tables.merge_config(self.tgt).mode, "pr")
 
     def test_human_is_read(self):
         self.locate('[merge]\napprove = "human"\n')
-
         self.assertEqual(config_tables.merge_config(self.tgt).approve,
                          "human")
 

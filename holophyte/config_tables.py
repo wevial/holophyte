@@ -6,6 +6,7 @@ host checks. The loop and daemon share these readers (KO-397).
 """
 import collections
 import math
+import re
 
 AGENT_FALLBACK_KEYS = ("implementer_fallback", "reviewer_fallback",
                        "adjudicator_fallback")
@@ -371,7 +372,7 @@ MERGE_KEYS = {
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "pr_style": "",
-    "ui_paths": (), "ui_capture": "",
+    "ui_paths": (), "ui_capture": "", "media_repo": "",
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
     "mention_handle": "holophyte",
     "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
@@ -393,12 +394,7 @@ MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
 
 
 def merge_config(target):
-    """The target's `[merge]` knobs over the defaults.
-
-    Validate enums, integer floors, instruction text, and string lists at
-    startup. `after` holds shell commands; `bot_authors` holds logins whose
-    declined threads are resolved. Refusals name the config, table and key.
-    """
+    """Validate merge settings at startup; refusals name the config and key."""
     from holophyte.pr import CHECK_WAIT_S  # Deferred: pr also reads config.
     table = target.config().get("merge", {})
     if not isinstance(table, dict):
@@ -423,11 +419,12 @@ def merge_config(target):
                     f" got {value!r}")
             values[key] = value
             continue
-        if key in ("pr_style", "mention_handle", "ui_capture"):
+        if key in ("pr_style", "mention_handle", "ui_capture", "media_repo"):
             if not isinstance(value, str):
                 raise SystemExit(
                     f"[holo2] {target.config_path}: [merge] {key} must be a"
-                    f" string, got {value!r}")
+                    " string" + (" in owner/name form" if key == "media_repo" else "")
+                    + f", got {value!r}")
             values[key] = value
             continue
         if key in ("after", "bot_authors", "bot_logins", "ui_paths"):
@@ -444,14 +441,17 @@ def merge_config(target):
                 f"[holo2] {target.config_path}: [merge] {key} must be one of "
                 f"{allowed}, got {value!r}")
         values[key] = value
-    _validate_ui(values)
+    _validate_ui(target, values)
     return MergeConfig(**values)
 
 
-def _validate_ui(values):
+def _validate_ui(target, values):
     import shlex
     from pathlib import PurePosixPath
-
+    if values["media_repo"] and not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9-]*/(?!\.\.?$)[A-Za-z0-9_.-]+", values["media_repo"]):
+        raise SystemExit(f"{target.config_path}: [merge] media_repo"
+                         " must be in owner/name form")
     paths, command = values["ui_paths"], values["ui_capture"]
     if bool(paths) != bool(command.strip()):
         raise SystemExit("[merge] ui_paths and ui_capture must be configured together")
