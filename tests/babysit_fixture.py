@@ -36,10 +36,10 @@ class BabysitHelpers:
             f"{quoted}\n\n"
             f"---- Comment by factory ----\n\nAddressed in {'a' * 40}: Moved it."))
         self.resume_with_conversation(first, second, answered)
-        fake, _ = self.loop(ConversationFix("fix: move button"),
+        fake, _ = self.loop(ConversationFix("fix: move button"), Idle(""),
                             provider=self.provider())
-        self.assertEqual(fake.roles, ["implement"])
-        brief = fake.turns[-1].goal
+        self.assertEqual(fake.roles, ["implement", "implement"])
+        brief = fake.turns[-2].goal
         self.assertIn(request, brief)
         self.assertIn("conversation on the pull request", brief)
         self.assertIn("Instruction from @operator", brief)
@@ -71,8 +71,9 @@ class BabysitHelpers:
     def resume_with_conversation(self, *states):
         self.fake_route(states=[self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "read conversation",
-                                         out=io.StringIO())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            out=io.StringIO())
         for path in self.api_dir.iterdir():
             path.unlink()
         self.serve(*states)
@@ -127,8 +128,13 @@ class BabysitHelpers:
                   REQUEST_CHANGES, provider=self.provider())
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "repair the pin",
-                                         out=io.StringIO())
+        # Supervisor context remains available to re-review fix rounds.
+        conn = holophyte.runs.open_store(self.tgt)
+        try:
+            ticket = store.read.ticket_by_identifier(conn, "KO-131")
+            store.babysit(conn, ticket.id, "repair the pin", source="supervisor")
+        finally:
+            conn.close()
 
     def conflict_refusal(self, conflict=False, heads=()):
         """GitHub refuses the first merge after main moves under the PR."""
@@ -403,10 +409,11 @@ class OperatorNoteCase:
         self.serve(self.pr_state(threads), self.pr_state())
         verdict = ([Reply("THREAD 1: ADDRESS -- crash\nTHREAD 2: ADDRESS -- style")]
                    if bots else [])
-        fake, _ = self.loop(*verdict, Commit("apply requested changes"),
+        fake, _ = self.loop(*verdict, Commit("apply requested changes"), Idle(""),
                             provider=self.provider())
-        self.assertEqual(fake.roles, (["adjudicate"] if bots else []) + ["implement"])
-        brief = fake.turns[-1].goal
+        self.assertEqual(fake.roles, (["adjudicate"] if bots else [])
+                         + ["implement", "implement"])
+        brief = fake.turns[-2].goal
         self.assertIn("Maintainer's instruction "
                       "(amends the ticket where they conflict):",
                       brief)

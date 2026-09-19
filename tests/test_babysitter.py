@@ -361,8 +361,8 @@ class ConflictingPullRequestTests(MergeModeFixture):
     def resume(self, *script):
         """`--babysit` the parked run and drive it through the harness,
         faked GitHub serving whatever `serve()` last laid down."""
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
-                                      out=io.StringIO())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
         return self.loop(*script, provider=self.provider())
 
     def test_a_conflicting_pull_request_merges_origin_main_in(self):
@@ -448,8 +448,8 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
         calls, verify = self.merge_verify(main_red=False)
         with verify:
-            fake, _ = self.resume(Commit("fix merge", path="FIXED.md"))
-        self.assertEqual(fake.roles, ["implement"])
+            fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
+        self.assertEqual(fake.roles, ["implement", "implement"])
         self.assertIn("echo ok", fake.turns[0].goal)
         self.assertGreaterEqual(len(calls), 3)
         self.assertEqual(calls[1][2], moved)

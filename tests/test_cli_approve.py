@@ -128,14 +128,14 @@ class ApproveCliTests(unittest.TestCase):
         the candidate the next claim carries is not marked approved."""
         self.park(pr_url="https://example.test/pull/7")
 
-        out, _ = self.cli("--babysit", "KO-1", "--note", "bots are done")
+        out, _ = self.cli("--babysit", "KO-1")
 
         self.assertIn(f"KO-1 sent back to the babysitter: run {self.run}", out)
         self.assertEqual(self.interventions(), [(self.run, "babysit")])
         (summary,) = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
             " 'intervention'", (self.run,)).fetchone()
-        self.assertEqual(summary, "human babysit: bots are done")
+        self.assertEqual(summary, "human babysit: sent back to the babysitter")
         phase, outcome, resume_phase, ended = self.run_row()
         self.assertEqual((outcome, resume_phase), ("abandoned", "merge_gate"))
         self.assertIsNotNone(ended)

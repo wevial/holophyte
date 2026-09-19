@@ -189,8 +189,9 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         approved = self.git("rev-parse", BRANCH).strip()
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "nit closed",
-                                       out=io.StringIO())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            out=io.StringIO())
         marker.write_text("")
 
         fake, _ = self.loop(provider=StubProvider(task))

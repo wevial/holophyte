@@ -54,8 +54,8 @@ class BabysitClaimTests(MergeModeFixture):
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
         self.assertIn("PR open:", self.question())
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
-                                         out=io.StringIO())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
         self.assertEqual(self.read("SELECT blockedQuestion FROM tickets"), [(None,)])
         observed = []
         set_phase = holophyte.pullrequest.set_phase

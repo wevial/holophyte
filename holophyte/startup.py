@@ -3,6 +3,8 @@ import importlib
 import pkgutil
 from pathlib import Path
 
+from holophyte import media_store
+from holophyte.config_tables import merge_config
 from holophyte.gates import sh
 
 BUILD = None
@@ -34,5 +36,11 @@ def eager_import():
             importlib.import_module(module.name)
 
 
-def banner():
+def banner(target=None):
     print(f'[holo2] factory at {build_sha()}', flush=True)
+    if target is not None and merge_config(target).media_bucket:
+        try:
+            media_store.credentials()
+        except media_store.MissingCredentials as error:
+            print(f'[holo2] warning: media_bucket is configured but {error.name} '
+                  'is not set; evidence will not be published', flush=True)

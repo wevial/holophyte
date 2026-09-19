@@ -32,6 +32,19 @@ import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
+from tests.test_cli_babysit import BabysitCliFixture  # noqa: E402
+
+
+class CliMaintainerThreadTests(BabysitCliFixture, unittest.TestCase):
+    def test_cli_note_becomes_a_pending_maintainer_instruction_after_resume(self):
+        self.cli("--note", "fix the padding")
+        state = self.pending()
+        self.assertEqual(len(state.threads), 1)
+        thread, = state.threads
+        self.assertEqual(thread.author_kind, "maintainer")
+        self.assertEqual(thread.body, "fix the padding")
+        self.assertEqual(thread.author, "operator")
+        self.assertTrue(thread.id.startswith("operator_note:"))
 
 
 class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
@@ -170,7 +183,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn("Declined: a naming preference", calls[1][1]["body"])
         return out, calls
 
-
     def test_declined_listed_bot_is_resolved_and_merges(self):
         out, calls = self.declined_thread("devin-ai-integration")
         self.assertEqual([kind for kind, _ in calls],
@@ -181,14 +193,12 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn("1 thread(s) declined; 1 from bots resolved with the reason", out)
         self.assertNotIn("Leaving this thread open", calls[1][1]["body"])
 
-
     def test_declined_bot_suffix_is_resolved_without_a_list_entry(self):
         _, calls = self.declined_thread("unlisted[bot]", "bot_authors = []\n")
         self.assertEqual([kind for kind, _ in calls],
                          ["state", "reply", "resolve", "state", "merge"])
         self.assertEqual(calls[2][1], {"thread": "PRRT_1"})
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-
 
     def test_declined_human_is_replied_to_left_open_and_parks(self):
         with patch("holophyte.babysitter._verdicts_by_kind",
@@ -199,7 +209,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                          [("awaiting_merge_approval", None)])
         self.assertIn("1 thread(s) declined and left open", self.question())
         self.assertIn("@alice", self.question())
-
 
     def test_a_stalled_fix_round_keeps_implementer_output(self):
         self.configure('[merge]\nmode = "pr"\n')
@@ -218,7 +227,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
             " WHERE kind = 'implementer_output'")
         self.assertEqual(summary, "fix round 1: reading store/read.py")
         self.assertIn("reading store/read.py\nstill reading", payload)
-
 
     def test_fix_transport_retry_preserves_the_pr_on_second_failure(self):
         self.configure('[merge]\nmode = "pr"\n')
@@ -239,7 +247,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                                    " WHERE kind = 'implementer_output'"),
                          [("fetch failed",), ("fetch failed",)])
 
-
     def test_a_fix_round_that_moves_the_candidate_keeps_no_output_event(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
@@ -255,7 +262,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual(self.read("SELECT count(*) FROM runEvents"
                                    " WHERE kind = 'implementer_output'"),
                          [(0,)])
-
 
     def test_a_fix_round_is_reviewed_before_the_pr_is_auto_merged(self):
         """Review the fixed candidate independently before merging it."""
@@ -290,6 +296,58 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
+    def test_human_fix_refreshes_description_before_parking(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("the scripted work"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"),
+            Commit("fix: default load()"),
+            Idle("TITLE: Fixed load\nLoad handles missing input."),
+            provider=self.provider())
+
+        self.assertEqual(fake.roles.count("review"), 1)
+        self.assertEqual([c for c in self.recorded() if c.startswith("gh pr edit")],
+                         [f"gh pr edit {self.URL} --body-file -"])
+        history = self.pr_body.read_text().split("## Changes since first review\n")[1]
+        self.assertTrue(history.startswith("- Round 1:"))
+        self.assertIn("ADDRESS: a real crash", history)
+        fixed = self.git("rev-parse", BRANCH).strip()
+        original = fake.turns[1].candidate_sha[:12]
+        self.assertIn(
+            f"the fix rounds moved the candidate from {original} to {fixed[:12]};"
+            f" the release covered {original}, and a human says merge on the"
+            ' candidate as it stands ([merge] approve = "human")', self.question())
+        self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
+                         [("awaiting_merge_approval", fixed)])
+
+    def test_human_fix_failed_verify_parks_without_description_edit(self):
+        failure = self.db.parent / "verify-failed"
+        command = f"test ! -f {failure}"
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       f'[verify]\nalways = ["{command}"]\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        push = holophyte.pr.push_branch
+        pushes = []
+
+        def push_then_break_verify(*args, **kwargs):
+            result = push(*args, **kwargs)
+            pushes.append(result)
+            if len(pushes) == 2:
+                failure.touch()
+            return result
+
+        with patch.object(holophyte.pr, "push_branch", push_then_break_verify):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      Reply("THREAD 1: ADDRESS -- a real crash"),
+                      Commit("fix: default load()"), provider=self.provider())
+
+        self.assertIn(command, self.question())
+        self.assertIn("verify failed", self.question())
+        self.assertFalse(any(c.startswith("gh pr edit") for c in self.recorded()))
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
+                         [("awaiting_merge_approval", fixed)])
 
     def test_a_fix_round_the_reviewer_rejects_parks_instead_of_merging(self):
         """An initial PR pass rejection parks; only a resume gets the allowance."""
@@ -317,7 +375,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn(fixed[:12], question)
         self.assertIn("scripted change is incomplete", question)
 
-
     def test_babysit_review_dispatches_one_fix_with_findings_and_note(self):
         self.resume_rejected_fix()
         self.configure('[merge]\nmode = "pr"\n'
@@ -343,7 +400,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual([r["exitCode"] for r in results], [0, 0])
         baseline = [r for r in results if r["source"] == "baseline"]
         self.assertEqual(baseline[0]["output"].strip(), fake.turns[0].candidate_sha)
-
 
     def test_allowance_refresh_keeps_original_address_and_retry_context(self):
         self.resume_rejected_fix()
@@ -374,7 +430,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 2"),
                          [("merged",)])
 
-
     def test_babysit_review_fix_head_timeout_parks_naming_both_shas(self):
         old, fake, naps = self.review_fix_propagation(catches_up=False)
         self.assertEqual(fake.roles, ["review", "implement", "review", "implement"])
@@ -385,7 +440,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                       f" the babysitter pushed {fixed[:12]}", self.question())
         self.assertEqual(self.read("SELECT phase, candidateSha FROM runs WHERE id = 2"),
                          [("awaiting_merge_approval", fixed)])
-
 
     def test_babysit_gets_a_recorded_fix_round_past_the_spent_cap(self):
         self.resume_rejected_fix()
@@ -398,7 +452,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                                    " FROM runs WHERE id = 2"), [(1, 4)])
         self.assertEqual(self.read("SELECT verdict FROM reviewRounds"
                                    " WHERE runId = 2 AND round = 3"), [("pass",)])
-
 
     def test_babysit_second_rejection_parks_without_another_fix(self):
         self.resume_rejected_fix()

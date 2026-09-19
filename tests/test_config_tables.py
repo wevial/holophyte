@@ -351,18 +351,17 @@ class MergeConfigTests(ConfigTestCase):
                           "park", "act", (), "holophyte", (), ("devin-ai-integration",
                            "coderabbitai", "greptile-apps", "github-actions")))
 
-    def test_bucket_credentials_refuse_startup_and_are_redacted(self):
+    def test_bucket_validates_without_credentials_and_secrets_are_redacted(self):
         from holophyte.redact import known_secrets, redact_prose
         from tests.test_media_store import CREDS
         toml = ('[merge.media_bucket]\nendpoint = "https://objects.example.invalid"\n'
                 'bucket = "evidence"\npublic_base = "https://media.example.invalid"\n')
-        for missing in CREDS:
-            with patch.dict(os.environ, CREDS):
-                del os.environ[missing]
-                message = refused(self, toml)
-                self.assertIn(missing, message)
-                for value in CREDS.values():
-                    self.assertNotIn(value, message)
+        self.locate(toml)
+        with patch.dict(os.environ):
+            for name in CREDS:
+                os.environ.pop(name, None)
+            self.assertEqual(config_tables.merge_config(self.tgt).media_bucket,
+                             self.tgt.config()["merge"]["media_bucket"])
         with patch.dict(os.environ, CREDS):
             text = redact_prose(" ".join(CREDS.values()), known_secrets({}))
             for value in CREDS.values():
@@ -381,6 +380,15 @@ class MergeConfigTests(ConfigTestCase):
                 with self.subTest(value=value):
                     self.assertIn("media_bucket", refused(
                         self, f"[merge]\nmedia_bucket = {value}"))
+
+    def test_bucket_without_endpoint_is_still_refused_by_name(self):
+        with patch.dict(os.environ):
+            for name in ("HOLOPHYTE_MEDIA_ACCESS_KEY_ID",
+                         "HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY"):
+                os.environ.pop(name, None)
+            message = refused(self, '[merge.media_bucket]\nbucket = "evidence"\n'
+                              'public_base = "https://media.example.invalid"\n')
+        self.assertIn("media_bucket endpoint", message)
 
     def test_media_repo_validation(self):
         for value in ('"not-a-repo"', '"../repo"', '"owner/.."', '3'):

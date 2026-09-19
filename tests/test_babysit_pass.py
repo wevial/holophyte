@@ -138,8 +138,9 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                                    " runs"), [(approved, approved)])
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "nit closed",
-                                       out=io.StringIO())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            out=io.StringIO())
 
         fake, _ = self.loop(provider=self.provider())
 
@@ -156,8 +157,9 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.fake_route(states=[self.pr_state()])
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
-                                         out=io.StringIO())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            out=io.StringIO())
         import store
         with closing(store.open(self.tgt.store_path)) as conn:
             store.record_intervention(conn, 1, "launch_loop", "resume",
