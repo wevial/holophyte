@@ -106,6 +106,23 @@ class PopulatedStore(unittest.TestCase):
 class OracleTests(PopulatedStore):
     """Each read against the SELECT `factory.py` embedded before this module."""
 
+    def test_last_independent_verdict_ignores_github_rounds_and_other_tickets(self):
+        self.assertIsNone(read.last_independent_verdict(self.conn, self.t3))
+        store.record_review_round(self.conn, self.live, 1, "changes_requested",
+                                  "reviewer", started_at=T0 + 71 * MIN)
+        store.record_review_round(self.conn, self.live, 2, "pass", "github:ci",
+                                  started_at=T0 + 72 * MIN)
+        store.record_review_round(self.conn, self.live2, 1, "pass", "reviewer",
+                                  started_at=T0 + 73 * MIN)
+        self.assertEqual(read.last_independent_verdict(self.conn, self.t3),
+                         ("changes_requested", None))
+        store.record_review_round(self.conn, self.live, 3, "pass", "reviewer",
+                                  started_at=T0 + 74 * MIN)
+        self.conn.execute("UPDATE runs SET approvedSha = ?, candidateSha = ?"
+                          " WHERE id = ?", (MERGE_SHA, "new-candidate", self.live))
+        self.assertEqual(read.last_independent_verdict(self.conn, self.t3),
+                         ("pass", MERGE_SHA))
+
     def test_a_merged_run_carries_its_merge_sha_and_a_failed_one_none(self):
         by_id = {run.id: run for run in read.ended_runs(self.conn)}
 
