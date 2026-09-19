@@ -36,6 +36,64 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     """Pass structure, settling, quiet clocks, and refreshing main."""
+    def test_fix_push_head_catches_up(self):
+        self.fix_push_head_propagation(False)
+
+    def test_fix_push_head_stays_stale(self):
+        self.fix_push_head_propagation(True)
+
+    def test_ancestor_remote_head_is_not_foreign(self):
+        with patch("holophyte.pr_head._remote_head", return_value=self.base):
+            self.fix_push_head_propagation(True)
+
+    def fix_push_head_propagation(self, persistent):
+        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                               self.pr_state(head=self.base)] +
+                        ([] if persistent else [self.pr_state(checks="PENDING"),
+                                                       self.pr_state()]))
+        push = holophyte.pr.push_branch
+
+        def push_with_stale_api(target, branch):
+            push(target, branch)
+            if len(self.pushed()) == 2:
+                previous = self.pushed()[0][1]
+                for answer in self.answers.glob("*.json"):
+                    answer.write_text(answer.read_text().replace(self.base, previous))
+
+        with patch.object(holophyte.pr, "SLEEP") as sleep, \
+                patch.object(holophyte.pr, "push_branch", push_with_stale_api):
+            self.loop(Commit("candidate"), APPROVE, Idle(""),
+                      Reply("THREAD 1: ADDRESS -- a real crash"),
+                      Commit("fix crash"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual([call.args[0] for call in sleep.call_args_list],
+                         [5, 5, 5] if persistent else [5, holophyte.pr.CHECK_POLL_S])
+        pushed = self.pushed()[-1][1]
+        self.assertEqual(self.read("SELECT outcome FROM runs"),
+                         [("merged",)])
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [pushed])
+        if persistent:
+            events = self.read("SELECT summary FROM runEvents")
+            self.assertTrue(any("stale" in row[0] and pushed in row[0]
+                                for row in events), events)
+
+    def test_foreign_remote_head_parks_naming_remote(self):
+        foreign = self.git("commit-tree", f"{self.base}^{{tree}}",
+                           "-m", "foreign root").strip()
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state(head=self.base)])
+        with patch("holophyte.pr_head._remote_head", return_value=foreign), \
+                patch.object(holophyte.pr, "SLEEP"):
+            self.loop(Commit("candidate"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn(f"remote branch head is {foreign[:12]}", self.question())
+        self.assertIn("someone else pushed", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
     def test_closed_pr_is_rejected_mid_pass(self):
         self.configure('[merge]\nmode = "pr"\n')
         state = self.pr_state(checks="PENDING")

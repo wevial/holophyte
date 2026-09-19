@@ -310,7 +310,7 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
     merged = _verify_main_refresh(
         target, conn, run_id, provider, task_id, branch, wt, merged, beat_s,
         pull, budget_min, verify_cmd, contracts, ticket, ref)
-    state = _wait_for_pushed_head(
+    state = _just_pushed_state(
         target, conn, run_id, provider, task_id, branch, merged, beat_s, pull, reviewed)
     if merged != sha and before == _diff_identity(wt, ref):
         if conn is not None and run_id is not None:
@@ -393,27 +393,6 @@ def _diff_identity(wt, ref):
                           capture_output=True, check=True).stdout
 
 
-def _wait_for_pushed_head(target, conn, run_id, provider, task_id, branch,
-                          sha, beat_s, pull, reviewed):
-    """Bound propagation of our known push, then hand its state to settling."""
-    from holophyte.pullrequest import _park_on_pr
-    waited = 0
-    wait_s = merge_config(target).pr_poll_sec
-    with heartbeat_while(conn, run_id, beat_s):
-        state = pr_status.pr_state(target, pull)
-        while state.head_sha != sha and waited < wait_s:
-            nap = min(pr.CHECK_POLL_S, wait_s - waited)
-            pr.SLEEP(nap)
-            waited += nap
-            state = pr_status.pr_state(target, pull)
-    if state.head_sha != sha:
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                    f"the pull request's head is {(state.head_sha or '?')[:12]}"
-                    f" after {waited}s; the babysitter pushed {sha[:12]}", (),
-                    reviewed=reviewed)
-    return state
-
-
 def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
               wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
               criteria=(), approved=False, reviewed=None, verified=None, fix_note=None,
@@ -456,6 +435,10 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                                   branch, wt, sha, beat_s, pull, state, rnd,
                                   pass_no, model, ticket, verify_cmd,
                                   contracts, budget_min, reviewed=reviewed)
+            if sha != state.head_sha:
+                pushed_state = _just_pushed_state(
+                    target, conn, run_id, provider, task_id, branch, sha,
+                    beat_s, pull, reviewed)
             continue
         reply = babysitter.round_reply(pull, pass_no, (), {}, state.checks, sha)
         record_round(target, conn, run_id, rnd, "review", reply, None, True,
@@ -477,7 +460,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             if fixed != sha:
                 fix_note = None  # One fix allowance per babysit, past the cap too.
                 sha = reviewed = fixed
-                pushed_state = _wait_for_pushed_head(
+                pushed_state = _just_pushed_state(
                     target, conn, run_id, provider, task_id, branch, sha,
                     beat_s, pull, reviewed)
                 continue  # Settle the pushed fix's checks and threads first.
