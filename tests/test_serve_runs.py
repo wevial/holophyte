@@ -63,7 +63,7 @@ class LivePullRequestTests(MergeModeFixture):
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "look again", out=io.StringIO())
+            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
         observed = []
         babysit = holophyte.pullrequest.babysitter._babysit
 

@@ -625,8 +625,8 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.git("clone", "-q", "-b", BRANCH, str(bare), str(clone))
         self.git("config", "user.email", "person@example.invalid", cwd=clone)
         self.git("config", "user.name", "A Person", cwd=clone)
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
-                                       out=io.StringIO())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
         return approved, bare, clone
 
     def publish(self, clone, bare, force=False):
@@ -772,8 +772,8 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.fake_route()
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
-        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "bots are done",
-                                       out=io.StringIO())
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
 
         fake, _ = self.loop(provider=self.provider())
 

@@ -389,8 +389,8 @@ class MergeApprovalTests(LoopFixture):
         self.loop(Commit("the scripted work"), APPROVE,
                   provider=StubProvider(a_task()))
         with self.assertRaises(SystemExit) as refused:
-            holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
-                                           out=io.StringIO())
+            holophyte.operator.babysit_ticket(
+                self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
         self.assertIn("no pull request", str(refused.exception))
         conn = holophyte.runs.open_store(self.tgt)
         try:
