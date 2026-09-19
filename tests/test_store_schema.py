@@ -11,7 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 import store
 import store.schema
@@ -1103,6 +1103,46 @@ class Version15MigrationTests(unittest.TestCase):
                 'INSERT INTO interventions (runId, source, "trigger",'
                 ' "action", at) VALUES (?, \'human\', \'manual\','
                 ' \'shepherd\', 1)', (run_id,))
+
+
+class OpenRetryTests(unittest.TestCase):
+    def test_first_statement_retries_close_connections_then_return_usable_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "store.db")
+            connect = sqlite3.connect
+            failed = [Mock(), Mock()]
+            for conn in failed:
+                conn.execute.side_effect = sqlite3.OperationalError("locking protocol")
+            with patch("store.schema.sqlite3.connect",
+                       side_effect=[*failed, connect(path)]) as opening, \
+                    patch("store.schema.time.sleep") as sleep:
+                conn = store.open(path)
+            self.addCleanup(conn.close)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
+                             store.schema.SCHEMA_VERSION)
+            self.assertEqual(opening.call_count, 3)
+            self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+            for failed_conn in failed:
+                failed_conn.close.assert_called_once()
+
+    def test_attempt_limit_and_nontransient_errors(self):
+        for reason, attempts, sleeps in (
+                ("locking protocol", 5, [call(1), call(2), call(4), call(8)]),
+                ("disk I/O error", 1, [])):
+            for at_connect in (False, True):
+                with self.subTest(reason=reason, at_connect=at_connect):
+                    failed = Mock()
+                    failed.execute.side_effect = sqlite3.OperationalError(reason)
+                    with patch("store.schema.sqlite3.connect", return_value=failed,
+                               side_effect=(sqlite3.OperationalError(reason)
+                                            if at_connect else None)) as opening, \
+                            patch("store.schema.time.sleep") as sleep:
+                        with self.assertRaisesRegex(sqlite3.OperationalError, reason):
+                            store.open("unused.db")
+                    self.assertEqual(opening.call_count, attempts)
+                    self.assertEqual(failed.close.call_count,
+                                     0 if at_connect else attempts)
+                    self.assertEqual(sleep.call_args_list, sleeps)
 
 
 if __name__ == "__main__":

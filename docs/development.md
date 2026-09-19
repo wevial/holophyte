@@ -151,6 +151,7 @@ The store is its own package:
   `TICKET_TRANSITIONS` table and `transition()`/`walk_ticket()`,
   `mirror_ticket`, §2's `pickable()`/`pickable_tickets()` and the Mermaid
   state-graph renderer, re-exported from the package.
+- `store/instructions.py` — persist replies on recorded thread instructions.
 - `store/agent_routes.py` — atomic fallback intervention and event records.
 - `store/launch_backoff.py` — persistent route outages, retry deadlines and
   project-owned startup evidence before a first claim (KO-466).

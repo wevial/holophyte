@@ -392,6 +392,23 @@ class _Connection(sqlite3.Connection):
         self._lock = threading.RLock()
 
 
+def _connect_with_version(path):
+    """Retry only the initial WAL lock acquisition, never migration writes."""
+    for attempt in range(5):
+        conn = None
+        try:
+            conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S,
+                                   check_same_thread=False, factory=_Connection)
+            (version,) = conn.execute("PRAGMA user_version").fetchone()
+            return conn, version
+        except sqlite3.OperationalError as exc:
+            if conn is not None:
+                conn.close()
+            if str(exc) != "locking protocol" or attempt == 4:
+                raise
+            time.sleep(2 ** attempt)
+
+
 def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry point open()
     """Open the store at `path` in WAL mode and return the connection.
 
@@ -400,12 +417,10 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
     With `migrate=False`, refuse older stores with `SchemaOlder` and skip
     index creation. Require WAL so supervisor reads can overlap loop writes;
     a filesystem that cannot enable it raises rather than silently degrading."""
-    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S,
-                           check_same_thread=False, factory=_Connection)
     # Before anything that writes, including the WAL switch below: a store a
     # newer module stamped is refused without touching it, so the file is
     # still exactly what that newer build left for it to reopen.
-    (version,) = conn.execute("PRAGMA user_version").fetchone()
+    conn, version = _connect_with_version(path)
     if version > SCHEMA_VERSION:
         conn.close()
         raise SchemaNewer(path, version)
