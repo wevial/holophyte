@@ -108,6 +108,8 @@ export interface RunDetailBody {
     pr_url?: string | null;
     /** The loop's review-round cap; a body without it falls back to the rounds seen. */
     max_rounds?: number;
+    approved_at?: number | null;
+    approved_by?: string | null;
   };
   findings?: { tone: "advisory"; message: string }[];
   rounds: Round[];

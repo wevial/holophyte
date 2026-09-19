@@ -22,6 +22,7 @@ re-exports every name, so `store.release()` keeps working.
 """
 from __future__ import annotations
 
+import getpass
 import re
 import socket
 import time
@@ -256,6 +257,8 @@ def requeue(conn, ticket_id, note, now=None):
         record_intervention(conn, last_run_id, "requeue", note, now=now)
         conn.execute("UPDATE tickets SET blockedQuestion = NULL"
                      " WHERE id = ?", (ticket_id,))
+        conn.execute("UPDATE runs SET approvedAt = NULL, approvedBy = NULL"
+                     " WHERE id = ?", (last_run_id,))
         walk_ticket(conn, ticket_id, "ready")
     return last_run_id
 
@@ -381,8 +384,11 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
         release(conn, last_run_id, "abandoned", reason, now=now)
         # `release()` records a resume point for failed runs only; this one
         # is the operator's, written once the ending is stamped.
-        conn.execute("UPDATE runs SET resumePhase = ? WHERE id = ?",
-                     (APPROVED_RESUME_PHASE, last_run_id))
+        conn.execute("UPDATE runs SET resumePhase = ?, approvedAt = ?,"
+                     " approvedBy = ? WHERE id = ?",
+                     (APPROVED_RESUME_PHASE, now if action == "approve" else None,
+                      getpass.getuser() if action == "approve" else None,
+                      last_run_id))
         if action in ("babysit", "operator_note"):
             conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
                          (ticket_id,))

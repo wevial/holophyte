@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import sys
 import unittest
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -149,6 +150,27 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                                    " WHERE id = 2"),
                          [("merged", self.MERGE_SHA)])
 
+
+    def test_human_resume_after_launch_loop_waits_without_merging(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state()])
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  provider=self.provider())
+        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "look again",
+                                         out=io.StringIO())
+        import store
+        with closing(store.open(self.tgt.store_path)) as conn:
+            store.record_intervention(conn, 1, "launch_loop", "resume",
+                                      source="supervisor")
+        for path in self.api_dir.iterdir():
+            path.unlink()
+
+        self.loop(provider=self.provider())
+
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs WHERE id = 2"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("waiting for a human to say merge", self.question())
 
     def test_threads_past_the_first_page_keep_the_pr_from_reading_quiet(self):
         self.configure('[merge]\nmode = "pr"\n')

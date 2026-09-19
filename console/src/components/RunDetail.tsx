@@ -110,6 +110,11 @@ function Card({
           {" · wall "}{boxFigure((run.ended_ms ?? tickingNow) - run.started_ms)}
         </span>
       </header>
+      {run.approved_at != null && (
+        <p className="text-[12px] text-muted">
+          approved by {run.approved_by} at {new Date(run.approved_at).toISOString()}
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">
         <div className="min-w-0">
           <RoundTimeline

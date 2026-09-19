@@ -305,19 +305,16 @@ class ApprovedCandidate:
 
 
 def approved_candidate(conn, ticket_id, run_id):
-    """The latest prior run released to the gate; intervention picks approval."""
+    """The latest prior run released to the gate and its explicit approval."""
     row = conn.execute(
-        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha FROM runs"
+        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha, approvedAt"
+        " FROM runs"
         " WHERE ticketId = ? AND id <> ?"
         " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
     if row is None or row[1] != "merge_gate":
         return None
-    last = conn.execute(
-        'SELECT "action" FROM interventions WHERE runId = ?'
-        " ORDER BY id DESC LIMIT 1", (row[0],)).fetchone()
     return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
-                             approved=last is None or last[0] not in (
-                                 "babysit", "operator_note"),
+                             approved=row[5] is not None,
                              approved_sha=row[4])
 
 
@@ -658,6 +655,8 @@ class RunDetail:
     workingMs: int | None = None
     workStartedAt: int | None = None
     ticketUrl: str | None = None
+    approvedAt: int | None = None
+    approvedBy: str | None = None
 
 
 def run_detail(conn, run_id):
@@ -666,7 +665,7 @@ def run_detail(conn, run_id):
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.attempt,"
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
         " r.branch, r.host, r.mergeSha, r.reviewRoundCap, r.prUrl,"
-        " r.workingMs, r.workStartedAt, t.url"
+        " r.workingMs, r.workStartedAt, t.url, r.approvedAt, r.approvedBy"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.id = ?", (run_id,)).fetchone()
     if row is None:
@@ -677,7 +676,7 @@ def run_detail(conn, run_id):
                      timeBoxMs=row[9], branch=row[10], host=row[11],
                      mergeSha=row[12], reviewRoundCap=row[13],
                      prUrl=row[14], workingMs=row[15], workStartedAt=row[16],
-                     ticketUrl=row[17])
+                     ticketUrl=row[17], approvedAt=row[18], approvedBy=row[19])
 
 
 @dataclass(frozen=True)

@@ -102,6 +102,34 @@ class BoardStateMigrationTests(unittest.TestCase):
                 conn.close()
 
 
+class ApprovalStampMigrationTests(unittest.TestCase):
+    def test_version_25_adds_nullable_approval_stamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "store.db"
+            conn = sqlite3.connect(path)
+            previous = "\n".join(
+                line for line in store.schema.SCHEMA.splitlines()
+                if not line.strip().startswith(("approvedAt ", "approvedBy ")))
+            conn.executescript(previous)
+            project = store.tickets.ensure_project(conn, "team", "/repo")
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id="issue", linear_identifier="KO-1",
+                title="old candidate")
+            store.claim(conn, project, ticket, now=1)
+            conn.execute("PRAGMA user_version = 25")
+            conn.commit()
+            conn.close()
+            conn = store.open(path)
+            try:
+                self.assertEqual(conn.execute(
+                    "SELECT approvedAt, approvedBy FROM runs").fetchall(),
+                    [(None, None)])
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                                 (store.schema.SCHEMA_VERSION,))
+            finally:
+                conn.close()
+
+
 class StoreSchemaTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

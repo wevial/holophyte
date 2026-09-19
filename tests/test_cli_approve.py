@@ -22,6 +22,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli
+import holophyte.report
+import holophyte.serve_runs
 import holophyte.target
 import store
 import store.read
@@ -142,6 +144,65 @@ class ApproveCliTests(unittest.TestCase):
                                                 self.run + 1)
         self.assertEqual((carried.run_id, carried.approved),
                          (self.run, False))
+
+    def test_approval_stamp_survives_activity_and_babysit_clears_it(self):
+        self.park(pr_url="https://example.test/pull/7")
+        store.babysit(self.conn, self.ticket, "look again", now=T0 + 3 * MINUTE)
+        store.record_intervention(self.conn, self.run, "launch_loop",
+                                  "resume", source="supervisor")
+        self.assertFalse(store.read.approved_candidate(
+            self.conn, self.ticket, self.run + 1).approved)
+
+        def repark():
+            # Re-create the parked boundary on this candidate to exercise
+            # each release's writes against an existing stamp.
+            self.conn.execute("UPDATE runs SET phase = 'awaiting_merge_approval',"
+                              " outcome = NULL, endedAt = NULL WHERE id = ?",
+                              (self.run,))
+            store.tickets.walk_ticket(self.conn, self.ticket,
+                                      "blocked_on_operator")
+            self.conn.commit()
+
+        def stamp():
+            return self.conn.execute(
+                "SELECT approvedAt, approvedBy FROM runs WHERE id = ?",
+                (self.run,)).fetchone()
+
+        self.assertEqual(stamp(), (None, None))
+        repark()
+        with patch("getpass.getuser", return_value="operator"):
+            store.approve(self.conn, self.ticket, "merge",
+                          now=T0 + 4 * MINUTE)
+        store.record_intervention(self.conn, self.run, "operator_note",
+                                  "later activity")
+        self.assertEqual(stamp(), (T0 + 4 * MINUTE, "operator"))
+        self.assertIn(
+            f"KO-1 run {self.run}: approved by operator at 2023-11-14T22:17:20+00:00",
+            holophyte.report.report_lines(self.conn))
+        status, detail = holophyte.serve_runs.run_detail(
+            self.target, str(self.run))
+        self.assertEqual(status, 200)
+        self.assertEqual((detail["run"]["approved_at"],
+                          detail["run"]["approved_by"]),
+                         (T0 + 4 * MINUTE, "operator"))
+        self.assertTrue(store.read.approved_candidate(
+            self.conn, self.ticket, self.run + 1).approved)
+        repark()
+        store.babysit(self.conn, self.ticket, "look again")
+        store.record_intervention(self.conn, self.run, "launch_loop",
+                                  "resume", source="supervisor")
+        self.assertEqual(stamp(), (None, None))
+        self.assertFalse(store.read.approved_candidate(
+            self.conn, self.ticket, self.run + 1).approved)
+
+        repark()
+        store.approve(self.conn, self.ticket, "merge")
+        self.conn.execute("UPDATE runs SET outcome = 'failed' WHERE id = ?",
+                          (self.run,))
+        store.tickets.walk_ticket(self.conn, self.ticket, "in_flight")
+        self.conn.commit()
+        store.requeue(self.conn, self.ticket, "retry failed candidate")
+        self.assertEqual(stamp(), (None, None))
 
     def test_a_babysitter_of_a_run_parked_with_no_pull_request_is_refused(self):
         """A run parked under `[merge] mode = "local"` has no threads to look

@@ -29,7 +29,7 @@ DOCUMENTED_COLUMNS = {
         # the ticket-to-commit link is a column and not a grep of git log.
         "mergeSha",
         "candidateSha",
-        "approvedSha",
+        "approvedSha", "approvedAt", "approvedBy",
         # Store-owned: the review-round cap the loop gave the run, so the
         # console sizes the round timeline by it rather than a constant.
         "reviewRoundCap",

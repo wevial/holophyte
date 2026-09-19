@@ -106,6 +106,19 @@ def report_summary(rows):
             f" · median ratio {statistics.median(ratios):.2f}")
 
 
+def approval_lines(conn):
+    """Explicit human approvals, including released candidates awaiting claim."""
+    rows = conn.execute(
+        "SELECT t.linearIdentifier, r.id, r.approvedBy, r.approvedAt"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.approvedAt IS NOT NULL ORDER BY r.id").fetchall()
+    return [
+        f"{ticket} run {run}: approved by {operator} at "
+        f"{datetime.fromtimestamp(at / 1000, timezone.utc).isoformat()}"
+        for ticket, run, operator, at in rows
+    ]
+
+
 def report_lines(conn, target=None):
     """Render a consistent snapshot of live runs, completed work and ratios.
 
@@ -120,6 +133,7 @@ def report_lines(conn, target=None):
         rows = report_rows(conn)
         from store.operator_notes import report_lines as note_lines
         live += note_lines(conn)
+        live += approval_lines(conn)
     finally:
         if owns_transaction:
             conn.rollback()  # Release only our read transaction, even on errors.
