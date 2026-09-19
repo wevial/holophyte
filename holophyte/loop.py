@@ -26,6 +26,7 @@ from time import monotonic as retry_clock
 import review_runner
 import store
 import store.read
+import ticket_template
 from holophyte import pr_status
 from holophyte.agents import agent, review_refs, transport_failure
 from holophyte.babysitter import _babysit
@@ -68,6 +69,7 @@ from holophyte.merge_gate import (
     _park_for_approval,
     _resume_at_merge_gate,
 )
+from holophyte.pr_media import implementer_brief as _capture_brief
 from holophyte.pullrequest import (
     _landed_pr,
     _open_pr,
@@ -588,14 +590,11 @@ def _transport_timed(target, conn, run_id, beat_s, wt, budget_min, goal):
 
 def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=()):
-    """The implementer phase: one turn against `ticket`, then the no-commit
-    gate. Returns the candidate's sha. `conflicts` are the paths a reuse
-    left mid-merge; they open the brief (`conflict_brief()`)."""
+    """Implement the ticket and return its SHA; open with reuse conflicts."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
-    # The run's ceiling before the first turn: a reclaim can arrive with
-    # the run already old, and a turn the cap has no room for is refused
-    # rather than started.
+    # A reclaimed run can already be old; refuse a turn that would exceed
+    # its remaining budget.
     _check_run_cap(target, conn, run_id, budget_min, start_sha)
     out, timed_out = _transport_timed(
         target, conn, run_id, beat_s, wt, budget_min,
@@ -604,7 +603,7 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         "The ticket above is the contract, acceptance criteria "
         "included; the task is done only when they hold. Commit your "
         "work with a clear message. Stay strictly on-scope; do not "
-        "expand the task.")
+        "expand the task." + _capture_brief(target, ticket))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work
@@ -776,7 +775,8 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                 f"{ticket}\n\n"
                 + _verify_brief(verify_cmd, ok, out)
                 + criteria_brief(criteria)
-                + evidence_brief(target, wt, task_id)
+                + evidence_brief(target, wt, task_id,
+                                 ticket_template.parse(ticket).evidence_states)
                 + "Do not modify anything. End your reply with exactly one "
                 "line:\n"
                 "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"

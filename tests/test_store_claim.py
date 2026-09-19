@@ -198,7 +198,7 @@ class ContractSnapshotTests(unittest.TestCase):
             json.loads(store.run_contract(self.conn, run_id)),
             {"title": "ship the thing",
              "acceptanceCriteria": ["it ships"],
-             "verificationCommands": ["make test"]})
+             "verificationCommands": ["make test"], "evidenceStates": []})
 
     def test_drift_names_the_fields_that_moved_and_only_those(self):
         """The gate's actual question, asked across a real edited ticket."""

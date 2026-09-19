@@ -44,14 +44,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Every section the template defines, in order. "Contract checks" is optional
-# so tickets without literal requirements stay valid; the rest are required.
+# Every section the template defines, in order. Literal checks and visual
+# evidence are optional; the rest are required.
 TEMPLATE_ORDER = [
     "Summary", "What / Why / How", "In scope", "Out of scope",
-    "Acceptance criteria", "Verify command(s)", "Contract checks",
+    "Acceptance criteria", "Verify command(s)", "Contract checks", "Evidence",
     "Implementation notes", "Estimate & dependencies", "Open questions",
 ]
-OPTIONAL_SECTIONS = {"Contract checks"}
+OPTIONAL_SECTIONS = {"Contract checks", "Evidence"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
 # Mechanical scope caps. Module-level so a future per-project config can
 # override them without touching validate().
@@ -252,6 +252,7 @@ class Ticket:
         self.acceptance_boxes = []  # checked and unchecked, document order
         self.verify_commands = []
         self.contract_checks = []
+        self.evidence_states = []
         self.notes = []
         self.estimate_min = None
         self.depends_on = None
@@ -297,6 +298,11 @@ def parse(text):
      t.acceptance_boxes) = _criteria(t.sections.get("Acceptance criteria", ""))
     t.verify_commands = _verify_commands(t.sections.get("Verify command(s)", ""))
     t.contract_checks = _contract_checks(t.sections.get("Contract checks", ""))
+    t.evidence_states = [
+        LIST_ITEM_RE.sub(r"\1", line.strip())
+        for line in COMMENT_RE.sub("", t.sections.get("Evidence", "")).splitlines()
+        if line.strip()
+    ]
     t.notes = _list_items(t.sections.get("Implementation notes", ""))
     est = None
     for ln in t.sections.get("Estimate & dependencies", "").splitlines():
@@ -325,7 +331,7 @@ def _labeled_texts(t):
             yield label, v
     lists = (("In scope", t.in_scope), ("Out of scope", t.out_of_scope),
              ("Acceptance criteria", t.acceptance),
-             ("Implementation notes", t.notes))
+             ("Implementation notes", t.notes), ("Evidence", t.evidence_states))
     for label, items in lists:
         for i, item in enumerate(items, 1):
             yield f"{label} #{i}", item
@@ -487,6 +493,11 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
         m = PLACEHOLDER_RE.search(text)
         if m:
             p.append(f"unfilled template placeholder in {label}: {m.group(0)}")
+
+    if len(t.evidence_states) > 6:
+        p.append("'Evidence' has more than 6 states; the limit is 6")
+    if "Evidence" in t.order and not t.evidence_states:
+        p.append("'Evidence' is empty; list states or omit the section")
 
     if not t.summary:
         p.append("'Summary' is empty")

@@ -4,6 +4,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import secrets
 import shlex
 import shutil
@@ -13,12 +14,26 @@ import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
+import ticket_template
 from holophyte import media_store, pr
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
 CAPTURE_TIMEOUT = 300
-RECEIPT_VERSION = 2  # KO-512: invalidate receipts without visibility-aware URLs.
+RECEIPT_VERSION = 3  # KO-522: receipts include ticket-specific evidence states.
+
+
+def implementer_brief(target, ticket):
+    states = ticket_template.parse(ticket).evidence_states
+    cfg = merge_config(target)
+    if not states or not cfg.ui_capture:
+        return ""
+    return (f"\n\nAdd or update a capture script under `{cfg.ui_capture_dir}` "
+            f"for this ticket, runnable by `{cfg.ui_capture}`. Produce one image "
+            "per state, named NN-slug.png in state order (01, 02, ...), plus "
+            "a recording when the states describe a flow. The harness receives "
+            "HOLOPHYTE_TICKET and newline-joined HOLOPHYTE_EVIDENCE_STATES.\n"
+            + "\n".join(f"{i:02d}: {state}" for i, state in enumerate(states, 1)))
 
 
 def media_url(repo, branch, name, private):
@@ -61,10 +76,14 @@ def matches(wt, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
-def _capture(command, wt, output):
+def _capture(command, wt, output, task_id, states):
+    env = dict(os.environ, HOLOPHYTE_TICKET=task_id)
+    env.pop("HOLOPHYTE_EVIDENCE_STATES", None)
+    if states:
+        env["HOLOPHYTE_EVIDENCE_STATES"] = "\n".join(states)
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(shlex.split(command) + [str(output)],
-                                   cwd=wt, stdin=subprocess.DEVNULL,
+                                   cwd=wt, env=env, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=log, start_new_session=True)
         try:
             code = process.wait(timeout=CAPTURE_TIMEOUT)
@@ -220,25 +239,49 @@ def _cap_files(output, files, cfg):
     return kept, dropped
 
 
-def _produce(target, wt, task_id, command, note, cfg):
+def _state_media(states, urls):
+    """Map published PNGs by their NN- prefix; videos never satisfy a state."""
+    images = {}
+    for file, url in urls.items():
+        match = re.match(r"^(\d{2})-.+\.png$", file.name)
+        if match:
+            images.setdefault(int(match[1]), (file, url))
+    lines, matched = [], set()
+    for number, state in enumerate(states, 1):
+        label = state.replace("[", r"\[").replace("]", r"\]")
+        image = images.get(number)
+        lines.append(f"- {label} — {'captured' if image else 'not captured'}")
+        if image:
+            file, url = image
+            matched.add(file)
+            lines.append(f"![{label}]({url})")
+    return lines, matched
+
+
+def _missing(section, states):
+    lines, _ = _state_media(states, {})
+    return "\n\n".join([section, *lines])
+
+
+def _produce(target, wt, task_id, command, note, cfg, states):
     with tempfile.TemporaryDirectory(prefix='pr-media-') as tmp:
         output = Path(tmp)
-        error = _capture(command, wt, output)
+        error = _capture(command, wt, output, task_id, states)
         if error:
-            return '## Evidence\n\n' + error
+            return _missing('## Evidence\n\n' + error, states)
         files = sorted(file for file in output.rglob('*')
                        if file.suffix in ('.png', '.webm', '.mp4')
                        and file.is_file() and not file.is_symlink()
                        and file.resolve().is_relative_to(output))
         if not files:
-            return (f'## Evidence\n\nCapture command `{command}`'
-                    ' produced no media files.')
+            return _missing(f'## Evidence\n\nCapture command `{command}`'
+                            ' produced no media files.', states)
         files, dropped = _cap_files(output, files, cfg)
         lines = ['## Evidence', f'Captured with `{command}`.']
         lines.extend(dropped)
         if not files:
             lines.append('No media remains within the evidence size limits.')
-            return '\n\n'.join(lines)
+            return _missing('\n\n'.join(lines), states)
         if cfg.media_bucket:
             description, urls = _publish_bucket(
                 target, output, files, task_id, cfg.media_bucket)
@@ -246,14 +289,18 @@ def _produce(target, wt, task_id, command, note, cfg):
             description, urls = _publish_git(
                 target, wt, output, files, task_id, note, cfg.media_repo)
         lines.append(description)
+        state_lines, matched = _state_media(states, urls)
+        lines.extend(state_lines)
         for file, url in urls.items():
+            if file in matched:
+                continue
             name = file.relative_to(output).as_posix()
             label = name.replace('[', r'\[').replace(']', r'\]')
             lines.append(f'{"!" if file.suffix == ".png" else ""}[{label}]({url})')
         return '\n\n'.join(lines)
 
 
-def prepare(target, wt, task_id, record_note=None):
+def prepare(target, wt, task_id, record_note=None, evidence_states=()):
     """Reuse evidence only for this exact candidate, base, and configuration.
 
     Keep the receipt in the worktree's git directory, outside candidate files.
@@ -265,7 +312,7 @@ def prepare(target, wt, task_id, record_note=None):
     identity = [RECEIPT_VERSION, sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt),
                 task_id, cfg.ui_paths, cfg.ui_capture, pr.origin_url(target),
                 cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
-                cfg.media_max_total_mb]
+                cfg.media_max_total_mb, list(evidence_states)]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     receipt = git_dir / f'pr-media-{key}.txt'
@@ -273,7 +320,7 @@ def prepare(target, wt, task_id, record_note=None):
     if not receipt.exists():
         try:
             section = _produce(target, wt, task_id, cfg.ui_capture, note,
-                               cfg)
+                               cfg, evidence_states)
         except (InfraFailure, OSError, RuntimeError, ValueError,
                 subprocess.TimeoutExpired) as error:
             destination = (" to media bucket" if cfg.media_bucket else
@@ -281,6 +328,7 @@ def prepare(target, wt, task_id, record_note=None):
             section = (f'## Evidence\n\nCapture command `{cfg.ui_capture}` failed to'
                        f' publish evidence{destination}'
                        f' ({type(error).__name__}).')
+            section = _missing(section, evidence_states)
         receipt.write_text(section)
     if record_note is not None and note.exists():
         record_note(note.read_text())

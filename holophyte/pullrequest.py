@@ -3,6 +3,7 @@ from time import monotonic
 
 import store
 import store.read
+import ticket_template
 from holophyte import babysitter, pr, pr_media
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
@@ -233,9 +234,7 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     not the ticket, so no strike is spent and the branch and worktree stay
     exactly as after a refused merge. Nothing touches main.
 
-    Adopt an existing open PR on this branch instead of creating a duplicate
-    (KO-407). The babysit pass and park then proceed as for a new PR.
-
+    Adopt an existing PR on this branch, then babysit as usual (KO-407).
     Before pushing, write the PR text, falling back to a stub on failure.
 
     Remote calls run under `heartbeat_while()`: a slow push is not a dead
@@ -244,6 +243,7 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     with heartbeat_while(conn, run_id, beat_s):
         evidence = pr_media.prepare(
             target, wt, task_id,
+            evidence_states=ticket_template.parse(body).evidence_states,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
     title, text = _written_pr_text(target, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,

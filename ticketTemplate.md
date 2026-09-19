@@ -79,6 +79,16 @@ Rules:
   shell. The gate fails naming the path and the literal when it is absent.
 ```
 
+## Evidence
+
+<!-- OPTIONAL: keep only when this ticket needs specific visual evidence.
+     List at most six short states, one per line, in capture order.
+     The implementer writes a capture under [merge] ui_capture_dir (default
+     e2e/capture): one NN-slug.png per state, plus a recording for a flow.
+     Delete the whole section otherwise. -->
+
+<Page, state, and interaction the image must show.>
+
 ## Implementation notes
 
 - <Known constraints, dependencies, risks, rollout concerns, or useful code landmarks.>

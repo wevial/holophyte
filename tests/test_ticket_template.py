@@ -11,6 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import store
+import store.tickets
 import ticket_template as tt  # noqa: E402 - after the sys.path insert above
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -769,3 +771,38 @@ class InterpreterAdvisoryTests(unittest.TestCase):
     def test_activation_must_precede_the_bare_token(self):
         self.assertEqual(
             len(self.advisories("python3 -m build && . .venv/bin/activate")), 1)
+
+class EvidenceTests(unittest.TestCase):
+    def body(self, states):
+        return FILLED.replace("## Implementation notes",
+                              "## Evidence\n\n" + "\n".join(states)
+                              + "\n\n## Implementation notes")
+
+    def test_optional_ordered_states_and_limit(self):
+        self.assertEqual(tt.parse(FILLED).evidence_states, [])
+        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+        states = ["Orders page empty", "Export dialog open", "Export complete"]
+        ticket = tt.parse(self.body(states))
+        self.assertEqual(ticket.evidence_states, states)
+        self.assertEqual(tt.validate(ticket), [])
+        problems = tt.validate(tt.parse(self.body(states * 2 + ["Seventh"])))
+        self.assertTrue(any("Evidence" in p and "6" in p for p in problems))
+
+    def test_claim_freezes_evidence_and_live_edit_is_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = store.open(Path(tmp) / "store.db")
+            self.addCleanup(conn.close)
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team", "/repos/test")
+            body = self.body(["Orders page empty"])
+            ticket = store.tickets.mirror_ticket(
+                conn, project, "issue", "KO-522", "Export",
+                acceptance_criteria=["works"], verification_commands=["test"],
+                body=body)
+            run = store.claim(conn, project, ticket)
+            task = dict(title="Export", criteria=["works"], verify="test",
+                        body=body.replace("Orders page empty", "Export dialog open"))
+            self.assertEqual(store.contract_drift(
+                store.run_contract(conn, run),
+                store.contract_snapshot(*holophyte.board.task_contract(task))),
+                ("evidenceStates",))

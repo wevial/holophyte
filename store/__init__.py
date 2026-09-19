@@ -36,6 +36,8 @@ import json
 import socket
 import time
 
+import ticket_template as _ticket_template
+
 from .schema import (  # noqa: F401
     SCHEMA_VERSION,
     SchemaNewer,
@@ -69,24 +71,22 @@ class ClaimConflict(Exception):
 # deliberately not among them — `runs.timeBoxMs` already snapshots it, and a
 # re-pointed estimate changes what the run was budgeted, not what it was
 # asked to do.
-CONTRACT_FIELDS = ("title", "acceptanceCriteria", "verificationCommands")
+CONTRACT_FIELDS = ("title", "acceptanceCriteria", "verificationCommands",
+                   "evidenceStates")
 
 
-def contract_snapshot(title, acceptance_criteria, verification_commands):
+def contract_snapshot(title, acceptance_criteria, verification_commands,
+                      evidence_states=()):
     """Freeze a ticket's contract as one canonical JSON document.
 
-    Canonical so the same contract is the same bytes on both sides of a
-    comparison: keys sorted, no encoder-variable whitespace, and the lists
-    left in the order the ticket gives them — a reordered acceptance list is
-    an edited ticket, not a formatting accident. Both sides build the document
-    through this function rather than assembling their own, which is what
-    keeps a drift check from reporting the callers' formatting as drift.
+    Sorted keys and ordered lists distinguish edits from serialization changes.
     """
     return json.dumps(
         {
             "title": title,
             "acceptanceCriteria": list(acceptance_criteria),
             "verificationCommands": list(verification_commands),
+            "evidenceStates": list(evidence_states),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -112,15 +112,14 @@ def run_contract(conn, run_id):
 def contract_drift(before, after):
     """The `CONTRACT_FIELDS` that differ between two snapshots, in field order.
 
-    Empty when the two agree and empty when either is None — an unreadable or
-    unrecorded side is a comparison that did not happen, and reporting it as
-    drift would block a merge on a Linear outage. The answer is field names
-    rather than a bare bool so the caller can say *what* moved: "the ticket
-    changed" sends a human to a diff they have to find themselves.
+    Empty when either side is unavailable, avoiding false drift on outages.
+    Return changed field names so the caller can identify the edited section.
     """
     if before is None or after is None:
         return ()
     was, is_now = json.loads(before), json.loads(after)
+    was.setdefault("evidenceStates", [])
+    is_now.setdefault("evidenceStates", [])
     return tuple(f for f in CONTRACT_FIELDS if was.get(f) != is_now.get(f))
 
 
@@ -186,12 +185,13 @@ def claim(conn, project_id, ticket_id, now=None):
         # SELECT for both snapshots, so the estimate and the contract a run
         # records are the same ticket at the same instant.
         ticket = conn.execute(
-            "SELECT timeBoxMs, title, acceptanceCriteria, verificationCommands"
+            "SELECT timeBoxMs, title, acceptanceCriteria, verificationCommands, body"
             " FROM tickets WHERE id = ?", (ticket_id,)
         ).fetchone()
         estimate = ticket[0] if ticket else None
         snapshot = None if ticket is None else contract_snapshot(
-            ticket[1], json.loads(ticket[2]), json.loads(ticket[3]))
+            ticket[1], json.loads(ticket[2]), json.loads(ticket[3]),
+            _ticket_template.parse(ticket[4] or "").evidence_states)
         run_id = conn.execute(
             "INSERT INTO runs"
             " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"

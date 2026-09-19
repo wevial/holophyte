@@ -10,6 +10,11 @@ Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
 the loop and its supervisor contend on one file without either dying.
 
+KO-522 adds `evidenceStates` to the JSON in `runs.ticketSnapshot`, parsed
+from `tickets.body` at claim time. No SQL schema migration is needed.
+Older snapshots without the key compare as an empty list; adding evidence
+after a claim is contract drift.
+
 ## Tables
 
 | Table | One row per | Written by | Notes |
