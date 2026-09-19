@@ -829,3 +829,32 @@ class FindingsModeTests(LoopFixture):
                          ["Complete task KO-131: add a thing",
                           "Merge task/ko-131-add-a-thing: add a thing"])
         self.assertEqual(self.dirt(), "")
+
+
+class VerifyBaselineTests(LoopFixture):
+    def test_tiers_run_in_order_and_only_gate_runs_before_merge(self):
+        log = self.target.parent / "commands.log"
+        self.configure('[verify]\n'
+                       f'always = ["echo always >> {log}"]\n'
+                       f'before_merge = ["echo gate >> {log}; exit 1"]\n')
+        task = dict(a_task(), verify=f"echo ticket >> {log}")
+        self.loop(Commit("candidate"), APPROVE, provider=StubProvider(task))
+        self.assertEqual(log.read_text().splitlines(),
+                         ["ticket", "always", "ticket", "always", "gate"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        rows = json.loads(self.read(
+            "SELECT verificationResults FROM reviewRounds "
+            "ORDER BY id DESC LIMIT 1")[0][0])
+        self.assertEqual(rows[-1]["tier"], "before_merge")
+        self.assertEqual(rows[-1]["exitCode"], 1)
+
+    def test_no_baseline_only_runs_ticket_at_review_and_gate(self):
+        log = self.target.parent / "commands.log"
+        task = dict(a_task(), verify=f"echo ticket >> {log}")
+        self.loop(Commit("candidate"), APPROVE, provider=StubProvider(task))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(log.read_text().splitlines(), ["ticket", "ticket"])
+        rows = json.loads(self.read(
+            "SELECT verificationResults FROM reviewRounds LIMIT 1")[0][0])
+        self.assertEqual(set(rows[0]), {"source", "command", "exitCode", "output"})
+        self.assertTrue(all(r["source"] == "ticket" for r in rows))

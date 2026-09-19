@@ -14,7 +14,14 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
 from holophyte.config_tables import merge_config
-from holophyte.gates import InfraFailure, RunFailure, run_verify
+from holophyte.gates import (
+    InfraFailure,
+    RunFailure,
+    VerificationOutput,
+    record_unreviewed_verification,
+    run_verify,
+    with_baseline,
+)
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.review import criteria_brief, criteria_findings, evidence_brief
@@ -316,9 +323,14 @@ def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
     started = int(time() * 1000)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(command, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = with_baseline(target, wt, command, ok, out,
+                               conn, run_id)
+    out.results = [dict(row, output=f"Tree {sha}\n{row['output']}")
+                   for row in out.results]
     record_round(target, conn, run_id, _next_round(conn, run_id), "review",
                  "VERDICT: " + ("APPROVE" if ok else "REQUEST_CHANGES"),
-                 command, ok, f"Tree {sha}\n{out}", started_at=started,
+                 command, ok, VerificationOutput(f"Tree {sha}\n{out}", out.results),
+                 started_at=started,
                  route="mechanical:main-refresh")
     return ok, out
 
@@ -360,7 +372,9 @@ def _verify_main_refresh(target, conn, run_id, provider, task_id, branch, wt,
             "commands passing. This is one implementer fix turn.")
     return _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                         beat_s, pull, (), None, ticket, command, contracts,
-                        budget_min, _next_round(conn, run_id), goal=goal)
+                        budget_min, _next_round(conn, run_id),
+                        review_follows=merge_config(target).approve == "auto",
+                        goal=goal)
 
 
 def _diff_identity(wt, ref):
@@ -545,7 +559,10 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
               " before its review")
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                               conn, run_id)
     if not ok:
+        record_unreviewed_verification(conn, run_id, out)
         ledger(conn, run_id, task_id, "failure",
                f"FAILED verify before the review of the fix at {sha} on"
                f" {pull.url}; branch {branch} preserved, not merged\n\n{out}",
@@ -620,7 +637,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                " recorded re-review, even if reviewRoundCap is spent.", provider)
         fixed = _fix_threads(target, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, (), None, ticket, verify_cmd,
-                             contracts, budget_min, rnd, goal=goal)
+                             contracts, budget_min, rnd, review_follows=True, goal=goal)
         return _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                            fixed, None, beat_s, pull, ticket, verify_cmd,
                            contracts, criteria, budget_min=budget_min,
@@ -768,7 +785,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         sha = _fix_threads(target, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
                            model, ticket, verify_cmd, contracts, budget_min,
-                           pass_no)
+                           pass_no,
+                           review_follows=merge_config(target).approve == "auto")
     declined_open = _decline_threads(target, conn, run_id, beat_s, pull,
                                      by_verdict["DECLINE"], model)
     left_open = declined_open + tuple(
@@ -838,9 +856,8 @@ def _verdicts_by_kind(threads, judged, parsed):
 
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
-                 contracts, budget_min, pass_no, goal=None):
-    """The fix round for the addressed threads, the push, then a reply on
-    each and a resolve on each bot's; the fixed candidate's sha."""
+                 contracts, budget_min, pass_no, *, review_follows, goal=None):
+    """Fix, verify, push and answer threads; return the fixed candidate's sha."""
     from holophyte.loop import (
         _candidate_drift,
         _record_implementer_output,
@@ -860,11 +877,8 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(f"fix round for {pull.url} timed out or made no"
                          f" progress; branch {branch} preserved at"
                          f" {sha[:12]}")
-    # The verify runs over the working tree, so it vouches for the
-    # commit only when the tree is that commit: a fix half committed and
-    # half left in the tree would verify green and push a commit that
-    # does not hold it -- and resolve the thread on it. The tree is left
-    # for a human; nothing is committed, deleted or pushed.
+    # Verify vouches for the commit only if the tree matches it. Preserve
+    # uncommitted work for a human without pushing or resolving threads.
     unclean = _candidate_drift(wt, branch, fixed)
     if unclean:
         ledger(conn, run_id, task_id, "failure",
@@ -878,6 +892,10 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     fixed = maintainer_notes.cite_commits(wt, sha, fixed, addressed, sh)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                               conn, run_id)
+    if not ok or not review_follows:
+        record_unreviewed_verification(conn, run_id, out)
     if not ok:
         print(f"[holo2] verify FAILED after the fix round for {pull.url};"
               f" leaving branch {branch} at {fixed} for a human:\n{out}")

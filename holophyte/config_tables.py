@@ -552,3 +552,29 @@ def split_address(text):
     if not sep or not host or not port.isdecimal():
         raise ValueError(f"expected HOST:PORT, got {text!r}")
     return host, int(port)
+
+
+VerifyConfig = collections.namedtuple("VerifyConfig", "always before_merge timeout_sec")
+
+
+def verify_config(target):
+    """Validate baseline command shapes at startup; execute them only at gates."""
+    from holophyte.config import VERIFY_TIMEOUT, config_table
+
+    table = config_table(target, "verify")
+    commands = {}
+    for tier in ("always", "before_merge"):
+        value = table.get(tier, [])
+        if not isinstance(value, list) or any(
+                not isinstance(cmd, str) or not cmd.strip() for cmd in value):
+            raise SystemExit(
+                f"[holo2] {target.config_path}: [verify] {tier} must be a "
+                "list of non-empty command strings")
+        commands[tier] = value
+    timeout = table.get("timeout_sec", VERIFY_TIMEOUT)
+    if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout) or timeout <= 0):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [verify] timeout_sec must be a "
+            "finite positive number of seconds")
+    return VerifyConfig(**commands, timeout_sec=timeout)

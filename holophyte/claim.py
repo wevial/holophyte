@@ -77,26 +77,20 @@ def timeout_report(cmd, expired):
 def run_worktree_setup(target, wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
-    Returns `(ok, report)`. Each command goes through `run_verify()`, so a
-    failure reads like a failed verify and not like a bare non-zero exit,
-    and a wall-clock cap per command -- `setup_timeout()`, the target's
-    `[worktree] setup_timeout_sec` over the verify cap; setup is a build
-    step, not a round -- takes the command's whole process tree with it:
-    a build that hangs is not still writing into the worktree while the
-    caller deletes it. A capped command is failed like any other rather
-    than raised: on a `False` the caller discards a fresh-cut branch (a
-    reused worktree, which may hold preserved work, is left in place).
-
+    Returns `(ok, report)`. Commands use `run_verify()` and the target's
+    `[worktree] setup_timeout_sec` cap, which kills the whole process tree.
+    Failures return a report so the caller can discard a fresh-cut branch;
+    reused worktrees may hold preserved work and are left in place.
+    Hook configuration failures follow the same cleanup path.
     Commands run in order and stop at the first failure: step two assumes
     step one worked. A target that names no setup runs nothing and records
     no phase, so an absent table leaves the run byte-identical to today's.
     """
     commands = setup_commands(target)
-    if not commands:
-        return True, ""
     timeout = setup_timeout(target)
-    set_phase(conn, run_id, "working",
-              f"worktree setup: {len(commands)} command(s) in {wt}")
+    if commands:
+        set_phase(conn, run_id, "working",
+                  f"worktree setup: {len(commands)} command(s) in {wt}")
     for n, command in enumerate(commands, 1):
         try:
             ok, out = run_verify(command, wt, timeout=timeout)
@@ -106,6 +100,13 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
             return False, (f"[holo2] worktree setup command {n} of "
                            f"{len(commands)} FAILED: {command}\n{out}")
         print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
+    if (Path(wt) / ".githooks").is_dir():
+        try:
+            # Without this extension --worktree writes the shared config.
+            sh(["git", "config", "extensions.worktreeConfig", "true"], wt)
+            sh(["git", "config", "--worktree", "core.hooksPath", ".githooks"], wt)
+        except RuntimeError as error:
+            return False, f"[holo2] worktree setup hooks configuration FAILED:\n{error}"
     return True, ""
 
 

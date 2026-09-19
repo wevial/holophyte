@@ -56,8 +56,10 @@ from holophyte.gates import (
     InfraFailure,
     MergeParked,
     RunFailure,
+    record_unreviewed_verification,
     run_verify,
     sh,
+    with_baseline,
 )
 from holophyte.merge_gate import (
     _gate_lock,
@@ -682,11 +684,13 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
 
 
 def _verify_brief(verify_cmd, ok, out):
-    """The verify result as the reviewer sees it — omitted when the ticket
-    declares no command, so the brief never implies a gate that never ran."""
-    if not verify_cmd:
+    """Show ticket and baseline checks; omit the brief only if neither ran."""
+    count = sum(row["source"] == "baseline"
+                for row in getattr(out, "results", []))
+    if not verify_cmd and not count:
         return ""
-    return (f"A mechanical verification command was run and "
+    return (f"The ticket's verification commands and the target's baseline "
+            f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n")
 
 
@@ -752,6 +756,8 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" branch {branch} preserved at {sha[:12]}")
         with heartbeat_while(conn, run_id, beat_s):
             ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+            ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                                   conn, run_id)
         if ok:
             print(f"[holo2] verify ok before round {rnd}")
         else:
@@ -834,7 +840,10 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
     set_phase(conn, run_id, "verifying", "verify before terminal adjudication")
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                               conn, run_id)
     if not ok:
+        record_unreviewed_verification(conn, run_id, out)
         print(f"[holo2] verify FAILED before adjudication; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
         ledger(conn, run_id, task_id, "failure",

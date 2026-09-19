@@ -100,6 +100,20 @@ class WorktreeSetupLoopTests(LoopFixture):
     first agent turn — and what a failing setup does to the run around it.
     """
 
+    def test_setup_enables_hooks_only_when_directory_exists(self):
+        wt = self.target.parent / "hooks-worktree"
+        self.git("worktree", "add", "--detach", str(wt))
+        for present in (False, True):
+            with self.subTest(present=present):
+                self.configure('[worktree]\nsetup = ["mkdir .githooks"]\n'
+                               if present else '')
+                self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+                result = subprocess.run(
+                    ["git", "config", "--get", "core.hooksPath"],
+                    cwd=wt, capture_output=True, text=True)
+                self.assertEqual(result.stdout.strip(), ".githooks" if present else "")
+                self.assertEqual(result.returncode, 0 if present else 1)
+
     def test_setup_runs_in_the_fresh_worktree_before_the_implementer(self):
         """The commands run in the task worktree — not the main checkout —
         while the branch is cut and before any agent turn, and the run merges

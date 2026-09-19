@@ -1,4 +1,5 @@
-"""The merge lock: two gates on one target take turns (KO-342)."""
+"""Mechanical baseline verification and the merge lock."""
+import json
 import os
 import sys
 import tempfile
@@ -13,6 +14,8 @@ sys.path.insert(0, str(ROOT))
 
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
+from tests.fake_agent import APPROVE, Commit  # noqa: E402
+from tests.loop_fixture import LoopFixture  # noqa: E402
 
 
 class MergeLockTests(unittest.TestCase):
@@ -65,6 +68,55 @@ class MergeLockTests(unittest.TestCase):
         self.assertIn("run 7", str(caught.exception))
         self.assertIsInstance(caught.exception, holophyte.gates.InfraFailure)
         self.assertEqual(holophyte.gates.read_merge_lock(path)[0], 7)
+
+
+class BaselineTests(LoopFixture):
+    def test_failed_baseline_records_both_sources_before_review(self):
+        self.configure('[verify]\nalways = ["echo baseline-broke; exit 7"]\n')
+        output = self.main_output(Commit("candidate"), APPROVE, Commit("fix"), APPROVE,
+                                  Commit("last fix"))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertIn("baseline-broke", output)
+        rows = json.loads(self.read(
+            "SELECT verificationResults FROM reviewRounds ORDER BY id LIMIT 1")[0][0])
+        self.assertEqual([(r["source"], r["exitCode"]) for r in rows],
+                         [("ticket", 0), ("baseline", 1)])
+        self.assertEqual(rows[1]["tier"], "always")
+
+    def test_verify_config_document_rejects_bad_shapes(self):
+        from holophyte.config import check_document
+        for setting in ('always = "true"', 'before_merge = [1]',
+                        'always = [" "]', 'timeout_sec = 0',
+                        'timeout_sec = true', 'timeout_sec = inf',
+                        'timeot_sec = 30'):
+            with self.subTest(setting=setting):
+                self.configure('[verify]\n' + setting + '\n')
+                with self.assertRaisesRegex(SystemExit, r"\[verify\]"):
+                    check_document(self.tgt)
+        self.configure('[verify]\nalways = ["missing-program"]\n'
+                       'before_merge = ["exit 1"]\ntimeout_sec = 12\n')
+        check_document(self.tgt)
+
+
+class BaselineBriefTests(unittest.TestCase):
+    def test_baseline_only_success_and_failure_are_visible_to_reviewer(self):
+        from holophyte.loop import _verify_brief
+        with tempfile.TemporaryDirectory() as wt:
+            target = type("Target", (), {"config": lambda self: {
+                "verify": {"always": ["echo baseline-detail"]}}})()
+            for command, ok_expected in (("echo baseline-detail", True),
+                                         ("echo baseline-detail; exit 1", False)):
+                with self.subTest(command=command):
+                    with patch.object(target, "config", return_value={
+                            "verify": {"always": [command]}}):
+                        ok, out = holophyte.gates.with_baseline(
+                            target, wt, "", True, "")
+                    self.assertEqual(ok, ok_expected)
+                    brief = _verify_brief("", ok, out)
+                    self.assertIn("(1 commands)", brief)
+                    self.assertIn("PASSED" if ok else "FAILED", brief)
+                    self.assertIn("baseline-detail", brief)
+            self.assertEqual(_verify_brief("", True, ""), "")
 
 
 if __name__ == "__main__":
