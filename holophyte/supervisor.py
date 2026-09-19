@@ -31,6 +31,7 @@ import json
 import os
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -830,6 +831,7 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
         release_supervisor_lock(path, pid)
         reexec_self(reason, EXEC, out)
 
+    skipped = 0
     previous = {signum: signal.signal(signum, on_signal)
                 for signum in STOP_SIGNALS}
     try:
@@ -848,11 +850,21 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
             try:
                 supervise_pass(target, pid, started_at, provider=provider,
                                out=out)
+            except sqlite3.OperationalError as exc:
+                skipped += 1
+                next_step = (f"next pass in {interval}s" if skipped < 3 else
+                             "exiting after 3 consecutive skipped passes")
+                print("[holo2] supervisor pass skipped: store unavailable"
+                      f" ({exc}); {next_step}", file=out)
+                if skipped >= 3:
+                    return 1
             except SystemExit as refused:
                 if NEWER_SCHEMA not in str(refused) or stop.is_set():
                     raise
                 reexec(f"{refused}; supervisor re-executing")
                 return 0  # only a test's EXEC returns
+            else:
+                skipped = 0
             wait(interval)
         print("[holo2] supervisor stopping on signal; lock released",
               file=out)

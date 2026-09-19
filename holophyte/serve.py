@@ -621,6 +621,14 @@ class StatusHandler(BaseHTTPRequestHandler):
     and a line per poll would bury the lines that matter.
     """
 
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+            print(f"[holo2] client disconnected: {getattr(self, 'path', '?')}",
+                  file=sys.stderr)
+
     def do_GET(self):
         parts = urlsplit(self.path)
         path = parts.path

@@ -9,10 +9,14 @@ sweep read the box once for the whole run.
 
 from __future__ import annotations
 
+import io
+import signal
+import sqlite3
 import sys
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -95,6 +99,13 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
 class MergeLockSweepTests(SweepTestCase):
     """KO-342: the sweep clears a merge lock whose run has ended, names it,
     and leaves a live run's lock alone."""
+
+    def setUp(self):
+        super().setUp()
+        # run_sweep hides executable tools; CLI startup still needs an identity.
+        build = patch("holophyte.startup.build_sha", return_value="test-build")
+        build.start()
+        self.addCleanup(build.stop)
 
     def lock_for(self, run_id):
         path = holophyte.gates.merge_lock_path(self.tgt)
@@ -187,6 +198,39 @@ class MergeLockSweepTests(SweepTestCase):
         self.assertNotIn("already cleared", " ".join(lines))
         self.assertFalse(path.exists())  # the gate's own release, last
         self.assertEqual(list(path.parent.glob("merge.lock")), [])
+
+
+class UnavailableStoreTests(SweepTestCase):
+    def test_skipped_passes_recover_reset_strikes_and_stop_after_three(self):
+        error = sqlite3.OperationalError("locking protocol")
+        for outcomes, expected_code, skips in (
+                ([error, None], 0, 1),
+                ([error, error, None, error, error, None], 0, 4),
+                ([error, error, error], 1, 3)):
+            with self.subTest(outcomes=outcomes):
+                out = io.StringIO()
+                waits = []
+
+                def wait(interval):
+                    waits.append(interval)
+                    if len(waits) == len(outcomes):
+                        signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+                with patch.object(holophyte.supervisor, "supervise_pass",
+                                  side_effect=outcomes) as run_pass, \
+                        patch.object(holophyte.supervisor, "factory_revision",
+                                     return_value="unchanged"):
+                    code = holophyte.supervisor.supervise(
+                        self.tgt, interval=7, wait=wait, out=out)
+                self.assertEqual(code, expected_code)
+                self.assertEqual(run_pass.call_count, len(outcomes))
+                lines = [line for line in out.getvalue().splitlines()
+                         if "supervisor pass skipped:" in line]
+                self.assertEqual(len(lines), skips)
+                self.assertIn("store unavailable (locking protocol)", lines[0])
+                self.assertIn("next pass in 7s", lines[0])
+                self.assertEqual(len(waits), len(outcomes) - bool(expected_code))
+
 
 if __name__ == "__main__":
     unittest.main()
