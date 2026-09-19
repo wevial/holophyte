@@ -423,21 +423,21 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertNotEqual(old, fixed)
         self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
                          [fixed])
-        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S] * 2)
+        self.assertEqual(naps, [5, holophyte.pr.CHECK_POLL_S])
         self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 2"),
                          [("merged",)])
 
 
-    def test_babysit_review_fix_head_timeout_parks_naming_both_shas(self):
+    def test_babysit_review_fix_stale_api_uses_remote_head(self):
         old, fake, naps = self.review_fix_propagation(catches_up=False)
         self.assertEqual(fake.roles, ["review", "implement", "review", "implement"])
         fixed = fake.turns[2].candidate_sha
-        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
-        self.assertEqual(sum(naps), 31)
-        self.assertIn(f"the pull request's head is {old[:12]} after 31s;"
-                      f" the babysitter pushed {fixed[:12]}", self.question())
-        self.assertEqual(self.read("SELECT phase, candidateSha FROM runs WHERE id = 2"),
-                         [("awaiting_merge_approval", fixed)])
+        self.assertNotEqual(old, fixed)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
+                         [fixed])
+        self.assertEqual(sum(naps), 15)
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 2"),
+                         [("merged",)])
 
 
     def test_babysit_gets_a_recorded_fix_round_past_the_spent_cap(self):

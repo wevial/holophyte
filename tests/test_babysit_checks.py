@@ -235,6 +235,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.enterContext(patch.object(holophyte.pr, "SLEEP"))
         self.configure('[merge]\nmode = "pr"\n')
         other = "a" * 40
+        self.enterContext(patch("holophyte.pr_head._remote_head", return_value=other))
         self.fake_route(states=[self.pr_state(head=other)])
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=self.provider())

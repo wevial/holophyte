@@ -229,25 +229,21 @@ class ConflictRefusalCases(BabysitHelpers):
             self.loop(Commit("candidate"), review, Idle(""), APPROVE, Idle(""),
                       provider=self.provider())
         self.assert_conflict_merge_landed()
-        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
+        self.assertEqual(naps, [5])
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "merge", "state", "state", "merge"])
 
-    def test_conflict_push_head_timeout_parks_naming_both_shas(self):
+    def test_conflict_push_stale_api_uses_remote_head(self):
         review = self.conflict_refusal(heads=("old",))
-        self.configure('[merge]\nmode = "pr"\npr_poll_sec = 31\n')
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append):
-            self.loop(Commit("candidate"), review, Idle(""),
+            self.loop(Commit("candidate"), review, Idle(""), APPROVE, Idle(""),
                       provider=self.provider())
         original, pushed = [sha for _, sha in self.pushed()]
-        self.assertEqual(sum(naps), 31)
-        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM runs"),
-                         [("awaiting_merge_approval", None, pushed)])
-        self.assertIn(f"the pull request's head is {original[:12]} after 31s;"
-                      f" the babysitter pushed {pushed[:12]}", self.question())
+        self.assertEqual(sum(naps), 15)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual([v["sha"] for kind, v in self.api_calls()
-                          if kind == "merge"], [original])
+                          if kind == "merge"], [original, pushed])
 
     def test_human_approval_conflict_refusal_preserves_the_candidate(self):
         review = self.conflict_refusal()
