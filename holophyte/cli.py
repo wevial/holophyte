@@ -32,6 +32,7 @@ from holophyte.config_tables import (
     loop_config,
 )
 from holophyte.operator import (
+    BABYSIT_DEFAULT_NOTE,
     approve,
     babysit_ticket,
     close_ticket,
@@ -63,8 +64,6 @@ FILE_TICKET_STATES = ("Todo", "Backlog")
 # the point of the mode, and "merge" is the whole of what a bare approval
 # says, so it needs no reason the way `--requeue` does.
 APPROVE_DEFAULT_NOTE = "approved for merge"
-# And `--babysit`'s: "look at the pull request again" is all a bare one says.
-BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
 
 
 def serve_address(text):
@@ -191,9 +190,10 @@ def cli(argv=None):
     modes.add_argument(
         "--babysit", metavar="KO-n",
         help="send the ticket parked on its pull request ([merge] mode = "
-             "\"pr\") back to the babysitter: records a babysit "
-             "intervention on its parked run carrying --note (default "
-             f"{BABYSIT_DEFAULT_NOTE!r}), ends that run with its resume "
+             "\"pr\") back to the babysitter: a custom --note records a "
+             "maintainer instruction like Send back, while no note or the "
+             f"default {BABYSIT_DEFAULT_NOTE!r} requests another look; "
+             "ends that run with its resume "
              "point at the merge gate and walks the ticket to ready, in one "
              "transaction; the loop's next claim resumes the candidate on "
              "the PR and reads its threads and checks again, parking again "
@@ -283,8 +283,8 @@ def cli(argv=None):
         help="with --requeue: why the ticket goes back in the queue; with "
              "--repoint: why the candidate moved to the new sha; with "
              "--approve: anything the approval should say beyond "
-             f"{APPROVE_DEFAULT_NOTE!r}; with --babysit: anything beyond "
-             f"{BABYSIT_DEFAULT_NOTE!r}; with --close: context for the external "
+             f"{APPROVE_DEFAULT_NOTE!r}; with --babysit: a maintainer instruction "
+             f"unless {BABYSIT_DEFAULT_NOTE!r}; with --close: context for the external "
              "landing; recorded on the intervention row's "
              "event")
     # Only the two states a filed ticket can start in: Todo is ready to

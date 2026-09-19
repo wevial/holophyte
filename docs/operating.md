@@ -23,6 +23,10 @@ not the worktree; every other
 `blocked_on_operator` park (a pull request, `merge?`, a strike-out) keeps
 `--requeue`'s refusal.
 
+A custom `--note` on `--babysit` records a maintainer instruction like the
+console’s Send back, while no note or the default `sent back to the babysitter`
+requests another look at the pull request.
+
 ## Supervising
 
 The loop watches itself only while it is alive. A crashed or hung run leaves
