@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -132,6 +133,96 @@ class MediaTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(parents.strip(), "1")
+
+    def media_remote(self):
+        remote = self.root / "media.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "evidence",
+                        str(remote)], check=True)
+        self.git("push", str(remote), "main:evidence")
+        config = self.root / "gitconfig"
+        config.write_text(
+            '[user]\n name = Test\n email = test@example.invalid\n'
+            f'[url "{remote}"]\n'
+            ' insteadOf = https://github.com/example/media.git\n')
+        self.enterContext(patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(config)}))
+        self.enterContext(patch("holophyte.pr_media.shutil.which", return_value=None))
+        self.enterContext(patch("holophyte.pr.token_from_env",
+                                return_value="test-token"))
+        self.config["merge"]["media_repo"] = "example/media"
+        return remote
+
+    def test_separate_media_repository_and_visibility(self):
+        remote = self.media_remote()
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       f'Path(sys.argv[1], "01-name.png").write_bytes({PNG!r})\n'
+                       f'Path(sys.argv[1], "02-name.png").write_bytes({PNG!r})\n')
+        for private in (False, True):
+            with self.subTest(private=private):
+                if private:
+                    self.git("commit", "--allow-empty", "-qm", "retry")
+                body = self.open(private=private)
+                self.visibility.assert_called_once_with(self.target, "example/media")
+                for name in ("01-name.png", "02-name.png"):
+                    data = subprocess.check_output(
+                        ["git", "--git-dir", str(remote), "show",
+                         f"evidence:KO-505/{name}"])
+                    self.assertEqual(data, PNG)
+                    prefix = ("https://github.com/example/media/blob/" if private
+                              else "https://raw.githubusercontent.com/example/media/")
+                    suffix = "?raw=true" if private else ""
+                    self.assertIn(f"{prefix}evidence/KO-505/{name}{suffix}", body)
+                self.assertIn("example/media", body)
+                self.assertEqual(subprocess.check_output(
+                    ["git", "--git-dir", str(self.remote), "for-each-ref",
+                     "--format=%(refname) %(objectname)"], text=True),
+                    f"refs/heads/candidate {self.git('rev-parse', 'HEAD')}\n")
+
+    def test_separate_media_retries_a_concurrent_push(self):
+        remote = self.media_remote()
+        self.candidate()
+        run = subprocess.run
+        pushes = []
+
+        def race(args, **kwargs):
+            if args[:3] == ["git", "push", "--porcelain"]:
+                pushes.append(args)
+                if len(pushes) == 1:
+                    other = self.root / "other"
+                    run(["git", "clone", "-q", str(remote), str(other)], check=True)
+                    (other / "KO-other").write_text("concurrent evidence")
+                    run(["git", "add", "."], cwd=other, check=True)
+                    run(["git", "commit", "-qm", "other evidence"],
+                        cwd=other, check=True)
+                    run(["git", "push", "-q"], cwd=other, check=True)
+            return run(args, **kwargs)
+
+        with patch("holophyte.pr_media.subprocess.run", side_effect=race):
+            body = self.open()
+        self.assertEqual(len(pushes), 2)
+        self.assertIn("example/media/evidence/KO-505/screen.png", body)
+        self.assertEqual(subprocess.check_output(
+            ["git", "--git-dir", str(remote), "show", "HEAD:KO-other"]),
+            b"concurrent evidence")
+        self.assertEqual(subprocess.check_output(
+            ["git", "--git-dir", str(remote), "show", "HEAD:KO-505/screen.png"]),
+            PNG)
+
+    def test_separate_media_push_failure_does_not_fall_back(self):
+        remote = self.media_remote()
+        hook = remote / "hooks" / "pre-receive"
+        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.chmod(0o755)
+        self.candidate()
+        body = self.open()
+        self.assertIn("failed to publish evidence", body)
+        self.assertIn("example/media", body)
+        self.assertEqual(subprocess.check_output(
+            ["git", "--git-dir", str(self.remote), "for-each-ref",
+             "--format=%(refname) %(objectname)"], text=True),
+            f"refs/heads/candidate {self.git('rev-parse', 'HEAD')}\n")
+        self.assertEqual(subprocess.check_output(
+            ["git", "--git-dir", str(remote), "ls-tree", "-r", "HEAD"],
+            text=True), "")
 
     def test_private_images_and_cached_visibility_note(self):
         self.candidate(script="import sys\nfrom pathlib import Path\n"

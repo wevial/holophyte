@@ -239,3 +239,15 @@ export function findingsHistory(rounds: Round[], ledger: LedgerRow[]): RoundHist
     })
     .reverse();
 }
+
+
+export interface Instruction {
+  kind: "instruction";
+  path: string;
+  line?: number | null;
+  author: string;
+  request: string;
+  url: string;
+  outcome?: "changed" | "kept" | "asked";
+  reply?: string;
+}

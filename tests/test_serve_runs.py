@@ -440,22 +440,31 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         reply = babysitter.round_reply(
             pr.PullRequest("github.com", "example", "repo", 1,
                            "https://github.com/example/repo/pull/1"),
-            1, (mentioned, finding),
-            {1: ("ADDRESS", mentioned.request), 2: ("ADDRESS", "handle empty tokens")},
+            1, (finding, mentioned),
+            {1: ("ADDRESS", "handle empty tokens"), 2: ("ADDRESS", mentioned.request)},
             "success", "abc123")
         conn = store.open(str(self.db))
         try:
             store.record_review_round(conn, self.run, 3, "changes_requested",
-                                      "github:reviewer", findings=parse_findings(reply))
+                                      "github:reviewer",
+                                      findings=parse_findings(reply) + [dict(
+                                          kind="instruction", path="other.py", line=9,
+                                          severity="nit", author="maintainer",
+                                          request="Keep validation", url="https://example.com/thread")])
         finally:
             conn.close()
         self.start()
         code, _, body = self.request("GET", f"/runs/{self.run}")
         self.assertEqual(code, 200)
         rnd = body["rounds"][-1]
-        self.assertEqual(len(rnd["instructions"]), 1)
-        self.assertIn("use the path tokenId - Drop guestTokenId "
-                      "- Preserve token validation", rnd["instructions"][0]["message"])
+        self.assertEqual(len(rnd["instructions"]), 2)
+        self.assertEqual("use the path tokenId - Drop guestTokenId "
+                      "- Preserve token validation", rnd["instructions"][0]["request"])
+        self.assertEqual(rnd["instructions"][0]["path"], "app.py")
+        self.assertEqual(rnd["instructions"][0]["author"], "operator")
+        self.assertEqual(rnd["instructions"][1]["path"], "other.py")
+        self.assertEqual(rnd["instructions"][1]["author"], "maintainer")
+        self.assertEqual(rnd["instructions"][1]["request"], "Keep validation")
         self.assertEqual(len(rnd["findings"]), 1)
         self.assertIn("Handle empty tokens", rnd["findings"][0]["message"])
 

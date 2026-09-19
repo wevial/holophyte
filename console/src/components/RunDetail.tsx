@@ -14,6 +14,7 @@ import type { Round, RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
 import { FilesTouched } from "./FilesTouched";
 import { FindingCard } from "./FindingCard";
+import { InstructionCard } from "./InstructionCard";
 import { RoundTimeline } from "./RoundTimeline";
 import { RunLog } from "./RunLog";
 import { PrLink, Sha } from "./ShippedTable";
@@ -126,9 +127,11 @@ function Card({
           {rounds.some((round) => (round.instructions ?? []).length > 0) && (
             <section className="mt-4">
               <h3 className="text-sm font-semibold">Instructions</h3>
-              {rounds.flatMap((round) => (round.instructions ?? []).map((instruction, index) => (
-                <p key={`${round.round}-${index}`} className="mt-2 whitespace-pre-wrap text-sm">{instruction.message}</p>
-              )))}
+              <ul className="mt-2 flex flex-col gap-2">
+                {rounds.flatMap((round) => (round.instructions ?? []).map((instruction, index) => (
+                  <InstructionCard key={`${round.round}-${index}`} instruction={instruction} />
+                )))}
+              </ul>
             </section>
           )}
           {finished ? (

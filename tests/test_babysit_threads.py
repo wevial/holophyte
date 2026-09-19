@@ -69,6 +69,45 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn("Addressed in ", replies[0]["body"])
         self.assertIn(("resolve", {"thread": "PRRT_1"}), self.api_calls())
 
+    def test_two_instructions_are_stored_with_posted_outcomes(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        threads = [("src/app.py", 30, ("operator", "User"),
+                    "@holophyte use the path token\n  and reject missing tokens"),
+                   ("src/app.py", 40, ("maintainer", "User"),
+                    "@holophyte preserve validation")]
+        self.fake_route(states=[self.pr_state(threads), self.pr_state()])
+        pending = []
+        original = holophyte.pr.reply_thread
+
+        def reply(*args, **kwargs):
+            pending.extend(json.loads(self.read(
+                "SELECT findings FROM reviewRounds WHERE round = 2")[0][0]))
+            return original(*args, **kwargs)
+
+        with patch("holophyte.pr.reply_thread", side_effect=reply):
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                                Commit("fix tokens"), APPROVE, Idle(""),
+                                provider=self.provider())
+        findings = json.loads(self.read(
+            "SELECT findings FROM reviewRounds WHERE round = 2")[0][0])
+        self.assertEqual(len(findings), 2)
+        replies = [data["body"] for kind, data in self.api_calls() if kind == "reply"]
+        for index, (finding, request, author) in enumerate(zip(
+                findings, ("use the path token\n  and reject missing tokens",
+                           "preserve validation"),
+                ("operator", "maintainer"))):
+            self.assertEqual({k: finding[k] for k in
+                              ("kind", "path", "line", "author", "request", "url")},
+                             dict(kind="instruction", path="src/app.py",
+                                  line=30 + index * 10, author=author, request=request,
+                                  url=self.URL + f"#discussion_r{index + 1}"))
+            self.assertEqual(finding["outcome"], "changed")
+            self.assertEqual(finding["reply"], replies[index])
+        self.assertNotIn("outcome", pending[0])
+        self.assertNotIn("outcome", pending[1])
+        self.assertIn("ADDRESS: use the path token and reject missing tokens",
+                      fake.turns[-1].goal)
+
     def test_unmentioned_latest_reply_is_judged_with_whole_conversation(self):
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
         threads = [
@@ -91,6 +130,12 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                       "is the thread's request", goal)
         self.assertIn("use path tokenId", fake.turns[4].goal)
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state", "reply"])
+        findings = json.loads(self.read(
+            "SELECT findings FROM reviewRounds WHERE round = 2")[0][0])
+        self.assertEqual(len(findings), 2)
+        for finding in findings:
+            with self.subTest(message=finding["message"]):
+                self.assertNotIn("VERDICT:", finding["message"])
 
     def test_custom_handle_routes_only_its_exact_latest_mention(self):
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n'
