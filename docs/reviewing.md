@@ -86,6 +86,20 @@ loop answers those the way an operator would by hand -- read, judge, fix,
 reply, wait, repeat -- and every pass is a review round of the run, so
 FINDINGS shows the GitHub rounds beside the Codex ones.
 
+A human mention of the configured handle in the pull request conversation
+is an instruction too. It bypasses adjudication and is answered by a
+conversation comment quoting the request and naming the fix SHA; there is
+no review thread to resolve. Unmentioned conversation comments are ignored.
+
+A merge under human approval requires an explicit approve recorded on the
+run: `--approve KO-n` records `approvedAt` and `approvedBy`. A `--babysit`
+resume or an independent review approval alone does not grant that permission.
+
+The pull request description is rewritten after each approved fix round,
+using the current diff, ticket and repository conventions, so it describes
+the candidate now under review. If the writing turn fails, the existing
+description is preserved.
+
 One pass:
 
 1. **Read.** One GraphQL query returns the PR's unresolved review threads,

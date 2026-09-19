@@ -37,7 +37,6 @@ MOVED_HEADINGS = (
     "Supervising",
     "Serving",
     "Linting",
-    "Config",
     "Local reviewer boundary",
 )
 
@@ -87,6 +86,8 @@ class self_exit:
 
 class HeadingTests(unittest.TestCase):
     def test_every_moved_heading_lives_in_exactly_one_doc(self):
+        # KO-520 promotes Config to the page title above per-table sections.
+        self.assertTrue((DOCS / "config.md").read_text().startswith("# Config\n"))
         homes = {title: [] for title in MOVED_HEADINGS}
         for name in TOPIC_DOCS:
             for title in headings((DOCS / f"{name}.md").read_text(), 2):

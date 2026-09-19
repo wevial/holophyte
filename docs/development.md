@@ -94,21 +94,12 @@ Each module, one line:
   of `holophyte/pr.py`: `pull_status()` for the parked-run reconcile,
   `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.
 - `holophyte/media_store.py` — standard-library SigV4 PUTs for evidence in an
-  S3-compatible bucket. Configure `[merge.media_bucket]` with `endpoint`,
-  `bucket`, `public_base`, and optional `retention_days` for display; set
-  `HOLOPHYTE_MEDIA_ACCESS_KEY_ID` and `HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY`
-  in the environment. The operator sets public reads and lifecycle expiry
-  on the bucket. Bucket publishing takes precedence over both git publishers.
+  S3-compatible bucket. Operator setup lives in the
+  [bucket configuration reference](config.md#mergemedia_bucket).
 - `holophyte/pr_media.py` — user-facing diff matching, timed capture, bounded
   media publishing and evidence shared by PR descriptions and review prompts.
-  `[merge] media_max_file_mb` defaults to 10 and `media_max_total_mb` to 20
-  (MB measured as 1,048,576 bytes); oversized files are omitted, then videos
-  are dropped first to fit the total. Each omission appears in Evidence.
-  Configure `[merge] ui_paths` with repository-relative globs and `ui_capture`
-  with a non-interactive command (shell-style quoting, no shell evaluation).
-  The command receives one output-directory argument and has five minutes to
-  write PNG, WebM or MP4 files. Configure both keys together; absent keys
-  leave PRs unchanged.
+  See [merge configuration](config.md#merge) for capture commands, destinations
+  and size limits.
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.
