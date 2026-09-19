@@ -684,3 +684,34 @@ class MigrationFeedTests(ServeTestCase):
                 target, query)
             self.assertFalse(any(r.get("action") == "migrate"
                                  for r in filtered["entries"]))
+
+
+class FailurePayloadTests(MergeModeFixture):
+    def test_failure_event_facts_and_console_reason(self):
+        from tests.fake_agent import REQUEST_CHANGES
+        from tests.loop_fixture import StubProvider, a_task
+
+        command = "sh -c 'echo boom; exit 3'"
+        task = dict(a_task(), verify=f"echo first\n{command}")
+        self.loop(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES,
+                  Commit(), provider=StubProvider(task))
+        ((reason,),) = self.read('SELECT outcomeReason FROM runs')
+        ((summary, payload),) = self.read(
+            "SELECT summary, payload FROM runEvents WHERE kind = 'failure'")
+        self.assertEqual(summary, reason)
+        facts = json.loads(payload)
+        self.assertEqual(facts['kind'], 'verify')
+        self.assertEqual(facts['command_index'], 2)
+        self.assertEqual(facts['command'], command)
+        self.assertEqual(facts['exit_status'], 3)
+        self.assertEqual(facts['last_output_line'], 'boom')
+        code, body = holophyte.serve_runs.shipped(self.tgt, 'outcome=all')
+        self.assertEqual(code, 200)
+        self.assertEqual(body['rows'][0]['outcome_reason'], reason)
+        self.assertIsInstance(body['rows'][0]['outcome_reason'], str)
+        self.assertIn('command 2', reason)
+        self.assertIn('exit 3; boom', reason)
+        code, body = holophyte.serve.attention(self.tgt)
+        self.assertEqual(code, 200)
+        (card,) = [item for item in body['items'] if item['kind'] == 'failed']
+        self.assertEqual(card['reason'], reason)

@@ -27,7 +27,7 @@ import review_runner
 import store
 import store.read
 import ticket_template
-from holophyte import pr_status
+from holophyte import failure_reason, pr_status
 from holophyte.agents import agent, review_refs, transport_failure
 from holophyte.babysitter import _babysit
 from holophyte.board import (
@@ -244,7 +244,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     if not approved:
         _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
-                               verify_cmd, contracts, cap)
+                               verify_cmd, contracts, cap, criteria)
 
     # 4. pre-merge verify (catches fix-round regressions), then merge. Both
     # happen under `merge_gate`: §4's gate node is the one edge out of a
@@ -823,15 +823,17 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
         if timed_out or sh(["git", "rev-parse", "HEAD"], cwd=wt) == sha:
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
-            raise RunFailure(f"fix round {rnd} timed out or made no progress;"
-                             f" branch {branch} preserved at {sha[:12]}")
+            findings = store.read.rounds_of(conn, run_id)[-1].findings if conn else None
+            pending = json.loads(findings) if findings else []
+            raise RunFailure(failure_reason.fix_round(
+                pending, timed_out, f"branch {branch} preserved at {sha[:12]}"))
         sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     return sha, rnd, False
 
 
 def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                            branch, wt, beat_s, base_sha, sha, ticket,
-                           verify_cmd, contracts, cap):
+                           verify_cmd, contracts, cap, criteria=()):
     """3b. Terminal adjudication: all `cap` review rounds and their fixes
     are spent, so one fresh independent run issues a bare verdict on the
     final state. There is no further fix round under any outcome —
@@ -850,8 +852,9 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                f"FAILED verify before terminal adjudication after "
                f"{cap} review rounds (the run's cap); branch {branch} preserved "
                f"at {sha}\n\n{out}", provider)
-        raise RunFailure(f"verify failed before terminal adjudication;"
-                         f" branch {branch} preserved at {sha[:12]}")
+        raise RunFailure(failure_reason.verify(
+            out, verify_cmd, f"before terminal adjudication; "
+            f"branch {branch} preserved at {sha[:12]}"))
     print("[holo2] verify ok before adjudication")
 
     set_phase(conn, run_id, "reviewing", "terminal adjudication")
@@ -866,6 +869,7 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
             "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
             f"{ticket}\n\n"
             + _verify_brief(verify_cmd, ok, out)
+            + criteria_brief(criteria)
             + "This candidate has already had its review rounds and their "
             "fixes; no further fix round exists. Your job is a verdict on "
             "the state as it stands, not a review.\n"
@@ -894,8 +898,9 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                f"Terminal adjudication after {cap} review "
                f"rounds: {decision}; branch {branch} preserved at "
                f"{sha}\n\nAdjudicator reply:\n{reply}", provider)
-        raise RunFailure(f"terminal adjudication: {decision};"
-                         f" branch {branch} preserved at {sha[:12]}")
+        raise RunFailure(failure_reason.adjudication(
+            reply, criteria, decision,
+            f"branch {branch} preserved at {sha[:12]}"))
     print("[holo2] terminal adjudication: PASS")
     ledger(conn, run_id, task_id, "adjudication",
            f"Terminal adjudication after {cap} review "

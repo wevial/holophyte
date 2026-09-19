@@ -31,11 +31,11 @@ OVER = {}
 # Pins are exact counts except the three KO-487 splits, which have headroom.
 # Those caps start 100 lines above their post-split lengths.
 PINNED = {
-    "holophyte/babysitter.py": 962, "holophyte/board.py": 894,
+    "holophyte/babysitter.py": 972, "holophyte/board.py": 897,
     "holophyte/claim.py": 816, "holophyte/cli.py": 479,
     "holophyte/config.py": 752, "holophyte/dispatch.py": 262,
     "holophyte/config_tables.py": 596, "holophyte/findings.py": 331,
-    "holophyte/gates.py": 746, "holophyte/loop.py": 902,
+    "holophyte/gates.py": 793, "holophyte/loop.py": 907,
     "holophyte/merge_gate.py": 495,
     "holophyte/operator.py": 479, "holophyte/pool.py": 371,
     "holophyte/pr.py": 663, "holophyte/pr_status.py": 441,
@@ -50,7 +50,7 @@ PINNED = {
     "store/operate.py": 914, "store/read.py": 956,
     "store/schema.py": 807, "store/tickets.py": 462,
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 653,
-    "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 274,
+    "tests/serve_fixture.py": 170, "tests/test_babysit_pass.py": 312,
     "tests/test_babysit_threads.py": 836, "tests/test_babysit_checks.py": 355,
     "tests/test_babysitter.py": 516, "tests/test_config_tables.py": 496,
     "tests/test_claim.py": 1500, "tests/test_claim_mirror.py": 178,
@@ -63,7 +63,7 @@ PINNED = {
     "tests/test_pullrequest.py": 1200, "tests/test_reconcile.py": 414,
     "tests/test_serve.py": 1160,
     "tests/test_serve_actions.py": 317, "tests/test_serve_config.py": 709,
-    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 686,
+    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 717,
     "tests/test_serve_shipped.py": 181,
     "tests/sweep_fixture.py": 196, "tests/test_startup_checks.py": 648,
     "tests/test_store.py": 282,

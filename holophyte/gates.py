@@ -117,9 +117,10 @@ def split_and_clauses(cmd):  # noqa: C901 -- hand-written tokenizer; slice 4b ow
     return None if any(not c for c in clauses) else clauses
 
 
-def instrumented_script(clauses):
-    """One shell script that runs the clauses in order, stopping at the first
-    failure with the original exit status. The clauses stay in a single shell,
+def instrumented_script(clauses, *, stop_on_failure=True):
+    """One shell script that runs clauses in order. An && chain stops at the
+    first failure; newline blocks retain their last-command exit semantics.
+    Failures retain the original exit status. Clauses stay in a single shell,
     so `cd` and exported variables still carry across them.
 
     The failure is reported from an EXIT trap reading a clause counter, so a
@@ -129,10 +130,18 @@ def instrumented_script(clauses):
              "trap '__holo2_rc=$?; [ \"$__holo2_rc\" -eq 0 ] || "
              "printf \"%s\\n\" \"{} $__holo2_clause $__holo2_rc\"' EXIT"
              .format(FAIL_MARK)]
+    if not stop_on_failure:
+        # Reporting must not clobber the status a following `$?` reads.
+        parts.append('__holo2_mark() { local status=$1; __holo2_clause=$2; '
+                     f'printf "%s\\n" "{CLAUSE_MARK} $2"; return "$status"; }}')
     for idx, clause in enumerate(clauses, 1):
-        parts.append("__holo2_clause={}".format(idx))
-        parts.append("printf '%s\\n' '{} {}'".format(CLAUSE_MARK, idx))
-        parts.append("{{ {}\n}} || exit $?".format(clause))
+        if stop_on_failure:
+            parts.append("__holo2_clause={}".format(idx))
+            parts.append("printf '%s\\n' '{} {}'".format(CLAUSE_MARK, idx))
+        else:
+            parts.append(f'__holo2_mark $? {idx}')
+        parts.append("{{ {}\n}}".format(clause) +
+                     (" || exit $?" if stop_on_failure else ""))
     return "\n".join(parts)
 
 
@@ -403,7 +412,8 @@ def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None
 
 
 def _run_verify(cmd, cwd, contracts=None, timeout=None):
-    """Mechanical acceptance check. Returns (ok, output). Runs via shell on
+    """Mechanical acceptance check. Returns (ok, output), with structured
+    command facts on failed output's `failure` attribute. Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
 
     Literal contracts run first. Reports reject drift and zero-test discovery.
@@ -418,26 +428,54 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None):
               if contracts else "")
     if not cmd:
         return True, passed + "(no verify command)"
-    clauses = split_and_clauses(cmd)
+    # Complete, simple command lines can be marked without splitting the
+    # shell: exported variables and cd still carry, and a newline block keeps
+    # its existing last-command exit semantics. Complex shell programs remain
+    # verbatim; the whole program is their command.
+    lines = [text for text in cmd.splitlines()
+             if text.strip() and not text.lstrip().startswith('#')]
+    block = len(lines) > 1 and all(
+        '<<' not in text and not text.endswith('\\') and subprocess.run(
+            ['bash', '-n'], input=text, text=True, capture_output=True).returncode == 0
+        for text in lines)
+    clauses = lines if block else split_and_clauses(cmd)
     marked = bool(clauses) and len(clauses) > 1
     try:
         returncode, out = run_capped(
-            instrumented_script(clauses) if marked else cmd,
+            instrumented_script(clauses, stop_on_failure=not block) if marked else cmd,
             cwd, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
         # The cap is a failed verify, not a crash: `run_capped` has already
         # reaped the process group, and what the command printed before the
         # kill says which clause was running when it fired.
         per_clause, _, cleaned = parse_clause_output(expired.output or "")
-        return False, timeout_failure_report(cmd, clauses if marked else None,
-                                             per_clause, cleaned,
-                                             expired.timeout)
+        report = timeout_failure_report(cmd, clauses if marked else None,
+                                        per_clause, cleaned, expired.timeout)
+        index = max(per_clause, default=1)
+        return False, _verify_failure(report, cmd, clauses if marked else None,
+                                      index, None, per_clause.get(index, cleaned))
     per_clause, failed, cleaned = parse_clause_output(out)
     if returncode == 0:
         vacuous = vacuous_green_report(cmd, cleaned)
-        return (False, vacuous) if vacuous else (True, passed + cleaned.strip()[-2000:])
-    return False, failure_report(cmd, clauses if marked else None,
-                                 per_clause, failed, returncode, cleaned)
+        if vacuous:
+            index = next((n for n, text in per_clause.items()
+                          if VACUOUS_RE.search(text)), 1)
+            return False, _verify_failure(vacuous, cmd, clauses, index, 0,
+                                          per_clause.get(index, cleaned))
+        return True, passed + cleaned.strip()[-2000:]
+    report = failure_report(cmd, clauses if marked else None,
+                            per_clause, failed, returncode, cleaned)
+    index = failed[0] if failed else max(per_clause, default=1)
+    return False, _verify_failure(report, cmd, clauses if marked else None,
+                                  index, returncode, per_clause.get(index, cleaned))
+
+
+def _verify_failure(report, cmd, clauses, index, status, output):
+    command = clauses[index - 1] if clauses and 1 <= index <= len(clauses) else cmd
+    facts = {'command_index': index, 'command': command,
+             'exit_status': status,
+             'last_output_line': output.splitlines()[-1] if output else '(no output)'}
+    return VerificationOutput(report, [], failure=facts)
 
 
 class RunFailure(Exception):
@@ -448,6 +486,10 @@ class RunFailure(Exception):
     difference is only the log line; both end as the same failed run with
     the text as its `outcomeReason`.
     """
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
 
 
 class InfraFailure(RunFailure):
@@ -663,9 +705,10 @@ def remove_dead_merge_lock(path):
 class VerificationOutput(str):
     """Human-readable output carrying the rows for the review's existing record."""
 
-    def __new__(cls, output, results):
+    def __new__(cls, output, results, *, failure=None):
         value = super().__new__(cls, output)
         value.results = results
+        value.failure = failure
         return value
 
 
@@ -678,6 +721,7 @@ def run_baseline(target, wt, tier, conn=None, run_id=None):
         raise ValueError(f"unknown verify tier: {tier}")
     results, reports = [], []
     ok = True
+    failure = None
     for command in getattr(config, tier):
         ok, out = run_verify(command, wt, timeout=config.timeout_sec,
                              conn=conn, run_id=run_id)
@@ -686,8 +730,9 @@ def run_baseline(target, wt, tier, conn=None, run_id=None):
                         "output": str(out)})
         reports.append(f"[baseline:{tier}] {command}\n{out}")
         if not ok:
+            failure = getattr(out, 'failure', None)
             break
-    return ok, VerificationOutput("\n".join(reports), results)
+    return ok, VerificationOutput("\n".join(reports), results, failure=failure)
 
 
 def with_baseline(target, wt, command, ok, out, conn=None, run_id=None,
@@ -705,11 +750,13 @@ def with_baseline(target, wt, command, ok, out, conn=None, run_id=None,
     results = ([{"source": "ticket", "command": command,
                  "exitCode": 0 if ok else 1, "output": str(out)}]
                if command else [])
+    failure = getattr(out, "failure", None)
     reports = [str(out)]
     for tier in (("always", "before_merge") if before_merge else ("always",)):
         if not ok:
             break
         ok, baseline = run_baseline(target, wt, tier, conn, run_id)
+        failure = baseline.failure
         results.extend(baseline.results)
         if baseline:
             reports.append(str(baseline))
@@ -719,7 +766,7 @@ def with_baseline(target, wt, command, ok, out, conn=None, run_id=None,
                            "Mechanical verification " + ("passed" if ok else "failed"),
                            level="detail",
                            payload=json.dumps({"verificationResults": results}))
-    output = VerificationOutput("\n".join(reports), results)
+    output = VerificationOutput("\n".join(reports), results, failure=failure)
     if before_merge:
         record_unreviewed_verification(conn, run_id, output)
     return ok, output
