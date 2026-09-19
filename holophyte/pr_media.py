@@ -16,6 +16,7 @@ from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
 CAPTURE_TIMEOUT = 300
+RECEIPT_VERSION = 2  # KO-512: invalidate receipts without visibility-aware URLs.
 
 
 def media_url(repo, branch, name, private):
@@ -137,8 +138,8 @@ def prepare(target, wt, task_id, record_note=None):
     cfg = merge_config(target)
     if not cfg.ui_paths or not matches(wt, cfg.ui_paths):
         return ''
-    identity = [sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt), task_id,
-                cfg.ui_paths, cfg.ui_capture, pr.origin_url(target)]
+    identity = [RECEIPT_VERSION, sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt),
+                task_id, cfg.ui_paths, cfg.ui_capture, pr.origin_url(target)]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     receipt = git_dir / f'pr-media-{key}.txt'

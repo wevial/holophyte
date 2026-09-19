@@ -1,6 +1,8 @@
 """PR evidence against a real local bare remote."""
 
 import base64
+import hashlib
+import json
 import subprocess
 import tempfile
 import unittest
@@ -159,6 +161,29 @@ class MediaTests(unittest.TestCase):
         self.ledger.assert_called_once()
         self.assertIn("visibility read failed", self.ledger.call_args.args[4])
         self.assertIn("blob", self.ledger.call_args.args[4])
+
+    def test_legacy_receipt_is_regenerated_for_private_repository(self):
+        self.candidate()
+        # Freeze the pre-KO-512 cache format to reproduce an upgrade retry.
+        legacy_identity = [self.git("rev-parse", "HEAD", "main"), "KO-505",
+                           ["console/src/**"], "python3 capture.py",
+                           "https://github.com/example/repo.git"]
+        legacy_key = hashlib.sha256(json.dumps(legacy_identity).encode()).hexdigest()
+        receipt = Path(self.git("rev-parse", "--absolute-git-dir")) / (
+            f"pr-media-{legacy_key}.txt")
+        receipt.write_text("## Evidence\n\n![screen.png](https://raw.githubusercontent.com/"
+                           "example/repo/pr-media/KO-505/screen.png)")
+
+        body = self.open(private=True)
+
+        self.assertIn("![screen.png](https://github.com/example/repo/blob/"
+                      "pr-media/KO-505/screen.png?raw=true)", body)
+        self.assertNotIn("raw.githubusercontent.com", body)
+        self.visibility.assert_called_once_with(self.target)
+        self.assertTrue((self.repo / "captured").exists())
+        self.assertIn("private", self.ledger.call_args.args[4])
+        self.assertEqual(self.open(private=True), body)
+        self.visibility.assert_not_called()
 
     def test_non_ui_and_unconfigured_do_not_capture(self):
         self.candidate("holophyte/loop.py")
