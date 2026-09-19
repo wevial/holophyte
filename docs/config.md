@@ -4,8 +4,6 @@ Every `config.toml` table the factory reads, with a commented example of each.
 A ticket that adds a config table edits this file; one that adds a mode edits
 the README's usage block. Back to the [README](index.md).
 
-## Config
-
 `LINEAR_API_KEY` — an env var or `.env` next to `linear_provider.py`. Which
 Linear project a target is driven from is the `[board]` table of that
 target's `config.toml`, below.
@@ -47,13 +45,27 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`), a key it does
+(`[agents]`, `[verify]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`), a key it does
 not read is
 a startup
 error naming the file, the table, the key and the keys the table accepts:
 `setup_timeout_min` is a typo, not a timeout, and a typo the factory ignored
 would leave a knob believed set that is not. The accepted keys are listed with
 each table below.
+
+## `[agents]`
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string; override to select another implementer harness. |
+| `reviewer` | Default: Hardened Codex review container | Non-empty command string; override only to supply an independent review route outside the container. |
+| `adjudicator` | Default: Hardened Codex review container | Non-empty command string; change to supply a separate adjudication route. |
+| `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
+| `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
+| `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
+| `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
+| `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup reviewer. |
+| `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
 
 ```toml
 [agents]
@@ -75,10 +87,6 @@ review_effort = "medium"
 # 1.0 to 3.0 otherwise. Set it for a slower harness, not for a bigger task.
 budget_scale = 1.5
 ```
-
-Accepted keys: `implementer`, `reviewer`, `adjudicator`, `review_model`,
-`review_effort`, `budget_scale`, `implementer_fallback`, `reviewer_fallback`,
-`adjudicator_fallback`.
 
 `budget_scale` exists because the budget stops runaway turns, not because
 it selects a harness: an implementer that reads more and edits later can
@@ -156,143 +164,23 @@ ticket: the string has to split to an argv, and its program has to be an
 executable found on `PATH` or named by an absolute path. A name that resolves
 nowhere is an error while nothing is in flight, rather than a
 `FileNotFoundError` in the middle of a round holding the project's run lease.
-Startup does not *run* the command — a route is an agent turn, not a probe.
+Executable resolution is separate from the live route probes described above.
 Relative paths with a directory in them (`./review.sh`) are refused: rounds run
 in a task worktree that does not exist yet, so the name would resolve somewhere
 neither startup nor the operator named.
 
-```toml
-[worktree]
-# Shell commands that prepare a freshly cut task worktree, run in order.
-setup = [
-  "python3 -m venv .venv",
-  ".venv/bin/pip install -q -e '.[dev]'",
-]
-# Wall-clock cap per setup command, in seconds. Optional; the default is the
-# verify gate's 300-second cap.
-setup_timeout_sec = 300
-# The segment ahead of the slash in a task branch name. Optional; `task` when
-# absent, so branches are `task/ko-7000-the-title-slug`.
-branch_prefix = "task"
-# Ignored install directories the review stage copies from the task worktree,
-# read-only, so the reviewer can run the ticket's verify commands. Optional;
-# empty when absent.
-carry = ["console/node_modules"]
-```
+## `[loop]`
 
-Accepted keys: `setup`, `setup_timeout_sec`, `branch_prefix`, `carry`.
-
-They run in the worktree, right after its branch is cut and before the first
-agent turn — the moment that decides what the implementer and the verify gate
-have to work with. Without them a worktree silently borrows the main checkout's
-environment (its `.venv`, its module cache), so a task that changes a dependency
-is tested against the old one. Each command goes through the same machinery as a
-ticket's verify command: shell, one command per entry, a per-command cap
-(`setup_timeout_sec`, a positive number of seconds; 300 when absent), and a
-fail-loud report that names the failing command, the cap when it is the cap
-that fired, and its output, attributing a top-level `&&` chain clause by
-clause.
-
-A failing command stops the setup — step two of a setup assumes step one worked
-— and fails the run before an agent turn is dispatched, so a target whose
-toolchain will not install costs no tokens. The branch and worktree are
-discarded rather than preserved: no agent ran, so there is nothing on them to
-keep, and the reason goes to the ticket as a comment. The table's shape is
-checked at startup with the `[agents]` commands; the commands themselves are not
-run there, since the worktree they are written against does not exist yet.
-
-What setup writes into the worktree is untracked, and the implementer is asked
-to commit its work: keep build artifacts (`.venv/`, caches) in the target's
-`.gitignore`, or a task's `git add -A` will sweep them into the branch.
-
-`carry` lists the repository-relative directories, among what setup wrote and
-git ignores, that the review stage receives a copy of: the reviewer judges a
-fresh checkout of the candidate commit, which holds none of them, and a
-console ticket's `bun --cwd=console test` reports zero tests in a stage with no
-`console/node_modules`. Each listed directory is copied into the stage at the
-same path with its write bits cleared, after the checkout and before the
-reviewer starts; the stage's identity check runs before and after the copy
-with `--ignored=no`, so a carried directory neither dirties the stage nor
-counts in its fingerprint. A listed path that is tracked in git, absent from
-the worktree, or escapes the repository (`..`) fails the stage naming the path
-rather than skipping it. Startup checks the list is a list of relative paths;
-nothing is carried that the worktree does not already hold.
-
-`branch_prefix` names the segment before the slash in every branch the loop
-cuts, so a repository with its own convention (`factory/`, `ko/`, `bot/`) keeps
-it. Everything after the slash is unchanged — the lowercased ticket identifier,
-then the title slug — because the identifier is what makes a preserved branch
-traceable from `git branch` alone. The worktree directory name does not carry
-the prefix and does not change. A prefix that is empty, contains a slash or
-whitespace, starts with `-`, or uses a character git refuses in a ref name
-(`~ ^ : ? * [ \`) is a startup error naming the key, before anything is claimed. Branches already
-preserved under an older prefix are not renamed; a run that reuses one starts
-from the name the new prefix gives it.
-
-```toml
-[supervisor]
-# The sweep's thresholds. Every key is optional; the values shown are the
-# defaults, in place whenever the key (or the whole table) is absent.
-heartbeat_stale_min      = 5    # a heartbeat older than this is a silent sighting
-stale_strikes            = 2    # consecutive silent sightings that trip a run
-budget_grace             = 1.5  # multiple of the ticket's estimate that blows the box
-run_cap                  = 3.0  # the run's hard ceiling, in boxes: the loop refuses a turn past it
-review_overlap_threshold = 0.5  # findings shared by two rounds that reads as stuck
-sweep_interval_sec       = 60   # sleep between two --supervise passes
-restart_grace_sec        = 120  # how long a self-merge re-exec may take to come back
-board_ask_sec            = 600  # least wait between two fallback asks of the board
-```
-
-Accepted keys: the eight above.
-
-`board_ask_sec` bounds how often the supervisor's board fallback may list
-the board's ready tickets. The fallback runs when the mirror is empty and
-no loop is live — a ticket filed while the loop was down has no mirror
-row, so the pass asks the board itself — and a ready listing is Linear's
-most expensive query here, thousands of the key's hourly complexity
-points. The last ask is stamped on the project's store row, so the
-interval holds across passes and across supervisor restarts whatever
-`sweep_interval_sec` is. The value is an integer of at least 60; under a
-minute the fallback is the polling that emptied the key.
-
-Separately, every Linear answer carries the key's complexity-budget
-headers and the provider shares low-budget deadlines per API key under
-`HOLOPHYTE_HOME/linear-budget` (default `~/.holophyte/linear-budget`). When under
-a tenth of the limit remains, the fallback and the loop's idle relisting
-both wait for the reset instead of spending the points to be refused: one
-`[holo2] board not asked: budget resets at HH:MM` line per refill, and no
-calls until it. Supervisor loop starts and pool worker claims honor the same
-deadline, including after a process restart; the pool also checks after
-mirroring before spawning workers. If a low reading omits the reset, the
-factory waits one hour from that reading before probing again. A refused
-answer (HTTP 429) lands the same way, as a
-`LinearBudgetExhausted` naming the reset.
-
-The box is counted per turn: a run's allowance is the ticket's estimate once
-for its first implementer turn and once more for each review round it has
-recorded, up to the run's review cap, all under `budget_grace` -- the same
-budget the loop gives each turn, so a fix round after a review is not swept as
-overtime. A run with no review round yet is judged against the single box.
-
-Whatever that allowance grows to, `run_cap` times the box is the ceiling: the
-loop refuses to arm a turn whose budget would carry the run past it -- the run
-fails there, candidate preserved, instead of the turn being killed mid-edit --
-and a run that slips past anyway is swept. The ceiling exists for the run that
-keeps earning turns by failing review, the case the per-turn budget cannot
-bound. `run_cap` is a number from 1.5 to 5.0; `/status` carries it in
-`thresholds` so the console's time-box bar can draw it.
-
-Different targets want different patience — a Go build's worktree setup is
-slower than stdlib Python's — and these are the knobs `--sweep` and
-`--supervise` read. Each value is checked at startup, for every mode: the
-thresholds and the interval must be positive numbers, `stale_strikes` a
-positive integer, `board_ask_sec` an integer of at least 60, the overlap
-a fraction in (0, 1], and `run_cap` a number
-from 1.5 to 5.0. A value outside its
-constraint is an error naming the key and the constraint, like malformed TOML,
-rather than a default quietly used in its place. A key this version does not
-know is refused the same way. The config is read once at startup; a running
-supervisor does not pick up an edit.
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `stop_on_failure` | Default: `true` | Boolean; set false to continue the queue after a failed run. |
+| `order` | Default: `"identifier"` | `"identifier"` or `"priority"`; choose priority to claim urgent Linear tickets first. |
+| `spawn_supervisor` | Default: `true` | Boolean; disable when a service manager owns the supervisor. |
+| `review_rounds` | Default: `2` | Integer at least 1; change the base independent review allowance. |
+| `review_rounds_per_lines` | Default: `800` | Integer at least 0; change the diff-size scaling interval, or use 0 to disable scaling. |
+| `review_rounds_max` | Default: `4` | Integer at least 1 and at least review_rounds; change the scaled round ceiling. |
+| `workers` | Default: `1` | Integer at least 1; increase to work multiple claimable tickets concurrently. |
+| `tick_sec` | Default: `120` seconds | Integer at least 10; change how soon a pool with spare slots notices new work. |
 
 ```toml
 [loop]
@@ -317,10 +205,6 @@ workers = 1                  # 3: up to three tickets worked at once
 # `workers` are running. Optional; the default is two minutes.
 tick_sec = 120
 ```
-
-Accepted keys: `stop_on_failure`, `order`, `spawn_supervisor`,
-`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`, `workers`,
-`tick_sec`.
 
 By default one failed run ends the process after its close-out, with a nonzero
 exit, and an operator relaunches the loop — the right call while the loop is
@@ -395,6 +279,14 @@ alone, and the tick prints nothing unless it spawns. An integer of at least
 `10`; `"120"` (a string) or `5` is a startup error naming the key. Only the
 scheduler reads it: under `workers = 1` there is no pool to tick.
 
+## `[board]`
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `project_id` | Default: None; required for a configured board | Non-empty string naming the Linear project UUID; set to choose the target's queue. |
+| `team` | Default: None; required for a configured board | Non-empty string naming the Linear team; set to resolve that team's workflow states. |
+| `label` | Default: Absent (no filter) | Non-empty string; set to claim only ready issues with this label. |
+
 ```toml
 [board]
 # The Linear project this target claims from and the team whose workflow
@@ -405,8 +297,6 @@ team = "Example Team"
 # absent, every ready issue in the project is the loop's.
 label = "holophyte"
 ```
-
-Accepted keys: `project_id`, `team`, `label`.
 
 The board is a per-target setting: two targets on one host driven from one
 process-wide variable would both claim from the same project, and the second
@@ -432,143 +322,128 @@ waits on the board at `blocked_on_deps` until it carries it again.
 the one key that may be absent, but when written it must be a non-empty
 string, and anything else is a startup error naming the key.
 
-```toml
-[report]
-# What the factory prints where it would print the machine's hostname.
-# Optional; absent, the hostname is printed as recorded.
-host_label = "writer-1"
-# Whether the loop renders FINDINGS.md into the target: `none` renders and
-# commits nothing, `repo` renders and commits the bounded window at every
-# close-out. Optional; the default is `none`.
-findings = "none"
-```
+## `[worktree]`
 
-Accepted keys: `host_label`, `findings`.
-
-The store is the run record, read through the console or `--report`;
-`FINDINGS.md` is a second copy of it that can drift, so by default
-(`findings = "none"`) no close-out writes or commits the file, the merge
-path makes no findings commit, and a pull request target's checkout gains
-no untracked file. `findings = "repo"` is for a target that wants the
-evidence beside its code: the bounded window is rendered and committed at
-every close-out, one commit per merge. Any other value fails startup naming
-`[report] findings`. Switching a target from `repo` to `none` leaves the
-`FINDINGS.md` already in its repository exactly as it is, not deleted; the
-operator removes it by hand. `--report` prints the mode in effect below the
-table.
-
-`host_label` also names this writer's board lease: the claim labels the
-Linear issue `holo:` plus the label (`holo:writer-1` above) for as long as
-the run holds the ticket, and another writer skips a ready issue carrying a
-`holo:` label that is not its own ([the loop](loop.md), step 1). Two writer
-hosts sharing one board therefore need two distinct labels; a host with no
-`host_label` leases under its hostname.
-
-The `host` column of `--report` and `--sweep` and the supervisor's startup
-and refusal lines show the label in place of the hostname when it is set.
-The `FINDINGS.md` window the loop commits renders no host: its run and round
-entries never carried one, so there is nothing there to relabel. The column
-of the report and sweep exists so a reader
-can tell which writer produced a run when there is more than one; a stable
-label does that job without naming a personal machine in a public repository.
-The store keeps recording the real hostname (`runs.host`,
-`supervisorHeartbeats.host`, the lock file), which the supervisor compares
-against its own, so the label can be renamed later without a migration. The
-value must be a non-empty string; anything else is a startup error naming the
-key.
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `setup` | Default: `[]` | List of non-empty shell command strings; set to install the target's dependencies before agent turns. |
+| `setup_timeout_sec` | Default: `300` seconds | Finite positive number; increase for slower dependency installation. |
+| `branch_prefix` | Default: `"task"` | Legal single git branch segment (constraints below); change to follow the target's branch naming convention. |
+| `carry` | Default: `[]` | List of non-empty repository-relative directory paths without `..`; set for ignored dependencies the reviewer needs. |
 
 ```toml
-[console]
-# The other daemons the console fans out to, as HOST:PORT strings. Optional;
-# absent, the page shows this daemon's project alone.
-daemons = ["writer-2:7710", "writer-3:7710"]
+[worktree]
+# Shell commands that prepare a freshly cut task worktree, run in order.
+setup = [
+  "python3 -m venv .venv",
+  ".venv/bin/pip install -q -e '.[dev]'",
+]
+# Wall-clock cap per setup command, in seconds. Optional; the default is the
+# verify gate's 300-second cap.
+setup_timeout_sec = 300
+# The segment ahead of the slash in a task branch name. Optional; `task` when
+# absent, so branches are `task/ko-7000-the-title-slug`.
+branch_prefix = "task"
+# Ignored install directories the review stage copies from the task worktree,
+# read-only, so the reviewer can run the ticket's verify commands. Optional;
+# empty when absent.
+carry = ["console/node_modules"]
 ```
 
-Accepted keys: `daemons`.
+They run in the worktree, right after its branch is cut and before the first
+agent turn — the moment that decides what the implementer and the verify gate
+have to work with. Without them a worktree silently borrows the main checkout's
+environment (its `.venv`, its module cache), so a task that changes a dependency
+is tested against the old one. Each command goes through the same machinery as a
+ticket's verify command: shell, one command per entry, a per-command cap
+(`setup_timeout_sec`, a positive number of seconds; 300 when absent), and a
+fail-loud report that names the failing command, the cap when it is the cap
+that fired, and its output, attributing a top-level `&&` chain clause by
+clause.
 
-One daemon serves one project; the console shows every project on every
-host, so the page has to be told where the others are, and the daemon it was
-loaded from tells it: `GET /peers` answers this list as `peers` beside the
-address the daemon itself bound as `self`. The entries are strings the page
-fetches from the browser; the daemon never connects to them. Each is checked
-at startup like `--serve`'s address -- a non-empty host, a decimal port -- and
-none may appear twice; a bad entry is a startup error naming `[console]
-daemons` and the entry, before anything is served. A peer beyond loopback
-is behind its own `[serve] token_file`; the page presents the token the
-operator gives it.
+A failing command stops the setup — step two of a setup assumes step one worked
+— and fails the run before an agent turn is dispatched, so a target whose
+toolchain will not install costs no tokens. The branch and worktree are
+discarded rather than preserved: no agent ran, so there is nothing on them to
+keep, and the reason goes to the ticket as a comment. The table's shape is
+checked at startup with the `[agents]` commands; the commands themselves are not
+run there, since the worktree they are written against does not exist yet.
+
+What setup writes into the worktree is untracked, and the implementer is asked
+to commit its work: keep build artifacts (`.venv/`, caches) in the target's
+`.gitignore`, or a task's `git add -A` will sweep them into the branch.
+
+`carry` lists the repository-relative directories, among what setup wrote and
+git ignores, that the review stage receives a copy of: the reviewer judges a
+fresh checkout of the candidate commit, which holds none of them, and a
+console ticket's `bun --cwd=console test` reports zero tests in a stage with no
+`console/node_modules`. Each listed directory is copied into the stage at the
+same path with its write bits cleared, after the checkout and before the
+reviewer starts; the stage's identity check runs before and after the copy
+with `--ignored=no`, so a carried directory neither dirties the stage nor
+counts in its fingerprint. A listed path that is tracked in git, absent from
+the worktree, or escapes the repository (`..`) fails the stage naming the path
+rather than skipping it. Startup checks the list is a list of relative paths;
+nothing is carried that the worktree does not already hold.
+
+`branch_prefix` names the segment before the slash in every branch the loop
+cuts, so a repository with its own convention (`factory/`, `ko/`, `bot/`) keeps
+it. Everything after the slash is unchanged — the lowercased ticket identifier,
+then the title slug — because the identifier is what makes a preserved branch
+traceable from `git branch` alone. The worktree directory name does not carry
+the prefix and does not change. A prefix that is empty, contains a slash or
+whitespace, starts with `-`, or uses a character git refuses in a ref name
+(`~ ^ : ? * [ \`) is a startup error naming the key, before anything is claimed. Branches already
+preserved under an older prefix are not renamed; a run that reuses one starts
+from the name the new prefix gives it.
+
+## `[verify]`
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `always` | Default: `[]` | List of non-empty shell command strings; set fast baseline checks required at every verify gate. |
+| `before_merge` | Default: `[]` | List of non-empty shell command strings; set additional, expensive checks needed at the merge gate. |
+| `timeout_sec` | Default: `300` seconds | Finite positive number; increase the per-command baseline timeout for slower checks. |
+
+The default empty tiers add no checks. Ticket verify commands run first,
+then `always`; at the merge gate `before_merge` runs last. Commands run in
+order in the task worktree and stop at the first failure. These baselines
+supplement the ticket's exact commands; `timeout_sec` applies to baseline
+commands, not to the ticket's commands or worktree setup.
 
 ```toml
-[serve]
-# The file whose contents every JSON request to a non-loopback bind must
-# present as `Authorization: Bearer ...`. Required when `--serve` names a
-# host other than loopback; ignored when it binds loopback.
-token_file = "~/.holophyte/holophyte/serve.token"
-# Answer `POST /actions/restart-supervisor`, `/actions/launch-loop` and
-# `/actions/requeue` behind the token, on every bind (so `token_file` is
-# required with this on). Off, every `/actions/` path is 404.
-actions = false
-# Answer `GET /config` (this file, token and key values redacted) and
-# `PUT /config` (a replacement, validated as startup validates, written
-# beside a `config.toml.bak-STAMP`) behind the token, on every bind. Off
-# by default: whoever can write this file writes `[worktree] setup` and
-# `[agents]`, which the next loop start runs as commands on this host.
-config_edit = false
-# The systemd instance those actions address: `holophyte-supervise@NAME`,
-# `holophyte-loop@NAME`. The target directory's name when absent.
-name = "holophyte"
+[verify]
+always = ["ruff check holophyte tests store"]
+before_merge = ["python3 -m unittest discover -s tests"]
+timeout_sec = 300
 ```
 
-Accepted keys: `token_file`, `actions`, `config_edit`, `name`.
+See [the loop](loop.md) for verify points and automatic `.githooks` enablement.
 
-The daemon's bind address is its only boundary, and once the bind is
-anything but loopback that is not enough. With `--serve HOST:PORT` where
-`HOST` is not loopback (`127.0.0.1`, any `127.x` address, `localhost`, `::1`),
-the daemon reads `token_file` at startup and answers 401 with an empty JSON
-body, before touching the store, to every request that does not carry the
-file's exact contents as a bearer token; `/`, the console's built files and
-`/peers` stay open so the page can load and learn where its peers are. A
-non-loopback bind with no `token_file` is a startup error naming the key. The
-file must be a regular, non-empty file that is not group- or world-readable
-(`chmod 600`); anything else is a startup error naming the file and its
-mode. The token is the file's contents with surrounding whitespace stripped
-and is never printed or logged. `~` is expanded and a relative path is taken
-against the config's directory. A loopback bind ignores the key for its
-reads: `--serve 7710` is as open as it always was, unless `actions` is on
-(below). One token per target, no rotation: to change it, write the file
-and restart the unit.
+## `[merge]`
 
-`actions` opts the daemon into the three `POST /actions/...` routes, off by
-default: `restart-supervisor` and `launch-loop` run `systemctl --user`
-against the deploy units, `requeue` is the store's requeue as `--requeue
-KO-n --note TEXT` does it, each an interventions row written before it
-runs and not run when it cannot be recorded. The routes are behind the
-bearer token on every bind, loopback included -- the bind address guards
-reads, not a hand on the units -- so `actions = true` needs `token_file`
-whatever the bind, and a bind without it is a startup error naming the
-key. `name` is the
-instance name the unit actions append -- the slug the deploy templates were
-enabled under -- a non-empty string with no `/`, the target directory's
-name when absent. `config_edit` opens this file itself to the console:
-`GET /config` is its text with the value of every key named `...token` or
-`...key` replaced by `[redacted]`, wherever and however the key is written
-(`token_file`, a path, stays; every value under a table so named is
-replaced too), and `PUT
-/config` is a replacement the daemon holds to the same checks startup
-runs -- a refused document is 400 naming the key and nothing is written --
-then writes beside a timestamped backup and records as a `config_edit`
-intervention; a `[redacted]` sent back is the current value, so a round
-trip never blanks a secret. A write that changes `[agents] implementer`
-runs the startup probe on it (`[agents]` above) and reports the verdict as
-`probe` beside the write, which lands regardless. A `PUT /config` may
-also carry `{"patch": {"loop.workers": 3, ...}}`, dotted keys the daemon
-sets in this file with `tomlkit` -- comments and layout kept -- and holds
-to the same checks; `GET /config` carries the redacted text parsed as
-`values` beside it, so the console never parses TOML. The change applies at the
-next loop start, not to a running loop. It needs `token_file` on every bind as `actions` does,
-and is off by default because the file is command execution on the writer
-host (`[worktree] setup`, `[agents]`). All three are read once at bind. The
-routes, their bodies and replies are in [The daemon's
-actions](reference/daemon.md).
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `approve` | Default: `"auto"` | `"auto"` or `"human"`; choose human to require an explicit operator approval before merging. |
+| `mode` | Default: `"local"` | `"local"` or `"pr"`; choose pr to send the candidate through GitHub checks and review. |
+| `pr_rounds` | Default: `5` | Integer at least 1; change the maximum babysit passes before parking. |
+| `pr_merge_method` | Default: `"merge"` | `"merge"`, `"squash"`, or `"rebase"`; match the repository's merge rules. |
+| `pr_poll_sec` | Default: `180` seconds | Integer at least 10; change the minimum interval between automatic babysit resumes. |
+| `pr_quiet_sec` | Default: `300` seconds | Integer at least 0; change the quiet period after GitHub activity, or use 0 for immediate green merges. |
+| `check_wait_sec` | Default: `1800` seconds | Integer at least 1; increase the pending-check and quiet-period wait cap for slow CI. |
+| `pr_style` | Default: `""` | String; set instructions for the title and description writer to follow repository conventions. |
+| `ui_paths` | Default: `[]` | List of non-empty repository-relative globs without `..`; set with ui_capture to identify changes needing visual evidence. |
+| `ui_capture` | Default: `""` | Command string with shell-style quoting but no shell evaluation; set with ui_paths to capture evidence non-interactively. |
+| `media_repo` | Default: `""` (target repository) | Empty string or GitHub `owner/name`; set a separate repository to keep evidence out of the target's git storage. |
+| `media_bucket` | Default: Absent (git publishing) | Table described under [merge.media_bucket](#mergemedia_bucket) below; set to publish evidence in S3-compatible object storage instead. |
+| `media_max_file_mb` | Default: `10` MB | Finite positive number; change the largest permitted individual evidence file. |
+| `media_max_total_mb` | Default: `20` MB | Finite positive number; change the total evidence budget per capture. |
+| `human_threads` | Default: `"park"` | `"park"` or `"act"`; choose act to judge and fix concrete human requests while leaving their threads unresolved. |
+| `bot_threads` | Default: `"act"` | `"act"` or `"advisory"`; choose advisory to record unmentioned bot findings without blocking the merge. |
+| `bot_logins` | Default: `[]` | List of login strings; set to classify additional bot accounts for advisory routing and human-reply escalation. |
+| `mention_handle` | Default: `"holophyte"` | String, written without `@`; change the handle used for direct instructions in threads and the PR conversation. |
+| `after` | Default: `[]` | List of shell command strings; set post-merge builds or other commands needed in the main checkout after a local merge. |
+| `bot_authors` | Default: `["devin-ai-integration", "coderabbitai", "greptile-apps", "github-actions"]` | List of login strings replacing these defaults; change which bots' declined threads are resolved (the `[bot]` suffix still qualifies). |
 
 ```toml
 [merge]
@@ -603,10 +478,6 @@ pr_style = ""
 # its output; the merge stays. Not run under mode = "pr".
 after = ["bun --cwd=console run build"]
 ```
-
-Accepted keys: `approve`, `mode`, `pr_rounds`, `pr_merge_method`,
-`pr_poll_sec`, `pr_quiet_sec`, `pr_style`, `human_threads`, `mention_handle`,
-`after`, `bot_authors`.
 
 `mention_handle` defaults to `"holophyte"` (without `@`). A review thread's
 latest comment mentioning `@holophyte`, case-insensitively, is an instruction:
@@ -737,8 +608,8 @@ of its budget (a few minutes of the run's remaining box), falls back to the
 ticket title and a short stub. The stub contains the first paragraph of the
 ticket's Summary section (up to 600 characters), one line saying
 `The description could not be written: REASON`, and the `Linear: KO-n` line
-with the issue URL. The loop prints the failure reason. The text is written
-once, when the pull request opens; later babysitter passes leave it alone.
+with the issue URL. The loop prints the failure reason. The description is rewritten after each approved fix round from the current
+diff, ticket and repository conventions; see [PR rounds](reviewing.md#pr-rounds).
 
 `pr_style` is an optional string of instructions the written turn is given
 verbatim, for the repository's own pull request conventions -- for example,
@@ -746,3 +617,273 @@ verbatim, for the repository's own pull request conventions -- for example,
 identifier in the title. Describe what changed and why in a few short
 paragraphs; no testing plan." Anything but a string is a startup error
 naming the key.
+
+Visual evidence is captured when the diff matches `ui_paths`. Configure it
+together with `ui_capture`; leaving both absent leaves PRs unchanged. The
+capture command receives one output-directory argument and has five minutes
+to write PNG, WebM or MP4 files. Evidence is shared with review prompts and
+PR descriptions. MB means 1,048,576 bytes: oversized files are omitted, then
+videos are dropped first to fit the total cap, with each omission listed in
+Evidence. Without a bucket, `media_repo` selects a separate GitHub repository;
+otherwise evidence goes to the target repository on `pr-media/KO-n`. Image
+links reflect the destination repository's visibility; videos use blob links.
+
+A human mention in the pull request conversation tab is also an instruction,
+bypassing adjudication. The factory answers with a conversation comment
+quoting the request and naming the fix SHA; conversation comments have no
+review thread to resolve. Unmentioned conversation comments are ignored.
+
+## `[merge.media_bucket]`
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `endpoint` | Default: None; required when the table is present | HTTP(S) URL without credentials, query, fragment or whitespace; set the S3-compatible API endpoint. |
+| `bucket` | Default: None; required when the table is present | Non-empty S3 bucket name using lowercase letters, digits, dots and hyphens; set the destination bucket. |
+| `public_base` | Default: None; required when the table is present | HTTP(S) URL without credentials, query, fragment or whitespace; set the public URL prefix from which readers fetch objects. |
+| `retention_days` | Default: Absent (displayed as "not specified") | Positive integer when set; set to describe the lifecycle policy you configured on the bucket. |
+
+Bucket publishing takes precedence over both git publishers. Set
+`HOLOPHYTE_MEDIA_ACCESS_KEY_ID` and `HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY` in
+the writer's environment, never in this file. The operator must configure
+public reads and lifecycle expiry on the bucket; `retention_days` is display
+metadata and does not install an expiry policy. The validator uses 1 as its
+validation fallback when the key is omitted, but the publisher displays
+"not specified" until the operator supplies a value.
+
+```toml
+[merge.media_bucket]
+endpoint = "https://objects.example.com"
+bucket = "review-evidence"
+public_base = "https://media.example.com"
+retention_days = 7
+```
+
+## `[supervisor]`
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `heartbeat_stale_min` | Default: `5` minutes | Finite positive number; increase for a target whose healthy heartbeat can be delayed. |
+| `stale_strikes` | Default: `2` | Positive integer; increase to require more consecutive silent sightings before acting. |
+| `budget_grace` | Default: `1.5` | Finite positive number; change the grace multiplier on the run's per-turn allowance. |
+| `run_cap` | Default: `3.0` | Finite number from 1.5 to 5.0; change the hard ceiling in scaled ticket boxes. |
+| `review_overlap_threshold` | Default: `0.5` | Finite number in (0, 1]; change the shared-findings fraction that signals a stuck review. |
+| `sweep_interval_sec` | Default: `60` seconds | Finite positive number; change how often the supervisor sweeps. |
+| `restart_grace_sec` | Default: `120` seconds | Finite positive number; increase for slower self-merge restarts. |
+| `board_ask_sec` | Default: `600` seconds | Integer at least 60; change the minimum interval between fallback board listings. |
+
+```toml
+[supervisor]
+# The sweep's thresholds. Every key is optional; the values shown are the
+# defaults, in place whenever the key (or the whole table) is absent.
+heartbeat_stale_min      = 5    # a heartbeat older than this is a silent sighting
+stale_strikes            = 2    # consecutive silent sightings that trip a run
+budget_grace             = 1.5  # multiple of the ticket's estimate that blows the box
+run_cap                  = 3.0  # the run's hard ceiling, in boxes: the loop refuses a turn past it
+review_overlap_threshold = 0.5  # findings shared by two rounds that reads as stuck
+sweep_interval_sec       = 60   # sleep between two --supervise passes
+restart_grace_sec        = 120  # how long a self-merge re-exec may take to come back
+board_ask_sec            = 600  # least wait between two fallback asks of the board
+```
+
+`board_ask_sec` bounds how often the supervisor's board fallback may list
+the board's ready tickets. The fallback runs when the mirror is empty and
+no loop is live — a ticket filed while the loop was down has no mirror
+row, so the pass asks the board itself — and a ready listing is Linear's
+most expensive query here, thousands of the key's hourly complexity
+points. The last ask is stamped on the project's store row, so the
+interval holds across passes and across supervisor restarts whatever
+`sweep_interval_sec` is. The value is an integer of at least 60; under a
+minute the fallback is the polling that emptied the key.
+
+Separately, every Linear answer carries the key's complexity-budget
+headers and the provider shares low-budget deadlines per API key under
+`HOLOPHYTE_HOME/linear-budget` (default `~/.holophyte/linear-budget`). When under
+a tenth of the limit remains, the fallback and the loop's idle relisting
+both wait for the reset instead of spending the points to be refused: one
+`[holo2] board not asked: budget resets at HH:MM` line per refill, and no
+calls until it. Supervisor loop starts and pool worker claims honor the same
+deadline, including after a process restart; the pool also checks after
+mirroring before spawning workers. If a low reading omits the reset, the
+factory waits one hour from that reading before probing again. A refused
+answer (HTTP 429) lands the same way, as a
+`LinearBudgetExhausted` naming the reset.
+
+The box is counted per turn: a run's allowance is the ticket's estimate once
+for its first implementer turn and once more for each review round it has
+recorded, up to the run's review cap, all under `budget_grace` -- the same
+budget the loop gives each turn, so a fix round after a review is not swept as
+overtime. A run with no review round yet is judged against the single box.
+
+Whatever that allowance grows to, `run_cap` times the box is the ceiling: the
+loop refuses to arm a turn whose budget would carry the run past it -- the run
+fails there, candidate preserved, instead of the turn being killed mid-edit --
+and a run that slips past anyway is swept. The ceiling exists for the run that
+keeps earning turns by failing review, the case the per-turn budget cannot
+bound. `run_cap` is a number from 1.5 to 5.0; `/status` carries it in
+`thresholds` so the console's time-box bar can draw it.
+
+Different targets want different patience — a Go build's worktree setup is
+slower than stdlib Python's — and these are the knobs `--sweep` and
+`--supervise` read. Each value is checked at startup, for every mode: the
+thresholds and the interval must be positive numbers, `stale_strikes` a
+positive integer, `board_ask_sec` an integer of at least 60, the overlap
+a fraction in (0, 1], and `run_cap` a number
+from 1.5 to 5.0. A value outside its
+constraint is an error naming the key and the constraint, like malformed TOML,
+rather than a default quietly used in its place. A key this version does not
+know is refused the same way. The config is read once at startup; a running
+supervisor does not pick up an edit.
+
+## `[serve]`
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `token_file` | Default: Absent | Non-empty path string, relative to the config directory or absolute, with home expansion; set for non-loopback reads or any enabled write routes. |
+| `actions` | Default: `false` | Boolean; enable to expose authenticated daemon action routes. |
+| `config_edit` | Default: `false` | Boolean; enable to read and edit config through authenticated daemon routes. |
+| `name` | Default: Target directory name | Non-empty string without `/`; change to match the deployed systemd instance. |
+
+```toml
+[serve]
+# The file whose contents every JSON request to a non-loopback bind must
+# present as `Authorization: Bearer ...`. Required when `--serve` names a
+# host other than loopback; ignored when it binds loopback.
+token_file = "~/.holophyte/holophyte/serve.token"
+# Answer `POST /actions/restart-supervisor`, `/actions/launch-loop` and
+# `/actions/requeue` behind the token, on every bind (so `token_file` is
+# required with this on). Off, every `/actions/` path is 404.
+actions = false
+# Answer `GET /config` (this file, token and key values redacted) and
+# `PUT /config` (a replacement, validated as startup validates, written
+# beside a `config.toml.bak-STAMP`) behind the token, on every bind. Off
+# by default: whoever can write this file writes `[worktree] setup` and
+# `[agents]`, which the next loop start runs as commands on this host.
+config_edit = false
+# The systemd instance those actions address: `holophyte-supervise@NAME`,
+# `holophyte-loop@NAME`. The target directory's name when absent.
+name = "holophyte"
+```
+
+The daemon's bind address is its only boundary, and once the bind is
+anything but loopback that is not enough. With `--serve HOST:PORT` where
+`HOST` is not loopback (`127.0.0.1`, any `127.x` address, `localhost`, `::1`),
+the daemon reads `token_file` at startup and answers 401 with an empty JSON
+body, before touching the store, to every request that does not carry the
+file's exact contents as a bearer token; `/`, the console's built files and
+`/peers` stay open so the page can load and learn where its peers are. A
+non-loopback bind with no `token_file` is a startup error naming the key. The
+file must be a regular, non-empty file that is not group- or world-readable
+(`chmod 600`); anything else is a startup error naming the file and its
+mode. The token is the file's contents with surrounding whitespace stripped
+and is never printed or logged. `~` is expanded and a relative path is taken
+against the config's directory. A loopback bind ignores the key for its
+reads: `--serve 7710` is as open as it always was, unless `actions` is on
+(below). One token per target, no rotation: to change it, write the file
+and restart the unit.
+
+`actions` opts the daemon into the three `POST /actions/...` routes, off by
+default: `restart-supervisor` and `launch-loop` run `systemctl --user`
+against the deploy units, `requeue` is the store's requeue as `--requeue
+KO-n --note TEXT` does it, each an interventions row written before it
+runs and not run when it cannot be recorded. The routes are behind the
+bearer token on every bind, loopback included -- the bind address guards
+reads, not a hand on the units -- so `actions = true` needs `token_file`
+whatever the bind, and a bind without it is a startup error naming the
+key. `name` is the
+instance name the unit actions append -- the slug the deploy templates were
+enabled under -- a non-empty string with no `/`, the target directory's
+name when absent. `config_edit` opens this file itself to the console:
+`GET /config` is its text with the value of every key named `...token` or
+`...key` replaced by `[redacted]`, wherever and however the key is written
+(`token_file`, a path, stays; every value under a table so named is
+replaced too), and `PUT
+/config` is a replacement the daemon holds to the same checks startup
+runs -- a refused document is 400 naming the key and nothing is written --
+then writes beside a timestamped backup and records as a `config_edit`
+intervention; a `[redacted]` sent back is the current value, so a round
+trip never blanks a secret. A write that changes `[agents] implementer`
+runs the startup probe on it (`[agents]` above) and reports the verdict as
+`probe` beside the write, which lands regardless. A `PUT /config` may
+also carry `{"patch": {"loop.workers": 3, ...}}`, dotted keys the daemon
+sets in this file with `tomlkit` -- comments and layout kept -- and holds
+to the same checks; `GET /config` carries the redacted text parsed as
+`values` beside it, so the console never parses TOML. The change applies at the
+next loop start, not to a running loop. It needs `token_file` on every bind as `actions` does,
+and is off by default because the file is command execution on the writer
+host (`[worktree] setup`, `[agents]`). All three are read once at bind. The
+routes, their bodies and replies are in [The daemon's
+actions](reference/daemon.md).
+
+## `[console]`
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `daemons` | Default: `[]` | List of unique `HOST:PORT` strings with non-empty host and decimal port; set to show other daemons' projects in the console. |
+
+```toml
+[console]
+# The other daemons the console fans out to, as HOST:PORT strings. Optional;
+# absent, the page shows this daemon's project alone.
+daemons = ["writer-2:7710", "writer-3:7710"]
+```
+
+One daemon serves one project; the console shows every project on every
+host, so the page has to be told where the others are, and the daemon it was
+loaded from tells it: `GET /peers` answers this list as `peers` beside the
+address the daemon itself bound as `self`. The entries are strings the page
+fetches from the browser; the daemon never connects to them. Each is checked
+at startup like `--serve`'s address -- a non-empty host, a decimal port -- and
+none may appear twice; a bad entry is a startup error naming `[console]
+daemons` and the entry, before anything is served. A peer beyond loopback
+is behind its own `[serve] token_file`; the page presents the token the
+operator gives it.
+
+## `[report]`
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `host_label` | Default: Absent (hostname) | Non-empty string; set a stable writer role label for reports and board leases. |
+| `findings` | Default: `"none"` | `"none"` or `"repo"`; choose repo to render and commit a bounded FINDINGS.md window. |
+
+```toml
+[report]
+# What the factory prints where it would print the machine's hostname.
+# Optional; absent, the hostname is printed as recorded.
+host_label = "writer-1"
+# Whether the loop renders FINDINGS.md into the target: `none` renders and
+# commits nothing, `repo` renders and commits the bounded window at every
+# close-out. Optional; the default is `none`.
+findings = "none"
+```
+
+The store is the run record, read through the console or `--report`;
+`FINDINGS.md` is a second copy of it that can drift, so by default
+(`findings = "none"`) no close-out writes or commits the file, the merge
+path makes no findings commit, and a pull request target's checkout gains
+no untracked file. `findings = "repo"` is for a target that wants the
+evidence beside its code: the bounded window is rendered and committed at
+every close-out, one commit per merge. Any other value fails startup naming
+`[report] findings`. Switching a target from `repo` to `none` leaves the
+`FINDINGS.md` already in its repository exactly as it is, not deleted; the
+operator removes it by hand. `--report` prints the mode in effect below the
+table.
+
+`host_label` also names this writer's board lease: the claim labels the
+Linear issue `holo:` plus the label (`holo:writer-1` above) for as long as
+the run holds the ticket, and another writer skips a ready issue carrying a
+`holo:` label that is not its own ([the loop](loop.md), step 1). Two writer
+hosts sharing one board therefore need two distinct labels; a host with no
+`host_label` leases under its hostname.
+
+The `host` column of `--report` and `--sweep` and the supervisor's startup
+and refusal lines show the label in place of the hostname when it is set.
+The `FINDINGS.md` window the loop commits renders no host: its run and round
+entries never carried one, so there is nothing there to relabel. The column
+of the report and sweep exists so a reader
+can tell which writer produced a run when there is more than one; a stable
+label does that job without naming a personal machine in a public repository.
+The store keeps recording the real hostname (`runs.host`,
+`supervisorHeartbeats.host`, the lock file), which the supervisor compares
+against its own, so the label can be renamed later without a migration. The
+value must be a non-empty string; anything else is a startup error naming the
+key.
