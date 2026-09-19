@@ -448,8 +448,8 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
         calls, verify = self.merge_verify(main_red=False)
         with verify:
-            fake, _ = self.resume(Commit("fix merge", path="FIXED.md"))
-        self.assertEqual(fake.roles, ["implement"])
+            fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
+        self.assertEqual(fake.roles, ["implement", "implement"])
         self.assertIn("echo ok", fake.turns[0].goal)
         self.assertGreaterEqual(len(calls), 3)
         self.assertEqual(calls[1][2], moved)

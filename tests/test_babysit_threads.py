@@ -291,6 +291,59 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                          [("merged", self.MERGE_SHA)])
 
 
+    def test_human_fix_refreshes_description_before_parking(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("the scripted work"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"),
+            Commit("fix: default load()"),
+            Idle("TITLE: Fixed load\nLoad handles missing input."),
+            provider=self.provider())
+
+        self.assertEqual(fake.roles.count("review"), 1)
+        self.assertEqual([c for c in self.recorded() if c.startswith("gh pr edit")],
+                         [f"gh pr edit {self.URL} --body-file -"])
+        history = self.pr_body.read_text().split("## Changes since first review\n")[1]
+        self.assertTrue(history.startswith("- Round 1:"))
+        self.assertIn("ADDRESS: a real crash", history)
+        fixed = self.git("rev-parse", BRANCH).strip()
+        original = fake.turns[1].candidate_sha[:12]
+        self.assertIn(
+            f"the fix rounds moved the candidate from {original} to {fixed[:12]};"
+            f" the release covered {original}, and a human says merge on the"
+            ' candidate as it stands ([merge] approve = "human")', self.question())
+        self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
+                         [("awaiting_merge_approval", fixed)])
+
+    def test_human_fix_failed_verify_parks_without_description_edit(self):
+        failure = self.db.parent / "verify-failed"
+        command = f"test ! -f {failure}"
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       f'[verify]\nalways = ["{command}"]\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        push = holophyte.pr.push_branch
+        pushes = []
+
+        def push_then_break_verify(*args, **kwargs):
+            result = push(*args, **kwargs)
+            pushes.append(result)
+            if len(pushes) == 2:
+                failure.touch()
+            return result
+
+        with patch.object(holophyte.pr, "push_branch", push_then_break_verify):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      Reply("THREAD 1: ADDRESS -- a real crash"),
+                      Commit("fix: default load()"), provider=self.provider())
+
+        self.assertIn(command, self.question())
+        self.assertIn("verify failed", self.question())
+        self.assertFalse(any(c.startswith("gh pr edit") for c in self.recorded()))
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
+                         [("awaiting_merge_approval", fixed)])
+
     def test_a_fix_round_the_reviewer_rejects_parks_instead_of_merging(self):
         """An initial PR pass rejection parks; only a resume gets the allowance."""
         self.configure('[merge]\nmode = "pr"\n')
