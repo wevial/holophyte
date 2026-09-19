@@ -106,7 +106,12 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
                            f"{len(commands)} FAILED: {command}\n{out}")
         print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
     if (Path(wt) / ".githooks").is_dir():
-        sh(["git", "config", "core.hooksPath", ".githooks"], wt)
+        try:
+            # Without this extension --worktree writes the shared config.
+            sh(["git", "config", "extensions.worktreeConfig", "true"], wt)
+            sh(["git", "config", "--worktree", "core.hooksPath", ".githooks"], wt)
+        except RuntimeError as error:
+            return False, f"[holo2] worktree setup hooks configuration FAILED:\n{error}"
     return True, ""
 
 

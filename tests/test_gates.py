@@ -98,5 +98,26 @@ class BaselineTests(LoopFixture):
         check_document(self.tgt)
 
 
+class BaselineBriefTests(unittest.TestCase):
+    def test_baseline_only_success_and_failure_are_visible_to_reviewer(self):
+        from holophyte.loop import _verify_brief
+        with tempfile.TemporaryDirectory() as wt:
+            target = type("Target", (), {"config": lambda self: {
+                "verify": {"always": ["echo baseline-detail"]}}})()
+            for command, ok_expected in (("echo baseline-detail", True),
+                                         ("echo baseline-detail; exit 1", False)):
+                with self.subTest(command=command):
+                    with patch.object(target, "config", return_value={
+                            "verify": {"always": [command]}}):
+                        ok, out = holophyte.gates.with_baseline(
+                            target, wt, "", True, "")
+                    self.assertEqual(ok, ok_expected)
+                    brief = _verify_brief("", ok, out)
+                    self.assertIn("(1 commands)", brief)
+                    self.assertIn("PASSED" if ok else "FAILED", brief)
+                    self.assertIn("baseline-detail", brief)
+            self.assertEqual(_verify_brief("", True, ""), "")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -372,7 +372,9 @@ def _verify_main_refresh(target, conn, run_id, provider, task_id, branch, wt,
             "commands passing. This is one implementer fix turn.")
     return _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                         beat_s, pull, (), None, ticket, command, contracts,
-                        budget_min, _next_round(conn, run_id), goal=goal)
+                        budget_min, _next_round(conn, run_id),
+                        review_follows=merge_config(target).approve == "auto",
+                        goal=goal)
 
 
 def _diff_identity(wt, ref):
@@ -635,7 +637,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                " recorded re-review, even if reviewRoundCap is spent.", provider)
         fixed = _fix_threads(target, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, (), None, ticket, verify_cmd,
-                             contracts, budget_min, rnd, goal=goal)
+                             contracts, budget_min, rnd, review_follows=True, goal=goal)
         return _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                            fixed, None, beat_s, pull, ticket, verify_cmd,
                            contracts, criteria, budget_min=budget_min,
@@ -783,7 +785,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         sha = _fix_threads(target, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
                            model, ticket, verify_cmd, contracts, budget_min,
-                           pass_no)
+                           pass_no,
+                           review_follows=merge_config(target).approve == "auto")
     declined_open = _decline_threads(target, conn, run_id, beat_s, pull,
                                      by_verdict["DECLINE"], model)
     left_open = declined_open + tuple(
@@ -853,7 +856,7 @@ def _verdicts_by_kind(threads, judged, parsed):
 
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
-                 contracts, budget_min, pass_no, goal=None):
+                 contracts, budget_min, pass_no, *, review_follows, goal=None):
     """The fix round for the addressed threads, the push, then a reply on
     each and a resolve on each bot's; the fixed candidate's sha."""
     from holophyte.loop import (
@@ -895,7 +898,8 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
-    record_unreviewed_verification(conn, run_id, out)
+    if not ok or not review_follows:
+        record_unreviewed_verification(conn, run_id, out)
     if not ok:
         print(f"[holo2] verify FAILED after the fix round for {pull.url};"
               f" leaving branch {branch} at {fixed} for a human:\n{out}")

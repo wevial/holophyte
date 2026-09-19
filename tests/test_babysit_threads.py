@@ -269,6 +269,8 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
 
     def test_babysit_review_dispatches_one_fix_with_findings_and_note(self):
         self.resume_rejected_fix()
+        self.configure('[merge]\nmode = "pr"\n'
+                       '[verify]\nalways = ["git rev-parse HEAD"]\n')
         fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE, Idle(""),
                             provider=self.provider())
         self.assertEqual(fake.roles, ["review", "implement", "review", "implement"])
@@ -285,8 +287,11 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                          [("changes_requested",), ("pass",)])
         results = json.loads(self.read("SELECT verificationResults FROM"
                                        " reviewRounds WHERE runId = 2"
-                                       " AND round = 3")[0][0])
-        self.assertEqual([r["exitCode"] for r in results], [0])
+                                       " AND verdict = 'changes_requested'"
+                                       " AND reviewerModel NOT LIKE 'github:%'")[0][0])
+        self.assertEqual([r["exitCode"] for r in results], [0, 0])
+        baseline = [r for r in results if r["source"] == "baseline"]
+        self.assertEqual(baseline[0]["output"].strip(), fake.turns[0].candidate_sha)
 
 
     def test_allowance_refresh_keeps_original_address_and_retry_context(self):

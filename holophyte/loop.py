@@ -684,12 +684,11 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
 
 
 def _verify_brief(verify_cmd, ok, out):
-    """The verify result as the reviewer sees it — omitted when the ticket
-    declares no command, so the brief never implies a gate that never ran."""
-    if not verify_cmd:
-        return ""
+    """Show ticket and baseline checks; omit the brief only if neither ran."""
     count = sum(row["source"] == "baseline"
                 for row in getattr(out, "results", []))
+    if not verify_cmd and not count:
+        return ""
     return (f"The ticket's verification commands and the target's baseline "
             f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n")
