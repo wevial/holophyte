@@ -66,8 +66,8 @@ class FactorySchemaCliTests(unittest.TestCase):
                 self.stamp_older(fixture)
                 fixture.cli(mode, "KO-1", "--note", "continue")
                 self.assertEqual(self.version(fixture), store.SCHEMA_VERSION)
-                self.assertEqual(fixture.interventions(),
-                                 [(fixture.run, mode[2:])])
+                action = "operator_note" if mode == "--babysit" else mode[2:]
+                self.assertEqual(fixture.interventions(), [(fixture.run, action)])
                 self.assertEqual(fixture.conn.execute(
                     "SELECT status FROM tickets WHERE id = ?",
                     (fixture.ticket,)).fetchone(), ("ready",))

@@ -1,4 +1,5 @@
 """Operator commands and startup: probe before claim, record route failures."""
+import getpass
 import json
 import os
 import sys
@@ -29,6 +30,9 @@ from holophyte.report import migration_header, report_lines
 from holophyte.runs import open_store
 from holophyte.startup import banner
 from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
+from store import operator_notes
+
+BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
 
 EXEC = os.execv  # Replace after a self-merge; tests observe through this seam.
 
@@ -351,30 +355,26 @@ def approve(target, identifier, note, out=None):
 
 
 def babysit_ticket(target, identifier, note, out=None):
-    """Send the ticket `identifier`, parked on its pull request, back to the
-    babysitter. Returns nothing.
-
-    `--babysit`'s whole body and `approve()`'s twin: `store.babysit()`'s
-    one transaction -- its intervention row carrying `note`, the
-    parked run ended with its resume point at the merge gate, the ticket
-    walked to `ready` -- printed and done. The loop's next claim of the
-    ticket resumes the candidate on its PR and makes another round of
-    passes: new threads verdicted and answered, checks awaited; a PR that
-    comes up ready under `[merge] approve = "human"` parks again for the
-    human's `--approve`. The refusals are `--approve`'s, as `SystemExit`.
+    """Release parked PRs with instructions or rechecks; refuse as SystemExit.
     """
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            run_id = store.babysit(conn, ticket_id, note)
+            if note != BABYSIT_DEFAULT_NOTE:
+                run_id = store.read.ticket_by_id(conn, ticket_id).lastRunId
+                event_id = operator_notes.send_back(
+                    conn, run_id, note, getpass.getuser())
+                purpose = ("as a maintainer instruction "
+                           f"(operator_note event {event_id})")
+            else:
+                run_id = store.babysit(conn, ticket_id, note)
+                purpose = "for another look"
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} sent back to the babysitter: run {run_id}"
-              " released from awaiting_merge_approval and the ticket is"
-              " ready; the loop's next claim resumes its candidate on the"
-              " pull request", file=out)
+              f" released and the ticket is ready {purpose}", file=out)
     finally:
         conn.close()
 
