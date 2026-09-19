@@ -318,6 +318,21 @@ def approved_candidate(conn, ticket_id, run_id):
                              approved_sha=row[4])
 
 
+def last_independent_verdict(conn, ticket_id):
+    """Latest non-GitHub verdict and the approval SHA preserved by its run.
+
+    Rounds have no SHA column: approvedSha is the durable review coverage,
+    while candidateSha may have moved beyond it before the run parked.
+    Missing coverage requires another review even when the verdict passed.
+    """
+    return conn.execute(
+        "SELECT rr.verdict, r.approvedSha"
+        " FROM reviewRounds rr JOIN runs r ON r.id = rr.runId"
+        " WHERE r.ticketId = ? AND rr.reviewerModel NOT GLOB 'github:*'"
+        " ORDER BY r.attempt DESC, rr.round DESC LIMIT 1",
+        (ticket_id,)).fetchone()
+
+
 def babysit_note(conn, run_id):
     """Read the newest babysit intervention's note from its paired event."""
     row = conn.execute(

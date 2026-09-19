@@ -19,6 +19,7 @@ sys.path.insert(0, str(HERE))
 import babysit_fixture as cases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
+    REQUEST_CHANGES,
     Commit,
     Idle,
     Reply,
@@ -208,6 +209,61 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"
                                    " WHERE id = 2"),
                          [("merged", self.MERGE_SHA)])
+
+
+    def rejected_resume_with_stale_approval(self):
+        self.resume_rejected_fix()
+        import store
+        with closing(store.open(self.tgt.store_path)) as conn:
+            # Legacy carried approval metadata must not override a rejection.
+            conn.execute("UPDATE runs SET approvedSha = candidateSha WHERE id = 1")
+            conn.commit()
+        return self.git("rev-parse", BRANCH).strip()
+
+    def test_rejected_resume_reviews_before_merge_despite_carried_approval(self):
+        candidate = self.rejected_resume_with_stale_approval()
+        fixture = self
+
+        class ReviewBeforeMerge:
+            role = APPROVE.role
+
+            def play(self, cwd, turn):
+                fixture.assertFalse([v for kind, v in fixture.api_calls()
+                                     if kind == "merge"])
+                return APPROVE.play(cwd, turn)
+
+        fake, _ = self.loop(ReviewBeforeMerge(), Idle(""), provider=self.provider())
+        self.assertEqual(fake.roles, ["review", "implement"])
+        self.assertEqual(fake.turns[0].candidate_sha, candidate)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [candidate])
+
+    def test_rejected_resume_exhausts_fix_allowance_and_parks_with_findings(self):
+        self.rejected_resume_with_stale_approval()
+        review = cases.SpentCapReview(self.db, REQUEST_CHANGES)
+        fake, _ = self.loop(review, Commit("attempt review fix"), REQUEST_CHANGES,
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertEqual(review.count, 1)
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertIn("scripted change is incomplete", self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs WHERE id = 2"),
+                         [("awaiting_merge_approval", None)])
+
+    def test_explicit_approval_of_rejected_candidate_skips_review(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""),
+                  Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),
+                  REQUEST_CHANGES, provider=self.provider())
+        candidate = self.git("rev-parse", BRANCH).strip()
+        holophyte.operator.approve(self.tgt, "KO-131", "accept this candidate",
+                                   out=io.StringIO())
+        out = self.main_output(provider=self.provider())
+        self.assertEqual(self.last_fake.roles, [])
+        self.assertIn("verify ok before merge", out)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [candidate])
 
 
     def test_human_resume_after_launch_loop_waits_without_merging(self):
