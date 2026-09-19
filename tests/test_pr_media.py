@@ -73,7 +73,7 @@ class MediaTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "candidate")
 
-    def open(self, private=False, error=None):
+    def open(self, private=False, error=None, ticket=""):
         with (
             patch(
                 "holophyte.loop._timed",
@@ -96,7 +96,7 @@ class MediaTests(unittest.TestCase):
                 "KO-505",
                 "task",
                 "candidate",
-                "",
+                ticket,
                 1,
                 self.repo,
                 monotonic(),
@@ -179,7 +179,10 @@ class MediaTests(unittest.TestCase):
     def test_missing_bucket_credentials_reach_evidence_and_review_without_http(self):
         from holophyte.review import evidence_brief
 
-        self.candidate()
+        states = ["Rename dialog open", "Name saved"]
+        ticket = "## Evidence\n\n" + "\n".join(states)
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       f'Path(sys.argv[1], "01-dialog.png").write_bytes({PNG!r})\n')
         self.config["merge"].update(mode="pr", media_bucket={
             "endpoint": "https://objects.example.invalid", "bucket": "evidence",
             "public_base": "https://media.example.invalid"})
@@ -190,8 +193,11 @@ class MediaTests(unittest.TestCase):
                     os.environ.pop(name, None)
                 # Each candidate needs a fresh receipt; review and PR share it.
                 self.git("commit", "-qm", f"candidate {index}", "--allow-empty")
-                brief = evidence_brief(self.target, self.repo, "KO-505")
-                body = self.open()
+                brief = evidence_brief(self.target, self.repo, "KO-505", states)
+                body = self.open(ticket=ticket)
+                for state in states:
+                    self.assertIn(f"{state} — not captured", body)
+                    self.assertIn(f"{state} — not captured", brief)
                 request.assert_not_called()
                 failure = next(line for line in body.splitlines()
                                if "failed to publish evidence to media bucket" in line)
