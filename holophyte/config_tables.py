@@ -373,6 +373,7 @@ MERGE_KEYS = {
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "pr_style": "",
     "ui_paths": (), "ui_capture": "", "media_repo": "",
+    "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
     "mention_handle": "holophyte",
     "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
@@ -406,10 +407,12 @@ def merge_config(target):
             f"[holo2] {target.config_path}: [merge] pr_text was retired:"
             " pull request bodies are always written")
     values = {}
-    for key, default in MERGE_KEYS.items():
-        if key == "check_wait_sec":
-            default = CHECK_WAIT_S
+    defaults = dict(MERGE_KEYS, check_wait_sec=CHECK_WAIT_S)
+    for key, default in defaults.items():
         value = table.get(key, default)
+        if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):
+            values[key] = _media_setting(target, key, value)
+            continue
         if key in MERGE_INT_FLOORS:
             if isinstance(value, bool) or not isinstance(value, int) \
                     or value < MERGE_INT_FLOORS[key]:
@@ -443,6 +446,19 @@ def merge_config(target):
         values[key] = value
     _validate_ui(target, values)
     return MergeConfig(**values)
+
+
+def _media_setting(target, key, value):
+    from holophyte.media_store import validate_bucket
+    try:
+        if key == "media_bucket":
+            return None if value is None else validate_bucket(value)
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or value <= 0):
+            raise ValueError(f"{key} must be a positive finite number of MB")
+        return value
+    except ValueError as error:
+        raise SystemExit(f"{target.config_path}: [merge] {error}") from None
 
 
 def _validate_ui(target, values):
