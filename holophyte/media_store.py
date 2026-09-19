@@ -9,10 +9,18 @@ from urllib.request import Request, urlopen
 CREDENTIALS = ("HOLOPHYTE_MEDIA_ACCESS_KEY_ID", "HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY")
 
 
+class MissingCredentials(ValueError):
+    """A missing environment variable, safe to name in evidence and logs."""
+
+    def __init__(self, name):
+        self.name = name
+        super().__init__(f"media_bucket requires environment variable {name}")
+
+
 def credentials():
     for name in CREDENTIALS:
         if not os.environ.get(name, "").strip():
-            raise ValueError(f"media_bucket requires environment variable {name}")
+            raise MissingCredentials(name)
     return tuple(os.environ[name] for name in CREDENTIALS)
 
 
@@ -39,7 +47,6 @@ def validate_bucket(value):
     days = value.get("retention_days", 1)
     if type(days) is not int or days < 1:
         raise ValueError("media_bucket retention_days must be a positive integer")
-    credentials()
     return dict(value)
 
 

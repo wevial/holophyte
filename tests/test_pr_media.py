@@ -137,6 +137,31 @@ class MediaTests(unittest.TestCase):
         for value in CREDS.values():
             self.assertNotIn(value, body + str(self.ledger.call_args_list))
 
+    def test_missing_bucket_credentials_reach_evidence_and_review_without_http(self):
+        from holophyte.review import evidence_brief
+
+        self.candidate()
+        self.config["merge"].update(mode="pr", media_bucket={
+            "endpoint": "https://objects.example.invalid", "bucket": "evidence",
+            "public_base": "https://media.example.invalid"})
+        for index, missing in enumerate((tuple(CREDS), (tuple(CREDS)[1],))):
+            with self.subTest(missing=missing), patch.dict(os.environ, CREDS), patch(
+                    "holophyte.media_store.urlopen") as request:
+                for name in missing:
+                    os.environ.pop(name, None)
+                # Each candidate needs a fresh receipt; review and PR share it.
+                self.git("commit", "-qm", f"candidate {index}", "--allow-empty")
+                brief = evidence_brief(self.target, self.repo, "KO-505")
+                body = self.open()
+                request.assert_not_called()
+                failure = next(line for line in body.splitlines()
+                               if "failed to publish evidence to media bucket" in line)
+                self.assertIn(missing[0], failure)
+                self.assertIn(failure, brief)
+                self.assertIn("## Evidence", body)
+                for value in CREDS.values():
+                    self.assertNotIn(value, body + brief)
+
     def test_caps_drop_oversized_files_and_videos_before_images(self):
         self.config["merge"].update(media_max_file_mb=1, media_max_total_mb=2)
         self.candidate(script="import sys\nfrom pathlib import Path\n"

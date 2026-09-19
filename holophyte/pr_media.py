@@ -278,9 +278,11 @@ def prepare(target, wt, task_id, record_note=None):
                 subprocess.TimeoutExpired) as error:
             destination = (" to media bucket" if cfg.media_bucket else
                            f" to {cfg.media_repo}" if cfg.media_repo else "")
+            detail = (f": {error}" if isinstance(error, media_store.MissingCredentials)
+                      else "")
             section = (f'## Evidence\n\nCapture command `{cfg.ui_capture}` failed to'
                        f' publish evidence{destination}'
-                       f' ({type(error).__name__}).')
+                       f' ({type(error).__name__}{detail}).')
         receipt.write_text(section)
     if record_note is not None and note.exists():
         record_note(note.read_text())

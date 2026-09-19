@@ -40,7 +40,7 @@ def self_hosted(target):
 
 def main(target, provider):
     """Probe before claiming, then run serially or schedule worker children."""
-    banner()
+    banner(target)
     reset(target)
     try:
         knobs = loop_config(target)
