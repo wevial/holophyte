@@ -76,6 +76,7 @@ from holophyte.pullrequest import (
     _park_on_pr,
 )
 from holophyte.redact import known_secrets, redact_prose
+from holophyte.redact import safe_print as print
 from holophyte.review import criteria_brief, criteria_findings, evidence_brief
 from holophyte.runs import (
     RunSwept,

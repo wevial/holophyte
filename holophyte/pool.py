@@ -15,6 +15,7 @@ from holophyte.config_tables import loop_config
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import MergeLockHeld, merge_lock
 from holophyte.reconcile import _reconcile_at_startup, _reconcile_pull_requests
+from holophyte.redact import safe_print as print
 from holophyte.reexec import reexec_command
 from holophyte.runs import open_store
 from holophyte.startup import banner

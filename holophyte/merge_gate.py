@@ -33,6 +33,7 @@ from holophyte.gates import (
 )
 from holophyte.merge_lock import live_merge_lock
 from holophyte.pullrequest import _landed_pr, _open_pr, _resume_on_pr
+from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 
 

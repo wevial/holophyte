@@ -37,6 +37,7 @@ import socket
 import time
 
 import ticket_template as _ticket_template
+from holophyte.redact import redact_values as _redact_values
 
 from .schema import (  # noqa: F401
     SCHEMA_VERSION,
@@ -421,6 +422,9 @@ def _append_event(conn, run_id, level, kind, summary, at, payload=None):
     `UNIQUE (runId, seq)` index stands behind the per-run monotonicity rather
     than a caller's counter.
     """
+    summary = _redact_values(summary)
+    if payload is not None:
+        payload = _redact_values(payload)
     (seq,) = conn.execute(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents WHERE runId = ?",
         (run_id,),
@@ -606,6 +610,8 @@ def record_ledger(conn, run_id, kind, text, source="loop", now=None):
     intervention's row and its ledger entry land together -- and otherwise
     is one of its own.
     """
+    if isinstance(text, str):
+        text = _redact_values(text)
     if kind not in LEDGER_KINDS:
         raise ValueError(f"unknown ledger kind {kind!r}")
     if source not in LEDGER_SOURCES:

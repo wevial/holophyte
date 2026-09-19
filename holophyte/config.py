@@ -14,6 +14,7 @@ import collections
 import math
 import os
 import pathlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -113,7 +114,7 @@ KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
-                           "carry"}),
+                           "carry", "env_source", "env_allow"}),
 }
 # `[loop]`'s and `[report]`'s entries are filled in beside `LOOP_KEYS` and
 # `REPORT_KEYS`, with `[supervisor]`'s.
@@ -523,6 +524,66 @@ def check_worktree_setup(target):
     setup_timeout(target)
     branch_prefix(target)
     carry_directories(target)
+    worktree_environment(target)
+
+
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def parse_environment(text):
+    """Read dotenv assignments without evaluating or unquoting their values."""
+    values = {}
+    for number, line in enumerate(text.split("\n"), 1):
+        line = line.lstrip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        name, separator, value = line.partition("=")
+        if not separator or not ENV_NAME.fullmatch(name):
+            raise ValueError(f"env_source: invalid assignment on line {number}")
+        values[name] = value
+    return values
+
+
+def worktree_environment(target):
+    """Validate and read the allow-list; None preserves targets without it.
+
+    Relative sources resolve beside config.toml. All source values are held
+    only in memory for redaction, including values excluded from the checkout.
+    """
+    from holophyte.redact import register_values
+
+    table = config_table(target, "worktree")
+    if "env_source" not in table and "env_allow" not in table:
+        return None
+    prefix = f"[holo2] {target.config_path}: [worktree] "
+    for key in ("env_source", "env_allow"):
+        if key not in table:
+            raise SystemExit(prefix + f"missing {key}; "
+                             "both environment keys are required")
+    source, allow = table["env_source"], table["env_allow"]
+    if not isinstance(source, str) or not source.strip():
+        raise SystemExit(prefix + "env_source must be a non-empty path")
+    if not isinstance(allow, list) or any(
+            not isinstance(name, str) or not ENV_NAME.fullmatch(name)
+            for name in allow):
+        raise SystemExit(prefix + "env_allow must be a list of variable names matching "
+                         "[A-Za-z_][A-Za-z0-9_]*")
+    path = Path(source).expanduser()
+    if not path.is_absolute():
+        path = Path(target.config_path).parent / path
+    try:
+        values = parse_environment(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        raise SystemExit(prefix + "env_source could not be read as UTF-8") from None
+    except ValueError as error:
+        raise SystemExit(prefix + str(error)) from None
+    register_values(values.values())
+    missing = [name for name in allow if name not in values]
+    if missing:
+        raise SystemExit(prefix + "env_source lacks: " + ", ".join(missing))
+    return {name: values[name] for name in allow}
 
 
 def setup_timeout(target):

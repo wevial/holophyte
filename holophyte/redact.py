@@ -28,6 +28,7 @@ than served.
 
 from __future__ import annotations
 
+import builtins
 import os
 import re
 import tomllib
@@ -428,6 +429,30 @@ PROSE_PAIR = re.compile(
     r"""(?im)(["']?[\w.-]*(?:token|key)["']?\s*[=:]\s*)(?!\s*$)[^\r\n]+""")
 
 
+# Retained for the process lifetime: a source may rotate while an earlier
+# candidate can still echo its old values. Never persist this registry.
+_environment_values = frozenset()
+
+
+def register_values(values):
+    global _environment_values
+    held = set(values)
+    held.update(value[1:-1] for value in tuple(held)
+                if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0])
+    _environment_values = _environment_values | frozenset(v for v in held if v)
+
+
+def redact_values(text):
+    """Remove source values while preserving ordinary non-environment prose."""
+    for value in sorted(_environment_values, key=len, reverse=True):
+        text = text.replace(value, REDACTED)
+    return text
+
+
+def safe_print(*args, **kwargs):
+    builtins.print(*(redact_values(str(arg)) for arg in args), **kwargs)
+
+
 def known_secrets(document, environ=None):
     """The secret values the process itself holds: every `secret_leaves()`
     value of the parsed config `document`, and the tokens `environ` carries
@@ -437,7 +462,7 @@ def known_secrets(document, environ=None):
     environ = os.environ if environ is None else environ
     values = [str(v) for v in secret_leaves(document or {}).values()]
     values += [environ.get(name, "") for name in ENV_SECRETS]
-    return frozenset(v for v in values if v.strip())
+    return frozenset(v for v in values if v.strip()) | _environment_values
 
 
 def redact_prose(text, secrets=()):
@@ -448,6 +473,7 @@ def redact_prose(text, secrets=()):
     `api_key = "..."` after a sentence would pass it untouched; this is the
     rule for text with no document to check against, and it errs toward
     hiding: a `key:` label in a pasted log is redacted with the rest."""
+    text = redact_values(text)
     for value in sorted(secrets, key=len, reverse=True):
         text = text.replace(value, REDACTED)
     return PROSE_PAIR.sub(lambda m: m.group(1) + REDACTED, text)

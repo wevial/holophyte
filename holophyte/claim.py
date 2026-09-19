@@ -20,7 +20,9 @@ gate a claimed run is dispatched into stay there. `_timed`, `_is_ancestor`,
 inside their callers, the house back-import pattern (`holophyte/pool.py`,
 `holophyte/pullrequest.py`), so a `holophyte.loop` attribute patch lands.
 """
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import store
@@ -45,7 +47,7 @@ from holophyte.board import (
     release_lease_label,
     store_status,
 )
-from holophyte.config import setup_commands, setup_timeout
+from holophyte.config import setup_commands, setup_timeout, worktree_environment
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -55,6 +57,8 @@ from holophyte.gates import (
     sh,
 )
 from holophyte.reconcile import PR_CLOSED_QUESTION
+from holophyte.redact import redact_values
+from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase
 
 
@@ -74,6 +78,22 @@ def timeout_report(cmd, expired):
             + (out or "(no output before the timeout)"))
 
 
+def write_worktree_environment(target, wt):
+    """Replace .env atomically, never following an existing symlink or hardlink."""
+    values = worktree_environment(target)
+    if values is None:
+        return
+    fd, temporary = tempfile.mkstemp(prefix=".env-", dir=wt)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write("".join(f"{name}={value}\n" for name, value in values.items()))
+        os.replace(temporary, Path(wt) / ".env")
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def run_worktree_setup(target, wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
@@ -86,6 +106,10 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
     step one worked. A target that names no setup runs nothing and records
     no phase, so an absent table leaves the run byte-identical to today's.
     """
+    try:
+        write_worktree_environment(target, wt)
+    except OSError:
+        return False, "[holo2] worktree environment file could not be written"
     commands = setup_commands(target)
     timeout = setup_timeout(target)
     if commands:
@@ -98,7 +122,8 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
             ok, out = False, timeout_report(command, e)
         if not ok:
             return False, (f"[holo2] worktree setup command {n} of "
-                           f"{len(commands)} FAILED: {command}\n{out}")
+                           f"{len(commands)} FAILED: {redact_values(command)}\n"
+                           f"{redact_values(out)}")
         print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
     if (Path(wt) / ".githooks").is_dir():
         try:
