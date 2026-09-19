@@ -280,7 +280,7 @@ def _ending_of(conn, run_id):
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  started_at=None, criteria=(), root=None, route=None,
-                 prior_reply=""):
+                 prior_reply="", structured_findings=None):
     """Record one review or adjudication round as a `reviewRounds` row.
 
     The round the loop just ran, as the store holds it: the verdict, the
@@ -315,6 +315,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     beside the Codex rounds as what it was. None is `agent_route()`'s
     answer for `role`, as before.
 
+    `structured_findings` supplies findings already structured by the babysitter.
+
     `prior_reply` preserves a capped malformed first reply as raw evidence;
     only `reply` determines the verdict and criterion findings. The evidence
     is marked so fingerprints and convergence comparisons ignore it.
@@ -333,6 +335,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
         findings = parse_findings(reply)
     else:
         findings = []
+    if structured_findings is not None:
+        findings = structured_findings
     if role == "review" and verdict != "error":
         unwitnessed = criteria_findings(reply, criteria, root)
         if unwitnessed:

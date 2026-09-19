@@ -1,3 +1,5 @@
+import type { Instruction } from "./findings";
+
 /** The daemon's `/status` body (holophyte/serve.py `status()`). `project`
  *  and `daemon` arrive with the daemon field ticket, so both are optional. */
 export interface Status {
@@ -78,7 +80,7 @@ export interface Round {
   verdict: "pass" | "changes_requested" | "error" | string;
   reviewer_model?: string | null;
   findings: Finding[];
-  instructions?: Finding[];
+  instructions?: Instruction[];
   operator_notes?: { kind: "operator_note"; event_id: number; note: string; author: string }[];
 }
 
