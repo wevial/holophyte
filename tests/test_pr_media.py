@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from holophyte import pr_media, pullrequest
 from holophyte.gates import InfraFailure
+from tests.test_media_store import CREDS, receiver
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/"
@@ -103,6 +104,65 @@ class MediaTests(unittest.TestCase):
         self.visibility = visibility
         self.ledger = ledger
         return create.call_args.args[3]
+
+    def test_bucket_precedes_git_publishers_and_keeps_credentials_out_of_ledger(self):
+        self.config["merge"]["media_repo"] = "example/media"
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       'for name in ("a.png", "b screen.png", "flow.webm"):\n'
+                       ' Path(sys.argv[1], name).write_bytes(b"evidence")\n')
+        with receiver() as (endpoint, requests), patch.dict(os.environ, CREDS):
+            self.config["merge"]["media_bucket"] = {
+                "endpoint": endpoint, "bucket": "evidence",
+                "public_base": "https://media.example.invalid", "retention_days": 30}
+            with patch("holophyte.pr_media._push") as push, patch(
+                    "holophyte.pr_media._push_repo") as push_repo:
+                body = self.open()
+            push.assert_not_called()
+            push_repo.assert_not_called()
+        self.assertEqual(len(requests), 3)
+        prefixes = {path.rsplit("/", 1)[0] for _, path, _, _ in requests}
+        self.assertEqual(len(prefixes), 1)
+        prefix = prefixes.pop()
+        self.assertRegex(prefix, r"^/evidence/repo/KO-505/[A-Za-z0-9_-]{22}$")
+        for method, path, headers, data in requests:
+            self.assertEqual(method, "PUT")
+            self.assertEqual(data, b"evidence")
+            self.assertIn("/auto/s3/aws4_request", headers["Authorization"])
+            self.assertIn("https://media.example.invalid"
+                          + path[len("/evidence"):], body)
+            self.assertIn("image/png" if path.endswith(".png") else "video/webm",
+                          headers["Content-Type"])
+        self.visibility.assert_not_called()
+        self.assertIn("30 days", body)
+        for value in CREDS.values():
+            self.assertNotIn(value, body + str(self.ledger.call_args_list))
+
+    def test_caps_drop_oversized_files_and_videos_before_images(self):
+        self.config["merge"].update(media_max_file_mb=1, media_max_total_mb=2)
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       'for name, size in [("z.png", 1048576), ("y.png", 1048576),'
+                       ' ("a.webm", 1048576), ("b.mp4", 524288),'
+                       ' ("huge.png", 1048577)]:\n'
+                       ' Path(sys.argv[1], name).write_bytes(b"x" * size)\n')
+        body = self.open()
+        self.assertIn("Dropped `huge.png`: exceeds media_max_file_mb (1 MB).", body)
+        self.assertIn("Dropped `a.webm`: exceeds media_max_total_mb (2 MB).", body)
+        self.assertIn("Dropped `b.mp4`: exceeds media_max_total_mb (2 MB).", body)
+        names = subprocess.check_output(
+            ["git", "--git-dir", str(self.remote), "ls-tree", "--name-only",
+             "pr-media/KO-505"], text=True).splitlines()
+        self.assertEqual(names, ["y.png", "z.png"])
+
+    def test_changed_caps_invalidate_receipt_and_all_dropped_skip_publish(self):
+        self.candidate()
+        self.assertIn("![screen.png]", self.open())
+        self.config["merge"]["media_max_total_mb"] = 0.000001
+        with patch("holophyte.pr_media._push") as push:
+            body = self.open()
+        push.assert_not_called()
+        self.assertIn("Dropped `screen.png`: exceeds media_max_total_mb", body)
+        self.assertIn("No media remains", body)
+        self.assertNotIn("![screen.png]", body)
 
     def test_image_body_and_orphan_remote_branch(self):
         self.candidate()

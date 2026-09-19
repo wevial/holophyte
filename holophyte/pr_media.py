@@ -4,6 +4,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import secrets
 import shlex
 import shutil
 import signal
@@ -12,7 +13,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
-from holophyte import pr
+from holophyte import media_store, pr
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
@@ -161,7 +162,65 @@ def _push_repo(wt, output, files, task_id, repo):
             git("reset", "--hard", "FETCH_HEAD", cwd=stage)
 
 
-def _produce(target, wt, task_id, command, note, media_repo):
+def _publish_git(target, wt, output, files, task_id, note, media_repo):
+    repo = media_repo or pr.repo_of(pr.origin_url(target))
+    if repo is None:
+        raise ValueError('origin does not name a GitHub repository')
+    try:
+        private = (repo_is_private(target, media_repo) if media_repo
+                   else repo_is_private(target))
+        visibility = 'private' if private else 'public'
+        form = 'blob-with-raw' if private else 'raw host'
+        text = (f'Evidence visibility read: {repo} is {visibility}; '
+                f'images use {form}.')
+    except (InfraFailure, OSError, RuntimeError, ValueError,
+            subprocess.TimeoutExpired) as error:
+        private = True
+        text = (f'Evidence visibility read failed for {repo} '
+                f'({type(error).__name__}); images use blob-with-raw fallback.')
+    note.write_text(text + ' Videos use blob-with-raw links.')
+    branch = f'pr-media/{task_id}'
+    if media_repo:
+        branch = _push_repo(wt, output, files, task_id, media_repo)
+    else:
+        _push(wt, output, files, task_id)
+    urls = {}
+    for file in files:
+        name = file.relative_to(output).as_posix()
+        path = f'{task_id}/{name}' if media_repo else name
+        urls[file] = media_url(repo, branch, path, private)
+    return f'Media lives in `{repo}` on `{branch}`.', urls
+
+
+def _publish_bucket(target, output, files, task_id, config):
+    prefix = f'{target.path.name}/{task_id}/{secrets.token_urlsafe(16)}'
+    urls = {file: media_store.upload(
+        config, f'{prefix}/{file.relative_to(output).as_posix()}', file)
+        for file in files}
+    days = config.get("retention_days")
+    retention = (f'{days} days' if days else 'not specified')
+    return (f'Media lives in an object bucket. Retention: {retention}; '
+            'evidence expires under the bucket lifecycle set by the operator.'), urls
+
+
+def _cap_files(output, files, cfg):
+    kept, dropped = [], []
+    for file in sorted(files, key=lambda file: (file.suffix != ".png", file)):
+        if file.stat().st_size > cfg.media_max_file_mb * 1024 * 1024:
+            dropped.append(f'Dropped `{file.relative_to(output)}`: exceeds '
+                           f'media_max_file_mb ({cfg.media_max_file_mb} MB).')
+        else:
+            kept.append(file)
+    total = sum(file.stat().st_size for file in kept)
+    while total > cfg.media_max_total_mb * 1024 * 1024:
+        file = kept.pop()
+        total -= file.stat().st_size
+        dropped.append(f'Dropped `{file.relative_to(output)}`: exceeds '
+                       f'media_max_total_mb ({cfg.media_max_total_mb} MB).')
+    return kept, dropped
+
+
+def _produce(target, wt, task_id, command, note, cfg):
     with tempfile.TemporaryDirectory(prefix='pr-media-') as tmp:
         output = Path(tmp)
         error = _capture(command, wt, output)
@@ -174,33 +233,21 @@ def _produce(target, wt, task_id, command, note, media_repo):
         if not files:
             return (f'## Evidence\n\nCapture command `{command}`'
                     ' produced no media files.')
-        repo = media_repo or pr.repo_of(pr.origin_url(target))
-        if repo is None:
-            raise ValueError('origin does not name a GitHub repository')
-        try:
-            private = (repo_is_private(target, media_repo) if media_repo
-                       else repo_is_private(target))
-            visibility = 'private' if private else 'public'
-            form = 'blob-with-raw' if private else 'raw host'
-            text = (f'Evidence visibility read: {repo} is {visibility}; '
-                    f'images use {form}.')
-        except (InfraFailure, OSError, RuntimeError, ValueError,
-                subprocess.TimeoutExpired) as error:
-            private = True
-            text = (f'Evidence visibility read failed for {repo} '
-                    f'({type(error).__name__}); images use blob-with-raw fallback.')
-        note.write_text(text + ' Videos use blob-with-raw links.')
-        branch = f'pr-media/{task_id}'
-        if media_repo:
-            branch = _push_repo(wt, output, files, task_id, media_repo)
+        files, dropped = _cap_files(output, files, cfg)
+        lines = ['## Evidence', f'Captured with `{command}`.']
+        lines.extend(dropped)
+        if not files:
+            lines.append('No media remains within the evidence size limits.')
+            return '\n\n'.join(lines)
+        if cfg.media_bucket:
+            description, urls = _publish_bucket(
+                target, output, files, task_id, cfg.media_bucket)
         else:
-            _push(wt, output, files, task_id)
-        lines = ['## Evidence', '', f'Captured with `{command}`. '
-                 f'Media lives in `{repo}` on `{branch}`.']
-        for file in files:
+            description, urls = _publish_git(
+                target, wt, output, files, task_id, note, cfg.media_repo)
+        lines.append(description)
+        for file, url in urls.items():
             name = file.relative_to(output).as_posix()
-            path = f'{task_id}/{name}' if media_repo else name
-            url = media_url(repo, branch, path, private)
             label = name.replace('[', r'\[').replace(']', r'\]')
             lines.append(f'{"!" if file.suffix == ".png" else ""}[{label}]({url})')
         return '\n\n'.join(lines)
@@ -217,7 +264,8 @@ def prepare(target, wt, task_id, record_note=None):
         return ''
     identity = [RECEIPT_VERSION, sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt),
                 task_id, cfg.ui_paths, cfg.ui_capture, pr.origin_url(target),
-                cfg.media_repo]
+                cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
+                cfg.media_max_total_mb]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     receipt = git_dir / f'pr-media-{key}.txt'
@@ -225,10 +273,11 @@ def prepare(target, wt, task_id, record_note=None):
     if not receipt.exists():
         try:
             section = _produce(target, wt, task_id, cfg.ui_capture, note,
-                               cfg.media_repo)
+                               cfg)
         except (InfraFailure, OSError, RuntimeError, ValueError,
                 subprocess.TimeoutExpired) as error:
-            destination = f" to {cfg.media_repo}" if cfg.media_repo else ""
+            destination = (" to media bucket" if cfg.media_bucket else
+                           f" to {cfg.media_repo}" if cfg.media_repo else "")
             section = (f'## Evidence\n\nCapture command `{cfg.ui_capture}` failed to'
                        f' publish evidence{destination}'
                        f' ({type(error).__name__}).')

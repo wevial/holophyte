@@ -39,7 +39,8 @@ REDACTED = "[redacted]"
 SECRET_SUFFIXES = ("token", "key")
 # The environment variables a credential reaches the process by:
 # `linear_provider`'s board key and `holophyte.pr`'s forge tokens.
-ENV_SECRETS = ("LINEAR_API_KEY", "GH_TOKEN", "GITHUB_TOKEN")
+ENV_SECRETS = ("LINEAR_API_KEY", "GH_TOKEN", "GITHUB_TOKEN",
+               "HOLOPHYTE_MEDIA_ACCESS_KEY_ID", "HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY")
 BARE_KEY = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
                      "0123456789_-")
 WHITESPACE = " \t"
