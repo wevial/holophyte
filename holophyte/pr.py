@@ -295,22 +295,29 @@ def split_pr_body(body):
     linear = re.search(r"^Linear:[^\n]*(?:\n|$)", body, re.MULTILINE)
     if linear is None:
         return body, "", "", ""
+    tail_start = body.find("<!--", linear.end())
+    region = body if tail_start < 0 else body[:tail_start]
+    heading = re.search(r"^## Evidence[ \t]*\r?$", region, re.MULTILINE)
+    evidence = ""
+    if heading:
+        end = re.search(r"^## |^Linear:|<!--", body[heading.end():], re.MULTILINE)
+        cut = heading.end() + end.start() if end else len(body)
+        evidence = body[heading.start():cut]
+        body = body[:heading.start()] + body[cut:]
+        linear = re.search(r"^Linear:[^\n]*(?:\n|$)", body, re.MULTILINE)
     own, link = body[:linear.start()], linear.group()
     rest = body[linear.end():]
     space = len(rest) - len(rest.lstrip("\r\n"))
     link += rest[:space]
-    rest = rest[space:]
-    if not rest.startswith("## Evidence"):
-        return own, link, "", rest
-    end = re.search(r"<!--|^## (?!Evidence(?:\r?$))", rest, re.MULTILINE)
-    cut = end.start() if end else len(rest)
-    return own, link, rest[:cut], rest[cut:]
+    return own, link, evidence, rest[space:]
 
 
 def replace_pr_text(body, text):
     """Replace only the loop's prose, retaining the preserved slices verbatim."""
     _, link, evidence, tail = split_pr_body(body)
-    return text.rstrip() + ("\n\n" if link else "") + link + evidence + tail
+    before_linear = evidence and body.index(evidence) < body.index(link)
+    preserved = evidence + link if before_linear else link + evidence
+    return text.rstrip() + ("\n\n" if link else "") + preserved + tail
 
 
 def edit_pr_body(target, pull, body):
