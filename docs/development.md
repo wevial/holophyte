@@ -93,8 +93,17 @@ Each module, one line:
 - `holophyte/pr_status.py` — reading a pull request's state (KO-426), out
   of `holophyte/pr.py`: `pull_status()` for the parked-run reconcile,
   `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.
-- `holophyte/pr_media.py` — user-facing diff matching, timed capture, orphan
+- `holophyte/media_store.py` — standard-library SigV4 PUTs for evidence in an
+  S3-compatible bucket. Configure `[merge.media_bucket]` with `endpoint`,
+  `bucket`, `public_base`, and optional `retention_days` for display; set
+  `HOLOPHYTE_MEDIA_ACCESS_KEY_ID` and `HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY`
+  in the environment. The operator sets public reads and lifecycle expiry
+  on the bucket. Bucket publishing takes precedence over both git publishers.
+- `holophyte/pr_media.py` — user-facing diff matching, timed capture, bounded
   media publishing and evidence shared by PR descriptions and review prompts.
+  `[merge] media_max_file_mb` defaults to 10 and `media_max_total_mb` to 20
+  (MB measured as 1,048,576 bytes); oversized files are omitted, then videos
+  are dropped first to fit the total. Each omission appears in Evidence.
   Configure `[merge] ui_paths` with repository-relative globs and `ui_capture`
   with a non-interactive command (shell-style quoting, no shell evaluation).
   The command receives one output-directory argument and has five minutes to
@@ -108,6 +117,8 @@ Each module, one line:
 - `store/operator_notes.py` — atomic send-back and append-only note consumption
   evidence across attempts on the same pull request.
 - `holophyte/bot_threads.py` — advisory bot findings and human-reply escalation.
+- `holophyte/conversation_comments.py` — paged human conversation instructions
+  and recognition of quoted factory replies.
 - `holophyte/thread_mentions.py` — latest-comment mentions as PR instructions.
 - `holophyte/babysitter.py` — the babysit pass over a pull request: the
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`

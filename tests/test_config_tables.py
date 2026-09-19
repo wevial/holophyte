@@ -2,6 +2,7 @@
 
 Run: python3 -m unittest discover -s tests -p 'test_config_tables*' -v
 """
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -346,8 +347,40 @@ class MergeConfigTests(ConfigTestCase):
         self.locate()
         self.assertEqual(config_tables.merge_config(self.tgt),
                          ("auto", "local", 5, "merge", 180, 300, 1800, "", (), "", "",
+                          None, 10, 20,
                           "park", "act", (), "holophyte", (), ("devin-ai-integration",
                            "coderabbitai", "greptile-apps", "github-actions")))
+
+    def test_bucket_credentials_refuse_startup_and_are_redacted(self):
+        from holophyte.redact import known_secrets, redact_prose
+        from tests.test_media_store import CREDS
+        toml = ('[merge.media_bucket]\nendpoint = "https://objects.example.invalid"\n'
+                'bucket = "evidence"\npublic_base = "https://media.example.invalid"\n')
+        for missing in CREDS:
+            with patch.dict(os.environ, CREDS):
+                del os.environ[missing]
+                message = refused(self, toml)
+                self.assertIn(missing, message)
+                for value in CREDS.values():
+                    self.assertNotIn(value, message)
+        with patch.dict(os.environ, CREDS):
+            text = redact_prose(" ".join(CREDS.values()), known_secrets({}))
+            for value in CREDS.values():
+                self.assertNotIn(value, text)
+
+    def test_media_limits_and_bucket_shape_refuse_invalid_configuration(self):
+        from tests.test_media_store import CREDS
+        for key in ("media_max_file_mb", "media_max_total_mb"):
+            for value in ("0", "-1", "nan", "inf", "true", '"large"'):
+                with self.subTest(key=key, value=value):
+                    self.assertIn(key, refused(self, f"[merge]\n{key} = {value}"))
+        with patch.dict(os.environ, CREDS):
+            for value in ('"bucket"', '{}', '{endpoint = "https://example.invalid"}',
+                          '{endpoint = "https://example.invalid", bucket = "evidence", '
+                          'public_base = "https://media.invalid", retention_days = 0}'):
+                with self.subTest(value=value):
+                    self.assertIn("media_bucket", refused(
+                        self, f"[merge]\nmedia_bucket = {value}"))
 
     def test_media_repo_validation(self):
         for value in ('"not-a-repo"', '"../repo"', '"owner/.."', '3'):

@@ -404,9 +404,7 @@ class MergeModeFixture(LoopFixture):
 
     @staticmethod
     def comment(number, author, body):
-        """One comment as the GraphQL answer carries it. `author` is a
-        login -- a review bot's, `__typename` `Bot`, the kind the babysitter
-        answers -- or a `(login, typename)` pair for a person (`User`)."""
+        """GraphQL comment: a bot login or a (login, typename) pair."""
         login, kind = (author if isinstance(author, tuple)
                        else (author, "Bot"))
         return {"author": {"login": login, "__typename": kind},
@@ -432,8 +430,7 @@ class MergeModeFixture(LoopFixture):
 
     @classmethod
     def comments_page(cls, number, replies, next_cursor=None):
-        """A later page of one thread's comments, as the thread query
-        answers it."""
+        """A later page of one thread's comments from the thread query."""
         return {"data": {"node": {"comments": {
             "pageInfo": {"hasNextPage": next_cursor is not None,
                          "endCursor": next_cursor},
@@ -527,8 +524,7 @@ class MergeModeFixture(LoopFixture):
         # what the loop sends out, and a fetch sends nothing). A fetch
         # with a refspec is a different caller — the babysit resume's
         # `fetch origin BRANCH` and the fixture's fetches into a bare
-        # remote — and reaches the real git, which fails or succeeds as
-        # it would.
+        # remote — and reaches the real git.
         (bindir / "git").write_text(
             "#!/bin/sh\n"
             'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
@@ -566,6 +562,9 @@ class MergeModeFixture(LoopFixture):
             '  esac\n'
             f'  n=$(ls "{self.api_dir}" | wc -l); n=$((n+1))\n'
             f'  body="{self.api_dir}/$n.json"; cat > "$body"\n'
+            '  if echo "$*" | grep -q "/issues/.*/comments"; then\n'
+            "    echo '{}'; exit 0\n"
+            '  fi\n'
             '  if grep -q resolveReviewThread "$body"; then\n'
             "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"
             '  elif grep -q addPullRequestReviewThreadReply "$body"; then\n'
@@ -639,7 +638,8 @@ class MergeModeFixture(LoopFixture):
             kind = ("resolve" if "resolveReviewThread" in query
                     else "reply" if "addPullRequestReviewThreadReply" in query
                     else "comments" if "PullRequestReviewThread" in query
-                    else "state" if "reviewThreads" in query else "merge")
+                    else "state" if "reviewThreads" in query
+                    else "conversation" if "body" in body else "merge")
             calls.append((kind, body.get("variables", body)))
         return calls
 
