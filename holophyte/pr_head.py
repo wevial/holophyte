@@ -11,10 +11,10 @@ from holophyte.target import worktree_path
 
 
 def _just_pushed_state(target, conn, run_id, provider, task_id, branch,
-                       sha, beat_s, pull, reviewed, *, state=None):
+                       sha, beat_s, pull, reviewed):
     """Let the PR view catch up with our push before calling its head foreign."""
     with heartbeat_while(conn, run_id, beat_s):
-        state = state or pr_status.pr_state(target, pull)
+        state = pr_status.pr_state(target, pull)
         reads = 1
         while (state.head_sha != sha and not state.merged and not state.closed
                and reads < 4):
@@ -74,12 +74,6 @@ def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
         raise MergeParked(f"rejected: {pull.url} closed by"
                           f" {state.closed_by or 'unknown'}")
     if state.head_sha and state.head_sha != sha:
-        if head_rereads is None:
-            state = _just_pushed_state(
-                target, conn, run_id, provider, task_id, branch, sha, 5,
-                pull, reviewed, state=state)
-            return _pr_terminal(target, conn, run_id, provider, task_id,
-                                branch, sha, pull, state, reviewed, head_rereads=3)
         remote = _stale_head(target, conn, run_id, branch, sha, state)
         if remote is None:
             return None

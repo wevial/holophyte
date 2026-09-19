@@ -50,7 +50,8 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                self.pr_state(head=self.base)] +
-                        ([] if persistent else [self.pr_state()]))
+                        ([] if persistent else [self.pr_state(checks="PENDING"),
+                                                       self.pr_state()]))
         push = holophyte.pr.push_branch
 
         def push_with_stale_api(target, branch):
@@ -60,12 +61,14 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                 for answer in self.answers.glob("*.json"):
                     answer.write_text(answer.read_text().replace(self.base, previous))
 
-        with patch.object(holophyte.pr, "SLEEP"), \
+        with patch.object(holophyte.pr, "SLEEP") as sleep, \
                 patch.object(holophyte.pr, "push_branch", push_with_stale_api):
             self.loop(Commit("candidate"), APPROVE, Idle(""),
                       Reply("THREAD 1: ADDRESS -- a real crash"),
                       Commit("fix crash"), APPROVE, Idle(""),
                       provider=self.provider())
+        self.assertEqual([call.args[0] for call in sleep.call_args_list],
+                         [5, 5, 5] if persistent else [5, holophyte.pr.CHECK_POLL_S])
         pushed = self.pushed()[-1][1]
         self.assertEqual(self.read("SELECT outcome FROM runs"),
                          [("merged",)])
