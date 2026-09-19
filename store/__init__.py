@@ -66,8 +66,8 @@ class ClaimConflict(Exception):
 # the contract here and the merge gate compares the live ticket against the
 # freeze before the branch lands.
 #
-# The fields are the ones a run is actually held to: the title it was briefed
-# with, and the two lists §2's pickability predicate reads. The estimate is
+# The fields are the ones a run is actually held to: its title, acceptance
+# criteria, verification commands, and evidence states. The estimate is
 # deliberately not among them — `runs.timeBoxMs` already snapshots it, and a
 # re-pointed estimate changes what the run was budgeted, not what it was
 # asked to do.
