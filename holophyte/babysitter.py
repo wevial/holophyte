@@ -560,18 +560,30 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     """Verify and review; allow one fix past the cap, then park on rejection."""
     from holophyte.loop import _verify_brief, agent, set_phase, sh
     from holophyte.pullrequest import _park_on_pr, refresh_pr_text
-    if merge_config(target).approve != "auto":
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
-                    pull, f"{_moved(sha, reviewed)}, and a human"
-                    " says merge on the candidate as it stands"
-                    " ([merge] approve = \"human\")", (),
-                    reviewed=reviewed)
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
+    if merge_config(target).approve != "auto":
+        if not ok:
+            record_unreviewed_verification(conn, run_id, out)
+            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                        pull, f"verify failed before human approval:\n{out}", (),
+                        reviewed=reviewed)
+        recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
+        answered = "\n".join(part for part in (fix_context, recovered) if part)
+        if not answered:
+            base = reviewed or sh(["git", "merge-base", "main", sha], cwd=wt)
+            answered = sh(["git", "log", "--format=%s", f"{base}..{sha}"], cwd=wt)
+        refresh_pr_text(target, conn, run_id, task_id, ticket.splitlines()[0],
+                        branch, ticket, beat_s, wt, budget_min, pull, answered)
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                    pull, f"{_moved(sha, reviewed)}, and a human"
+                    " says merge on the candidate as it stands"
+                    " ([merge] approve = \"human\")", (),
+                    reviewed=reviewed)
     if not ok:
         record_unreviewed_verification(conn, run_id, out)
         ledger(conn, run_id, task_id, "failure",
