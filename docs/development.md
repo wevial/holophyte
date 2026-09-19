@@ -108,6 +108,8 @@ Each module, one line:
 - `store/operator_notes.py` — atomic send-back and append-only note consumption
   evidence across attempts on the same pull request.
 - `holophyte/bot_threads.py` — advisory bot findings and human-reply escalation.
+- `holophyte/conversation_comments.py` — paged human conversation instructions
+  and recognition of quoted factory replies.
 - `holophyte/thread_mentions.py` — latest-comment mentions as PR instructions.
 - `holophyte/babysitter.py` — the babysit pass over a pull request: the
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`

@@ -37,6 +37,12 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                                  cases.BabysitHelpers, MergeModeFixture):
     """Thread judgment, bot policy, operator notes, and fix rounds."""
+    def test_human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
+        self.human_conversation_mention_is_fixed_and_replied_on_the_pull()
+
+    def test_bot_conversation_mentions_and_unmentioned_humans_are_ignored(self):
+        self.bot_conversation_mentions_and_unmentioned_humans_are_ignored()
+
     def test_latest_mention_is_fixed_without_judgment_and_resolved(self):
         self.mentioned_thread_is_fixed(("reviewer", "User"))
 

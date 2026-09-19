@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from holophyte.conversation_comments import conversation_threads
 from holophyte.gates import InfraFailure
 from holophyte.pr import (
     Comment,
@@ -44,7 +45,7 @@ THREADS_PAGE = 100
 COMMENTS_PAGE = 50
 STATE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $after: String,
-      $contextsAfter: String) {
+      $contextsAfter: String, $commentsAfter: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
@@ -52,6 +53,10 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       }
       state merged headRefOid mergeable mergeCommit { oid } updatedAt
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
+      comments(first: 100, after: $commentsAfter) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id author { login __typename } body url }
+      }
       reviewThreads(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -110,19 +115,10 @@ query($owner: String!, $name: String!, $number: Int!) {
 
 @dataclass(frozen=True)
 class PullStatus:
-    """A pull request as one `pull_status()` read saw it: open, merged as
-    `merge_sha` by `merged_by`, or closed without merging; when it last
-    changed (`updated_at`, GitHub's ISO 8601 timestamp) and how many
-    review threads it carries (`threads`), None for either when GitHub
-    did not say; the head's checks rollup as `checks` ("success",
-    "pending" or "failure", None when the head carries no rollup -- a
-    pull request with no checks -- or the answer had none) and
-    `reviewDecision` lower-cased as `review` ("approved",
-    "changes_requested", "review_required", None when the repository
-    requires no review or the answer had none); `mergeable` as GitHub
-    spells it ("MERGEABLE", "CONFLICTING", "UNKNOWN", None when the
-    answer had none); and the token's GraphQL budget with its reset
-    (`rate_remaining`, `rate_reset`), None without a `rateLimit`."""
+    """PR lifecycle, activity, checks, review and rate-limit facts.
+
+    Missing activity and budget fields remain None.
+    """
 
     merged: bool
     closed: bool
@@ -240,6 +236,7 @@ def pr_state(target, pull):
         if not (info.get("hasNextPage") and info.get("endCursor")):
             break
         node = _pull_request_page(target, pull, info["endCursor"])
+    threads.extend(conversation_threads(target, pull, first_page, _pull_request_page))
     runs, required = _check_reads(target, pull, first_page.get("headRefOid"))
     if runs is not None:
         try:
@@ -382,12 +379,13 @@ def _comment_nodes(page):
     return comments
 
 
-def _pull_request_page(target, pull, after):
+def _pull_request_page(target, pull, after, comments_after=None):
     """The `pullRequest` node of one `STATE_QUERY` read, its threads the
     page after cursor `after` (None for the first)."""
     data = graphql(target, pull, STATE_QUERY,
                    {"owner": pull.owner, "name": pull.name,
-                    "number": pull.number, "after": after})
+                    "number": pull.number, "after": after,
+                    **({"commentsAfter": comments_after} if comments_after else {})})
     node = ((data.get("repository") or {}).get("pullRequest")
             if isinstance(data, dict) else None)
     if not isinstance(node, dict):
