@@ -9,7 +9,8 @@ from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from holophyte import pullrequest
+from holophyte import pr_media, pullrequest
+from holophyte.gates import InfraFailure
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/"
@@ -67,12 +68,15 @@ class MediaTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "candidate")
 
-    def open(self):
+    def open(self, private=False, error=None):
         with (
             patch(
                 "holophyte.loop._timed",
                 return_value=("TITLE: A screen\nDescription.", False),
             ),
+            patch("holophyte.pr_media.repo_is_private", return_value=private,
+                  side_effect=error) as visibility,
+            patch("holophyte.pullrequest.ledger") as ledger,
             patch("holophyte.pr.open_pull_request", return_value=None),
             patch("holophyte.pr.create_pull_request", return_value="url") as create,
             patch(
@@ -93,6 +97,8 @@ class MediaTests(unittest.TestCase):
                 monotonic(),
                 30,
             )
+        self.visibility = visibility
+        self.ledger = ledger
         return create.call_args.args[3]
 
     def test_image_body_and_orphan_remote_branch(self):
@@ -105,6 +111,9 @@ class MediaTests(unittest.TestCase):
             body,
         )
         self.assertLess(body.index("## Evidence"), body.index("Linear:"))
+        self.visibility.assert_called_once_with(self.target)
+        self.assertIn("public", self.ledger.call_args.args[4])
+        self.assertIn("raw host", self.ledger.call_args.args[4])
         data = subprocess.check_output(
             ["git", "--git-dir", str(self.remote), "show", "pr-media/KO-505:screen.png"]
         )
@@ -121,6 +130,35 @@ class MediaTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(parents.strip(), "1")
+
+    def test_private_images_and_cached_visibility_note(self):
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       'Path(sys.argv[1], "first.png").write_bytes(b"png")\n'
+                       'Path(sys.argv[1], "second screen.png").write_bytes(b"png")\n')
+        with patch("holophyte.pr.origin_url",
+                   return_value="https://github.com/example/repo.git"), patch(
+                       "holophyte.pr_media.repo_is_private",
+                       return_value=True) as visibility:
+            pr_media.prepare(self.target, self.repo, "KO-505")
+        body = self.open(private=True)
+        visibility.assert_called_once_with(self.target)
+        self.visibility.assert_not_called()
+        self.assertIn("https://github.com/example/repo/blob/"
+                      "pr-media/KO-505/first.png?raw=true", body)
+        self.assertIn("https://github.com/example/repo/blob/"
+                      "pr-media/KO-505/second%20screen.png?raw=true", body)
+        self.assertNotIn("raw.githubusercontent.com", body)
+        self.assertIn("private", self.ledger.call_args.args[4])
+
+    def test_failed_visibility_uses_blob_and_records_failure(self):
+        self.candidate()
+        body = self.open(error=InfraFailure("unavailable"))
+        self.assertIn("![screen.png](https://github.com/example/repo/blob/"
+                      "pr-media/KO-505/screen.png?raw=true)", body)
+        self.visibility.assert_called_once_with(self.target)
+        self.ledger.assert_called_once()
+        self.assertIn("visibility read failed", self.ledger.call_args.args[4])
+        self.assertIn("blob", self.ledger.call_args.args[4])
 
     def test_non_ui_and_unconfigured_do_not_capture(self):
         self.candidate("holophyte/loop.py")
@@ -151,7 +189,8 @@ class MediaTests(unittest.TestCase):
             'Path(sys.argv[1], "flow.mp4").write_bytes(b"video")\n'
         )
         body = self.open()
-        self.assertIn("[flow.mp4](https://raw.githubusercontent.com/", body)
+        self.assertIn("[flow.mp4](https://github.com/example/repo/blob/"
+                      "pr-media/KO-505/flow.mp4?raw=true)", body)
         self.assertNotIn("![flow.mp4]", body)
         names = subprocess.check_output(
             [
@@ -170,6 +209,34 @@ class MediaTests(unittest.TestCase):
         self.candidate(script="import time; time.sleep(30)")
         with patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.05):
             self.assertIn("timed out", self.open())
+
+    def test_visibility_transport_and_invalid_answers(self):
+        with patch("holophyte.pr.origin_url",
+                   return_value="https://github.com/example/repo.git"), patch(
+                       "holophyte.pr_media.shutil.which", return_value="gh"), patch(
+                       "holophyte.pr_media.subprocess.run") as run:
+            run.return_value = SimpleNamespace(
+                returncode=0, stdout='{"isPrivate":true}')
+            self.assertTrue(pr_media.repo_is_private(self.target))
+            self.assertEqual(run.call_args.args[0],
+                             ["gh", "repo", "view", "example/repo",
+                              "--json", "isPrivate"])
+            run.return_value.stdout = '{"isPrivate":false}'
+            self.assertFalse(pr_media.repo_is_private(self.target))
+            run.return_value.stdout = '{}'
+            with self.assertRaises(ValueError):
+                pr_media.repo_is_private(self.target)
+        with patch("holophyte.pr.origin_url",
+                   return_value="https://github.com/example/repo.git"), patch(
+                       "holophyte.pr_media.shutil.which", return_value=None), patch(
+                       "holophyte.pr.rest", return_value={"private": True}) as rest:
+            self.assertTrue(pr_media.repo_is_private(self.target))
+            self.assertEqual(rest.call_args.args[2:], ("GET", "repos/example/repo"))
+            rest.return_value = {"private": False}
+            self.assertFalse(pr_media.repo_is_private(self.target))
+            rest.return_value = {"private": "false"}
+            with self.assertRaises(ValueError):
+                pr_media.repo_is_private(self.target)
 
     def test_invalid_ui_configuration(self):
         from holophyte.config_tables import merge_config
