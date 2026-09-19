@@ -542,7 +542,7 @@ def _fix_answers(conn, run_id, rnd, fix_note):
         if not recorded.reviewerModel.startswith("github:"):
             break
         lines[:0] = [line for finding in json.loads(recorded.findings)
-                     for line in (f"ADDRESS: {finding['request']}"
+                     for line in (f"ADDRESS: {' '.join(finding['request'].split())}"
                                   if finding.get("kind") == "instruction"
                                   else finding["message"]).splitlines()
                      if "ADDRESS:" in line]
@@ -846,8 +846,10 @@ def _thread_findings(pull, pass_no, threads, verdicts, checks, sha):
                                  request=thread.request, url=thread.url,
                                  severity="nit", message=thread.request))
         else:
-            findings.extend(parse_findings(babysitter.round_reply(
-                pull, pass_no, (thread,), {1: verdicts[n]}, checks, sha)))
+            reply = babysitter.round_reply(
+                pull, pass_no, (thread,), {1: verdicts[n]}, checks, sha)
+            # The terminal verdict describes the round, not this finding.
+            findings.extend(parse_findings(reply.rsplit("\n", 1)[0]))
     return findings
 
 
