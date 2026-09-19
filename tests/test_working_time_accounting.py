@@ -137,7 +137,8 @@ class WorkingTimeTests(SweepTestCase):
                       criteria=[], cap=1, conflicts=['code.py'], body='body',
                       started=0, issue_url=None, sync_main=False, pull=pull,
                       state=pr.PrState((thread,), 'success', 'before'), rnd=1,
-                      pass_no=1, model='test', addressed=[], reviewed='before')
+                      pass_no=1, model='test', addressed=[], reviewed='before',
+                      review_follows=True)
 
         def route(*args, **kwargs):
             self.assertIsNotNone(self.snapshot(run).workStartedAt)

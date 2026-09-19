@@ -857,8 +857,7 @@ def _verdicts_by_kind(threads, judged, parsed):
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None):
-    """The fix round for the addressed threads, the push, then a reply on
-    each and a resolve on each bot's; the fixed candidate's sha."""
+    """Fix, verify, push and answer threads; return the fixed candidate's sha."""
     from holophyte.loop import (
         _candidate_drift,
         _record_implementer_output,
@@ -878,11 +877,8 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(f"fix round for {pull.url} timed out or made no"
                          f" progress; branch {branch} preserved at"
                          f" {sha[:12]}")
-    # The verify runs over the working tree, so it vouches for the
-    # commit only when the tree is that commit: a fix half committed and
-    # half left in the tree would verify green and push a commit that
-    # does not hold it -- and resolve the thread on it. The tree is left
-    # for a human; nothing is committed, deleted or pushed.
+    # Verify vouches for the commit only if the tree matches it. Preserve
+    # uncommitted work for a human without pushing or resolving threads.
     unclean = _candidate_drift(wt, branch, fixed)
     if unclean:
         ledger(conn, run_id, task_id, "failure",
