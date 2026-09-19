@@ -1,6 +1,9 @@
 """The read-only report shows unfinished work before its finished history."""
 import io
+import os
+import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli
@@ -24,6 +27,23 @@ class LiveReportTests(ReportStoreCase):
         super().setUp()
         with patch("socket.gethostname", return_value="writer"):
             self.completed_run(1, 5, 25, 0, "merged")
+
+    def test_operator_commands_allow_bucket_without_credentials(self):
+        (self.db.parent / "config.toml").write_text(
+            '[merge.media_bucket]\nendpoint = "https://objects.example.invalid"\n'
+            'bucket = "evidence"\npublic_base = "https://media.example.invalid"\n')
+        env = dict(os.environ)
+        for name in ("HOLOPHYTE_MEDIA_ACCESS_KEY_ID",
+                     "HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY"):
+            env.pop(name, None)
+        for command in ("--report", "--sweep"):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    [sys.executable, "factory.py", str(self.target), command],
+                    cwd=Path(__file__).resolve().parents[1], env=env,
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn("warning: media_bucket", result.stdout)
 
     def live_run(self, number, started, phase, url=None, project=None):
         project = self.project if project is None else project

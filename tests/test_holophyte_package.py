@@ -11,9 +11,13 @@ Run: python3 -m unittest discover -s tests -p 'test_holophyte_package*' -v
 """
 import importlib.util
 import inspect
+import io
+import os
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
@@ -291,6 +295,40 @@ DEFINED = {
         "_seen",
     ],
 }
+
+
+class MediaStartupTests(unittest.TestCase):
+    def test_missing_bucket_credentials_warn_once_before_probes(self):
+        from holophyte import operator
+        from tests.test_media_store import CREDS
+
+        bucket = {"endpoint": "https://objects.example.invalid", "bucket": "evidence",
+                  "public_base": "https://media.example.invalid"}
+        target = SimpleNamespace(config=lambda: {"merge": {"media_bucket": bucket}},
+                                 config_path=Path("config.toml"))
+        for missing in (tuple(CREDS), (tuple(CREDS)[1],), ()):
+            with self.subTest(missing=missing), patch.dict(os.environ, CREDS):
+                for name in missing:
+                    os.environ.pop(name, None)
+                out = io.StringIO()
+
+                def probe(*args, **kwargs):
+                    print("probes reached")
+                    return False
+
+                with patch("sys.stdout", out), patch.object(
+                        operator, "startup_routes", side_effect=probe) as probes:
+                    self.assertEqual(operator.main(target, None), 1)
+                probes.assert_called_once()
+                warnings = [line for line in out.getvalue().splitlines()
+                            if "warning:" in line]
+                expected = (["[holo2] warning: media_bucket is configured but "
+                             f"{missing[0]} is not set; evidence will not be published"]
+                            if missing else [])
+                self.assertEqual(warnings, expected)
+                self.assertTrue(out.getvalue().endswith("probes reached\n"))
+                for value in CREDS.values():
+                    self.assertNotIn(value, out.getvalue())
 
 
 class MovedNamesTests(unittest.TestCase):
