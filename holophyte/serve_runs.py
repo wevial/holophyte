@@ -370,10 +370,7 @@ def run_detail(target, run_id, now=None):
         "rounds": [{"round": r.round, "started_ms": r.startedAt,
                     "ended_ms": r.endedAt, "verdict": r.verdict,
                     "reviewer_model": r.reviewerModel,
-                    "findings": [f for f in json.loads(r.findings)
-                                 if " -- MENTIONED: ADDRESS: " not in f["message"]],
-                    "instructions": [f for f in json.loads(r.findings)
-                                     if " -- MENTIONED: ADDRESS: " in f["message"]],
+                    **split_instructions(json.loads(r.findings)),
                     "operator_notes": notes[r.round]}
                    for r in rounds],
         "findings": [{"tone": "advisory", "message": e.summary}
@@ -381,6 +378,32 @@ def run_detail(target, run_id, now=None):
         "events": [{"at": e.at, "kind": e.kind, "summary": e.summary}
                    for e in events],
     }
+
+
+def split_instructions(findings):
+    """Normalize legacy instructions once at the read boundary, without writes."""
+    result = {"findings": [], "instructions": []}
+    marker = " -- MENTIONED: ADDRESS: "
+    for finding in findings:
+        if finding.get("kind") == "instruction":
+            result["instructions"].append(finding)
+        elif "kind" not in finding and marker in finding.get("message", ""):
+            head, request = finding["message"].split(marker, 1)
+            location = re.match(r"^- (.*?) @([^:]+):", head)
+            path, line = finding.get("path", "(no file)"), finding.get("line")
+            author = ""
+            if location:
+                path, author = location.groups()
+                file_line = re.match(r"^(.*):(\d+)$", path)
+                if file_line:
+                    path, line = file_line[1], int(file_line[2])
+            result["instructions"].append(dict(
+                kind="instruction", path=path, line=line, author=author,
+                request=re.split(r"\nVERDICT:", request, maxsplit=1)[0].strip(),
+                url=finding.get("url", "")))
+        else:
+            result["findings"].append(finding)
+    return result
 
 
 def run_ledger(target, run_id):

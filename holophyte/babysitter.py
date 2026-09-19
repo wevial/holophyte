@@ -24,8 +24,14 @@ from holophyte.gates import (
 )
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
-from holophyte.review import criteria_brief, criteria_findings, evidence_brief
+from holophyte.review import (
+    criteria_brief,
+    criteria_findings,
+    evidence_brief,
+    parse_findings,
+)
 from holophyte.runs import heartbeat_while, record_round
+from store.instructions import record_instruction_reply
 
 # Quote conventions in brief order, capped per file, so rules aren't guessed.
 CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
@@ -536,7 +542,9 @@ def _fix_answers(conn, run_id, rnd, fix_note):
         if not recorded.reviewerModel.startswith("github:"):
             break
         lines[:0] = [line for finding in json.loads(recorded.findings)
-                     for line in finding["message"].splitlines()
+                     for line in (f"ADDRESS: {finding['request']}"
+                                  if finding.get("kind") == "instruction"
+                                  else finding["message"]).splitlines()
                      if "ADDRESS:" in line]
     if fix_note:
         lines.append(f"Operator babysit note: {fix_note}")
@@ -755,7 +763,9 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  babysitter.round_reply(pull, pass_no, threads, verdicts,
                                       state.checks, sha),
                  None, True, "", started_at=round_started,
-                 route=babysitter.route_of(threads))
+                 route=babysitter.route_of(threads),
+                 structured_findings=_thread_findings(
+                     pull, pass_no, threads, verdicts, state.checks, sha))
     people = sum(t.author_kind not in ("bot", "maintainer")
                  and t.classification != "MENTIONED" for t in threads)
     ledger(conn, run_id, task_id, "round",
@@ -824,6 +834,21 @@ def _decline_threads(target, conn, run_id, beat_s, pull, declined, model):
         print(f"[holo2] {len(declined)} thread(s) declined;"
               f" {len(declined) - len(left_open)} from bots resolved with the reason")
     return tuple(left_open)
+
+
+def _thread_findings(pull, pass_no, threads, verdicts, checks, sha):
+    """Keep explicit instructions structured; ordinary findings retain their prose."""
+    findings = []
+    for n, thread in enumerate(threads, 1):
+        if thread.classification == "MENTIONED":
+            findings.append(dict(kind="instruction", path=thread.path or "(no file)",
+                                 line=thread.line, author=thread.comments[-1].author,
+                                 request=thread.request, url=thread.url,
+                                 severity="nit", message=thread.request))
+        else:
+            findings.extend(parse_findings(babysitter.round_reply(
+                pull, pass_no, (thread,), {1: verdicts[n]}, checks, sha)))
+    return findings
 
 
 def _verdicts_by_kind(threads, judged, parsed):
@@ -914,9 +939,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     for n, thread, reason in addressed:
         if maintainer_notes.is_note(thread):
             continue
+        reply = babysitter.addressed_reply(model, summaries.get(n, reason), fixed)
         _post(target, conn, run_id, beat_s, pull, thread,
-              babysitter.addressed_reply(model, summaries.get(n, reason),
-                                       fixed),
+              reply,
               resolve=(thread.author_kind == "bot"
                        or thread.classification == "MENTIONED"))
     return fixed
@@ -927,6 +952,8 @@ def _post(target, conn, run_id, beat_s, pull, thread, body, resolve):
     call is a `runEvents` row for an interrupted pass to read back."""
     with heartbeat_while(conn, run_id, beat_s):
         pr.reply_thread(target, pull, thread.id, body)
+        if thread.classification == "MENTIONED":
+            record_instruction_reply(conn, run_id, thread.url, "changed", body)
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "pull_request",
                                f"replied on thread {thread.url}:"
