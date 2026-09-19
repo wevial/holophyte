@@ -4,6 +4,8 @@ import json
 import os
 from types import SimpleNamespace
 
+from holophyte.startup import factory_checkout
+
 
 def read(target):
     try:
@@ -46,7 +48,7 @@ def fetched_schema(target):
 
     try:
         tree = ast.parse(sh(["git", "show", "origin/main:store/schema.py"],
-                            target.path))
+                            factory_checkout()))
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(
                     isinstance(name, ast.Name) and name.id == "SCHEMA_VERSION"
@@ -65,7 +67,7 @@ def prepare_restart(state, target, pool):
         return False
     if state.prepared_sha is None:
         state.prepared_sha = sh(["git", "rev-parse", "--short", "HEAD"],
-                               target.path)
+                               factory_checkout())
         state.can_ff, state.schema_changed = _prepare_reexec(target, pool)
     return not state.schema_changed
 
@@ -91,7 +93,8 @@ def workers_on_previous_build(target):
 
 
 def _checkout_refused(exc):
-    print("[holo2] re-exec: checkout not fast-forwarded "
+    print("[holo2] re-exec: factory checkout not fast-forwarded "
+          f"at {factory_checkout()} "
           f"({' '.join(str(exc).split())}); executing the code on disk", flush=True)
 
 
@@ -104,14 +107,14 @@ def _prepare_reexec(target, worker_pids):
         return False, False
     version = fetched_schema(target)
     schema_moves = version != SCHEMA_VERSION
-    arriving = sh(["git", "rev-parse", "--short", "origin/main"], target.path)
+    arriving = sh(["git", "rev-parse", "--short", "origin/main"], factory_checkout())
     if schema_moves:
         decision = (f"schema {SCHEMA_VERSION} -> {version}; draining"
                     f" {len(worker_pids)} worker(s) before fast-forward to {arriving}")
     else:
         decision = (f"schema unchanged ({SCHEMA_VERSION}); fast-forwarding to"
                     f" {arriving} under {len(worker_pids)} live worker(s)")
-    leaving = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
+    leaving = sh(["git", "rev-parse", "--short", "HEAD"], factory_checkout())
     print(f"[holo2] re-exec: {decision} (leaving {leaving})", flush=True)
     return can_ff, schema_moves
 
@@ -121,10 +124,11 @@ def _fetch_main(target):
     from holophyte.operator import sh
 
     try:
-        sh(["git", "fetch", "origin", "main"], target.path)
-        if sh(["git", "branch", "--show-current"], target.path) != "main":
+        sh(["git", "fetch", "origin", "main"], factory_checkout())
+        if sh(["git", "branch", "--show-current"], factory_checkout()) != "main":
             raise RuntimeError("not on main")
-        if st := sh("git status --porcelain --untracked-files=no".split(), target.path):
+        if st := sh("git status --porcelain --untracked-files=no".split(),
+                    factory_checkout()):
             raise RuntimeError("checkout not clean: " + ", ".join(
                 line.split(maxsplit=1)[1] for line in st.splitlines()[:3]))
         return True
@@ -138,6 +142,6 @@ def _ff_main(target):
     from holophyte.operator import sh
 
     try:
-        sh(["git", "merge", "--ff-only", "origin/main"], target.path)
+        sh(["git", "merge", "--ff-only", "origin/main"], factory_checkout())
     except (RuntimeError, OSError) as exc:
         _checkout_refused(exc)

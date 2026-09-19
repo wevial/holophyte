@@ -3,9 +3,10 @@ import io
 import json
 import unittest
 from contextlib import redirect_stdout
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from holophyte import operator
+from holophyte import operator, pool_handoff
 from store.schema import SCHEMA_VERSION
 from tests.loop_fixture import LoopFixture
 
@@ -85,6 +86,8 @@ class ReexecTests(LoopFixture):
                 self.assertIn(['git', 'fetch', 'origin', 'main'], events)
                 self.assertEqual(output.count('checkout not fast-forwarded'), 1)
                 self.assertIn(reason, output)
+                self.assertIn(f"factory checkout not fast-forwarded at {self.target}",
+                              output)
                 self.assertEqual(events[-1], 'EXEC')
 
     def test_untracked_files_allow_fast_forward(self):
@@ -108,6 +111,76 @@ class ReexecTests(LoopFixture):
                 self.assertEqual(events[-2:], [
                     ('note', {'leaving': 'old1234', 'arriving': 'old1234'}), 'EXEC'])
                 self.assertEqual(output.count('checkout not fast-forwarded'), 1)
+
+
+class SeparateCheckoutTests(LoopFixture):
+    def setUp(self):
+        super().setUp()
+        self.factory = self.target.parent / "factory"
+        self.git("init", "-q", "-b", "main", str(self.factory))
+        self.git("config", "user.email", "factory@example.invalid", cwd=self.factory)
+        self.git("config", "user.name", "Factory Test", cwd=self.factory)
+        schema = self.factory / "store" / "schema.py"
+        schema.parent.mkdir()
+        schema.write_text(f"SCHEMA_VERSION = {SCHEMA_VERSION}\n")
+        self.git("add", ".", cwd=self.factory)
+        self.git("commit", "-qm", "factory base", cwd=self.factory)
+        self.leaving = self.git("rev-parse", "--short", "HEAD",
+                                cwd=self.factory).strip()
+        for repo in (self.factory, self.target):
+            remote = repo.with_name(repo.name + "-origin")
+            self.git("clone", "-q", str(repo), str(remote))
+            self.git("config", "user.email", "factory@example.invalid", cwd=remote)
+            self.git("config", "user.name", "Factory Test", cwd=remote)
+            path = remote / ("store/schema.py" if repo == self.factory else "README.md")
+            path.write_text(f"SCHEMA_VERSION = {SCHEMA_VERSION + 1}\n"
+                            if repo == self.factory else "target advanced\n")
+            self.git("add", ".", cwd=remote)
+            self.git("commit", "-qm", "remote advance", cwd=remote)
+            self.git("remote", "add", "origin", str(remote), cwd=repo)
+        self.arriving = self.git("rev-parse", "--short", "HEAD",
+                                 cwd=self.factory.with_name("factory-origin")).strip()
+        patcher = patch.object(pool_handoff, "factory_checkout",
+                               return_value=self.factory)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_schema_gate_reads_factory_remote(self):
+        with redirect_stdout(io.StringIO()):
+            can_ff, changed = pool_handoff._prepare_reexec(self.tgt, {})
+        self.assertTrue(can_ff)
+        self.assertTrue(changed)
+        self.assertEqual(pool_handoff.fetched_schema(self.tgt), SCHEMA_VERSION + 1)
+
+    def test_restart_moves_only_factory_and_reports_its_shas(self):
+        for dirty in (False, True):
+            with self.subTest(dirty_target=dirty):
+                self.git("reset", "--hard", self.leaving, cwd=self.factory)
+                if dirty:
+                    (self.target / "README.md").write_text("uncommitted target work\n")
+                state = SimpleNamespace(restart=True, stopped=False,
+                                        restart_reason=None, prepared_sha=None)
+                out = io.StringIO()
+                with redirect_stdout(out), patch.object(operator, "EXEC"), \
+                        patch.object(operator.store, "record_loop_restart") as note:
+                    self.assertFalse(pool_handoff.prepare_restart(state, self.tgt, {}))
+                    self.assertTrue(state.can_ff)
+                    operator._reexec(self.tgt, Mock(), 1,
+                                     prepared_sha=state.prepared_sha,
+                                     can_ff=state.can_ff)
+                self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+                self.assertEqual(self.git("rev-parse", "--short", "HEAD",
+                                          cwd=self.factory).strip(), self.arriving)
+                self.assertIn(f"fast-forward to {self.arriving} "
+                              f"(leaving {self.leaving})",
+                              out.getvalue())
+                self.assertNotIn("checkout not fast-forwarded", out.getvalue())
+                self.assertEqual(json.loads(note.call_args.args[2]),
+                                 {"leaving": self.leaving, "arriving": self.arriving})
+                self.assertFalse((self.target / ".git" / "FETCH_HEAD").exists())
+                if dirty:
+                    self.assertEqual((self.target / "README.md").read_text(),
+                                     "uncommitted target work\n")
 
 
 if __name__ == '__main__':
