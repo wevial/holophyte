@@ -238,13 +238,13 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
 
     Before pushing, write the PR text, falling back to a stub on failure.
 
-    Both calls leave the machine and block for as long as the remote takes,
-    so they run under `heartbeat_while()` like every other wait: a slow push
-    is not a dead loop for the supervisor to sweep before the URL is on the
-    run (KO-259 review round 1).
+    Remote calls run under `heartbeat_while()`: a slow push is not a dead
+    loop to sweep before its URL is recorded (KO-259 review round 1).
     """
     with heartbeat_while(conn, run_id, beat_s):
-        evidence = pr_media.prepare(target, wt, task_id)
+        evidence = pr_media.prepare(
+            target, wt, task_id,
+            record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
     title, text = _written_pr_text(target, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,
                                    budget_min, issue_url)
