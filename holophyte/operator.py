@@ -201,14 +201,17 @@ def _schema_move(target):
 def _reexec(target, conn, project, reason=None, *, prepared_sha=None,
             can_ff=None, worker_pids=()):
     """Update and exec; a schema move with workers asks the caller to drain."""
-    sha = prepared_sha or sh(["git", "rev-parse", "--short", "HEAD"], target.path)
+    from holophyte.pool_handoff import factory_checkout
+
+    sha = prepared_sha or sh(["git", "rev-parse", "--short", "HEAD"],
+                             factory_checkout())
     if can_ff is None:
         can_ff, schema_moves = _prepare_reexec(target, worker_pids)
         if schema_moves and worker_pids:
             return False
     if can_ff:
         _ff_main(target)
-    arriving = sh(["git", "rev-parse", "--short", "HEAD"], target.path)
+    arriving = sh(["git", "rev-parse", "--short", "HEAD"], factory_checkout())
     store.record_loop_restart(conn, project, json.dumps({
         "leaving": sha, "arriving": arriving}))
     conn.close()

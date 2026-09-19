@@ -8,10 +8,15 @@ from holophyte.gates import sh
 BUILD = None
 
 
+def factory_checkout():
+    """The resolved checkout containing the running factory.py."""
+    return Path(__file__).resolve().parents[1]
+
+
 def build_sha():
     """The startup build, with a fallback for callers bypassing the CLI."""
     return BUILD or sh(['git', 'rev-parse', '--short', 'HEAD'],
-                       Path(__file__).resolve().parents[1])
+                       factory_checkout())
 
 
 def eager_import():

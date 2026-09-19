@@ -171,6 +171,11 @@ class LoopFixture(unittest.TestCase):
         self.target = root / "repo"
         self.worktrees = root / "repo.worktrees"
         self.target.mkdir()
+        # Self-reexec tests run against the disposable factory checkout.
+        factory_file = patch("holophyte.pool_handoff.factory_checkout",
+                             return_value=self.target)
+        factory_file.start()
+        self.addCleanup(factory_file.stop)
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.email", "factory@example.invalid")
         self.git("config", "user.name", "Factory Test")
