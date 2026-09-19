@@ -22,16 +22,19 @@ class BabysitHelpers:
     """Shared pass setup and assertions; no discoverable test cases."""
     def human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        request = "@holophyte move the button\nPut it beside Save."
+        request = ("@holophyte move the button\nPut it beside Save."
+                   "\n\n---- Comment by earlier-route ----"
+                   "\n\nAddressed in abc123: Earlier attempt.")
         # The instruction is on the second page of conversation comments.
         first = self.conversation_state(("operator", "User"), "Looks good", "c1")
         second = self.conversation_state(("operator", "User"), request)
         answered = self.conversation_state(("operator", "User"), request)
         nodes = answered["data"]["repository"]["pullRequest"]["comments"]["nodes"]
+        quoted = "\n".join("> " + line for line in request.splitlines())
         nodes.append(self.comment(2, ("writer", "User"),
             f"> [Request by @operator]({self.URL}#discussion_r1)\n>\n"
-            "> @holophyte move the button\n> Put it beside Save.\n\n"
-            "---- Comment by factory ----\n\nAddressed in HEAD_SHA: Moved it."))
+            f"{quoted}\n\n"
+            f"---- Comment by factory ----\n\nAddressed in {'a' * 40}: Moved it."))
         self.resume_with_conversation(first, second, answered)
         fake, _ = self.loop(ConversationFix("fix: move button"),
                             provider=self.provider())

@@ -1,7 +1,20 @@
 """Human instructions in the pull request's paged issue comments."""
+import re
+
 from holophyte.config_tables import merge_config
 from holophyte.pr import Thread
 from holophyte.thread_mentions import classify
+
+REPLY_RE = re.compile(
+    r"(> \[Request by @[^\n]+\]\([^\n]+\)\n>\n> .*?)"
+    r"\n\n---- Comment by [^\n]+ ----\n\nAddressed in [0-9a-f]{40}: .+",
+    re.DOTALL)
+
+
+def _reply_quote(comment):
+    body = comment.get("body") if isinstance(comment, dict) else None
+    match = REPLY_RE.fullmatch(body) if isinstance(body, str) else None
+    return match[1] if match else None
 
 
 def conversation_threads(target, pull, node, read_page):
@@ -17,9 +30,7 @@ def conversation_threads(target, pull, node, read_page):
     if not comments:
         return
     merge = merge_config(target)
-    replies = {c.get("body", "").split("\n\n---- Comment by ")[0]
-               for c in comments if isinstance(c, dict)
-               and "\n\n---- Comment by " in c.get("body", "")}
+    replies = {_reply_quote(c) for c in comments}
     for comment in comments:
         thread = _instruction(comment, pull, merge)
         if thread and quote_request(thread) not in replies:
@@ -27,8 +38,7 @@ def conversation_threads(target, pull, node, read_page):
 
 
 def _instruction(comment, pull, merge):
-    if (not isinstance(comment, dict)
-            or "\n\n---- Comment by " in comment.get("body", "")):
+    if not isinstance(comment, dict) or _reply_quote(comment) is not None:
         return None
     author = comment.get("author") or {}
     login = author.get("login") or "unknown"
