@@ -626,7 +626,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             super().handle_one_request()
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True
-            print(f"[holo2] client disconnected: {getattr(self, 'path', '?')}",
+            print(f"[holo2] client disconnected: {getattr(self, 'path', '?')!r}",
                   file=sys.stderr)
 
     def do_GET(self):

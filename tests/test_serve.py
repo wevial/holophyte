@@ -1128,15 +1128,15 @@ class DisconnectedClientTests(unittest.TestCase):
     def test_closed_client_logs_one_line_without_traceback(self):
         server_side, client_side = socket.socketpair()
         self.addCleanup(server_side.close)
-        client_side.sendall(b"GET /missing HTTP/1.0\r\n\r\n")
+        client_side.sendall(b"GET /missing\x1b[31m HTTP/1.0\r\n\r\n")
         client_side.close()
         out = io.StringIO()
         with contextlib.redirect_stderr(out), \
                 patch.object(holophyte.serve.StatusHandler, "do_GET",
                              lambda handler: handler.answer(404, {})):
             holophyte.serve.StatusHandler(server_side, ("local", 0), None)
-        self.assertEqual(len(out.getvalue().splitlines()), 1)
-        self.assertIn("/missing", out.getvalue())
+        self.assertEqual(out.getvalue(),
+                         "[holo2] client disconnected: '/missing\\x1b[31m'\n")
         self.assertNotIn("Traceback", out.getvalue())
 
     def test_reset_during_body_write_logs_one_line(self):
