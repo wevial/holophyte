@@ -788,6 +788,32 @@ class EvidenceTests(unittest.TestCase):
         problems = tt.validate(tt.parse(self.body(states * 2 + ["Seventh"])))
         self.assertTrue(any("Evidence" in p and "6" in p for p in problems))
 
+    def test_marker_only_states_report_each_index(self):
+        ticket = tt.parse(self.body([
+            "Orders page empty", "-", "*  ", "+", "4.", "5) <!-- state -->",
+        ]))
+        self.assertEqual(tt.validate(ticket), [
+            "Evidence state #2 is empty",
+            "Evidence state #3 is empty",
+            "Evidence state #4 is empty",
+            "Evidence state #5 is empty",
+            "Evidence state #6 is empty",
+        ])
+        self.assertEqual(ticket.evidence_states,
+                         ["Orders page empty", "", "", "", "", ""])
+
+    def test_nonempty_list_states_and_blank_lines(self):
+        ticket = tt.parse(self.body([
+            "", "<!-- capture states -->", "- Orders page empty",
+            "* Export dialog open", "+ Export complete", "4. Orders refreshed",
+            "5) Confirmation dismissed", "Plain state", "",
+        ]))
+        self.assertEqual(ticket.evidence_states, [
+            "Orders page empty", "Export dialog open", "Export complete",
+            "Orders refreshed", "Confirmation dismissed", "Plain state",
+        ])
+        self.assertEqual(tt.validate(ticket), [])
+
     def test_claim_freezes_evidence_and_live_edit_is_drift(self):
         with tempfile.TemporaryDirectory() as tmp:
             conn = store.open(Path(tmp) / "store.db")

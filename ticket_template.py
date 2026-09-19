@@ -138,6 +138,17 @@ def _list_items(body):
     return out
 
 
+def _evidence_states(body):
+    states = []
+    for line in COMMENT_RE.sub("", body).splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        item = re.match(rf"^(?:{BULLET}|\d+[.)])(?:\s+(.*))?$", text)
+        states.append((item.group(1) or "") if item else text)
+    return states
+
+
 def _criteria(body):
     """Acceptance-criteria list entries as (unchecked, checked, other,
     checkboxes) -- the last being every "- [ ]"/"- [x]" entry in document
@@ -298,11 +309,7 @@ def parse(text):
      t.acceptance_boxes) = _criteria(t.sections.get("Acceptance criteria", ""))
     t.verify_commands = _verify_commands(t.sections.get("Verify command(s)", ""))
     t.contract_checks = _contract_checks(t.sections.get("Contract checks", ""))
-    t.evidence_states = [
-        LIST_ITEM_RE.sub(r"\1", line.strip())
-        for line in COMMENT_RE.sub("", t.sections.get("Evidence", "")).splitlines()
-        if line.strip()
-    ]
+    t.evidence_states = _evidence_states(t.sections.get("Evidence", ""))
     t.notes = _list_items(t.sections.get("Implementation notes", ""))
     est = None
     for ln in t.sections.get("Estimate & dependencies", "").splitlines():
@@ -498,6 +505,9 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
         p.append("'Evidence' has more than 6 states; the limit is 6")
     if "Evidence" in t.order and not t.evidence_states:
         p.append("'Evidence' is empty; list states or omit the section")
+    for index, state in enumerate(t.evidence_states, 1):
+        if not state:
+            p.append(f"Evidence state #{index} is empty")
 
     if not t.summary:
         p.append("'Summary' is empty")
