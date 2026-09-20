@@ -339,13 +339,13 @@ def edit_pr_body(target, pull, body):
 
 
 def push_branch(target, branch):
-    """`git push origin BRANCH` from the target checkout; a refusal is an
-    `InfraFailure` naming the remote's answer, with the branch untouched."""
+    """Push the checked tip; report remote refusals as `InfraFailure`."""
     from holophyte.environment_git import refuse_environment_history
 
-    refuse_environment_history(target, branch, action="push")
+    checked = refuse_environment_history(target, branch, action="push")
+    refspec = f"{checked}:refs/heads/{branch}" if checked != branch else branch
     try:
-        r = subprocess.run(["git", "push", REMOTE, branch], cwd=target.path,
+        r = subprocess.run(["git", "push", REMOTE, refspec], cwd=target.path,
                            capture_output=True, text=True, timeout=PR_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise InfraFailure(f"git push {REMOTE} {branch} did not answer in "

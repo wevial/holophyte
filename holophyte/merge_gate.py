@@ -415,7 +415,7 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     """The `merging` phase: the `--no-ff` merge of `branch` into main, its
     one self-resolved conflict, and the post-merge cleanup. Returns the full
     sha of the merge commit main now sits on."""
-    refuse_environment_history(target, branch, action="merge")
+    checked = refuse_environment_history(target, branch, action="merge")
     # Commit a FINDINGS.md window left dirty by an earlier failed run before
     # merging. Normally a no-op: runs no longer write this file mid-flight.
     commit_findings(target, f"FINDINGS: {task_id} review records")
@@ -424,7 +424,7 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     # no history, so the run goes merging -> done and the phase §4 puts
     # between them names an activity that never happens here.
     set_phase(conn, run_id, "merging", f"--no-ff merge of {branch} into main")
-    mr = subprocess.run(["git", "merge", "--no-ff", branch, "-m",
+    mr = subprocess.run(["git", "merge", "--no-ff", checked, "-m",
                          f"Merge {branch}: {task}"], cwd=target.path,
                         capture_output=True, text=True)
     if mr.returncode != 0:

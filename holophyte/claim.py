@@ -49,6 +49,7 @@ from holophyte.board import (
 )
 from holophyte.config import setup_commands, setup_timeout, worktree_environment
 from holophyte.environment_git import (
+    environment_temporary_directory,
     exclude_environment,
     paths,
     stage_work,
@@ -90,9 +91,8 @@ def write_worktree_environment(target, wt):
     if values is None:
         return
     exclude_environment(wt)
-    # A killed writer can leave this file behind. Git metadata keeps that
-    # secret-bearing leftover outside every subsequent `git add -A`.
-    git_dir = sh(["git", "rev-parse", "--absolute-git-dir"], wt)
+    # Git metadata keeps interrupted writes outside subsequent `git add -A`.
+    git_dir = environment_temporary_directory(wt)
     fd, temporary = tempfile.mkstemp(prefix=".env-", dir=git_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:

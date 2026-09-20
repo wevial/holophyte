@@ -13,6 +13,8 @@ from fake_agent import APPROVE, Commit, _git
 from loop_fixture import BRANCH, StubProvider, a_task
 
 import holophyte.claim
+import holophyte.environment_git
+import holophyte.merge_gate
 import holophyte.redact
 import store
 
@@ -74,6 +76,17 @@ class WorktreeSetupCases:
         self.assertEqual(len(leftovers), 1)
         self.assertEqual(leftovers[0].read_text(),
                          "PUBLIC=sentinel-interrupted-value\n")
+        shared = self.target / ".git" / ".env-other-writer"
+        shared.write_text("another writer")
+        sibling = self.target.parent / "sibling"
+        self.git("worktree", "add", "--detach", str(sibling), "main")
+        sibling_temp = (Path(_git(sibling, "rev-parse", "--absolute-git-dir"))
+                        / ".env-active")
+        sibling_temp.write_text("another worktree")
+        directory = git_dir / ".env-directory"
+        directory.mkdir()
+        symlink = git_dir / ".env-symlink"
+        symlink.symlink_to(shared)
         (wt / "work.txt").write_text("candidate work\n")
         _git(wt, "add", "-A")
         _git(wt, "commit", "-m", "candidate after interrupted setup")
@@ -81,6 +94,64 @@ class WorktreeSetupCases:
         self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
         self.assertEqual((wt / ".env").read_text(),
                          "PUBLIC=sentinel-interrupted-value\n")
+
+        self.assertFalse(leftovers[0].exists())
+        self.assertEqual(shared.read_text(), "another writer")
+        self.assertEqual(sibling_temp.read_text(), "another worktree")
+        self.assertTrue(directory.is_dir())
+        self.assertTrue(symlink.is_symlink())
+        # The primary checkout must never sweep the shared Git directory.
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, self.target)[0])
+        stale = self.target / ".git" / "holophyte-env" / ".env-interrupted"
+        stale.write_text("interrupted primary checkout write")
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, self.target)[0])
+        self.assertFalse(stale.exists())
+        self.assertEqual(shared.read_text(), "another writer")
+        self.assertEqual(sibling_temp.read_text(), "another worktree")
+
+    def test_environment_check_pins_push_and_merge_to_checked_commit(self):
+        source = self.target.parent / "source.env"
+        source.write_text("PUBLIC=sentinel-racing-value\n")
+        self.configure(f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n')
+        remote = self.target.parent / "remote.git"
+        self.git("init", "--bare", str(remote))
+        self.git("remote", "add", "origin", str(remote))
+        check = holophyte.environment_git.refuse_environment_history
+        for operation in ("push", "merge"):
+            with self.subTest(operation=operation):
+                branch = f"task/{operation}"
+                wt = self.target.parent / operation
+                self.git("worktree", "add", "-b", branch, str(wt), "main")
+                (wt / "work.txt").write_text(operation)
+                _git(wt, "add", "-A")
+                _git(wt, "commit", "-m", "safe candidate")
+                safe = _git(wt, "rev-parse", "HEAD")
+                (wt / ".env").write_text("PUBLIC=sentinel-racing-value\n")
+                _git(wt, "add", "-f", ".env")
+                _git(wt, "commit", "-m", "unsafe concurrent candidate")
+                unsafe = _git(wt, "rev-parse", "HEAD")
+                _git(wt, "reset", "--hard", safe)
+
+                def move_after_check(target, name, *, action):
+                    checked = check(target, name, action=action)
+                    self.git("update-ref", f"refs/heads/{name}", unsafe)
+                    return checked
+
+                module = (holophyte.environment_git if operation == "push"
+                          else holophyte.merge_gate)
+                with patch.object(module, "refuse_environment_history",
+                                  move_after_check):
+                    if operation == "push":
+                        holophyte.pr.push_branch(self.tgt, branch)
+                        landed = _git(remote, "rev-parse", f"refs/heads/{branch}")
+                    else:
+                        with patch.object(module, "set_phase"), patch.object(
+                                module, "commit_findings"):
+                            module._merge(self.tgt, None, None, None, "KO-131",
+                                          "task", branch, wt, safe)
+                        landed = self.git("rev-parse", "main^2").strip()
+                self.assertEqual(landed, safe)
 
     def test_baseline_evidence_survives_source_redaction(self):
         self.main_output(Commit("candidate"), APPROVE)
