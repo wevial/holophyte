@@ -17,7 +17,7 @@ import sys
 import threading
 import unittest
 from pathlib import Path
-from time import sleep, time
+from time import monotonic, sleep, time
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -30,6 +30,7 @@ import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
 
 # How far the clock may move between seeding and the assertion: the daemon
 # stamps its own `now`, so an age is "about" the seeded distance.
@@ -1040,7 +1041,6 @@ class ParseAddressTests(unittest.TestCase):
 
 
 class CliTests(ServeTestCase):
-
     def test_a_malformed_address_is_a_usage_error_naming_the_shape(self):
         for argv in (["--serve"], ["--serve", "localhost"],
                      ["--serve", "127.0.0.1:abc"], ["--serve", ":7710"]):
@@ -1053,16 +1053,14 @@ class CliTests(ServeTestCase):
                 self.assertIn("PORT|HOST:PORT", stderr.getvalue())
                 self.assertFalse(self.db.exists())
 
-    def test_a_bare_port_serves_status_on_loopback(self):
+    def serve_until_sigterm(self, address):
         self.seed()
         out = io.StringIO()
         seen = {}
-
         done = threading.Event()
 
         def poll_then_stop():
-            # A refused address returns before anything is served; stop
-            # polling then rather than hang the test on a usage error.
+            # Stop polling if startup is refused before the announcement.
             while "serving" not in out.getvalue() and not done.is_set():
                 sleep(0.01)
             if done.is_set():
@@ -1074,7 +1072,6 @@ class CliTests(ServeTestCase):
             seen["status"] = conn.getresponse().status
             conn.close()
             os.kill(os.getpid(), signal.SIGTERM)
-
         stopper = threading.Thread(target=poll_then_stop)
         stopper.start()
         self.addCleanup(stopper.join)
@@ -1082,46 +1079,49 @@ class CliTests(ServeTestCase):
         try:
             with contextlib.redirect_stdout(out), \
                     contextlib.redirect_stderr(io.StringIO()):
-                code = holophyte.cli.cli([str(self.target), "--serve", "0"])
+                code = holophyte.cli.cli([str(self.target), "--serve", address])
+        except SystemExit as refused:
+            raise self.failureException(str(refused)) from None
         finally:
             done.set()
         stopper.join()
-
         self.assertEqual(code, 0)
+        return out.getvalue(), seen
+
+    def test_a_bare_port_serves_status_on_loopback(self):
+        _, seen = self.serve_until_sigterm("0")
         self.assertEqual(seen["host"], "127.0.0.1")
         self.assertEqual(seen["status"], 200)
 
     def test_serve_announces_the_bound_address_and_stops_on_sigterm(self):
-        self.seed()
-        out = io.StringIO()
-        seen = {}
-
-        def poll_then_stop():
-            # The announcement names the port the kernel picked; poll it
-            # once, then send the signal the operator's ^C or kill would.
-            while "serving" not in out.getvalue():
-                sleep(0.01)
-            line = out.getvalue().splitlines()[0]
-            host, port = line.split()[2].split(":")
-            conn = http.client.HTTPConnection(host, int(port), timeout=10)
-            conn.request("GET", "/status")
-            seen["status"] = conn.getresponse().status
-            conn.close()
-            os.kill(os.getpid(), signal.SIGTERM)
-
-        stopper = threading.Thread(target=poll_then_stop)
-        stopper.start()
-        self.addCleanup(stopper.join)
-        with contextlib.redirect_stdout(out):
-            code = holophyte.cli.cli([str(self.target), "--serve", "127.0.0.1:0"])
-        stopper.join()
-
-        self.assertEqual(code, 0)
+        out, seen = self.serve_until_sigterm("127.0.0.1:0")
         self.assertEqual(seen["status"], 200)
-        first = out.getvalue().splitlines()[0]
+        first = out.splitlines()[0]
         self.assertTrue(first.startswith("[holo2] serving 127.0.0.1:"), first)
         self.assertIn(f"read-only for {self.target}", first)
         self.assertEqual(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
+
+
+class RefusedStartTests(unittest.TestCase):
+    def test_cli_tests_report_refusal_and_leave_no_helper_thread(self):
+        for method in (
+                "test_a_bare_port_serves_status_on_loopback",
+                "test_serve_announces_the_bound_address_and_stops_on_sigterm"):
+            with self.subTest(method=method):
+                before = set(threading.enumerate())
+                result = unittest.TestResult()
+                started = monotonic()
+                with patch.object(holophyte.serve, "require_tomlkit",
+                                  side_effect=SystemExit(TOMLKIT_MISSING)), \
+                        patch("os.kill") as kill:
+                    CliTests(method).run(result)
+                self.assertLess(monotonic() - started, 5)
+                self.assertEqual(set(threading.enumerate()) - before, set())
+                kill.assert_not_called()
+                self.assertEqual(result.testsRun, 1)
+                problems = result.failures + result.errors
+                self.assertEqual(len(problems), 1)
+                self.assertEqual(problems[0][1].count(TOMLKIT_MISSING), 1)
 
 
 class DisconnectedClientTests(unittest.TestCase):
