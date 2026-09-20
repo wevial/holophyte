@@ -130,6 +130,7 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
       if (phase !== "merge_gate") continue;
     } else phase = phaseAfterArrow(change.summary);
     close(change.at);
+    if (phase === "merge_gate" && change.summary.includes(": babysitting")) prOpen = true;
     const monitoring = phase === "merge_gate" && prOpen && !change.summary.includes("pre-merge verify");
     const kind = monitoring ? "wait" : phase == null ? undefined : PHASE_KINDS[phase];
     if (!kind) continue;

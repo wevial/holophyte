@@ -174,3 +174,18 @@ test("approval and operator parks each retain ten minutes and the reason on resu
     expect(parked.reason).toBe(`working -> ${phase}: awaiting a person`);
   }
 });
+
+test("a completed resumed PR run records babysitting as wait without a new PR-open event", () => {
+  const run: TimelineRun = { ...RUN, phase: "done", ended_ms: T + 661_000, rounds: [],
+    pr_url: "https://example.test/pull/1", events: [
+      { at: T, kind: "pull_request", summary: "resuming run 422's candidate on https://example.test/pull/1" },
+      ...events([
+        [0, "claimed -> merge_gate: babysitting https://example.test/pull/1"],
+        [600, "merge_gate -> merge_gate: pre-merge verify, then the autonomy gate"],
+        [660, "merge_gate -> merging: checks passed"],
+        [661, "merging -> done: merged"],
+      ]),
+    ] };
+  expect(buildTimeline(run, run.ended_ms!).map(s => [s.kind, seconds(s)]))
+    .toEqual([["wait", 600], ["verify", 60], ["merge", 1]]);
+});
