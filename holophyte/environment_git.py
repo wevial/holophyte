@@ -12,8 +12,8 @@ def protected(target):
 
 
 def paths(target):
-    """Pathspecs for factory status and staging, independent of ignore rules."""
-    return ["--", ".", ":(top,exclude).env"] if protected(target) else []
+    """Setup ignores .env; naming it in an exclude pathspec breaks git add."""
+    return []
 
 
 def exclude_environment(wt):
@@ -38,8 +38,8 @@ def unstage_environment(target, wt):
 
 
 def stage_work(target, wt):
-    unstage_environment(target, wt)
     sh(["git", "add", "-A", *paths(target)], wt)
+    unstage_environment(target, wt)
 
 
 def refuse_environment_history(target, branch, *, action):
