@@ -27,8 +27,9 @@ Each module, one line:
 - `holophyte/agent_routes.py` — process-owned route state and live console snapshots.
 - `holophyte/isolation.py` — host/container implementer launch seam, validated
   isolation settings, credential boundary and container cleanup.
-- `holophyte/isolation_git.py` — self-contained Git metadata for container turns;
-  returns commits to linked worktrees without exposing host Git configuration.
+- `holophyte/isolation_git.py` — Git metadata validation and atomic object copying.
+- `holophyte/isolation_clone.py` — disposable container checkouts and sanitized,
+  fast-forward-only commit imports with environment-file exclusions.
 - `holophyte/agents.py` — the agent routes and the `agent()` call, one turn
   of a role.
 - `holophyte/review.py` — reviewer output as structured findings and a

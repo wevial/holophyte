@@ -22,6 +22,8 @@ class IsolationTests(unittest.TestCase):
         )
 
     def test_none_preserves_process_call(self):
+        from holophyte.target import state_dir
+
         for backend in (None, "none"):
             if backend:
                 self.table["agents"]["implementer_isolation"] = backend
@@ -33,10 +35,13 @@ class IsolationTests(unittest.TestCase):
                     "done",
                 )
             run.assert_called_once_with(["agent-cli", "task"], self.root, 17)
+            self.assertFalse(state_dir(self.root).exists())
 
     def test_container_boundary(self):
         from holophyte import isolation
 
+        main, worktree = self.make_worktree()
+        self.target.path = main
         source = self.root / "allowed.env"
         source.write_text("ALLOWED=allowed-secret\nBOARD_KEY=excluded\n")
         self.table["worktree"] = {"env_source": str(source), "env_allow": ["ALLOWED"]}
@@ -53,18 +58,15 @@ class IsolationTests(unittest.TestCase):
                     "AGENT_KEY": "agent-secret",
                 },
             ),
-            patch.object(
-                isolation.subprocess,
-                "run",
-                return_value=subprocess.CompletedProcess([], 0, "", ""),
-            ),
+            patch.object(isolation, "image_ready"),
             patch.object(isolation.review_runner, "_remove_container"),
             patch.object(isolation, "run_capped", return_value=(0, "done")) as run,
         ):
-            agents.agent(self.target, "implement", "task", self.root, timeout=17)
+            agents.agent(self.target, "implement", "task", worktree, timeout=17)
         argv = run.call_args.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
-        self.assertEqual(mounts, [f"{self.root}:/workspace:rw"])
+        self.assertEqual(len(mounts), 1)
+        self.assertTrue(mounts[0].endswith("/clone:/workspace:rw"))
         for flag in (
             "--read-only",
             "--cap-drop=ALL",
@@ -89,6 +91,7 @@ class IsolationTests(unittest.TestCase):
     def test_file_credential_and_timeout_cleanup(self):
         from holophyte import isolation
 
+        _, worktree = self.make_worktree()
         credential = self.root / "auth.json"
         credential.write_text("private")
         route = isolation.Route(
@@ -108,14 +111,15 @@ class IsolationTests(unittest.TestCase):
             ) as run,
         ):
             with self.assertRaises(subprocess.TimeoutExpired):
-                isolation.launch(route, self.root, {}, ["agent"], timeout=1)
+                isolation.launch(route, worktree, {}, ["agent"], timeout=1)
         remove.assert_called_once()
+        self.assertFalse(Path(run.call_args.args[1]).exists())
         argv = run.call_args.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
         self.assertEqual(
             mounts,
             [
-                f"{self.root}:/workspace:rw",
+                f"{run.call_args.args[1]}:/workspace:rw",
                 f"{credential}:/home/implementer/.agent/auth.json:ro",
             ],
         )
@@ -125,7 +129,7 @@ class IsolationTests(unittest.TestCase):
 
         main = self.root / "main"
         main.mkdir()
-        git(main, "init", "-q")
+        git(main, "init", "-q", "-b", "main")
         git(main, "config", "user.name", "Configured Author")
         git(main, "config", "user.email", "author@example.test")
         git(main, "commit", "--allow-empty", "-qm", "base")
@@ -240,8 +244,8 @@ class IsolationTests(unittest.TestCase):
 
         def resolve(argv, cwd, timeout, *, env):
             # Execute the Git operations with the environment Docker receives.
-            (worktree / "conflict").write_text("resolved\n")
-            git(worktree, "add", "conflict")
+            (Path(cwd) / "conflict").write_text("resolved\n")
+            git(cwd, "add", "conflict")
             subprocess.run(["git", "commit", "-qm", "resolved"], cwd=cwd,
                            env=env, check=True, capture_output=True)
             return 0, "resolved"
@@ -257,6 +261,128 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(git(worktree, "status", "--porcelain"), "")
         self.assertFalse(Path(git(worktree, "rev-parse", "--path-format=absolute",
                                   "--git-path", "MERGE_HEAD")).exists())
+
+    def test_clone_turn_returns_commit_and_dirty_file_safely(self):
+        from holophyte import isolation
+        from holophyte.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        sentinel = self.root / "hook-ran"
+        mounts = []
+        script = "git status; git log -1; echo committed > file; git add file; " \
+                 "git commit -qm 'container message'; echo leftover > dirty"
+
+        def run(argv, cwd, timeout, *, env):
+            mount = Path(argv[argv.index("--volume") + 1].split(":")[0])
+            mounts.append(mount)
+            self.assertNotEqual(mount, worktree)
+            self.assertFalse((mount / ".git/objects/info/alternates").exists())
+            self.assertTrue(Path(git(mount, "rev-parse", "--absolute-git-dir"))
+                            .is_relative_to(mount))
+            subprocess.run(argv[argv.index(isolation.Route().image) + 1:],
+                           cwd=mount, env=env,
+                           check=True, capture_output=True)
+            hook = mount / ".git/hooks/post-checkout"
+            hook.parent.mkdir(exist_ok=True)
+            hook.write_text(f"#!/bin/sh\ntouch {sentinel}\n")
+            hook.chmod(0o755)
+            git(mount, "config", "alias.container-only", "status")
+            git(mount, "config", "uploadpack.packObjectsHook", f"touch {sentinel}")
+            return 0, "done"
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            isolation.launch(isolation.Route("container"), worktree, {},
+                             ["sh", "-ec", script])
+        self.assertEqual(git(worktree, "log", "-1", "--format=%s|%an|%ae"),
+                         "container message|Configured Author|author@example.test")
+        self.assertEqual(git(worktree, "status", "--porcelain"), "?? dirty")
+        self.assertEqual((worktree / "dirty").read_text(), "leftover\n")
+        subprocess.run(["git", "checkout", "task"], cwd=worktree,
+                       check=True, capture_output=True)
+        self.assertFalse(sentinel.exists())
+        self.assertNotIn("alias.container-only", git(worktree, "config", "--list"))
+        self.assertFalse(mounts[0].exists())
+
+    def test_clone_rewritten_history_is_infrastructure_failure(self):
+        from holophyte import isolation
+        from holophyte.gates import InfraFailure
+        from holophyte.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        before = git(worktree, "rev-parse", "HEAD")
+
+        def run(argv, cwd, timeout, *, env):
+            mount = Path(argv[argv.index("--volume") + 1].split(":")[0])
+            subprocess.run(["git", "commit", "--amend", "--allow-empty", "-qm",
+                            "rewritten"], cwd=mount, env=env, check=True)
+            return 0, "done"
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            with self.assertRaisesRegex(InfraFailure, "fast-forward"):
+                isolation.launch(isolation.Route("container"), worktree, {}, ["agent"])
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
+
+    def test_clone_refuses_environment_history_and_excludes_dirty_environment(self):
+        from holophyte import isolation
+        from holophyte.gates import InfraFailure
+        from holophyte.isolation_git import git
+
+        main, worktree = self.make_worktree()
+        git(main, "branch", "-M", "main")
+        self.target.path = main
+        self.table["worktree"] = {"env_source": "local.env"}
+        (worktree / ".env").write_text("host secret")
+        before = git(worktree, "rev-parse", "HEAD")
+
+        def run(argv, cwd, timeout, *, env):
+            clone = Path(cwd)
+            self.assertFalse((clone / ".env").exists())
+            (clone / ".env").write_text("container value")
+            if commit_environment:
+                subprocess.run(["sh", "-ec", "git add -f .env; git commit -qm env; "
+                                "git rm .env; git commit -qm removed"],
+                               cwd=cwd, env=env, check=True, capture_output=True)
+            return 0, "done"
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            commit_environment = False
+            isolation.launch(isolation.Route("container"), worktree, {}, ["agent"],
+                             target=self.target)
+            commit_environment = True
+            with self.assertRaisesRegex(InfraFailure, "contains .env"):
+                isolation.launch(isolation.Route("container"), worktree, {}, ["agent"],
+                                 target=self.target)
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
+        self.assertEqual((worktree / ".env").read_text(), "host secret")
+
+    def test_signal_removes_clone_and_preserves_worktree(self):
+        import signal
+
+        from holophyte import isolation
+        from holophyte.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        before = git(worktree, "rev-parse", "HEAD")
+        mounts = []
+
+        def run(argv, cwd, timeout, *, env):
+            mounts.append(Path(cwd))
+            signal.raise_signal(signal.SIGTERM)
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            with self.assertRaises(SystemExit):
+                isolation.launch(isolation.Route("container"), worktree, {}, ["agent"])
+        self.assertFalse(mounts[0].exists())
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
+        self.assertTrue((worktree / ".git").is_file())
 
     def test_config_rejects_invalid_boundaries(self):
         from holophyte.isolation import route_for

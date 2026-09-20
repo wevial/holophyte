@@ -42,11 +42,12 @@ def stage_work(target, wt):
     unstage_environment(target, wt)
 
 
-def refuse_environment_history(target, branch, *, action):
+def refuse_environment_history(target, branch, *, action, commit=None):
     if not protected(target):
         return branch
-    commit = sh(["git", "rev-parse", "--verify", f"refs/heads/{branch}^{{commit}}"],
-                target.path)
+    commit = commit or sh(
+        ["git", "rev-parse", "--verify", f"refs/heads/{branch}^{{commit}}"],
+        target.path)
     tree = sh(["git", "ls-tree", "--name-only", commit, "--", ".env"], target.path)
     history = sh(["git", "log", "--format=%H", f"main..{commit}", "--", ".env"],
                  target.path)

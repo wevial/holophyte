@@ -176,7 +176,8 @@ def unwinding_on_signal(name):
             signal.signal(sig, handler)
 
 
-def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None):
+def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
+           target=None):
     """Preserve host process semantics; always remove isolated descendants."""
     hook = {"on_start": on_start} if on_start is not None else {}
     if route.backend == "none":
@@ -184,15 +185,17 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
         return (runner or run_capped)(argv, worktree, timeout, **hook, **kwargs)
     if route.backend != "container":
         raise ValueError(f"unknown isolation backend: {route.backend}")
-    from holophyte.isolation_git import isolated_git
+    from holophyte.isolation_clone import turn_clone
 
     image_ready(route)
     name = "holophyte-implement-" + uuid.uuid4().hex
-    with unwinding_on_signal(name), isolated_git(Path(worktree)) as git_env:
+    checkout = (turn_clone(worktree, target) if route.writable
+                else contextlib.nullcontext((worktree, {})))
+    with unwinding_on_signal(name), checkout as (workspace, git_env):
         command, host_env = container_command(
-            route, worktree, dict(env or {}, **git_env), argv, name
+            route, workspace, dict(env or {}, **git_env), argv, name
         )
         try:
-            return run_capped(command, worktree, timeout, env=host_env, **hook)
+            return run_capped(command, workspace, timeout, env=host_env, **hook)
         finally:
             review_runner._remove_container(name, env={"PATH": os.defpath})
