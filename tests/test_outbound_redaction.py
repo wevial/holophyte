@@ -37,6 +37,7 @@ class OutboundRedactionTests(unittest.TestCase):
         return "[redacted]" if enabled else SENTINEL
 
     def test_verify_output_reaches_both_agent_roles_and_routes_safely(self):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
         redact.register_values([SENTINEL])
         command = 'printf "%s\\n" "$VERIFY_VALUE"'
         with patch.dict(os.environ, VERIFY_VALUE=SENTINEL):

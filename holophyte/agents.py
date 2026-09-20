@@ -11,6 +11,7 @@ the loop or the board; a run context keeps configured review turns alive.
 Third slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import contextlib
 import json
 import os
 import shlex
@@ -59,9 +60,10 @@ def transport_failure(exit_code, output):
 class AgentOutput(str):
     """Turn text retaining the dispatched route for outage classification."""
 
-    def __new__(cls, output, command):
+    def __new__(cls, output, command, *, timed_out=False):
         result = super().__new__(cls, output)
         result.command = command
+        result.timed_out = timed_out
         return result
 
 
@@ -306,11 +308,10 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     committing into a worktree the loop had already given up on. `on_start`
     is handed that group's `Popen` as it starts (`GroupKill.arm`), so the
     loop can end the same group from outside the wait when the supervisor
-    sweeps the run mid-turn (KO-339). The review and adjudicate routes run
-    through `subprocess.run` -- the container runner's and the configured
-    command's -- and hold no handle to hand over, so `on_start` is not
-    called for them. Configured review commands heartbeat while running when
-    `conn` and `run_id` are supplied, at half the target's stale interval.
+    sweeps the run mid-turn (KO-339). Configured review commands use the
+    same group cap and return a failed turn on timeout. Their factory-owned
+    scratch worktrees are removed on every exit. They heartbeat when `conn`
+    and `run_id` are supplied, at half the target's stale interval.
 
     `adjudicate` is the terminal pass/fail round. It takes the same
     independent reviewer route as `review` — a fresh dispatch that knows only
@@ -369,14 +370,15 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         from holophyte.runs import heartbeat_while
 
         beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-        env = dict(os.environ, HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1])
+        cap = 1800 if timeout is None else min(timeout, 1800)
         try:
-            with heartbeat_while(conn, run_id, beat_s):
-                r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                                   timeout=1800, env=env)
+            with review_scratch(cwd) as scratch, heartbeat_while(conn, run_id, beat_s):
+                env = dict(
+                    os.environ, HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
+                    HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
+                return configured_review(cmd, cwd, cap, env, role, dispatched_route)
         finally:
             check_review_refs(cwd, run_id, base_sha, candidate_sha)
-        return AgentOutput((r.stdout + "\n" + r.stderr).strip(), dispatched_route)
     # `IMPL_TIMEOUT` is the scaled thirty minutes on this target: the
     # caller's `timeout` already carries `[agents] budget_scale`, and the
     # ceiling it is held under stretches with it.
@@ -392,6 +394,39 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     return ImplementerOutput(out.strip(), code, dispatched_route)
 
 
+@contextlib.contextmanager
+def review_scratch(repo):
+    """Own the wrapper's scratch space, including git's worktree registrations."""
+    with tempfile.TemporaryDirectory(prefix="holophyte-review-") as scratch:
+        try:
+            yield Path(scratch)
+        finally:
+            try:
+                listing = sh(["git", "worktree", "list", "--porcelain", "-z"], cwd=repo)
+                for field in listing.split("\0"):
+                    if not field.startswith("worktree "):
+                        continue
+                    path = Path(field.removeprefix("worktree "))
+                    if path.resolve().is_relative_to(Path(scratch).resolve()):
+                        try:
+                            sh(["git", "worktree", "remove", "--force", "--force",
+                                str(path)], cwd=repo)
+                        except (OSError, RuntimeError) as exc:
+                            print(f"[holo2] review worktree cleanup failed: {exc}")
+            finally:
+                sh(["git", "worktree", "prune"], cwd=repo)
+
+
+def configured_review(cmd, cwd, cap, env, role, command):
+    """Turn the group cap into a reviewer failure eligible for route fallback."""
+    try:
+        _, output = run_capped(cmd, cwd, cap, env=env)
+    except subprocess.TimeoutExpired:
+        message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
+        return AgentOutput(message, command, timed_out=True)
+    return AgentOutput(output.strip(), command)
+
+
 # Exact substrings emitted by the supported routes. Keep causes here so the
 # event carries the matching line, rather than a guessed generic failure.
 OUTAGE_SIGNATURES = {
@@ -403,6 +438,8 @@ OUTAGE_SIGNATURES = {
 
 
 def outage_reason(command, output):
+    if getattr(output, "timed_out", False):
+        return str(output)
     command = command.lower()
     signatures = tuple(sig for route, values in OUTAGE_SIGNATURES.items()
                        if route in command for sig in values)

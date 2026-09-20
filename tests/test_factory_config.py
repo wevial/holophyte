@@ -546,9 +546,10 @@ class AgentCommandTests(ConfigTestCase):
         with patch.object(review_runner, "run_review") as run_review, \
                 patch.object(holophyte.agents, "publish_review_refs") as publish, \
                 patch.object(holophyte.agents, "check_review_refs"), \
-                patch.object(subprocess, "run") as run:
-            run.return_value.stdout = "VERDICT: APPROVE"
-            run.return_value.stderr = ""
+                patch.object(holophyte.agents, "review_scratch",
+                             return_value=contextlib.nullcontext(Path("/scratch"))), \
+                patch.object(holophyte.agents, "run_capped") as run:
+            run.return_value = (0, "VERDICT: APPROVE")
             result = holophyte.agents.agent(self.tgt, "review", "review it",
                                             self.WORKTREE,
                                    base_sha="1" * 40, candidate_sha="2" * 40)
@@ -559,8 +560,9 @@ class AgentCommandTests(ConfigTestCase):
                                         run_id=None)
         run.assert_called_once_with(
             ["my-reviewer", "--diff", "review it"],
-            cwd=self.WORKTREE, capture_output=True, text=True, timeout=1800,
-            env=dict(os.environ, HOLOPHYTE_REVIEW_CANDIDATE="refs/review/candidate"),
+            self.WORKTREE, 1800,
+            env=dict(os.environ, HOLOPHYTE_REVIEW_CANDIDATE="refs/review/candidate",
+                     HOLOPHYTE_REVIEW_SCRATCH="/scratch"),
         )
         # Overriding the reviewer leaves the adjudicator on its default route.
         self.assertIsNone(

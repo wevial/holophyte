@@ -83,6 +83,8 @@ class WorkingTimeTests(SweepTestCase):
                 patch.object(agents, 'agent_command', return_value=['script']), \
                 patch.object(agents, 'publish_review_refs'), \
                 patch.object(agents, 'check_review_refs'), \
+                patch.object(agents, 'review_scratch',
+                             lambda _: nullcontext(self.target)), \
                 patch('holophyte.runs.heartbeat_while',
                       lambda *a, **k: nullcontext()), \
                 patch.object(loop, 'heartbeat_while', lambda *a, **k: nullcontext()):
@@ -99,12 +101,9 @@ class WorkingTimeTests(SweepTestCase):
                             elif path in ('review', 'adjudicate',
                                           'PR-thread-adjudicate'):
                                 role = 'review' if path == 'review' else 'adjudicate'
-                                with patch.object(agents.subprocess, 'run',
-                                                  side_effect=lambda *a, **k:
-                                                  self.review_route(route)):
-                                    agents.agent(self.tgt, role, 'goal', self.target,
-                                                 base_sha='base', candidate_sha='sha',
-                                                 conn=self.conn, run_id=run)
+                                agents.agent(self.tgt, role, 'goal', self.target,
+                                             base_sha='base', candidate_sha='sha',
+                                             conn=self.conn, run_id=run)
                             else:
                                 loop._timed(self.tgt, self.conn, run, 100,
                                             self.target, 1, path)
@@ -146,10 +145,6 @@ class WorkingTimeTests(SweepTestCase):
             calls.append('work')
             return 0, responses.pop(0) if responses else 'done'
 
-        def reviewer(*args, **kwargs):
-            _, output = route()
-            return subprocess.CompletedProcess(['script'], 0, output, '')
-
         def nap(seconds):
             self.assertIsNone(self.snapshot(run).workStartedAt)
             now[0] += int(seconds * 1000)
@@ -159,7 +154,8 @@ class WorkingTimeTests(SweepTestCase):
             stack.enter_context(patch('store.working.time', lambda: now[0] / 1000))
             stack.enter_context(patch.object(agents, 'run_capped', route))
             stack.enter_context(patch.object(gates, 'run_capped', route))
-            stack.enter_context(patch.object(agents.subprocess, 'run', reviewer))
+            stack.enter_context(patch.object(agents, 'review_scratch',
+                                             lambda _: nullcontext(self.target)))
             stack.enter_context(patch.object(agents, 'agent_command',
                                              return_value=['script']))
             stack.enter_context(patch.object(agents, 'publish_review_refs'))
@@ -226,11 +222,6 @@ class WorkingTimeTests(SweepTestCase):
                 babysitter._settled_state(self.tgt, self.conn, run, 100, pull)
             self.assertEqual(self.snapshot(run).workingMs, len(calls) * 10)
             self.assertGreater(now[0] - T0, 30_000)
-
-    @staticmethod
-    def review_route(route):
-        route()
-        return subprocess.CompletedProcess(['script'], 0, 'APPROVE', '')
 
     def test_work_accounting_ownership_race(self):
         from store.working import effective_work, settle_work, working

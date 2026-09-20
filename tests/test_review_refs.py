@@ -58,14 +58,12 @@ class ReviewRefsTests(unittest.TestCase):
         target.config.return_value = {
             "agents": {"reviewer": "review-wrapper", "adjudicator": "judge-wrapper"}
         }
-        real_run = subprocess.run
         for role in ("review", "adjudicate"):
             for moved in (None, "base", "candidate"):
                 with self.subTest(role=role, moved=moved):
 
-                    def dispatch_command(cmd, **kwargs):
-                        if cmd[0] not in ("review-wrapper", "judge-wrapper"):
-                            return real_run(cmd, **kwargs)
+                    def dispatch_command(cmd, cwd, timeout, **kwargs):
+                        self.assertIn(cmd[0], ("review-wrapper", "judge-wrapper"))
                         self.assertEqual(
                             kwargs["env"]["HOLOPHYTE_REVIEW_CANDIDATE"],
                             "refs/review/340/candidate",
@@ -74,10 +72,10 @@ class ReviewRefsTests(unittest.TestCase):
                             self.git(
                                 "update-ref", f"refs/review/340/{moved}", self.second
                             )
-                        return SimpleNamespace(stdout="VERDICT: APPROVE", stderr="")
+                        return 0, "VERDICT: APPROVE"
 
                     with patch.object(
-                        agents.subprocess, "run", side_effect=dispatch_command
+                        agents, "run_capped", side_effect=dispatch_command
                     ):
                         call = lambda: agents.agent(  # noqa: E731
                             target,
