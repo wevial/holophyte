@@ -161,7 +161,9 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
  *  the phase decides between verify, the first implement and a fix. */
 function runningKind(run: TimelineRun, openRound: boolean): SegmentKind {
   if (PHASE_KINDS[run.phase] === "parked") return "parked";
-  if (run.phase === "merge_gate") return run.pr_url ? "wait" : "verify";
+  // Without phase events, a PR URL cannot distinguish monitoring from
+  // resumed pre-merge verification. Preserve verification in the fallback.
+  if (run.phase === "merge_gate") return "verify";
   if (openRound) return "review";
   if (phaseLabel(run.phase) === "verifying") return "verify";
   return run.rounds.length === 0 ? "implement" : "fix";
@@ -196,7 +198,7 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
   });
 
   const kind = runningKind(run, openRound);
-  const label = running ? phaseLabel(run.phase, run.pr_url) : LABELS[kind];
+  const label = running ? phaseLabel(run.phase) : LABELS[kind];
   const round = kind === "review" ? openIndex + 1 : kind === "fix" && rounds.length > 0 ? rounds.length : undefined;
   out.push({ kind, label, from: cursor, to: Math.max(cursor, end), round, running, width: 0 });
   return size(out, run, Math.max(end, cursor));

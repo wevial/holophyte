@@ -136,6 +136,25 @@ test("a run with no phase_change events falls back to the rounds derivation", ()
   expect(buildTimeline({ ...RUN, events: [] }, now).map((segment) => segment.kind)).toEqual(["implement", "review", "fix", "review"]);
 });
 
+test("an eventless resumed PR keeps its pre-merge verification tail and label", () => {
+  for (const eventStream of [undefined, []]) {
+    const out = buildTimeline({
+      ...RUN,
+      phase: "merge_gate",
+      pr_url: "https://example.test/pull/1",
+      rounds: [RUN.rounds[0]!],
+      events: eventStream,
+    }, T + 15 * MINUTE);
+    expect(out.map(s => [s.kind, minutes(s)])).toEqual([
+      ["implement", 8], ["review", 4], ["verify", 3],
+    ]);
+    expect(out[2]!.label).toBe("verifying");
+    expect(out[2]!.from).toBe(T + 12 * MINUTE);
+    expect(out[2]!.to).toBe(T + 15 * MINUTE);
+    expect(out[2]!.running).toBe(true);
+  }
+});
+
 test("PR monitoring stays wait through thread replies, with fresh pre-merge verifies kept green", () => {
   const run: TimelineRun = {
     ...RUN, phase: "done", ended_ms: T + 3702_000, pr_url: "https://example.test/pull/1", rounds: [],
