@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import ticket_template
-from holophyte import media_store, pr
+from holophyte import isolation, media_store, pr
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
@@ -76,11 +76,24 @@ def matches(wt, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
-def _capture(command, wt, output, task_id, states):
-    env = dict(os.environ, HOLOPHYTE_TICKET=task_id)
+def _capture(command, wt, output, task_id, states, *, target=None):
+    route = isolation.route_for(target) if target is not None else isolation.Route()
+    if route.backend == 'container':
+        env = dict(isolation.environment(target) or {})
+    else:
+        env = dict(os.environ)
+    env['HOLOPHYTE_TICKET'] = task_id
     env.pop("HOLOPHYTE_EVIDENCE_STATES", None)
     if states:
         env["HOLOPHYTE_EVIDENCE_STATES"] = "\n".join(states)
+    if route.backend == 'container':
+        destination = Path('/workspace') / output.relative_to(Path(wt).resolve())
+        argv = ['/bin/sh', '-c', shlex.join(shlex.split(command) + [str(destination)])]
+        try:
+            code, _ = isolation.launch(route, wt, env, argv, timeout=CAPTURE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return f'Capture command `{command}` failed: timed out after 300 seconds.'
+        return f'Capture command `{command}` failed (exit {code}).' if code else ''
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(shlex.split(command) + [str(output)],
                                    cwd=wt, env=env, stdin=subprocess.DEVNULL,
@@ -264,9 +277,14 @@ def _missing(section, states):
 
 
 def _produce(target, wt, task_id, command, note, cfg, states):
-    with tempfile.TemporaryDirectory(prefix='pr-media-') as tmp:
+    isolated = isolation.route_for(target).backend == 'container'
+    directory = ({'dir': Path(wt).resolve(), 'prefix': '.holophyte-capture-'}
+                 if isolated else {'prefix': 'pr-media-'})
+    with tempfile.TemporaryDirectory(**directory) as tmp:
         output = Path(tmp)
-        error = _capture(command, wt, output, task_id, states)
+        if isolated:
+            (output / '.gitignore').write_text('*\n')
+        error = _capture(command, wt, output, task_id, states, target=target)
         if error:
             return _missing('## Evidence\n\n' + error, states)
         files = sorted(file for file in output.rglob('*')

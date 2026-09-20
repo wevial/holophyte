@@ -403,15 +403,25 @@ def run_capped(cmd, cwd, timeout, on_start=None, *, env=None):
         return proc.returncode, out
 
 
-def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None):
+def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None,
+               target=None):
     """Account for a mechanical verification, preserving its tuple interface."""
     from store.working import working
 
     with working(conn, run_id):
-        return _run_verify(cmd, cwd, contracts, timeout)
+        return _run_verify(cmd, cwd, contracts, timeout, target=target)
 
 
-def _run_verify(cmd, cwd, contracts=None, timeout=None):
+def _verify_command(target, command, cwd, timeout):
+    from holophyte import isolation
+
+    route = isolation.route_for(target) if target is not None else isolation.Route()
+    argv = ['/bin/sh', '-c', command] if route.backend == 'container' else command
+    env = isolation.environment(target) if target is not None else None
+    return isolation.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped)
+
+
+def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
     """Mechanical acceptance check. Returns (ok, output), with structured
     command facts on failed output's `failure` attribute. Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
@@ -441,7 +451,8 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None):
     clauses = lines if block else split_and_clauses(cmd)
     marked = bool(clauses) and len(clauses) > 1
     try:
-        returncode, out = run_capped(
+        returncode, out = _verify_command(
+            target,
             instrumented_script(clauses, stop_on_failure=not block) if marked else cmd,
             cwd, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
@@ -724,7 +735,7 @@ def run_baseline(target, wt, tier, conn=None, run_id=None):
     failure = None
     for command in getattr(config, tier):
         ok, out = run_verify(command, wt, timeout=config.timeout_sec,
-                             conn=conn, run_id=run_id)
+                             conn=conn, run_id=run_id, target=target)
         results.append({"source": "baseline", "tier": tier,
                         "command": command, "exitCode": 0 if ok else 1,
                         "output": str(out)})
