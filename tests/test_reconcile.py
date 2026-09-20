@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -211,6 +212,34 @@ class ReconcileTests(LoopFixture):
         self.git("show-ref", "--verify", f"refs/remotes/origin/{branch}")
         self.assertIn("commits exist nowhere else", self.cancel_tree())
         self.assertTrue(wt.is_dir())
+
+    def test_remote_verification_failures_are_preserved_and_reported(self):
+        wt, _, run_id = self.abandoned_tree()
+        real_run = subprocess.run
+        for command in ("ls-remote", "fetch"):
+            with self.subTest(command=command):
+                def fail_remote(args, **kwargs):
+                    if args[:2] == ["git", command]:
+                        return subprocess.CompletedProcess(
+                            args, 128, stdout="", stderr="fatal: transport unavailable")
+                    return real_run(args, **kwargs)
+                with patch("holophyte.claim.subprocess.run", side_effect=fail_remote):
+                    printed = self.cancel_tree()
+                self.assertTrue(wt.is_dir())
+                line = next(line for line in printed.splitlines()
+                            if "remote verification failed" in line)
+                self.assertIn(command, line)
+                self.assertIn("transport unavailable", line)
+                self.assertIn("KO-2", line)
+                self.assertNotIn("commits exist nowhere else", printed)
+                self.assertIn((run_id, line), self.read(
+                    "SELECT runId, summary FROM runEvents"))
+                # Let the next subcase witness the same cancellation transition.
+                conn = store.open(str(self.db))
+                conn.execute("UPDATE tickets SET status = 'ready'"
+                             " WHERE linearIdentifier = 'KO-2'")
+                conn.commit()
+                conn.close()
 
     def test_abandoned_dirty_tree_is_preserved_and_reported(self):
         wt, _, run_id = self.abandoned_tree()

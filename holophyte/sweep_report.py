@@ -12,6 +12,7 @@ it prints -- `merge_lock_lines()` inside `sweep()`'s transaction and
 `sweep_lines()` on a loud `supervise_pass()`.
 """
 import sys
+from pathlib import Path
 from time import time
 
 import review_runner
@@ -211,13 +212,15 @@ def debris_lines(target, conn):
     from holophyte.target import worktree_path
 
     rows = conn.execute(
-        "SELECT DISTINCT t.linearIdentifier, t.status, r.branch FROM tickets t"
+        "SELECT DISTINCT t.linearIdentifier, t.status, r.branch, p.repoPath"
+        " FROM tickets t"
         " JOIN runs r ON r.ticketId = t.id JOIN projects p ON p.id = t.projectId"
         " WHERE t.status IN ('merged', 'abandoned') AND r.branch IS NOT NULL"
-        " AND p.repoPath = ? ORDER BY t.linearIdentifier, r.branch",
-        (str(target.path),))
+        " ORDER BY t.linearIdentifier, r.branch")
     lines = []
-    for identifier, status, branch in rows:
+    for identifier, status, branch, repo_path in rows:
+        if Path(repo_path).resolve() != target.path.resolve():
+            continue
         path = worktree_path(target, branch)
         if (path.is_dir() and not path.is_symlink()
                 and path.resolve().is_relative_to(target.worktrees.resolve())):

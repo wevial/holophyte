@@ -65,6 +65,12 @@ class WorktreeDebrisTests(SweepTestCase):
         paths = [self.tgt.worktrees / f"ko-{n}" for n in (1, 2)]
         for n, path in enumerate(paths, 1):
             git("worktree", "add", "-b", f"holo/ko-{n}", str(path))
+        # Existing stores can retain a symlink spelling of the same repository.
+        alias = self.root / "alias"
+        alias.symlink_to(self.target, target_is_directory=True)
+        self.conn.execute("UPDATE projects SET repoPath = ? WHERE id = ?",
+                          (str(alias), self.project))
+        self.conn.commit()
         for flags in ((), ("--act",)):
             printed = "\n".join(self.run_sweep(T0, *flags))
             self.assertIn(f"debris: KO-1 (abandoned): {paths[0]}", printed)

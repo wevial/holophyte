@@ -495,6 +495,26 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
                        " their work")
 
 
+def _retirement_remote_tip(target, branch):
+    """Read and fetch the current remote tip, distinguishing absence from failure."""
+    remote = subprocess.run(
+        ["git", "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}"],
+        cwd=target.path, capture_output=True, text=True, timeout=60)
+    if remote.returncode == 2:
+        return None
+    if remote.returncode:
+        raise RuntimeError("remote verification failed (git ls-remote): "
+                           + remote.stderr.strip())
+    tip = remote.stdout.split()[0]
+    fetched = subprocess.run(
+        ["git", "fetch", "--no-tags", "--no-write-fetch-head", "origin", tip],
+        cwd=target.path, capture_output=True, text=True, timeout=60)
+    if fetched.returncode:
+        raise RuntimeError("remote verification failed (git fetch): "
+                           + fetched.stderr.strip())
+    return tip
+
+
 def retire_worktree(target, branch):
     """Remove a clean, backed-up task checkout; return a refusal or None.
 
@@ -523,16 +543,8 @@ def retire_worktree(target, branch):
                 cwd=target.path, capture_output=True).returncode == 0
         backed_up = reachable("refs/heads/main")
         if not backed_up:
-            remote = subprocess.run(
-                ["git", "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}"],
-                cwd=target.path, capture_output=True, text=True, timeout=60)
-            if remote.returncode == 0 and remote.stdout.strip():
-                tip = remote.stdout.split()[0]
-                subprocess.run(
-                    ["git", "fetch", "--no-tags", "--no-write-fetch-head",
-                     "origin", tip],
-                    cwd=target.path, capture_output=True, timeout=60)
-                backed_up = reachable(tip)
+            tip = _retirement_remote_tip(target, branch)
+            backed_up = tip is not None and reachable(tip)
         if not backed_up:
             return "commits exist nowhere else (not confirmed on remote branch or main)"
         sh(["git", "worktree", "remove", str(wt)], target.path)
