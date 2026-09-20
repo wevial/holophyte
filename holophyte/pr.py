@@ -37,6 +37,7 @@ from dataclasses import dataclass
 import ticket_template
 from holophyte import config_tables
 from holophyte.gates import InfraFailure
+from holophyte.redact import known_secrets, outbound
 
 # The remote the mode pushes to and the branch the PR targets. `main` is the
 # factory's only integration point, and `origin` is the remote the design
@@ -322,6 +323,7 @@ def replace_pr_text(body, text):
 
 def edit_pr_body(target, pull, body):
     """Edit only the body through the configured GitHub route."""
+    body = outbound(body, known_secrets(target.config()))
     if shutil.which(GH) is None:
         rest(target, pull, "PATCH", f"repos/{pull.repo}/pulls/{pull.number}",
              {"body": body})
@@ -363,6 +365,8 @@ def create_pull_request(target, branch, title, body):
     token otherwise -- the same order `check_pr_route()` settled at startup.
     Neither answering is an `InfraFailure`: the branch is pushed and stays.
     """
+    secrets = known_secrets(target.config())
+    title, body = outbound(title, secrets), outbound(body, secrets)
     if shutil.which(GH) is not None:
         return _create_with_gh(target, branch, title, body)
     token = token_from_env()

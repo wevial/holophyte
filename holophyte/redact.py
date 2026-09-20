@@ -488,3 +488,12 @@ def redact_prose(text, secrets=()):
     for value in sorted(secrets, key=len, reverse=True):
         text = text.replace(value, REDACTED)
     return PROSE_PAIR.sub(lambda m: m.group(1) + REDACTED, text)
+
+
+def outbound(text, secrets=()):
+    """Redact outbound prose once, before routing or truncating its payload.
+
+    Callers with a target pass its known config secrets. Without those,
+    preserve ordinary prose exactly apart from registered environment values.
+    """
+    return redact_prose(text, secrets) if secrets else redact_values(text)

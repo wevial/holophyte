@@ -35,6 +35,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.gates import InfraFailure, run_capped, sh
+from holophyte.redact import known_secrets, outbound
 from holophyte.redact import safe_print as print
 
 TRANSPORT_SIGNATURES = (
@@ -320,6 +321,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         raise ValueError(role)
     if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
         raise ValueError(f"{role} requires exact base_sha and candidate_sha")
+    goal = outbound(goal, known_secrets(target.config()))
     command = routes(target).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(target, role, goal))

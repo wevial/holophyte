@@ -20,7 +20,7 @@ import store.tickets
 import ticket_template
 from holophyte.agents import cleanup_review_refs
 from holophyte.findings import refresh_findings
-from holophyte.redact import redact_values
+from holophyte.redact import outbound, redact_values
 from holophyte.redact import safe_print as print
 from holophyte.report import host_label
 from holophyte.runs import warn_on_run
@@ -43,6 +43,7 @@ _COMMENT_BANNERS = (
 def comment_body(text, limit=BOARD_COMMENT_LIMIT):
     """Keep at most `limit` cleaned characters plus a notice counting the cut.
     The store retains the original text, including banners and omitted prose."""
+    text = outbound(text)
     text = re.sub(
         r"(?m)^<!-- devin-review-badge-begin -->[^\n]*\n"
         r"[\s\S]*?^<!-- devin-review-badge-end -->[^\n]*(?:\n|$)",
