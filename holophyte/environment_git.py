@@ -29,10 +29,15 @@ def exclude_environment(wt):
         stream.write("\n/.env\n")
 
 
-def stage_work(target, wt):
+def unstage_environment(target, wt):
+    """Clear a forced staged environment even when there is no other work."""
     if protected(target):
         # Also remove a forced, already staged environment from the index.
         sh(["git", "reset", "-q", "HEAD", "--", ".env"], wt)
+
+
+def stage_work(target, wt):
+    unstage_environment(target, wt)
     sh(["git", "add", "-A", *paths(target)], wt)
 
 

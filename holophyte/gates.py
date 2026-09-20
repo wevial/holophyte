@@ -776,15 +776,15 @@ def record_unreviewed_verification(conn, run_id, output):
     """Attach checks with no subsequent review to the run's latest round.
 
     This includes the merge gate and failures that abort before the next review.
-    Targets without a baseline keep their existing review records.
     """
     import json
 
     from holophyte.redact import redact_document
 
-    results = redact_document(getattr(output, "results", []))
-    if (conn is None or run_id is None
-            or not any(row["source"] == "baseline" for row in results)):
+    raw_results = getattr(output, "results", [])
+    has_baseline = any(row["source"] == "baseline" for row in raw_results)
+    results = redact_document(raw_results)
+    if conn is None or run_id is None or not has_baseline:
         return
     with conn:
         row = conn.execute(

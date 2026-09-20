@@ -3,6 +3,7 @@
 Kept as a mixin so the required test_claim command still runs every case
 while its new environment acceptance tests stay within the module ceiling.
 """
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -11,9 +12,77 @@ from fake_agent import APPROVE, Commit, _git
 from loop_fixture import BRANCH, StubProvider, a_task
 
 import holophyte.claim
+import holophyte.redact
+import store
 
 
 class WorktreeSetupCases:
+    def test_baseline_evidence_survives_source_redaction(self):
+        self.main_output(Commit("candidate"), APPROVE)
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        with patch.object(holophyte.redact, "_environment_values", frozenset()):
+            holophyte.redact.register_values(["base"])
+            output = holophyte.gates.VerificationOutput(
+                "base", [{"source": "baseline", "output": "base"}])
+            holophyte.gates.record_unreviewed_verification(conn, 1, output)
+        rows = json.loads(self.read(
+            "SELECT verificationResults FROM reviewRounds ORDER BY round DESC"
+        )[0][0])
+        self.assertEqual(rows[-1],
+                         {"source": "[redacted]line", "output": "[redacted]"})
+
+    def test_event_payload_redacts_escaped_json_and_plain_text(self):
+        self.main_output(Commit("candidate"), APPROVE)
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        values = ['sentinel"quote', "sentinel\nnewline", "sentinel\\slash"]
+        with patch.object(holophyte.redact, "_environment_values", frozenset()):
+            holophyte.redact.register_values(values)
+            for value in values:
+                for encoded in (False, True):
+                    with self.subTest(value=value, encoded=encoded):
+                        payload = json.dumps({"output": [value]}) if encoded else value
+                        store.record_event(conn, 1, "escaped", "diagnostic",
+                                           level="detail", payload=payload)
+                        saved = self.read("SELECT payload FROM runEvents "
+                                          "ORDER BY seq DESC LIMIT 1")[0][0]
+                        self.assertEqual(
+                            json.loads(saved) if encoded else saved,
+                            {"output": ["[redacted]"]} if encoded else "[redacted]")
+
+    def test_recovery_unstages_environment_when_it_is_the_only_change(self):
+        source = self.target.parent / "source.env"
+        source.write_text("PUBLIC=sentinel-recovery-value\n")
+        self.configure(f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n')
+        for recovery in ("leftover", "timeout"):
+            with self.subTest(recovery=recovery):
+                wt = self.target.parent / recovery
+                branch = f"task/{recovery}"
+                self.git("worktree", "add", "-b", branch, str(wt), "main")
+                self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+                _git(wt, "add", "-f", ".env")
+                if recovery == "leftover":
+                    ok, reason = holophyte.claim.reuse_leftover(
+                        self.tgt, wt, branch, sync_origin=False)
+                    self.assertTrue(ok, reason)
+                else:
+                    # A killed staging process can leave its lock behind too.
+                    lock = Path(_git(
+                        wt, "rev-parse", "--git-path", "index.lock").strip())
+                    lock.touch()
+                    with patch.object(holophyte.loop, "_check_run_cap"), patch.object(
+                            holophyte.loop, "_transport_timed",
+                            return_value=("", True)):
+                        with self.assertRaises(holophyte.gates.RunFailure):
+                            holophyte.loop._implement(
+                                self.tgt, None, None, "KO-131", "task", branch,
+                                wt, False, 1, self.base, "ticket", "", 5)
+                self.assertEqual(_git(wt, "ls-files", "--", ".env"), "")
+                self.assertEqual(_git(wt, "rev-parse", "HEAD").strip(), self.base)
+                self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+
     def test_environment_stays_out_of_reclaim_and_candidate_commits(self):
         source = self.target.parent / "source.env"
         source.write_text("PUBLIC=sentinel-git-value\n")

@@ -416,16 +416,16 @@ EVENT_LEVELS = ("narrative", "detail")
 def _append_event(conn, run_id, level, kind, summary, at, payload=None):
     """Append one row to run `run_id`'s event stream; return its `seq`.
 
-    No transaction of its own, deliberately: an event describes a thing that
-    happened, so it belongs to the transaction of the write it describes —
-    `set_phase()` lands the phase, the heartbeat and this row together or not
-    at all. `seq` is `MAX(seq) + 1` read inside that transaction, so the
-    `UNIQUE (runId, seq)` index stands behind the per-run monotonicity rather
-    than a caller's counter.
+    Shares the caller's transaction; UNIQUE (runId, seq) enforces monotonicity.
     """
     summary = _redact_values(summary)
     if payload is not None:
-        payload = _redact_values(payload)
+        try:
+            document = json.loads(payload)
+        except (json.JSONDecodeError, TypeError):
+            payload = _redact_values(payload)
+        else:
+            payload = json.dumps(_redact_document(document))
     (seq,) = conn.execute(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents WHERE runId = ?",
         (run_id,),

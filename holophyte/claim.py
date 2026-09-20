@@ -48,7 +48,12 @@ from holophyte.board import (
     store_status,
 )
 from holophyte.config import setup_commands, setup_timeout, worktree_environment
-from holophyte.environment_git import exclude_environment, paths, stage_work
+from holophyte.environment_git import (
+    exclude_environment,
+    paths,
+    stage_work,
+    unstage_environment,
+)
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -142,11 +147,8 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
 def reuse_leftover(target, wt, branch, conn=None, run_id=None,
                    provider=None, task_id=None, sync_origin=True):
     """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
-
-    The reuse rule, stated once: preserved work survives. An unregistered
-    directory is refused with a reason rather than deleted or crashed into
-    (`git worktree add` onto a non-empty directory dies); uncommitted
-    changes become a WIP commit on the branch; the branch is reset to main
+    Preserved work survives. Refuse unregistered directories; commit
+    uncommitted changes as WIP. Reset the branch to main
     only when the leftover verifiably holds nothing — a clean tree and a
     tip main already contains — and preserved commits keep theirs with a
     moved-on main merged in, since review routes and the merge both require
@@ -154,9 +156,8 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     is left mid-merge for the implementer turn to resolve first
     (`merge_conflicts()` names the paths); a worktree off its branch while
     the branch holds commits is a human's call, refused with the state
-    named. Nothing is ever deleted here.
-
-    Nor is the local copy the branch's truth (KO-410): a pull-request
+    named. Nothing is deleted here.
+    The local copy is not the branch's truth (KO-410): a pull-request
     target shares it with origin and the operator, so under `sync_origin`
     — the claim's reclaim of a failed run's leftover — a target with an
     `origin` runs the babysit resume's fetch-and-compare (KO-379) before
@@ -166,11 +167,9 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     is refused naming both shas. The approved candidate's resume passes
     `sync_origin` False: its worktree is held to the sha the park recorded
     (`_candidate_drift()`), and a fast-forward would move the branch onto
-    commits no review saw and the gate would land them. A target without
-    `origin` skips the step either way.
+    unreviewed commits. Targets without `origin` skip this step.
     """
     from holophyte.loop import _sync_branch_from_origin
-
     sh(["git", "worktree", "prune"], target.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
                        cwd=target.path, capture_output=True, text=True)
@@ -185,6 +184,7 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
         return False, (f"leftover directory {wt} exists but is not a"
                        " registered worktree; a human moves it aside or"
                        " removes it before this ticket is run again")
+    unstage_environment(target, wt)
     dirty = sh(["git", "status", "--porcelain", *paths(target)], cwd=wt)
 
     def is_ancestor(a, b):
