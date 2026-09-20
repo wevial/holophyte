@@ -57,10 +57,10 @@ def _reconcile_at_startup(target, conn, project, provider):
     the board says, and the next pass asks GitHub again.
     """
     _reconcile_pull_requests(target, conn, project, provider)
-    _reconcile_mirror(conn, project, provider)
+    _reconcile_mirror(conn, project, provider, target)
 
 
-def _reconcile_mirror(conn, project, provider):
+def _reconcile_mirror(conn, project, provider, target=None):
     """Walk the mirrored tickets Linear has since closed to their terminal
     status, one printed line each; nothing is written to Linear. Board state
     names refresh first for all open mirrors, including live and parked runs.
@@ -144,6 +144,22 @@ def _reconcile_mirror(conn, project, provider):
                 line += "; no run to record the intervention against"
             store.tickets.walk_ticket(conn, ticket.id, to_status)
         print(line)
+        if to_status == "abandoned" and target is not None:
+            _retire_abandoned(target, conn, now)
+
+
+def _retire_abandoned(target, conn, ticket):
+    from holophyte.claim import retire_worktree
+
+    run = store.read.run_detail(conn, ticket.lastRunId)
+    if run is None or not run.branch:
+        return
+    reason = retire_worktree(target, run.branch)
+    if reason:
+        line = (f"[holo2] {ticket.linearIdentifier}: kept worktree"
+                f" {worktree_path(target, run.branch)}: {reason}")
+        print(line)
+        store.record_event(conn, run.id, "worktree_retirement_refused", line)
 
 
 # How the ticket's question begins once its pull request was closed on

@@ -127,6 +127,7 @@ class SweepTestCase(unittest.TestCase):
         cannot arrange, so `time` is what `at` replaces -- the seam the sweep
         itself takes as a parameter.
         """
+        holophyte.cli.eager_import()  # Resolve the build before hiding git on PATH.
         out = io.StringIO()
         # No `docker` either: the review-container check asks the host's
         # daemon, and these tests are about the store.
