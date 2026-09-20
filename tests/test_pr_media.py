@@ -145,6 +145,60 @@ class MediaTests(unittest.TestCase):
              'pr-media/KO-530:01-dialog.png']), PNG)
         self.assertFalse(list(self.repo.glob('.holophyte-capture-*')))
 
+    def test_readonly_capture_is_rejected_at_startup(self):
+        from holophyte.config import check_config
+
+        self.config['agents'] = {
+            'implementer_isolation': {'backend': 'container', 'writable': False}}
+        with self.assertRaisesRegex(SystemExit, 'ui_capture.*writable'):
+            check_config(self.target)
+        self.config.pop('merge')
+        check_config(self.target)
+        self.config['agents']['implementer_isolation']['backend'] = 'none'
+        self.config['merge'] = {'ui_paths': ['console/**'], 'ui_capture': 'capture'}
+        check_config(self.target)
+
+    def test_capture_receipt_changes_with_execution_route(self):
+        self.candidate()
+        agents = self.config.setdefault('agents', {})
+        changes = [
+            {'implementer_isolation': 'container'},
+            {'implementer_image': 'capture-runtime:2'},
+            {'implementer_isolation': {'backend': 'container', 'memory': '8g'}},
+            {'implementer_credential': {'env': 'CAPTURE_KEY'}},
+        ]
+        with patch.object(pr_media, '_produce',
+                          return_value='capture failed') as produce:
+            pr_media.prepare(self.target, self.repo, 'KO-530')
+            for number, change in enumerate(changes, 2):
+                with self.subTest(change=change):
+                    agents.update(change)
+                    pr_media.prepare(self.target, self.repo, 'KO-530')
+                    self.assertEqual(produce.call_count, number)
+                    pr_media.prepare(self.target, self.repo, 'KO-530')
+                    self.assertEqual(produce.call_count, number)
+
+    def test_capture_receipt_tracks_allowed_environment_without_exposing_values(self):
+        self.enterContext(patch('holophyte.redact._environment_values', frozenset()))
+        self.candidate()
+        source = self.root / 'capture.env'
+        source.write_text('ALLOWED=first-secret\nEXCLUDED=one\n')
+        self.config['agents'] = {'implementer_isolation': 'container'}
+        self.config['worktree'] = {'env_source': str(source), 'env_allow': ['ALLOWED']}
+        with patch.object(pr_media, '_produce', return_value='evidence') as produce:
+            pr_media.prepare(self.target, self.repo, 'KO-530')
+            source.write_text('EXCLUDED=two\nALLOWED=first-secret\n')
+            pr_media.prepare(self.target, self.repo, 'KO-530')
+            self.assertEqual(produce.call_count, 1)
+            source.write_text('ALLOWED=second-secret\nEXCLUDED=two\n')
+            pr_media.prepare(self.target, self.repo, 'KO-530')
+            self.assertEqual(produce.call_count, 2)
+        git_dir = Path(self.git('rev-parse', '--absolute-git-dir'))
+        receipts = list(git_dir.glob('pr-media-*'))
+        self.assertEqual(len(receipts), 2)
+        for receipt in receipts:
+            self.assertNotIn('secret', receipt.name + receipt.read_text())
+
     def test_host_capture_preserves_popen_call(self):
         from unittest.mock import ANY
         for agents in ({}, {'implementer_isolation': 'none'}):

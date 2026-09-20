@@ -11,6 +11,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import quote
 
@@ -20,7 +21,7 @@ from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
 CAPTURE_TIMEOUT = 300
-RECEIPT_VERSION = 3  # KO-522: receipts include ticket-specific evidence states.
+RECEIPT_VERSION = 4  # KO-530: receipts include capture execution inputs.
 
 
 def implementer_brief(target, ticket):
@@ -318,6 +319,26 @@ def _produce(target, wt, task_id, command, note, cfg, states):
         return '\n\n'.join(lines)
 
 
+def _execution_fingerprint(target):
+    """Hash execution inputs without storing raw environment values in receipts."""
+    route = isolation.route_for(target)
+    env = (dict(isolation.environment(target) or {}) if route.backend == 'container'
+           else dict(os.environ))
+    credential_digest = None
+    if route.backend == 'container':
+        if 'env' in route.credential:
+            name = route.credential['env']
+            env[name] = os.environ.get(name)
+        if 'file' in route.credential:
+            try:
+                data = Path(route.credential['file']).expanduser().read_bytes()
+                credential_digest = hashlib.sha256(data).hexdigest()
+            except OSError:
+                credential_digest = 'unreadable'
+    inputs = [asdict(route), env, credential_digest, CAPTURE_TIMEOUT]
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
+
+
 def prepare(target, wt, task_id, record_note=None, evidence_states=()):
     """Reuse evidence only for this exact candidate, base, and configuration.
 
@@ -330,7 +351,8 @@ def prepare(target, wt, task_id, record_note=None, evidence_states=()):
     identity = [RECEIPT_VERSION, sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt),
                 task_id, cfg.ui_paths, cfg.ui_capture, pr.origin_url(target),
                 cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
-                cfg.media_max_total_mb, list(evidence_states)]
+                cfg.media_max_total_mb, list(evidence_states),
+                _execution_fingerprint(target)]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     receipt = git_dir / f'pr-media-{key}.txt'
