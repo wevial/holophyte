@@ -121,6 +121,51 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn("ADDRESS: use the path token and reject missing tokens",
                       fake.turns[-1].goal)
 
+    def test_configured_user_bots_are_stored_as_findings_without_outcomes(self):
+        self.configure('[merge]\nmode = "pr"\nbot_logins = ["SERVICE"]\n'
+                       'bot_authors = ["REVIEWER"]\n')
+        authors = ("service", "Reviewer", "automation[BOT]")
+        threads = [("src/app.py", 30, (author, "User"),
+                    "@holophyte fix tokens") for author in authors]
+        threads.append(("src/app.py", 40, ("service", "User"), "Which token?",
+                        ((("operator", "User"), "@holophyte preserve validation"),)))
+        self.fake_route(states=[self.pr_state(threads), self.pr_state()])
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  Commit("fix tokens"), APPROVE, Idle(""), provider=self.provider())
+        findings = json.loads(self.read(
+            "SELECT findings FROM reviewRounds WHERE round = 2")[0][0])
+        self.assertEqual(len(findings), 4)
+        for finding, author in zip(findings, authors):
+            self.assertEqual(finding["kind"], "finding")
+            self.assertEqual(finding["author"], author)
+            self.assertNotIn("outcome", finding)
+        self.assertEqual(findings[-1]["kind"], "instruction")
+        self.assertEqual(findings[-1]["author"], "operator")
+        self.assertEqual(findings[-1]["outcome"], "changed")
+
+    def test_bot_mention_is_a_finding_but_latest_human_mention_is_instruction(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        threads = [
+            ("src/app.py", 30, ("coderabbitai", "Bot"),
+             "<details>In `@holophyte/app.py` handle empty tokens</details>\n"
+             "**Handle empty tokens.**\nPreserve validation."),
+            ("src/app.py", 40, ("coderabbitai", "Bot"), "Which token?",
+             ((("operator", "User"), "@holophyte preserve validation"),)),
+        ]
+        self.fake_route(states=[self.pr_state(threads), self.pr_state()])
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  Commit("fix tokens"), APPROVE, Idle(""), provider=self.provider())
+        findings = json.loads(self.read(
+            "SELECT findings FROM reviewRounds WHERE round = 2")[0][0])
+        self.assertEqual(len(findings), 2)
+        bot, person = findings
+        self.assertNotEqual(bot.get("kind"), "instruction")
+        self.assertEqual(bot["author"], "coderabbitai")
+        self.assertIn("**Handle empty tokens.**\nPreserve validation.", bot["message"])
+        self.assertEqual(person["kind"], "instruction")
+        self.assertEqual(person["author"], "operator")
+        self.assertEqual(person["request"], "preserve validation")
+
     def test_unmentioned_latest_reply_is_judged_with_whole_conversation(self):
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
         threads = [
