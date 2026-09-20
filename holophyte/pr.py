@@ -341,9 +341,9 @@ def edit_pr_body(target, pull, body):
 def push_branch(target, branch):
     """`git push origin BRANCH` from the target checkout; a refusal is an
     `InfraFailure` naming the remote's answer, with the branch untouched."""
-    from holophyte.environment_git import refuse_environment_push
+    from holophyte.environment_git import refuse_environment_history
 
-    refuse_environment_push(target, branch)
+    refuse_environment_history(target, branch, action="push")
     try:
         r = subprocess.run(["git", "push", REMOTE, branch], cwd=target.path,
                            capture_output=True, text=True, timeout=PR_TIMEOUT)

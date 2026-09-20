@@ -14,10 +14,7 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-# `fake_agent` is a helper, not a test module: discovery never imports it, and
-# how this file is imported decides whether `tests/` is on the path at all.
-# Putting it there explicitly makes `discover -s tests` and `-m unittest
-# tests.<name>` resolve the harness the same way.
+# Both discovery and named-module unittest commands need the harness on sys.path.
 sys.path.insert(0, str(HERE))
 from babysit_fixture import ResolveMerge  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
@@ -136,11 +133,15 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
             holophyte.gates.record_unreviewed_verification(conn, 1, output)
             store.resume(conn, 1)
             store.release(conn, 1, "failed", "sentinel-db-value")
+            ticket_id = conn.execute("SELECT id FROM tickets").fetchone()[0]
+            self.assertTrue(holophyte.board.block_ticket(
+                conn, ticket_id, provider, "verify failed: sentinel-public-value"))
         finally:
             conn.close()
         records = repr(self.read("SELECT * FROM runEvents"))
         records += repr(self.read("SELECT * FROM ledger"))
         records += repr(self.read("SELECT outcomeReason FROM runs"))
+        records += repr(self.read("SELECT blockedQuestion FROM tickets"))
         rounds = self.read("SELECT verificationResults FROM reviewRounds")
         self.assertEqual(len(json.loads(rounds[0][0])), 2)
         records += repr(rounds)
@@ -170,7 +171,6 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         self.configure(f'[worktree]\nsetup = ["test ! -e .env && touch {seen}"]\n')
         self.loop(Commit("the scripted work"), APPROVE)
         self.assertTrue(seen.exists())
-
 
 
 class SkipLineTests(unittest.TestCase):

@@ -701,7 +701,7 @@ def block_ticket(conn, ticket_id, provider, question):
     if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
         return False
     conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
-                 (question, ticket_id))
+                 (redact_values(question), ticket_id))
     conn.commit()
     return True
 

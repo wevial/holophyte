@@ -22,6 +22,7 @@ from holophyte.babysitter import _babysit
 from holophyte.board import block_ticket, ledger, merge_drift
 from holophyte.claim import _resolve_merge_conflict, reuse_leftover
 from holophyte.config_tables import merge_config, sweep_config
+from holophyte.environment_git import refuse_environment_history
 from holophyte.findings import commit_findings
 from holophyte.gates import (
     MergeLockHeld,
@@ -414,10 +415,9 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     """The `merging` phase: the `--no-ff` merge of `branch` into main, its
     one self-resolved conflict, and the post-merge cleanup. Returns the full
     sha of the merge commit main now sits on."""
-    # Commit any pending FINDINGS.md changes BEFORE merging so the merge
-    # never trips over a dirty index. Nothing is written to the file during a
-    # run any more, so this is normally a no-op; what it still catches is a
-    # window an earlier failed run regenerated and left uncommitted.
+    refuse_environment_history(target, branch, action="merge")
+    # Commit a FINDINGS.md window left dirty by an earlier failed run before
+    # merging. Normally a no-op: runs no longer write this file mid-flight.
     commit_findings(target, f"FINDINGS: {task_id} review records")
 
     # `squashing` is skipped, not faked: this merge is --no-ff and rewrites

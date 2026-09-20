@@ -5,6 +5,7 @@ while its new environment acceptance tests stay within the module ceiling.
 """
 import json
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +18,70 @@ import store
 
 
 class WorktreeSetupCases:
+    def assert_environment_merge_refused(self, remove):
+        source = self.target.parent / "source.env"
+        source.write_text("PUBLIC=sentinel-local-merge-value\n")
+        self.configure(f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n')
+
+        class UnsafeCommit(Commit):
+            def play(self, cwd, turn):
+                _git(cwd, "add", "-f", ".env")
+                super().play(cwd, turn)
+                if remove:
+                    _git(cwd, "rm", ".env")
+                    _git(cwd, "commit", "-m", "remove environment")
+                return "candidate ready"
+
+        self.main_output(UnsafeCommit("unsafe candidate"), APPROVE)
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertEqual(self.git("log", "main", "--format=%H", "--", ".env"), "")
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        reason = self.read("SELECT outcomeReason FROM runs")[0][0]
+        self.assertIn(".env", reason)
+        self.assertIn("refusing to merge", reason)
+        self.assertIn(BRANCH, self.branches())
+
+    def test_local_merge_refuses_environment_in_candidate_tree(self):
+        self.assert_environment_merge_refused(remove=False)
+
+    def test_local_merge_refuses_environment_removed_from_candidate_tree(self):
+        self.assert_environment_merge_refused(remove=True)
+
+    def test_interrupted_environment_write_cannot_be_staged(self):
+        source = self.target.parent / "source.env"
+        source.write_text("PUBLIC=sentinel-interrupted-value\n")
+        self.configure(f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n')
+        wt = self.target.parent / "interrupted"
+        self.git("worktree", "add", "-b", BRANCH, str(wt), "main")
+        # Exit after the temporary file is written, without running finally,
+        # as a SIGKILL between the write and the atomic rename would do.
+        result = subprocess.run([sys.executable, "-c", "\n".join([
+            "import os, sys",
+            "from pathlib import Path",
+            "from unittest.mock import patch",
+            "from holophyte.claim import write_worktree_environment",
+            "from holophyte.target import Target",
+            "target = Target.locate(Path(sys.argv[1]))",
+            "with patch('holophyte.claim.os.replace',",
+            "           side_effect=lambda *a: os._exit(37)):",
+            "    write_worktree_environment(target, Path(sys.argv[2]))",
+        ]), str(self.target), str(wt)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 37, result.stderr)
+        git_dir = Path(_git(wt, "rev-parse", "--absolute-git-dir"))
+        leftovers = list(wt.glob(".env-*")) + list(git_dir.glob(".env-*"))
+        self.assertEqual(len(leftovers), 1)
+        self.assertEqual(leftovers[0].read_text(),
+                         "PUBLIC=sentinel-interrupted-value\n")
+        (wt / "work.txt").write_text("candidate work\n")
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-m", "candidate after interrupted setup")
+        self.assertNotIn("sentinel-interrupted-value", _git(wt, "log", "-p"))
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertEqual((wt / ".env").read_text(),
+                         "PUBLIC=sentinel-interrupted-value\n")
+
     def test_baseline_evidence_survives_source_redaction(self):
         self.main_output(Commit("candidate"), APPROVE)
         conn = store.open(str(self.db))

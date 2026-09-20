@@ -90,7 +90,10 @@ def write_worktree_environment(target, wt):
     if values is None:
         return
     exclude_environment(wt)
-    fd, temporary = tempfile.mkstemp(prefix=".env-", dir=wt)
+    # A killed writer can leave this file behind. Git metadata keeps that
+    # secret-bearing leftover outside every subsequent `git add -A`.
+    git_dir = sh(["git", "rev-parse", "--absolute-git-dir"], wt)
+    fd, temporary = tempfile.mkstemp(prefix=".env-", dir=git_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             os.fchmod(stream.fileno(), 0o600)
@@ -104,13 +107,10 @@ def write_worktree_environment(target, wt):
 def run_worktree_setup(target, wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
-    Returns `(ok, report)`. Commands use `run_verify()` and the target's
-    `[worktree] setup_timeout_sec` cap, which kills the whole process tree.
-    Failures return a report so the caller can discard a fresh-cut branch;
-    reused worktrees may hold preserved work and are left in place.
-    Hook configuration failures follow the same cleanup path.
-    Commands run in order and stop at the first failure: step two assumes
-    step one worked. A target that names no setup runs nothing and records
+    Returns `(ok, report)` using `run_verify()` and `setup_timeout_sec`.
+    Commands run in order, stopping on failure or a timeout's process-tree kill.
+    Setup and hook failures discard fresh branches but preserve reused worktrees.
+    A target that names no setup runs nothing and records
     no phase, so an absent table leaves the run byte-identical to today's.
     """
     try:

@@ -41,7 +41,7 @@ def stage_work(target, wt):
     sh(["git", "add", "-A", *paths(target)], wt)
 
 
-def refuse_environment_push(target, branch):
+def refuse_environment_history(target, branch, *, action):
     if not protected(target):
         return
     tree = sh(["git", "ls-tree", "--name-only", branch, "--", ".env"], target.path)
@@ -49,4 +49,4 @@ def refuse_environment_push(target, branch):
                  target.path)
     if tree or history:
         raise InfraFailure("candidate contains .env in its tree or history; "
-                           "refusing to push")
+                           f"refusing to {action}")
