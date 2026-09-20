@@ -423,6 +423,9 @@ def release_run(conn, run_id, merged, reason=None, outcome_class="work",
     # branch say so themselves in the reason they pass, and stamping
     # "preserved" on a reason-less failure lied on every deletion path
     # (KO-146 incident, run 10).
+    from holophyte.failure_reason import record
+
+    record(conn, run_id, reason)
     store.release(conn, run_id, "failed", reason or
                   f"run stopped in phase {store.run_phase(conn, run_id)}",
                   outcome_class=outcome_class)

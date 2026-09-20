@@ -10,7 +10,14 @@ import review_runner
 import store
 import store.read
 import ticket_template
-from holophyte import babysitter, maintainer_notes, pr, pr_status, thread_mentions
+from holophyte import (
+    babysitter,
+    failure_reason,
+    maintainer_notes,
+    pr,
+    pr_status,
+    thread_mentions,
+)
 from holophyte.agents import agent_route, review_refs
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
@@ -551,8 +558,10 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     if merge_config(target).approve != "auto":
         if not ok:
             record_unreviewed_verification(conn, run_id, out)
+            reason = failure_reason.verify(out, verify_cmd, "before human approval")
+            failure_reason.record(conn, run_id, reason)
             _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
-                        pull, f"verify failed before human approval:\n{out}", (),
+                        pull, reason, (),
                         reviewed=reviewed)
         recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
         answered = "\n".join(part for part in (fix_context, recovered) if part)
@@ -572,9 +581,9 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                f"FAILED verify before the review of the fix at {sha} on"
                f" {pull.url}; branch {branch} preserved, not merged\n\n{out}",
                provider)
-        raise RunFailure(f"verify failed before the review of the fix on"
-                         f" {pull.url}; branch {branch} preserved at"
-                         f" {sha[:12]}")
+        raise RunFailure(failure_reason.verify(
+            out, verify_cmd, f"before the review of the fix on {pull.url}; "
+            f"branch {branch} preserved at {sha[:12]}"))
     set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     rnd = _next_round(conn, run_id)
@@ -895,9 +904,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                                    f"fix round {pass_no}: {fixes}",
                                    known_secrets(target.config()))
     if timed_out or fixed == sha:
-        raise RunFailure(f"fix round for {pull.url} timed out or made no"
-                         f" progress; branch {branch} preserved at"
-                         f" {sha[:12]}")
+        raise RunFailure(failure_reason.fix_round(
+            [{'message': thread.body} for _, thread, _ in addressed], timed_out,
+            f"for {pull.url}; branch {branch} preserved at {sha[:12]}"))
     # Verify vouches for the commit only if the tree matches it. Preserve
     # uncommitted work for a human without pushing or resolving threads.
     unclean = _candidate_drift(wt, branch, fixed)
@@ -924,8 +933,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                f"FAILED verify after the fix round for {pull.url}; branch"
                f" {branch} preserved at {fixed}, not pushed\n\n{out}",
                provider)
-        raise RunFailure(f"verify failed after the fix round for {pull.url};"
-                         f" branch {branch} preserved at {fixed[:12]}")
+        raise RunFailure(failure_reason.verify(
+            out, verify_cmd, f"after the fix round for {pull.url}; "
+            f"branch {branch} preserved at {fixed[:12]}"))
     with heartbeat_while(conn, run_id, beat_s):
         pr.push_branch(target, branch)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")

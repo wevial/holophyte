@@ -120,6 +120,7 @@ EXPECTED_READ = [
     # KO-258: the loop's claim path asks whether the ticket's newest prior
     # run left an approved candidate to take to the merge gate.
     "approved_candidate",
+    "last_independent_verdict",
     "babysit_note",  # KO-462: the resumed implementer reads the operator note.
     # KO-245: the `serve` daemon's `/attention` reads.
     "blocked_tickets",
