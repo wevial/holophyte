@@ -5,6 +5,7 @@ never execute on the host. The original Git link/config stays outside the mount.
 """
 
 import contextlib
+import os
 import re
 import shutil
 import stat
@@ -57,6 +58,45 @@ def packed_ref(metadata, ref):
     return ""
 
 
+def atomic_copy(source, destination):
+    """Publish complete Git files atomically on the destination filesystem."""
+    mode_source = destination if destination.exists() else source
+    mode = stat.S_IMODE(mode_source.stat().st_mode)
+    descriptor, name = tempfile.mkstemp(
+        prefix=".holophyte-copy-", dir=destination.parent
+    )
+    temporary = Path(name)
+    try:
+        os.close(descriptor)
+        shutil.copyfile(source, temporary)
+        temporary.chmod(mode)
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def copy_merge_state(worktree, clone):
+    """Carry only validated pending-merge metadata into the disposable repository."""
+    metadata = Path(git(worktree, "rev-parse", "--absolute-git-dir"))
+    paths = [metadata / name for name in ("MERGE_HEAD", "MERGE_MSG", "MERGE_MODE")]
+    for path in paths:
+        if (path.exists() or path.is_symlink()) and not regular(path):
+            raise RuntimeError(f"invalid pending merge file: {path.name}")
+    if not paths[0].exists():
+        return []
+    parents = paths[0].read_text().splitlines()
+    if not parents or any(not re.fullmatch("[0-9a-f]{40}", sha) for sha in parents):
+        raise RuntimeError("invalid pending MERGE_HEAD")
+    for sha in parents:
+        git(clone, "cat-file", "-e", sha + "^{commit}")
+    if paths[2].exists() and paths[2].read_text().strip() not in ("", "no-ff"):
+        raise RuntimeError("invalid pending MERGE_MODE")
+    for path in paths:
+        if path.exists():
+            shutil.copyfile(path, clone / ".git" / path.name)
+    return paths
+
+
 def import_objects(source, destination):
     """Copy only ordinary Git object files, never config, links or hooks."""
     if source.is_symlink():
@@ -76,7 +116,7 @@ def import_objects(source, destination):
             )
             if re.fullmatch(pattern, path.name) and regular(path):
                 if not (dest / path.name).exists():
-                    shutil.copyfile(path, dest / path.name)
+                    atomic_copy(path, dest / path.name)
 
 
 @contextlib.contextmanager
@@ -123,6 +163,7 @@ def isolated_git(worktree):
         )
         if index.exists():
             shutil.copyfile(index, clone / ".git" / "index")
+        merge_state = copy_merge_state(worktree, clone)
         entry.rename(root / "original")
         try:
             (clone / ".git").rename(entry)
@@ -148,4 +189,7 @@ def isolated_git(worktree):
                 git(worktree, "cat-file", "-e", sha + "^{commit}")
                 git(worktree, "update-ref", "HEAD", sha, old)
                 if (result / "index").exists() and regular(result / "index"):
-                    shutil.copyfile(result / "index", index)
+                    atomic_copy(result / "index", index)
+                if sha != old and not (result / "MERGE_HEAD").exists():
+                    for path in merge_state:
+                        path.unlink(missing_ok=True)

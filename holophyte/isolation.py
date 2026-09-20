@@ -145,8 +145,8 @@ def container_command(route, worktree, env, argv, name):
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL="/dev/null",
     )
-    command += [f"--env={key}={value}" for key, value in values.items()]
-    host_env = {"PATH": os.defpath}
+    command += [f"--env={key}" for key in values]
+    host_env = {"PATH": os.defpath, **values}
     if "env" in credential:
         key = credential["env"]
         if key not in os.environ:

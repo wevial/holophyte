@@ -38,7 +38,7 @@ class IsolationTests(unittest.TestCase):
         from holophyte import isolation
 
         source = self.root / "allowed.env"
-        source.write_text("ALLOWED=yes\nBOARD_KEY=excluded\n")
+        source.write_text("ALLOWED=allowed-secret\nBOARD_KEY=excluded\n")
         self.table["worktree"] = {"env_source": str(source), "env_allow": ["ALLOWED"]}
         self.table["agents"].update(
             implementer_isolation="container",
@@ -73,7 +73,9 @@ class IsolationTests(unittest.TestCase):
             "--pids-limit=256",
         ):
             self.assertIn(flag, argv)
-        self.assertIn("--env=ALLOWED=yes", argv)
+        self.assertIn("--env=ALLOWED", argv)
+        self.assertNotIn("allowed-secret", str(argv))
+        self.assertEqual(run.call_args.kwargs["env"]["ALLOWED"], "allowed-secret")
         self.assertIn("--env=AGENT_KEY", argv)
         self.assertNotIn("agent-secret", str(argv))
         self.assertNotIn("board-secret", str(run.call_args))
@@ -81,7 +83,7 @@ class IsolationTests(unittest.TestCase):
         self.assertTrue(
             any(v.startswith("--user=") and v != "--user=0:0" for v in argv)
         )
-        self.assertIn("HOME=/home/implementer", " ".join(argv))
+        self.assertEqual(run.call_args.kwargs["env"]["HOME"], "/home/implementer")
         self.assertEqual(argv[-2:], ["agent-cli", "task"])
 
     def test_file_credential_and_timeout_cleanup(self):
@@ -158,6 +160,103 @@ class IsolationTests(unittest.TestCase):
             "isolated|Configured Author|author@example.test",
         )
         self.assertEqual(git(worktree, "status", "--porcelain"), "")
+
+    def test_interrupted_index_restore_preserves_host_staging(self):
+        from holophyte import isolation_git
+
+        _, worktree = self.make_worktree()
+        staged = worktree / "staged"
+        staged.write_text("original staged content\n")
+        isolation_git.git(worktree, "add", "staged")
+        index = Path(isolation_git.git(
+            worktree, "rev-parse", "--path-format=absolute", "--git-path", "index"
+        ))
+        index.chmod(0o640)
+        before = index.read_bytes()
+        entries = set(index.parent.iterdir())
+        copyfile = isolation_git.shutil.copyfile
+
+        def interrupt(source, destination):
+            if Path(destination).parent == index.parent:
+                Path(destination).write_bytes(b"partial index")
+                raise SystemExit(143)
+            return copyfile(source, destination)
+
+        with patch.object(isolation_git.shutil, "copyfile", side_effect=interrupt):
+            with self.assertRaises(SystemExit):
+                with isolation_git.isolated_git(worktree):
+                    staged.write_text("new staged content\n")
+                    isolation_git.git(worktree, "add", "staged")
+        self.assertEqual(index.read_bytes(), before)
+        self.assertEqual(index.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(set(index.parent.iterdir()), entries)
+        self.assertEqual(
+            isolation_git.git(worktree, "show", ":staged"), "original staged content"
+        )
+        with isolation_git.isolated_git(worktree):
+            isolation_git.git(worktree, "add", "staged")
+        self.assertEqual(index.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(isolation_git.git(worktree, "show", ":staged"),
+                         "new staged content")
+
+    def test_interrupted_object_import_never_publishes_partial_object(self):
+        from holophyte import isolation_git
+
+        main, _ = self.make_worktree()
+        source = main / ".git" / "objects"
+        destination = self.root / "imported"
+        destination.mkdir()
+
+        def interrupt(source, target):
+            Path(target).write_bytes(b"partial object")
+            raise SystemExit(143)
+
+        with patch.object(isolation_git.shutil, "copyfile", side_effect=interrupt):
+            with self.assertRaises(SystemExit):
+                isolation_git.import_objects(source, destination)
+        self.assertFalse([p for p in destination.rglob("*") if p.is_file()])
+        isolation_git.import_objects(source, destination)
+        for path in source.rglob("*"):
+            if path.is_file():
+                self.assertEqual((destination / path.relative_to(source)).read_bytes(),
+                                 path.read_bytes())
+
+    def test_container_resolves_pending_merge_with_both_parents(self):
+        from holophyte import isolation
+        from holophyte.claim import reuse_leftover
+        from holophyte.isolation_git import git
+
+        main, worktree = self.make_worktree()
+        git(main, "branch", "-M", "main")
+        for directory, content in ((main, "main"), (worktree, "task")):
+            (directory / "conflict").write_text(content)
+            git(directory, "add", "conflict")
+            git(directory, "commit", "-qm", content)
+        parents = [git(worktree, "rev-parse", "HEAD"), git(main, "rev-parse", "HEAD")]
+        self.target.path = main
+        ok, reason = reuse_leftover(self.target, worktree, "task")
+        self.assertTrue(ok, reason)
+        self.assertIn("AA conflict", git(worktree, "status", "--porcelain"))
+
+        def resolve(argv, cwd, timeout, *, env):
+            # Execute the Git operations with the environment Docker receives.
+            (worktree / "conflict").write_text("resolved\n")
+            git(worktree, "add", "conflict")
+            subprocess.run(["git", "commit", "-qm", "resolved"], cwd=cwd,
+                           env=env, check=True, capture_output=True)
+            return 0, "resolved"
+
+        with (
+            patch.object(isolation, "image_ready"),
+            patch.object(isolation.review_runner, "_remove_container"),
+            patch.object(isolation, "run_capped", side_effect=resolve),
+        ):
+            isolation.launch(isolation.Route("container"), worktree, {}, ["agent"])
+        self.assertEqual(git(worktree, "log", "-1", "--format=%P").split(), parents)
+        git(worktree, "merge-base", "--is-ancestor", "main", "HEAD")
+        self.assertEqual(git(worktree, "status", "--porcelain"), "")
+        self.assertFalse(Path(git(worktree, "rev-parse", "--path-format=absolute",
+                                  "--git-path", "MERGE_HEAD")).exists())
 
     def test_config_rejects_invalid_boundaries(self):
         from holophyte.isolation import route_for
