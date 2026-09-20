@@ -485,7 +485,7 @@ class IsolationTests(unittest.TestCase):
                 InfraFailure, "originals retained at"
             ) as raised:
                 copy_files(source, destination, protect=False)
-        backups = list(self.root.glob(".backup-*"))
+        backups = list(destination.glob(".backup-*"))
         self.assertEqual(len(backups), 1)
         self.assertIn(str(backups[0]), str(raised.exception))
         self.assertEqual((backups[0] / "file").read_text(), "valuable original")
@@ -568,6 +568,146 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(mounts[0].exists())
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
         self.assertTrue((worktree / ".git").is_file())
+
+    def test_copy_back_needs_only_writable_destination(self):
+        from holophyte.isolation_clone import copy_files
+
+        source = self.root / "source"
+        parent = self.root / "readonly"
+        destination = parent / "worktree"
+        source.mkdir()
+        destination.mkdir(parents=True)
+        (source / "file").write_text("returned work")
+        (destination / "old").write_text("previous work")
+        parent.chmod(0o555)
+        try:
+            copy_files(source, destination, protect=False)
+        finally:
+            parent.chmod(0o755)
+        self.assertEqual((destination / "file").read_text(), "returned work")
+        self.assertEqual({p.name for p in destination.iterdir()}, {"file"})
+
+    def test_racing_branch_update_preserves_worktree_and_index(self):
+        from holophyte import isolation_clone
+        from holophyte.gates import InfraFailure
+        from holophyte.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        with self.assertRaisesRegex(InfraFailure, "changed|lock|fast-forward"):
+            with isolation_clone.turn_clone(worktree) as (clone, env):
+                (clone / "file").write_text("container work")
+                subprocess.run(["git", "add", "file"], cwd=clone,
+                               env={**os.environ, **env}, check=True)
+                subprocess.run(["git", "commit", "-qm", "container"], cwd=clone,
+                               env={**os.environ, **env}, check=True)
+                real_git = isolation_clone.git
+
+                def race(cwd, *args, **kwargs):
+                    result = real_git(cwd, *args, **kwargs)
+                    if args == ("rev-parse", "HEAD"):
+                        (worktree / "file").write_text("concurrent work")
+                        git(worktree, "add", "file")
+                        git(worktree, "commit", "-qm", "concurrent")
+                        (worktree / "staged").write_text("valuable staged work")
+                        git(worktree, "add", "staged")
+                        snapshot.append((git(worktree, "rev-parse", "HEAD"),
+                                         git(worktree, "ls-files", "--stage")))
+                    return result
+
+                snapshot = []
+                patcher = patch.object(isolation_clone, "git", side_effect=race)
+                patcher.start()
+                self.addCleanup(patcher.stop)
+        patcher.stop()
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), snapshot[0][0])
+        self.assertEqual(git(worktree, "ls-files", "--stage"), snapshot[0][1])
+        self.assertEqual((worktree / "file").read_text(), "concurrent work")
+        self.assertEqual((worktree / "staged").read_text(), "valuable staged work")
+
+    def test_return_locks_refs_and_index_during_file_replacement(self):
+        from holophyte import isolation_clone
+        from holophyte.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        old = git(worktree, "rev-parse", "HEAD")
+        replace = isolation_clone.replace_files
+        attempts = []
+
+        def contend(staged, destination, excluded, finish):
+            for args in (("update-ref", "HEAD", old), ("reset", "--hard", old)):
+                with self.assertRaises(subprocess.CalledProcessError) as raised:
+                    git(worktree, *args)
+                self.assertIn("lock", raised.exception.stderr)
+                attempts.append(args)
+            replace(staged, destination, excluded, finish)
+
+        with isolation_clone.turn_clone(worktree) as (clone, env):
+            (clone / "file").write_text("returned work")
+            git(clone, "add", "file")
+            subprocess.run(["git", "commit", "-qm", "returned"], cwd=clone,
+                           env={**os.environ, **env}, check=True)
+            patcher = patch.object(isolation_clone, "replace_files", contend)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher.stop()
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(git(worktree, "log", "-1", "--format=%s"), "returned")
+        self.assertEqual(git(worktree, "status", "--porcelain"), "")
+        git(worktree, "reset", "--hard", old)  # Locks were released.
+
+    def test_failed_ref_commit_restores_working_files_and_index(self):
+        from holophyte import isolation_clone, isolation_return
+        from holophyte.gates import InfraFailure
+        from holophyte.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        (worktree / "keep").write_text("valuable staged work")
+        git(worktree, "add", "keep")
+        old = git(worktree, "rev-parse", "HEAD")
+        index = git(worktree, "ls-files", "--stage")
+        command = isolation_return.transaction_command
+
+        def fail(process, action):
+            if action == "commit":
+                command(process, "abort")
+                raise InfraFailure("injected ref commit failure")
+            command(process, action)
+
+        with self.assertRaisesRegex(InfraFailure, "injected ref commit failure"):
+            with isolation_clone.turn_clone(worktree) as (clone, env):
+                (clone / "keep").write_text("container version")
+                git(clone, "add", "keep")
+                subprocess.run(["git", "commit", "-qm", "container"], cwd=clone,
+                               env={**os.environ, **env}, check=True)
+                patcher = patch.object(isolation_return, "transaction_command", fail)
+                patcher.start()
+                self.addCleanup(patcher.stop)
+        patcher.stop()
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), old)
+        self.assertEqual(git(worktree, "ls-files", "--stage"), index)
+        self.assertEqual((worktree / "keep").read_text(), "valuable staged work")
+        self.assertEqual({p.name for p in worktree.iterdir()}, {".git", "keep"})
+        git(worktree, "commit", "-qm", "locks released")
+
+    def test_host_git_ignores_inherited_repository_locations(self):
+        from holophyte.isolation_git import git
+
+        main, worktree = self.make_worktree()
+        (worktree / "file").write_text("task content")
+        for variables in (
+            {"GIT_DIR": str(main / ".git"), "GIT_WORK_TREE": str(main)},
+            {"GIT_COMMON_DIR": str(self.root / "missing")},
+            {"GIT_INDEX_FILE": str(self.root / "foreign-index")},
+            {"GIT_OBJECT_DIRECTORY": str(self.root / "missing")},
+        ):
+            with self.subTest(variables=variables), patch.dict(os.environ, variables):
+                self.assertEqual(git(worktree, "branch", "--show-current"), "task")
+                git(worktree, "add", "file")
+                self.assertIn("file", git(worktree, "ls-files"))
+            self.assertIn("file", git(worktree, "ls-files"))
+            git(worktree, "reset", "--mixed", "HEAD")
+        self.assertFalse((self.root / "foreign-index").exists())
+        self.assertEqual(git(main, "status", "--porcelain"), "")
 
     def test_config_rejects_invalid_boundaries(self):
         from holophyte.isolation import route_for

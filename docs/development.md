@@ -28,6 +28,7 @@ Each module, one line:
 - `holophyte/isolation.py` — host/container implementer launch seam, validated
   isolation settings, credential boundary and container cleanup.
 - `holophyte/isolation_git.py` — Git metadata validation and atomic object copying.
+- `holophyte/isolation_return.py` — Git ref and index locks for atomic turn returns.
 - `holophyte/isolation_clone.py` — disposable container checkouts and sanitized,
   fast-forward-only commit imports with environment-file exclusions.
 - `holophyte/agents.py` — the agent routes and the `agent()` call, one turn

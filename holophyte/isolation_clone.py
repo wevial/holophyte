@@ -10,6 +10,7 @@ from pathlib import Path
 from holophyte.environment_git import protected, refuse_environment_history
 from holophyte.gates import InfraFailure
 from holophyte.isolation_git import copy_merge_state, git, head, import_objects
+from holophyte.isolation_return import locked_return
 from holophyte.target import state_dir
 
 
@@ -36,17 +37,18 @@ def stage_files(source, destination, excluded):
             )
 
 
-def replace_files(staged, destination, excluded):
+def replace_files(staged, destination, excluded, finish):
     """Keep originals on the same filesystem until every replacement succeeds."""
-    backup = Path(tempfile.mkdtemp(prefix=".backup-", dir=destination.parent))
+    backup = Path(tempfile.mkdtemp(prefix=".backup-", dir=destination))
     moves = []
     try:
         for source, target in ((destination, backup), (staged, destination)):
             for path in source.iterdir():
-                if path.name not in excluded:
+                if path.name not in excluded and path not in (staged, backup):
                     replacement = target / path.name
                     path.rename(replacement)
                     moves.append((path, replacement))
+        finish()
     except BaseException:
         try:
             for original, moved in reversed(moves):
@@ -61,11 +63,11 @@ def replace_files(staged, destination, excluded):
     shutil.rmtree(backup)
 
 
-def copy_files(source, destination, protect):
+def copy_files(source, destination, protect, finish=lambda: None):
     """Stage the complete copy and roll back failed destination mutations."""
     excluded = {".git", ".env"} if protect else {".git"}
     with tempfile.TemporaryDirectory(
-        prefix=".copy-", dir=destination.parent
+        prefix=".copy-", dir=destination
     ) as directory:
         staged = Path(directory)
         try:
@@ -73,7 +75,7 @@ def copy_files(source, destination, protect):
         except (OSError, shutil.Error) as error:
             raise InfraFailure(f"cannot prepare working files: {error}") from error
         try:
-            replace_files(staged, destination, excluded)
+            replace_files(staged, destination, excluded, finish)
         except (OSError, shutil.Error) as error:
             raise InfraFailure(f"cannot replace working files: {error}") from error
 
@@ -113,12 +115,11 @@ def return_turn(worktree, clone, root, old, target, merge_state):
         raise InfraFailure(
             "task branch changed during container turn; refusing fast-forward"
         )
-    copy_files(clone, worktree, target is not None and protected(target))
-    if sha != old:
-        git(worktree, "update-ref", "HEAD", sha, old)
-        git(worktree, "reset", "--mixed", sha)
-        for path in merge_state:
-            path.unlink(missing_ok=True)
+    with locked_return(worktree, root, old, sha) as finish:
+        copy_files(clone, worktree, target is not None and protected(target), finish)
+        if sha != old:
+            for path in merge_state:
+                path.unlink(missing_ok=True)
 
 
 @contextlib.contextmanager

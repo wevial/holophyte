@@ -14,10 +14,23 @@ import tempfile
 from pathlib import Path
 
 
-def git(worktree, *args):
+def git_environment():
+    """Discard repository selectors inherited from hooks or the caller's shell."""
+    excluded = {
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_NAMESPACE",
+        "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+        "GIT_IMPLICIT_WORK_TREE", "GIT_PREFIX",
+    }
+    return {key: value for key, value in os.environ.items() if key not in excluded}
+
+
+def git(worktree, *args, index=None):
     result = subprocess.run(
         ["git", "-c", "core.hooksPath=/dev/null", *args],
         cwd=worktree,
+        env={**git_environment(), **({"GIT_INDEX_FILE": str(index)} if index else {})},
         capture_output=True,
         text=True,
         check=True,
