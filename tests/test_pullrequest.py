@@ -50,6 +50,7 @@ import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr_media  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
 
@@ -443,13 +444,44 @@ class MergeModePullRequestTests(MergeModeFixture):
                 holophyte.pr_status.parse_pr_url(self.URL), answered)
         return turn.call_args.args[-1]
 
+    def test_replace_preserves_production_evidence_in_either_position(self):
+        evidence = "## Evidence\n\nCaptured with `capture`.  \n\n![screen](https://example/screen.png)\n\n"
+        link = "Linear: KO-131 (https://linear.app/example/KO-131)"
+        tail = "\n\n<!-- bot -->\nAppended block.\n"
+        base = holophyte.pr.pr_body_written(
+            "Old description.", "KO-131", "https://linear.app/example/KO-131")
+        production = holophyte.pr_media.append(base, evidence[:-2]) + tail
+        after = base + "\n\n" + evidence + tail
+        for body, expected in [
+            (production, "New description.\n\n" + evidence + link + tail),
+            (after, "New description.\n\n" + link + "\n\n" + evidence + tail),
+            (production.replace(link, "## Old details\n\nOutdated.\n\n" + link),
+             "New description.\n\n" + evidence + link + tail),
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(holophyte.pr.replace_pr_text(
+                    body, "New description."), expected)
+
+    def test_replace_without_evidence_matches_existing_layout(self):
+        body = holophyte.pr.pr_body_written(
+            "Old description.", "KO-131", None)
+        body += "\n\n<!-- bot -->\nAppended block.\n"
+        self.assertEqual(
+            holophyte.pr.replace_pr_text(body, "New description.\n"),
+            "New description.\n\nLinear: KO-131\n\n"
+            "<!-- bot -->\nAppended block.\n")
+
     def test_refresh_preserves_metadata_and_accumulates_fix_rounds(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route()
-        preserved = ("Linear: KO-131 (https://linear.app/example/KO-131)\n\n"
-                     "## Evidence\n\n![capture](https://example/screen.png)\n\n"
-                     "<!-- greptile_comment -->\nBot's appended block.\n")
-        self.pr_body.write_text("Original subquery description.\n\n" + preserved)
+        original = holophyte.pr_media.append(
+            holophyte.pr.pr_body_written(
+                "Original subquery description.", "KO-131",
+                "https://linear.app/example/KO-131"),
+            "## Evidence\n\n![capture](https://example/screen.png)")
+        original += "\n\n<!-- greptile_comment -->\nBot's appended block.\n"
+        preserved = original[original.index("## Evidence"):]
+        self.pr_body.write_text(original)
         appended = "\n<!-- new bot -->\nAppended during writing.\n"
         def write_and_append(*args):
             self.pr_body.write_text(self.pr_body.read_text() + appended)
