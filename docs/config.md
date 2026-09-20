@@ -379,8 +379,12 @@ to commit its work: keep build artifacts (`.venv/`, caches) in the target's
 `export ` prefix. Values (including quotes) are kept verbatim; no shell
 expansion runs. Duplicate names use the last assignment. Invalid assignments
 are refused by line number without revealing values. Source values are
-redacted from loop output, events and ledger narratives. With neither key,
-setup writes no environment file.
+redacted from loop output, events, ledger narratives, run failure reasons and
+review verification results. CRLF line endings are accepted. Setup refuses a
+tracked `.env` and adds `/.env` to Git’s local `info/exclude` if needed. Factory
+recovery staging excludes it independently of ignore rules; a candidate with
+`.env` in its tree or new history cannot be pushed. With neither key, setup
+writes no environment file.
 
 `carry` lists the repository-relative directories, among what setup wrote and
 git ignores, that the review stage receives a copy of: the reviewer judges a

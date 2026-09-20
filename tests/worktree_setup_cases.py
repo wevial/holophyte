@@ -4,14 +4,66 @@ Kept as a mixin so the required test_claim command still runs every case
 while its new environment acceptance tests stay within the module ceiling.
 """
 import subprocess
+from pathlib import Path
+from unittest.mock import patch
 
-from fake_agent import APPROVE, Commit
+from fake_agent import APPROVE, Commit, _git
 from loop_fixture import BRANCH, StubProvider, a_task
 
 import holophyte.claim
 
 
 class WorktreeSetupCases:
+    def test_environment_stays_out_of_reclaim_and_candidate_commits(self):
+        source = self.target.parent / "source.env"
+        source.write_text("PUBLIC=sentinel-git-value\n")
+        self.configure(f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n')
+        wt = self.target.parent / "reused"
+        self.git("worktree", "add", "-b", BRANCH, str(wt), "main")
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertEqual(_git(wt, "check-ignore", ".env").strip(), ".env")
+        # Reclaim must protect it even if the local exclusion is lost.
+        exclude = Path(_git(wt, "rev-parse", "--git-path", "info/exclude").strip())
+        exclude.write_text("")
+        _git(wt, "add", "-f", ".env")
+        (wt / "work.txt").write_text("preserved work\n")
+        ok, reason = holophyte.claim.reuse_leftover(
+            self.tgt, wt, BRANCH, sync_origin=False)
+        self.assertTrue(ok, reason)
+        self.assertNotIn(".env",
+                         _git(wt, "ls-tree", "--name-only", "HEAD").splitlines())
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        (wt / "work.txt").write_text("candidate work\n")
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-m", "candidate")
+        self.assertEqual(_git(wt, "log", "--format=%H", "--", ".env"), "")
+        _git(wt, "add", "-f", ".env")
+        _git(wt, "commit", "-m", "unsafe candidate")
+        with self.assertRaisesRegex(holophyte.gates.InfraFailure, r"\.env"):
+            holophyte.pr.push_branch(self.tgt, BRANCH)
+        _git(wt, "rm", ".env")
+        _git(wt, "commit", "-m", "remove unsafe file")
+        with self.assertRaisesRegex(holophyte.gates.InfraFailure, r"\.env"):
+            holophyte.pr.push_branch(self.tgt, BRANCH)
+
+    def test_source_disappearing_after_startup_releases_run(self):
+        source = self.target.parent / "source.env"
+        source.write_text("PUBLIC=sentinel-vanishing-value\n")
+        self.configure(f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n')
+        setup = holophyte.claim.run_worktree_setup
+
+        def remove_source(*args, **kwargs):
+            source.unlink()
+            return setup(*args, **kwargs)
+
+        with patch.object(holophyte.claim, "run_worktree_setup", remove_source):
+            output = self.main_output(provider=StubProvider(a_task()))
+        self.assertIn("env_source could not be read", output)
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+
     def test_setup_enables_hooks_only_when_directory_exists(self):
         wt = self.target.parent / "hooks-worktree"
         self.git("worktree", "add", "--detach", str(wt))

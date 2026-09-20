@@ -534,7 +534,7 @@ def parse_environment(text):
     """Read dotenv assignments without evaluating or unquoting their values."""
     values = {}
     for number, line in enumerate(text.split("\n"), 1):
-        line = line.lstrip()
+        line = line.removesuffix("\r").lstrip()
         if not line or line.startswith("#"):
             continue
         if line.startswith("export "):

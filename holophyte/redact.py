@@ -449,6 +449,17 @@ def redact_values(text):
     return text
 
 
+def redact_document(value):
+    """Redact strings before JSON encoding so escapes cannot hide a value."""
+    if isinstance(value, str):
+        return redact_values(value)
+    if isinstance(value, dict):
+        return {key: redact_document(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_document(item) for item in value]
+    return value
+
+
 def safe_print(*args, **kwargs):
     builtins.print(*(redact_values(str(arg)) for arg in args), **kwargs)
 

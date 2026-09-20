@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import sqlite3
 import subprocess
 import sys
@@ -126,10 +127,23 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
             store.record_event(conn, 1, "diagnostic", "sentinel-public-value",
                                level="detail", payload="sentinel quoted value")
             store.record_ledger(conn, 1, "failure", "sentinel-db-value")
+            store.record_review_round(
+                conn, 1, 1, "pass", "reviewer",
+                verification_results=[{"output": "sentinel-auth-value"}])
+            output = holophyte.gates.VerificationOutput(
+                "sentinel-other-value",
+                [{"source": "baseline", "output": "sentinel-other-value"}])
+            holophyte.gates.record_unreviewed_verification(conn, 1, output)
+            store.resume(conn, 1)
+            store.release(conn, 1, "failed", "sentinel-db-value")
         finally:
             conn.close()
         records = repr(self.read("SELECT * FROM runEvents"))
         records += repr(self.read("SELECT * FROM ledger"))
+        records += repr(self.read("SELECT outcomeReason FROM runs"))
+        rounds = self.read("SELECT verificationResults FROM reviewRounds")
+        self.assertEqual(len(json.loads(rounds[0][0])), 2)
+        records += repr(rounds)
         records += repr(provider.comments) + out
         for value in ("sentinel-public-value", "sentinel quoted value",
                       "sentinel-auth-value", "sentinel-db-value",
@@ -141,7 +155,7 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         source = self.target.parent / "source.env"
         source.write_text("PUBLIC=sentinel-link-value\n")
         wt = self.target.parent / "reused"
-        wt.mkdir()
+        self.git("worktree", "add", "--detach", str(wt), "main")
         (wt / ".env").symlink_to(source)
         self.configure(f'[worktree]\nenv_source = "{source}"\n'
                        'env_allow = ["PUBLIC"]\n')

@@ -33,6 +33,7 @@ from holophyte.gates import (
 )
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
+from holophyte.redact import safe_print as print
 from holophyte.review import (
     criteria_brief,
     criteria_findings,

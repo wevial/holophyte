@@ -780,7 +780,9 @@ def record_unreviewed_verification(conn, run_id, output):
     """
     import json
 
-    results = getattr(output, "results", [])
+    from holophyte.redact import redact_document
+
+    results = redact_document(getattr(output, "results", []))
     if (conn is None or run_id is None
             or not any(row["source"] == "baseline" for row in results)):
         return

@@ -321,6 +321,26 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
                          [("awaiting_merge_approval", fixed)])
 
+    def test_fix_verify_failure_redacts_environment_from_print_and_outcome(self):
+        source = self.target.parent / "source.env"
+        source.write_bytes(b"PUBLIC=sentinel-fix-value\r\n")
+        self.configure('[merge]\nmode = "pr"\n'
+                       f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n'
+                       '[verify]\nalways = '
+                       '["test ! -f break-verify || { cat .env; exit 1; }"]\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        output = self.main_output(
+            Commit("candidate"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"),
+            Commit("fix", path="break-verify"), provider=self.provider())
+        self.assertIn("verify FAILED after the fix round", output)
+        self.assertIn("PUBLIC=[redacted]", output)
+        self.assertNotIn("sentinel-fix-value", output)
+        reason, = self.read("SELECT outcomeReason FROM runs")
+        self.assertNotIn("sentinel-fix-value", reason[0])
+        self.assertIn("[redacted]", reason[0])
+
     def test_human_fix_failed_verify_parks_without_description_edit(self):
         failure = self.db.parent / "verify-failed"
         command = f"test ! -f {failure}"

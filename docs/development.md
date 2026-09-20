@@ -84,6 +84,8 @@ Each module, one line:
   and board label, then `_cut_worktree`/`reuse_leftover`,
   `run_worktree_setup` under `_setup_worktree`, and the mid-merge
   hand-off (`merge_conflicts`, `conflict_brief`, `_resolve_merge_conflict`).
+- `holophyte/environment_git.py` — excludes the filtered `.env` from Git
+  staging and refuses candidate pushes containing it.
 - `holophyte/pr.py` — `[merge] mode = "pr"`'s GitHub writes: the startup
   route check, the push, the pull request and its body, the babysitter's
   replies and resolves, the merge through the PR API, and the `gh`/API

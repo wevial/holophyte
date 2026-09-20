@@ -48,6 +48,7 @@ from holophyte.board import (
     store_status,
 )
 from holophyte.config import setup_commands, setup_timeout, worktree_environment
+from holophyte.environment_git import exclude_environment, paths, stage_work
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -83,6 +84,7 @@ def write_worktree_environment(target, wt):
     values = worktree_environment(target)
     if values is None:
         return
+    exclude_environment(wt)
     fd, temporary = tempfile.mkstemp(prefix=".env-", dir=wt)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -108,6 +110,8 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
     """
     try:
         write_worktree_environment(target, wt)
+    except (SystemExit, InfraFailure) as error:
+        return False, redact_values(str(error))
     except OSError:
         return False, "[holo2] worktree environment file could not be written"
     commands = setup_commands(target)
@@ -181,7 +185,7 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
         return False, (f"leftover directory {wt} exists but is not a"
                        " registered worktree; a human moves it aside or"
                        " removes it before this ticket is run again")
-    dirty = sh(["git", "status", "--porcelain"], cwd=wt)
+    dirty = sh(["git", "status", "--porcelain", *paths(target)], cwd=wt)
 
     def is_ancestor(a, b):
         return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
@@ -203,7 +207,7 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     # `-B branch main` does.
     sh(["git", "checkout", "-B", branch], cwd=wt)
     if dirty:
-        sh(["git", "add", "-A"], cwd=wt)
+        stage_work(target, wt)
         # The identity is pinned so a target with no committer configured
         # cannot raise here — and a rescue commit is the factory's, not a
         # person's.

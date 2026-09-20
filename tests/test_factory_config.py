@@ -672,6 +672,11 @@ class WorktreeSetupTests(ConfigTestCase):
     verify command runs through, before any agent turn is dispatched.
     """
 
+    def test_crlf_environment_preserves_values_without_carriage_returns(self):
+        self.assertEqual(holophyte.config.parse_environment(
+            'PUBLIC=sentinel-crlf\r\nQUOTED="quoted value"\r\n'),
+            {"PUBLIC": "sentinel-crlf", "QUOTED": '"quoted value"'})
+
     def worktree(self):
         """A throwaway directory standing in for a freshly cut task worktree."""
         tmp = tempfile.TemporaryDirectory()

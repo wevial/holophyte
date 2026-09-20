@@ -37,6 +37,7 @@ import socket
 import time
 
 import ticket_template as _ticket_template
+from holophyte.redact import redact_document as _redact_document
 from holophyte.redact import redact_values as _redact_values
 
 from .schema import (  # noqa: F401
@@ -893,7 +894,8 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
     findings_json = _json_document("findings", findings)
     results_json = _json_document(
         "verification results",
-        _document_argument("verification results", verification_results))
+        _redact_document(_document_argument(
+            "verification results", verification_results)))
     if started_at is None:
         started_at = int(time.time() * 1000)
     with _transaction(conn):

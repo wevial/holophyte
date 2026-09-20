@@ -52,6 +52,7 @@ from holophyte.config_tables import (
     sweep_config,
 )
 from holophyte.dispatch import SWEPT
+from holophyte.environment_git import paths, stage_work
 from holophyte.gates import (
     GroupKill,
     InfraFailure,
@@ -625,7 +626,7 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         # `-uall`: default porcelain collapses an untracked directory into
         # one `??` line, which would report files as directories in the
         # event below.
-        dirty = sh(["git", "status", "--porcelain", "-uall"],
+        dirty = sh(["git", "status", "--porcelain", "-uall", *paths(target)],
                    cwd=wt).splitlines()
         if dirty:
             # The kill can land inside `git add` itself — KO-391's turn died
@@ -637,7 +638,7 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             lock = Path(wt, sh(["git", "rev-parse", "--git-path",
                                 "index.lock"], cwd=wt))
             lock.unlink(missing_ok=True)
-            sh(["git", "add", "-A"], cwd=wt)
+            stage_work(target, wt)
             # The identity is pinned for the same reason the reuse WIP
             # commit pins it: a rescue commit is the factory's, and a
             # target with no committer configured must not make it raise.

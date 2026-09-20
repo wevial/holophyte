@@ -27,7 +27,7 @@ import re
 import socket
 import time
 
-from . import PHASES, _append_event, record_ledger, set_phase
+from . import PHASES, _append_event, _redact_values, record_ledger, set_phase
 from .schema import _transaction
 from .tickets import walk_ticket
 
@@ -112,6 +112,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
     `merged` outcome may carry one; any other outcome with a sha is a caller
     bug and raises before any write.
     """
+    reason = _redact_values(reason) if reason is not None else None
     if outcome not in TERMINAL_PHASES:
         raise ValueError(f"unknown outcome {outcome!r}")
     if outcome_class not in OUTCOME_CLASSES:
