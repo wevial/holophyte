@@ -468,6 +468,38 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertEqual(len(rnd["findings"]), 1)
         self.assertIn("Handle empty tokens", rnd["findings"][0]["message"])
 
+    def test_bot_instructions_read_as_findings_without_changing_stored_rows(self):
+        self.seed_reviewed()
+        bot = dict(kind="instruction", path="app.py", line=1, severity="nit",
+                   author="coderabbitai", request="Handle empty tokens",
+                   message="Handle empty tokens", outcome="changed")
+        legacy = dict(path="app.py", severity="nit", message=(
+            "- app.py:2 @github-actions[bot]: Check tokens"
+            " -- MENTIONED: ADDRESS: Check tokens"))
+        conn = store.open(str(self.db))
+        try:
+            store.record_review_round(conn, self.run, 3, "changes_requested",
+                                      "github:coderabbitai", findings=[bot, legacy])
+            before = conn.execute("SELECT * FROM reviewRounds").fetchall()
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200)
+        rnd = body["rounds"][-1]
+        self.assertEqual(rnd["instructions"], [])
+        self.assertEqual(len(rnd["findings"]), 2)
+        self.assertEqual(rnd["findings"][0]["author"], "coderabbitai")
+        self.assertEqual(rnd["findings"][0]["message"], "Handle empty tokens")
+        self.assertNotEqual(rnd["findings"][0].get("kind"), "instruction")
+        self.assertEqual(rnd["findings"][1], legacy)
+        conn = store.open(str(self.db))
+        try:
+            after = conn.execute("SELECT * FROM reviewRounds").fetchall()
+            self.assertEqual(after, before)
+        finally:
+            conn.close()
+
     def test_rounds_oldest_first_with_findings_as_objects(self):
         self.seed_reviewed()
         self.start()

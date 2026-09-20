@@ -137,6 +137,50 @@ function renderBlock(block: Block, key: string): ReactNode {
   }
 }
 
+/** Remove GitHub's collapsed analysis, preserving fenced examples verbatim.
+ * Tokens are scanned in source order so nested details and fences inside a
+ * collapsed block cannot accidentally expose its tail. */
+export function cleanCommentBody(body: string): string {
+  const tokens = /^ {0,3}(`{3,}|~{3,})[^\r\n]*|<!--|-->|<\/?[a-z][^>]*>/gim;
+  let fence: string | null = null;
+  let depth = 0;
+  let comment = false;
+  let end = 0;
+  let cleaned = "";
+  let removed = false;
+  for (const match of body.matchAll(tokens)) {
+    if (depth === 0 && !comment) cleaned += body.slice(end, match.index);
+    const token = match[0];
+    if (comment) {
+      if (token === "-->") comment = false;
+    } else if (fence !== null) {
+      if (match[1]?.[0] === fence[0] && match[1].length >= fence.length &&
+          token.trim() === match[1]) fence = null;
+      if (depth === 0) cleaned += token;
+    } else if (match[1]) {
+      fence = match[1];
+      if (depth === 0) cleaned += token;
+    } else if (token === "-->") {
+      if (depth === 0) cleaned += token;
+    } else {
+      removed = true;
+      if (token === "<!--") comment = true;
+      else if (/^<details\b/i.test(token)) depth++;
+      else if (/^<\/details\s*>/i.test(token)) depth = Math.max(0, depth - 1);
+    }
+    end = match.index + token.length;
+  }
+  if (depth === 0 && !comment) cleaned += body.slice(end);
+  if (!removed) return body;
+  return cleaned.replace(/^(\s*)([^\r\n]+)/, (_, space: string, line: string) =>
+    space + line.replace(/(^|[ |])([_*])([^_*]+)\2(?=[ |]|$)/g, "$1$3"));
+}
+
+/** Shared comment rendering for instruction requests and finding messages. */
+export function renderCommentBody(body: string): ReactNode {
+  return renderMarkdown(cleanCommentBody(body));
+}
+
 /** The body rendered as React nodes. */
 export function renderMarkdown(body: string): ReactNode {
   return createElement(Fragment, null, blocksOf(body).map((block, at) => renderBlock(block, `b${at}`)));

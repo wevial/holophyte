@@ -845,14 +845,15 @@ def _thread_findings(pull, pass_no, threads, verdicts, checks, sha):
     findings = []
     for n, thread in enumerate(threads, 1):
         if thread.classification == "MENTIONED":
-            findings.append(dict(kind="instruction", path=thread.path or "(no file)",
-                                 line=thread.line, author=thread.comments[-1].author,
+            author = thread.comments[-1]
+            kind = "finding" if author.author_kind == "bot" else "instruction"
+            findings.append(dict(kind=kind, path=thread.path or "(no file)",
+                                 line=thread.line, author=author.author,
                                  request=thread.request, url=thread.url,
                                  severity="nit", message=thread.request))
         else:
             reply = babysitter.round_reply(
                 pull, pass_no, (thread,), {1: verdicts[n]}, checks, sha)
-            # The terminal verdict describes the round, not this finding.
             findings.extend(parse_findings(reply.rsplit("\n", 1)[0]))
     return findings
 
