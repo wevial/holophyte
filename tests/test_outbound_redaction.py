@@ -71,7 +71,7 @@ class OutboundRedactionTests(unittest.TestCase):
         url = "https://github.com/example/repo/pull/1"
         title, prose = pr.parse_pr_text(f"TITLE: Fix {SENTINEL}\nObserved {SENTINEL}.")
         body = pr.pr_body_written(prose, "KO-542", "https://linear.app/issue/KO-542")
-        body += "\n\n## Evidence\n![demo](https://example.com/demo.png)\n"
+        body += "\n\n## Evidence\n![demo](https://example.com/demo.png?key=public-image)\n"
         pull = SimpleNamespace(url=url, repo="example/repo", number=1)
         for enabled in (False, True, "config"):
             replacement = self.register(enabled)

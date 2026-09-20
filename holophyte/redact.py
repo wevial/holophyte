@@ -476,18 +476,20 @@ def known_secrets(document, environ=None):
     return frozenset(v for v in values if v.strip()) | _environment_values
 
 
-def redact_prose(text, secrets=()):
+def redact_prose(text, secrets=(), *, assignments=True):
     """`text` -- prose, not TOML -- with every `secrets` value replaced by
     `REDACTED`, and every `name = value` pair whose name `is_secret()`
     replaced by `name = REDACTED`, whatever the line around it says.
     `redact()`'s scanner stops at the first word that is not a key, so an
     `api_key = "..."` after a sentence would pass it untouched; this is the
     rule for text with no document to check against, and it errs toward
-    hiding: a `key:` label in a pasted log is redacted with the rest."""
+    hiding: a `key:` label in a pasted log is redacted with the rest.
+    Outbound payloads disable assignment matching to preserve unrelated links."""
     text = redact_values(text)
     for value in sorted(secrets, key=len, reverse=True):
         text = text.replace(value, REDACTED)
-    return PROSE_PAIR.sub(lambda m: m.group(1) + REDACTED, text)
+    return (PROSE_PAIR.sub(lambda m: m.group(1) + REDACTED, text)
+            if assignments else text)
 
 
 def outbound(text, secrets=()):
@@ -496,4 +498,4 @@ def outbound(text, secrets=()):
     Callers with a target pass its known config secrets. Without those,
     preserve ordinary prose exactly apart from registered environment values.
     """
-    return redact_prose(text, secrets) if secrets else redact_values(text)
+    return redact_prose(text, secrets, assignments=False)
