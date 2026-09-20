@@ -435,7 +435,7 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
         # empty reuse was reset to main and reads as a fresh cut, so the
         # close-outs must neither claim preservation over nothing nor
         # keep an empty leftover alive forever.
-        return (not sh(["git", "status", "--porcelain"], cwd=wt)
+        return (not sh(["git", "status", "--porcelain", *paths(target)], cwd=wt)
                 and sh(["git", "rev-parse", "HEAD"], cwd=wt)
                 == sh(["git", "rev-parse", "main"], target.path))
     # The mirror leftover: the branch exists but its directory does not

@@ -40,6 +40,7 @@ from worktree_setup_cases import WorktreeSetupCases  # noqa: E402
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.claim  # noqa: E402 - after the sys.path insert above
+import holophyte.environment_git  # noqa: E402
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -92,13 +93,6 @@ class BabysitClaimTests(MergeModeFixture):
 
 
 class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
-    """`[worktree] setup` as a whole run walks it: real repo, real worktree.
-
-    The unit tests cover the table and the report. What only a run can show is
-    where the commands land in the loop — after the branch is cut, before the
-    first agent turn — and what a failing setup does to the run around it.
-    """
-
     def test_filtered_environment_precedes_setup_and_never_reaches_records(self):
         source = self.target.parent / "source.env"
         source.write_text(
@@ -111,7 +105,8 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         self.configure(
             f'[worktree]\nenv_source = "{source}"\n'
             'env_allow = ["PUBLIC", "QUOTED"]\n'
-            f'setup = ["cp .env {seen}; stat -c %a .env > {mode}; '
+            f'setup = ["cp .env {seen}; '
+            f'(stat -c %a .env 2>/dev/null || stat -f %Lp .env) > {mode}; '
             f'echo sentinel-public-value", "cat {source}; exit 3"]\n')
         provider = StubProvider(a_task())
         out = self.main_output(provider=provider)
@@ -301,12 +296,54 @@ class LeftoverWorktreeTests(LoopFixture):
         self.git("checkout", "-b", BRANCH, cwd=wt)
         return wt
 
-    def test_an_idle_implementer_on_a_dirty_leftover_does_not_merge_debris(self):
-        """The WIP commit reuse makes is a candidate for review, not a free
-        pass to main: an implementer that does nothing on a reused worktree
-        sends the carried tip to the reviewer, and only an approval there can
-        put the leftover's debris on main."""
+    def environment(self):
+        source = self.target.parent / "source.env"
+        source.write_text("PUBLIC=checkout-only\n")
+        self.configure(f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n')
+
+    def test_staging_environment_keeps_only_source_in_index_and_commit(self):
+        self.environment()
+        for own_ignore, forced in ((False, False), (True, False), (False, True)):
+            with self.subTest(own_ignore=own_ignore, forced=forced):
+                wt = self.worktrees / f"stage-{own_ignore}-{forced}"
+                self.git("worktree", "add", "--detach", str(wt), "main")
+                if own_ignore:
+                    (wt / ".gitignore").write_text("/.env\n")
+                holophyte.claim.write_worktree_environment(self.tgt, wt)
+                self.assertTrue((wt / ".env").is_file())
+                rule = ".gitignore" if own_ignore else "info/exclude"
+                self.assertIn(rule, self.git("check-ignore", "-v", ".env", cwd=wt))
+                (wt / "source.py").write_text("print('work')\n")
+                if forced:
+                    self.git("add", "-f", ".env", cwd=wt)
+                    self.assertIn(".env", self.git("ls-files", cwd=wt).splitlines())
+                holophyte.environment_git.stage_work(self.tgt, wt)
+                staged = self.git("diff", "--cached", "--name-only", cwd=wt)
+                self.assertIn("source.py", staged.splitlines())
+                self.assertNotIn(".env", staged.splitlines())
+                self.git("commit", "-qm", "source work", cwd=wt)
+                tree = self.git("ls-tree", "-r", "--name-only", "HEAD", cwd=wt)
+                self.assertIn("source.py", tree.splitlines())
+                self.assertNotIn(".env", tree.splitlines())
+
+    def test_without_environment_staging_and_status_have_no_pathspec(self):
         wt = self.leftover()
+        (wt / "source.py").write_text("print('work')\n")
+        module = holophyte.environment_git
+        with patch.object(module, "sh", wraps=module.sh) as stage, patch.object(
+                holophyte.claim, "sh", wraps=holophyte.claim.sh) as status:
+            self.loop(Idle(), APPROVE)
+        self.assertIn(["git", "add", "-A"], [c.args[0] for c in stage.call_args_list])
+        self.assertEqual({tuple(c.args[0]) for c in status.call_args_list
+                          if c.args[0][:2] == ["git", "status"]},
+                         {("git", "status", "--porcelain")})
+
+    def test_an_idle_implementer_on_a_dirty_leftover_does_not_merge_debris(self):
+        """A reclaimed WIP candidate still needs independent approval."""
+        wt = self.leftover()
+        self.environment()
+        holophyte.claim.write_worktree_environment(self.tgt, wt)
         (wt / "debris.bin").write_text("build junk\n")
 
         fake, _ = self.loop(Idle(), REQUEST_CHANGES, Idle())
@@ -314,15 +351,19 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
-        # The debris survives as the WIP commit, on a branch nothing merged.
         self.assertIn(BRANCH, self.branches())
         self.assertIn("WIP", self.subjects(BRANCH)[0])
+        self.assertEqual(self.git("log", BRANCH, "--format=%H", "--", ".env"), "")
+        self.assertIn("debris.bin", self.git("ls-tree", "--name-only", BRANCH))
 
     def test_an_empty_reused_leftover_is_discarded_like_a_fresh_cut(self):
-        """A clean leftover at main holds nothing: keeping it forever and
-        calling it preserved work would be the reason lying in the safe
-        direction — and an unbounded leftover on every re-failing ticket."""
-        self.leftover()
+        """An unignored environment alone is still an empty reclaimed checkout."""
+        wt = self.leftover()
+        self.environment()
+        holophyte.claim.write_worktree_environment(self.tgt, wt)
+        exclude = wt / _git(wt, "rev-parse", "--git-path", "info/exclude")
+        exclude.write_text("")
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt).strip(), "?? .env")
 
         self.loop(Idle())
 
@@ -332,8 +373,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("discarded", reason)
 
     def test_a_timed_out_implementer_keeps_the_commits_it_made(self):
-        """A budget overrun is not 'no work': commits that landed before the
-        alarm survive, with the reason saying where they are."""
+        """Commits landed before timeout survive, with their location recorded."""
         printed = self.main_output(CommitThenTimeout("late work"))
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
@@ -342,18 +382,17 @@ class LeftoverWorktreeTests(LoopFixture):
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("budget", reason)
         self.assertIn(BRANCH, reason)
-        # The cap, not an alarm: the budget reaches the dispatch as its
-        # timeout, and what the turn printed before the kill is not lost.
         self.assertEqual(self.last_fake.turns[0].timeout, 5 * 60)
         self.assertIn("partial progress before cap", printed)
 
     def test_a_timed_out_dirty_tree_is_kept_as_a_wip_commit(self):
-        """KO-391's turn: the move done, killed inside `git commit`. The
-        budget is a wall-clock cap, not a judgement, so the dirty tree lands
-        as a WIP commit on the preserved branch, the run's reason names the
-        sha — and the reclaim carries the candidate through verify and
-        review instead of re-implementing it."""
+        """A timed-out edit survives as WIP and can be reclaimed and reviewed."""
+        self.environment()
         self.loop(EditThenTimeout("the whole move done; mid-commit"))
+        wt = self.worktrees / "ko-131-add-a-thing"
+        self.assertTrue((wt / ".env").is_file())
+        self.assertEqual(self.git("log", BRANCH, "--format=%H", "--", ".env"), "")
+        self.assertIn("wip-one.txt", self.git("ls-tree", "--name-only", BRANCH))
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn(BRANCH, self.branches())
@@ -369,13 +408,7 @@ class LeftoverWorktreeTests(LoopFixture):
         ((event,),) = self.read("SELECT summary FROM runEvents"
                                " WHERE kind = 'wip_committed'")
         self.assertIn(sha[:12], event)
-        # the two files the turn left dirty
         self.assertIn("2 changed file(s)", event)
-
-        # The requeue puts the ticket back and the reclaim lands on the
-        # preserved worktree: an implementer that correctly adds nothing
-        # sees its candidate carried, verified and reviewed — the WIP
-        # commit reaches main rather than being re-implemented.
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         store.requeue(conn, 1, "budget fired; the WIP commit is the work")
@@ -390,17 +423,10 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn(commits[0], self.subjects())
 
     def test_a_turn_killed_mid_staging_still_lands_the_wip_commit(self):
-        """The kill can land inside `git add` itself, and SIGKILL leaves the
-        interrupted staging's `index.lock` behind: the rescue clears the
-        dead turn's lock before its own `git add -A`, so the WIP commit
-        still lands and the reason still names its sha. The event's count
-        is the committed files — two of the three sit inside `new-dir/`,
-        which default porcelain reports as a single `??` line."""
+        """Rescue clears a killed git add lock and counts files, not directories."""
         step = StageThenTimeout()
         self.loop(step)
 
-        # The once-flag the blocking filter raises: the kill really landed
-        # mid-`git add`, not before staging began.
         self.assertTrue(step.flag.exists())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn(BRANCH, self.branches())
@@ -416,15 +442,21 @@ class LeftoverWorktreeTests(LoopFixture):
         ((event,),) = self.read("SELECT summary FROM runEvents"
                                " WHERE kind = 'wip_committed'")
         self.assertIn(sha[:12], event)
-        # `.gitattributes`, `one.txt` and `two.txt` under `new-dir/` — not
-        # the single line `?? new-dir/` default porcelain would report.
         self.assertIn("3 changed file(s)", event)
 
     def test_a_timed_out_clean_tree_is_still_discarded(self):
-        """Unchanged by the WIP rescue: a turn the cap killed with nothing
-        in the tree holds nothing, so the branch and worktree go the way
-        they always did."""
-        self.loop(IdleThenTimeout())
+        """An environment whose ignore rule disappeared is not timed-out work."""
+        self.environment()
+
+        class LoseIgnoreThenTimeout(IdleThenTimeout):
+            def play(self, wt, turn):
+                exclude = Path(wt) / _git(wt, "rev-parse", "--git-path", "info/exclude")
+                exclude.write_text("")
+                if _git(wt, "status", "--porcelain") != "?? .env":
+                    raise AssertionError("expected only the unignored environment")
+                super().play(wt, turn)
+
+        self.loop(LoseIgnoreThenTimeout())
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertNotIn(BRANCH, self.branches())
@@ -433,9 +465,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("discarded", reason)
 
     def test_budget_scale_multiplies_the_cap_every_implementer_turn_gets(self):
-        """`[agents] budget_scale` is the harness's wall-clock multiplier:
-        a 30-minute ticket at scale 1.5 arms a 45-minute cap on the first
-        turn and the fix round alike — the estimate itself untouched."""
+        """Scale both implementer caps without changing the ticket estimate."""
         self.configure("[agents]\nbudget_scale = 1.5\n")
         task = dict(a_task(), budget_min=30)
 
@@ -447,8 +477,7 @@ class LeftoverWorktreeTests(LoopFixture):
                          ["implement", "review", "implement", "review"])
         self.assertEqual(fake.turns[0].timeout, 45 * 60)
         self.assertEqual(fake.turns[2].timeout, 45 * 60)
-        # The ticket's estimate — the box the report compares against —
-        # is still the 30 minutes Linear said.
+        # Reports retain the ticket's original 30-minute estimate.
         self.assertEqual(
             self.read("SELECT timeBoxMs FROM runs"), [(30 * 60 * 1000,)])
 
@@ -462,8 +491,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(fake.turns[0].timeout, 30 * 60)
 
     def test_a_scaled_budget_timeout_names_both_figures(self):
-        """The cap that fired was the scaled one, and the line the run
-        row carries says so: the estimate and what it became."""
+        """Report both the estimate and the scaled cap that fired."""
         self.configure("[agents]\nbudget_scale = 1.5\n")
         task = dict(a_task(), budget_min=30)
 
@@ -476,9 +504,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("30 min budget (45 min at scale 1.5)", reason)
 
     def test_the_refusal_reason_reaches_the_run_row(self):
-        """The reuse refusal's whole product is an explanation for a human;
-        it must land on the run row, not only in a Linear comment a provider
-        outage can swallow."""
+        """Persist the reuse refusal even if the board is unavailable."""
         wt = self.worktrees / "ko-131-add-a-thing"
         wt.mkdir(parents=True)
         (wt / "precious.txt").write_text("rescued work\n")
@@ -491,14 +517,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
 
     def test_a_no_commit_run_keeps_the_reused_worktree_and_its_commits(self):
-        """Run 10 of the KO-146 incident: the no-commit close-out
-        force-removed the reused worktree and -D'd the branch, destroying
-        exactly the preserved work the reuse path exists to protect — and
-        the run row then claimed the branch was preserved.
-
-        The branch here is ahead of main in history but identical to it in
-        content, so there is no carried candidate to review (KO-172) and the
-        no-commit gate is still what closes the run out."""
+        """KO-146/KO-172: preserve commits even when the tree matches main."""
         wt = self.leftover()
         (wt / "rescued.txt").write_text("rescued work\n")
         self.git("add", "-A", cwd=wt)
@@ -812,9 +831,7 @@ class ApproveNotingMergeHead:
 
 
 class EditThenTimeout(Idle):
-    """The mid-edit case between the two above: real files written and never
-    committed — KO-391's turn died inside `git commit` with the whole move
-    staged — then a real blocking process the cap kills."""
+    """Write real files, then block until the implementer cap kills the turn."""
 
     paths = ("wip-one.txt", "wip-two.txt")
 
