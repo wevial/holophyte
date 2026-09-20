@@ -139,7 +139,9 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
     if (kind === "review" || kind === "fix") {
       const named = roundNumber(change.summary);
       const recorded = named == null ? -1 : rounds.findIndex((entry) => entry.round === named);
-      const ordinal = recorded >= 0 ? recorded + 1 : rounds.filter((entry) => entry.started_ms <= change.at).length;
+      // A named review may start before its row is recorded. Only unnamed
+      // events can fall back to the rounds present at that time.
+      const ordinal = named == null ? rounds.filter((entry) => entry.started_ms <= change.at).length : recorded + 1;
       round = ordinal || undefined;
     }
     open = { kind, label, from: change.at, round, reason: change.summary };

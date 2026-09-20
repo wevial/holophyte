@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boxRemaining, buildTimeline, type TimelineRun } from "../src/lib/timeline";
+import { boxRemaining, buildTimeline, segmentName, type TimelineRun } from "../src/lib/timeline";
 
 const MINUTE = 60_000;
 const T = 1_756_900_000_000;
@@ -72,6 +72,17 @@ const CHANGES: [number, string][] = [
 const events = (changes: [number, string][]) =>
   changes.map(([s, summary]) => ({ at: T + s * 1000, kind: "phase_change", summary }));
 const seconds = (segment: { from: number; to: number }) => (segment.to - segment.from) / 1000;
+
+test("a named live review stays unnumbered until its round is recorded", () => {
+  const run: TimelineRun = {
+    ...RUN,
+    rounds: [{ ...RUN.rounds[0]!, round: 6 }],
+    events: events([[960, "verifying -> reviewing: round 9 review"]]),
+  };
+  expect(segmentName(buildTimeline(run, T + 20 * MINUTE).at(-1)!)).toBe("Review");
+  run.rounds.push({ ...RUN.rounds[1]!, round: 9 });
+  expect(segmentName(buildTimeline(run, T + 20 * MINUTE).at(-1)!)).toBe("Review · Round 2");
+});
 
 test("phase events without recorded rounds preserve segments without inventing round numbers", () => {
   const run: TimelineRun = { ...RUN, phase: "done", ended_ms: T + 2196_000, rounds: [], events: events(CHANGES) };
