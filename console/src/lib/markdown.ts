@@ -139,38 +139,44 @@ function renderBlock(block: Block, key: string): ReactNode {
 
 /** Remove GitHub's collapsed analysis, preserving fenced examples verbatim.
  * Tokens are scanned in source order so nested details and fences inside a
- * collapsed block cannot accidentally expose its tail. */
+ * collapsed block cannot accidentally expose its tail. Content is discarded
+ * only on a matching close; malformed openings leave trailing prose intact. */
 export function cleanCommentBody(body: string): string {
   const tokens = /^ {0,3}(`{3,}|~{3,})[^\r\n]*|<!--|-->|<\/?[a-z][^>]*>/gim;
   let fence: string | null = null;
-  let depth = 0;
-  let comment = false;
+  const details: number[] = [];
   let end = 0;
   let cleaned = "";
   let removed = false;
   for (const match of body.matchAll(tokens)) {
-    if (depth === 0 && !comment) cleaned += body.slice(end, match.index);
+    if (match.index < end) continue;
+    cleaned += body.slice(end, match.index);
     const token = match[0];
-    if (comment) {
-      if (token === "-->") comment = false;
-    } else if (fence !== null) {
+    if (fence !== null) {
       if (match[1]?.[0] === fence[0] && match[1].length >= fence.length &&
           token.trim() === match[1]) fence = null;
-      if (depth === 0) cleaned += token;
+      cleaned += token;
     } else if (match[1]) {
       fence = match[1];
-      if (depth === 0) cleaned += token;
+      cleaned += token;
     } else if (token === "-->") {
-      if (depth === 0) cleaned += token;
+      cleaned += token;
     } else {
       removed = true;
-      if (token === "<!--") comment = true;
-      else if (/^<details\b/i.test(token)) depth++;
-      else if (/^<\/details\s*>/i.test(token)) depth = Math.max(0, depth - 1);
+      if (token === "<!--") {
+        const close = body.indexOf("-->", match.index + token.length);
+        if (close !== -1) {
+          end = close + 3;
+          continue;
+        }
+      } else if (/^<details\b/i.test(token)) details.push(cleaned.length);
+      else if (/^<\/details\s*>/i.test(token) && details.length > 0) {
+        cleaned = cleaned.slice(0, details.pop()!);
+      }
     }
     end = match.index + token.length;
   }
-  if (depth === 0 && !comment) cleaned += body.slice(end);
+  cleaned += body.slice(end);
   if (!removed) return body;
   return cleaned.replace(/^(\s*)([^\r\n]+)/, (_, space: string, line: string) =>
     space + line.replace(/(^|[ |])([_*])([^_*]+)\2(?=[ |]|$)/g, "$1$3"));

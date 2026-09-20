@@ -769,7 +769,8 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  None, True, "", started_at=round_started,
                  route=babysitter.route_of(threads),
                  structured_findings=_thread_findings(
-                     pull, pass_no, threads, verdicts, state.checks, sha))
+                     pull, pass_no, threads, verdicts, state.checks, sha,
+                     merge.bot_authors + merge.bot_logins))
     people = sum(t.author_kind not in ("bot", "maintainer")
                  and t.classification != "MENTIONED" for t in threads)
     ledger(conn, run_id, task_id, "round",
@@ -840,13 +841,15 @@ def _decline_threads(target, conn, run_id, beat_s, pull, declined, model):
     return tuple(left_open)
 
 
-def _thread_findings(pull, pass_no, threads, verdicts, checks, sha):
+def _thread_findings(pull, pass_no, threads, verdicts, checks, sha, bot_logins):
     """Keep explicit instructions structured; ordinary findings retain their prose."""
     findings = []
     for n, thread in enumerate(threads, 1):
         if thread.classification == "MENTIONED":
             author = thread.comments[-1]
-            kind = "finding" if author.author_kind == "bot" else "instruction"
+            is_bot = thread_mentions.bot_author(
+                author.author, bot_logins, author.author_kind)
+            kind = "finding" if is_bot else "instruction"
             findings.append(dict(kind=kind, path=thread.path or "(no file)",
                                  line=thread.line, author=author.author,
                                  request=thread.request, url=thread.url,

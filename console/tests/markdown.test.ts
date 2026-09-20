@@ -63,3 +63,15 @@ test("HTML tokens inside fences cannot change comment or disclosure state", () =
   expect(cleanCommentBody(code + "<details>Script executed</details>\nVisible finding"))
     .toBe(code + "\nVisible finding");
 });
+
+for (const [name, opening] of [["details block", "<details>"], ["HTML comment", "<!--"]]) {
+  test(`an unclosed ${name} preserves trailing finding prose`, () => {
+    const prose = "Analysis\n\n**Handle empty tokens.**\n\nReject missing tokens before dispatch.";
+    const cleaned = cleanCommentBody(opening + prose);
+    expect(cleaned).toBe(prose);
+    const output = renderToStaticMarkup(renderMarkdown(cleaned));
+    expect(output).toContain("<strong>Handle empty tokens.</strong>");
+    expect(output).toContain("Reject missing tokens before dispatch.");
+    expect(output).not.toContain("&lt;");
+  });
+}

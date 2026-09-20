@@ -16,6 +16,7 @@ from holophyte.pool_handoff import workers_on_previous_build  # noqa: F401
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.target import worktree_path
+from holophyte.thread_mentions import bot_author
 from store.operator_notes import round_notes
 from store.working import effective_work
 
@@ -383,18 +384,13 @@ def run_detail(target, run_id, now=None):
     }
 
 
-def _bot_author(author, bot_logins):
-    return author.lower().endswith("[bot]") or author.lower() in bot_logins
-
-
 def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):
     """Normalize legacy instructions once at the read boundary, without writes."""
     result = {"findings": [], "instructions": []}
-    bot_logins = {name.lower() for name in bot_logins}
     marker = " -- MENTIONED: ADDRESS: "
     for finding in findings:
         if finding.get("kind") == "instruction":
-            if _bot_author(finding.get("author", ""), bot_logins):
+            if bot_author(finding.get("author", ""), bot_logins):
                 finding = dict(finding)
                 finding.pop("kind")
                 finding.setdefault("message", finding.get("request", ""))
@@ -412,7 +408,7 @@ def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):
                 file_line = re.match(r"^(.*):(\d+)$", path)
                 if file_line:
                     path, line = file_line[1], int(file_line[2])
-            if _bot_author(author, bot_logins):
+            if bot_author(author, bot_logins):
                 result["findings"].append(finding)
                 continue
             result["instructions"].append(dict(
