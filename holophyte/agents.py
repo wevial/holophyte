@@ -203,7 +203,7 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
             else:
                 if role == "implement":
                     code, out = isolation.launch(
-                        isolation.route_for(target), scratch,
+                        replace(isolation.route_for(target), writable=False), scratch,
                         isolation.environment(target), cmd, timeout=cap,
                         runner=run_capped)
                 else:
@@ -388,7 +388,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     hook = {"on_start": on_start} if on_start is not None else {}
     code, out = isolation.launch(isolation.route_for(target), cwd,
                                  isolation.environment(target), cmd,
-                                 timeout=cap, runner=run_capped, **hook)
+                                 timeout=cap, runner=run_capped, target=target, **hook)
     return ImplementerOutput(out.strip(), code, dispatched_route)
 
 

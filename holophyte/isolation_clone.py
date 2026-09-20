@@ -1,0 +1,174 @@
+"""Disposable turn checkout and a config-free, fast-forward-only return path."""
+
+import contextlib
+import shutil
+import stat
+import subprocess
+import tempfile
+from pathlib import Path
+
+from holophyte.environment_git import protected, refuse_environment_history
+from holophyte.gates import InfraFailure
+from holophyte.isolation_git import copy_merge_state, git, head, import_objects
+from holophyte.isolation_return import locked_return
+from holophyte.target import state_dir
+
+
+def stage_files(source, destination, excluded):
+    """Copy only ordinary files, directories and links; never follow links."""
+    for path in source.iterdir():
+        if path.name in excluded:
+            continue
+        if path.name == ".git":
+            raise InfraFailure("refusing working files containing nested .git")
+        dest = destination / path.name
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            dest.symlink_to(path.readlink())
+        elif stat.S_ISDIR(mode):
+            dest.mkdir()
+            stage_files(path, dest, set())
+            shutil.copystat(path, dest)
+        elif stat.S_ISREG(mode):
+            shutil.copy2(path, dest)
+        else:
+            raise InfraFailure(
+                f"refusing working files containing special file: {path}"
+            )
+
+
+def replace_files(staged, destination, excluded, finish):
+    """Keep originals on the same filesystem until every replacement succeeds."""
+    backup = Path(tempfile.mkdtemp(prefix=".backup-", dir=destination))
+    moves = []
+    try:
+        for source, target in ((destination, backup), (staged, destination)):
+            for path in source.iterdir():
+                if path.name not in excluded and path not in (staged, backup):
+                    replacement = target / path.name
+                    path.rename(replacement)
+                    moves.append((path, replacement))
+        finish()
+    except BaseException:
+        try:
+            for original, moved in reversed(moves):
+                moved.rename(original)
+        except OSError as error:
+            # Do not clean up the only surviving copies if rollback also fails.
+            raise InfraFailure(
+                f"cannot restore working files; originals retained at {backup}: {error}"
+            ) from error
+        shutil.rmtree(backup)
+        raise
+    shutil.rmtree(backup)
+
+
+def copy_files(source, destination, protect, finish=lambda: None):
+    """Stage the complete copy and roll back failed destination mutations."""
+    excluded = {".git", ".env"} if protect else {".git"}
+    with tempfile.TemporaryDirectory(
+        prefix=".copy-", dir=destination
+    ) as directory:
+        staged = Path(directory)
+        try:
+            stage_files(source, staged, excluded)
+        except (OSError, shutil.Error) as error:
+            raise InfraFailure(f"cannot prepare working files: {error}") from error
+        try:
+            replace_files(staged, destination, excluded, finish)
+        except (OSError, shutil.Error) as error:
+            raise InfraFailure(f"cannot replace working files: {error}") from error
+
+
+def return_turn(worktree, clone, root, old, target, merge_state):
+    # Never run Git against the untrusted clone: upload-pack also reads config.
+    # Build a bare transport containing only validated objects and its HEAD.
+    transport = root / "return.git"
+    git(worktree, "-c", "init.templateDir=", "init", "--bare", str(transport))
+    sha = head(clone / ".git")
+    import_objects(clone / ".git/objects", transport / "objects")
+    (transport / "HEAD").write_text(sha + "\n")
+    hooks = root / "empty-hooks"
+    hooks.mkdir()
+    git(
+        worktree,
+        "-c",
+        "protocol.file.allow=always",
+        "-c",
+        f"core.hooksPath={hooks}",
+        "fetch",
+        "--no-tags",
+        str(transport),
+        "HEAD",
+    )
+    try:
+        git(worktree, "merge-base", "--is-ancestor", old, sha)
+    except subprocess.CalledProcessError as error:
+        raise InfraFailure(
+            "container history is not a fast-forward; refusing fetch back"
+        ) from error
+    if target is not None:
+        refuse_environment_history(
+            target, sha, action="import container commits", commit=sha
+        )
+    if git(worktree, "rev-parse", "HEAD") != old:
+        raise InfraFailure(
+            "task branch changed during container turn; refusing fast-forward"
+        )
+    with locked_return(worktree, root, old, sha) as finish:
+        copy_files(clone, worktree, target is not None and protected(target), finish)
+        if sha != old:
+            for path in merge_state:
+                path.unlink(missing_ok=True)
+
+
+@contextlib.contextmanager
+def turn_clone(worktree, target=None):
+    worktree = Path(worktree).resolve()
+    common = Path(
+        git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    )
+    state = state_dir(target.path if target is not None else common.parent)
+    state.mkdir(parents=True, exist_ok=True)
+    old = git(worktree, "rev-parse", "HEAD")
+    env = {"GIT_CONFIG_COUNT": "3"}
+    for i, (key, value) in enumerate(
+        [
+            ("safe.directory", "/workspace"),
+            ("user.name", git(worktree, "config", "--get", "user.name")),
+            ("user.email", git(worktree, "config", "--get", "user.email")),
+        ]
+    ):
+        env[f"GIT_CONFIG_KEY_{i}"] = key
+        env[f"GIT_CONFIG_VALUE_{i}"] = value
+    with tempfile.TemporaryDirectory(prefix="implementer-", dir=state) as directory:
+        root = Path(directory)
+        clone = root / "clone"
+        git(
+            worktree,
+            "-c",
+            "init.templateDir=",
+            "clone",
+            "--no-hardlinks",
+            "--dissociate",
+            "--single-branch",
+            "--no-checkout",
+            str(worktree),
+            str(clone),
+        )
+        git(clone, "remote", "remove", "origin")
+        index = Path(
+            git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index")
+        )
+        if index.exists():
+            shutil.copyfile(index, clone / ".git/index")
+        merge_state = copy_merge_state(worktree, clone)
+        copy_files(worktree, clone, target is not None and protected(target))
+        try:
+            yield clone, env
+        except subprocess.TimeoutExpired:
+            # The runner has stopped: preserve its work for the loop's WIP path.
+            return_turn(worktree, clone, root, old, target, merge_state)
+            raise
+        else:
+            return_turn(worktree, clone, root, old, target, merge_state)
