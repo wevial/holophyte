@@ -2,6 +2,7 @@
 
 import contextlib
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,27 +13,48 @@ from holophyte.isolation_git import copy_merge_state, git, head, import_objects
 from holophyte.target import state_dir
 
 
-def copy_files(source, destination, protect):
-    """Mirror working files without following links or copying Git/environment state."""
-    excluded = {".git", ".env"} if protect else {".git"}
-    for path in destination.iterdir():
-        if path.name not in excluded:
-            if path.is_dir() and not path.is_symlink():
-                shutil.rmtree(path)
-            else:
-                path.unlink()
+def stage_files(source, destination, excluded):
+    """Copy only ordinary files, directories and links; never follow links."""
     for path in source.iterdir():
         if path.name in excluded:
             continue
+        if path.name == ".git":
+            raise InfraFailure("refusing working files containing nested .git")
         dest = destination / path.name
-        if path.is_dir() and not path.is_symlink():
-            shutil.copytree(
-                path, dest, symlinks=True, ignore=shutil.ignore_patterns(".git")
-            )
-        elif path.is_symlink():
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
             dest.symlink_to(path.readlink())
-        else:
+        elif stat.S_ISDIR(mode):
+            dest.mkdir()
+            stage_files(path, dest, set())
+            shutil.copystat(path, dest)
+        elif stat.S_ISREG(mode):
             shutil.copy2(path, dest)
+        else:
+            raise InfraFailure(
+                f"refusing working files containing special file: {path}"
+            )
+
+
+def copy_files(source, destination, protect):
+    """Prepare the complete copy before removing any destination working files."""
+    excluded = {".git", ".env"} if protect else {".git"}
+    with tempfile.TemporaryDirectory(
+        prefix=".copy-", dir=destination.parent
+    ) as directory:
+        staged = Path(directory)
+        try:
+            stage_files(source, staged, excluded)
+        except (OSError, shutil.Error) as error:
+            raise InfraFailure(f"cannot prepare working files: {error}") from error
+        for path in destination.iterdir():
+            if path.name not in excluded:
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+        for path in staged.iterdir():
+            path.rename(destination / path.name)
 
 
 def return_turn(worktree, clone, root, old, target, merge_state):
@@ -70,10 +92,10 @@ def return_turn(worktree, clone, root, old, target, merge_state):
         raise InfraFailure(
             "task branch changed during container turn; refusing fast-forward"
         )
-    git(worktree, "update-ref", "HEAD", sha, old)
-    git(worktree, "reset", "--mixed", sha)
     copy_files(clone, worktree, target is not None and protected(target))
     if sha != old:
+        git(worktree, "update-ref", "HEAD", sha, old)
+        git(worktree, "reset", "--mixed", sha)
         for path in merge_state:
             path.unlink(missing_ok=True)
 

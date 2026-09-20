@@ -262,6 +262,82 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(Path(git(worktree, "rev-parse", "--path-format=absolute",
                                   "--git-path", "MERGE_HEAD")).exists())
 
+    def test_inconclusive_turn_preserves_pending_merge_and_staging(self):
+        from holophyte import isolation
+        from holophyte.isolation_git import git
+
+        main, worktree = self.make_worktree()
+        for directory, content in ((main, "main"), (worktree, "task")):
+            (directory / "conflict").write_text(content)
+            git(directory, "add", "conflict")
+            git(directory, "commit", "-qm", content)
+        with self.assertRaises(subprocess.CalledProcessError):
+            git(worktree, "merge", "main")
+        (worktree / "staged").write_text("staged content")
+        git(worktree, "add", "staged")
+        parents = [git(worktree, "rev-parse", "HEAD"), git(main, "rev-parse", "HEAD")]
+        before = git(worktree, "ls-files", "--stage")
+        with (
+            patch.object(isolation, "image_ready"),
+            patch.object(isolation.review_runner, "_remove_container"),
+            patch.object(isolation, "run_capped") as run,
+        ):
+            for code in (0, 1):
+                with self.subTest(code=code):
+                    run.return_value = (code, "inconclusive")
+                    isolation.launch(
+                        isolation.Route("container"), worktree, {}, ["agent"]
+                    )
+                    self.assertEqual(git(worktree, "ls-files", "--stage"), before)
+                    self.assertEqual(
+                        git(worktree, "rev-parse", "MERGE_HEAD"), parents[1]
+                    )
+        (worktree / "conflict").write_text("resolved")
+        git(worktree, "add", "conflict")
+        git(worktree, "commit", "-qm", "resolved afterwards")
+        self.assertEqual(git(worktree, "log", "-1", "--format=%P").split(), parents)
+
+    def test_copy_back_refuses_unsafe_entries_without_losing_work(self):
+        import socket
+
+        from holophyte import isolation
+        from holophyte.gates import InfraFailure
+        from holophyte.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        (worktree / "keep").write_text("valuable uncommitted work")
+        before = git(worktree, "rev-parse", "HEAD")
+
+        def run(argv, cwd, timeout, *, env):
+            bad = Path(cwd) / "nested" / "bad"
+            bad.parent.mkdir()
+            if kind == "fifo":
+                os.mkfifo(bad)
+            elif kind == "socket":
+                with socket.socket(socket.AF_UNIX) as sock:
+                    sock.bind(str(bad))
+            else:
+                (bad.parent / ".git").write_text("nested metadata")
+            subprocess.run(["git", "commit", "--allow-empty", "-qm", "new"],
+                           cwd=cwd, env=env, check=True, capture_output=True)
+            return 0, "done"
+
+        with (
+            patch.object(isolation, "image_ready"),
+            patch.object(isolation.review_runner, "_remove_container"),
+            patch.object(isolation, "run_capped", side_effect=run),
+        ):
+            for kind in ("fifo", "socket", "nested git"):
+                with self.subTest(kind=kind):
+                    with self.assertRaisesRegex(InfraFailure, "working files"):
+                        isolation.launch(
+                            isolation.Route("container"), worktree, {}, ["agent"]
+                        )
+                    self.assertEqual((worktree / "keep").read_text(),
+                                     "valuable uncommitted work")
+                    self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
+                    self.assertFalse((worktree / "nested").exists())
+
     def test_clone_turn_returns_commit_and_dirty_file_safely(self):
         from holophyte import isolation
         from holophyte.isolation_git import git
