@@ -20,7 +20,9 @@ gate a claimed run is dispatched into stay there. `_timed`, `_is_ancestor`,
 inside their callers, the house back-import pattern (`holophyte/pool.py`,
 `holophyte/pullrequest.py`), so a `holophyte.loop` attribute patch lands.
 """
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import store
@@ -45,7 +47,14 @@ from holophyte.board import (
     release_lease_label,
     store_status,
 )
-from holophyte.config import setup_commands, setup_timeout
+from holophyte.config import setup_commands, setup_timeout, worktree_environment
+from holophyte.environment_git import (
+    environment_temporary_directory,
+    exclude_environment,
+    paths,
+    stage_work,
+    unstage_environment,
+)
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -55,6 +64,8 @@ from holophyte.gates import (
     sh,
 )
 from holophyte.reconcile import PR_CLOSED_QUESTION
+from holophyte.redact import redact_values
+from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase
 
 
@@ -74,18 +85,40 @@ def timeout_report(cmd, expired):
             + (out or "(no output before the timeout)"))
 
 
+def write_worktree_environment(target, wt):
+    """Replace .env atomically, never following an existing symlink or hardlink."""
+    values = worktree_environment(target)
+    if values is None:
+        return
+    exclude_environment(wt)
+    # Git metadata keeps interrupted writes outside subsequent `git add -A`.
+    git_dir = environment_temporary_directory(wt)
+    fd, temporary = tempfile.mkstemp(prefix=".env-", dir=git_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write("".join(f"{name}={value}\n" for name, value in values.items()))
+        os.replace(temporary, Path(wt) / ".env")
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def run_worktree_setup(target, wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
-    Returns `(ok, report)`. Commands use `run_verify()` and the target's
-    `[worktree] setup_timeout_sec` cap, which kills the whole process tree.
-    Failures return a report so the caller can discard a fresh-cut branch;
-    reused worktrees may hold preserved work and are left in place.
-    Hook configuration failures follow the same cleanup path.
-    Commands run in order and stop at the first failure: step two assumes
-    step one worked. A target that names no setup runs nothing and records
+    Returns `(ok, report)` using `run_verify()` and `setup_timeout_sec`.
+    Commands run in order, stopping on failure or a timeout's process-tree kill.
+    Setup and hook failures discard fresh branches but preserve reused worktrees.
+    A target that names no setup runs nothing and records
     no phase, so an absent table leaves the run byte-identical to today's.
     """
+    try:
+        write_worktree_environment(target, wt)
+    except (SystemExit, InfraFailure) as error:
+        return False, redact_values(str(error))
+    except OSError:
+        return False, "[holo2] worktree environment file could not be written"
     commands = setup_commands(target)
     timeout = setup_timeout(target)
     if commands:
@@ -98,7 +131,8 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
             ok, out = False, timeout_report(command, e)
         if not ok:
             return False, (f"[holo2] worktree setup command {n} of "
-                           f"{len(commands)} FAILED: {command}\n{out}")
+                           f"{len(commands)} FAILED: {redact_values(command)}\n"
+                           f"{redact_values(out)}")
         print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
     if (Path(wt) / ".githooks").is_dir():
         try:
@@ -113,11 +147,8 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
 def reuse_leftover(target, wt, branch, conn=None, run_id=None,
                    provider=None, task_id=None, sync_origin=True):
     """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
-
-    The reuse rule, stated once: preserved work survives. An unregistered
-    directory is refused with a reason rather than deleted or crashed into
-    (`git worktree add` onto a non-empty directory dies); uncommitted
-    changes become a WIP commit on the branch; the branch is reset to main
+    Preserved work survives. Refuse unregistered directories; commit
+    uncommitted changes as WIP. Reset the branch to main
     only when the leftover verifiably holds nothing — a clean tree and a
     tip main already contains — and preserved commits keep theirs with a
     moved-on main merged in, since review routes and the merge both require
@@ -125,9 +156,8 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     is left mid-merge for the implementer turn to resolve first
     (`merge_conflicts()` names the paths); a worktree off its branch while
     the branch holds commits is a human's call, refused with the state
-    named. Nothing is ever deleted here.
-
-    Nor is the local copy the branch's truth (KO-410): a pull-request
+    named. Nothing is deleted here.
+    The local copy is not the branch's truth (KO-410): a pull-request
     target shares it with origin and the operator, so under `sync_origin`
     — the claim's reclaim of a failed run's leftover — a target with an
     `origin` runs the babysit resume's fetch-and-compare (KO-379) before
@@ -137,11 +167,9 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     is refused naming both shas. The approved candidate's resume passes
     `sync_origin` False: its worktree is held to the sha the park recorded
     (`_candidate_drift()`), and a fast-forward would move the branch onto
-    commits no review saw and the gate would land them. A target without
-    `origin` skips the step either way.
+    unreviewed commits. Targets without `origin` skip this step.
     """
     from holophyte.loop import _sync_branch_from_origin
-
     sh(["git", "worktree", "prune"], target.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
                        cwd=target.path, capture_output=True, text=True)
@@ -156,7 +184,8 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
         return False, (f"leftover directory {wt} exists but is not a"
                        " registered worktree; a human moves it aside or"
                        " removes it before this ticket is run again")
-    dirty = sh(["git", "status", "--porcelain"], cwd=wt)
+    unstage_environment(target, wt)
+    dirty = sh(["git", "status", "--porcelain", *paths(target)], cwd=wt)
 
     def is_ancestor(a, b):
         return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
@@ -178,7 +207,7 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     # `-B branch main` does.
     sh(["git", "checkout", "-B", branch], cwd=wt)
     if dirty:
-        sh(["git", "add", "-A"], cwd=wt)
+        stage_work(target, wt)
         # The identity is pinned so a target with no committer configured
         # cannot raise here — and a rescue commit is the factory's, not a
         # person's.

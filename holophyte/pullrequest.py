@@ -9,6 +9,7 @@ from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
 from holophyte.gates import MergeParked, RunFailure, sh
 from holophyte.reconcile import _pr_seen
+from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase
 
 

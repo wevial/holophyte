@@ -22,6 +22,7 @@ from holophyte.babysitter import _babysit
 from holophyte.board import block_ticket, ledger, merge_drift
 from holophyte.claim import _resolve_merge_conflict, reuse_leftover
 from holophyte.config_tables import merge_config, sweep_config
+from holophyte.environment_git import refuse_environment_history
 from holophyte.findings import commit_findings
 from holophyte.gates import (
     MergeLockHeld,
@@ -33,6 +34,7 @@ from holophyte.gates import (
 )
 from holophyte.merge_lock import live_merge_lock
 from holophyte.pullrequest import _landed_pr, _open_pr, _resume_on_pr
+from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 
 
@@ -413,17 +415,16 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     """The `merging` phase: the `--no-ff` merge of `branch` into main, its
     one self-resolved conflict, and the post-merge cleanup. Returns the full
     sha of the merge commit main now sits on."""
-    # Commit any pending FINDINGS.md changes BEFORE merging so the merge
-    # never trips over a dirty index. Nothing is written to the file during a
-    # run any more, so this is normally a no-op; what it still catches is a
-    # window an earlier failed run regenerated and left uncommitted.
+    checked = refuse_environment_history(target, branch, action="merge")
+    # Commit a FINDINGS.md window left dirty by an earlier failed run before
+    # merging. Normally a no-op: runs no longer write this file mid-flight.
     commit_findings(target, f"FINDINGS: {task_id} review records")
 
     # `squashing` is skipped, not faked: this merge is --no-ff and rewrites
     # no history, so the run goes merging -> done and the phase §4 puts
     # between them names an activity that never happens here.
     set_phase(conn, run_id, "merging", f"--no-ff merge of {branch} into main")
-    mr = subprocess.run(["git", "merge", "--no-ff", branch, "-m",
+    mr = subprocess.run(["git", "merge", "--no-ff", checked, "-m",
                          f"Merge {branch}: {task}"], cwd=target.path,
                         capture_output=True, text=True)
     if mr.returncode != 0:

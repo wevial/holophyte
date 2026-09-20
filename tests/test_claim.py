@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import sqlite3
 import subprocess
 import sys
@@ -13,10 +14,7 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-# `fake_agent` is a helper, not a test module: discovery never imports it, and
-# how this file is imported decides whether `tests/` is on the path at all.
-# Putting it there explicitly makes `discover -s tests` and `-m unittest
-# tests.<name>` resolve the harness the same way.
+# Both discovery and named-module unittest commands need the harness on sys.path.
 sys.path.insert(0, str(HERE))
 from babysit_fixture import ResolveMerge  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
@@ -38,6 +36,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     StubProvider,
     a_task,
 )
+from worktree_setup_cases import WorktreeSetupCases  # noqa: E402
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.claim  # noqa: E402 - after the sys.path insert above
@@ -92,7 +91,7 @@ class BabysitClaimTests(MergeModeFixture):
         self.assertEqual(observed, [[(None, None, "claimed")]])
 
 
-class WorktreeSetupLoopTests(LoopFixture):
+class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
     """`[worktree] setup` as a whole run walks it: real repo, real worktree.
 
     The unit tests cover the table and the report. What only a run can show is
@@ -100,94 +99,78 @@ class WorktreeSetupLoopTests(LoopFixture):
     first agent turn — and what a failing setup does to the run around it.
     """
 
-    def test_setup_enables_hooks_only_when_directory_exists(self):
-        wt = self.target.parent / "hooks-worktree"
-        self.git("worktree", "add", "--detach", str(wt))
-        for present in (False, True):
-            with self.subTest(present=present):
-                self.configure('[worktree]\nsetup = ["mkdir .githooks"]\n'
-                               if present else '')
-                self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
-                result = subprocess.run(
-                    ["git", "config", "--get", "core.hooksPath"],
-                    cwd=wt, capture_output=True, text=True)
-                self.assertEqual(result.stdout.strip(), ".githooks" if present else "")
-                self.assertEqual(result.returncode, 0 if present else 1)
+    def test_filtered_environment_precedes_setup_and_never_reaches_records(self):
+        source = self.target.parent / "source.env"
+        source.write_text(
+            "# ignored\n\nexport PUBLIC=sentinel-public-value\n"
+            'QUOTED="sentinel quoted value"\n'
+            "AUTH_KEY=sentinel-auth-value\nDB_KEY=sentinel-db-value\n"
+            "OTHER=sentinel-other-value\n")
+        seen = self.target.parent / "seen.env"
+        mode = self.target.parent / "seen.mode"
+        self.configure(
+            f'[worktree]\nenv_source = "{source}"\n'
+            'env_allow = ["PUBLIC", "QUOTED"]\n'
+            f'setup = ["cp .env {seen}; stat -c %a .env > {mode}; '
+            f'echo sentinel-public-value", "cat {source}; exit 3"]\n')
+        provider = StubProvider(a_task())
+        out = self.main_output(provider=provider)
+        self.assertEqual(seen.read_text(),
+                         'PUBLIC=sentinel-public-value\n'
+                         'QUOTED="sentinel quoted value"\n')
+        self.assertEqual(mode.read_text().strip(), "600")
+        conn = store.open(str(self.db))
+        try:
+            store.record_event(conn, 1, "diagnostic", "sentinel-public-value",
+                               level="detail", payload="sentinel quoted value")
+            store.record_ledger(conn, 1, "failure", "sentinel-db-value")
+            store.record_review_round(
+                conn, 1, 1, "pass", "reviewer",
+                verification_results=[{"output": "sentinel-auth-value"}])
+            output = holophyte.gates.VerificationOutput(
+                "sentinel-other-value",
+                [{"source": "baseline", "output": "sentinel-other-value"}])
+            holophyte.gates.record_unreviewed_verification(conn, 1, output)
+            store.resume(conn, 1)
+            store.release(conn, 1, "failed", "sentinel-db-value")
+            ticket_id = conn.execute("SELECT id FROM tickets").fetchone()[0]
+            self.assertTrue(holophyte.board.block_ticket(
+                conn, ticket_id, provider, "verify failed: sentinel-public-value"))
+        finally:
+            conn.close()
+        records = repr(self.read("SELECT * FROM runEvents"))
+        records += repr(self.read("SELECT * FROM ledger"))
+        records += repr(self.read("SELECT outcomeReason FROM runs"))
+        records += repr(self.read("SELECT blockedQuestion FROM tickets"))
+        rounds = self.read("SELECT verificationResults FROM reviewRounds")
+        self.assertEqual(len(json.loads(rounds[0][0])), 2)
+        records += repr(rounds)
+        records += repr(provider.comments) + out
+        for value in ("sentinel-public-value", "sentinel quoted value",
+                      "sentinel-auth-value", "sentinel-db-value",
+                      "sentinel-other-value"):
+            self.assertNotIn(value, records)
+        self.assertIn("[redacted]", records)
 
-    def test_setup_runs_in_the_fresh_worktree_before_the_implementer(self):
-        """The commands run in the task worktree — not the main checkout —
-        while the branch is cut and before any agent turn, and the run merges
-        as it otherwise would."""
-        marker = self.target.parent / "where.txt"
-        self.configure(f'[worktree]\nsetup = ["pwd > {marker}"]\n')
-
-        fake, guard = self.loop(Commit("the scripted work"), APPROVE)
-
-        self.assertEqual(marker.read_text().strip(),
-                         str((self.worktrees / "ko-131-add-a-thing").resolve()))
-        self.assertEqual(guard.spawned, [])
-        self.assertEqual(fake.roles, ["implement", "review"])
-        self.assertIn("the scripted work", self.subjects())
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-
-    def test_a_failed_setup_fails_the_run_before_any_agent_turn(self):
-        """No agent is dispatched — the script is empty, so a turn would raise
-        — main is untouched, and the branch is discarded rather than preserved:
-        nothing was implemented on it."""
-        provider = StubProvider(a_task(1), a_task(2))
-        self.configure('[worktree]\nsetup = ["echo no toolchain here; exit 3"]\n')
-
-        fake, guard = self.loop(provider=provider)
-
-        self.assertEqual(fake.roles, [])
-        self.assertEqual(guard.spawned, [])
-        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
-        self.assertNotIn(BRANCH, self.branches())
-        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
-        # A toolchain outage says nothing about the ticket: no agent ran, so
-        # the failure must not spend one of its escalation strikes.
-        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
-                         [("failed", "infra")])
-        self.assertEqual(len(provider.queue), 1)  # the loop stopped
-        # The ticket carries the reason, with the failing command and what it
-        # printed — a run that ended before anything ran leaves no other trace.
-        (_, body), = provider.comments
-        self.assertIn("worktree setup", body)
-        self.assertIn("no toolchain here", body)
-        self.assertIn("exit 3", body)
-
-    def test_a_failing_setup_leaves_a_reused_worktree_as_found(self):
-        """A setup failure says nothing about the preserved work a reused
-        worktree may hold; only a branch the run cut fresh is discarded."""
-        wt = self.worktrees / "ko-131-add-a-thing"
+    def test_environment_replaces_existing_symlink_without_changing_its_target(self):
+        source = self.target.parent / "source.env"
+        source.write_text("PUBLIC=sentinel-link-value\n")
+        wt = self.target.parent / "reused"
         self.git("worktree", "add", "--detach", str(wt), "main")
-        self.git("checkout", "-b", BRANCH, cwd=wt)
-        (wt / "rescued.txt").write_text("rescued work\n")
-        self.git("add", "-A", cwd=wt)
-        self.git("commit", "-q", "-m", "rescued: preserved work", cwd=wt)
-        self.configure('[worktree]\nsetup = ["exit 3"]\n')
+        (wt / ".env").symlink_to(source)
+        self.configure(f'[worktree]\nenv_source = "{source}"\n'
+                       'env_allow = ["PUBLIC"]\n')
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertFalse((wt / ".env").is_symlink())
+        self.assertEqual((wt / ".env").stat().st_mode & 0o777, 0o600)
+        (wt / ".env").write_text("checkout changes\n")
+        self.assertEqual(source.read_text(), "PUBLIC=sentinel-link-value\n")
 
-        self.loop()
-
-        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
-                         [("failed", "infra")])
-        self.assertTrue((wt / "rescued.txt").exists())
-        self.assertIn("rescued: preserved work", self.subjects(BRANCH))
-        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
-        self.assertIn("left in place", reason)
-
-    def test_the_setup_phase_is_recorded_between_cutting_and_working(self):
-        self.configure('[worktree]\nsetup = ["true"]\n')
-
+    def test_without_environment_keys_setup_writes_no_environment(self):
+        seen = self.target.parent / "env-absent"
+        self.configure(f'[worktree]\nsetup = ["test ! -e .env && touch {seen}"]\n')
         self.loop(Commit("the scripted work"), APPROVE)
-
-        self.assertEqual(self.transitions()[:3],
-                         ["claimed -> working", "working -> working",
-                          "working -> verifying"])
-        (note,) = [summary for (summary,) in
-                   self.read("SELECT summary FROM runEvents ORDER BY seq")
-                   if "worktree setup" in summary]
-        self.assertIn("1 command(s)", note)
+        self.assertTrue(seen.exists())
 
 
 class SkipLineTests(unittest.TestCase):

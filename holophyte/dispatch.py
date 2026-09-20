@@ -28,6 +28,7 @@ from holophyte.board import (
 )
 from holophyte.findings import refresh_findings
 from holophyte.gates import MergeParked, RunFailure, outcome_class_of
+from holophyte.redact import safe_print as print
 from holophyte.supervisor import linear_budget_low, sweep
 from holophyte.sweep_report import SWEEP_HINT, sweep_lines
 

@@ -20,6 +20,8 @@ import store.tickets
 import ticket_template
 from holophyte.agents import cleanup_review_refs
 from holophyte.findings import refresh_findings
+from holophyte.redact import redact_values
+from holophyte.redact import safe_print as print
 from holophyte.report import host_label
 from holophyte.runs import warn_on_run
 
@@ -699,7 +701,7 @@ def block_ticket(conn, ticket_id, provider, question):
     if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
         return False
     conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
-                 (question, ticket_id))
+                 (redact_values(question), ticket_id))
     conn.commit()
     return True
 
@@ -776,6 +778,7 @@ def ledger(conn, run_id, task_id, kind, text, provider):
 def post_ledger_comment(task_id, text, provider):
     """Project an already-recorded narrative to the board without another row."""
     from datetime import datetime, timezone
+    text = redact_values(text)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if provider is None:
         print("[holo2] no board to archive to; record kept in the store")

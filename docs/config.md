@@ -329,6 +329,8 @@ string, and anything else is a startup error naming the key.
 | `setup` | Default: `[]` | List of non-empty shell command strings; set to install the target's dependencies before agent turns. |
 | `setup_timeout_sec` | Default: `300` seconds | Finite positive number; increase for slower dependency installation. |
 | `branch_prefix` | Default: `"task"` | Legal single git branch segment (constraints below); change to follow the target's branch naming convention. |
+| `env_source` | Default: absent | Source dotenv path, with `~` expanded; relative paths resolve beside config.toml. Requires `env_allow`. |
+| `env_allow` | Default: absent | List of names matching `[A-Za-z_][A-Za-z0-9_]*`; requires `env_source`. Missing names refuse startup. Writes exactly these assignments to a mode-0600 `.env` before setup commands. An empty list writes an empty file. |
 | `carry` | Default: `[]` | List of non-empty repository-relative directory paths without `..`; set for ignored dependencies the reviewer needs. |
 
 ```toml
@@ -372,6 +374,17 @@ run there, since the worktree they are written against does not exist yet.
 What setup writes into the worktree is untracked, and the implementer is asked
 to commit its work: keep build artifacts (`.venv/`, caches) in the target's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
+
+`env_source` accepts `NAME=value` lines, blank lines, comments and an optional
+`export ` prefix. Values (including quotes) are kept verbatim; no shell
+expansion runs. Duplicate names use the last assignment. Invalid assignments
+are refused by line number without revealing values. Source values are
+redacted from loop output, events, ledger narratives, run failure reasons and
+review verification results. CRLF line endings are accepted. Setup refuses a
+tracked `.env` and adds `/.env` to Git’s local `info/exclude` if needed. Factory
+recovery staging excludes it independently of ignore rules; a candidate with
+`.env` in its tree or new history cannot be pushed. With neither key, setup
+writes no environment file.
 
 `carry` lists the repository-relative directories, among what setup wrote and
 git ignores, that the review stage receives a copy of: the reviewer judges a

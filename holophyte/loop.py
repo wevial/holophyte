@@ -52,6 +52,7 @@ from holophyte.config_tables import (
     sweep_config,
 )
 from holophyte.dispatch import SWEPT
+from holophyte.environment_git import paths, stage_work, unstage_environment
 from holophyte.gates import (
     GroupKill,
     InfraFailure,
@@ -76,6 +77,7 @@ from holophyte.pullrequest import (
     _park_on_pr,
 )
 from holophyte.redact import known_secrets, redact_prose
+from holophyte.redact import safe_print as print
 from holophyte.review import criteria_brief, criteria_findings, evidence_brief
 from holophyte.runs import (
     RunSwept,
@@ -622,21 +624,21 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         # work instead of starting over. Only a tree with no changes at
         # all reaches the discard.
         # `-uall`: default porcelain collapses an untracked directory into
-        # one `??` line, which would report files as directories in the
-        # event below.
-        dirty = sh(["git", "status", "--porcelain", "-uall"],
+        # one `??` line, reporting files as directories in the event below.
+        # The kill can land inside `git add` itself — KO-391's turn died
+        # mid-staging — and SIGKILL does no cleanup, so the interrupted
+        # operation leaves `index.lock` and the add below would refuse
+        # it with "File exists". The turn's whole process group was
+        # reaped before `TimeoutExpired` reached here, so a lock in this
+        # worktree can only be the dead turn's: remove it before unstaging.
+        lock = Path(wt, sh(["git", "rev-parse", "--git-path",
+                            "index.lock"], cwd=wt))
+        lock.unlink(missing_ok=True)
+        unstage_environment(target, wt)
+        dirty = sh(["git", "status", "--porcelain", "-uall", *paths(target)],
                    cwd=wt).splitlines()
         if dirty:
-            # The kill can land inside `git add` itself — KO-391's turn died
-            # mid-staging — and SIGKILL does no cleanup, so the interrupted
-            # operation leaves `index.lock` and the add below would refuse
-            # it with "File exists". The turn's whole process group was
-            # reaped before `TimeoutExpired` reached here, so a lock in this
-            # worktree can only be the dead turn's: remove it and stage.
-            lock = Path(wt, sh(["git", "rev-parse", "--git-path",
-                                "index.lock"], cwd=wt))
-            lock.unlink(missing_ok=True)
-            sh(["git", "add", "-A"], cwd=wt)
+            stage_work(target, wt)
             # The identity is pinned for the same reason the reuse WIP
             # commit pins it: a rescue commit is the factory's, and a
             # target with no committer configured must not make it raise.

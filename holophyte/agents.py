@@ -35,6 +35,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.gates import InfraFailure, run_capped, sh
+from holophyte.redact import safe_print as print
 
 TRANSPORT_SIGNATURES = (
     "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "getaddrinfo",

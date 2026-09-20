@@ -37,6 +37,8 @@ import socket
 import time
 
 import ticket_template as _ticket_template
+from holophyte.redact import redact_document as _redact_document
+from holophyte.redact import redact_values as _redact_values
 
 from .schema import (  # noqa: F401
     SCHEMA_VERSION,
@@ -414,13 +416,16 @@ EVENT_LEVELS = ("narrative", "detail")
 def _append_event(conn, run_id, level, kind, summary, at, payload=None):
     """Append one row to run `run_id`'s event stream; return its `seq`.
 
-    No transaction of its own, deliberately: an event describes a thing that
-    happened, so it belongs to the transaction of the write it describes —
-    `set_phase()` lands the phase, the heartbeat and this row together or not
-    at all. `seq` is `MAX(seq) + 1` read inside that transaction, so the
-    `UNIQUE (runId, seq)` index stands behind the per-run monotonicity rather
-    than a caller's counter.
+    Shares the caller's transaction; UNIQUE (runId, seq) enforces monotonicity.
     """
+    summary = _redact_values(summary)
+    if payload is not None:
+        try:
+            document = json.loads(payload)
+        except (json.JSONDecodeError, TypeError):
+            payload = _redact_values(payload)
+        else:
+            payload = json.dumps(_redact_document(document))
     (seq,) = conn.execute(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents WHERE runId = ?",
         (run_id,),
@@ -606,6 +611,8 @@ def record_ledger(conn, run_id, kind, text, source="loop", now=None):
     intervention's row and its ledger entry land together -- and otherwise
     is one of its own.
     """
+    if isinstance(text, str):
+        text = _redact_values(text)
     if kind not in LEDGER_KINDS:
         raise ValueError(f"unknown ledger kind {kind!r}")
     if source not in LEDGER_SOURCES:
@@ -887,7 +894,8 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
     findings_json = _json_document("findings", findings)
     results_json = _json_document(
         "verification results",
-        _document_argument("verification results", verification_results))
+        _redact_document(_document_argument(
+            "verification results", verification_results)))
     if started_at is None:
         started_at = int(time.time() * 1000)
     with _transaction(conn):

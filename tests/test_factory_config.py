@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -47,6 +48,28 @@ from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
 class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
+    def test_worktree_environment_refusals(self):
+        self.locate("")
+        source = self.tgt.config_path.parent / "source.env"
+        source.write_text("PUBLIC=sentinel-config-value\n")
+        cases = [
+            (f'env_source = "{source}"', "env_allow"),
+            ('env_allow = ["PUBLIC"]', "env_source"),
+            (f'env_source = "{source}"\nenv_allow = ["MISSING"]', "MISSING"),
+            (f'env_source = "{source}"\nenv_allow = ["bad-name"]', "env_allow"),
+        ]
+        for config, message in cases:
+            with self.subTest(config=config):
+                target = type("Candidate", (), {
+                    "config_path": self.tgt.config_path,
+                    "path": self.tgt.path,
+                    "config": lambda self: {"worktree": tomllib.loads(config)},
+                })()
+                with self.assertRaises(SystemExit) as caught:
+                    holophyte.config.check_document(target)
+                self.assertIn(message, str(caught.exception))
+                self.assertNotIn("sentinel-config-value", str(caught.exception))
+
     def test_merge_mention_handle(self):
         self.locate("")
         self.assertEqual(holophyte.config.merge_config(self.tgt).mention_handle,
@@ -648,6 +671,11 @@ class WorktreeSetupTests(ConfigTestCase):
     worktree, in order, through the same verify-gate machinery a ticket's
     verify command runs through, before any agent turn is dispatched.
     """
+
+    def test_crlf_environment_preserves_values_without_carriage_returns(self):
+        self.assertEqual(holophyte.config.parse_environment(
+            'PUBLIC=sentinel-crlf\r\nQUOTED="quoted value"\r\n'),
+            {"PUBLIC": "sentinel-crlf", "QUOTED": '"quoted value"'})
 
     def worktree(self):
         """A throwaway directory standing in for a freshly cut task worktree."""

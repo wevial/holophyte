@@ -29,6 +29,7 @@ import review_runner
 import store
 import store.read
 from holophyte.agents import agent_route
+from holophyte.redact import safe_print as print
 from holophyte.review import (
     criteria_findings,
     parse_findings,
