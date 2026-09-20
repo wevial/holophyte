@@ -338,7 +338,8 @@ def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
     """Record the checked tree beside its mechanical result, including red main."""
     started = int(time() * 1000)
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(command, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = run_verify(command, wt, contracts, conn=conn, run_id=run_id,
+                             target=target)
         ok, out = with_baseline(target, wt, command, ok, out,
                                conn, run_id)
     out.results = [dict(row, output=f"Tree {sha}\n{row['output']}")
@@ -553,7 +554,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id,
+                             target=target)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
     if merge_config(target).approve != "auto":
@@ -926,7 +928,8 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                          f" {branch} preserved at {fixed[:12]}")
     fixed = maintainer_notes.cite_commits(wt, sha, fixed, addressed, sh)
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id,
+                             target=target)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
     if not ok or not review_follows:

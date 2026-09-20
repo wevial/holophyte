@@ -558,6 +558,26 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertEqual(body["events"][-1]["kind"], "implementer_output")
         self.assertNotIn("ran ruff", [e["summary"] for e in body["events"]])
 
+    def test_note_consumption_timestamp_is_exposed_without_detail_payloads(self):
+        self.seed_reviewed()
+        consumed_at = self.now - 26 * MIN
+        summary = "operator_note event 4047 drove round 1"
+        with store.open(str(self.db)) as conn:
+            store.record_event(
+                conn, self.run, "operator_note_consumed", summary,
+                level="detail", payload=json.dumps({"event_id": 4047, "round": 1}),
+                now=consumed_at)
+        self.start()
+        code, _, body = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200)
+        consumed = [e for e in body["events"]
+                    if e["kind"] == "operator_note_consumed"]
+        self.assertEqual(consumed, [{"at": consumed_at,
+                                    "kind": "operator_note_consumed",
+                                    "summary": summary}])
+        self.assertLess(consumed_at, body["rounds"][0]["started_ms"])
+        self.assertNotIn("ran ruff", [e["summary"] for e in body["events"]])
+
     def test_the_run_is_the_row_joined_to_its_ticket(self):
         self.seed_reviewed()
         self.start()

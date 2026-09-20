@@ -112,7 +112,9 @@ DOCKER_PROBE_TIMEOUT = 5
 KNOWN_KEYS = {
     "verify": frozenset({"always", "before_merge", "timeout_sec"}),
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
-              | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale"}),
+              | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
+                  "implementer_isolation", "implementer_image",
+                  "implementer_credential"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry", "env_source", "env_allow"}),
 }
@@ -150,20 +152,19 @@ def check_config_keys(target):
 
 
 def check_config(target):
-    """The config checks every mode runs at startup, with the command line
-    parsed and nothing claimed: unknown keys and every table whose values
-    are held to a constraint without touching the host -- `[supervisor]`,
-    `[loop]`, `[report]`, `[merge]`, `[console]`, `[serve]`, and the one
-    `[agents]` value that is a number and not a route, `budget_scale`.
-    `cli()` calls
-    this once it has a target; the daemon's `PUT /config` (KO-356) calls it
-    over a candidate document, so what the console can write is exactly
-    what startup would accept. Each check exits naming the file, the table
-    and the key, so a refusal is one sentence about the value to fix."""
-    merge_config(target)
+    """Validate config before claiming work, without touching the host.
+    CLI startup and daemon writes share these checks; refusals name the setting.
+    """
+    merge = merge_config(target)
     verify_config(target)
     check_config_keys(target)
     budget_scale(target)
+    from holophyte.isolation import route_for
+    route = route_for(target)
+    if merge.ui_capture and route.backend == "container" and not route.writable:
+        raise SystemExit(
+            "[merge] ui_capture requires [agents] implementer_isolation "
+            "writable = true for its worktree output directory")
     check_agent_fallbacks(target)
     sweep_config(target)
     loop_config(target)
@@ -317,20 +318,19 @@ def budget_scale(target):
 
 
 def check_agent_commands(target):
-    """Resolve configured commands and check default harness prerequisites.
+    """Validate route grammar; check executables on the host only for host seats.
 
-    Fallbacks are validated with their primaries. A missing primary executable
-    is left to the startup probe when a fallback exists, so the explicit
-    alternative can be tried before any ticket is claimed. Relative paths
-    containing a directory are always refused: a turn runs in a worktree.
-
-    Without a fallback, the default implementer must be on PATH and the
-    default review container needs a working Docker daemon and built image.
-    PR merge mode also checks its remote and authentication prerequisites."""
+    Container implementers are live-probed before claiming. Host routes without
+    fallbacks need installed executables; default reviewers need Docker and an
+    image. PR merge mode also checks its remote and authentication prerequisites."""
+    from holophyte.isolation import route_for
+    isolated = route_for(target).backend == "container"
     review_route(target)
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
         argv = agent_command(target, role, "")
+        if role == "implement" and isolated:
+            continue
         if argv is None:
             if agent_command(target, role, "", fallback=True) is not None:
                 # The live startup probe settles the default route and can

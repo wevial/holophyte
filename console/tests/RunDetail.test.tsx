@@ -321,11 +321,11 @@ test("a live run's status line names the running fix phase and its duration tick
   await settle();
   const status = () => document.querySelector("[data-timeline-status]")!;
   // The open fix began at T+12m: eight minutes in at the poll.
-  expect(status().textContent).toBe("fix 1 · 8m 00s");
+  expect(status().textContent).toBe("fix · 8m 00s");
   expect(document.querySelectorAll("[data-segment-label]").length).toBe(0);
   // Two seconds on the console's clock grows the figure by two seconds.
   view.rerender(page(2_000));
-  expect(status().textContent).toBe("fix 1 · 8m 02s");
+  expect(status().textContent).toBe("fix · 8m 02s");
 });
 
 test("a run done at 82m 14s reads done with the run's total span", async () => {
@@ -411,12 +411,12 @@ test("a segment floats its long name and duration on hover and on focus, hides o
   const tooltip = () => document.querySelector("[data-segment-tooltip]");
   expect(tooltip()).toBeNull();
   fireEvent.mouseOver(items[0]!);
-  expect(tooltip()!.textContent).toBe("Implementation · 20m 00s");
+  expect(tooltip()!.textContent).toBe("Implementation · 20m 00s · claimed -> working: KO-232");
   expect((tooltip() as HTMLElement).style.left).toBe("25%");
   fireEvent.mouseOut(items[0]!);
   expect(tooltip()).toBeNull();
   fireEvent.focusIn(items[1]!);
-  expect(tooltip()!.textContent).toBe("Review 1 · 2m 00s");
+  expect(tooltip()!.textContent).toBe("Review · 2m 00s · working -> reviewing: round 1 review");
   fireEvent.focusOut(items[1]!);
   expect(tooltip()).toBeNull();
 });
@@ -570,4 +570,64 @@ test("instructions show each request once with its state and thread link", async
   expect(screen.getByRole("link", { name: "app.py:30" }).getAttribute("href")).toBe("https://example.com/thread/1");
   expect(screen.getByText("@maintainer")).toBeTruthy();
   expect(screen.queryByText(/MENTIONED|VERDICT/)).toBeNull();
+});
+
+test("send-back notes are markdown cards with metadata outside the body", async () => {
+  const body = structuredClone(DETAIL);
+  body.rounds[1]!.operator_notes = [{ kind: "operator_note", event_id: 4047, author: "maintainer",
+    note: "1. Fix validation\n2. Preserve the path\n3. Verify the result\n\nKeep this change focused." }];
+  body.events = [{ at: T + 15 * MINUTE, kind: "operator_note_consumed", summary: "operator_note event 4047 drove round 2" }];
+  await mount(body, T + 20 * MINUTE);
+  const cards = document.querySelectorAll("[data-operator-note]");
+  expect(cards).toHaveLength(1);
+  const card = cards[0]!;
+  expect(card.querySelector("header")!.textContent).toContain("maintainer");
+  expect(card.querySelector("header")!.textContent).toContain(formatClock(T + 15 * MINUTE));
+  expect(card.querySelector("header")!.textContent).toContain("Round 2");
+  expect(card.querySelector("header")!.textContent).toContain("4047");
+  const content = card.querySelector("[data-note-body]")!;
+  expect(Array.from(content.querySelectorAll("ol li"), li => li.textContent)).toEqual([
+    "Fix validation", "Preserve the path", "Verify the result",
+  ]);
+  expect(content.querySelector("p")!.textContent).toBe("Keep this change focused.");
+  expect(content.textContent).not.toContain("operator_note event");
+});
+
+test("a plain send-back sentence stays unchanged", async () => {
+  const body = structuredClone(DETAIL);
+  body.rounds[0]!.operator_notes = [{ kind: "operator_note", event_id: 4048, author: "maintainer", note: "Please preserve validation." }];
+  await mount(body, T + 20 * MINUTE);
+  expect(document.querySelector("[data-note-body] p")?.textContent).toBe("Please preserve validation.");
+});
+
+test("recorded rounds determine the header, current chip and findings labels", async () => {
+  const body = structuredClone(DETAIL);
+  body.run.max_rounds = 4;
+  body.rounds = [
+    { ...DETAIL.rounds[0]!, round: 6 },
+    { ...DETAIL.rounds[1]!, round: 9, ended_ms: T + 18 * MINUTE },
+    { ...DETAIL.rounds[1]!, round: 12, started_ms: T + 19 * MINUTE },
+  ];
+  // An incomplete event stream and ticket-wide round IDs must not change the count.
+  body.events = [{ at: T + 19 * MINUTE, kind: "phase_change", summary: "verifying -> reviewing: round 12 review" }];
+  for (const events of [body.events, []]) {
+    await mount({ ...body, events }, T + 20 * MINUTE);
+    expect(screen.getByText("Round 3 of 4 · reviewing")).toBeTruthy();
+    expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("Review · Round 3 · 1m 00s");
+    expect(document.querySelector("[data-round-fold] button")!.textContent).toContain("Round 3 · 4 findings");
+    expect(document.querySelector("[data-round-fold] button")!.textContent).not.toContain("of 4");
+    cleanup();
+  }
+  await mount({ ...body, run: { ...body.run, ended_ms: T + 20 * MINUTE, phase: "done" } }, T + 20 * MINUTE);
+  expect(document.querySelector("[data-round-fold] button")!.textContent).toContain("Round 3 · 4 findings");
+  expect(document.querySelector("[data-round-fold] button")!.textContent).not.toContain("of 4");
+});
+
+
+test("before any recorded review the header keeps its preview and no chip or fold names a round", async () => {
+  await mount({ ...DETAIL, run: { ...DETAIL.run, phase: "working", max_rounds: 4 }, rounds: [], events: [] }, T + MINUTE);
+  expect(screen.getByText("Round 1 of 4 · implementing")).toBeTruthy();
+  expect(screen.getByText("No review round yet")).toBeTruthy();
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("implementing · 1m 00s");
+  expect(document.querySelector("[data-round-fold]")).toBeNull();
 });

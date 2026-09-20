@@ -1,13 +1,14 @@
-import { phaseLabel } from "./runs";
+import { phaseLabel, roundLabel } from "./runs";
 import type { RunEvent } from "./types";
 
-/** What a timeline segment is coloured as: implement and fix teal, review
- *  purple, verify and merge green. */
-export type SegmentKind = "implement" | "review" | "fix" | "verify" | "merge";
+/** The kind of work or waiting represented by a segment. */
+export type SegmentKind = "implement" | "review" | "fix" | "verify" | "merge" | "wait" | "parked";
 
 export interface Segment {
   kind: SegmentKind;
   label: string;
+  /** The boundary event’s explanation, when available. */
+  reason?: string;
   from: number;
   to: number;
   /** The review or fix round the segment belongs to, when the timeline
@@ -29,7 +30,7 @@ export interface TimelineRun {
   time_box_ms: number;
   phase: string;
   pr_url?: string | null;
-  rounds: { started_ms: number; ended_ms: number | null }[];
+  rounds: { round?: number; started_ms: number; ended_ms: number | null }[];
   events?: RunEvent[];
 }
 
@@ -39,22 +40,26 @@ const LABELS: Record<SegmentKind, string> = {
   fix: "fix",
   verify: "verify",
   merge: "merge",
+  wait: "wait",
+  parked: "parked",
 };
 
 /** A segment kind's long name for the tooltip. */
 const NAMES: Record<SegmentKind, string> = {
   implement: "Implementation",
   review: "Review",
-  fix: "Fix",
+  fix: "Rework",
   verify: "Verify",
   merge: "Merge",
+  wait: "Wait",
+  parked: "Parked",
 };
 
 /** The tooltip's name for a segment: the kind's long name, plus the round
- *  a numbered review or fix belongs to ("Review 2", "Fix 1"). */
+ *  a numbered review or fix belongs to ("Review · Round 2"). */
 export function segmentName(segment: Segment): string {
-  if (segment.label === "monitoring PR" || segment.label === "verifying") return segment.label;
-  return segment.round == null ? NAMES[segment.kind] : `${NAMES[segment.kind]} ${segment.round}`;
+  if (segment.label === "verifying") return segment.label;
+  return segment.round == null ? NAMES[segment.kind] : `${NAMES[segment.kind]} · ${roundLabel(segment.round)}`;
 }
 
 /** Store phase → segment kind. Phases missing here (`claimed`, `done`,
@@ -66,6 +71,8 @@ const PHASE_KINDS: Record<string, SegmentKind> = {
   reviewing: "review",
   addressing: "fix",
   merging: "merge",
+  awaiting_merge_approval: "parked",
+  blocked_on_operator: "parked",
 };
 
 /** `FROM -> TO: detail` → `TO`; null when the summary is not that shape. */
@@ -92,21 +99,21 @@ function size(out: Segment[], run: TimelineRun, end: number): Segment[] {
 /**
  * Segments from the run's `phase_change` events in order: each row's `at`
  * closes the previous segment and opens one for the phase after the
- * arrow. Review and fix segments carry the round the summary names. The
+ * arrow. Review and fix segments carry recorded round ordinals. The
  * last segment of a live run ends at `now` and pulses.
  */
 function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment[] {
   const end = run.ended_ms ?? now;
   const live = run.ended_ms == null;
   const out: Segment[] = [];
-  let open: { kind: SegmentKind; label: string; from: number; round?: number } | null = null;
-  let reviews = 0;
+  let open: { kind: SegmentKind; label: string; from: number; round?: number; reason?: string } | null = null;
+  const rounds = [...run.rounds].sort((a, b) => a.started_ms - b.started_ms);
   /** A segment that picks up where an identical one ended merges into it
    *  (a `working -> working` setup event is one implement phase, not
    *  two): the `to` extends and `running` follows the newer segment. */
   const push = (segment: Segment) => {
     const last = out[out.length - 1];
-    if (last && last.to === segment.from && last.kind === segment.kind && last.label === segment.label) {
+    if (last && last.to === segment.from && last.kind === segment.kind && last.label === segment.label && last.round === segment.round) {
       last.to = segment.to;
       last.running = segment.running;
     } else out.push(segment);
@@ -123,19 +130,29 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
       if (phase !== "merge_gate") continue;
     } else phase = phaseAfterArrow(change.summary);
     close(change.at);
-    const kind = phase == null ? undefined : PHASE_KINDS[phase];
+    if (phase === "merge_gate" && change.summary.includes(": babysitting")) prOpen = true;
+    const monitoring = phase === "merge_gate" && prOpen && !change.summary.includes("pre-merge verify");
+    const kind = monitoring ? "wait" : phase == null ? undefined : PHASE_KINDS[phase];
     if (!kind) continue;
-    let label = phase === "merge_gate" ? phaseLabel(phase, prOpen ? run.pr_url : null) : LABELS[kind];
+    const label = phase === "merge_gate" ? phaseLabel(phase, monitoring ? "open" : null) : LABELS[kind];
     let round: number | undefined;
-    if (kind === "review") reviews = roundNumber(change.summary) ?? reviews + 1;
     if (kind === "review" || kind === "fix") {
-      round = roundNumber(change.summary) ?? reviews;
-      label = `${label} ${round}`;
+      const named = roundNumber(change.summary);
+      const recorded = named == null ? -1 : rounds.findIndex((entry) => entry.round === named);
+      // A named review may start before its row is recorded. Only unnamed
+      // events can fall back to the rounds present at that time.
+      const ordinal = named == null ? rounds.filter((entry) => entry.started_ms <= change.at).length : recorded + 1;
+      round = ordinal || undefined;
     }
-    open = { kind, label, from: change.at, round };
+    open = { kind, label, from: change.at, round, reason: change.summary };
   }
   if (open) {
-    if (live && phase === "merge_gate") open.label = phaseLabel(phase, run.pr_url);
+    // Older event streams can lack the PR-open boundary. Only infer the
+    // live tail from the current URL; never recolour an explicit verify.
+    if (live && phase === "merge_gate" && run.pr_url && !open.reason?.includes("pre-merge verify")) {
+      open.kind = "wait";
+      open.label = phaseLabel(phase, run.pr_url);
+    }
     const last: Segment = { ...open, to: Math.max(open.from, end), running: live, width: 0 };
     if (live || last.to > last.from) push(last);
   }
@@ -146,6 +163,10 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
 /** The running segment's kind: an open round is under review; otherwise
  *  the phase decides between verify, the first implement and a fix. */
 function runningKind(run: TimelineRun, openRound: boolean): SegmentKind {
+  if (PHASE_KINDS[run.phase] === "parked") return "parked";
+  // Without phase events, a PR URL cannot distinguish monitoring from
+  // resumed pre-merge verification. Preserve verification in the fallback.
+  if (run.phase === "merge_gate") return "verify";
   if (openRound) return "review";
   if (phaseLabel(run.phase) === "verifying") return "verify";
   return run.rounds.length === 0 ? "implement" : "fix";
@@ -180,7 +201,7 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
   });
 
   const kind = runningKind(run, openRound);
-  const label = running ? phaseLabel(run.phase, run.pr_url) : LABELS[kind];
+  const label = running ? phaseLabel(run.phase) : LABELS[kind];
   const round = kind === "review" ? openIndex + 1 : kind === "fix" && rounds.length > 0 ? rounds.length : undefined;
   out.push({ kind, label, from: cursor, to: Math.max(cursor, end), round, running, width: 0 });
   return size(out, run, Math.max(end, cursor));

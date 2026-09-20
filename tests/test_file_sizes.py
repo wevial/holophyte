@@ -31,12 +31,12 @@ OVER = {}
 # Pins are exact counts except the three KO-487 splits, which have headroom.
 # Those caps start 100 lines above their post-split lengths.
 PINNED = {
-    "holophyte/babysitter.py": 977, "holophyte/board.py": 901,
+    "holophyte/babysitter.py": 980, "holophyte/board.py": 901,
     "holophyte/claim.py": 845, "holophyte/cli.py": 479,
     "holophyte/config.py": 813, "holophyte/dispatch.py": 263,
     "holophyte/config_tables.py": 596, "holophyte/findings.py": 331,
-    "holophyte/gates.py": 795, "holophyte/loop.py": 909,
-    "holophyte/merge_gate.py": 496,
+    "holophyte/gates.py": 806, "holophyte/loop.py": 911,
+    "holophyte/merge_gate.py": 497,
     "holophyte/operator.py": 479, "holophyte/pool.py": 372,
     "holophyte/pr.py": 677, "holophyte/pr_status.py": 441,
     "holophyte/pullrequest.py": 386,
@@ -44,7 +44,7 @@ PINNED = {
     "holophyte/report.py": 196, "provider.py": 302,
     "holophyte/serve.py": 904,
     "holophyte/serve_actions.py": 191, "holophyte/serve_config.py": 336,
-    "holophyte/serve_runs.py": 587, "holophyte/supervisor.py": 901,
+    "holophyte/serve_runs.py": 589, "holophyte/supervisor.py": 901,
     "holophyte/supervisor_lock.py": 227,
     "holophyte/sweep_report.py": 235, "store/__init__.py": 984,
     "store/operate.py": 915, "store/read.py": 956,
@@ -63,7 +63,7 @@ PINNED = {
     "tests/test_pullrequest.py": 1232, "tests/test_reconcile.py": 414,
     "tests/test_serve.py": 1160,
     "tests/test_serve_actions.py": 317, "tests/test_serve_config.py": 709,
-    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 749,
+    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 769,
     "tests/test_serve_shipped.py": 181,
     "tests/sweep_fixture.py": 196, "tests/test_startup_checks.py": 648,
     "tests/test_store.py": 282,

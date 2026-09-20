@@ -29,17 +29,19 @@ test("the timeline preserves pre-PR verification and labels the PR wait", () => 
     { label: "verifying", from: 0, to: 20 },
     { label: "monitoring PR", from: 20, to: 60 },
   ]);
-  expect(buildTimeline({ ...run, events: [] }, 60).at(-1)?.label).toBe("monitoring PR");
+  expect(buildTimeline({ ...run, events: [] }, 60).at(-1)?.label).toBe("verifying");
   const adopted = { ...run, events: run.events!.map((event) => event.kind === "pull_request"
     ? { ...event, summary: `adopted the branch's open pull request: ${PR_URL}` } : event) };
-  expect(buildTimeline(adopted, 60)).toEqual(buildTimeline(run, 60));
+  expect(buildTimeline(adopted, 60).map(({ reason, ...segment }) => segment))
+    .toEqual(buildTimeline(run, 60).map(({ reason, ...segment }) => segment));
+  expect(buildTimeline(adopted, 60)[1]!.reason).toBe(`adopted the branch's open pull request: ${PR_URL}`);
   const missingOpen = { ...run, events: [
     run.events![0]!,
     { at: 10, kind: "phase_change", summary: "merge_gate -> reviewing: round 2 review" },
     { at: 30, kind: "phase_change", summary: "reviewing -> merge_gate: approved" },
   ] };
   expect(buildTimeline(missingOpen, 60).map((segment) => segment.label)).toEqual([
-    "verifying", "review 2", "monitoring PR",
+    "verifying", "review", "monitoring PR",
   ]);
 });
 

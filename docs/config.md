@@ -62,6 +62,9 @@ each table below.
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string; change to supply a separate adjudication route. |
 | `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
+| `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
+| `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and target toolchain. Startup refuses a missing image and prints its build command. |
+| `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
 | `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
 | `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup reviewer. |
@@ -87,6 +90,19 @@ review_effort = "medium"
 # 1.0 to 3.0 otherwise. Set it for a slower harness, not for a bigger task.
 budget_scale = 1.5
 ```
+
+Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,
+bridge networking, the factory user's non-root UID/GID, a temporary home and
+`/workspace` mounted read-write. Only `[worktree] env_allow` values and the
+declared credential enter the agent environment, alongside fixed runtime and Git
+identity settings. With no worktree environment configured, no host environment
+variables are inherited. Git author identity comes from the target's configured
+`user.name` and `user.email`; host Git configuration and hooks are not mounted.
+A self-contained Git directory permits commits in linked worktrees; objects,
+HEAD and index return to the host after the container has been removed. Verify
+and capture commands still run on the host. The image must supply the CLI;
+host executables are not mounted. The reviewer image alone may need extending
+for the configured implementer. `none` preserves existing host behavior.
 
 `budget_scale` exists because the budget stops runaway turns, not because
 it selects a harness: an implementer that reads more and edits later can
