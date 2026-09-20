@@ -90,3 +90,33 @@ test("a live run whose last segment closed is parked, not done: the status names
   render(<RoundTimeline segments={parked} run={run} now={T + 37 * MINUTE} />);
   expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("awaiting_merge_approval · 5m 00s");
 });
+
+test("all kinds have distinct fills, share-sized labels, reason titles and ordered elapsed totals", () => {
+  const kinds = ["implement", "wait", "verify", "review", "fix", "parked", "merge", "verify"] as const;
+  const lengths = [10, 20, 3, 5, 10, 10, 1, 3];
+  let elapsed = 0;
+  const segments: Segment[] = kinds.map((kind, i) => {
+    const from = T + elapsed * MINUTE;
+    elapsed += lengths[i]!;
+    return { kind, label: kind === "fix" ? "fix 1" : kind, from, to: T + elapsed * MINUTE,
+      width: lengths[i]! / 62, running: false, reason: `reason for ${kind}` };
+  });
+  render(<RoundTimeline segments={segments} run={{ ...LIVE, ended_ms: T + 62 * MINUTE }} now={T + 62 * MINUTE} />);
+  const fills = segments.map((s, i) => {
+    const fill = segment(i).querySelector("span")!;
+    expect(fill.title).toContain(s.kind === "implement" ? "Implementation" : s.kind === "fix" ? "Rework" : s.kind[0]!.toUpperCase() + s.kind.slice(1));
+    expect(fill.title).toContain(`${lengths[i]}m 00s`);
+    expect(fill.title).toContain(s.reason!);
+    return fill.className.match(/bg-\S+/)![0];
+  });
+  expect(new Set(fills).size).toBe(7);
+  expect(fills[1]).toBe("bg-faint");
+  expect(fills[5]).toBe("bg-warn");
+  expect(segment(1).textContent).toBe("wait · 20m 00s");
+  expect(segment(4).textContent).toBe("rework 1 · 10m 00s");
+  expect(segment(6).textContent).toBe("");
+  const totals = document.querySelector("[data-timeline-totals]")!;
+  expect(totals.textContent).toBe("implement · 10m 00s · wait · 20m 00s · verify · 6m 00s · review · 5m 00s · rework · 10m 00s · parked · 10m 00s · merge · 1m 00s");
+  const minutes = [...totals.textContent!.matchAll(/(\d+)m/g)].reduce((sum, match) => sum + Number(match[1]), 0);
+  expect(minutes).toBe(62);
+});

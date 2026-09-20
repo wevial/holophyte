@@ -6,9 +6,11 @@ import { segmentName, type Segment, type SegmentKind, type TimelineRun } from ".
 const FILLS: Record<SegmentKind, string> = {
   implement: "bg-accent",
   review: "bg-review",
-  fix: "bg-accent",
+  fix: "bg-[color-mix(in_oklab,var(--accent),var(--rail-fg)_45%)]",
   verify: "bg-ok",
-  merge: "bg-ok",
+  merge: "bg-ok-text",
+  wait: "bg-faint",
+  parked: "bg-warn",
 };
 
 /** Gap between bar items, in px; each item gives up its share of the
@@ -18,16 +20,14 @@ export const GAP_PX = 3;
 const width = (share: number, gapsPx: number) =>
   `calc(${Math.max(0, share * 100)}% - ${Math.max(0, share) * gapsPx}px)`;
 
-/** The run's phases as a 22px bar, each segment as wide as its share of
- *  the time box; the box's unspent remainder is the empty track and the
- *  running segment pulses. No per-segment labels: one status line under
- *  the bar names the current phase and its live duration on a running
- *  run, or reads "done" with the run's whole span on a finished one —
- *  the live figure ticks because the caller rebuilds the segments each
- *  second. A live run parked between segments (on the operator or on
- *  merge approval) names its phase and how long it has waited. Hovering
- *  or focusing a segment floats one tooltip above the bar at the
- *  segment's centre, naming the phase and its duration. */
+const shortLabel = (segment: Segment) =>
+  segment.kind === "fix" ? segment.label.replace(/^fix/, "rework") : segment.label;
+
+const description = (segment: Segment) =>
+  `${segmentName(segment)} · ${formatTotal(segment.to - segment.from)}${segment.reason ? ` · ${segment.reason}` : ""}`;
+
+/** Proportional segments with share-based labels, reason tooltips and totals.
+ * The remainder is unused time in the box; a running segment pulses. */
 export function RoundTimeline({
   segments,
   run,
@@ -53,6 +53,10 @@ export function RoundTimeline({
     starts.push(cursor);
     cursor += segment.width;
   }
+  const totals = new Map<SegmentKind, number>();
+  for (const segment of segments) {
+    totals.set(segment.kind, (totals.get(segment.kind) ?? 0) + segment.to - segment.from);
+  }
   const last = segments[segments.length - 1];
   const status =
     run.ended_ms != null
@@ -60,7 +64,7 @@ export function RoundTimeline({
       : last == null
         ? undefined
         : last.running
-          ? { label: last.label, ms: last.to - last.from }
+          ? { label: last.kind === "parked" ? phaseLabel(run.phase, run.pr_url) : last.label, ms: last.to - last.from }
           : { label: phaseLabel(run.phase, run.pr_url), ms: now - last.to };
   const hovered = active == null ? undefined : segments[active];
   return (
@@ -83,8 +87,11 @@ export function RoundTimeline({
           >
             <span
               aria-hidden="true"
-              className={`block h-[22px] rounded-[6px] ${FILLS[segment.kind]} ${segment.running ? "segment-running" : ""}`}
-            />
+              title={description(segment)}
+              className={`block overflow-hidden whitespace-nowrap h-[22px] rounded-[6px] text-center font-mono text-[10px] leading-[22px] text-badge-text ${FILLS[segment.kind]} ${segment.running ? "segment-running" : ""}`}
+            >
+              {segment.width >= 0.15 ? `${shortLabel(segment)} · ${formatTotal(segment.to - segment.from)}` : null}
+            </span>
           </li>
         ))}
         {remainder > 0 && (
@@ -100,8 +107,13 @@ export function RoundTimeline({
           className="pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-button border border-line bg-rail px-2 py-[3px] font-mono text-[11px] text-rail-fg shadow-card"
           style={{ left: `${(starts[active!]! + hovered.width / 2) * 100}%`, bottom: "calc(100% + 4px)" }}
         >
-          {segmentName(hovered)} · {formatSpan(hovered.to - hovered.from)}
+          {description(hovered)}
         </div>
+      )}
+      {totals.size > 0 && (
+        <p data-timeline-totals className="mt-1.5 font-mono text-[11px] text-muted">
+          {[...totals].map(([kind, ms]) => `${kind === "fix" ? "rework" : kind} · ${formatTotal(ms)}`).join(" · ")}
+        </p>
       )}
       {status && (
         <p data-timeline-status className="mt-1.5 text-[12px]">
