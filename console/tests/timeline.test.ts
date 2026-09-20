@@ -135,3 +135,76 @@ test("a run with no phase_change events falls back to the rounds derivation", ()
   expect(buildTimeline({ ...RUN, events: noise }, now)).toEqual(buildTimeline(RUN, now));
   expect(buildTimeline({ ...RUN, events: [] }, now).map((segment) => segment.kind)).toEqual(["implement", "review", "fix", "review"]);
 });
+
+test("an eventless resumed PR keeps its pre-merge verification tail and label", () => {
+  for (const eventStream of [undefined, []]) {
+    const out = buildTimeline({
+      ...RUN,
+      phase: "merge_gate",
+      pr_url: "https://example.test/pull/1",
+      rounds: [RUN.rounds[0]!],
+      events: eventStream,
+    }, T + 15 * MINUTE);
+    expect(out.map(s => [s.kind, minutes(s)])).toEqual([
+      ["implement", 8], ["review", 4], ["verify", 3],
+    ]);
+    expect(out[2]!.label).toBe("verifying");
+    expect(out[2]!.from).toBe(T + 12 * MINUTE);
+    expect(out[2]!.to).toBe(T + 15 * MINUTE);
+    expect(out[2]!.running).toBe(true);
+  }
+});
+
+test("PR monitoring stays wait through thread replies, with fresh pre-merge verifies kept green", () => {
+  const run: TimelineRun = {
+    ...RUN, phase: "done", ended_ms: T + 3702_000, pr_url: "https://example.test/pull/1", rounds: [],
+    events: [
+      ...events([
+        [0, "claimed -> working: implement"],
+        [517, "working -> verifying: verify before review"],
+        [713, "verifying -> reviewing: round 1 review"],
+        [1203, "reviewing -> merge_gate: pre-merge verify, then the autonomy gate"],
+        [2701, "merge_gate -> verifying: verify the fix"],
+        [2899, "verifying -> reviewing: round 2 review"],
+        [3501, "reviewing -> merge_gate: pre-merge verify, then the autonomy gate"],
+        [3701, "merge_gate -> merging: checks passed"],
+        [3702, "merging -> done: merged"],
+      ]),
+      { at: T + 1435_000, kind: "pull_request", summary: "pull request open: https://example.test/pull/1" },
+      { at: T + 2635_000, kind: "pull_request", summary: "answered review thread" },
+    ],
+  };
+  expect(buildTimeline(run, run.ended_ms!).map(s => [s.kind, (s.from - T) / 1000, (s.to - T) / 1000])).toEqual([
+    ["implement", 0, 517], ["verify", 517, 713], ["review", 713, 1203],
+    ["verify", 1203, 1435], ["wait", 1435, 2701], ["verify", 2701, 2899],
+    ["review", 2899, 3501], ["verify", 3501, 3701], ["merge", 3701, 3702],
+  ]);
+});
+
+test("approval and operator parks each retain ten minutes and the reason on resume", () => {
+  for (const phase of ["awaiting_merge_approval", "blocked_on_operator"]) {
+    const run: TimelineRun = { ...RUN, rounds: [], events: events([
+      [0, "claimed -> working: implement"],
+      [60, `working -> ${phase}: awaiting a person`],
+      [660, `${phase} -> working: resumed`],
+    ]) };
+    const parked = buildTimeline(run, T + 720_000)[1]!;
+    expect([parked.kind, seconds(parked), parked.from, parked.to]).toEqual(["parked", 600, T + 60_000, T + 660_000]);
+    expect(parked.reason).toBe(`working -> ${phase}: awaiting a person`);
+  }
+});
+
+test("a completed resumed PR run records babysitting as wait without a new PR-open event", () => {
+  const run: TimelineRun = { ...RUN, phase: "done", ended_ms: T + 661_000, rounds: [],
+    pr_url: "https://example.test/pull/1", events: [
+      { at: T, kind: "pull_request", summary: "resuming run 422's candidate on https://example.test/pull/1" },
+      ...events([
+        [0, "claimed -> merge_gate: babysitting https://example.test/pull/1"],
+        [600, "merge_gate -> merge_gate: pre-merge verify, then the autonomy gate"],
+        [660, "merge_gate -> merging: checks passed"],
+        [661, "merging -> done: merged"],
+      ]),
+    ] };
+  expect(buildTimeline(run, run.ended_ms!).map(s => [s.kind, seconds(s)]))
+    .toEqual([["wait", 600], ["verify", 60], ["merge", 1]]);
+});

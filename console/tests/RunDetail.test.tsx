@@ -411,12 +411,12 @@ test("a segment floats its long name and duration on hover and on focus, hides o
   const tooltip = () => document.querySelector("[data-segment-tooltip]");
   expect(tooltip()).toBeNull();
   fireEvent.mouseOver(items[0]!);
-  expect(tooltip()!.textContent).toBe("Implementation · 20m 00s");
+  expect(tooltip()!.textContent).toBe("Implementation · 20m 00s · claimed -> working: KO-232");
   expect((tooltip() as HTMLElement).style.left).toBe("25%");
   fireEvent.mouseOut(items[0]!);
   expect(tooltip()).toBeNull();
   fireEvent.focusIn(items[1]!);
-  expect(tooltip()!.textContent).toBe("Review 1 · 2m 00s");
+  expect(tooltip()!.textContent).toBe("Review 1 · 2m 00s · working -> reviewing: round 1 review");
   fireEvent.focusOut(items[1]!);
   expect(tooltip()).toBeNull();
 });
