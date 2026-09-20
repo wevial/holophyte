@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FATE_LABEL, findingParts, findingPath, severityOf, type Fate } from "../lib/findings";
-import { renderMarkdown } from "../lib/markdown";
+import { cleanCommentBody, renderCommentBody, renderMarkdown } from "../lib/markdown";
 import type { Finding } from "../lib/types";
 import { SeverityPill } from "./SeverityPill";
 
@@ -28,7 +28,7 @@ export function FindingCard({
 }) {
   const path = findingPath(finding);
   const location = finding.line != null ? `${path}:${finding.line}` : path;
-  const parts = findingParts(finding.message);
+  const parts = findingParts(cleanCommentBody(finding.message));
   return (
     <li
       data-finding
@@ -55,7 +55,7 @@ export function FindingCard({
       )}
       {parts.body !== "" && (
         <div data-body className="ticket-body mt-1 text-[14px] leading-[1.45] text-body">
-          {renderMarkdown(parts.body)}
+          {renderCommentBody(parts.body)}
         </div>
       )}
       {sentence != null && (

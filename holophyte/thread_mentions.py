@@ -16,3 +16,9 @@ def classify(thread, handle):
 def instruction(thread):
     return (f"Instruction from @{thread.comments[-1].author} on the pull request:\n"
             f"{thread.request}")
+
+
+def bot_author(author, bot_logins, author_kind=""):
+    """Share bot identity rules between stored requests and legacy reads."""
+    return (author_kind == "bot" or author.lower().endswith("[bot]")
+            or author.lower() in {name.lower() for name in bot_logins})

@@ -10,11 +10,13 @@ from urllib.parse import parse_qs
 
 import store.read
 from holophyte.config import budget_scale
+from holophyte.config_tables import MERGE_KEYS, merge_config
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.pool_handoff import workers_on_previous_build  # noqa: F401
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.target import worktree_path
+from holophyte.thread_mentions import bot_author
 from store.operator_notes import round_notes
 from store.working import effective_work
 
@@ -345,6 +347,7 @@ def run_detail(target, run_id, now=None):
             detail_kinds=("implementer_output", "operator_note_consumed"))
     finally:
         conn.close()
+    merge = merge_config(target)
     live = run.endedAt is None
     # `time_box_ms` is the box the run was counted against -- the estimate
     # scaled by `[agents] budget_scale` -- matching the box `/status` serves.
@@ -372,7 +375,8 @@ def run_detail(target, run_id, now=None):
         "rounds": [{"round": r.round, "started_ms": r.startedAt,
                     "ended_ms": r.endedAt, "verdict": r.verdict,
                     "reviewer_model": r.reviewerModel,
-                    **split_instructions(json.loads(r.findings)),
+                    **split_instructions(json.loads(r.findings),
+                                         merge.bot_authors + merge.bot_logins),
                     "operator_notes": notes[r.round]}
                    for r in rounds],
         "findings": [{"tone": "advisory", "message": e.summary}
@@ -382,13 +386,20 @@ def run_detail(target, run_id, now=None):
     }
 
 
-def split_instructions(findings):
+def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):
     """Normalize legacy instructions once at the read boundary, without writes."""
     result = {"findings": [], "instructions": []}
     marker = " -- MENTIONED: ADDRESS: "
     for finding in findings:
         if finding.get("kind") == "instruction":
-            result["instructions"].append(finding)
+            if bot_author(finding.get("author", ""), bot_logins):
+                finding = dict(finding)
+                finding.pop("kind")
+                finding.setdefault("message", finding.get("request", ""))
+                finding.setdefault("severity", "nit")
+                result["findings"].append(finding)
+            else:
+                result["instructions"].append(finding)
         elif "kind" not in finding and marker in finding.get("message", ""):
             head, request = finding["message"].split(marker, 1)
             location = re.match(r"^- (.*?) @([^:]+):", head)
@@ -399,6 +410,9 @@ def split_instructions(findings):
                 file_line = re.match(r"^(.*):(\d+)$", path)
                 if file_line:
                     path, line = file_line[1], int(file_line[2])
+            if bot_author(author, bot_logins):
+                result["findings"].append(finding)
+                continue
             result["instructions"].append(dict(
                 kind="instruction", path=path, line=line, author=author,
                 request=re.split(r"\nVERDICT:", request, maxsplit=1)[0].strip(),
