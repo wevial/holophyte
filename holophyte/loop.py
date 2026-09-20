@@ -756,7 +756,8 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" resolves the merge before this ticket is run again;"
                     f" branch {branch} preserved at {sha[:12]}")
         with heartbeat_while(conn, run_id, beat_s):
-            ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+            ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id,
+                             target=target)
             ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                    conn, run_id)
         if ok:
@@ -843,7 +844,8 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
     """
     set_phase(conn, run_id, "verifying", "verify before terminal adjudication")
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id)
+        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id,
+                             target=target)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
     if not ok:

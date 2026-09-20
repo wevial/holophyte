@@ -152,19 +152,19 @@ def check_config_keys(target):
 
 
 def check_config(target):
-    """The config checks every mode runs at startup, with the command line
-    parsed and nothing claimed: unknown keys and every table whose values
-    are held to a constraint without touching the host -- `[supervisor]`,
-    `[loop]`, `[report]`, `[merge]`, `[console]`, `[serve]`, plus
-    `[agents]` budgets and isolation settings. The CLI and daemon config writes
-    share these checks, so the console accepts exactly what startup accepts.
-    Refusals name the setting to fix."""
-    merge_config(target)
+    """Validate config before claiming work, without touching the host.
+    CLI startup and daemon writes share these checks; refusals name the setting.
+    """
+    merge = merge_config(target)
     verify_config(target)
     check_config_keys(target)
     budget_scale(target)
     from holophyte.isolation import route_for
-    route_for(target)
+    route = route_for(target)
+    if merge.ui_capture and route.backend == "container" and not route.writable:
+        raise SystemExit(
+            "[merge] ui_capture requires [agents] implementer_isolation "
+            "writable = true for its worktree output directory")
     check_agent_fallbacks(target)
     sweep_config(target)
     loop_config(target)

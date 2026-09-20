@@ -119,5 +119,95 @@ class BaselineBriefTests(unittest.TestCase):
             self.assertEqual(_verify_brief("", True, ""), "")
 
 
+class IsolatedVerifyTests(unittest.TestCase):
+    def setUp(self):
+        from types import SimpleNamespace
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.wt = self.root / 'worktree'
+        self.wt.mkdir()
+        self.outside = self.root / 'host-only'
+        self.outside.write_text('host secret')
+        self.config = {'agents': {'implementer_isolation': 'container'}}
+        self.target = SimpleNamespace(config=lambda: self.config)
+
+    def test_verify_and_baseline_cannot_read_host_file(self):
+        from holophyte import gates, isolation
+        command = f'cat {self.outside}'
+        self.config['verify'] = {'always': [command]}
+
+        def filesystem_runner(argv, cwd, timeout, *, env):
+            self.assertEqual(cwd, self.wt)
+            mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
+            self.assertEqual(mounts, [f'{self.wt}:/workspace:rw'])
+            self.assertIn('--workdir=/workspace', argv)
+            self.assertEqual(argv[-3:], ['/bin/sh', '-c', command])
+            self.assertNotIn('HOST_SECRET', env)
+            # The fake container resolves absolute paths only through its mounts.
+            path = Path(argv[-1].removeprefix('cat '))
+            for mount in mounts:
+                source, destination, _ = mount.split(':')
+                if path.is_relative_to(destination):
+                    return 0, (Path(source) / path.relative_to(destination)).read_text()
+            return 1, f'cat: {path}: No such file or directory\n'
+
+        with (patch.object(isolation, 'image_ready'),
+              patch.object(isolation.review_runner, '_remove_container'),
+              patch.dict(os.environ, HOST_SECRET='private'),
+              patch.object(isolation, 'run_capped',
+                           side_effect=filesystem_runner) as run):
+            ok, out = gates.run_verify(command, self.wt, target=self.target)
+            self.assertFalse(ok)
+            ok, recorded = gates.with_baseline(self.target, self.wt, command, ok, out)
+            self.assertIn('No such file', recorded.results[0]['output'])
+            self.assertEqual(recorded.results[0]['exitCode'], 1)
+            ok, baseline = gates.run_baseline(self.target, self.wt, 'always')
+            self.assertFalse(ok)
+            self.assertIn('No such file', baseline.results[0]['output'])
+            self.assertEqual(run.call_count, 2)
+
+    def test_timeout_removes_named_container_and_preserves_output(self):
+        import subprocess
+
+        from holophyte import gates, isolation
+        expired = subprocess.TimeoutExpired('docker', 3, output='started\n')
+        with (patch.object(isolation, 'image_ready'),
+              patch.object(isolation.review_runner, '_remove_container') as remove,
+              patch.object(isolation, 'run_capped', side_effect=expired) as run):
+            ok, out = gates.run_verify('sleep 20', self.wt, timeout=3,
+                                       target=self.target)
+        self.assertFalse(ok)
+        self.assertIn('started', out)
+        self.assertIn('timed out', out.lower())
+        argv = run.call_args.args[0]
+        remove.assert_called_once_with(argv[argv.index('--name') + 1],
+                                       env={'PATH': os.defpath})
+
+    def test_none_preserves_runner_call(self):
+        from holophyte import gates
+        for agents in ({}, {'implementer_isolation': 'none'}):
+            self.config['agents'] = agents
+            with patch.object(gates, 'run_capped', return_value=(0, 'done')) as run:
+                self.assertEqual(gates.run_verify('echo done', self.wt, timeout=17,
+                                                 target=self.target), (True, 'done'))
+            run.assert_called_once_with('echo done', self.wt, 17)
+
+    @unittest.skipUnless(os.environ.get('HOLOPHYTE_TEST_DOCKER') == '1',
+                         'set HOLOPHYTE_TEST_DOCKER=1 for container integration')
+    def test_real_container_cannot_read_host_file(self):
+        import shutil
+        import subprocess
+
+        from holophyte import gates
+        if not shutil.which('docker') or subprocess.run(
+                ['docker', 'info'], capture_output=True).returncode:
+            self.skipTest('Docker unavailable')
+        ok, out = gates.run_verify(f'cat {self.outside}', self.wt, target=self.target)
+        self.assertFalse(ok)
+        self.assertIn('No such file', out)
+        self.assertNotIn('host secret', out)
+
+
 if __name__ == "__main__":
     unittest.main()

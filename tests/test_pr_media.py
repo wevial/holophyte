@@ -106,6 +106,116 @@ class MediaTests(unittest.TestCase):
         self.ledger = ledger
         return create.call_args.args[3]
 
+    def test_isolated_capture_publishes_from_worktree(self):
+        import shlex
+
+        from holophyte import isolation
+        self.config['agents'] = {'implementer_isolation': 'container'}
+        self.candidate()
+        states = ['Dialog open', 'Saved']
+
+        def capture(argv, cwd, timeout, *, env):
+            mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
+            self.assertEqual(mounts, [f'{self.repo}:/workspace:rw'])
+            self.assertEqual(argv[-3:-1], ['/bin/sh', '-c'])
+            script = shlex.split(argv[-1])
+            self.assertEqual(script[:2], ['python3', 'capture.py'])
+            output = self.repo / Path(script[-1]).relative_to('/workspace')
+            self.assertEqual(env['HOLOPHYTE_TICKET'], 'KO-530')
+            self.assertEqual(env['HOLOPHYTE_EVIDENCE_STATES'], '\n'.join(states))
+            self.assertNotIn('MEDIA_SECRET', env)
+            self.assertEqual(self.git('check-ignore', str(output / '01-dialog.png')),
+                             str(output / '01-dialog.png'))
+            (output / '01-dialog.png').write_bytes(PNG)
+            return 0, ''
+
+        with (patch.object(isolation, 'image_ready'),
+              patch.object(isolation.review_runner, '_remove_container'),
+              patch.object(isolation, 'run_capped', side_effect=capture) as run,
+              patch.dict(os.environ, MEDIA_SECRET='host-only'),
+              patch('holophyte.pr.origin_url',
+                    return_value='https://github.com/example/repo.git'),
+              patch.object(pr_media, 'repo_is_private', return_value=False)):
+            section = pr_media.prepare(self.target, self.repo, 'KO-530',
+                                       evidence_states=states)
+        run.assert_called_once()
+        self.assertIn('Dialog open — captured', section)
+        self.assertEqual(subprocess.check_output(
+            ['git', '--git-dir', str(self.remote), 'show',
+             'pr-media/KO-530:01-dialog.png']), PNG)
+        self.assertFalse(list(self.repo.glob('.holophyte-capture-*')))
+
+    def test_readonly_capture_is_rejected_at_startup(self):
+        from holophyte.config import check_config
+
+        self.config['agents'] = {
+            'implementer_isolation': {'backend': 'container', 'writable': False}}
+        with self.assertRaisesRegex(SystemExit, 'ui_capture.*writable'):
+            check_config(self.target)
+        self.config.pop('merge')
+        check_config(self.target)
+        self.config['agents']['implementer_isolation']['backend'] = 'none'
+        self.config['merge'] = {'ui_paths': ['console/**'], 'ui_capture': 'capture'}
+        check_config(self.target)
+
+    def test_capture_receipt_changes_with_execution_route(self):
+        self.candidate()
+        agents = self.config.setdefault('agents', {})
+        changes = [
+            {'implementer_isolation': 'container'},
+            {'implementer_image': 'capture-runtime:2'},
+            {'implementer_isolation': {'backend': 'container', 'memory': '8g'}},
+            {'implementer_credential': {'env': 'CAPTURE_KEY'}},
+        ]
+        with patch.object(pr_media, '_produce',
+                          return_value='capture failed') as produce:
+            pr_media.prepare(self.target, self.repo, 'KO-530')
+            for number, change in enumerate(changes, 2):
+                with self.subTest(change=change):
+                    agents.update(change)
+                    pr_media.prepare(self.target, self.repo, 'KO-530')
+                    self.assertEqual(produce.call_count, number)
+                    pr_media.prepare(self.target, self.repo, 'KO-530')
+                    self.assertEqual(produce.call_count, number)
+
+    def test_capture_receipt_tracks_allowed_environment_without_exposing_values(self):
+        self.enterContext(patch('holophyte.redact._environment_values', frozenset()))
+        self.candidate()
+        source = self.root / 'capture.env'
+        source.write_text('ALLOWED=first-secret\nEXCLUDED=one\n')
+        self.config['agents'] = {'implementer_isolation': 'container'}
+        self.config['worktree'] = {'env_source': str(source), 'env_allow': ['ALLOWED']}
+        with patch.object(pr_media, '_produce', return_value='evidence') as produce:
+            pr_media.prepare(self.target, self.repo, 'KO-530')
+            source.write_text('EXCLUDED=two\nALLOWED=first-secret\n')
+            pr_media.prepare(self.target, self.repo, 'KO-530')
+            self.assertEqual(produce.call_count, 1)
+            source.write_text('ALLOWED=second-secret\nEXCLUDED=two\n')
+            pr_media.prepare(self.target, self.repo, 'KO-530')
+            self.assertEqual(produce.call_count, 2)
+        git_dir = Path(self.git('rev-parse', '--absolute-git-dir'))
+        receipts = list(git_dir.glob('pr-media-*'))
+        self.assertEqual(len(receipts), 2)
+        for receipt in receipts:
+            self.assertNotIn('secret', receipt.name + receipt.read_text())
+
+    def test_host_capture_preserves_popen_call(self):
+        from unittest.mock import ANY
+        for agents in ({}, {'implementer_isolation': 'none'}):
+            self.config['agents'] = agents
+            with patch.object(pr_media.subprocess, 'Popen') as popen:
+                popen.return_value.wait.return_value = 0
+                error = pr_media._capture('python3 capture.py', self.repo, self.root,
+                                          'KO-530', ['Open'], target=self.target)
+            self.assertEqual(error, '')
+            popen.assert_called_once_with(
+                ['python3', 'capture.py', str(self.root)], cwd=self.repo,
+                env=dict(os.environ, HOLOPHYTE_TICKET='KO-530',
+                         HOLOPHYTE_EVIDENCE_STATES='Open'),
+                stdin=subprocess.DEVNULL, stdout=ANY, stderr=ANY,
+                start_new_session=True)
+            popen.return_value.wait.assert_called_once_with(timeout=300)
+
     def test_ticket_states_reach_capture_and_review(self):
         from holophyte.review import evidence_brief
 
