@@ -12,8 +12,8 @@ def protected(target):
 
 
 def paths(target):
-    """Setup ignores .env; naming it in an exclude pathspec breaks git add."""
-    return []
+    """Hide protected .env from status even if its ignore rule disappeared."""
+    return ["--", ".", ":(top,exclude).env"] if protected(target) else []
 
 
 def exclude_environment(wt):
@@ -38,7 +38,7 @@ def unstage_environment(target, wt):
 
 
 def stage_work(target, wt):
-    sh(["git", "add", "-A", *paths(target)], wt)
+    sh(["git", "add", "-A"], wt)
     unstage_environment(target, wt)
 
 

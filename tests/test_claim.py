@@ -357,8 +357,13 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("debris.bin", self.git("ls-tree", "--name-only", BRANCH))
 
     def test_an_empty_reused_leftover_is_discarded_like_a_fresh_cut(self):
-        """An empty reclaimed checkout is discarded."""
-        self.leftover()
+        """An unignored environment alone is still an empty reclaimed checkout."""
+        wt = self.leftover()
+        self.environment()
+        holophyte.claim.write_worktree_environment(self.tgt, wt)
+        exclude = wt / _git(wt, "rev-parse", "--git-path", "info/exclude")
+        exclude.write_text("")
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt).strip(), "?? .env")
 
         self.loop(Idle())
 
@@ -440,10 +445,18 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("3 changed file(s)", event)
 
     def test_a_timed_out_clean_tree_is_still_discarded(self):
-        """Unchanged by the WIP rescue: a turn the cap killed with nothing
-        in the tree holds nothing, so the branch and worktree go the way
-        they always did."""
-        self.loop(IdleThenTimeout())
+        """An environment whose ignore rule disappeared is not timed-out work."""
+        self.environment()
+
+        class LoseIgnoreThenTimeout(IdleThenTimeout):
+            def play(self, wt, turn):
+                exclude = Path(wt) / _git(wt, "rev-parse", "--git-path", "info/exclude")
+                exclude.write_text("")
+                if _git(wt, "status", "--porcelain") != "?? .env":
+                    raise AssertionError("expected only the unignored environment")
+                super().play(wt, turn)
+
+        self.loop(LoseIgnoreThenTimeout())
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertNotIn(BRANCH, self.branches())
@@ -452,9 +465,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("discarded", reason)
 
     def test_budget_scale_multiplies_the_cap_every_implementer_turn_gets(self):
-        """`[agents] budget_scale` is the harness's wall-clock multiplier:
-        a 30-minute ticket at scale 1.5 arms a 45-minute cap on the first
-        turn and the fix round alike — the estimate itself untouched."""
+        """Scale both implementer caps without changing the ticket estimate."""
         self.configure("[agents]\nbudget_scale = 1.5\n")
         task = dict(a_task(), budget_min=30)
 
@@ -466,8 +477,7 @@ class LeftoverWorktreeTests(LoopFixture):
                          ["implement", "review", "implement", "review"])
         self.assertEqual(fake.turns[0].timeout, 45 * 60)
         self.assertEqual(fake.turns[2].timeout, 45 * 60)
-        # The ticket's estimate — the box the report compares against —
-        # is still the 30 minutes Linear said.
+        # Reports retain the ticket's original 30-minute estimate.
         self.assertEqual(
             self.read("SELECT timeBoxMs FROM runs"), [(30 * 60 * 1000,)])
 
@@ -481,8 +491,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(fake.turns[0].timeout, 30 * 60)
 
     def test_a_scaled_budget_timeout_names_both_figures(self):
-        """The cap that fired was the scaled one, and the line the run
-        row carries says so: the estimate and what it became."""
+        """Report both the estimate and the scaled cap that fired."""
         self.configure("[agents]\nbudget_scale = 1.5\n")
         task = dict(a_task(), budget_min=30)
 
@@ -495,9 +504,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertIn("30 min budget (45 min at scale 1.5)", reason)
 
     def test_the_refusal_reason_reaches_the_run_row(self):
-        """The reuse refusal's whole product is an explanation for a human;
-        it must land on the run row, not only in a Linear comment a provider
-        outage can swallow."""
+        """Persist the reuse refusal even if the board is unavailable."""
         wt = self.worktrees / "ko-131-add-a-thing"
         wt.mkdir(parents=True)
         (wt / "precious.txt").write_text("rescued work\n")
@@ -510,14 +517,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
 
     def test_a_no_commit_run_keeps_the_reused_worktree_and_its_commits(self):
-        """Run 10 of the KO-146 incident: the no-commit close-out
-        force-removed the reused worktree and -D'd the branch, destroying
-        exactly the preserved work the reuse path exists to protect — and
-        the run row then claimed the branch was preserved.
-
-        The branch here is ahead of main in history but identical to it in
-        content, so there is no carried candidate to review (KO-172) and the
-        no-commit gate is still what closes the run out."""
+        """KO-146/KO-172: preserve commits even when the tree matches main."""
         wt = self.leftover()
         (wt / "rescued.txt").write_text("rescued work\n")
         self.git("add", "-A", cwd=wt)
