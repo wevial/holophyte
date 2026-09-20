@@ -381,6 +381,115 @@ class IsolationTests(unittest.TestCase):
         self.assertNotIn("alias.container-only", git(worktree, "config", "--list"))
         self.assertFalse(mounts[0].exists())
 
+    def test_real_timeout_returns_committed_and_dirty_clone_work(self):
+        from holophyte import isolation
+        from holophyte.gates import run_capped
+        from holophyte.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        mounts = []
+        script = ("echo committed > file; git add file; "
+                  "git commit -qm 'before timeout'; "
+                  "echo staged > staged; git add staged; "
+                  "echo leftover > dirty; echo ready; sleep 30")
+
+        def run(argv, cwd, timeout, *, env):
+            mounts.append(Path(cwd))
+            return run_capped(argv[argv.index(isolation.Route().image) + 1:],
+                              cwd, timeout, env=env)
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container") as remove, \
+             patch.object(isolation, "run_capped", side_effect=run):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                isolation.launch(isolation.Route("container"), worktree, {},
+                                 ["sh", "-ec", script], timeout=2)
+        self.assertIn("ready", raised.exception.output)
+        self.assertEqual(git(worktree, "log", "-1", "--format=%s|%an|%ae"),
+                         "before timeout|Configured Author|author@example.test")
+        self.assertEqual((worktree / "file").read_text(), "committed\n")
+        self.assertEqual((worktree / "staged").read_text(), "staged\n")
+        self.assertEqual((worktree / "dirty").read_text(), "leftover\n")
+        self.assertEqual(git(worktree, "status", "--porcelain"),
+                         "?? dirty\n?? staged")
+        remove.assert_called_once()
+        self.assertFalse(mounts[0].exists())
+
+    def test_copy_back_rolls_back_failed_destination_mutation(self):
+        from holophyte.gates import InfraFailure
+        from holophyte.isolation_clone import copy_files
+
+        source = self.root / "source"
+        destination = self.root / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (destination / "a").write_text("original uncommitted work")
+        (destination / "a").chmod(0o640)
+        (destination / "locked").mkdir()
+        (destination / "locked/keep").write_text("nested original")
+        (destination / "link").symlink_to("a")
+        (destination / ".git").write_text("host metadata")
+        (destination / ".env").write_text("host environment")
+        (source / "a").write_text("replacement")
+        (source / "new").write_text("new file")
+        rename = Path.rename
+
+        for phase in ("backup", "install"):
+            with self.subTest(phase=phase):
+                calls = []
+
+                def fail(path, target):
+                    matches = (path.parent == destination if phase == "backup"
+                               else Path(target).parent == destination)
+                    if matches:
+                        calls.append(path)
+                        if len(calls) == 2:
+                            raise OSError("injected filesystem failure")
+                    return rename(path, target)
+
+                with patch.object(Path, "rename", fail):
+                    with self.assertRaisesRegex(InfraFailure, "injected filesystem"):
+                        copy_files(source, destination, protect=True)
+                self.assertEqual((destination / "a").read_text(),
+                                 "original uncommitted work")
+                self.assertEqual((destination / "a").stat().st_mode & 0o777, 0o640)
+                self.assertEqual((destination / "locked/keep").read_text(),
+                                 "nested original")
+                self.assertEqual((destination / "link").readlink(), Path("a"))
+                self.assertEqual((destination / ".git").read_text(), "host metadata")
+                self.assertEqual((destination / ".env").read_text(),
+                                 "host environment")
+                self.assertEqual({p.name for p in destination.iterdir()},
+                                 {"a", "locked", "link", ".git", ".env"})
+                self.assertEqual(set(self.root.iterdir()), {source, destination})
+
+    def test_failed_copy_back_rollback_retains_original_backup(self):
+        from holophyte.gates import InfraFailure
+        from holophyte.isolation_clone import copy_files
+
+        source = self.root / "source"
+        destination = self.root / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / "file").write_text("replacement")
+        (destination / "file").write_text("valuable original")
+        rename = Path.rename
+
+        def fail(path, target):
+            if Path(target).parent == destination:
+                raise OSError("destination unavailable")
+            return rename(path, target)
+
+        with patch.object(Path, "rename", fail):
+            with self.assertRaisesRegex(
+                InfraFailure, "originals retained at"
+            ) as raised:
+                copy_files(source, destination, protect=False)
+        backups = list(self.root.glob(".backup-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertIn(str(backups[0]), str(raised.exception))
+        self.assertEqual((backups[0] / "file").read_text(), "valuable original")
+
     def test_clone_rewritten_history_is_infrastructure_failure(self):
         from holophyte import isolation
         from holophyte.gates import InfraFailure

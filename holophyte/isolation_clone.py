@@ -36,8 +36,33 @@ def stage_files(source, destination, excluded):
             )
 
 
+def replace_files(staged, destination, excluded):
+    """Keep originals on the same filesystem until every replacement succeeds."""
+    backup = Path(tempfile.mkdtemp(prefix=".backup-", dir=destination.parent))
+    moves = []
+    try:
+        for source, target in ((destination, backup), (staged, destination)):
+            for path in source.iterdir():
+                if path.name not in excluded:
+                    replacement = target / path.name
+                    path.rename(replacement)
+                    moves.append((path, replacement))
+    except BaseException:
+        try:
+            for original, moved in reversed(moves):
+                moved.rename(original)
+        except OSError as error:
+            # Do not clean up the only surviving copies if rollback also fails.
+            raise InfraFailure(
+                f"cannot restore working files; originals retained at {backup}: {error}"
+            ) from error
+        shutil.rmtree(backup)
+        raise
+    shutil.rmtree(backup)
+
+
 def copy_files(source, destination, protect):
-    """Prepare the complete copy before removing any destination working files."""
+    """Stage the complete copy and roll back failed destination mutations."""
     excluded = {".git", ".env"} if protect else {".git"}
     with tempfile.TemporaryDirectory(
         prefix=".copy-", dir=destination.parent
@@ -47,14 +72,10 @@ def copy_files(source, destination, protect):
             stage_files(source, staged, excluded)
         except (OSError, shutil.Error) as error:
             raise InfraFailure(f"cannot prepare working files: {error}") from error
-        for path in destination.iterdir():
-            if path.name not in excluded:
-                if path.is_dir() and not path.is_symlink():
-                    shutil.rmtree(path)
-                else:
-                    path.unlink()
-        for path in staged.iterdir():
-            path.rename(destination / path.name)
+        try:
+            replace_files(staged, destination, excluded)
+        except (OSError, shutil.Error) as error:
+            raise InfraFailure(f"cannot replace working files: {error}") from error
 
 
 def return_turn(worktree, clone, root, old, target, merge_state):
@@ -142,5 +163,11 @@ def turn_clone(worktree, target=None):
             shutil.copyfile(index, clone / ".git/index")
         merge_state = copy_merge_state(worktree, clone)
         copy_files(worktree, clone, target is not None and protected(target))
-        yield clone, env
-        return_turn(worktree, clone, root, old, target, merge_state)
+        try:
+            yield clone, env
+        except subprocess.TimeoutExpired:
+            # The runner has stopped: preserve its work for the loop's WIP path.
+            return_turn(worktree, clone, root, old, target, merge_state)
+            raise
+        else:
+            return_turn(worktree, clone, root, old, target, merge_state)
