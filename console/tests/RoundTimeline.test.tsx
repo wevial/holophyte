@@ -44,7 +44,7 @@ test("the bar keeps its proportional widths, remainder and running pulse; the st
   expect(Math.round(resolvePx(items[0]!.style.width, 1000))).toBe(40);
   expect(Math.round(resolvePx(items[1]!.style.width, 1000))).toBe(Math.round((20 / 30) * 1000 - 4));
   expect(items[1]!.getAttribute("data-running")).toBe("true");
-  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("review 1 · 20m 00s");
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("Review · Round 1 · 20m 00s");
 });
 
 test("each segment is a focusable img naming itself; hovering it floats the long name and duration, leaving hides it", () => {
@@ -65,7 +65,7 @@ test("each segment is a focusable img naming itself; hovering it floats the long
   expect(document.querySelector("[data-segment-tooltip]")).toBeNull();
 
   fireEvent.focusIn(segment(1));
-  expect(document.querySelector("[data-segment-tooltip]")!.textContent).toBe("Review 1 · 20m 00s");
+  expect(document.querySelector("[data-segment-tooltip]")!.textContent).toBe("Review · Round 1 · 20m 00s");
   fireEvent.focusOut(segment(1));
   expect(document.querySelector("[data-segment-tooltip]")).toBeNull();
 });

@@ -73,15 +73,15 @@ const events = (changes: [number, string][]) =>
   changes.map(([s, summary]) => ({ at: T + s * 1000, kind: "phase_change", summary }));
 const seconds = (segment: { from: number; to: number }) => (segment.to - segment.from) / 1000;
 
-test("a merged four-round run's phase changes yield implement, 4× (verify, review N, fix N), verify, merge", () => {
+test("phase events without recorded rounds preserve segments without inventing round numbers", () => {
   const run: TimelineRun = { ...RUN, phase: "done", ended_ms: T + 2196_000, rounds: [], events: events(CHANGES) };
   const out = buildTimeline(run, T + 3 * 3600_000);
   expect(out.map((segment) => segment.label)).toEqual([
     "implement",
-    "verify", "review 1", "fix 1",
-    "verify", "review 2", "fix 2",
-    "verify", "review 3", "fix 3",
-    "verify", "review 4",
+    "verify", "review", "fix",
+    "verify", "review", "fix",
+    "verify", "review", "fix",
+    "verify", "review",
     "verifying", "merge",
   ]);
   expect(out.map((segment) => segment.kind)).toEqual([
@@ -118,13 +118,13 @@ test("a working -> working phase change is one implement segment spanning both",
   expect(out[1]!.running).toBe(true);
 });
 
-test("a live run mid-review is implement, verify and a running review 1 of 200 s that pulses", () => {
+test("a live run mid-review is implement, verify and a running review of 200 s that pulses", () => {
   const run: TimelineRun = { ...RUN, rounds: [], events: events(CHANGES.slice(0, 3)) };
   const out = buildTimeline(run, T + 453_000);
   expect(out.map((segment) => [segment.label, seconds(segment), segment.running])).toEqual([
     ["implement", 185, false],
     ["verify", 68, false],
-    ["review 1", 200, true],
+    ["review", 200, true],
   ]);
   expect(out[2]!.width).toBeCloseTo(200 / (30 * 60), 10);
 });

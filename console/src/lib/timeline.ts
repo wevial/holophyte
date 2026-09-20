@@ -1,4 +1,4 @@
-import { phaseLabel } from "./runs";
+import { phaseLabel, roundLabel } from "./runs";
 import type { RunEvent } from "./types";
 
 /** The kind of work or waiting represented by a segment. */
@@ -30,7 +30,7 @@ export interface TimelineRun {
   time_box_ms: number;
   phase: string;
   pr_url?: string | null;
-  rounds: { started_ms: number; ended_ms: number | null }[];
+  rounds: { round?: number; started_ms: number; ended_ms: number | null }[];
   events?: RunEvent[];
 }
 
@@ -56,10 +56,10 @@ const NAMES: Record<SegmentKind, string> = {
 };
 
 /** The tooltip's name for a segment: the kind's long name, plus the round
- *  a numbered review or fix belongs to ("Review 2", "Rework 1"). */
+ *  a numbered review or fix belongs to ("Review · Round 2"). */
 export function segmentName(segment: Segment): string {
   if (segment.label === "verifying") return segment.label;
-  return segment.round == null ? NAMES[segment.kind] : `${NAMES[segment.kind]} ${segment.round}`;
+  return segment.round == null ? NAMES[segment.kind] : `${NAMES[segment.kind]} · ${roundLabel(segment.round)}`;
 }
 
 /** Store phase → segment kind. Phases missing here (`claimed`, `done`,
@@ -99,7 +99,7 @@ function size(out: Segment[], run: TimelineRun, end: number): Segment[] {
 /**
  * Segments from the run's `phase_change` events in order: each row's `at`
  * closes the previous segment and opens one for the phase after the
- * arrow. Review and fix segments carry the round the summary names. The
+ * arrow. Review and fix segments carry recorded round ordinals. The
  * last segment of a live run ends at `now` and pulses.
  */
 function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment[] {
@@ -107,13 +107,13 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
   const live = run.ended_ms == null;
   const out: Segment[] = [];
   let open: { kind: SegmentKind; label: string; from: number; round?: number; reason?: string } | null = null;
-  let reviews = 0;
+  const rounds = [...run.rounds].sort((a, b) => a.started_ms - b.started_ms);
   /** A segment that picks up where an identical one ended merges into it
    *  (a `working -> working` setup event is one implement phase, not
    *  two): the `to` extends and `running` follows the newer segment. */
   const push = (segment: Segment) => {
     const last = out[out.length - 1];
-    if (last && last.to === segment.from && last.kind === segment.kind && last.label === segment.label) {
+    if (last && last.to === segment.from && last.kind === segment.kind && last.label === segment.label && last.round === segment.round) {
       last.to = segment.to;
       last.running = segment.running;
     } else out.push(segment);
@@ -134,12 +134,13 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
     const monitoring = phase === "merge_gate" && prOpen && !change.summary.includes("pre-merge verify");
     const kind = monitoring ? "wait" : phase == null ? undefined : PHASE_KINDS[phase];
     if (!kind) continue;
-    let label = phase === "merge_gate" ? phaseLabel(phase, monitoring ? "open" : null) : LABELS[kind];
+    const label = phase === "merge_gate" ? phaseLabel(phase, monitoring ? "open" : null) : LABELS[kind];
     let round: number | undefined;
-    if (kind === "review") reviews = roundNumber(change.summary) ?? reviews + 1;
     if (kind === "review" || kind === "fix") {
-      round = roundNumber(change.summary) ?? reviews;
-      label = `${label} ${round}`;
+      const named = roundNumber(change.summary);
+      const recorded = named == null ? -1 : rounds.findIndex((entry) => entry.round === named);
+      const ordinal = recorded >= 0 ? recorded + 1 : rounds.filter((entry) => entry.started_ms <= change.at).length;
+      round = ordinal || undefined;
     }
     open = { kind, label, from: change.at, round, reason: change.summary };
   }

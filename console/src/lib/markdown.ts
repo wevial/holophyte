@@ -13,7 +13,7 @@ import { createElement, Fragment, type ReactNode } from "react";
 type Block =
   | { kind: "heading"; level: number; text: string }
   | { kind: "code"; lines: string[] }
-  | { kind: "list"; items: { checked: boolean | null; text: string }[] }
+  | { kind: "list"; ordered?: boolean; start?: number; items: { checked: boolean | null; text: string }[] }
   | { kind: "paragraph"; lines: string[] };
 
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
@@ -22,6 +22,7 @@ const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 // a bare backtick means nothing else in prose.
 const FENCE = /^\s*(?:```|~~~|`\s*$)/;
 const BULLET = /^\s*[-*+]\s+(.*)$/;
+const NUMBERED = /^\s*(\d+)[.)]\s+(.*)$/;
 const CHECKBOX = /^\[([ xX])\]\s*(.*)$/;
 
 /** The body split into blocks: fenced code swallows every line until a
@@ -55,12 +56,14 @@ export function blocksOf(body: string): Block[] {
       continue;
     }
     const bullet = BULLET.exec(raw);
-    if (bullet) {
-      const box = CHECKBOX.exec(bullet[1]!);
-      const item = box ? { checked: box[1] !== " ", text: box[2]! } : { checked: null, text: bullet[1]! };
-      if (last?.kind === "list") last.items.push(item);
+    const numbered = NUMBERED.exec(raw);
+    if (bullet || numbered) {
+      const text = numbered ? numbered[2]! : bullet![1]!;
+      const box = numbered ? null : CHECKBOX.exec(text);
+      const item = box ? { checked: box[1] !== " ", text: box[2]! } : { checked: null, text };
+      if (last?.kind === "list" && !!last.ordered === !!numbered) last.items.push(item);
       else {
-        last = { kind: "list", items: [item] };
+        last = { kind: "list", items: [item], ...(numbered ? { ordered: true, start: Number(numbered[1]) } : {}) };
         blocks.push(last);
       }
       continue;
@@ -112,8 +115,8 @@ function renderBlock(block: Block, key: string): ReactNode {
       return createElement("pre", { key }, createElement("code", null, block.lines.join("\n")));
     case "list":
       return createElement(
-        "ul",
-        { key },
+        block.ordered ? "ol" : "ul",
+        { key, ...(block.ordered ? { start: block.start } : {}) },
         block.items.map((item, at) =>
           createElement(
             "li",

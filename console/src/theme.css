@@ -310,6 +310,10 @@ body {
   list-style: disc;
   padding-left: 1.4em;
 }
+.ticket-body ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
 .ticket-body li + li {
   margin-top: 0.25em;
 }

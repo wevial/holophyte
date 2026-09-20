@@ -7,13 +7,14 @@ import { FATE_LABEL, findingsHistory, openFindings, severityCounts, type Fate, t
 import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
-import { phaseLabel } from "../lib/runs";
+import { phaseLabel, roundLabel } from "../lib/runs";
 import { workingMs } from "../lib/runs";
 import { buildTimeline } from "../lib/timeline";
 import type { Round, RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
 import { FilesTouched } from "./FilesTouched";
 import { FindingCard } from "./FindingCard";
+import { OperatorNoteCard } from "./OperatorNoteCard";
 import { InstructionCard } from "./InstructionCard";
 import { RoundTimeline } from "./RoundTimeline";
 import { RunLog } from "./RunLog";
@@ -24,8 +25,8 @@ import { PrLink, Sha } from "./ShippedTable";
 export function roundLine(body: RunDetailBody): string {
   const seen = body.rounds.length;
   const current = Math.max(1, seen);
-  const max = Math.max(current, body.run.max_rounds ?? seen);
-  return `Round ${current} of ${max} · ${phaseLabel(body.run.phase, body.run.pr_url)}`;
+  const max = body.run.max_rounds ?? current;
+  return `${roundLabel(current, max)} · ${phaseLabel(body.run.phase, body.run.pr_url)}`;
 }
 
 /** The expanded run's card: header line, round timeline, the newest
@@ -79,7 +80,8 @@ function Card({
   now: number;
   sinceMs: number;
 }) {
-  const { run, rounds } = body;
+  const { run } = body;
+  const rounds = [...body.rounds].sort((a, b) => a.started_ms - b.started_ms);
   // The card's clock: the daemon's at the last poll plus the local drift
   // since. A finished run's figures measure against its end instead, so a
   // live run keeps counting between polls and a finished one stays put —
@@ -123,7 +125,11 @@ function Card({
             run={run}
             now={tickingNow}
           />
-          {rounds.flatMap((round) => (round.operator_notes ?? []).map((note) => <p key={note.event_id} className="mt-2 whitespace-pre-wrap text-sm">Round {round.round} · operator_note event {note.event_id} · {note.author}: {note.note}</p>))}
+          {rounds.flatMap((round, index) => (round.operator_notes ?? []).map((note) => (
+            <OperatorNoteCard key={note.event_id} note={note} ordinal={index + 1}
+              started={body.events.find((event) => event.kind === "operator_note_consumed" &&
+                event.summary === `operator_note event ${note.event_id} drove round ${round.round}`)?.at ?? round.started_ms} />
+          )))}
           {rounds.some((round) => (round.instructions ?? []).length > 0) && (
             <section className="mt-4">
               <h3 className="text-sm font-semibold">Instructions</h3>
@@ -144,17 +150,12 @@ function Card({
                   {counts.must} must · {counts.should} should
                 </span>
               </div>
-              {findings.length === 0 ? (
+              {findings.length === 0 && (
                 <p className="mt-2 text-[13px] text-muted">
                   {rounds.length === 0 ? "No review round yet" : "No open findings"}
                 </p>
-              ) : (
-                <ul className="mt-2 flex flex-col gap-2">
-                  {findings.map((finding, index) => (
-                    <FindingCard key={`${finding.path}:${finding.line ?? ""}:${index}`} finding={finding} />
-                  ))}
-                </ul>
               )}
+              {rounds.length > 0 && <FindingsSection rounds={rounds} ledger={ledger} showHeading={false} />}
             </>
           )}
           {(body.findings ?? []).length > 0 && (
@@ -193,23 +194,24 @@ function fateSummary(group: RoundHistory): string {
     .join(" · ");
 }
 
-/** A finished run's findings: one fold per review round, newest first and
+/** A run's findings: one fold per review round, newest first and
  *  the newest open, each card carrying the fate the round's ledger row and
  *  the next round give it. The heading counts findings over rounds. */
-function FindingsSection({ rounds, ledger }: { rounds: Round[]; ledger: LedgerRow[] }) {
-  const history = findingsHistory(rounds, ledger);
+function FindingsSection({ rounds, ledger, showHeading = true }: { rounds: Round[]; ledger: LedgerRow[]; showHeading?: boolean }) {
+  const history = findingsHistory(rounds, ledger).sort((a, b) =>
+    rounds.findIndex((round) => round.round === b.round) - rounds.findIndex((round) => round.round === a.round));
   const total = history.reduce((sum, group) => sum + group.findings.length, 0);
   return (
     <>
-      <div className="mt-4 flex items-baseline gap-3">
+      {showHeading && <div className="mt-4 flex items-baseline gap-3">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Findings</span>
         <span data-findings-count className="font-mono text-[12px] text-muted">
           {total} over {history.length} rounds
         </span>
-      </div>
+      </div>}
       <div className="mt-2 flex flex-col gap-3">
         {history.map((group, index) => (
-          <RoundFold key={group.round} group={group} startOpen={index === 0} />
+          <RoundFold key={group.round} ordinal={rounds.findIndex((round) => round.round === group.round) + 1} group={group} startOpen={index === 0} />
         ))}
       </div>
     </>
@@ -218,7 +220,7 @@ function FindingsSection({ rounds, ledger }: { rounds: Round[]; ledger: LedgerRo
 
 /** One round's fold: "Round N · M findings · fates" behind the run log's
  *  disclosure, closed but for the newest. */
-function RoundFold({ group, startOpen }: { group: RoundHistory; startOpen: boolean }) {
+function RoundFold({ group, startOpen, ordinal }: { group: RoundHistory; startOpen: boolean; ordinal: number }) {
   const [open, setOpen] = useState(startOpen);
   const count = group.findings.length;
   const summary = fateSummary(group);
@@ -234,7 +236,7 @@ function RoundFold({ group, startOpen }: { group: RoundHistory; startOpen: boole
           {open ? "▾" : "▸"}
         </span>
         <span className="text-[12px] font-semibold text-ink">
-          Round {group.round} · {count} {count === 1 ? "finding" : "findings"}
+          {roundLabel(ordinal)} · {count} {count === 1 ? "finding" : "findings"}
           {summary !== "" ? ` · ${summary}` : ""}
         </span>
       </button>

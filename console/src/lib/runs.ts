@@ -115,3 +115,8 @@ export function runKey(base: string, id: number): string {
 export function workingMs(run: { working_ms?: number | null; work_started_ms?: number | null }, sinceMs = 0): number | null {
   return run.working_ms == null ? null : run.working_ms + (run.work_started_ms != null ? sinceMs : 0);
 }
+
+/** One-based ordinal among this run's recorded review rounds. */
+export function roundLabel(ordinal: number, cap?: number): string {
+  return `Round ${ordinal}${cap == null ? "" : ` of ${cap}`}`;
+}
