@@ -234,6 +234,14 @@ def _prepare_runtime(root: Path, auth: Path, codex: Path) -> tuple[Path, Path]:
     return home, toolchain
 
 
+def hardening_flags(uid: int, gid: int, memory: str = "2g") -> list[str]:
+    """Shared container boundary for review and implementation seats."""
+    return ["--read-only", "--cap-drop=ALL",
+            "--security-opt=no-new-privileges", "--pids-limit=256",
+            f"--memory={memory}", "--cpus=2", "--network=bridge",
+            f"--user={uid}:{gid}", "--workdir=/workspace"]
+
+
 def container_command(
     *,
     image: str,
@@ -289,15 +297,7 @@ exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
         "--rm",
         "--name",
         name,
-        "--read-only",
-        "--cap-drop=ALL",
-        "--security-opt=no-new-privileges",
-        "--pids-limit=256",
-        "--memory=2g",
-        "--cpus=2",
-        "--network=bridge",
-        f"--user={uid}:{gid}",
-        "--workdir=/workspace",
+        *hardening_flags(uid, gid),
         "--env=HOME=/home/reviewer",
         f"--env=HOLOPHYTE_REVIEW_CANDIDATE={review_refs(run_id)[1]}",
         "--tmpfs",
@@ -414,12 +414,15 @@ def _ensure_image(image: str, dockerfile: str, *, candidate: str) -> None:
             ) from exc
 
 
-def _remove_container(name: str) -> None:
+def _remove_container(name: str, *, env=None) -> None:
+    environment = {} if env is None else {"env": env}
     subprocess.run(
-        ["docker", "rm", "--force", name], capture_output=True, text=True, timeout=30
+        ["docker", "rm", "--force", name], capture_output=True, text=True, timeout=30,
+        **environment
     )
     if subprocess.run(
-        ["docker", "inspect", name], capture_output=True, text=True, timeout=30
+        ["docker", "inspect", name], capture_output=True, text=True, timeout=30,
+        **environment
     ).returncode == 0:
         raise ReviewBoundaryError(
             f"review container still exists after cleanup: {name}"
