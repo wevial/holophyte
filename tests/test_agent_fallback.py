@@ -48,6 +48,27 @@ class AgentFallbackTests(SweepTestCase):
             code = operator.main(self.tgt, SimpleNamespace(team='team-1'))
         return code, out.getvalue()
 
+    def test_missing_implementer_image_stops_before_claim(self):
+        import subprocess
+
+        from holophyte import isolation
+
+        self.configure('[agents]\nimplementer_isolation = "container"\n'
+                       'implementer_image = "missing-implementer:test"\n')
+        real_run = subprocess.run
+        def docker_missing(argv, **kwargs):
+            if argv[:3] == ['docker', 'image', 'inspect']:
+                return subprocess.CompletedProcess(argv, 1, '', 'missing')
+            return real_run(argv, **kwargs)
+        with patch.object(isolation.subprocess, 'run', side_effect=docker_missing):
+            code, output = self.start(
+                lambda *_: self.fail('claimed after missing image'))
+        self.assertEqual(code, 1)
+        self.assertIn('missing-implementer:test', output)
+        self.assertIn('docker build -t missing-implementer:test', output)
+        self.assertEqual(self.conn.execute(
+            'SELECT count(*) FROM runs').fetchone()[0], 0)
+
     def test_probe_fallback_is_logged_and_first_turn_uses_it(self):
         self.routes()
         run = self.a_run()

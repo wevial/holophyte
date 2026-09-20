@@ -368,7 +368,7 @@ class GroupKill:
             self._proc.kill()
 
 
-def run_capped(cmd, cwd, timeout, on_start=None):
+def run_capped(cmd, cwd, timeout, on_start=None, *, env=None):
     """Run one command under a hard cap. Returns `(returncode, output)`,
     or raises `subprocess.TimeoutExpired` carrying whatever it printed first.
 
@@ -379,8 +379,7 @@ def run_capped(cmd, cwd, timeout, on_start=None):
     return code and what it printed first as the output.
 
     `cmd` is a shell string (a ticket's verify command, a setup command) or an
-    argv list (an agent dispatch, where the prompt is data and must never
-    reach a shell); either way the tree underneath it runs as one group.
+    argv list (an agent dispatch). `env=None` preserves inherited environment.
 
     The process group is the point. `subprocess.run(timeout=...)` signals the
     shell it started and nothing underneath it, so a `make` that reached the
@@ -390,9 +389,10 @@ def run_capped(cmd, cwd, timeout, on_start=None):
     session of its own makes the tree one killable unit, so the cap can end
     the command it timed rather than just the shell that spawned it.
     """
+    environment = {} if env is None else {"env": env}
     with subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=str(cwd),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          text=True, start_new_session=True) as proc:
+                          text=True, start_new_session=True, **environment) as proc:
         if on_start is not None:
             on_start(proc)
         try:

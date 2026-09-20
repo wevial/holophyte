@@ -20,6 +20,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import review_runner
+from holophyte import isolation
 from holophyte.agent_routes import route_prose, routes, safe_command
 from holophyte.config import (
     AGENT_CONFIG_KEYS,
@@ -175,7 +176,9 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
     cmd = agent_command(target, role, PROBE_GOAL, fallback=fallback)
     default = cmd is None
     if default:
-        if fallback or agent_command(target, role, "", fallback=True) is None:
+        if fallback or (agent_command(target, role, "", fallback=True) is None
+                        and not (role == "implement" and
+                                 isolation.route_for(target).backend == "container")):
             return None
         cmd = ([DEFAULT_IMPLEMENTER, "-p", PROBE_GOAL, "--model", IMPL_MODEL,
                 "--effort", IMPL_EFFORT] if role == "implement" else
@@ -197,7 +200,13 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
                     timeout=cap, verdicts=None, carry=carry_directories(target))
                 code = 0
             else:
-                code, out = run_capped(cmd, scratch, cap)
+                if role == "implement":
+                    code, out = isolation.launch(
+                        isolation.route_for(target), scratch,
+                        isolation.environment(target), cmd, timeout=cap,
+                        runner=run_capped)
+                else:
+                    code, out = run_capped(cmd, scratch, cap)
         except subprocess.TimeoutExpired as expired:
             partial = expired.output or ""
             if isinstance(partial, bytes):
@@ -375,7 +384,9 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     # The hook is passed only when there is one, so a turn without a
     # sweep-time kill runs exactly the call it always did.
     hook = {"on_start": on_start} if on_start is not None else {}
-    code, out = run_capped(cmd, cwd, cap, **hook)
+    code, out = isolation.launch(isolation.route_for(target), cwd,
+                                 isolation.environment(target), cmd,
+                                 timeout=cap, runner=run_capped, **hook)
     return ImplementerOutput(out.strip(), code, dispatched_route)
 
 
