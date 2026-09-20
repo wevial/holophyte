@@ -21,7 +21,7 @@ const width = (share: number, gapsPx: number) =>
   `calc(${Math.max(0, share * 100)}% - ${Math.max(0, share) * gapsPx}px)`;
 
 const shortLabel = (segment: Segment) =>
-  segment.kind === "fix" ? segment.label.replace(/^fix/, "rework") : segment.label;
+  segment.round != null ? segmentName(segment) : segment.kind === "fix" ? segment.label.replace(/^fix/, "rework") : segment.label;
 
 const description = (segment: Segment) =>
   `${segmentName(segment)} · ${formatTotal(segment.to - segment.from)}${segment.reason ? ` · ${segment.reason}` : ""}`;
@@ -64,7 +64,7 @@ export function RoundTimeline({
       : last == null
         ? undefined
         : last.running
-          ? { label: last.kind === "parked" ? phaseLabel(run.phase, run.pr_url) : last.label, ms: last.to - last.from }
+          ? { label: last.kind === "parked" ? phaseLabel(run.phase, run.pr_url) : last.round != null ? segmentName(last) : last.label, ms: last.to - last.from }
           : { label: phaseLabel(run.phase, run.pr_url), ms: now - last.to };
   const hovered = active == null ? undefined : segments[active];
   return (
@@ -77,7 +77,7 @@ export function RoundTimeline({
             data-running={segment.running ? "true" : undefined}
             role="img"
             tabIndex={0}
-            aria-label={`${segment.label} ${formatSpan(segment.to - segment.from)}`}
+            aria-label={`${shortLabel(segment)} ${formatSpan(segment.to - segment.from)}`}
             onMouseEnter={() => setActive(index)}
             onMouseLeave={() => setActive(null)}
             onFocus={() => setActive(index)}

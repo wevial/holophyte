@@ -41,7 +41,7 @@ test("the timeline preserves pre-PR verification and labels the PR wait", () => 
     { at: 30, kind: "phase_change", summary: "reviewing -> merge_gate: approved" },
   ] };
   expect(buildTimeline(missingOpen, 60).map((segment) => segment.label)).toEqual([
-    "verifying", "review 2", "monitoring PR",
+    "verifying", "review", "monitoring PR",
   ]);
 });
 
