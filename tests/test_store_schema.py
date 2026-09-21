@@ -413,20 +413,38 @@ class StoreSchemaTests(unittest.TestCase):
 
         self.assertEqual(self.review_round_count(conn, ended), 1)
 
+    def test_reopening_excludes_error_rounds_from_ended_run_counts(self):
+        conn = self.legacy_store()
+        ended = self.a_run(conn, phase="done", ended_at=5_000)
+        self.a_review_round(conn, ended, round=1)
+        self.a_review_round(conn, ended, round=2)
+        self.a_review_round(conn, ended, round=3, verdict="error")
+        # Exercise an unstamped legacy count, a correct close-out count,
+        # and a count inflated by the old startup backfill.
+        for previous_count in (0, 2, 3):
+            with self.subTest(previous_count=previous_count):
+                conn.execute("UPDATE runs SET reviewRoundCount = ? WHERE id = ?",
+                             (previous_count, ended))
+                conn.commit()
+                conn.close()
+                conn = self.open()
+                store.init(conn)
+                self.assertEqual(self.review_round_count(conn, ended), 2)
+
     def review_round_count(self, conn, run_id):
         (count,) = conn.execute(
             "SELECT reviewRoundCount FROM runs WHERE id = ?", (run_id,)
         ).fetchone()
         return count
 
-    def a_review_round(self, conn, run_id, round):  # noqa: A002 - the column's name
+    def a_review_round(self, conn, run_id, round, verdict="pass"):  # noqa: A002 - the column's name
         """One `reviewRounds` row on `run_id`, for the backfill tests."""
         conn.execute(
             "INSERT INTO reviewRounds"
             " (runId, round, verdict, findingsFingerprint, reviewerModel,"
             "  startedAt)"
-            " VALUES (?, ?, 'pass', 'fp', 'a-model', 0)",
-            (run_id, round),
+            " VALUES (?, ?, ?, 'fp', 'a-model', 0)",
+            (run_id, round, verdict),
         )
         conn.commit()
 
