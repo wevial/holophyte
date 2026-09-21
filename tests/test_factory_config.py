@@ -77,6 +77,18 @@ class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
                 with self.assertRaisesRegex(SystemExit, "strip_attribution"):
                     holophyte.config.check_document(self.tgt)
 
+    def test_merge_changes_log_default_override_and_validation(self):
+        for value, expected in ((None, False), ("false", False), ("true", True)):
+            self.locate("" if value is None else f"[merge]\npr_changes_log = {value}\n")
+            holophyte.config.check_document(self.tgt)
+            self.assertIs(holophyte.config.merge_config(self.tgt).pr_changes_log,
+                          expected)
+        for value in ('"true"', "1", "0", "1.5", "[]", "{}"):
+            with self.subTest(value=value):
+                self.locate(f"[merge]\npr_changes_log = {value}\n")
+                with self.assertRaisesRegex(SystemExit, "pr_changes_log.*boolean"):
+                    holophyte.config.check_document(self.tgt)
+
     def test_merge_mention_handle(self):
         self.locate("")
         self.assertEqual(holophyte.config.merge_config(self.tgt).mention_handle,

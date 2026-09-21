@@ -72,7 +72,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                   provider=self.provider())
         body = self.pr_body.read_text()
         self.assertIn("Load handles missing input.", body)
-        self.assertIn("- Round 1: Missing input no longer crashes the load.", body)
+        self.assertNotIn("Changes since first review", body)
         self.serve(self.pr_state())
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(len(edits), 1)
@@ -376,7 +376,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                             self.BODY, 60, self.target, 5, pull,
                             "ADDRESS: replace correlated subquery")
                 self.assertEqual(title, "Faster search")
-                self.assertIn("- Round 1: Search no longer stalls.",
+                self.assertIn("Search results arrive sooner.",
                               edit.call_args.args[2])
                 self.assertNotIn("correlated subquery", edit.call_args.args[2])
                 turns = [json.loads(line)
@@ -568,8 +568,25 @@ class MergeModePullRequestTests(MergeModeFixture):
             "New description.\n\nLinear: KO-131\n\n"
             "<!-- bot -->\nAppended block.\n")
 
-    def test_refresh_preserves_metadata_and_accumulates_fix_rounds(self):
+    def test_refresh_omits_history_by_default_and_removes_existing_rounds(self):
         self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        preserved = ("## Evidence\n\n![capture](https://example/screen.png)\n\n"
+                     "Linear: KO-131 (https://linear.app/example/KO-131)\n\n"
+                     "<!-- bot -->\nAppended block.\n")
+        for history in ("", "## Changes since first review\n"
+                        "- Round 1: Results arrive sooner.\n"
+                        "- Round 2: Keep rows without matches.\n\n"):
+            for summary in ("", "\n\n## Changes since first review\n- Faster."):
+                with self.subTest(history=history, summary=summary):
+                    self.pr_body.write_text(
+                        "Old description.\n\n" + history + preserved)
+                    self.refresh(("TITLE: Ignored\nNew description." + summary, False))
+                    self.assertEqual(self.pr_body.read_text(),
+                                     "New description.\n\n" + preserved)
+
+    def test_refresh_preserves_metadata_and_accumulates_fix_rounds(self):
+        self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
         self.fake_route()
         original = holophyte.pr_media.append(
             holophyte.pr.pr_body_written(
@@ -608,7 +625,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(edits, [f"gh pr edit {self.URL} --body-file -"] * 2)
 
     def test_refresh_refusal_leaves_body_untouched(self):
-        self.configure('[merge]\nmode = "pr"\n')
+        self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
         self.fake_route()
         original = ("Good description.\n\nLinear: KO-131\n\n## Evidence\n"
                     "Capture\n<!-- bot -->tail\n")

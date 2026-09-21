@@ -352,9 +352,9 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual(fake.roles.count("review"), 1)
         self.assertEqual([c for c in self.recorded() if c.startswith("gh pr edit")],
                          [f"gh pr edit {self.URL} --body-file -"])
-        history = self.pr_body.read_text().split("## Changes since first review\n")[1]
-        self.assertTrue(history.startswith("- Round 1:"))
-        self.assertIn("Missing input no longer crashes.", history)
+        body = self.pr_body.read_text()
+        self.assertIn("Load handles missing input.", body)
+        self.assertNotIn("Changes since first review", body)
         fixed = self.git("rev-parse", BRANCH).strip()
         original = fake.turns[1].candidate_sha[:12]
         self.assertIn(
@@ -481,8 +481,8 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                      "scripted change is incomplete", "repair the pin"):
             self.assertIn(text, prompt)
             self.assertNotIn(text, body)
-        self.assertIn("## Changes since first review\n"
-                      "- Round 1: Missing input is preserved.", body)
+        self.assertIn("Both defects fixed.", body)
+        self.assertNotIn("Changes since first review", body)
 
     def test_babysit_review_fix_waits_for_head_and_checks_before_merging(self):
         old, fake, naps = self.review_fix_propagation(catches_up=True)

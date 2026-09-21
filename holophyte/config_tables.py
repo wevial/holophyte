@@ -380,7 +380,7 @@ MERGE_KEYS = {
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
-    "pr_style": "",
+    "pr_style": "", "pr_changes_log": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
     "media_repo": "",
     "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
@@ -418,6 +418,9 @@ def merge_config(target):
     defaults = dict(MERGE_KEYS, check_wait_sec=CHECK_WAIT_S)
     values["strip_attribution"] = _attribution_patterns(
         target, table.get("strip_attribution", defaults.pop("strip_attribution")))
+    values["pr_changes_log"] = _merge_boolean(
+        target, "pr_changes_log",
+        table.get("pr_changes_log", defaults.pop("pr_changes_log")))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):
@@ -457,6 +460,14 @@ def merge_config(target):
         values[key] = value
     _validate_ui(target, values)
     return MergeConfig(**values)
+
+
+def _merge_boolean(target, key, value):
+    if not isinstance(value, bool):
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [merge] {key} must be a"
+            f" boolean, got {value!r}")
+    return value
 
 
 def _attribution_patterns(target, value):
