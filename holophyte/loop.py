@@ -277,6 +277,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
         if merge.mode == "pr":
             url = _open_pr(target, conn, run_id, task_id, task, branch, body,
                            beat_s, wt, started, budget_min, issue_url)
+            sha = sh(["git", "rev-parse", branch], wt)
         elif merge.approve == "human":
             # The human half of the gate, when the target asks for one: the
             # candidate is approved and verified, and a person says "merge".
@@ -612,7 +613,8 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         "The ticket above is the contract, acceptance criteria "
         "included; the task is done only when they hold. Commit your "
         "work with a clear message. Stay strictly on-scope; do not "
-        "expand the task." + _capture_brief(target, ticket))
+        "expand the task. Commit messages carry no tool attribution or co-author "
+        "lines for an AI." + _capture_brief(target, ticket))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work
