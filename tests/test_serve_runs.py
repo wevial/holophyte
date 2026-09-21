@@ -491,6 +491,44 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         finally:
             conn.close()
 
+    def assert_old_bot_headline(self, comment, expected):
+        self.seed_reviewed()
+        finding = dict(kind="instruction", path="app.py", line=1, severity="nit",
+                       author="coderabbitai", request=comment, message=comment)
+        with store.open(str(self.db)) as conn:
+            store.record_review_round(conn, self.run, 3, "changes_requested",
+                                      "github:coderabbitai", findings=[finding])
+        self.start()
+        code, _, body = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200)
+        (shown,) = body["rounds"][-1]["findings"]
+        self.assertEqual(shown["summary"], expected)
+        self.assertLessEqual(len(shown["summary"]), 200)
+        self.assertEqual(shown["raw"], comment)
+        self.assertNotIn("verdict", shown)
+
+    def test_old_bot_comment_uses_bold_headline_outside_collapsed_blocks(self):
+        self.assert_old_bot_headline(
+            "_Potential issue_ | _Major_\n\n"
+            "<details><summary>Analysis</summary>\n"
+            "**Internal analysis**\n```sh\n" + "inspect && check; " * 150 +
+            "\n```\n</details>\n<!-- **Hidden metadata** -->\n"
+            "Context before the headline.\n\n**Handle empty tokens safely.**\n"
+            "The lookup currently assumes a token exists.",
+            "Handle empty tokens safely.")
+
+    def test_old_bot_comment_unclosed_blocks_preserve_prose(self):
+        self.assert_old_bot_headline(
+            "*Potential issue*\n<details open>\n<!--\n"
+            "Handle empty tokens safely.\nThe lookup assumes a token exists.",
+            "Handle empty tokens safely.")
+
+    def test_old_bot_comment_headline_is_capped_on_a_word_boundary(self):
+        self.assert_old_bot_headline(
+            "__" + "Token validation needs attention. " * 8 + "__",
+            "Token validation needs attention. " * 5 +
+            "Token validation needs")
+
     def test_bot_instructions_read_as_findings_without_changing_stored_rows(self):
         self.seed_reviewed()
         bot = dict(kind="instruction", path="app.py", line=1, severity="nit",

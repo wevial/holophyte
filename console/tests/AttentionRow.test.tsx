@@ -1,3 +1,4 @@
+import { fakeFetch } from "./actionFakes";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { AttentionRow } from "../src/components/AttentionRow";
@@ -19,31 +20,6 @@ beforeEach(() => {
   storeToken("writer:7710", TOKEN);
 });
 afterEach(cleanup);
-
-interface Seen {
-  url: string;
-  method: string | undefined;
-  authorization: string | null;
-  body: unknown;
-}
-
-/** A `fetch` that records each request and answers every one with `reply`
- *  (a body, or a Response for a non-2xx answer); `gate` holds the answer
- *  until the test releases it. */
-function fakeFetch(reply: Record<string, unknown> | (() => Response), gate?: Promise<void>) {
-  const seen: Seen[] = [];
-  const fetchImpl: Fetch = async (url, init) => {
-    seen.push({
-      url,
-      method: init?.method,
-      authorization: new Headers(init?.headers).get("authorization"),
-      body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
-    });
-    if (gate) await gate;
-    return typeof reply === "function" ? reply() : Response.json(reply);
-  };
-  return { seen, fetchImpl };
-}
 
 const supervisorItem = allKinds.attention.items.find((item) => item.kind === "supervisor")!;
 const failedItem = allKinds.attention.items.find((item) => item.kind === "failed")!;

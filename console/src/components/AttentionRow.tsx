@@ -1,13 +1,11 @@
+import { PrFacts } from "./PrFacts";
 import { TicketLink } from "./TicketLink";
 import { useState, type KeyboardEvent } from "react";
-import { ACTIONS_OFF, NOT_WIRED, ROUTES, postAction } from "../lib/actions";
-import { OPEN_PR, type Description, type Tone } from "../lib/attention";
+import type { Description } from "../lib/attention";
 import { formatAge } from "../lib/format";
-import type { Fetch } from "../lib/poll";
 import type { ThreadRow } from "../lib/threads";
 import type { AttentionItem } from "../lib/types";
-import { SendBackNote } from "./SendBackNote";
-import { ActionButton } from "./ActionButton";
+import { RowActions, type RowDaemon } from "./RowActions";
 import { AttemptsCard } from "./AttemptsCard";
 import { KindPill } from "./KindPill";
 import { QuestionThread } from "./QuestionThread";
@@ -30,35 +28,7 @@ export interface AttemptsProps {
   onToggle: () => void;
 }
 
-/** The title of an "Open PR" on a row whose item carried no URL. */
-export const NO_PR_URL = "the item carries no PR URL";
-
-/** The page's own `fetch`; `postAction` adds the bearer itself. */
-const pageFetch: Fetch = (url, init) => globalThis.fetch(url, init);
-
-/** The daemon a row's buttons post to: its base URL and whether its
- *  `/status` advertised `actions`. `fetch` defaults to the page's own;
- *  tests hand in a fake. */
-export interface RowDaemon {
-  base: string;
-  actions: boolean;
-  fetch?: Fetch;
-}
-
-/** A fact chip's classes by tone: the theme's ok, warn and bad washes;
- *  a neutral chip is outlined and faint. */
-const TONE_CLASS: Record<Tone, string> = {
-  ok: "bg-ok-bg text-ok-text",
-  warn: "bg-warn-bg text-warn-text",
-  bad: "bg-bad-bg text-bad-text",
-  neutral: "border border-chip-border text-faint",
-};
-
-/** The body one wired label posts: the row's ticket for "Requeue"
- *  (holophyte/serve.py `requeue_action()`), nothing for the unit actions. */
-function bodyFor(label: string, ticket: string | null): Record<string, unknown> {
-  return label === "Requeue" && ticket != null ? { ticket } : {};
-}
+export { NO_PR_URL, type RowDaemon } from "./RowActions";
 
 /** One item: pill, ticket over project, body over meta, age, actions. A
  *  row given `thread` toggles its thread card on click; one given
@@ -101,28 +71,6 @@ export function AttentionRow({
   const failed = kind === "failed" && runId != null && daemon != null && !thread && !attempts;
   const card = thread ?? attempts ?? (failed ? { open: expanded, onToggle: () => setExpanded((value) => !value) } : undefined);
   const toggle = card?.onToggle;
-  const [detail, setDetail] = useState<{ text: string; ok: boolean } | null>(null);
-  const act = (label: string) => {
-    if (label === OPEN_PR) {
-      if (!prUrl) return undefined;
-      return async () => {
-        window.open(prUrl, "_blank", "noopener,noreferrer");
-      };
-    }
-    const route = ROUTES[label];
-    if (!daemon || !daemon.actions || route == null) return undefined;
-    return async () => {
-      setDetail(null);
-      const result = await postAction(daemon.base, route, bodyFor(label, ticket), daemon.fetch ?? pageFetch);
-      setDetail({ text: result.detail, ok: result.ok });
-    };
-  };
-  const titleFor = (label: string) => {
-    if (label === OPEN_PR) return prUrl ? undefined : NO_PR_URL;
-    if (ROUTES[label] == null) return NOT_WIRED;
-    if (daemon && !daemon.actions) return ACTIONS_OFF;
-    return undefined;
-  };
   // A row with fact chips leads with the PR link (KO-370); any other row
   // keeps the link after the prose, as before.
   const leadsWithLink = facts != null && facts.length > 0;
@@ -174,20 +122,7 @@ export function AttentionRow({
               </span>
             )}
           </p>
-          {facts && facts.length > 0 && (
-            <p data-facts className="mt-1 flex flex-wrap gap-1.5">
-              {facts.map((fact) => (
-                <span
-                  key={fact.label}
-                  data-fact
-                  data-tone={fact.tone}
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONE_CLASS[fact.tone]}`}
-                >
-                  {fact.label}
-                </span>
-              ))}
-            </p>
-          )}
+          <PrFacts facts={facts} />
           {meta && <p className="text-[12px] text-faint">{meta}</p>}
           {failed && !attempts && (
             <p className="text-[12px] font-semibold text-needs-you-link">{card?.open ? "hide run ▴" : "run ▾"}</p>
@@ -204,26 +139,7 @@ export function AttentionRow({
           )}
         </div>
         <div className="text-right font-mono text-[12px] text-muted">{ageMs == null ? "" : formatAge(ageMs)}</div>
-        <div className="flex flex-col items-end gap-1.5">
-          <div className="flex gap-1.5">
-            {actions.map((action) => (
-              <ActionButton key={action} onAct={act(action)} title={titleFor(action)}>
-                {action}
-              </ActionButton>
-            ))}
-          </div>
-          {kind === "pr_open" && daemon?.actions && runId != null && <SendBackNote daemon={daemon} runId={runId} />}
-          {detail && (
-            <p
-              data-action-detail
-              data-ok={detail.ok}
-              role="status"
-              className={`max-w-[280px] text-right text-[12px] ${detail.ok ? "text-muted" : "text-needs-you-link"}`}
-            >
-              {detail.text}
-            </p>
-          )}
-        </div>
+        <RowActions kind={kind} actions={actions} ticket={ticket} prUrl={prUrl} daemon={daemon} runId={runId} />
       </div>
       {thread?.open && <QuestionThread rows={thread.rows} />}
       {attempts?.open && <AttemptsCard runs={attempts.runs} />}

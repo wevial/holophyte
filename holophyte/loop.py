@@ -32,7 +32,6 @@ from holophyte.agents import agent, review_refs, transport_failure
 from holophyte.babysitter import _babysit
 from holophyte.board import (
     block_ticket,
-    comment_body,
     ledger,
     mirror_key,
 )
@@ -78,7 +77,12 @@ from holophyte.pullrequest import (
 )
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
-from holophyte.review import criteria_brief, criteria_findings, evidence_brief
+from holophyte.review import (
+    _review_reply,
+    criteria_brief,
+    criteria_findings,
+    evidence_brief,
+)
 from holophyte.runs import (
     RunSwept,
     heartbeat_while,
@@ -717,27 +721,6 @@ def _review_cap(target, conn, run_id, provider, task_id, wt):
     return cap
 
 
-def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id):
-    """Re-ask a malformed review once; keep its evidence out of the verdict."""
-    first_reply = ""
-    for attempt in range(2):
-        reply = agent(target, "review", prompt, wt, base_sha=base_sha,
-                      candidate_sha=sha, conn=conn, run_id=run_id)
-        try:
-            decision = review_runner.terminal_verdict(reply)
-        except review_runner.ReviewBoundaryError:
-            decision = "MALFORMED"
-        if decision != "MALFORMED":
-            break
-        if attempt == 0:
-            first_reply = "first reply (no verdict):\n" + comment_body(reply)
-            prompt += ("\n\nYour previous reply had no clean terminal verdict. "
-                       "Your reply must end with exactly one line, "
-                       "VERDICT: APPROVE or VERDICT: REQUEST_CHANGES, "
-                       "and nothing after it.")
-    return reply, decision, first_reply
-
-
 def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap):
@@ -784,7 +767,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                 "line:\n"
                 "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
                 "If REQUEST_CHANGES, list only concrete blockers.", wt,
-                base_sha, sha, conn, run_id)
+                base_sha, sha, conn, run_id, run_agent=agent)
         # Store even the round that ends the loop.
         record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                      ok, out,

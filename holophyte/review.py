@@ -6,8 +6,8 @@ severity, message}` findings, the per-criterion checklist the reviewer is held
 to, and the collapse of both reviewer vocabularies onto `reviewRounds.verdict`.
 Witness checks read candidate files and import test modules in a subprocess;
 other helpers parse text without reading config, the store or the board. The
-one import beyond the standard library is `review_runner`, whose verdict
-reader `round_verdict` wraps.
+shared retry helper dispatches review turns; `round_verdict` wraps the
+`review_runner` verdict reader.
 
 Third slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
@@ -519,6 +519,32 @@ def criteria_brief(criteria):
             "A criterion marked not met or unwitnessed, or left out of this "
             "list, is a blocker: the round is REQUEST_CHANGES regardless of "
             "the verdict line.\n\n")
+
+
+def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
+                  run_agent=None):
+    """Re-ask a malformed review once; keep its evidence out of the verdict."""
+    from holophyte.agents import agent
+    from holophyte.board import comment_body
+
+    run_agent = run_agent or agent
+    first_reply = ""
+    for attempt in range(2):
+        reply = run_agent(target, "review", prompt, wt, base_sha=base_sha,
+                          candidate_sha=sha, conn=conn, run_id=run_id)
+        try:
+            decision = review_runner.terminal_verdict(reply)
+        except review_runner.ReviewBoundaryError:
+            decision = "MALFORMED"
+        if decision != "MALFORMED":
+            break
+        if attempt == 0:
+            first_reply = "first reply (no verdict):\n" + comment_body(reply)
+            prompt += ("\n\nYour previous reply had no clean terminal verdict. "
+                       "Your reply must end with exactly one line, "
+                       "VERDICT: APPROVE or VERDICT: REQUEST_CHANGES, "
+                       "and nothing after it.")
+    return reply, decision, first_reply
 
 
 def round_verdict(reply, verdicts):

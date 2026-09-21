@@ -8,6 +8,7 @@ import {
   describe,
   filterItems,
   orderByAge,
+  splitPullRequests,
   type BandEntry,
   type KindFilter,
   type ProjectChoice,
@@ -83,7 +84,13 @@ export function NeedsYou({
     return describe(aged, status.thresholds, { now: status.now + sinceMs, runs });
   };
 
-  const entries = orderByAge(collapseFailed(filterItems(stamped, "all", project)), (entry) => describeRow(entry.item).ageMs);
+  const { needsYou, pullRequests } = splitPullRequests(filterItems(stamped, "all", project));
+  const pointer = pullRequests.length > 0 ? (
+    <a href="#pull-requests" className="block py-3 text-[13px] text-needs-you-link">
+      {pullRequests.length} {pullRequests.length === 1 ? "pull request" : "pull requests"} below
+    </a>
+  ) : null;
+  const entries = orderByAge(collapseFailed(needsYou), (entry) => describeRow(entry.item).ageMs);
   const mine = entries.map((entry) => entry.item);
   const counts = countsByKind(mine);
   const shown = entries.filter((entry) => filterItems([entry.item], kind, project).length > 0);
@@ -130,6 +137,7 @@ export function NeedsYou({
     return (
       <p aria-label="Needs you" className="px-6 py-4 text-[13px] text-muted">
         Nothing needs you
+        {pointer}
       </p>
     );
   }
@@ -160,6 +168,7 @@ export function NeedsYou({
             />
           ))}
       </div>
+      {pointer}
       <ul className="mt-3">
         {rows.map((entry, index) => {
           const { item } = entry;

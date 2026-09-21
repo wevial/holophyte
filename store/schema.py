@@ -583,10 +583,12 @@ BACKFILLS = (
     (
         "runs.reviewRoundCount on runs that ended before close-out stamped it",
         "UPDATE runs SET reviewRoundCount ="
-        "     (SELECT COUNT(*) FROM reviewRounds WHERE runId = runs.id)"
+        "     (SELECT COUNT(*) FROM reviewRounds"
+        "      WHERE runId = runs.id AND verdict != 'error')"
         " WHERE endedAt IS NOT NULL"
         "   AND reviewRoundCount <>"
-        "     (SELECT COUNT(*) FROM reviewRounds WHERE runId = runs.id)",
+        "     (SELECT COUNT(*) FROM reviewRounds"
+        "      WHERE runId = runs.id AND verdict != 'error')",
     ),
 )
 
