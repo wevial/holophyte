@@ -161,7 +161,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
             "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
             " outcomeClass = ?, resumePhase = ?, mergeSha = ?,"
             " reviewRoundCount = (SELECT COUNT(*) FROM reviewRounds"
-            "                     WHERE runId = ?)"
+            "                     WHERE runId = ? AND verdict != 'error')"
             " WHERE id = ?",
             (now, outcome, reason, outcome_class, resume_phase, merge_sha,
              run_id, run_id),

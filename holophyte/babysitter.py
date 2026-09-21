@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 from time import monotonic, time
 
-import review_runner
 import store
 import store.read
 import ticket_template
@@ -35,6 +34,7 @@ from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
 from holophyte.review import (
+    _review_reply,
     criteria_brief,
     criteria_findings,
     evidence_brief,
@@ -592,7 +592,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     rnd = _next_round(conn, run_id)
     round_started = int(time() * 1000)
     with heartbeat_while(conn, run_id, beat_s):
-        verdict = agent(target, "review",
+        verdict, decision, first_reply = _review_reply(target,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             f"{review_refs(run_id)[0]} as the frozen base and {review_refs(run_id)[1]} "
             "as the candidate in this repo against the ticket below. The "
@@ -614,10 +614,16 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
-            base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
+            base_sha, sha, conn, run_id, run_agent=agent)
     record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out, started_at=round_started, criteria=criteria,
-                 root=wt)
+                 root=wt, prior_reply=first_reply)
+    if decision == "MALFORMED":
+        reason = "the reviewer gave no verdict after one reminder"
+        if conn is not None and run_id is not None:
+            store.record_event(conn, run_id, "route_failure", reason)
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                    pull, reason, ())
     # The same gate as a review round's: a criterion left not met or
     # unwitnessed is a blocker whatever the verdict line says.
     unwitnessed = criteria_findings(verdict, criteria, wt)
@@ -628,7 +634,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
         verdict += "\n\n" + "\n".join(f["message"] for f in unwitnessed)
     recovered = _fix_answers(conn, run_id, rnd, fix_note)
     answered = "\n".join(part for part in (fix_context, recovered) if part)
-    if not unwitnessed and review_runner.terminal_verdict(verdict) == "APPROVE":
+    if not unwitnessed and decision == "APPROVE":
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"
                f"Reviewer verdict:\n{verdict}", provider)
@@ -644,7 +650,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
            f" {pull.url}; not merged\nReviewer findings:\n{verdict}",
            provider)
     if fix_note is not None and (unwitnessed or
-            review_runner.terminal_verdict(verdict) == "REQUEST_CHANGES"):
+            decision == "REQUEST_CHANGES"):
         goal = (f"Fix the pre-merge review findings on {pull.url}. The ticket"
                 f" is the contract:\n\n{ticket}\n\nReviewer findings:\n{verdict}"
                 f"\n\nOperator babysit note:\n{fix_note}\n\n"

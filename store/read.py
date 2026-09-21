@@ -245,7 +245,8 @@ def run_snapshot(conn, run_id):
     row = conn.execute(
         "SELECT id, ticketId, phase, lastHeartbeat, endedAt, startedAt,"
         " timeBoxMs, workingMs, workStartedAt, (SELECT COUNT(*) FROM reviewRounds"
-        " WHERE runId = runs.id), reviewRoundCap FROM runs WHERE id = ?",
+        " WHERE runId = runs.id AND verdict != 'error'),"
+        " reviewRoundCap FROM runs WHERE id = ?",
         (run_id,)).fetchone()
     if row is None:
         return None
@@ -355,7 +356,8 @@ def live_runs(conn, phases):
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
         " r.startedAt, r.timeBoxMs, r.host,"
-        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id),"
+        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id"
+        " AND rr.verdict != 'error'),"
         " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url, t.boardState"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
