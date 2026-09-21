@@ -27,15 +27,22 @@ export function App({
   timeoutMs?: number;
 }) {
   const readRun = () => {
-    const match = /^#run=([1-9]\d*)$/.exec(window.location.hash);
-    return match && Number.isSafeInteger(Number(match[1])) ? Number(match[1]) : null;
+    const match = /^#run=([1-9]\d*)(?:&daemon=([^&]+))?$/.exec(window.location.hash);
+    if (!match || !Number.isSafeInteger(Number(match[1]))) return null;
+    // Keep peer navigation on this origin, where its bearer token is stored.
+    const daemon = new URLSearchParams(window.location.hash.slice(1)).get("daemon") ?? base;
+    try {
+      const url = new URL(daemon);
+      if (!/^https?:$/.test(url.protocol) || url.origin !== daemon) return null;
+      return { id: Number(match[1]), base: daemon };
+    } catch { return null; }
   };
   const [linkedRun, setLinkedRun] = useState(readRun);
   useEffect(() => {
     const changed = () => setLinkedRun(readRun());
     window.addEventListener("hashchange", changed);
     return () => window.removeEventListener("hashchange", changed);
-  }, []);
+  }, [base]);
   const [view, setView] = useState<View>("now");
   const [project, setProject] = useState<ProjectChoice>("all");
   const [theme, setTheme] = useState<Theme>(readTheme);
@@ -70,10 +77,11 @@ export function App({
       />
       <main className="min-w-0 flex-1 overflow-y-auto">
         {linkedRun != null ? (
-          <section aria-label={`Run ${linkedRun}`} className="py-6">
+          <section aria-label={`Run ${linkedRun.id}`} className="py-6">
             <a href="#" className="mx-6 text-link">Back to Now</a>
-            <h1 className="mx-6 my-3 text-[20px] font-semibold">Run {linkedRun}</h1>
-            <RunDetail base={base} id={linkedRun} now={hosts.find(host => host.base === base)?.status?.now ?? daemonNow}
+            <h1 className="mx-6 my-3 text-[20px] font-semibold">Run {linkedRun.id}</h1>
+            <RunDetail key={`${linkedRun.base}/${linkedRun.id}`} base={linkedRun.base} id={linkedRun.id}
+              now={hosts.find(host => host.base === linkedRun.base)?.status?.now ?? daemonNow}
               polls={polls} deps={pollDeps} />
           </section>
         ) : view === "shipped" ? (

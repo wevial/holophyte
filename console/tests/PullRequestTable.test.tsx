@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { App } from "../src/App";
 import { PullRequestTable } from "../src/components/PullRequestTable";
 import { NeedsYou } from "../src/components/NeedsYou";
+import { tokenedFetch } from "../src/lib/poll";
 import { storeToken } from "../src/lib/token";
 import type { AttentionItem, Status, RunDetailBody } from "../src/lib/types";
 import { fakeFetch } from "./actionFakes";
@@ -138,7 +139,7 @@ test("detail is lazy, shows the latest findings and full facts, and rows stay in
   expect(row.textContent).toContain("Open threads: 0");
   expect(row.textContent).toContain("Waiting for review");
   expect(row.textContent).toContain("2m ago");
-  expect(within(row as HTMLElement).getByRole("link", { name: "Open run 47" }).getAttribute("href")).toBe(`${host.base}/#run=47`);
+  expect(within(row as HTMLElement).getByRole("link", { name: "Open run 47" }).getAttribute("href")).toBe(`#run=47&daemon=${encodeURIComponent(host.base)}`);
   const keyboardToggle = screen.getByRole("button", { name: "Details for KO-8" });
   keyboardToggle.focus();
   await act(async () => { await userEvent.keyboard("{Enter}"); });
@@ -190,5 +191,44 @@ test("the run link opens the existing run view on its serving daemon", async () 
     await act(async () => { window.location.hash = ""; window.dispatchEvent(new Event("hashchange")); });
     expect(screen.queryByRole("region", { name: "Run 47" })).toBeNull();
     expect(screen.getByRole("region", { name: "Floor" })).toBeTruthy();
+  } finally { window.location.hash = ""; }
+});
+
+
+test("a peer run link stays in this console and authenticates the peer run page", async () => {
+  const peer = "http://writer:7711";
+  storeToken("writer:7711", "peer-test-token");
+  const requests: { url: string; authorization: string | null }[] = [];
+  const { deps } = fakeDeps(tokenedFetch(async (url, init) => {
+    if (url === `${host.base}/peers`) return Response.json({ self: host.address, peers: ["writer:7711"] });
+    if (url.endsWith("/status")) return Response.json(status);
+    if (url.endsWith("/attention")) return Response.json({ level: "attention", now: status.now,
+      items: url.startsWith(peer) ? [item] : [] });
+    if (url.includes("/runs/")) {
+      const authorization = new Headers(init?.headers).get("authorization");
+      requests.push({ url, authorization });
+      if (url === `${peer}/runs/47` && authorization === "Bearer peer-test-token") return Response.json(detail);
+      return new Response("unauthorized", { status: 401 });
+    }
+    return new Response("not found", { status: 404 });
+  }));
+  try {
+    render(<App base={host.base} pollDeps={deps} />);
+    await act(settle);
+    fireEvent.click(screen.getByRole("button", { name: "Details for KO-7" }));
+    await act(settle);
+    const link = screen.getByRole("link", { name: "Open run 47" }) as HTMLAnchorElement;
+    expect(link.origin).toBe(window.location.origin);
+    const hash = link.hash;
+    requests.length = 0;
+    await act(async () => {
+      window.location.hash = hash;
+      window.dispatchEvent(new Event("hashchange"));
+      await settle();
+    });
+    expect(screen.getByRole("region", { name: "Run 47" })).toBeTruthy();
+    expect(screen.getByRole("article", { name: "run 47" })).toBeTruthy();
+    expect(requests).toContainEqual({ url: `${peer}/runs/47`, authorization: "Bearer peer-test-token" });
+    expect(requests.some(request => request.url.startsWith(host.base))).toBe(false);
   } finally { window.location.hash = ""; }
 });

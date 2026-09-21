@@ -57,7 +57,7 @@ export function PullRequestDetail({ base, id, item, now, polls, deps }: {
           </time>
         </> : <p className="text-muted">No factory activity recorded</p>}
       </section>
-      <a className="text-link" href={`${base}/#run=${id}`}>Open run {id}</a>
+      <a className="text-link" href={`#run=${id}&daemon=${encodeURIComponent(base)}`}>Open run {id}</a>
     </>}
   </div>;
 }
