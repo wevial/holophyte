@@ -1,6 +1,6 @@
 """Read-only mention answers and attributed thread replies."""
 import store
-from holophyte import babysitter, pr
+from holophyte import pr
 from holophyte.agents import agent_route
 from holophyte.conversation_comments import ASK_REPLY_MARKER, quote_request
 from holophyte.gates import InfraFailure
@@ -11,6 +11,7 @@ from store.instructions import record_instruction_reply
 
 def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
                 beat_s, pull, threads, ticket, reviewed):
+    from holophyte import babysitter
     from holophyte.loop import agent, sh
     from holophyte.pullrequest import _park_on_pr
     asks = tuple(t for t in threads if t.classification == "MENTIONED"
@@ -62,6 +63,7 @@ def previous_park_reason(conn, run_id, branch):
 
 def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=None):
     """Reply and optionally resolve a review thread; record each landed call."""
+    from holophyte import babysitter
     body = outbound(body, known_secrets(target.config()))
     with heartbeat_while(conn, run_id, beat_s):
         if thread.kind == "conversation":
