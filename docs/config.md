@@ -493,6 +493,7 @@ Use TOML literal strings for custom patterns, for example
 | `pr_quiet_sec` | Default: `300` seconds | Integer at least 0; change the quiet period after GitHub activity, or use 0 for immediate green merges. |
 | `strip_attribution` | Default: agent attribution patterns | List of Python regular expressions searched per commit-message line; `[]` disables cleanup. Replaces the default patterns when set. |
 | `check_wait_sec` | Default: `1800` seconds | Integer at least 1; increase the pending-check and quiet-period wait cap for slow CI. |
+| `pr_changes_log` | Default: `false` | Boolean; set to `true` to retain an ordered "Changes since first review" list across approved fix rounds. Otherwise the next successful description refresh removes any existing list, preserving Evidence, the Linear line and appended blocks. Non-boolean values are a startup error naming the key. |
 | `pr_style` | Default: `""` | String; set instructions for the title and description writer to follow repository conventions. |
 | `ui_paths` | Default: `[]` | List of non-empty repository-relative globs without `..`; set with ui_capture to identify changes needing visual evidence. |
 | `ui_capture_dir` | Default: `"e2e/capture"` | Directory named in the implementer brief for ticket capture scripts. |

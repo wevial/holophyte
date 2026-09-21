@@ -168,10 +168,14 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
             "Rewrite the description to explain the current behaviour and reasons."
             " The title"
             " will be ignored. Do not include Linear, Evidence, or appended bot"
-            " blocks. Under `## Changes since first review`, give one bullet for"
-            " this fix: what changed in behaviour, one line only. Follow the"
-            " same prose rules above. Omit earlier rounds; the loop preserves them.",
+            " blocks. Follow the same prose rules above.",
         ])
+        if merge_config(target).pr_changes_log:
+            parts.append("Under `## Changes since first review`, give one bullet for"
+                         " this fix: what changed in behaviour, one line only."
+                         " Omit earlier rounds; the loop preserves them.")
+        else:
+            parts.append("Do not include a Changes since first review section.")
     goal = "\n\n".join(parts)
     left = budget_min - (monotonic() - started) / 60
     minutes = max(1, min(PR_TEXT_BUDGET_MIN, int(left)))
@@ -226,15 +230,18 @@ def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
         refresh=(own, answered))
     if written is None:
         return
-    _, history = _without_changes(own)
+    log_changes = merge_config(target).pr_changes_log
     description, changes = _without_changes(written[1])
-    if (not description.strip() or len(changes) != 1
-            or not changes[0][2:].strip()):
+    if (not description.strip() or (log_changes and
+            (len(changes) != 1 or not changes[0][2:].strip()))):
         print(f"[holo2] written PR text refused for {task_id}: missing behaviour"
               " summary; leaving the pull request body unchanged")
         return
-    history.append(f"- Round {len(history) + 1}: {changes[0][2:]}")
-    text = description.rstrip() + "\n\n" + CHANGES_HEADING + "\n" + "\n".join(history)
+    text = description.rstrip()
+    if log_changes:
+        _, history = _without_changes(own)
+        history.append(f"- Round {len(history) + 1}: {changes[0][2:]}")
+        text += "\n\n" + CHANGES_HEADING + "\n" + "\n".join(history)
     with heartbeat_while(conn, run_id, beat_s):
         latest = pr.rest(target, pull, "GET", endpoint)["body"] or ""
         pr.edit_pr_body(target, pull, pr.replace_pr_text(latest, text))
