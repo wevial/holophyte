@@ -66,9 +66,13 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state([H.DEFECT]), self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   Reply("THREAD 1: ADDRESS -- a real crash"), Commit("fix"),
-                  Idle("TITLE: Fixed load\nLoad handles missing input."),
+                  Idle("TITLE: Fixed load\nLoad handles missing input.\n\n"
+                       "## Changes since first review\n"
+                       "- Missing input no longer crashes the load."),
                   provider=self.provider())
         body = self.pr_body.read_text()
+        self.assertIn("Load handles missing input.", body)
+        self.assertIn("- Round 1: Missing input no longer crashes the load.", body)
         self.serve(self.pr_state())
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(len(edits), 1)
