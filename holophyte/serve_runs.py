@@ -16,6 +16,7 @@ from holophyte.pool_handoff import workers_on_previous_build  # noqa: F401
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
 from holophyte.target import worktree_path
+from holophyte.thread_findings import normalize_thread
 from holophyte.thread_mentions import bot_author
 from store.operator_notes import round_notes
 from store.working import effective_work
@@ -394,7 +395,7 @@ def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):
         if finding.get("kind") == "instruction":
             if bot_author(finding.get("author", ""), bot_logins):
                 finding = dict(finding)
-                finding.pop("kind")
+                finding["kind"] = "finding"
                 finding.setdefault("message", finding.get("request", ""))
                 finding.setdefault("severity", "nit")
                 result["findings"].append(finding)
@@ -419,6 +420,7 @@ def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):
                 url=finding.get("url", "")))
         else:
             result["findings"].append(finding)
+    result["findings"] = [normalize_thread(f, bot_logins) for f in result["findings"]]
     return result
 
 

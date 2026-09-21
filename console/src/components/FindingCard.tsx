@@ -26,9 +26,12 @@ export function FindingCard({
   fate?: Fate;
   sentence?: string | null;
 }) {
+  const [originalOpen, setOriginalOpen] = useState(false);
   const path = findingPath(finding);
   const location = finding.line != null ? `${path}:${finding.line}` : path;
-  const parts = findingParts(cleanCommentBody(finding.message));
+  const parts = finding.summary != null
+    ? { title: null, body: finding.summary, criterion: null }
+    : findingParts(cleanCommentBody(finding.message));
   return (
     <li
       data-finding
@@ -36,6 +39,8 @@ export function FindingCard({
     >
       <div className="flex items-center gap-2">
         <SeverityPill severity={severityOf(finding)} />
+        {finding.verdict && <span data-verdict className="rounded-pill bg-warn-bg px-2 py-[3px] font-mono text-[11px] text-warn-text">{finding.verdict}</span>}
+        {finding.author && <span data-author className="text-[12px] text-muted">@{finding.author}</span>}
         {fate != null && (
           <span
             data-fate={fate}
@@ -45,7 +50,7 @@ export function FindingCard({
           </span>
         )}
         <span data-location className="truncate font-mono text-[12px] text-link">
-          {location}
+          {finding.url ? <a href={finding.url} target="_blank" rel="noreferrer">{location}</a> : location}
         </span>
       </div>
       {parts.title != null && (
@@ -64,6 +69,16 @@ export function FindingCard({
         </p>
       )}
       {parts.criterion != null && <CriterionFold text={parts.criterion} />}
+      {finding.raw != null && (
+        <div className="mt-2">
+          <button type="button" aria-expanded={originalOpen}
+            className="font-mono text-[11px] text-muted"
+            onClick={() => setOriginalOpen((open) => !open)}>
+            {originalOpen ? "Hide original comment" : "Show original comment"}
+          </button>
+          {originalOpen && <div data-original className="ticket-body mt-2 text-[13px] text-muted">{renderMarkdown(finding.raw)}</div>}
+        </div>
+      )}
     </li>
   );
 }

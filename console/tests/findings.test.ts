@@ -234,3 +234,21 @@ test("a finding in the last round of a run that ended unmerged is open", () => {
   expect(history[0]!.round).toBe(2);
   expect(history[0]!.findings[0]!.fate).toBe("open");
 });
+
+
+test("history keeps moved threads open using preserved identity until they disappear", () => {
+  for (const line of [3, null, undefined]) {
+    const fingerprint = { path: "Dockerfile", line, severity: "nit" };
+    const original = finding({ ...fingerprint });
+    const moved = finding({ path: "renamed/Dockerfile", line: 8, severity: "p2", fingerprint });
+    const movedAgain = { ...moved, line: 12 };
+    const rounds = [original, moved, movedAgain].map((entry, index) => ({
+      ...ROUNDS[0]!, round: index + 1, findings: [entry],
+    }));
+    expect(findingsHistory(rounds, []).map((group) => group.findings[0]!.fate))
+      .toEqual(["open", "open", "open"]);
+    rounds.push({ ...ROUNDS[2]!, round: 4, findings: [] });
+    expect(findingsHistory(rounds, []).slice(1).map((group) => group.findings[0]!.fate))
+      .toEqual(["fixed", "open", "open"]);
+  }
+});
