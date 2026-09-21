@@ -72,6 +72,7 @@ Each module, one line:
 - `holophyte/files.py` — the files a run touched, read from git in the
   target's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: `run_task`'s stages.
+- `holophyte/fix_session.py` — review fix-session arms, resume argv and fresh retry.
 - `holophyte/dispatch.py` — the dispatcher out of `holophyte/loop.py`
   (KO-412): one claim run under its crash containment and close-out,
   the startup sweep and the queue mirror.

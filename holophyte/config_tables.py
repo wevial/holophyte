@@ -193,6 +193,7 @@ LOOP_KEYS = {
     "review_rounds_max": 4,
     "workers": 1,
     "tick_sec": 120,
+    "fix_session": "fresh",
 }
 LOOP_ORDERS = ("identifier", "priority")
 # The keys that must be integers, and the least each may be: a run with no
@@ -207,10 +208,7 @@ LOOP_INTEGER_FLOORS = {
     "workers": 1,
     "tick_sec": 10,
 }
-LoopConfig = collections.namedtuple(
-    "LoopConfig", ("stop_on_failure", "order", "spawn_supervisor",
-                   "review_rounds", "review_rounds_per_lines",
-                   "review_rounds_max", "workers", "tick_sec"))
+LoopConfig = collections.namedtuple("LoopConfig", LOOP_KEYS)
 
 
 def loop_config(target):
@@ -246,8 +244,10 @@ def loop_config(target):
             raise SystemExit(
                 f"[holo2] {target.config_path}: [loop] {key} must be a boolean "
                 f"(true or false), got {value!r}")
-        if key == "order" and value not in LOOP_ORDERS:
-            allowed = " or ".join(f'"{o}"' for o in LOOP_ORDERS)
+        choices = {"order": LOOP_ORDERS,
+                   "fix_session": ("fresh", "resume", "alternate")}
+        if key in choices and value not in choices[key]:
+            allowed = " or ".join(f'"{o}"' for o in choices[key])
             raise SystemExit(
                 f"[holo2] {target.config_path}: [loop] {key} must be one of "
                 f"{allowed}, got {value!r}")

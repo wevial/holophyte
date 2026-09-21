@@ -334,7 +334,7 @@ def writer_turn(target, goal, cwd, timeout, on_start):
 
 
 def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
-          timeout=None, on_start=None, conn=None, run_id=None):
+          timeout=None, on_start=None, conn=None, run_id=None, argv=None):
     """Account for one role call, including timeout and exceptional returns."""
     from store.working import working
 
@@ -344,17 +344,19 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             return writer_turn(target, goal, cwd, timeout, on_start)
         record_pending_switch(target, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
-                      timeout=timeout, on_start=on_start, conn=conn, run_id=run_id)
+                      timeout=timeout, on_start=on_start, conn=conn,
+                      run_id=run_id, argv=argv)
         output = _agent(target, role, goal, cwd, **kwargs)
         command = getattr(output, "command", agent_route(target, role))
         reason = outage_reason(command, output)
-        if reason and activate_fallback(target, role, reason, conn, run_id):
+        if (argv is None and reason
+                and activate_fallback(target, role, reason, conn, run_id)):
             return _agent(target, role, goal, cwd, **kwargs)
         return output
 
 
 def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
-          timeout=None, on_start=None, conn=None, run_id=None):
+          timeout=None, on_start=None, conn=None, run_id=None, argv=None):
     """Run one agent turn for a role. Returns combined output text.
 
     An `implement` turn runs in a process group of its own under `timeout`
@@ -393,6 +395,8 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     command = routes(target).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(target, role, goal))
+    if argv is not None:
+        cmd = [outbound(arg, known_secrets(target.config())) for arg in argv] + [goal]
     dispatched_route = shlex.join(cmd[:-1]) if cmd is not None else DEFAULT_IMPLEMENTER
     if cmd is None:
         if role != "implement":

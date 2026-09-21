@@ -1,5 +1,4 @@
 """Per-target config: `~/.holophyte/SLUG/config.toml`, `[agents]`, `[worktree]`.
-
 Run: python3 -m unittest discover -s tests -p 'test_factory_config*' -v
 """
 import contextlib
@@ -40,6 +39,7 @@ sys.path.insert(0, str(HERE))
 SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "factory.py")
 from bot_thread_fixture import BotConfigCases  # noqa: E402
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
+from fix_session_fixture import FixSessionConfigCases  # noqa: E402
 from procs import (  # noqa: E402 - after the sys.path insert above
     KillWatch,
     assert_no_escaped_child,
@@ -47,7 +47,7 @@ from procs import (  # noqa: E402 - after the sys.path insert above
 from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
-class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
+class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
     def test_implementer_session_validation_at_startup(self):
         for value in ('"["', '"no group"', '"(one)(two)"', '42', '[]'):
             with self.subTest(value=value):
