@@ -92,6 +92,8 @@ Each module, one line:
   hand-off (`merge_conflicts`, `conflict_brief`, `_resolve_merge_conflict`).
 - `holophyte/environment_git.py` — excludes the filtered `.env` from Git
   staging and refuses candidate pushes containing it.
+- `holophyte/commit_hygiene.py` — removes configured attribution lines from
+  unpublished commits before task pushes and local merges.
 - `holophyte/pr.py` — `[merge] mode = "pr"`'s GitHub writes: the startup
   route check, the push, the pull request and its body, the babysitter's
   replies and resolves, the merge through the PR API, and the `gh`/API

@@ -357,6 +357,8 @@ class ReviewLoopTests(unittest.TestCase):
                       goal)
         self.assertIn("add a thing", goal)
         self.assertIn("echo ok", goal)
+        self.assertIn("Commit messages carry no tool attribution or co-author lines "
+                      "for an AI.", goal)
 
     def test_review_goal_numbers_the_criteria_and_asks_for_a_checklist(self):
         """The reviewer is asked to account for each criterion by number; a

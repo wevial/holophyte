@@ -277,6 +277,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
         if merge.mode == "pr":
             url = _open_pr(target, conn, run_id, task_id, task, branch, body,
                            beat_s, wt, started, budget_min, issue_url)
+            sha = sh(["git", "rev-parse", branch], wt)
         elif merge.approve == "human":
             # The human half of the gate, when the target asks for one: the
             # candidate is approved and verified, and a person says "merge".
@@ -477,18 +478,20 @@ def _scale_note(target, budget_min):
     return f" ({budget_min * scale:g} min at scale {scale:g})"
 
 
-def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
-    """Run one implementer turn under its scaled wall-clock budget.
+def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *, role="implement"):
+    """Run one turn under its scaled wall-clock budget.
 
     Return `(output, timed_out)`; retain output and reap children on timeout.
     The sweep hook kills the same group if the run is swept."""
     # The sweep's hook: a beat that finds the run ended kills the turn's
     # whole process group, the same kill the budget sends, and the block
     # raises `RunSwept` for `run_task()` once the turn has stopped.
+    from holophyte.agents import effective_role
+    role = effective_role(target, role)
     kill = GroupKill()
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            return (agent(target, "implement", goal, wt,
+            return (agent(target, role, goal, wt,
                           timeout=budget_min * budget_scale(target) * 60,
                           on_start=kill.arm, conn=conn, run_id=run_id),
                     False)
@@ -499,7 +502,8 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", "replace")
         partial = partial.strip()
-        print("[holo2] implementer output before the budget fired:\n"
+        print(f"[holo2] {'writer' if role == 'write' else 'implementer'}"
+              " output before the budget fired:\n"
               + (partial[-2000:] or "(no output before the budget fired)"))
         return partial, True
 
@@ -609,7 +613,8 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         "The ticket above is the contract, acceptance criteria "
         "included; the task is done only when they hold. Commit your "
         "work with a clear message. Stay strictly on-scope; do not "
-        "expand the task." + _capture_brief(target, ticket))
+        "expand the task. Commit messages carry no tool attribution or co-author "
+        "lines for an AI." + _capture_brief(target, ticket))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work

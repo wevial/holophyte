@@ -88,7 +88,7 @@ def worker(target, provider):
     configured = target.config().get("agents") or {}
     reset(target)
     try:
-        if any(key in configured for key in AGENT_FALLBACK_KEYS):
+        if "writer" in configured or any(k in configured for k in AGENT_FALLBACK_KEYS):
             if not startup_routes(target, provider):
                 return WORKER_STOP
         result = _worker(target, provider)
