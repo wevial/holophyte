@@ -48,6 +48,15 @@ from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
 class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
+    def test_implementer_session_validation_at_startup(self):
+        for value in ('"["', '"no group"', '"(one)(two)"', '42', '[]'):
+            with self.subTest(value=value):
+                self.locate(f"[agents]\nimplementer_session = {value}\n")
+                with self.assertRaisesRegex(SystemExit, "implementer_session"):
+                    holophyte.config.check_document(self.tgt)
+        self.locate("[agents]\nimplementer_session = 'session id: ([0-9a-f-]{36})'\n")
+        holophyte.config.check_document(self.tgt)
+
     def test_worktree_environment_refusals(self):
         self.locate("")
         source = self.tgt.config_path.parent / "source.env"

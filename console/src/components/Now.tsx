@@ -74,7 +74,7 @@ export function Now({
           />
         )}
       />
-      <PullRequestTable hosts={shown} project={project} now={now} />
+      <PullRequestTable hosts={shown} project={project} now={now} polls={polls} deps={deps} />
     </>
   );
 }

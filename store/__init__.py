@@ -442,19 +442,11 @@ def record_event(conn, run_id, kind, summary, level="narrative", now=None,
                  payload=None):
     """Append one event of `kind` to run `run_id`'s stream; return its `seq`.
 
-    `set_phase()` writes the stream's `phase_change` rows and is the only
-    writer of a run's phase; this is how the loop writes the rows that are not
-    transitions — a best-effort projection that failed, say. `kind` is free
-    text because §2's column is a label rather than an enum, `level` is one of
-    §2's two, and `payload` is the `detail`-row field: the text behind the
-    summary (a crash's traceback, say), refused on a `narrative` row so the
-    stream's two levels keep meaning what §2 says they mean.
-
-    An unknown `run_id` is a caller bug and raises `ValueError`, the way
-    `set_phase()` and `run_phase()` answer the same mistake — the foreign key
-    would refuse the row anyway, but as an `IntegrityError` naming a
-    constraint rather than the run that does not exist. `now` is epoch
-    milliseconds for `at`, defaulting to the clock.
+    `set_phase()` alone writes phases and `phase_change` rows; this records
+    other events. `kind` is free text, `level` is one of §2's two levels,
+    and `payload` is allowed only on `detail` rows, never `narrative` rows.
+    Unknown runs raise `ValueError`, as in `set_phase()` and `run_phase()`.
+    `now` is epoch milliseconds for `at`, defaulting to the clock.
     """
     if level not in EVENT_LEVELS:
         raise ValueError(f"unknown event level {level!r}")
@@ -468,6 +460,24 @@ def record_event(conn, run_id, kind, summary, level="narrative", now=None,
             raise ValueError(f"no run {run_id}")
         return _append_event(conn, run_id, level, kind, summary, now,
                              payload=payload)
+
+
+def record_agent_session(conn, run_id, session_id, role, route):
+    """Write the latest session and history atomically; refuse ended runs."""
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
+            (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        ended_at, outcome, reason = row
+        if ended_at is not None:
+            raise RunEnded(run_id, outcome, reason)
+        record_event(conn, run_id, "agent_session", f"{role} session: {session_id}",
+                     level="detail", payload=json.dumps({
+                         "session_id": session_id, "role": role, "route": route}))
+        conn.execute("UPDATE runs SET providerSessionId = ? WHERE id = ?",
+                     (session_id, run_id))
 
 
 def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,

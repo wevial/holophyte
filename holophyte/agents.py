@@ -295,6 +295,22 @@ def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
         sh(["git", "update-ref", name, sha], cwd=repo)
 
 
+def record_session(target, conn, run_id, role, output):
+    """Persist host implementer session handles from completed or capped turns."""
+    import store
+    from holophyte.config import implementer_session
+
+    if role != "implement" or conn is None or run_id is None:
+        return
+    pattern = implementer_session(target)
+    if pattern is None or isolation.route_for(target).backend == "container":
+        return
+    match = pattern.search(output)
+    if match and match.group(1):
+        route = "fallback" if role in routes(target).commands else "primary"
+        store.record_agent_session(conn, run_id, match.group(1), role, route)
+
+
 def effective_role(target, role):
     """An absent or startup-refused writer follows the active implementer."""
     if role == "write" and (routes(target).writer_failed

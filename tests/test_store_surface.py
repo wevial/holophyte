@@ -49,6 +49,7 @@ EXPECTED = [
     "pickable",
     # KO-343: the scheduler's one-read count of the claimable queue.
     "pickable_tickets",
+    "record_agent_session",  # KO-569: latest session and ordered event history.
     "record_event",
     "record_intervention",
     # KO-250: the run's narrative lives in the store; `board.ledger()` writes
