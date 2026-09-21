@@ -1,0 +1,99 @@
+{
+  "run": {
+    "id": 1,
+    "ticket": "KO-7",
+    "ticket_url": null,
+    "title": "ticket 7",
+    "phase": "working",
+    "attempt": 1,
+    "started_ms": 1750000000000,
+    "ended_ms": null,
+    "outcome": null,
+    "elapsed_ms": 120000,
+    "working_ms": 0,
+    "time_box_ms": 1500000,
+    "branch": null,
+    "host": "writer",
+    "heartbeat_age_ms": 30000,
+    "merge_sha": null,
+    "commit_url": null,
+    "pr_url": null,
+    "work_started_ms": null,
+    "approved_at": null,
+    "approved_by": null,
+    "max_rounds": 2
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "started_ms": 1750000000000,
+      "ended_ms": 1750000000000,
+      "verdict": "changes_requested",
+      "reviewer_model": "reviewer",
+      "findings": [
+        {
+          "path": "app.py",
+          "line": 7,
+          "severity": "p1",
+          "criterion": null,
+          "message": "Validate input",
+          "kind": "thread",
+          "author": "review-bot",
+          "author_kind": "bot",
+          "summary": "Validate input",
+          "verdict": "ADDRESS",
+          "raw": "Please validate input",
+          "url": "https://example.test/thread"
+        }
+      ],
+      "instructions": [
+        {
+          "kind": "instruction",
+          "path": "app.py",
+          "line": null,
+          "author": "operator",
+          "severity": "nit",
+          "message": "Keep validation",
+          "request": "Keep validation",
+          "url": "https://example.test/instruction",
+          "outcome": "changed",
+          "reply": "Validation retained"
+        }
+      ],
+      "operator_notes": [
+        {
+          "note": "Keep validation",
+          "author": "operator",
+          "kind": "operator_note",
+          "event_id": 1,
+          "consumed": true,
+          "run_id": 1,
+          "round": 1
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "tone": "advisory",
+      "message": "Review is advisory"
+    }
+  ],
+  "events": [
+    {
+      "at": 1750000000000,
+      "kind": "phase_change",
+      "summary": "claimed -> working"
+    },
+    {
+      "at": 1750000000000,
+      "kind": "operator_note_consumed",
+      "summary": "operator_note event 2 drove round 1"
+    },
+    {
+      "at": 1750000000000,
+      "kind": "bot_finding",
+      "summary": "Review is advisory"
+    }
+  ]
+}

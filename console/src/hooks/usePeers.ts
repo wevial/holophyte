@@ -3,6 +3,7 @@ import { addressOf, mergeHosts, oldestPoll, peerAddresses, type HostRecord, type
 import { forgetToken } from "../lib/token";
 import {
   AnswerError,
+  ContractError,
   POLL_INTERVAL_MS,
   REQUEST_TIMEOUT_MS,
   TICK_MS,
@@ -54,7 +55,7 @@ export async function pollPeers(
         (failure: unknown) =>
           failure instanceof AnswerError
             ? { address, base, ok: false, error: message(failure), status: failure.status }
-            : { address, base, ok: false, error: message(failure) },
+            : { address, base, ok: false, error: message(failure), contract_error: failure instanceof ContractError },
       );
       inFlight.set(address, pending);
     }
@@ -63,7 +64,7 @@ export async function pollPeers(
   let addresses = known.length > 0 ? known.map(({ address, base }) => ({ address, base })) : peerAddresses(origin, null);
   addresses.forEach(start);
   try {
-    addresses = peerAddresses(origin, await fetchJson<PeersBody>(deps.fetch, `${origin}/peers`, signal));
+    addresses = peerAddresses(origin, await fetchJson<PeersBody>(deps.fetch, `${origin}/peers`, undefined, signal));
   } catch {
     // Discovery failed: the tick reports the addresses it started with.
   }

@@ -27,7 +27,7 @@ export interface Segment {
 export interface TimelineRun {
   started_ms: number;
   ended_ms?: number | null;
-  time_box_ms: number;
+  time_box_ms: number | null;
   phase: string;
   pr_url?: string | null;
   rounds: { round?: number; started_ms: number; ended_ms: number | null }[];
@@ -91,7 +91,7 @@ export function roundNumber(summary: string): number | null {
  *  them so the sum is 1. */
 function size(out: Segment[], run: TimelineRun, end: number): Segment[] {
   const total = end - run.started_ms;
-  const scale = run.time_box_ms > 0 ? Math.max(run.time_box_ms, total) : total;
+  const scale = run.time_box_ms != null && run.time_box_ms > 0 ? Math.max(run.time_box_ms, total) : total;
   for (const segment of out) segment.width = scale > 0 ? (segment.to - segment.from) / scale : 0;
   return out;
 }
@@ -224,6 +224,6 @@ export function buildTimeline(run: TimelineRun, now: number): Segment[] {
 }
 
 /** Positive: milliseconds left in the box; negative: how far past it. */
-export function boxRemaining(run: { started_ms: number; time_box_ms: number }, now: number): number {
-  return run.time_box_ms - (now - run.started_ms);
+export function boxRemaining(run: { started_ms: number; time_box_ms: number | null }, now: number): number | null {
+  return run.time_box_ms == null ? null : run.time_box_ms - (now - run.started_ms);
 }

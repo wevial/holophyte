@@ -28,6 +28,7 @@ export interface HostRecord {
   /** The last poll answered 401: the daemon is up but wants its serve
    *  token, which the Hosts card asks for. Never set beside `error`. */
   needs_token: boolean;
+  contract_error?: boolean;
 }
 
 /** What `/peers` answers: the daemon's own address and the configured
@@ -71,7 +72,7 @@ export function baseOf(address: string): string {
 /** One poll's answer for one address. */
 export type PollResult =
   | { address: string; base: string; ok: true; status: Status; attention: Attention }
-  | { address: string; base: string; ok: false; error: string; status?: number };
+  | { address: string; base: string; ok: false; error: string; status?: number; contract_error?: boolean };
 
 /** The project a host serves, from its last good `/status`. */
 export function hostProject(status: Status | null): string | null {
@@ -114,6 +115,7 @@ export function mergeHosts(previous: HostRecord[], results: PollResult[], now: n
       seen_ms: before?.seen_ms ?? null,
       error: needsToken ? null : result.error,
       needs_token: needsToken,
+      contract_error: result.contract_error,
     };
   });
 }

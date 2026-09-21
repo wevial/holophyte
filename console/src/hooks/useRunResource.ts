@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { defaultPollDeps, type Fetch } from "../lib/poll";
+import { ContractError, defaultPollDeps, type Fetch } from "../lib/poll";
 
 /** A daemon answer other than 2xx, keeping the status beside the message
  *  so a caller can tell a named refusal from a passing failure. */
@@ -61,7 +61,7 @@ export function useRunResource<T>(
         if (!alive) return;
         const message = failure instanceof Error ? failure.message : String(failure);
         const status = failure instanceof AnsweredError ? failure.status : null;
-        setState((previous) => ({ id, body: previous.id === id ? previous.body : null, error: message, status }));
+        setState((previous) => ({ id, body: !(failure instanceof ContractError) && previous.id === id ? previous.body : null, error: message, status }));
       }
     })();
     return () => {

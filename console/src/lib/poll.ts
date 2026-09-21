@@ -1,3 +1,5 @@
+import type { z } from "zod";
+import { statusSchema } from "./schemas";
 import { addressOf } from "./hosts";
 import { withToken } from "./token";
 import type { Attention, Status } from "./types";
@@ -56,10 +58,17 @@ export class AnswerError extends Error {
   }
 }
 
+export class ContractError extends Error {
+  constructor(readonly endpoint: string, readonly path: string) {
+    super(`Response contract mismatch: ${endpoint} at ${path}`);
+    this.name = "ContractError";
+  }
+}
+
 /** One JSON GET; a non-2xx answer throws an `AnswerError` naming the url
  *  and status, and an aborted one throws "timed out" naming the url.
  *  `signal` bounds the wait. */
-export async function fetchJson<T>(fetchImpl: Fetch, url: string, signal?: AbortSignal): Promise<T> {
+export async function fetchJson<T>(fetchImpl: Fetch, url: string, schema?: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
     response = await fetchImpl(url, { headers: { accept: "application/json" }, signal });
@@ -70,15 +79,20 @@ export async function fetchJson<T>(fetchImpl: Fetch, url: string, signal?: Abort
     throw failure;
   }
   if (!response.ok) throw new AnswerError(url, response.status);
-  return (await response.json()) as T;
+  const body: unknown = await response.json();
+  // Endpoints outside the status/run-detail contract retain their existing types.
+  if (!schema) return body as T;
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) throw new ContractError(url, parsed.error.issues[0]!.path.join(".") || "$");
+  return parsed.data;
 }
 
 /** One round trip: both endpoints of the daemon at `base`, both bounded by
  *  `signal` when given. */
 export async function pollOnce(base: string, fetchImpl: Fetch, signal?: AbortSignal): Promise<PollAnswer> {
   const [status, attention] = await Promise.all([
-    fetchJson<Status>(fetchImpl, `${base}/status`, signal),
-    fetchJson<Attention>(fetchImpl, `${base}/attention`, signal),
+    fetchJson(fetchImpl, `${base}/status`, statusSchema, signal),
+    fetchJson<Attention>(fetchImpl, `${base}/attention`, undefined, signal),
   ]);
   return { status, attention };
 }

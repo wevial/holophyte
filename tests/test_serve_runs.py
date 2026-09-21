@@ -829,3 +829,18 @@ class FailurePayloadTests(MergeModeFixture):
         self.assertEqual(code, 200)
         (card,) = [item for item in body['items'] if item['kind'] == 'failed']
         self.assertEqual(card['reason'], reason)
+
+
+class ServeContractTests(ServeTestCase):
+    def test_shared_console_contracts_match_seeded_daemon_answers(self):
+        from tests.serve_contract_fixture import NOW, contract_answers
+        fixtures = Path(__file__).parent / "fixtures" / "serve"
+        self.maxDiff = None
+        # Freeze clocks at their sources; normalization preserves durations.
+        with patch("serve_fixture.time", return_value=NOW / 1000), \
+             patch("time.time", return_value=NOW / 1000):
+            answers = contract_answers(self)
+        for name, body in answers.items():
+            with self.subTest(endpoint=name):
+                expected = json.loads((fixtures / f"{name}.json").read_text())
+                self.assertEqual(body, expected)

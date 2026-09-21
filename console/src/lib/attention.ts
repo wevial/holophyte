@@ -288,7 +288,7 @@ function joinMeta(...parts: (string | null)[]): string | null {
 function overTimeBox(item: AttentionItem, runs: Run[] | undefined): string {
   const id = num(item.run);
   const run = id == null ? undefined : runs?.find((candidate) => candidate.id === id);
-  if (!run || !(run.working_ms != null && run.working_ms > run.time_box_ms)) return "";
+  if (!run || run.time_box_ms == null || !(run.working_ms != null && run.working_ms > run.time_box_ms)) return "";
   return ` and ${formatSpan(run.working_ms! - run.time_box_ms)} over its ${formatAge(run.time_box_ms)} time box`;
 }
 

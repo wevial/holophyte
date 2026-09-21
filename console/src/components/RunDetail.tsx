@@ -58,7 +58,7 @@ export function RunDetail({
     <div data-detail className="pr-4 pb-[14px] pl-[44px]">
       {loading && <p className="text-[12px] text-muted">loading…</p>}
       {error && (
-        <p data-detail-error className="text-[12px] font-semibold text-bad">
+        <p role="alert" data-detail-error className="text-[12px] font-semibold text-bad">
           {error}
         </p>
       )}
@@ -88,7 +88,7 @@ function Card({
   // and reads at settled granularity, its seconds done counting too.
   const tickingNow = now + sinceMs;
   const work = workingMs(run, run.ended_ms == null ? sinceMs : 0);
-  const remaining = work == null ? null : run.time_box_ms - work;
+  const remaining = work == null || run.time_box_ms == null ? null : run.time_box_ms - work;
   const over = remaining != null && remaining < 0;
   const finished = run.ended_ms != null;
   const boxFigure = finished ? formatSettled : formatSpan;
@@ -109,7 +109,7 @@ function Card({
           data-box={over ? "over" : "left"}
           className={`ml-auto font-mono text-[12px] ${over ? "font-semibold text-bad" : "text-muted"}`}
         >
-          {remaining == null ? "working n/a" : over ? `${boxFigure(-remaining)} over the working box` : `${boxFigure(remaining)} left in working box`}
+          {run.time_box_ms == null ? "working box unknown" : remaining == null ? "working n/a" : over ? `${boxFigure(-remaining)} over the working box` : `${boxFigure(remaining)} left in working box`}
           {" · wall "}{boxFigure((run.ended_ms ?? tickingNow) - run.started_ms)}
         </span>
       </header>

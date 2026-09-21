@@ -104,7 +104,7 @@ export function cardLine(card: BoardCard, now: number = card.now): string | null
     case "in_flight": {
       const { run } = card;
       if (run == null) return card.runId == null ? null : `#${card.runId}`;
-      return `#${run.id} · working ${workingMs(run) == null ? "n/a" : formatDuration(workingMs(run)!)} / ${formatAge(run.time_box_ms)} · wall ${formatDuration(run.elapsed_ms)} · hb ${formatAge(run.heartbeat_age_ms)}`;
+      return `#${run.id} · working ${workingMs(run) == null ? "n/a" : formatDuration(workingMs(run)!)} / ${run.time_box_ms == null ? "n/a" : formatAge(run.time_box_ms)} · wall ${formatDuration(run.elapsed_ms)} · hb ${formatAge(run.heartbeat_age_ms)}`;
     }
     default:
       return null;
