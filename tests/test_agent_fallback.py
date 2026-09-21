@@ -69,6 +69,29 @@ class AgentFallbackTests(SweepTestCase):
             'codex-primary ' + agents.PROBE_GOAL,
             'devin-fallback describe'])
 
+    def test_worker_probes_writer_without_fallback_keys(self):
+        from holophyte import pool
+
+        subprocess.run(['git', 'init', '-q', str(self.target)], check=True)
+        self.routes()
+        self.configure(f'[agents]\nimplementer = "{self.fallback}"\n'
+                       f'writer = "{self.primary}"\n[loop]\nworkers = 2\n')
+        def turn(*_):
+            self.assertEqual(agents.agent(self.tgt, 'write', 'describe', self.target),
+                             'turn completed')
+            return pool.WORKER_PARKED
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), patch.object(
+                pool, '_worker', side_effect=turn):
+            code = pool.worker(self.tgt, SimpleNamespace(team='team-1'))
+        self.assertEqual(code, pool.WORKER_PARKED)
+        self.assertIn('writer probe failed', out.getvalue())
+        self.assertIn('using implementer', out.getvalue())
+        self.assertEqual(self.calls.read_text().splitlines(), [
+            'devin-fallback ' + agents.PROBE_GOAL,
+            'codex-primary ' + agents.PROBE_GOAL,
+            'devin-fallback describe'])
+
     def test_missing_implementer_image_stops_before_claim(self):
         import subprocess
 

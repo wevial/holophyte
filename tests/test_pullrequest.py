@@ -461,8 +461,8 @@ class MergeModePullRequestTests(MergeModeFixture):
     PR_TEMPLATE = ("## Summary\n\n<!-- what the change does. -->\n\n"
                    "## Why\n\n<!-- why it is needed. -->\n")
 
-    # The prompt the frozen base's written turn was handed for this
-    # scenario, recorded once from `refs/review/base`: criterion 2's
+    # The frozen prompt for this scenario, updated in KO-561 for the
+    # behavior-first writing instruction: criterion 2's
     # oracle. Comparing the live prompt against the same run's own output
     # would let a drift in the shared text move both sides together.
     RECORDED = (ROOT / "tests" / "fixtures" / "pullrequest"
@@ -472,12 +472,12 @@ class MergeModePullRequestTests(MergeModeFixture):
         """KO-430: a worktree carrying `.github/pull_request_template.md`
         gives the written turn the file under a "fill its sections"
         heading, ahead of the style line; a worktree without one gets
-        the frozen base's prompt byte for byte, witnessed against the
+        the frozen fixture's prompt byte for byte, witnessed against the
         recording."""
         provider = self.written_target()
         fake, _ = self.loop(Commit("the scripted work"), APPROVE,
                             self.WRITTEN, provider=provider)
-        # A worktree with no template file: the recorded base prompt,
+        # A worktree with no template file: the recorded fixture prompt,
         # byte for byte.
         base = self.RECORDED.read_text()
         self.assertEqual(fake.turns[2].goal, base)
