@@ -470,6 +470,16 @@ def record_event(conn, run_id, kind, summary, level="narrative", now=None,
                              payload=payload)
 
 
+def record_agent_session(conn, run_id, session_id, role, route):
+    """Write the latest session and its ordered history in one transaction."""
+    with _transaction(conn):
+        record_event(conn, run_id, "agent_session", f"{role} session: {session_id}",
+                     level="detail", payload=json.dumps({
+                         "session_id": session_id, "role": role, "route": route}))
+        conn.execute("UPDATE runs SET providerSessionId = ? WHERE id = ?",
+                     (session_id, run_id))
+
+
 def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
          now=None, approved_sha=None, pr_seen=None):
     """Park the live run `run_id` in `phase` and give its lease back.

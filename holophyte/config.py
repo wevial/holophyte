@@ -115,7 +115,7 @@ KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
                   "implementer_isolation", "implementer_image",
-                  "implementer_credential"}),
+                  "implementer_credential", "implementer_session"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry", "env_source", "env_allow"}),
 }
@@ -160,6 +160,7 @@ def check_config(target):
     verify_config(target)
     check_config_keys(target)
     budget_scale(target)
+    implementer_session(target)
     from holophyte.isolation import route_for
     route = route_for(target)
     if merge.ui_capture and route.backend == "container" and not route.writable:
@@ -172,6 +173,23 @@ def check_config(target):
     report_config(target)
     console_config(target)
     serve_config(target)
+
+
+def implementer_session(target):
+    """Optional compiled session-id pattern; refuse invalid settings at startup."""
+    value = config_table(target, "agents").get("implementer_session")
+    if value is None:
+        return None
+    key = f"[holo2] {target.config_path}: [agents] implementer_session"
+    if not isinstance(value, str):
+        raise SystemExit(f"{key} must be a regular expression string")
+    try:
+        pattern = re.compile(value)
+    except re.error as exc:
+        raise SystemExit(f"{key} invalid regular expression: {exc}") from exc
+    if pattern.groups != 1:
+        raise SystemExit(f"{key} must have exactly one capture group")
+    return pattern
 
 
 def check_document(target):

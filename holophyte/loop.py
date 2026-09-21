@@ -486,15 +486,16 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *, role="implemen
     # The sweep's hook: a beat that finds the run ended kills the turn's
     # whole process group, the same kill the budget sends, and the block
     # raises `RunSwept` for `run_task()` once the turn has stopped.
-    from holophyte.agents import effective_role
+    from holophyte.agents import effective_role, record_session
+    session_role = role
     role = effective_role(target, role)
     kill = GroupKill()
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            return (agent(target, role, goal, wt,
+            output = agent(target, role, goal, wt,
                           timeout=budget_min * budget_scale(target) * 60,
-                          on_start=kill.arm, conn=conn, run_id=run_id),
-                    False)
+                          on_start=kill.arm, conn=conn, run_id=run_id)
+            timed_out = False
     except subprocess.TimeoutExpired as expired:
         print(f"[holo2] task exceeded {budget_min} min budget"
               f"{_scale_note(target, budget_min)}")
@@ -505,7 +506,9 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *, role="implemen
         print(f"[holo2] {'writer' if role == 'write' else 'implementer'}"
               " output before the budget fired:\n"
               + (partial[-2000:] or "(no output before the budget fired)"))
-        return partial, True
+        output, timed_out = partial, True
+    record_session(target, conn, run_id, session_role, output)
+    return output, timed_out
 
 
 def _open_findings(conn, run_id):
