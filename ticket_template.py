@@ -581,8 +581,8 @@ def _repository_problems(t, repo):
 
 
 def _script_arguments(tokens):
-    """Arguments of a directly invoked script or a Python script command.
-    Interpreter options precede the script; -c and -m are different modes."""
+    """Arguments of the validator invoked as a script or Python module.
+    Interpreter options precede the target; -c does not invoke the validator."""
     args = iter(tokens)
     executable = next(args, "")
     while executable == "env" or re.match(r"^[A-Za-z_]\w*=", executable):
@@ -592,7 +592,9 @@ def _script_arguments(tokens):
     if not re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", Path(executable).name):
         return []
     for arg in args:
-        if arg in ("-c", "-m"):
+        if arg == "-m":
+            return list(args) if next(args, "") == "ticket_template" else []
+        if arg == "-c":
             return []
         if arg in ("-W", "-X"):
             next(args, None)

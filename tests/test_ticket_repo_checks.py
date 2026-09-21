@@ -90,15 +90,18 @@ class RepositoryChecksTests(unittest.TestCase):
     def test_blank_template_and_cli_without_repo(self):
         for interpreter in ("python3", "python3 -B", "python3 -u",
                             ".venv/bin/python -X dev -W error"):
-            body = self.body.replace(
-                '.venv/bin/python -m unittest tests.test_a',
-                f'{interpreter} ticket_template.py ticketTemplate.md')
-            for repo in (None, self.repo):
-                with self.subTest(interpreter=interpreter, repo=repo):
-                    problems = tt.blocking(tt.validate(tt.parse(body), repo=repo))
-                    self.assertTrue(any('blank template can never validate' in p
-                                        for p in problems), problems)
+            for validator in ('ticket_template.py', '-m ticket_template'):
+                body = self.body.replace(
+                    '.venv/bin/python -m unittest tests.test_a',
+                    f'{interpreter} {validator} ticketTemplate.md')
+                for repo in (None, self.repo):
+                    with self.subTest(interpreter=interpreter, validator=validator,
+                                      repo=repo):
+                        problems = tt.blocking(tt.validate(tt.parse(body), repo=repo))
+                        self.assertTrue(any('blank template can never validate' in p
+                                            for p in problems), problems)
         for command in ('echo ticket_template.py ticketTemplate.md',
+                        'python3 -m other_module ticket_template.py ticketTemplate.md',
                         'python3 -c "print(1)" ticket_template.py ticketTemplate.md'):
             body = self.body.replace(
                 '.venv/bin/python -m unittest tests.test_a', command)
