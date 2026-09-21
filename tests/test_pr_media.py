@@ -110,23 +110,38 @@ class MediaTests(unittest.TestCase):
         import shlex
 
         from holophyte import isolation
+        from holophyte.target import state_dir
         self.config['agents'] = {'implementer_isolation': 'container'}
         self.candidate()
+        worktree = self.root / 'task'
+        self.git('worktree', 'add', '-qb', 'task', str(worktree))
+        self.repo = worktree
         states = ['Dialog open', 'Saved']
 
         def capture(argv, cwd, timeout, *, env):
             mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
-            self.assertEqual(mounts, [f'{self.repo}:/workspace:rw'])
+            self.assertEqual(len(mounts), 1)
+            source, destination, mode = mounts[0].split(':')
+            workspace = Path(source).resolve()
+            self.assertTrue(workspace.is_dir())
+            self.assertTrue(workspace.is_relative_to(
+                state_dir(self.target.path).resolve()))
+            self.assertNotEqual(workspace, self.repo.resolve())
+            self.assertEqual(Path(cwd).resolve(), workspace)
+            self.assertEqual((destination, mode), ('/workspace', 'rw'))
             self.assertEqual(argv[-3:-1], ['/bin/sh', '-c'])
             script = shlex.split(argv[-1])
             self.assertEqual(script[:2], ['python3', 'capture.py'])
-            output = self.repo / Path(script[-1]).relative_to('/workspace')
+            relative_output = Path(script[-1]).relative_to('/workspace')
+            output = workspace / relative_output
             self.assertEqual(env['HOLOPHYTE_TICKET'], 'KO-530')
             self.assertEqual(env['HOLOPHYTE_EVIDENCE_STATES'], '\n'.join(states))
             self.assertNotIn('MEDIA_SECRET', env)
-            self.assertEqual(self.git('check-ignore', str(output / '01-dialog.png')),
-                             str(output / '01-dialog.png'))
+            host_image = self.repo / relative_output / '01-dialog.png'
+            self.assertEqual(self.git('check-ignore', str(host_image)),
+                             str(host_image))
             (output / '01-dialog.png').write_bytes(PNG)
+            self.assertFalse(host_image.exists())
             return 0, ''
 
         with (patch.object(isolation, 'image_ready'),
