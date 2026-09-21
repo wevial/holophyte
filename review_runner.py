@@ -82,10 +82,12 @@ def _run(
         list(args), cwd=cwd, capture_output=True, text=True, timeout=timeout
     )
     if check and result.returncode:
-        raise ReviewBoundaryError(
+        error = ReviewBoundaryError(
             f"command failed ({result.returncode}): {' '.join(args)}\n"
             f"{result.stdout}{result.stderr}".strip()
         )
+        error.returncode = result.returncode
+        raise error
     return result
 
 

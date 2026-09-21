@@ -39,6 +39,103 @@ def bare_target(case, path):
         worktrees=path.parent / f"{path.name}.worktrees")
 
 
+class AgentTurnEventTests(unittest.TestCase):
+    def setUp(self):
+        import store
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name)
+        self.target = bare_target(self, self.repo)
+        for args in (("init", "-q"), ("-c", "user.name=Test", "-c",
+                     "user.email=test@example.invalid", "commit", "--allow-empty",
+                     "-qm", "base")):
+            subprocess.run(["git", *args], cwd=self.repo, check=True)
+        self.sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.repo, text=True).strip()
+        self.conn = store.open(self.target.store_path)
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        project = store.ensure_project(self.conn, "test", self.repo)
+        ticket = store.mirror_ticket(self.conn, project, "KO-573", "KO-573",
+                                     "turn events", acceptance_criteria=["record"],
+                                     verification_commands=["true"])
+        self.run = store.claim(self.conn, project, ticket)
+
+    def configure(self, **commands):
+        self.target._config = None
+        self.target.config_path.write_text("[agents]\n" + "".join(
+            f"{key} = {json.dumps(value)}\n" for key, value in commands.items()))
+
+    def stub(self, name, body):
+        path = self.repo / name
+        path.write_text(f"#!{sys.executable}\n" + body + "\n")
+        path.chmod(0o755)
+        return str(path)
+
+    def turn(self, role="implement", **kwargs):
+        return holophyte.agents.agent(
+            self.target, role, "private prompt --model secret", self.repo,
+            base_sha=self.sha, candidate_sha=self.sha,
+            conn=self.conn, run_id=self.run, **kwargs)
+
+    def events(self):
+        return [json.loads(row[0]) for row in self.conn.execute(
+            "SELECT payload FROM runEvents WHERE runId=? AND kind='agent_turn' "
+            "ORDER BY seq", (self.run,))]
+
+    def test_roles_status_labels_and_probe_without_context(self):
+        command = self.stub("devin-review", "import time; time.sleep(0.05)")
+        self.configure(implementer=command + " -m first --model ignored",
+                       reviewer=command, adjudicator=command,
+                       writer=command + " --model writer-model")
+        for role, label in (("implement", command + " first"),
+                            ("review", command), ("adjudicate", command),
+                            ("write", command + " writer-model")):
+            self.turn(role)
+            event = self.events()[-1]
+            self.assertEqual({k: v for k, v in event.items() if k != "seconds"},
+                             dict(role=role, label=label, route="primary",
+                                  exit_status=0, timed_out=False))
+            self.assertGreaterEqual(event["seconds"], 0.05)
+        self.assertEqual(len(self.events()), 4)
+        for context in ({}, {"conn": self.conn}, {"run_id": self.run}):
+            holophyte.agents.agent(self.target, "implement", "probe", self.repo,
+                                    **context)
+        self.assertEqual(len(self.events()), 4)
+        failing = self.stub("failed", "raise SystemExit(7)")
+        self.configure(implementer=failing, reviewer=failing, writer=failing)
+        for role in ("implement", "review", "write"):
+            self.turn(role)
+            self.assertEqual(self.events()[-1]["exit_status"], 7)
+            self.assertFalse(self.events()[-1]["timed_out"])
+
+    def test_timeout_is_recorded_and_still_propagates(self):
+        command = self.stub("slow", "import time; time.sleep(30)")
+        self.configure(implementer=command)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.turn(timeout=0.05)
+        event, = self.events()
+        self.assertTrue(event["timed_out"])
+        self.assertIsNone(event["exit_status"])
+        self.assertGreaterEqual(event["seconds"], 0.05)
+
+    def test_startup_fallback_attributes_only_the_launched_turn(self):
+        from types import SimpleNamespace
+        primary = self.stub("primary", "raise SystemExit(1)")
+        fallback = self.stub("fallback", "print('ready')")
+        self.configure(implementer=primary,
+                       implementer_fallback=fallback + " --model fallback-model")
+        self.addCleanup(holophyte.agents.routes(self.target).close)
+        with patch("holophyte.operator._record_startup_probe"):
+            self.assertTrue(holophyte.agents.startup_routes(
+                self.target, SimpleNamespace(team="test")))
+        self.assertEqual(self.events(), [])
+        self.turn()
+        event, = self.events()
+        self.assertEqual(event["route"], "fallback")
+        self.assertEqual(event["label"], fallback + " fallback-model")
+
+
 class SeatProbeTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
