@@ -4,7 +4,7 @@ from time import monotonic
 import store
 import store.read
 import ticket_template
-from holophyte import babysitter, pr, pr_media
+from holophyte import babysitter, pr, pr_activity, pr_media
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
 from holophyte.gates import MergeParked, RunFailure, sh
@@ -168,10 +168,14 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
             "Rewrite the description to explain the current behaviour and reasons."
             " The title"
             " will be ignored. Do not include Linear, Evidence, or appended bot"
-            " blocks. Under `## Changes since first review`, give one bullet for"
-            " this fix: what changed in behaviour, one line only. Follow the"
-            " same prose rules above. Omit earlier rounds; the loop preserves them.",
+            " blocks. Follow the same prose rules above.",
         ])
+        if merge_config(target).pr_changes_log:
+            parts.append("Under `## Changes since first review`, give one bullet for"
+                         " this fix: what changed in behaviour, one line only."
+                         " Omit earlier rounds; the loop preserves them.")
+        else:
+            parts.append("Do not include a Changes since first review section.")
     goal = "\n\n".join(parts)
     left = budget_min - (monotonic() - started) / 60
     minutes = max(1, min(PR_TEXT_BUDGET_MIN, int(left)))
@@ -212,8 +216,10 @@ def _without_changes(text):
 
 
 def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
-                    beat_s, wt, budget_min, pull, answered):
+                    beat_s, wt, budget_min, pull, answered, *, sha=None):
     """One bounded writing turn after approval; refusal never overwrites prose."""
+    if sha and pr_activity.latest(conn, run_id, "pr_text_sha") == sha:
+        return
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
         current = pr.rest(target, pull, "GET", endpoint)["body"] or ""
@@ -224,18 +230,23 @@ def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
         refresh=(own, answered))
     if written is None:
         return
-    _, history = _without_changes(own)
+    log_changes = merge_config(target).pr_changes_log
     description, changes = _without_changes(written[1])
-    if (not description.strip() or len(changes) != 1
-            or not changes[0][2:].strip()):
+    if (not description.strip() or (log_changes and
+            (len(changes) != 1 or not changes[0][2:].strip()))):
         print(f"[holo2] written PR text refused for {task_id}: missing behaviour"
               " summary; leaving the pull request body unchanged")
         return
-    history.append(f"- Round {len(history) + 1}: {changes[0][2:]}")
-    text = description.rstrip() + "\n\n" + CHANGES_HEADING + "\n" + "\n".join(history)
+    text = description.rstrip()
+    if log_changes:
+        _, history = _without_changes(own)
+        history.append(f"- Round {len(history) + 1}: {changes[0][2:]}")
+        text += "\n\n" + CHANGES_HEADING + "\n" + "\n".join(history)
     with heartbeat_while(conn, run_id, beat_s):
         latest = pr.rest(target, pull, "GET", endpoint)["body"] or ""
         pr.edit_pr_body(target, pull, pr.replace_pr_text(latest, text))
+    if sha and conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "pr_text_sha", sha)
 
 
 def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
@@ -362,14 +373,11 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
     unwinds the run with branch and worktree left standing. The operator's
     ways on are `--approve KO-n` (merge it) and `--babysit KO-n` (look
     again, which merges at `reviewed` alone and reviews anything else) --
-    and, since KO-362, the loop's own tick: the park reads the pull
-    request once more, *after* this pass's pushes and replies, and
-    records its `updatedAt` and thread count on the run
-    (`runs.prSeenAt`, `runs.prSeenThreads`, with the checks rollup and
-    review decision beside them, KO-368), so the reconcile that sees
-    the pull request move past them is seeing a reviewer, not the
-    babysitter's own writes. A read that fails records nothing, and the
-    reconcile then records without babysitting."""
+    and the supervisor's content-based wake rule. The park reads the PR after
+    this pass's writes and records its mark, checks and review decision.
+    Delayed updatedAt bumps alone cannot trigger another pass (KO-563).
+    A failed read records no mark; reconcile initializes it without waking.
+    """
     short = sha[:12] if sha else "an unrecorded sha"
     question = babysitter.open_threads_question(pull, why, threads)
     if conn is not None and run_id is not None:
@@ -381,7 +389,7 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                    f"{babysitter.gist(why)}; {branch} at {short} is open as"
                    f" {pull.url} ([merge] mode = \"pr\")",
                    candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed,
-                   pr_seen=_pr_seen(target, pull))
+                   pr_seen=_pr_seen(target, pull, conn, run_id))
     print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"

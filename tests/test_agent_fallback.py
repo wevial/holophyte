@@ -30,14 +30,19 @@ class AgentFallbackTests(SweepTestCase):
         for name in ('codex-primary', 'devin-fallback'):
             path = self.root / name
             path.write_text(
-                f'#!{sys.executable}\nimport sys\n'
+                f'#!{sys.executable}\nimport subprocess, sys\n'
                 f'with open({str(self.calls)!r}, "a") as f:\n'
                 f' f.write({name!r} + " " + sys.argv[-1] + "\\n")\n'
-                'probe = sys.argv[-1] == "Reply with the single word: ready"\n'
+                f'review_probe = sys.argv[-1] == {agents.REVIEW_PROBE_GOAL!r}\n'
+                'probe = review_probe or '
+                'sys.argv[-1] == "Reply with the single word: ready"\n'
                 f'failed = ({probe_fails!r} or not probe) '
                 f'if {name!r} == "codex-primary" else {fallback_fails!r}\n'
                 'print("ERROR: You\'ve hit your usage limit" if failed else '
                 '("ready" if probe else "turn completed"))\n'
+                'if review_probe and not failed:\n'
+                ' print(subprocess.check_output('
+                '["git", "rev-parse", "HEAD"], text=True).strip())\n'
                 'sys.exit(1 if failed else 0)\n')
             path.chmod(0o755)
         self.primary = str(self.root / 'codex-primary')
@@ -326,7 +331,7 @@ class AgentFallbackTests(SweepTestCase):
                                     cwd=self.target), sha)
                 reset(self.tgt)
         self.assertEqual(self.calls.read_text().splitlines(), 2 * [
-            'codex-primary judge this', 'devin-fallback ' + agents.PROBE_GOAL,
+            'codex-primary judge this', 'devin-fallback ' + agents.REVIEW_PROBE_GOAL,
             'devin-fallback judge this'])
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM interventions WHERE action='route_fallback'"
@@ -412,7 +417,7 @@ class AgentFallbackTests(SweepTestCase):
                               conn=self.conn, run_id=run)
         self.assertEqual(result, 'turn completed')
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'devin-fallback ' + agents.PROBE_GOAL, 'devin-fallback judge'])
+            'devin-fallback ' + agents.REVIEW_PROBE_GOAL, 'devin-fallback judge'])
         rows = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId=? AND kind='route_fallback'",
             (run,)).fetchall()

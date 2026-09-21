@@ -85,6 +85,10 @@ class ImplementerOutput(AgentOutput):
 # healthy CLI's cold start and small next to the implement turn that would
 # otherwise be the first evidence of a route that does not answer.
 PROBE_GOAL = "Reply with the single word: ready"
+REVIEW_PROBE_GOAL = (
+    "Run the read-only command `git rev-parse HEAD` in the current checkout. "
+    "Reply with ready followed by the full commit id from the command output."
+)
 PROBE_WORD = "ready"
 PROBE_TIMEOUT = 90
 PROBE_TAIL_LINES = 5
@@ -92,7 +96,7 @@ PROBE_TAIL_LINES = 5
 
 @dataclass(frozen=True)
 class ProbeResult:
-    """What one implementer probe found: the exact argv it ran, the exit
+    """What one seat probe found: the exact argv it ran, the exit
     code (`None` when the cap ended it or it never started), the output it
     read back, and -- when the command could not be launched at all -- the
     OS's reason, so a missing or non-executable route is a failed probe
@@ -104,6 +108,7 @@ class ProbeResult:
     timeout: int
     launch_error: str = None
     seat: str = "implementer"
+    expected_commit: str = None
 
     @property
     def timed_out(self):
@@ -111,7 +116,8 @@ class ProbeResult:
 
     @property
     def ok(self):
-        return self.returncode == 0 and PROBE_WORD in self.output.lower()
+        witness = self.expected_commit or PROBE_WORD
+        return self.returncode == 0 and witness in self.output.lower()
 
     def describe(self):
         """The line(s) the loop prints: the command as a shell would take it,
@@ -127,6 +133,8 @@ class ProbeResult:
             why = f"no answer within {self.timeout}s"
         elif self.returncode:
             why = f"exit {self.returncode}"
+        elif self.expected_commit:
+            why = "route answered without reporting the commit; cannot run commands"
         else:
             why = f"exit 0 but no {PROBE_WORD!r} in the output"
         tail = self.tail()
@@ -179,7 +187,8 @@ def probe_implementer(target, timeout=None):
 
 def probe_seat(target, role, *, fallback=False, timeout=None):
     """Probe the exact command, in a scratch checkout for review wrappers."""
-    cmd = agent_command(target, role, PROBE_GOAL, fallback=fallback)
+    goal = REVIEW_PROBE_GOAL if role in ("review", "adjudicate") else PROBE_GOAL
+    cmd = agent_command(target, role, goal, fallback=fallback)
     default = cmd is None
     if default:
         if fallback or (agent_command(target, role, "", fallback=True) is None
@@ -190,6 +199,7 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
                 "--effort", IMPL_EFFORT] if role == "implement" else
                ["default-review", review_profile(*review_route(target))])
     cap = PROBE_TIMEOUT if timeout is None else timeout
+    sha = None
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
             if role in ("review", "adjudicate"):
@@ -200,7 +210,7 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
             if default and role != "implement":
                 out = review_runner.run_review(
                     repo=Path(scratch), base_sha=sha, candidate_sha=sha,
-                    prompt=PROBE_GOAL, model=review_route(target)[0],
+                    prompt=goal, model=review_route(target)[0],
                     effort=review_route(target)[1],
                     profile=review_profile(*review_route(target)),
                     timeout=cap, verdicts=None, carry=carry_directories(target))
@@ -217,11 +227,13 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
             partial = expired.output or ""
             if isinstance(partial, bytes):
                 partial = partial.decode(errors="replace")
-            return ProbeResult(cmd, None, partial, cap, seat=AGENT_CONFIG_KEYS[role])
+            return ProbeResult(cmd, None, partial, cap, seat=AGENT_CONFIG_KEYS[role],
+                               expected_commit=sha)
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
             return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
-                               seat=AGENT_CONFIG_KEYS[role])
-    return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role])
+                               seat=AGENT_CONFIG_KEYS[role], expected_commit=sha)
+    return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
+                       expected_commit=sha)
 
 
 def agent_route(target, role):

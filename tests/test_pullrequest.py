@@ -60,6 +60,32 @@ class MergeModePullRequestTests(MergeModeFixture):
     the pull request; the passes over threads and checks are
     `MergeModeBabysitPassTests` (`test_babysit_pass.py`)."""
 
+    def test_resumed_human_candidate_keeps_current_description(self):
+        from test_babysit_threads import MergeModeBabysitThreadsTests as H
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state([H.DEFECT]), self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""),
+                  Reply("THREAD 1: ADDRESS -- a real crash"), Commit("fix"),
+                  Idle("TITLE: Fixed load\nLoad handles missing input.\n\n"
+                       "## Changes since first review\n"
+                       "- Missing input no longer crashes the load."),
+                  provider=self.provider())
+        body = self.pr_body.read_text()
+        self.assertIn("Load handles missing input.", body)
+        self.assertNotIn("Changes since first review", body)
+        self.serve(self.pr_state())
+        edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
+        self.assertEqual(len(edits), 1)
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+        fake, _ = self.loop(provider=self.provider())
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.pr_body.read_text(), body)
+        self.assertEqual([c for c in self.recorded() if c.startswith("gh pr edit")],
+                         edits)
+        self.assertEqual(self.read("SELECT phase FROM runs ORDER BY id")[-1],
+                         ("awaiting_merge_approval",))
+
     def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
         """Push, then create with the ticket title and Summary stub.
         With green checks and `approve = "human"`, park ready to merge: the
@@ -350,7 +376,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                             self.BODY, 60, self.target, 5, pull,
                             "ADDRESS: replace correlated subquery")
                 self.assertEqual(title, "Faster search")
-                self.assertIn("- Round 1: Search no longer stalls.",
+                self.assertIn("Search results arrive sooner.",
                               edit.call_args.args[2])
                 self.assertNotIn("correlated subquery", edit.call_args.args[2])
                 turns = [json.loads(line)
@@ -542,8 +568,25 @@ class MergeModePullRequestTests(MergeModeFixture):
             "New description.\n\nLinear: KO-131\n\n"
             "<!-- bot -->\nAppended block.\n")
 
-    def test_refresh_preserves_metadata_and_accumulates_fix_rounds(self):
+    def test_refresh_omits_history_by_default_and_removes_existing_rounds(self):
         self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        preserved = ("## Evidence\n\n![capture](https://example/screen.png)\n\n"
+                     "Linear: KO-131 (https://linear.app/example/KO-131)\n\n"
+                     "<!-- bot -->\nAppended block.\n")
+        for history in ("", "## Changes since first review\n"
+                        "- Round 1: Results arrive sooner.\n"
+                        "- Round 2: Keep rows without matches.\n\n"):
+            for summary in ("", "\n\n## Changes since first review\n- Faster."):
+                with self.subTest(history=history, summary=summary):
+                    self.pr_body.write_text(
+                        "Old description.\n\n" + history + preserved)
+                    self.refresh(("TITLE: Ignored\nNew description." + summary, False))
+                    self.assertEqual(self.pr_body.read_text(),
+                                     "New description.\n\n" + preserved)
+
+    def test_refresh_preserves_metadata_and_accumulates_fix_rounds(self):
+        self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
         self.fake_route()
         original = holophyte.pr_media.append(
             holophyte.pr.pr_body_written(
@@ -582,7 +625,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(edits, [f"gh pr edit {self.URL} --body-file -"] * 2)
 
     def test_refresh_refusal_leaves_body_untouched(self):
-        self.configure('[merge]\nmode = "pr"\n')
+        self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
         self.fake_route()
         original = ("Good description.\n\nLinear: KO-131\n\n## Evidence\n"
                     "Capture\n<!-- bot -->tail\n")
@@ -1078,6 +1121,10 @@ class MergeModePullRequestTests(MergeModeFixture):
         with no checks, a repository requiring no review)."""
         pull = dict(self.OPEN_PULL, updatedAt=at,
                     reviewThreads={"totalCount": threads})
+        if threads:
+            pull["comments"] = {"nodes": [{"id": "comment-1",
+                "createdAt": self.T2, "author": {"login": "reviewer"},
+                "body": "Please check this"}]}
         if checks is not None:
             pull["commits"] = {"nodes": [
                 {"commit": {"statusCheckRollup": {"state": checks}}}]}
@@ -1136,6 +1183,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             self.read("SELECT summary FROM runEvents"
                       " WHERE kind = 'intervention'"),
             [(f"supervisor babysit: new review activity on {self.URL}:"
+              " conversation comment;"
               f" updated {self.T2} (last seen {self.T1}), 1 review threads"
               " (last seen 0)",)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
