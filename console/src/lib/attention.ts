@@ -380,3 +380,11 @@ export function describe(
       return { ...base, body: str(item.question) ?? str(item.reason) ?? "" };
   }
 }
+
+/** Separate parked pull requests without changing either group's order. */
+export function splitPullRequests(items: AttentionItem[]): { needsYou: AttentionItem[]; pullRequests: AttentionItem[] } {
+  return {
+    needsYou: items.filter(item => item.kind !== "pr_open"),
+    pullRequests: items.filter(item => item.kind === "pr_open"),
+  };
+}

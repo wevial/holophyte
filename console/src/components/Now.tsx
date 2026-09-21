@@ -7,6 +7,7 @@ import { localMidnight } from "../lib/ledger";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { resolvedSince } from "../lib/resolved";
 import type { DaemonStatus } from "../lib/runs";
+import { PullRequestTable } from "./PullRequestTable";
 import { Floor } from "./Floor";
 import { NeedsYou } from "./NeedsYou";
 import { ResolvedFold } from "./ResolvedFold";
@@ -72,6 +73,7 @@ export function Now({
           />
         )}
       />
+      <PullRequestTable hosts={shown} project={project} now={now} />
     </>
   );
 }
