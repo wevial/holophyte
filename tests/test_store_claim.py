@@ -66,6 +66,30 @@ class ClaimLeaseTests(unittest.TestCase):
             ).fetchone()[0],
         )
 
+    def test_session_recording_refuses_a_run_ended_by_another_connection(self):
+        operator = self.open()
+        for previous in (None, "original-session"):
+            with self.subTest(previous=previous):
+                run_id = store.claim(self.conn, self.project_id, self.ticket_id)
+                if previous is not None:
+                    store.record_agent_session(
+                        self.conn, run_id, previous, "implement", "primary")
+                store.release(operator, run_id, "failed", reason="operator sweep")
+                before = self.conn.execute(
+                    "SELECT * FROM runEvents WHERE runId = ? ORDER BY seq",
+                    (run_id,)).fetchall()
+
+                with self.assertRaises(store.RunEnded):
+                    store.record_agent_session(
+                        self.conn, run_id, "stale-session", "implement", "fallback")
+
+                self.assertEqual(self.conn.execute(
+                    "SELECT providerSessionId FROM runs WHERE id = ?",
+                    (run_id,)).fetchone(), (previous,))
+                self.assertEqual(self.conn.execute(
+                    "SELECT * FROM runEvents WHERE runId = ? ORDER BY seq",
+                    (run_id,)).fetchall(), before)
+
     def test_claim_records_a_claimed_run_and_takes_the_tickets_lease(self):
         run_id = store.claim(self.conn, self.project_id, self.ticket_id, now=1700)
 
