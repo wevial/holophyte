@@ -21,6 +21,14 @@ T0 = 1_700_000_000_000
 
 class BabysitHelpers:
     """Shared pass setup and assertions; no discoverable test cases."""
+    def no_commit_review_fix_fails(self):
+        self.resume_rejected_fix()
+        self.loop(REQUEST_CHANGES, Idle("no answer"), provider=self.provider())
+        ((outcome, reason),) = self.read(
+            "SELECT outcome, outcomeReason FROM runs ORDER BY id DESC LIMIT 1")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("fix round made no progress", reason)
+
     def no_commit_thread_answers(self, mode):
         from store.operator_notes import send_back
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')

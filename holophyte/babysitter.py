@@ -926,7 +926,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         _record_implementer_output(conn, run_id, f"fix round {pass_no}: {fixes}",
                                    known_secrets(target.config()))
     summaries = babysitter.parse_summaries(fixes)
-    if (fixed == sha and not timed_out
+    if (addressed and fixed == sha and not timed_out
             and all(summaries.get(n) for n, _, _ in addressed)):
         why = "Fix round made no commit; operator instruction needed:\n" + "\n".join(
             f"THREAD {n} -- {where(thread)}:\n> {summaries[n]}"
