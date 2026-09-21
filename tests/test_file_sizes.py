@@ -31,7 +31,7 @@ OVER = {}
 # Pins are exact counts except the three KO-487 splits, which have headroom.
 # Those caps start 100 lines above their post-split lengths.
 PINNED = {
-    "holophyte/babysitter.py": 980, "holophyte/board.py": 901,
+    "holophyte/babysitter.py": 985, "holophyte/board.py": 901,
     "holophyte/claim.py": 845, "holophyte/cli.py": 479,
     "holophyte/config.py": 813, "holophyte/dispatch.py": 263,
     "holophyte/config_tables.py": 596, "holophyte/findings.py": 331,
@@ -44,9 +44,9 @@ PINNED = {
     "holophyte/report.py": 196, "provider.py": 302,
     "holophyte/serve.py": 904,
     "holophyte/serve_actions.py": 191, "holophyte/serve_config.py": 336,
-    "holophyte/serve_runs.py": 589, "holophyte/supervisor.py": 901,
+    "holophyte/serve_runs.py": 591, "holophyte/supervisor.py": 901,
     "holophyte/supervisor_lock.py": 227,
-    "holophyte/sweep_report.py": 235, "store/__init__.py": 984,
+    "holophyte/sweep_report.py": 235, "store/__init__.py": 986,
     "store/operate.py": 915, "store/read.py": 956,
     "store/schema.py": 807, "store/tickets.py": 462,
     "tests/config_fixture.py": 76, "tests/loop_fixture.py": 653,
@@ -63,7 +63,7 @@ PINNED = {
     "tests/test_pullrequest.py": 1232, "tests/test_reconcile.py": 414,
     "tests/test_serve.py": 1160,
     "tests/test_serve_actions.py": 317, "tests/test_serve_config.py": 709,
-    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 769,
+    "tests/test_serve_ledger.py": 449, "tests/test_serve_runs.py": 792,
     "tests/test_serve_shipped.py": 181,
     "tests/sweep_fixture.py": 196, "tests/test_startup_checks.py": 648,
     "tests/test_store.py": 282,

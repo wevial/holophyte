@@ -251,3 +251,14 @@ export interface Instruction {
   outcome?: "changed" | "kept" | "asked";
   reply?: string;
 }
+
+/** Named fields on a PR thread; absent on pre-PR reviewer prose. */
+export interface ThreadFindingFields {
+  kind?: "thread" | "finding";
+  author?: string;
+  author_kind?: string;
+  verdict?: string;
+  summary?: string;
+  raw?: string;
+  url?: string;
+}

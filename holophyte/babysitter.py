@@ -41,6 +41,7 @@ from holophyte.review import (
     parse_findings,
 )
 from holophyte.runs import heartbeat_while, record_round
+from holophyte.thread_findings import thread_finding
 from store.instructions import record_instruction_reply
 
 # Quote conventions in brief order, capped per file, so rules aren't guessed.
@@ -538,6 +539,8 @@ def _fix_answers(conn, run_id, rnd, fix_note):
         lines[:0] = [line for finding in json.loads(recorded.findings)
                      for line in (f"ADDRESS: {' '.join(finding['request'].split())}"
                                   if finding.get("kind") == "instruction"
+                                  else f"{finding['verdict']}: {finding['summary']}"
+                                  if finding.get("kind") == "thread"
                                   else finding["message"]).splitlines()
                      if "ADDRESS:" in line]
     if fix_note:
@@ -844,22 +847,24 @@ def _decline_threads(target, conn, run_id, beat_s, pull, declined, model):
 
 
 def _thread_findings(pull, pass_no, threads, verdicts, checks, sha, bot_logins):
-    """Keep explicit instructions structured; ordinary findings retain their prose."""
+    """Keep instructions and adjudicated thread findings structured."""
     findings = []
     for n, thread in enumerate(threads, 1):
         if thread.classification == "MENTIONED":
             author = thread.comments[-1]
             is_bot = thread_mentions.bot_author(
                 author.author, bot_logins, author.author_kind)
-            kind = "finding" if is_bot else "instruction"
-            findings.append(dict(kind=kind, path=thread.path or "(no file)",
+            finding = dict(kind="instruction", path=thread.path or "(no file)",
                                  line=thread.line, author=author.author,
                                  request=thread.request, url=thread.url,
-                                 severity="nit", message=thread.request))
+                                 severity="nit", message=thread.request)
+            findings.append(thread_finding(thread, verdicts[n], finding, bot_logins)
+                            if is_bot else finding)
         else:
             reply = babysitter.round_reply(
                 pull, pass_no, (thread,), {1: verdicts[n]}, checks, sha)
-            findings.extend(parse_findings(reply.rsplit("\n", 1)[0]))
+            legacy, = parse_findings(reply.rsplit("\n", 1)[0])
+            findings.append(thread_finding(thread, verdicts[n], legacy, bot_logins))
     return findings
 
 

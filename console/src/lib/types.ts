@@ -1,3 +1,4 @@
+import type { ThreadFindingFields } from "./findings";
 import type { Instruction } from "./findings";
 
 /** The daemon's `/status` body (holophyte/serve.py `status()`). `project`
@@ -64,7 +65,7 @@ export interface AttentionItem {
 }
 
 /** One review finding as the daemon decodes it from `reviewRounds.findings`. */
-export interface Finding {
+export interface Finding extends ThreadFindingFields {
   path: string;
   line?: number | null;
   severity: string;

@@ -678,6 +678,7 @@ def _finding_keys(findings):
     would make an unchanged complaint look like a new one and hide exactly the
     non-convergence the fingerprint exists to catch.
 
+    Thread `fingerprint` keys preserve the legacy parser's identity.
     Duplicate keys collapse, keeping fingerprints and overlap comparable.
 
     Raises `ValueError` for a finding missing `path` or `severity`, carrying a
@@ -695,9 +696,10 @@ def _finding_keys(findings):
     keys = set()
     for finding in findings:
         try:
-            path = finding["path"]
-            severity = finding["severity"]
-        except (TypeError, KeyError) as exc:
+            key_finding = finding.get("fingerprint", finding)
+            path = key_finding["path"]
+            severity = key_finding["severity"]
+        except (AttributeError, TypeError, KeyError) as exc:
             raise ValueError(
                 f"finding must carry a path and a severity, got {finding!r}"
             ) from exc
@@ -712,7 +714,7 @@ def _finding_keys(findings):
             raise ValueError(
                 f"finding severity must be one of {SEVERITIES}, got {severity!r}"
             )
-        line = finding.get("line")
+        line = key_finding.get("line")
         if line is None:
             line = _NO_LINE
         elif isinstance(line, bool) or not isinstance(line, int):
