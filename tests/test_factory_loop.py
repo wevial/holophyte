@@ -6,6 +6,8 @@ Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 """
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import sqlite3
 import subprocess
@@ -62,6 +64,92 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class LoopTests(LoopFixture):
+    def test_implementer_sessions_survive_implement_and_fix_turns(self):
+        self.configure("[agents]\nimplementer_session = 'session id: ([a-z-]+)'\n")
+
+        class SessionCommit(Commit):
+            def play(step, cwd, turn):
+                super().play(cwd, turn)
+                return f"session id: {step.message}"
+
+        seen = []
+
+        class ObserveCommit(SessionCommit):
+            def play(step, cwd, turn):
+                seen.extend(self.read("SELECT providerSessionId FROM runs"))
+                self.assertEqual(self.read(
+                    "SELECT count(*) FROM runEvents WHERE kind = 'agent_session'"),
+                    [(1,)])
+                return super().play(cwd, turn)
+
+        self.loop(SessionCommit("first-session"), REQUEST_CHANGES,
+                  ObserveCommit("fix-session"), APPROVE)
+        self.assertEqual(seen, [("first-session",)])
+        self.assertEqual(self.read("SELECT providerSessionId, outcome FROM runs"),
+                         [("fix-session", "merged")])
+        events = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'agent_session' ORDER BY seq")
+        self.assertEqual([json.loads(row[0]) for row in events], [
+            {"session_id": session, "role": "implement", "route": "primary"}
+            for session in ("first-session", "fix-session")])
+
+    def test_session_recording_is_optional_and_requires_a_match(self):
+        for number, (config, output) in enumerate((
+            ("", "session id: ignored"),
+            ("[agents]\nimplementer_session = 'session id: ([a-z-]+)'\n",
+             "no banner"),
+        ), 1):
+            with self.subTest(config=config):
+                self.configure(config)
+                self.loop(Commit(output), APPROVE,
+                          provider=StubProvider(a_task(number)))
+                self.assertTrue(all(value is None for (value,) in
+                                    self.read("SELECT providerSessionId FROM runs")))
+                self.assertEqual(self.read(
+                    "SELECT payload FROM runEvents WHERE kind = 'agent_session'"), [])
+                self.assertEqual(self.read("SELECT outcome FROM runs"),
+                                 [("merged",)] * number)
+
+    def test_timed_out_fallback_session_is_recorded(self):
+        self.configure("[agents]\nimplementer_session = 'session id: ([a-z-]+)'\n")
+
+        class CappedSession(Commit):
+            def play(step, cwd, turn):
+                super().play(cwd, turn)
+                holophyte.agents.routes(self.tgt).commands["implement"] = "fallback-cli"
+                raise subprocess.TimeoutExpired(
+                    "fallback-cli", 1, output=b"session id: capped-session")
+
+        self.loop(CappedSession("partial work"), APPROVE)
+        self.assertEqual(self.read("SELECT providerSessionId FROM runs"),
+                         [("capped-session",)])
+        events = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'agent_session'")
+        self.assertEqual([json.loads(row[0]) for row in events], [
+            {"session_id": "capped-session", "role": "implement", "route": "fallback"}])
+
+    def test_writer_and_container_turns_do_not_record_sessions(self):
+        self.configure("[agents]\nimplementer_session = 'session id: ([a-z-]+)'\n")
+        self.loop(Commit("seed run"), APPROVE)
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        run_id = self.read("SELECT id FROM runs")[0][0]
+        # The writer may use the implementer CLI but remains out of scope.
+        with (patch.object(holophyte.loop, "heartbeat_while",
+                           return_value=contextlib.nullcontext()),
+              patch.object(holophyte.loop, "agent",
+                           return_value="session id: excluded")):
+            holophyte.loop._timed(self.tgt, conn, run_id, 1, self.target, 1,
+                                  "write", role="write")
+            self.configure("[agents]\nimplementer_isolation = 'container'\n"
+                           "implementer_session = 'session id: ([a-z-]+)'\n")
+            holophyte.loop._timed(self.tgt, conn, run_id, 1, self.target, 1,
+                                  "implement")
+
+        self.assertEqual(self.read("SELECT providerSessionId FROM runs"), [(None,)])
+        self.assertEqual(self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'agent_session'"), [])
+
     def test_startup_first_line_names_running_build(self):
         # The factory build comes from its source checkout, even when its
         # target is another repository. Keep the normal self-hosting decision.

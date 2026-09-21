@@ -72,6 +72,7 @@ implementer's command and isolation settings.
 | `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
 | `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and target toolchain. Startup refuses a missing image and prints its build command. |
 | `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
+| `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. |
 | `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
 | `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup reviewer. |
@@ -110,6 +111,23 @@ HEAD and index return to the host after the container has been removed. Verify
 and capture commands still run on the host. The image must supply the CLI;
 host executables are not mounted. The reviewer image alone may need extending
 for the configured implementer. `none` preserves existing host behavior.
+
+Set `implementer_session` to extract a session handle from captured implementer
+output (stdout and stderr), for example the Codex banner:
+
+```toml
+[agents]
+implementer_session = 'session id: ([0-9a-f-]{36})'
+```
+
+After each implement or fix turn, including a timed-out turn, the first match
+updates `runs.providerSessionId` and appends an `agent_session` detail event.
+Its payload contains `session_id`, `role` (`implement`) and `route`
+(`primary` or `fallback`). Later ids replace the column while the events
+retain history in order. With no pattern or no match, nothing is recorded.
+Invalid regular expressions or a capture-group count other than one are refused
+at startup. Writer, reviewer, adjudicator and container-isolated turns are
+excluded. This records handles only; it does not resume sessions.
 
 `budget_scale` exists because the budget stops runaway turns, not because
 it selects a harness: an implementer that reads more and edits later can

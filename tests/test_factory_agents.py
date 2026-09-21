@@ -4,6 +4,7 @@ loop's control flow.
 Run: python3 -m unittest discover -s tests -p 'test_factory_agents*' -v
 """
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -37,6 +38,16 @@ def bare_target(case, path):
         path=path, holo_dir=holo, store_path=holo / "store.db",
         config_path=holo / "config.toml",
         worktrees=path.parent / f"{path.name}.worktrees")
+
+
+class SessionBannerTests(unittest.TestCase):
+    def test_documented_pattern_captures_real_codex_banner(self):
+        # Banner witnessed on the writer host on 2026-09-21.
+        banner = "session id: 01a0c612-78f5-7b21-8cfd-f4e3a7bf72e6"
+        document = (ROOT / "docs/config.md").read_text()
+        pattern = re.search(r"implementer_session = '([^']+)'", document)[1]
+        self.assertEqual(re.search(pattern, banner)[1],
+                         "01a0c612-78f5-7b21-8cfd-f4e3a7bf72e6")
 
 
 class SeatProbeTests(unittest.TestCase):
