@@ -161,9 +161,9 @@ class VerifyFactsTests(unittest.TestCase):
             with self.subTest(command=command):
                 ok, output = run_verify(command, '.')
                 self.assertEqual(ok, expected, output)
-        ok, output = run_verify('echo first\necho boom; exit 3', '.')
+        ok, output = run_verify('echo first\necho boom && exit 3', '.')
         self.assertFalse(ok)
         self.assertEqual(output.failure, {
-            'command_index': 2, 'command': 'echo boom; exit 3',
+            'command_index': 2, 'command': 'echo boom && exit 3',
             'exit_status': 3, 'last_output_line': 'boom',
         })

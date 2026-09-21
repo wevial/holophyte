@@ -19,10 +19,18 @@ from tests.loop_fixture import LoopFixture  # noqa: E402
 
 
 class VerifyBlockTests(unittest.TestCase):
+    def test_compound_block_preserves_errexit(self):
+        with tempfile.TemporaryDirectory() as cwd:
+            ok, out = holophyte.gates.run_verify(
+                "set -e; false; touch should-not-run\ntrue", cwd)
+            self.assertFalse((Path(cwd) / "should-not-run").exists())
+            self.assertFalse(ok, out)
+            self.assertEqual(out.failure["exit_status"], 1)
+
     def test_block_stops_at_first_failure_and_names_its_status(self):
         with tempfile.TemporaryDirectory() as cwd:
             ok, out = holophyte.gates.run_verify(
-                "false\ntouch should-not-run; true", cwd)
+                "false\ntouch should-not-run && true", cwd)
             self.assertFalse(ok, out)
             self.assertIn("clause 1 of 2 exited 1", out)
             self.assertIn("failing clause: false", out)
@@ -35,7 +43,7 @@ class VerifyBlockTests(unittest.TestCase):
             (Path(cwd) / "sub").mkdir()
             (Path(cwd) / "sub" / "value").write_text("carried")
             commands = (
-                'export VERIFY_VALUE=carried; cd sub\n'
+                'export VERIFY_VALUE=carried && cd sub\n'
                 'test "$(cat value)" = "$VERIFY_VALUE"',
                 "false || true\nprintf tolerated",
                 "printf one\nprintf two\nprintf three",
@@ -58,7 +66,7 @@ class VerifyBlockTests(unittest.TestCase):
             for tier in ("always", "before_merge"):
                 with self.subTest(tier=tier):
                     config = {"verify": {tier: [
-                        "false\ntouch should-not-run; true"]}}
+                        "false\ntouch should-not-run && true"]}}
                     target = SimpleNamespace(config=lambda: config)
                     ok, out = holophyte.gates.with_baseline(
                         target, cwd, "true", True, "", before_merge=True)

@@ -440,10 +440,15 @@ order in the task worktree and stop at the first failure. These baselines
 supplement the ticket's exact commands; `timeout_sec` applies to baseline
 commands, not to the ticket's commands or worktree setup.
 
-Every line of a verify block must pass, and the run stops at the first failure.
+Every line of an instrumented simple newline verify block must pass, and the
+run stops at the first failure. Parseable top-level `&&` chains also stop at
+the first failing clause; both forms report the failed clause and exit status.
 This applies to ticket commands and to blocks in both `always` and
 `before_merge`. Lines share one shell, preserving exported variables and
-`cd`; append `|| true` to a line whose failure is explicitly allowed.
+`cd`; append `|| true` to a line whose failure is explicitly allowed. Complex
+shell programs (including semicolon-separated command lists) execute verbatim,
+with their own shell exit semantics and without clause-level reporting or
+the instrumented first-failure guarantee.
 
 ```toml
 [verify]
