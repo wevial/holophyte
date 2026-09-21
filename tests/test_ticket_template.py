@@ -435,6 +435,9 @@ class GitignoredPathTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name) / "repo"
         self.repo.mkdir()
+        (self.repo / "test_orders_export.py").touch()
+        (self.repo / "src/lotuspod").mkdir(parents=True)
+        (self.repo / "src/lotuspod/cli.py").touch()
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         (self.repo / ".gitignore").write_text("artifacts/*\n")
         self.ticket = Path(self.tmp.name) / "TICKET.md"
@@ -505,6 +508,9 @@ class GitignoredPathTests(unittest.TestCase):
     def test_a_directory_that_is_not_a_repository_yields_one_advisory(self):
         elsewhere = Path(self.tmp.name) / "plain"
         elsewhere.mkdir()
+        (elsewhere / "test_orders_export.py").touch()
+        (elsewhere / "artifacts").mkdir()
+        (elsewhere / "artifacts/report.html").touch()
         problems = tt.validate(tt.parse(GITIGNORED_CRITERION), repo=elsewhere)
         self.assertEqual(tt.blocking(problems), [])
         advisories = [p for p in problems if "could not check paths" in p]
