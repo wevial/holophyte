@@ -151,14 +151,16 @@ class BabysitterFailureTests(MergeModeFixture):
 
 
 class VerifyFactsTests(unittest.TestCase):
-    def test_blocks_preserve_shell_state_and_original_failure_conditions(self):
+    def test_blocks_preserve_shell_state_and_stop_on_failure(self):
         from holophyte.gates import run_verify
-        for command in ('export ANSWER=42\n[ "$ANSWER" = 42 ]',
-                        'false\n[ "$?" = 1 ]',
-                        'false\ntrue', 'if true; then\necho yes\nfi'):
+        for command, expected in (
+                ('export ANSWER=42\n[ "$ANSWER" = 42 ]', True),
+                ('false\n[ "$?" = 1 ]', False),
+                ('false\ntrue', False),
+                ('if true; then\necho yes\nfi', True)):
             with self.subTest(command=command):
                 ok, output = run_verify(command, '.')
-                self.assertTrue(ok, output)
+                self.assertEqual(ok, expected, output)
         ok, output = run_verify('echo first\necho boom; exit 3', '.')
         self.assertFalse(ok)
         self.assertEqual(output.failure, {

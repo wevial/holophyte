@@ -118,8 +118,8 @@ def split_and_clauses(cmd):  # noqa: C901 -- hand-written tokenizer; slice 4b ow
 
 
 def instrumented_script(clauses, *, stop_on_failure=True):
-    """One shell script that runs clauses in order. An && chain stops at the
-    first failure; newline blocks retain their last-command exit semantics.
+    """One shell script that runs clauses in order. Chains and newline blocks
+    stop at the first failure by default.
     Failures retain the original exit status. Clauses stay in a single shell,
     so `cd` and exported variables still carry across them.
 
@@ -439,8 +439,8 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
     if not cmd:
         return True, passed + "(no verify command)"
     # Complete, simple command lines can be marked without splitting the
-    # shell: exported variables and cd still carry, and a newline block keeps
-    # its existing last-command exit semantics. Complex shell programs remain
+    # shell: exported variables and cd still carry, and a newline block stops
+    # at the first failing line. Complex shell programs remain
     # verbatim; the whole program is their command.
     lines = [text for text in cmd.splitlines()
              if text.strip() and not text.lstrip().startswith('#')]
@@ -453,7 +453,7 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
     try:
         returncode, out = _verify_command(
             target,
-            instrumented_script(clauses, stop_on_failure=not block) if marked else cmd,
+            instrumented_script(clauses, stop_on_failure=True) if marked else cmd,
             cwd, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
         # The cap is a failed verify, not a crash: `run_capped` has already
