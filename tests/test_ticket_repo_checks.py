@@ -63,12 +63,21 @@ class RepositoryChecksTests(unittest.TestCase):
         self.assertFalse(any('does not exist' in p for p in self.problems(body)))
 
     def test_blank_template_and_cli_without_repo(self):
-        body = self.body.replace('.venv/bin/python -m unittest tests.test_a',
-                                 'python3 ticket_template.py ticketTemplate.md')
-        for repo in (None, self.repo):
-            problems = tt.blocking(tt.validate(tt.parse(body), repo=repo))
-            self.assertTrue(any('blank template can never validate' in p
-                                for p in problems), problems)
+        for interpreter in ("python3", "python3 -B", "python3 -u",
+                            ".venv/bin/python -X dev -W error"):
+            body = self.body.replace(
+                '.venv/bin/python -m unittest tests.test_a',
+                f'{interpreter} ticket_template.py ticketTemplate.md')
+            for repo in (None, self.repo):
+                with self.subTest(interpreter=interpreter, repo=repo):
+                    problems = tt.blocking(tt.validate(tt.parse(body), repo=repo))
+                    self.assertTrue(any('blank template can never validate' in p
+                                        for p in problems), problems)
+        for command in ('echo ticket_template.py ticketTemplate.md',
+                        'python3 -c "print(1)" ticket_template.py ticketTemplate.md'):
+            body = self.body.replace(
+                '.venv/bin/python -m unittest tests.test_a', command)
+            self.assertEqual(tt.blocking(tt.validate(tt.parse(body))), [])
         body = self.body.replace('tests.test_a', 'tests.test_gone')
         self.assertEqual(tt.validate(tt.parse(body)), tt.validate(tt.parse(self.body)))
         ticket = self.repo / 'ticket.md'

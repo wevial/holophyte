@@ -574,17 +574,33 @@ def _repository_problems(t, repo):
     return problems
 
 
+def _script_arguments(tokens):
+    """Arguments of a directly invoked script or a Python script command.
+    Interpreter options precede the script; -c and -m are different modes."""
+    args = iter(tokens)
+    executable = next(args, "")
+    while executable == "env" or re.match(r"^[A-Za-z_]\w*=", executable):
+        executable = next(args, "")
+    if Path(executable).name == "ticket_template.py":
+        return list(args)
+    if not re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", Path(executable).name):
+        return []
+    for arg in args:
+        if arg in ("-c", "-m"):
+            return []
+        if arg in ("-W", "-X"):
+            next(args, None)
+        elif not arg.startswith("-"):
+            return list(args) if Path(arg).name == "ticket_template.py" else []
+    return []
+
+
 def _blank_template_problems(t):
     problems = []
     for command in t.verify_commands:
         for tokens in _shell_commands(command):
-            names = [Path(token).name for token in tokens]
-            if "ticket_template.py" not in names:
-                continue
-            index = names.index("ticket_template.py")
-            invoked = index == 0 or re.fullmatch(
-                r"python(?:\d+(?:\.\d+)*)?", names[index - 1])
-            if invoked and "ticketTemplate.md" in names[index + 1:]:
+            names = [Path(token).name for token in _script_arguments(tokens)]
+            if "ticketTemplate.md" in names:
                 problems.append("verify command runs the validator on "
                                 "ticketTemplate.md: the blank template can never "
                                 f"validate: {command}")
