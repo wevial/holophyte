@@ -28,15 +28,19 @@ def _message(message, patterns):
         text = line.decode('utf-8', errors='surrogateescape')
         if any(p.search(text) for p in patterns):
             removed = True
-            if kept and not kept[-1].strip():
-                kept.pop()
         else:
             kept.append(line)
     if not removed:
         return message
     while kept and not kept[-1].strip():
         kept.pop()
-    return b''.join(kept)
+    cleaned = re.sub(rb'\n(?:[ \t]*\r?\n)+', b'\n\n', b''.join(kept))
+    trailers = re.search(rb'(?m)(?:^[A-Za-z][A-Za-z-]*: .*\n?)+\Z', cleaned)
+    if trailers and trailers.start():
+        # Git needs a separate final paragraph to recognize surviving trailers.
+        body = cleaned[:trailers.start()].rstrip(b'\r\n')
+        cleaned = body + b'\n\n' + trailers.group()
+    return cleaned
 
 
 def _reword(wt, sha, rewritten, patterns):
