@@ -11,7 +11,7 @@ import shlex
 import tempfile
 from pathlib import Path
 
-from holophyte.config import AGENT_CONFIG_KEYS
+from holophyte.config import AGENT_CONFIG_KEYS, DEFAULT_IMPLEMENTER
 from holophyte.redact import REDACTED, known_secrets, redact_prose
 
 
@@ -78,8 +78,13 @@ class ActiveRoutes:
             fcntl.flock(self.stream, fcntl.LOCK_EX)
         self.stream.seek(0)
         self.stream.truncate()
+        commands = dict(self.commands)
+        if self.writer_failed:
+            commands['write'] = (commands.get('implement')
+                                 or (self.target.config().get('agents') or {}).get(
+                                     'implementer') or DEFAULT_IMPLEMENTER)
         json.dump({AGENT_CONFIG_KEYS[role]: safe_command(self.target, command)
-                   for role, command in self.commands.items()}, self.stream)
+                   for role, command in commands.items()}, self.stream)
         self.stream.flush()
 
     def close(self):

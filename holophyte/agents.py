@@ -587,4 +587,6 @@ def probe_writer(target, *, activate):
     if not probe.ok:
         print("[holo2] writer route down; using implementer for PR text")
     if activate:
-        routes(target).writer_failed = not probe.ok
+        state = routes(target)
+        state.writer_failed = not probe.ok
+        state.publish()

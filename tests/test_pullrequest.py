@@ -590,6 +590,10 @@ class MergeModePullRequestTests(MergeModeFixture):
         for answer, reason in [(("", True), "ran out of time"),
                                (("No title line", False), "no `TITLE:` line"),
                                (("TITLE: Valid\nNew prose", False),
+                                "missing behaviour summary"),
+                               (("TITLE: Valid\nNew prose\n\n"
+                                 "## Changes since first review\n- \t\n\n"
+                                 "## Risks\nNone.", False),
                                 "missing behaviour summary")]:
             with self.subTest(reason=reason), patch(
                     "sys.stdout", new_callable=io.StringIO) as out:

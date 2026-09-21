@@ -53,10 +53,14 @@ class AgentFallbackTests(SweepTestCase):
         return code, out.getvalue()
 
     def test_failed_writer_probe_continues_on_implementer(self):
+        from holophyte.serve_runs import active_routes
+
         self.routes()
         self.configure(f'[agents]\nimplementer = "{self.fallback}"\n'
                        f'writer = "{self.primary}"\n')
         def turn(*_):
+            self.assertEqual(active_routes(self.tgt)['writer'],
+                             {'command': self.fallback, 'fallback': self.fallback})
             self.assertEqual(agents.agent(self.tgt, 'write', 'describe', self.target),
                              'turn completed')
             return 0
@@ -68,6 +72,30 @@ class AgentFallbackTests(SweepTestCase):
             'devin-fallback ' + agents.PROBE_GOAL,
             'codex-primary ' + agents.PROBE_GOAL,
             'devin-fallback describe'])
+
+    def test_writer_status_tracks_implementer_fallback_and_clears(self):
+        from holophyte.serve_runs import active_routes
+
+        self.routes()
+        self.configure(f'[agents]\nimplementer = "{self.primary}"\n'
+                       f'implementer_fallback = "{self.fallback}"\n'
+                       f'writer = "{self.primary}"\n')
+        self.addCleanup(reset, self.tgt)
+        self.assertTrue(agents.startup_routes(
+            self.tgt, SimpleNamespace(team='team-1')))
+        self.assertEqual(active_routes(self.tgt)['writer'],
+                         {'command': self.fallback, 'fallback': self.fallback})
+        # A read-only startup probe must not clear the published substitution.
+        Path(self.primary).write_text(f'#!{sys.executable}\nprint("ready")\n')
+        agents.probe_writer(self.tgt, activate=False)
+        self.assertEqual(active_routes(self.tgt)['writer']['command'], self.fallback)
+        agents.probe_writer(self.tgt, activate=True)
+        self.assertEqual(active_routes(self.tgt)['writer'], {'command': self.primary})
+        Path(self.primary).write_text(f'#!{sys.executable}\nprint("unavailable")\n')
+        agents.probe_writer(self.tgt, activate=True)
+        self.assertEqual(active_routes(self.tgt)['writer']['command'], self.fallback)
+        reset(self.tgt)
+        self.assertEqual(active_routes(self.tgt)['writer'], {'command': self.primary})
 
     def test_worker_probes_writer_without_fallback_keys(self):
         from holophyte import pool

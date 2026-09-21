@@ -226,7 +226,8 @@ def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
         return
     _, history = _without_changes(own)
     description, changes = _without_changes(written[1])
-    if not description.strip() or len(changes) != 1:
+    if (not description.strip() or len(changes) != 1
+            or not changes[0][2:].strip()):
         print(f"[holo2] written PR text refused for {task_id}: missing behaviour"
               " summary; leaving the pull request body unchanged")
         return
