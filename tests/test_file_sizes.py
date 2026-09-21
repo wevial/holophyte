@@ -31,7 +31,7 @@ OVER = {}
 # Pins are exact counts except the three KO-487 splits, which have headroom.
 # Those caps start 100 lines above their post-split lengths.
 PINNED = {
-    "holophyte/babysitter.py": 991, "holophyte/board.py": 901,
+    "holophyte/babysitter.py": 980, "holophyte/board.py": 901,
     "holophyte/claim.py": 903, "holophyte/cli.py": 479,
     "holophyte/config.py": 813, "holophyte/dispatch.py": 263,
     "holophyte/config_tables.py": 596, "holophyte/findings.py": 331,

@@ -68,8 +68,8 @@ class BabysitHelpers:
         self.assertEqual(fake.roles, [])
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
 
-    def resume_with_conversation(self, *states):
-        self.fake_route(states=[self.pr_state()])
+    def resume_with_conversation(self, *states, initial_state=None):
+        self.fake_route(states=[initial_state or self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         holophyte.operator.babysit_ticket(
             self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,

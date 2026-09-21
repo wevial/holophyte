@@ -120,6 +120,7 @@ Each module, one line:
 - `holophyte/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.
+- `holophyte/thread_answers.py` — read-only mention answers and thread replies.
 - `holophyte/thread_mentions.py` — latest-comment mentions as PR instructions.
 - `holophyte/thread_findings.py` — structured PR findings, bounded originals,
   and read-only normalization of legacy thread rows.
