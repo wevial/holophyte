@@ -498,6 +498,12 @@ def _new_paths(t):
 
 
 def _available(repo, path, declarations):
+    # Check containment before existence or exemptions, including new files.
+    try:
+        if not (repo / path).resolve().is_relative_to(repo.resolve()):
+            return False
+    except (OSError, RuntimeError):
+        return False
     files, directories = declarations
     normalized = str(Path(path))
     return ((repo / path).exists() or normalized in files

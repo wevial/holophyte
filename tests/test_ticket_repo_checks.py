@@ -62,6 +62,31 @@ class RepositoryChecksTests(unittest.TestCase):
                                 '`python3 -m unittest`, `generated/result.py`.')
         self.assertFalse(any('does not exist' in p for p in self.problems(body)))
 
+    def test_paths_must_resolve_inside_repository(self):
+        with tempfile.TemporaryDirectory(dir=self.repo.parent) as outside:
+            external = Path(outside)
+            (external / 'test_helper.py').touch()
+            (self.repo / 'shared').symlink_to(external, target_is_directory=True)
+            for path in (f'../{external.name}/test_helper.py',
+                         'shared/test_helper.py', 'shared/new_helper.py'):
+                for label, anchor, replacement in (
+                    ('Acceptance criteria #1', 'then 4 lines including header.',
+                     f'then `{path}` witnesses it.'),
+                    ('Implementation notes',
+                     'Endpoint lives beside the other order routes.',
+                     f'Add a new test file `{path}`.'),
+                    ('verify command',
+                     '.venv/bin/python -m unittest tests.test_a',
+                     f'python3 {path}'),
+                ):
+                    with self.subTest(path=path, label=label):
+                        self.assertIn(f'path does not exist in {label}: {path}',
+                                      self.problems(self.body.replace(
+                                          anchor, replacement)))
+        body = self.body.replace('then 4 lines including header.',
+                                 'then `tests/../tests/test_a.py` witnesses it.')
+        self.assertEqual(self.problems(body), [])
+
     def test_blank_template_and_cli_without_repo(self):
         for interpreter in ("python3", "python3 -B", "python3 -u",
                             ".venv/bin/python -X dev -W error"):
