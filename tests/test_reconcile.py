@@ -512,3 +512,119 @@ class RejectedPullRequestTests(MergeModeFixture):
         self.assertEqual(provider.states, [])
         self.assertEqual(store.read.failed_attempts_since(conn, ticket, 0), before)
         self.assertEqual(self.git("rev-parse", branch).strip(), sha)
+
+
+class ContentWakeTests(MergeModeFixture):
+    def parked_on_pr(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+        H.parked_on_pr(self)
+
+    def test_timestamp_only_bump_refreshes_facts_without_intervention(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+        H.parked_with_mark(self, H.T1, 3)
+        old = {'id': 'old', 'createdAt': H.T1, 'submittedAt': H.T1,
+               'author': {'login': 'person'}, 'body': 'Already seen'}
+        node = dict(H.OPEN_PULL, updatedAt='2026-09-10T10:00:10Z',
+                    comments={'nodes': [old]}, reviews={'nodes': [old]},
+                    reviewThreads={'totalCount': 3, 'nodes': [
+                        {'comments': {'nodes': [old]}}]},
+                    commits={'nodes': [{'commit': {'oid': 'old-commit',
+                        'committedDate': H.T1, 'statusCheckRollup':
+                        {'state': 'SUCCESS'}}}]}, reviewDecision='APPROVED')
+        H.fake_client(self, node)
+        self.main_output(provider=StubProvider())
+        self.assertEqual(self.read("SELECT action FROM interventions "
+                                   "WHERE action = 'babysit'"), [])
+        self.assertEqual(self.read("SELECT phase, prSeenAt, prSeenThreads, "
+                                   "prSeenChecks, prSeenReview FROM runs"),
+                         [('awaiting_merge_approval', H.T1, 3,
+                           'success', 'approved')])
+
+    def test_only_new_authored_content_wakes_once(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+        H.parked_with_mark(self, H.T1, 3)
+        cases = [({}, False),
+                 ({'comments': {'nodes': [{'id': 'own', 'createdAt': H.T2,
+                    'author': {'login': 'factory'},
+                    'body': '---- Comment by implementer ----\nreply'}]}}, False),
+                 ({'comments': {'nodes': [{'id': 'bot', 'createdAt': H.T1,
+                    'updatedAt': H.T2, 'author': {'login': 'bot',
+                    '__typename': 'Bot'}, 'body': 'edited'}]}}, False)]
+        for field, label in [('comments', 'conversation comment'),
+                             ('reviews', 'review'), ('commits', 'commit'),
+                             ('reviewThreads', 'inline thread')]:
+            item = {'id': label, 'createdAt': H.T2, 'submittedAt': H.T2,
+                    'committedDate': H.T2, 'oid': 'other-sha',
+                    'author': {'login': 'factory', 'user': {'login': 'person'}},
+                    'body': 'Please check this'}
+            if field == 'commits':
+                item = {'commit': item}
+            if field == 'reviewThreads':
+                item = {'comments': {'nodes': [item]}}
+            cases.append(({field: {'nodes': [item]}}, label))
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        import holophyte.pr_status as ps
+        from holophyte.reconcile import _rebabysit
+        ticket = store.read.blocked_tickets(conn)[0]
+        pull = ps.parse_pr_url(self.URL)
+        for content, expected in cases:
+            with self.subTest(content=content):
+                node = dict(H.OPEN_PULL, updatedAt=H.T2,
+                            reviewThreads={'totalCount': 3})
+                node.update(content)
+                with patch.object(ps, 'graphql', return_value={
+                        'viewer': {'login': 'factory'},
+                        'repository': {'pullRequest': node}}):
+                    status = ps.pull_status(self.tgt, pull)
+                with patch.object(store, 'babysit') as wake:
+                    _rebabysit(conn, ticket, pull, status, 0)
+                    if expected:
+                        wake.assert_called_once()
+                        self.assertIn(expected, wake.call_args.args[2])
+                        wake.reset_mock()
+                        _rebabysit(conn, ticket, pull, status, 0)
+                    wake.assert_not_called()
+                conn.execute('UPDATE runs SET prSeenAt = ?', (H.T1,))
+                conn.commit()
+
+    def test_two_empty_passes_raise_attention_until_real_content_arrives(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+
+        from holophyte.serve import parked_item
+        H.parked_with_mark(self, H.T1, 0)
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        for n, at in enumerate((H.T2, H.T3), 1):
+            with self.subTest(pass_number=n):
+                active = dict(H.OPEN_PULL, updatedAt=at, comments={'nodes': [
+                    {'id': f'comment-{n}', 'createdAt': at,
+                     'author': {'login': 'person'}, 'body': 'Please check'}]})
+                quiet = dict(H.OPEN_PULL, updatedAt=at)
+                H.fake_client(self, active, quiet)
+                self.main_output(provider=self.provider())
+                self.assertEqual(self.read("SELECT summary FROM runEvents WHERE "
+                                          "kind = 'pr_empty_wakes' ORDER BY id")[-1],
+                                 (str(n),))
+                conn.execute('UPDATE runs SET lastHeartbeat = lastHeartbeat - 200000')
+                conn.commit()
+        ticket = store.read.blocked_tickets(conn)[0]
+        self.assertEqual(ticket.blockedQuestion, 'woken repeatedly with nothing new')
+        item = parked_item(ticket)
+        self.assertEqual(item['ticket'], 'KO-131')
+        self.assertEqual(item['question'], 'woken repeatedly with nothing new')
+        before = self.read("SELECT id FROM interventions WHERE action = 'babysit'")
+        self.main_output(provider=StubProvider())
+        self.assertEqual(self.read("SELECT id FROM interventions "
+                                   "WHERE action = 'babysit'"),
+                         before)
+        later = dict(H.OPEN_PULL, updatedAt='2026-09-10T12:00:00Z',
+                     comments={'nodes': [{'id': 'real',
+                     'createdAt': '2026-09-10T12:00:00Z',
+                     'author': {'login': 'person'}, 'body': 'Actual new feedback'}]})
+        H.fake_client(self, later)
+        self.main_output(provider=self.provider())
+        self.assertEqual(len(self.read("SELECT id FROM interventions "
+                                       "WHERE action = 'babysit'")), len(before) + 1)
+        self.assertEqual(self.read("SELECT summary FROM runEvents WHERE "
+                                   "kind = 'pr_empty_wakes' ORDER BY id")[-1], ('0',))

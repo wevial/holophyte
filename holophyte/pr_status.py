@@ -17,6 +17,7 @@ from holophyte.pr import (
     graphql,
     rest,
 )
+from holophyte.pr_activity import ACTIVITY_FIELDS, activities
 from holophyte.pr_contexts import CONTEXTS_FIELDS, status_contexts_of
 
 # The shape of a pull request URL, `gh pr create`'s and the API's alike; the
@@ -83,19 +84,9 @@ query($thread: ID!, $after: String) {
 }""" % COMMENTS_PAGE
 
 
-# The one read the loop's pull-request reconcile makes of a parked PR: is
-# it still open, merged (as which commit, by whom) or closed unmerged, and
-# -- KO-362 -- whether anything happened on it since the babysitter last
-# looked: `updatedAt` and the count of its review threads, held against
-# what the last babysit pass recorded (`runs.prSeenAt`,
-# `runs.prSeenThreads`), and -- KO-368 -- the facts `/attention` shows
-# beside them: the head's checks rollup and the review decision
-# (`runs.prSeenChecks`, `runs.prSeenReview`). The thread bodies and the
-# per-run checks are still the babysitter's own read. `mergeable` rides
-# along too (GitHub's MERGEABLE / CONFLICTING / UNKNOWN, the answer a
-# resumed pass merges `origin/main` on) and `rateLimit` at no cost: the
-# remaining GraphQL budget on the token and when it resets, so the
-# reconcile backs off before the babysitter's reads run it dry.
+# The parked PR read includes authored activity, lifecycle and attention facts.
+# Creation/submission times distinguish new content from description edits or
+# bot edits. Overflow activity pages are read before returning (KO-563).
 PULL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -104,13 +95,15 @@ query($owner: String!, $name: String!, $number: Int!) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
       state merged mergeable mergeCommit { oid } mergedBy { login }
-      updatedAt reviewThreads { totalCount }
+      updatedAt
+      threadCount: reviewThreads { totalCount }
       reviewDecision
-      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      %s
     }
   }
+  viewer { login }
   rateLimit { remaining resetAt }
-}"""
+}""" % ACTIVITY_FIELDS
 
 
 @dataclass(frozen=True)
@@ -132,12 +125,13 @@ class PullStatus:
     mergeable: str | None = None
     rate_remaining: int | None = None
     rate_reset: str | None = None
+    activity: tuple = ()
 
 
 def pull_status(target, pull):
     """One GraphQL read of the pull request's `state`, `merged`,
     `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, review-thread
-    count, `reviewDecision` and head checks rollup, with the token's
+    count, authored content, `reviewDecision` and head checks rollup, with the token's
     `rateLimit` (`PULL_QUERY`): the loop's reconcile of a run parked on
     its PR asks this once per pass. GitHub answering without the pull
     request is `InfraFailure`, as every read here is; an answer without
@@ -153,11 +147,13 @@ def pull_status(target, pull):
                            f" {pull.url}: {_short(data)}")
     merge = node.get("mergeCommit") or {}
     by = node.get("mergedBy") or {}
-    threads = node.get("reviewThreads") or {}
+    threads = node.get("threadCount") or node.get("reviewThreads") or {}
     rate = data.get("rateLimit") or {}
     updated = node.get("updatedAt")
     decision = node.get("reviewDecision")
-    return PullStatus(merged=bool(node.get("merged")),
+    return PullStatus(activity=activities(target, pull, node,
+                      (data.get("viewer") or {}).get("login"), graphql),
+                      merged=bool(node.get("merged")),
                       closed=node.get("state") == "CLOSED",
                    closed_by=_closed_by(node),
                       merge_sha=merge.get("oid") if isinstance(merge, dict)
@@ -190,7 +186,7 @@ def _head_checks(node):
     beside the check runs and required contexts it does not have."""
     commits = node.get("commits")
     nodes = commits.get("nodes") if isinstance(commits, dict) else None
-    head = nodes[0] if isinstance(nodes, list) and nodes else None
+    head = nodes[-1] if isinstance(nodes, list) and nodes else None
     commit = head.get("commit") if isinstance(head, dict) else None
     rollup = commit.get("statusCheckRollup") if isinstance(commit, dict) \
         else None
