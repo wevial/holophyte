@@ -122,15 +122,26 @@ class BaselineBriefTests(unittest.TestCase):
 class IsolatedVerifyTests(unittest.TestCase):
     def setUp(self):
         from types import SimpleNamespace
+
+        from holophyte.isolation_git import git
+
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
+        self.enterContext(patch.dict(os.environ,
+                                     HOLOPHYTE_HOME=str(self.root / 'state')))
+        main = self.root / 'main'
+        main.mkdir()
+        git(main, 'init', '-q', '-b', 'main')
+        git(main, 'config', 'user.name', 'Configured Author')
+        git(main, 'config', 'user.email', 'author@example.test')
+        git(main, 'commit', '--allow-empty', '-qm', 'base')
         self.wt = self.root / 'worktree'
-        self.wt.mkdir()
+        git(main, 'worktree', 'add', '-qb', 'task', str(self.wt))
         self.outside = self.root / 'host-only'
         self.outside.write_text('host secret')
         self.config = {'agents': {'implementer_isolation': 'container'}}
-        self.target = SimpleNamespace(config=lambda: self.config)
+        self.target = SimpleNamespace(path=main, config=lambda: self.config)
 
     def test_verify_and_baseline_cannot_read_host_file(self):
         from holophyte import gates, isolation
@@ -138,9 +149,18 @@ class IsolatedVerifyTests(unittest.TestCase):
         self.config['verify'] = {'always': [command]}
 
         def filesystem_runner(argv, cwd, timeout, *, env):
-            self.assertEqual(cwd, self.wt)
             mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
-            self.assertEqual(mounts, [f'{self.wt}:/workspace:rw'])
+            self.assertEqual(len(mounts), 1)
+            source, destination, mode = mounts[0].split(':')
+            workspace = Path(source).resolve()
+            self.assertTrue(workspace.is_dir())
+            self.assertTrue(workspace.is_relative_to(
+                holophyte.target.state_dir(self.target.path).resolve()))
+            self.assertNotEqual(workspace, self.wt.resolve())
+            self.assertEqual(Path(cwd).resolve(), workspace)
+            self.assertEqual((destination, mode), ('/workspace', 'rw'))
+            self.assertFalse(workspace.is_relative_to(Path.home().resolve()))
+            self.assertFalse(self.outside.resolve().is_relative_to(workspace))
             self.assertIn('--workdir=/workspace', argv)
             self.assertEqual(argv[-3:], ['/bin/sh', '-c', command])
             self.assertNotIn('HOST_SECRET', env)
