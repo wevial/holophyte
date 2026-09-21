@@ -21,7 +21,7 @@ const width = (share: number, gapsPx: number) =>
   `calc(${Math.max(0, share * 100)}% - ${Math.max(0, share) * gapsPx}px)`;
 
 const shortLabel = (segment: Segment) =>
-  segment.round != null ? segmentName(segment) : segment.kind === "fix" ? segment.label.replace(/^fix/, "rework") : segment.label;
+  segment.round != null ? segmentName(segment) : segment.kind === "fix" && segment.reason !== "fix" ? segment.label.replace(/^fix/, "rework") : segment.label;
 
 const description = (segment: Segment) =>
   `${segmentName(segment)} · ${formatTotal(segment.to - segment.from)}${segment.reason ? ` · ${segment.reason}` : ""}`;

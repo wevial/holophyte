@@ -3,6 +3,7 @@ import dataclasses
 import io
 import sqlite3
 import subprocess
+from contextlib import closing
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -198,6 +199,45 @@ class BabysitHelpers:
 
 
 class ConflictRefusalCases(BabysitHelpers):
+    def verdictless_fix(self, second):
+        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        output = self.main_output(
+            Commit("candidate"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"), Commit("fix crash"),
+            Reply("Focused tests pass. Continuing the review."), second,
+            *([Idle("")] if second is APPROVE else []), provider=self.provider())
+        reviews = [t for t in self.last_fake.turns if t.role == "review"]
+        self.assertEqual(len(reviews), 3)
+        self.assertTrue(reviews[2].goal.startswith(reviews[1].goal))
+        self.assertIn("nothing after it", reviews[2].goal)
+        self.assertNotIn("criteria not witnessed", output)
+        return output
+
+    def test_fix_missing_verdict_then_approval_merges(self):
+        self.verdictless_fix(APPROVE)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.read("SELECT verdict FROM reviewRounds ORDER BY round"),
+                         [("pass",), ("changes_requested",), ("pass",), ("pass",)])
+
+    def test_fix_two_missing_verdicts_park_without_spending_round(self):
+        self.verdictless_fix(Reply("Still reviewing."))
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("the reviewer gave no verdict", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertEqual(self.read("SELECT verdict FROM reviewRounds ORDER BY round"),
+                         [("pass",), ("changes_requested",), ("pass",), ("error",)])
+        events = self.read("SELECT summary FROM runEvents WHERE kind = 'route_failure'")
+        self.assertEqual(len(events), 1)
+        self.assertIn("the reviewer gave no verdict", events[0][0])
+        import store
+        import store.read
+        with closing(store.open(self.db)) as conn:
+            self.assertEqual(store.read.run_snapshot(conn, 1).reviewRoundCount, 3)
+            self.assertEqual(store.read.live_runs(
+                conn, ("awaiting_merge_approval",))[0].reviewRoundCount, 3)
+
     def test_main_refresh_carries_review_and_quiet_but_waits_for_checks(self):
         out, naps = self.refresh_wait()
         self.assertEqual(self.last_fake.roles, ["implement", "review", "implement"])

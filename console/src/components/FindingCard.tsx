@@ -30,7 +30,7 @@ export function FindingCard({
   const path = findingPath(finding);
   const location = finding.line != null ? `${path}:${finding.line}` : path;
   const parts = finding.summary != null
-    ? { title: null, body: finding.summary, criterion: null }
+    ? { title: null, body: `${finding.verdict === "DECLINE" ? "Declined: " : ""}${finding.summary}`, criterion: null }
     : findingParts(finding.message);
   return (
     <li

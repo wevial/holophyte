@@ -37,44 +37,33 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     """Pass structure, settling, quiet clocks, and refreshing main."""
-    def verdictless_fix(self, second):
-        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
-        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
-        output = self.main_output(
-            Commit("candidate"), APPROVE, Idle(""),
-            Reply("THREAD 1: ADDRESS -- a real crash"), Commit("fix crash"),
-            Reply("Focused tests pass. Continuing the review."), second,
-            *([Idle("")] if second is APPROVE else []), provider=self.provider())
-        reviews = [t for t in self.last_fake.turns if t.role == "review"]
-        self.assertEqual(len(reviews), 3)
-        self.assertTrue(reviews[2].goal.startswith(reviews[1].goal))
-        self.assertIn("nothing after it", reviews[2].goal)
-        self.assertNotIn("criteria not witnessed", output)
-        return output
+    def steps(self):
+        return [row[0] for row in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'babysit_step' ORDER BY seq")]
 
-    def test_fix_missing_verdict_then_approval_merges(self):
-        self.verdictless_fix(APPROVE)
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-        self.assertEqual(self.read("SELECT verdict FROM reviewRounds ORDER BY round"),
-                         [("pass",), ("changes_requested",), ("pass",), ("pass",)])
+    def test_wait_threads_fix_steps_are_recorded_once_per_change(self):
+        self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.fake_route(states=[self.pr_state(checks="PENDING"),
+                               self.pr_state(checks="PENDING"),
+                               self.pr_state(updated_at=fresh),
+                               self.pr_state(updated_at=fresh),
+                               self.pr_state([self.DEFECT, self.NIT]), self.pr_state()])
+        with patch.object(holophyte.pr, "SLEEP"):
+            self.loop(Commit("candidate"), APPROVE, Idle(""),
+                      Reply("THREAD 1: ADDRESS -- crash\n"
+                            "THREAD 2: DECLINE -- preference"),
+                      Commit("fix crash"), provider=self.provider())
+        self.assertEqual(self.steps(), ["checks", "quiet", "threads", "fix", "parked"])
+        self.assertEqual(len(self.pushed()), 2)
 
-    def test_fix_two_missing_verdicts_park_without_spending_round(self):
-        self.verdictless_fix(Reply("Still reviewing."))
-        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
-                         [("awaiting_merge_approval", None)])
-        self.assertIn("the reviewer gave no verdict", self.question())
-        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
-        self.assertEqual(self.read("SELECT verdict FROM reviewRounds ORDER BY round"),
-                         [("pass",), ("changes_requested",), ("pass",), ("error",)])
-        events = self.read("SELECT summary FROM runEvents WHERE kind = 'route_failure'")
-        self.assertEqual(len(events), 1)
-        self.assertIn("the reviewer gave no verdict", events[0][0])
-        import store
-        import store.read
-        with closing(store.open(self.db)) as conn:
-            self.assertEqual(store.read.run_snapshot(conn, 1).reviewRoundCount, 3)
-            self.assertEqual(store.read.live_runs(
-                conn, ("awaiting_merge_approval",))[0].reviewRoundCount, 3)
+    def test_conflict_covering_review_and_park_steps(self):
+        review = self.conflict_refusal(conflict=True)
+        self.loop(self.ratchet_work(), review, Idle(""),
+                  Commit("Resolve main", path="tests/test_file_sizes.py",
+                         body="branch's line\nmain's line\n"), REQUEST_CHANGES,
+                  provider=self.provider())
+        self.assertEqual(self.steps(), ["conflict_merge", "covering_review", "parked"])
 
     def test_fix_push_head_catches_up(self):
         self.fix_push_head_propagation(False)
