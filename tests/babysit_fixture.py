@@ -13,7 +13,7 @@ import holophyte.pr_status
 import store
 import store.tickets
 from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle, Reply
-from tests.loop_fixture import BRANCH
+from tests.loop_fixture import BRANCH, IdleThenTimeout
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -21,6 +21,58 @@ T0 = 1_700_000_000_000
 
 class BabysitHelpers:
     """Shared pass setup and assertions; no discoverable test cases."""
+    def no_commit_thread_answers(self, mode):
+        from store.operator_notes import send_back
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
+        older = "The non-blocking observations are FOLLOW_UP, not for this round."
+        with store.open(str(self.tgt.store_path)) as conn:
+            run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+            send_back(conn, run_id, older, "maintainer")
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.pr_state([self.DEFECT, self.NIT]))
+        sentences = ["No change; redaction remains FOLLOW_UP per the amendment.",
+                     "No change; naming remains FOLLOW_UP per the amendment."]
+        output = "Reading additional input from stdin...\nTHREAD 1: " + sentences[0]
+        if mode != "partial":
+            output += "\nTHREAD 2: " + sentences[1] + "\nTHREAD 3: Kept the amendment."
+        candidate = self.git("rev-parse", BRANCH).strip()
+        action = IdleThenTimeout(output) if mode == "timeout" else Idle(output)
+        fake, _ = self.loop(Reply("THREAD 1: ADDRESS -- crash\n"
+                                  "THREAD 2: ADDRESS -- style"),
+                            action, provider=self.provider())
+        row, = self.read("SELECT id, phase, outcome, outcomeReason, prUrl FROM runs"
+                         " ORDER BY id DESC LIMIT 1")
+        run_id, phase, outcome, reason, url = row
+        if mode != "complete":
+            self.assertEqual((phase, outcome), ("failed", "failed"))
+            state = "timed out" if mode == "timeout" else "made no progress"
+            self.assertIn("fix round " + state, reason)
+            return
+        self.assertEqual((phase, outcome, url),
+                         ("awaiting_merge_approval", None, self.URL))
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(),
+                         candidate)
+        question = self.question()
+        for thread, sentence in zip((self.DEFECT, self.NIT), sentences):
+            self.assertIn(f"{thread[0]}:{thread[1]}", question)
+            self.assertIn(sentence, question)
+        newer = "Address both accepted threads now; this supersedes FOLLOW_UP."
+        with store.open(str(self.tgt.store_path)) as conn:
+            send_back(conn, run_id, newer, "maintainer")
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.pr_state([self.DEFECT, self.NIT]), self.pr_state())
+        fake, _ = self.loop(Reply("THREAD 1: ADDRESS -- crash\n"
+                                  "THREAD 2: ADDRESS -- style"),
+                            Commit("apply corrected instruction"), Idle(""),
+                            provider=self.provider())
+        goal = fake.turns[1].goal
+        self.assertIn("Maintainer's instruction", goal)
+        self.assertLess(goal.index(older), goal.index(newer))
+
     def human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         request = ("@holophyte move the button\nPut it beside Save."

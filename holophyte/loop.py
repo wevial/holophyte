@@ -561,12 +561,12 @@ OUTPUT_TAIL = 4000
 def _record_implementer_output(conn, run_id, out, secrets=()):
     """Record the output tail as a detail event before discarding a worktree.
 
-    The summary is the first line; the payload is the last OUTPUT_TAIL
+    The summary is the last non-empty line; the payload is the last OUTPUT_TAIL
     characters, redacted with config/environment secrets and secret names."""
     if conn is None or run_id is None:
         return
     text = redact_prose((out or "").strip(), secrets)
-    summary = text.splitlines()[0] if text else "(implementer printed nothing)"
+    summary = text.splitlines()[-1] if text else "(implementer printed nothing)"
     store.record_event(conn, run_id, "implementer_output", summary,
                        level="detail", payload=text[-OUTPUT_TAIL:])
 

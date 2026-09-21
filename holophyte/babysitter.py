@@ -50,17 +50,14 @@ CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
 CONVENTIONS_CAP = 4000
 
 VERDICTS = ("ADDRESS", "DECLINE", "HUMAN")
-# Per-thread verdicts accept the model's choice of separator.
 VERDICT_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(ADDRESS|DECLINE|HUMAN)\b"
     r"\s*(?:[-–—:,]+\s*)?(.*?)\s*$", re.IGNORECASE | re.MULTILINE)
-# `THREAD 2: <what changed>` in the fix round's output, one per addressed
-# thread; the reply on the thread carries it beside the sha.
+# Fix summaries keep the adjudicator's numbering.
 SUMMARY_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE)
 COMMENT_HEADER = "---- Comment by {model} ----"
-# Limit thread excerpts in rounds, the ledger and parked questions.
 GIST_CHARS = 200
 
 
@@ -192,8 +189,7 @@ def parse_verdicts(reply, count):
 
 
 def fix_brief(pull, addressed, ticket):
-    """The implementer's goal for the fix round: the addressed threads,
-    numbered as the adjudicator saw them, and the summary line for each."""
+    """Fix goal: adjudicator-numbered threads and a summary line for each."""
     listing = "\n\n".join(
         f"THREAD {n} -- {where(t)} by @{t.author}\n{conversation(t)}\n"
         + (maintainer_notes.instruction(t) if maintainer_notes.is_note(t)
@@ -919,6 +915,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         _transport_timed,
         sh,
     )
+    from holophyte.pullrequest import _park_on_pr
     from holophyte.redact import known_secrets
     record_step(conn, run_id, "fix")
     maintainer_notes.start_fix(conn, run_id, addressed)
@@ -926,15 +923,20 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         goal or babysitter.fix_brief(pull, addressed, ticket))
     fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if fixed == sha:
-        _record_implementer_output(conn, run_id,
-                                   f"fix round {pass_no}: {fixes}",
+        _record_implementer_output(conn, run_id, f"fix round {pass_no}: {fixes}",
                                    known_secrets(target.config()))
+    summaries = babysitter.parse_summaries(fixes)
+    if (fixed == sha and not timed_out
+            and all(summaries.get(n) for n, _, _ in addressed)):
+        why = "Fix round made no commit; operator instruction needed:\n" + "\n".join(
+            f"THREAD {n} -- {where(thread)}:\n> {summaries[n]}"
+            for n, thread, _ in addressed)
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull, why, ())
     if timed_out or fixed == sha:
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,
             f"for {pull.url}; branch {branch} preserved at {sha[:12]}"))
-    # Verify vouches for the commit only if the tree matches it. Preserve
-    # uncommitted work for a human without pushing or resolving threads.
+    # Preserve uncommitted work without pushing or resolving threads.
     unclean = _candidate_drift(wt, branch, fixed)
     if unclean:
         ledger(conn, run_id, task_id, "failure",
@@ -967,8 +969,6 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         pr.push_branch(target, branch)
     fixed = sh(["git", "rev-parse", branch], wt)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
-    summaries = babysitter.parse_summaries(fixes)
-    # Human review threads stay open unless explicitly addressed to the factory.
     for n, thread, reason in addressed:
         if maintainer_notes.is_note(thread):
             continue
