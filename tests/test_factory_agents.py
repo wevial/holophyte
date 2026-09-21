@@ -109,6 +109,27 @@ class AgentTurnEventTests(unittest.TestCase):
             self.assertEqual(self.events()[-1]["exit_status"], 7)
             self.assertFalse(self.events()[-1]["timed_out"])
 
+    def test_timed_writer_delegation_preserves_role_and_implementer_identity(self):
+        command = self.stub("implementer", "print('draft written')")
+        writer = self.stub("writer", "raise SystemExit('writer must not run')")
+        for refused in (False, True):
+            with self.subTest(writer_refused=refused):
+                self.configure(implementer=command + " -m implement-model",
+                               **({"writer": writer} if refused else {}))
+                holophyte.agents.routes(self.target).writer_failed = refused
+                output, timed_out = holophyte.loop._timed(
+                    self.target, self.conn, self.run, 60, self.repo, 1,
+                    "write the PR", role="write")
+                self.assertEqual(output, "draft written")
+                self.assertFalse(timed_out)
+                event = self.events()[-1]
+                self.assertEqual(event["role"], "write")
+                self.assertEqual(event["label"], command + " implement-model")
+                self.assertEqual(event["route"], "primary")
+                self.assertEqual(event["exit_status"], 0)
+                self.assertFalse(event["timed_out"])
+        self.assertEqual(len(self.events()), 2)
+
     def test_timeout_is_recorded_and_still_propagates(self):
         command = self.stub("slow", "import time; time.sleep(30)")
         self.configure(implementer=command)
