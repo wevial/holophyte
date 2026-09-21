@@ -12,7 +12,7 @@ from holophyte import agents, operator, pr, thread_mentions
 
 
 class AskMentionCases:
-    def mention_intents(self):
+    def test_mention_intents(self):
         for text, intent in [
             (" ? Can guests rename?", "ask"),
             (" AsK: Can guests rename?", "ask"),
@@ -28,10 +28,10 @@ class AskMentionCases:
                 self.assertEqual(result.intent, intent)
                 self.assertEqual(result.request, "Can guests rename?")
 
-    def conversation_ask_pass(self):
-        self.ask_pass(conversation=True)
+    def test_conversation_ask_pass(self):
+        self.test_ask_pass(conversation=True)
 
-    def ask_pass(self, conversation=False):
+    def test_ask_pass(self, conversation=False):
         self.configure(
             '[merge]\nmode = "pr"\napprove = "human"\n'
             '[example]\napi_key = "sentinel-ask-secret"\n'
@@ -125,7 +125,7 @@ class AskMentionCases:
             "SELECT COUNT(*) FROM runEvents WHERE kind = 'instruction'"), [(1,)])
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), sha)
 
-    def mixed_mentions(self):
+    def test_mixed_mentions(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         threads = [
             ("src/app.py", 30, ("operator", "User"), "@holophyte ? Why?"),
@@ -153,7 +153,7 @@ class AskMentionCases:
         ]
         self.assertEqual([f["outcome"] for f in findings], ["changed"])
 
-    def initial_auto_ask(self):
+    def test_initial_auto_ask(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
         self.fake_route(states=[self.pr_state([
             ("src/app.py", 30, ("operator", "User"), "@holophyte ask: Why?")])])
@@ -191,11 +191,11 @@ class AskMentionCases:
             [("failed", "infra")])
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), sha)
 
-    def nonzero_ask(self):
+    def test_nonzero_ask(self):
         self.failed_ask((1, "Could not read checkout"))
 
-    def timed_out_ask(self):
+    def test_timed_out_ask(self):
         self.failed_ask(subprocess.TimeoutExpired("reviewer", 1800))
 
-    def empty_ask(self):
+    def test_empty_ask(self):
         self.failed_ask((0, "  \n"))

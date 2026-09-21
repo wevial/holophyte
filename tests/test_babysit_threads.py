@@ -39,16 +39,6 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
                                  BotThreadCases, cases.BabysitHelpers,
                                  MergeModeFixture):
     """Thread judgment, bot policy, operator notes, and fix rounds."""
-    test_mention_intents = AskMentionCases.mention_intents
-    test_initial_auto_ask = AskMentionCases.initial_auto_ask
-    test_nonzero_ask = AskMentionCases.nonzero_ask
-    test_timed_out_ask = AskMentionCases.timed_out_ask
-    test_empty_ask = AskMentionCases.empty_ask
-    test_ask_pass = AskMentionCases.ask_pass
-    test_mixed_mentions = AskMentionCases.mixed_mentions
-
-    test_conversation_ask_pass = AskMentionCases.conversation_ask_pass
-
     def test_human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
         self.human_conversation_mention_is_fixed_and_replied_on_the_pull()
 
