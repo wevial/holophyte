@@ -363,7 +363,16 @@ def board_config(target):
 # serves. The first nonzero exit stops the list and parks the run for the
 # operator with the command's output; it does not undo the merge. Not run
 # under `mode = "pr"`, where nothing lands in the checkout.
+DEFAULT_STRIP_ATTRIBUTION = (
+    r"(?i)^Co-Authored-By:\s*(?:(?:Claude|Devin|Codex|Copilot|Cursor)"
+    r"(?:\s+(?:Code|AI|Bot))?\s*(?:<|$)|.*(?:noreply@anthropic\.com|devin-ai-integration))",
+    r"(?i)^(?:🤖\s*)?Generated with\b.*https?://(?:[a-z0-9-]+\.)*"
+    r"(?:anthropic\.com|claude\.(?:ai|com)|devin\.ai|openai\.com|"
+    r"copilot\.github\.com|github\.com/(?:features/)?copilot|cursor\.(?:com|sh))\b",
+    r"(?i)^🤖\s*Generated with\b",
+)
 MERGE_KEYS = {
+    "strip_attribution": DEFAULT_STRIP_ATTRIBUTION,
     "approve": "auto",
     "mode": "local",
     "pr_rounds": 5,
@@ -407,6 +416,8 @@ def merge_config(target):
             " pull request bodies are always written")
     values = {}
     defaults = dict(MERGE_KEYS, check_wait_sec=CHECK_WAIT_S)
+    values["strip_attribution"] = _attribution_patterns(
+        target, table.get("strip_attribution", defaults.pop("strip_attribution")))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):
@@ -446,6 +457,23 @@ def merge_config(target):
         values[key] = value
     _validate_ui(target, values)
     return MergeConfig(**values)
+
+
+def _attribution_patterns(target, value):
+    error = None
+    if not isinstance(value, (list, tuple)) or not all(
+            isinstance(p, str) for p in value):
+        error = "must be a list of regular expressions"
+    else:
+        try:
+            for pattern in value:
+                re.compile(pattern)
+        except re.error as exc:
+            error = f"invalid regular expression: {exc}"
+    if error:
+        raise SystemExit(f"[holo2] {target.config_path}: "
+                         f"[merge] strip_attribution {error}")
+    return tuple(value)
 
 
 def _media_setting(target, key, value):

@@ -70,6 +70,13 @@ class ConfigLoadingTests(BotConfigCases, ConfigTestCase):
                 self.assertIn(message, str(caught.exception))
                 self.assertNotIn("sentinel-config-value", str(caught.exception))
 
+    def test_strip_attribution_rejects_invalid_patterns_at_startup(self):
+        for value in ('["["]', '"not a list"', '[1]'):
+            with self.subTest(value=value):
+                self.locate(f'[merge]\nstrip_attribution = {value}\n')
+                with self.assertRaisesRegex(SystemExit, "strip_attribution"):
+                    holophyte.config.check_document(self.tgt)
+
     def test_merge_mention_handle(self):
         self.locate("")
         self.assertEqual(holophyte.config.merge_config(self.tgt).mention_handle,

@@ -342,8 +342,10 @@ def edit_pr_body(target, pull, body):
 
 def push_branch(target, branch):
     """Push the checked tip; report remote refusals as `InfraFailure`."""
+    from holophyte.commit_hygiene import strip_attribution
     from holophyte.environment_git import refuse_environment_history
 
+    strip_attribution(target, target.path, branch)
     checked = refuse_environment_history(target, branch, action="push")
     refspec = f"{checked}:refs/heads/{branch}" if checked != branch else branch
     try:

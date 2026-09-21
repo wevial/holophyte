@@ -149,6 +149,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
         if merge.mode == "pr":
             url = _open_pr(target, conn, run_id, task_id, task, branch, body,
                            beat_s, wt, started, budget_min, issue_url)
+            sha = sh(["git", "rev-parse", branch], wt)
         else:
             return _land(target, conn, run_id, provider, task_id, task,
                          branch, wt, sha, ok, started, budget_min, 0)
@@ -416,6 +417,10 @@ def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
     """The `merging` phase: the `--no-ff` merge of `branch` into main, its
     one self-resolved conflict, and the post-merge cleanup. Returns the full
     sha of the merge commit main now sits on."""
+    from holophyte.commit_hygiene import strip_attribution
+
+    strip_attribution(target, wt, branch)
+    sha = sh(["git", "rev-parse", branch], wt)
     checked = refuse_environment_history(target, branch, action="merge")
     # Commit a FINDINGS.md window left dirty by an earlier failed run before
     # merging. Normally a no-op: runs no longer write this file mid-flight.
