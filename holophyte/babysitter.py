@@ -18,6 +18,7 @@ from holophyte import (
     thread_mentions,
 )
 from holophyte.agents import agent_route, review_refs
+from holophyte.babysit_steps import record_step
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
 from holophyte.config_tables import merge_config
@@ -282,6 +283,7 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                            f" for the conflicting {pull.url}:"
                            f" {(fetched.stderr or fetched.stdout).strip()}"
                            f"; branch {branch} preserved at {sha[:12]}")
+    record_step(conn, run_id, "conflict_merge")
     before = _diff_identity(wt, ref)
     status, detail = _merge_ref(wt, ref)
     if status == "conflicted":
@@ -592,6 +594,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             out, verify_cmd, f"before the review of the fix on {pull.url}; "
             f"branch {branch} preserved at {sha[:12]}"))
     set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
+    record_step(conn, run_id, "covering_review")
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     rnd = _next_round(conn, run_id)
     round_started = int(time() * 1000)
@@ -720,6 +723,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
         while (not state.threads and not state.merged and not state.closed
                and state.mergeable != "CONFLICTING"):
             if state.checks == "pending":
+                record_step(conn, run_id, "checks")
                 reason = "pending checks"
                 if state.pending_contexts:
                     reason += f" ({', '.join(state.pending_contexts)})"
@@ -728,6 +732,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
                       f" {nap}s")
             elif state.checks == "success" \
                     and (left := _quiet_left(state, quiet_ms, refresh)):
+                record_step(conn, run_id, "quiet")
                 reason = "quiet wait"
                 nap = min(merge.pr_poll_sec, left / 1000)
                 print(f"[holo2] {pull.url} is green and quiet for"
@@ -755,6 +760,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte.loop import agent, sh
     from holophyte.pullrequest import _park_human, _park_on_pr
     merge = merge_config(target)
+    record_step(conn, run_id, "threads")
     threads = tuple(thread_mentions.classify(t, merge.mention_handle)
                     for t in state.threads)
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
@@ -914,6 +920,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         sh,
     )
     from holophyte.redact import known_secrets
+    record_step(conn, run_id, "fix")
     maintainer_notes.start_fix(conn, run_id, addressed)
     fixes, timed_out = _transport_timed(target, conn, run_id, beat_s, wt, budget_min,
         goal or babysitter.fix_brief(pull, addressed, ticket))

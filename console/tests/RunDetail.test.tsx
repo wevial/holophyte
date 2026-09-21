@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import unestimatedDetail from "../../tests/fixtures/serve/run-detail-unestimated.json";
 import { TimeBoxBar } from "../src/components/TimeBoxBar";
 import { Now } from "../src/components/Now";
+import { FindingCard } from "../src/components/FindingCard";
 import { RunDetail } from "../src/components/RunDetail";
 import { formatClock } from "../src/lib/format";
 import type { LedgerRow } from "../src/lib/ledger";
@@ -139,7 +140,7 @@ test("the newest round's findings are cards pilled must, must, should, nit with 
   expect(document.querySelector("[data-severity-counts]")!.textContent).toBe("2 must · 1 should");
   expect(document.querySelector("[data-files-label]")!.textContent).toBe("1 · +12 −3");
   expect(document.querySelector("[data-file] [data-path]")!.textContent).toBe("holophyte/serve.py");
-  expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();
+  expect(screen.getByText("Review 2 of 2 · reviewing")).toBeTruthy();
   expect(document.querySelector("[data-started]")!.textContent).toBe(`started ${formatClock(T)} · writer`);
   const box = document.querySelector("[data-box]")!;
   expect(box.textContent).toBe("10m 00s left in working box · wall 20m 00s");
@@ -441,7 +442,7 @@ test("a files endpoint answering 409 leaves one line, its own message, and the r
   expect(column.querySelector("[data-files-note]")!.textContent).toBe("branch task/ko-232 is not on disk");
   expect(column.querySelector("[data-file]")).toBeNull();
   expect(column.querySelector("[data-files-label]")).toBeNull();
-  expect(screen.getByText("Round 2 of 2 · reviewing")).toBeTruthy();
+  expect(screen.getByText("Review 2 of 2 · reviewing")).toBeTruthy();
   expect(document.querySelectorAll("[data-finding]").length).toBe(4);
   expect(document.querySelector("[data-log-summary]")!.textContent).toBe("1 event · last: claimed KO-232 20m ago");
   expect(document.querySelector("[data-log-rows]")).toBeNull();
@@ -614,7 +615,7 @@ test("recorded rounds determine the header, current chip and findings labels", a
   body.events = [{ at: T + 19 * MINUTE, kind: "phase_change", summary: "verifying -> reviewing: round 12 review" }];
   for (const events of [body.events, []]) {
     await mount({ ...body, events }, T + 20 * MINUTE);
-    expect(screen.getByText("Round 3 of 4 · reviewing")).toBeTruthy();
+    expect(screen.getByText("Review 3 of 4 · reviewing")).toBeTruthy();
     expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("Review · Round 3 · 1m 00s");
     expect(document.querySelector("[data-round-fold] button")!.textContent).toContain("Round 3 · 4 findings");
     expect(document.querySelector("[data-round-fold] button")!.textContent).not.toContain("of 4");
@@ -628,7 +629,7 @@ test("recorded rounds determine the header, current chip and findings labels", a
 
 test("before any recorded review the header keeps its preview and no chip or fold names a round", async () => {
   await mount({ ...DETAIL, run: { ...DETAIL.run, phase: "working", max_rounds: 4 }, rounds: [], events: [] }, T + MINUTE);
-  expect(screen.getByText("Round 1 of 4 · implementing")).toBeTruthy();
+  expect(screen.getByText("Review 0 of 4 · implementing")).toBeTruthy();
   expect(screen.getByText("No review round yet")).toBeTruthy();
   expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("implementing · 1m 00s");
   expect(document.querySelector("[data-round-fold]")).toBeNull();
@@ -697,4 +698,45 @@ test("an unestimated legacy run renders with an unknown budget, not a contract e
   expect(bar.hasAttribute("aria-valuenow")).toBe(false);
   expect(bar.getAttribute("data-tone")).toBe("none");
   expect(screen.getByText("working 20m 0s / n/a")).toBeTruthy();
+});
+
+test("header counts independent reviews separately from mechanical and bot rounds", async () => {
+  await mount({ ...DETAIL, rounds: ["independent-review", "mechanical:main-refresh",
+    "mechanical:main-refresh", "github:review-bot"].map((reviewer_model, i) => ({
+      ...DETAIL.rounds[0]!, round: i + 1, reviewer_model,
+    })) }, T + 20 * MINUTE);
+  expect(screen.getByText("Review 1 of 2 · 3 other rounds · reviewing")).toBeTruthy();
+});
+
+test("header excludes failed independent reviews from the review budget", async () => {
+  await mount({ ...DETAIL, rounds: [
+    { ...DETAIL.rounds[0]!, round: 1, reviewer_model: "independent-review", verdict: "error" },
+    { ...DETAIL.rounds[0]!, round: 2, reviewer_model: "independent-review", verdict: "approve" },
+    { ...DETAIL.rounds[0]!, round: 3, reviewer_model: "independent-review", verdict: "error" },
+  ] }, T + 20 * MINUTE);
+  expect(screen.getByText("Review 1 of 2 · 2 other rounds · reviewing")).toBeTruthy();
+});
+
+test("finding summaries identify declined reasons and leave other verdicts unchanged", () => {
+  for (const verdict of ["DECLINE", "ADDRESS", "FOLLOW_UP"]) {
+    const { container, unmount } = render(<FindingCard finding={{ message: "original",
+      path: "example.py", line: 1, severity: "p2", summary: "Verification now passes", verdict }} />);
+    expect(container.querySelector("[data-body]")!.textContent).toBe(
+      verdict === "DECLINE" ? "Declined: Verification now passes" : "Verification now passes");
+    unmount();
+  }
+});
+
+test("run page renders babysitter waits and a twelve minute fix as labelled segments", async () => {
+  await mount({ ...DETAIL, run: { ...DETAIL.run, phase: "merge_gate", pr_url: "https://example/pr/1" },
+    rounds: [], events: [
+      { at: T, kind: "phase_change", summary: "reviewing -> merge_gate: babysitting" },
+      { at: T, kind: "babysit_step", summary: "checks" },
+      { at: T + 2 * MINUTE, kind: "babysit_step", summary: "fix" },
+      { at: T + 14 * MINUTE, kind: "babysit_step", summary: "quiet" },
+    ] }, T + 16 * MINUTE);
+  const timeline = screen.getByRole("list", { name: "Round timeline" });
+  expect(within(timeline).getByRole("img", { name: "checks 2m 00s" })).toBeTruthy();
+  expect(within(timeline).getByRole("img", { name: "fix 12m 00s" })).toBeTruthy();
+  expect(within(timeline).getByRole("img", { name: "quiet 2m 00s" })).toBeTruthy();
 });

@@ -219,3 +219,35 @@ test("a completed resumed PR run records babysitting as wait without a new PR-op
   expect(buildTimeline(run, run.ended_ms!).map(s => [s.kind, seconds(s)]))
     .toEqual([["wait", 600], ["verify", 60], ["merge", 1]]);
 });
+
+test("babysit steps split waits around a twelve minute fix and preserve legacy monitoring", () => {
+  const run: TimelineRun = { ...RUN, phase: "merge_gate", rounds: [], pr_url: "https://example/pr/1",
+    events: [{ at: T, kind: "phase_change", summary: "reviewing -> merge_gate: babysitting" }] };
+  const events = [
+    { at: T, kind: "babysit_step", summary: "checks" },
+    { at: T + 2 * MINUTE, kind: "babysit_step", summary: "fix" },
+    { at: T + 14 * MINUTE, kind: "babysit_step", summary: "quiet" },
+  ];
+  const out = buildTimeline({ ...run, events: [...run.events!, ...events] }, T + 16 * MINUTE);
+  expect(out.map(s => s.kind)).toEqual(["wait", "fix", "wait"]);
+  expect(out.map(s => s.label)).toEqual(["checks", "fix", "quiet"]);
+  expect(out.map(minutes)).toEqual([2, 12, 2]);
+  const liveFix = buildTimeline({ ...run, events: [...run.events!, ...events.slice(0, 2)] }, T + 14 * MINUTE);
+  expect(liveFix.at(-1)?.kind).toBe("fix");
+  expect(buildTimeline(run, T + 16 * MINUTE).map(s => [s.kind, s.label, minutes(s)]))
+    .toEqual([["wait", "monitoring PR", 16]]);
+});
+
+test("babysit work resumes after covering review without a new phase", () => {
+  const run: TimelineRun = { ...RUN, phase: "reviewing", rounds: [], events: [
+    { at: T, kind: "phase_change", summary: "verifying -> reviewing: review of the fix" },
+    { at: T + MINUTE, kind: "babysit_step", summary: "checks" },
+    { at: T + 2 * MINUTE, kind: "babysit_step", summary: "threads" },
+    { at: T + 3 * MINUTE, kind: "babysit_step", summary: "conflict_merge" },
+    { at: T + 4 * MINUTE, kind: "babysit_step", summary: "covering_review" },
+    { at: T + 5 * MINUTE, kind: "babysit_step", summary: "parked" },
+  ] };
+  expect(buildTimeline(run, T + 6 * MINUTE).map(s => [s.kind, s.label, minutes(s)]))
+    .toEqual([["review", "review", 1], ["wait", "checks", 1], ["review", "threads", 1],
+      ["fix", "conflict_merge", 1], ["review", "covering_review", 1], ["parked", "parked", 1]]);
+});

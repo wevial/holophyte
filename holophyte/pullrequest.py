@@ -378,6 +378,8 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
     Delayed updatedAt bumps alone cannot trigger another pass (KO-563).
     A failed read records no mark; reconcile initializes it without waking.
     """
+    from holophyte.babysit_steps import record_step
+    record_step(conn, run_id, "parked")
     short = sha[:12] if sha else "an unrecorded sha"
     question = babysitter.open_threads_question(pull, why, threads)
     if conn is not None and run_id is not None:
