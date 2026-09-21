@@ -54,6 +54,10 @@ export function useRunResource<T>(
     if (id == null) return;
     let alive = true;
     void (async () => {
+      // React StrictMode replays mount effects. Let its cleanup cancel the
+      // discarded mount before starting an otherwise duplicate request.
+      await Promise.resolve();
+      if (!alive) return;
       try {
         const body = await loadRef.current(base, id, fetchRef.current);
         if (alive) setState({ id, body, error: null, status: null });
