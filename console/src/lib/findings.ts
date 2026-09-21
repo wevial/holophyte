@@ -128,7 +128,8 @@ export interface RoundHistory {
 // the canonical form's unit separator so a path holding ":" cannot forge
 // another finding's key.
 function findingKey(finding: Finding): string {
-  return [finding.path, finding.line ?? -1, finding.severity].join("\x1f");
+  const identity = finding.fingerprint ?? finding;
+  return [identity.path, identity.line ?? -1, identity.severity].join("\x1f");
 }
 
 // The ledger row a changes-requested round leaves (holophyte/loop.py):
@@ -254,6 +255,7 @@ export interface Instruction {
 
 /** Named fields on a PR thread; absent on pre-PR reviewer prose. */
 export interface ThreadFindingFields {
+  fingerprint?: { path: string; line?: number | null; severity: string };
   kind?: "thread" | "finding";
   author?: string;
   author_kind?: string;

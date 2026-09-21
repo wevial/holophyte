@@ -60,4 +60,6 @@ def normalize_thread(finding, bot_logins):
                 author_kind="bot" if bot_author(login, bot_logins) else "unknown",
                 verdict=verdict[1], summary=summary, message=summary,
                 path=path, line=line, url=finding.get("url", ""),
+                fingerprint=finding.get("fingerprint", {
+                    key: finding.get(key) for key in ("path", "line", "severity")}),
                 raw=bounded_raw(message[:verdict.start()]))

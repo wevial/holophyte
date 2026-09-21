@@ -471,7 +471,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
     def test_legacy_thread_summary_is_read_without_rewriting_the_row(self):
         self.seed_reviewed()
         raw = "- app.py:7 @review-bot[bot]: <details> -- ADDRESS: analysis</details>"
-        finding = dict(path="app.py", line=7, severity="nit", url="https://example.test/thread",
+        finding = dict(path="original.py", line=3, severity="nit", url="https://example.test/thread",
                        message=raw + " -- ADDRESS: the index keeps a forced file")
         conn = store.open(str(self.db))
         try:
@@ -484,7 +484,8 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
             self.assertEqual(body["rounds"][-1]["findings"], [dict(
                 finding, kind="thread", author="review-bot[bot]", author_kind="bot",
                 verdict="ADDRESS", summary="the index keeps a forced file",
-                message="the index keeps a forced file", raw=raw)])
+                message="the index keeps a forced file", raw=raw, path="app.py", line=7,
+                fingerprint=dict(path="original.py", line=3, severity="nit"))])
             self.assertEqual(conn.execute("SELECT * FROM reviewRounds").fetchall(),
                              before)
         finally:
