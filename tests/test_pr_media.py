@@ -27,6 +27,8 @@ class MediaTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
+        self.enterContext(patch.dict(
+            os.environ, HOLOPHYTE_HOME=str(self.root / "state")))
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.remote = self.root / "remote.git"
