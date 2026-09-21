@@ -2,6 +2,10 @@
 import contextlib
 import io
 import json
+import os
+import shutil
+import signal
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -259,6 +263,181 @@ class AgentFallbackTests(SweepTestCase):
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM interventions WHERE action='route_fallback'"
         ).fetchone()[0], 2)
+
+    def reviewer_repository(self):
+        from holophyte.gates import sh
+
+        sh(['git', 'init', '-q', str(self.target)])
+        sh(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
+            'commit', '--allow-empty', '-qm', 'base'], cwd=self.target)
+        return sh(['git', 'rev-parse', 'HEAD'], cwd=self.target)
+
+    def scratch_reviewer(self, *, sleep=False, checkout='checkout with spaces'):
+        path = self.root / 'scratch-reviewer'
+        self.evidence = self.root / 'review-evidence.json'
+        path.write_text(
+            f'#!{sys.executable}\n'
+            'import json, os, pathlib, subprocess, sys, time\n'
+            'scratch = pathlib.Path(os.environ["HOLOPHYTE_REVIEW_SCRATCH"])\n'
+            f'checkout = scratch / {checkout!r}\n'
+            'subprocess.run(["git", "worktree", "add", "--detach", '
+            'str(checkout), "HEAD"], check=True, capture_output=True)\n'
+            'child = subprocess.Popen([sys.executable, "-c", '
+            '"import time; time.sleep(60)"])\n'
+            f'pathlib.Path({str(self.evidence)!r}).write_text(json.dumps('
+            '{"scratch": str(scratch), "pids": [os.getpid(), child.pid]}))\n'
+            + ('subprocess.run(["git", "worktree", "lock", str(checkout)], '
+               'check=True, capture_output=True)\ntime.sleep(60)\n' if sleep else
+               'child.terminate()\nchild.wait()\n'
+               'subprocess.run(["git", "worktree", "remove", str(checkout)], '
+               'check=True, capture_output=True)\nprint("PASS")\n'))
+        path.chmod(0o755)
+        return path
+
+    def assert_review_cleanup(self):
+        evidence = json.loads(self.evidence.read_text())
+        self.assertFalse(Path(evidence['scratch']).exists())
+        listed = subprocess.check_output(
+            ['git', 'worktree', 'list', '--porcelain'], cwd=self.target, text=True)
+        self.assertNotIn(evidence['scratch'], listed)
+        for pid in evidence['pids']:
+            # A killed orphan may await init's waitpid; a zombie is not alive.
+            stat = Path(f'/proc/{pid}/stat')
+            self.assertTrue(not stat.exists() or
+                            stat.read_text().split(')')[-1].split()[0] == 'Z',
+                            f'reviewer process {pid} still alive')
+
+    def kill_review_leftovers(self):
+        if self.evidence.exists():
+            for pid in json.loads(self.evidence.read_text())['pids']:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_timeout_reaps_review_seats_and_scratch_worktree(self):
+        sha = self.reviewer_repository()
+        command = self.scratch_reviewer(
+            sleep=True, checkout='quoted " café\\name\n\ncheckout')
+        self.addCleanup(self.kill_review_leftovers)
+        for role, seat in (('review', 'reviewer'), ('adjudicate', 'adjudicator')):
+            with self.subTest(role=role):
+                self.configure(f'[agents]\n{seat} = "{command}"\n')
+                result = agents.agent(self.tgt, role, 'judge', self.target,
+                                      base_sha=sha, candidate_sha=sha, timeout=1)
+                self.assertIsInstance(result, agents.AgentOutput)
+                self.assertIn(f'{seat} timed out after', result)
+                self.assertIn('minutes', result)
+                self.assert_review_cleanup()
+
+    def test_timeout_probes_records_and_retries_fallback(self):
+        self.routes()
+        sha = self.reviewer_repository()
+        command = self.scratch_reviewer(sleep=True)
+        self.addCleanup(self.kill_review_leftovers)
+        run = self.a_run()
+        self.configure(f'[agents]\nreviewer = "{command}"\n'
+                       f'reviewer_fallback = "{self.fallback}"\n')
+        self.addCleanup(reset, self.tgt)
+        result = agents.agent(self.tgt, 'review', 'judge', self.target,
+                              base_sha=sha, candidate_sha=sha, timeout=1,
+                              conn=self.conn, run_id=run)
+        self.assertEqual(result, 'turn completed')
+        self.assertEqual(self.calls.read_text().splitlines(), [
+            'devin-fallback ' + agents.PROBE_GOAL, 'devin-fallback judge'])
+        rows = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId=? AND kind='route_fallback'",
+            (run,)).fetchall()
+        self.assertEqual(len(rows), 1)
+        evidence = json.loads(rows[0][0])
+        self.assertIn('reviewer timed out after', evidence['reason'])
+        self.assertEqual(evidence['command'], self.fallback)
+        self.assert_review_cleanup()
+
+    def test_successful_reviewer_can_remove_own_worktree(self):
+        sha = self.reviewer_repository()
+        command = self.scratch_reviewer()
+        self.addCleanup(self.kill_review_leftovers)
+        self.configure(f'[agents]\nreviewer = "{command}"\n')
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            result = agents.agent(self.tgt, 'review', 'judge', self.target,
+                                  base_sha=sha, candidate_sha=sha, timeout=5)
+        self.assertEqual(result, 'PASS')
+        self.assertEqual(printed.getvalue(), '')
+        self.assert_review_cleanup()
+
+    def test_review_cleanup_ignores_inherited_git_repository_variables(self):
+        from holophyte.gates import sh
+
+        self.reviewer_repository()
+        other = self.root / 'other-repository'
+        sh(['git', 'init', '-q', str(other)])
+        sh(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
+            'commit', '--allow-empty', '-qm', 'other'], cwd=other)
+        stale = self.root / 'other-checkout'
+        sh(['git', 'worktree', 'add', '--detach', str(stale)], cwd=other)
+        shutil.rmtree(stale)
+        before = sh(['git', 'worktree', 'list', '--porcelain'], cwd=other)
+        polluted = {
+            'GIT_DIR': str(other / '.git'),
+            'GIT_COMMON_DIR': str(other / '.git'),
+            'GIT_WORK_TREE': str(other),
+            'GIT_INDEX_FILE': str(other / '.git' / 'index'),
+        }
+        printed = io.StringIO()
+        with patch.dict(os.environ, polluted), contextlib.redirect_stdout(printed):
+            with agents.review_scratch(self.target) as scratch:
+                # Create in the intended repository before exercising cleanup
+                # under the inherited environment pointing at another repo.
+                with patch.dict(os.environ):
+                    for key in polluted:
+                        os.environ.pop(key)
+                    checkout = scratch / 'locked checkout'
+                    sh(['git', 'worktree', 'add', '--detach', str(checkout)],
+                       cwd=self.target)
+                    sh(['git', 'worktree', 'lock', str(checkout)], cwd=self.target)
+        self.assertFalse(scratch.exists())
+        self.assertNotIn(str(scratch), sh(
+            ['git', 'worktree', 'list', '--porcelain'], cwd=self.target))
+        self.assertEqual(sh(['git', 'worktree', 'list', '--porcelain'], cwd=other),
+                         before)
+        self.assertEqual(printed.getvalue(), '')
+
+    def test_review_cleanup_with_git_234_porcelain(self):
+        sha = self.reviewer_repository()
+        real_sh = agents.sh
+        checkout = 'quoted " café\\name\n\ncheckout'
+
+        def git_234(argv, **kwargs):
+            if argv[:3] == ['git', 'worktree', 'list']:
+                if '-z' in argv:
+                    raise RuntimeError("git worktree list: unknown switch `z'")
+                # Git 2.34 emits raw paths, including embedded newlines.
+                listing = (f'worktree {self.target}\nHEAD {sha}\n'
+                           'branch refs/heads/main\n\n')
+                scratch = Path(json.loads(self.evidence.read_text())['scratch'])
+                if (scratch / checkout).exists():
+                    listing += (f'worktree {scratch / checkout}\nHEAD {sha}\n'
+                                'detached\nlocked\n\n')
+                return listing
+            return real_sh(argv, **kwargs)
+
+        for sleep in (False, True):
+            with self.subTest(timeout=sleep):
+                command = self.scratch_reviewer(sleep=sleep, checkout=checkout)
+                self.addCleanup(self.kill_review_leftovers)
+                self.configure(f'[agents]\nreviewer = "{command}"\n')
+                printed = io.StringIO()
+                with patch.object(agents, 'sh', side_effect=git_234), \
+                        contextlib.redirect_stdout(printed):
+                    result = agents.agent(self.tgt, 'review', 'judge', self.target,
+                                          base_sha=sha, candidate_sha=sha, timeout=1)
+                self.assertEqual(result.timed_out, sleep)
+                if not sleep:
+                    self.assertEqual(result, 'PASS')
+                self.assertEqual(printed.getvalue(), '')
+                self.assert_review_cleanup()
 
     def test_failed_mid_turn_probe_does_not_redispatch_or_log_switch(self):
         self.routes(probe_fails=False, fallback_fails=True)
