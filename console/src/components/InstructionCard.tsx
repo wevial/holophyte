@@ -1,5 +1,5 @@
 import type { Instruction } from "../lib/findings";
-import { renderCommentBody } from "../lib/markdown";
+import { Markdown } from "./Markdown";
 
 export function InstructionCard({ instruction }: { instruction: Instruction }) {
   const location = instruction.line != null ? `${instruction.path}:${instruction.line}` : instruction.path;
@@ -17,8 +17,8 @@ export function InstructionCard({ instruction }: { instruction: Instruction }) {
         ) : <span className="truncate font-mono text-[12px] text-muted">{location}</span>}
         <span className="text-[12px] text-muted">@{instruction.author}</span>
       </div>
-      <div className="ticket-body mt-1 text-[14px] leading-[1.45] text-body">
-        {renderCommentBody(instruction.request)}
+      <div className="mt-1 text-[14px] leading-[1.45] text-body">
+        <Markdown>{instruction.request}</Markdown>
       </div>
     </li>
   );

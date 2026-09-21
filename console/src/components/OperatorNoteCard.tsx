@@ -1,5 +1,5 @@
 import { formatClock } from "../lib/format";
-import { renderMarkdown } from "../lib/markdown";
+import { Markdown } from "./Markdown";
 import { roundLabel } from "../lib/runs";
 import type { Round } from "../lib/types";
 
@@ -17,8 +17,8 @@ export function OperatorNoteCard({ note, ordinal, started }: {
         <span>started <time dateTime={new Date(started).toISOString()}>{formatClock(started)}</time></span>
         <span className="font-mono text-[11px]">event {note.event_id}</span>
       </header>
-      <div data-note-body className="ticket-body mt-1 text-[14px] leading-[1.45] text-body">
-        {renderMarkdown(note.note)}
+      <div data-note-body className="mt-1 text-[14px] leading-[1.45] text-body">
+        <Markdown>{note.note}</Markdown>
       </div>
     </article>
   );

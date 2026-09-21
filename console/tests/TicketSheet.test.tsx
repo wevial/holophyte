@@ -96,7 +96,7 @@ test("clicking the identifier opens an aria-modal dialog with the title and rend
   expect(body.querySelector("h2")!.textContent).toBe("Summary");
   expect(body.querySelector("strong")!.textContent).toBe("runs");
   expect(Array.from(body.querySelectorAll("li input")).map((box) => (box as HTMLInputElement).checked)).toEqual([false, true]);
-  expect(body.querySelector("pre")!.textContent).toBe("bun test");
+  expect(body.querySelector("pre")!.textContent).toBe("bun test\n");
   // The sheet is rendered beside the Board section, not in it.
   expect(screen.getByRole("region", { name: "Board" }).contains(dialog)).toBe(false);
   expect(identifier("KO-242").getAttribute("aria-pressed")).toBe("true");
@@ -158,7 +158,7 @@ test("a poll that replaces the board data leaves the open sheet on the same tick
   expect(screen.getByText("Console reads /runs (renamed by poll)")).toBeTruthy();
   const dialog = screen.getByRole("dialog");
   expect(dialog.querySelector("h2")!.textContent).toBe("Console reads /runs with cursor paging");
-  expect(dialog.querySelector("[data-sheet-body] pre")!.textContent).toBe("bun test");
+  expect(dialog.querySelector("[data-sheet-body] pre")!.textContent).toBe("bun test\n");
   expect(identifier("KO-242").getAttribute("aria-pressed")).toBe("true");
   // The body is not refetched per poll: what the operator reads stays put.
   expect(asked.filter((url) => url.endsWith("/tickets/KO-242")).length).toBe(fetches);

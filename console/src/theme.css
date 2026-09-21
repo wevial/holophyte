@@ -317,7 +317,7 @@ body {
 .ticket-body li + li {
   margin-top: 0.25em;
 }
-.ticket-body li[data-checked] {
+.ticket-body li.task-list-item {
   list-style: none;
   margin-left: -1.4em;
 }
@@ -352,4 +352,40 @@ body {
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
   }
+}
+
+/* GFM and native disclosures share the ticket typography tokens. */
+.ticket-body :is(details, blockquote, li) > * + * {
+  margin-top: 0.7em;
+}
+.ticket-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.ticket-body :is(th, td) {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+}
+.ticket-body th {
+  background: var(--well);
+  color: var(--ink);
+  font-weight: 600;
+}
+.ticket-body blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: 12px;
+  color: var(--muted);
+}
+.ticket-body details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.ticket-body summary {
+  display: list-item;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
 }
