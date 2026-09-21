@@ -161,6 +161,7 @@ class FileTicketCliTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
+        (self.repo / "test_orders_export.py").touch()
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         self.target = holophyte.target.Target.locate(self.repo)
         self.ticket = self.root / "tickets" / "01-export.md"

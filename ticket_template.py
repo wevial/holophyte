@@ -27,19 +27,23 @@ file names to "[factory.py:1](<http://factory.py:1>)" and ticket ids to
 "[KO-1](https://linear.app/...)" -- reads as its text, so those variants are
 accepted. Loose formatting beyond those equivalences still fails.
 
-Two checks look past the body at what a reviewer could witness. A relative
+Repository checks look past the body at what a reviewer could witness. A relative
 path a criterion, verify command or contract check names is asked of the
 target repository with "git check-ignore": an ignored path can never appear
 in the candidate export the reviewer sees, so it is a violation — but only
 when the caller names the repository (validate(t, repo=...), CLI --repo);
-without one the check is skipped. A criterion phrased as something only an
-operator or a merged main could witness (OPERATOR_WITNESS_PHRASES) gets an
-advisory, since a sentence can mention an operator legitimately.
+without one repository checks are skipped. Named witness and verify paths
+must exist or be declared new; unittest modules must resolve to repository
+files. Verifying the blank template is always rejected. A criterion phrased
+as something only an operator or a merged main could witness
+(OPERATOR_WITNESS_PHRASES) gets an advisory, since a sentence can mention an
+operator legitimately.
 
 CLI: python3 ticket_template.py [--repo PATH] TICKET.md [...]
      ->  exit 0 iff all valid.
 """
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -449,6 +453,144 @@ def _gitignored_path_problems(t, repo):
     return problems
 
 
+# Bare prose such as version numbers and unittest module names is not a file.
+SOURCE_EXTENSIONS = {
+    ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".json", ".md",
+    ".toml", ".yaml", ".yml", ".txt", ".html", ".css", ".scss",
+    ".sh", ".bash", ".sql", ".rs", ".go", ".c", ".h", ".cpp",
+    ".java", ".rb", ".vue", ".svelte", ".xml", ".ini", ".cfg",
+}
+
+
+def _repo_paths(text):
+    return [p for p in path_candidates(text)
+            if "/" in p or Path(p).suffix in SOURCE_EXTENSIONS]
+
+
+def _prose_paths(text):
+    for span in re.finditer(r"`([^`\n]+)`", text):
+        paths = _repo_paths(span.group(1))
+        if len(paths) == 1 and span.group(1) == paths[0]:
+            yield span, paths[0]
+
+
+def _new_paths(t):
+    """Declarations apply across fields; 'new' must precede the code span
+    in the same sentence. Mask code spans before finding sentence boundaries
+    so a filename's dots do not end its sentence."""
+    files, directories = set(), set()
+    for text in t.sections.values():
+        masked = re.sub(r"`[^`\n]+`", lambda m: " " * len(m.group()), text)
+        for span in re.finditer(r"`([^`\n]+)`", text):
+            path = span.group(1)
+            if not PATH_TOKEN_RE.fullmatch(path):
+                continue
+            prefix = masked[:span.start()]
+            sentence = re.split(r"[.!?](?:\s|$)|\n\s*(?:\n|[-*+] )", prefix)[-1]
+            directory = re.search(r"\bdirector(?:y|ies)\b", sentence, re.I)
+            if (re.search(r"\bnew\b", sentence, re.I)
+                    and (_repo_paths(path) or directory)):
+                normalized = str(Path(path))
+                files.add(normalized)
+                if path.endswith("/") or directory:
+                    directories.add(normalized)
+    return files, directories
+
+
+def _available(repo, path, declarations):
+    files, directories = declarations
+    normalized = str(Path(path))
+    return ((repo / path).exists() or normalized in files
+            or any(normalized.startswith(d + "/") for d in directories)
+            or _gitignored(repo, path) is True)
+
+
+def _shell_commands(command):
+    """Tokenize only; never execute a verify command."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return []
+    commands, current = [], []
+    for token in tokens:
+        if token and all(c in ";&|()" for c in token):
+            commands.append(current)
+            current = []
+        else:
+            current.append(token)
+    return commands + [current]
+
+
+def _unittest_modules(tokens):
+    for i in range(len(tokens) - 1):
+        if tokens[i:i + 2] != ["-m", "unittest"]:
+            continue
+        args = iter(tokens[i + 2:])
+        for arg in args:
+            if arg == "discover":
+                return
+            if arg in ("-k", "--locals"):
+                if arg == "-k":
+                    next(args, None)
+                continue
+            if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", arg):
+                yield arg
+        return
+
+
+def _module_available(repo, module, declarations):
+    # unittest also accepts package names and qualified class/method names.
+    parts = module.split(".")
+    for end in range(len(parts), 0, -1):
+        stem = "/".join(parts[:end])
+        if _available(repo, stem + ".py", declarations):
+            return True
+    stem = "/".join(parts)
+    return _available(repo, stem + "/__init__.py", declarations)
+
+
+def _repository_problems(t, repo):
+    repo = Path(repo)
+    declarations = _new_paths(t)
+    problems = []
+    texts = [(f"Acceptance criteria #{i}", text)
+             for i, text in enumerate(t.acceptance_boxes, 1)]
+    texts.append(("Implementation notes", t.sections.get("Implementation notes", "")))
+    for label, text in texts:
+        for path in dict.fromkeys(path for _, path in _prose_paths(text)):
+            if not _available(repo, path, declarations):
+                problems.append(f"path does not exist in {label}: {path}")
+    for command in t.verify_commands:
+        for path in _repo_paths(command):
+            if not _available(repo, path, declarations):
+                problems.append(f"path does not exist in verify command: {path}")
+        for tokens in _shell_commands(command):
+            for module in _unittest_modules(tokens):
+                if not _module_available(repo, module, declarations):
+                    problems.append("unittest module does not exist in verify "
+                                    f"command: {module}")
+    return problems
+
+
+def _blank_template_problems(t):
+    problems = []
+    for command in t.verify_commands:
+        for tokens in _shell_commands(command):
+            names = [Path(token).name for token in tokens]
+            if "ticket_template.py" not in names:
+                continue
+            index = names.index("ticket_template.py")
+            invoked = index == 0 or re.fullmatch(
+                r"python(?:\d+(?:\.\d+)*)?", names[index - 1])
+            if invoked and "ticketTemplate.md" in names[index + 1:]:
+                problems.append("verify command runs the validator on "
+                                "ticketTemplate.md: the blank template can never "
+                                f"validate: {command}")
+    return problems
+
+
 def _operator_witness_advisories(t):
     """An advisory per acceptance criterion phrased as something only an
     operator, a screen, or main-after-the-merge could witness."""
@@ -469,7 +611,8 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
     violation: the ticket is valid iff blocking(validate(t)) is empty.
 
     `repo`, when given, is the target repository the named paths are checked
-    against with `git check-ignore`; without it the path check is skipped."""
+    for existence and with `git check-ignore`; without it repository checks
+    are skipped. The blank-template verify check always applies."""
     p = []
     if not t.title:
         p.append("missing H1 title ('# ...' on the first heading line)")
@@ -582,10 +725,12 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
             p.append(f"{ADVISORY_PREFIX}verify command uses bare {token!r} "
                      f"(template rule: activate the venv or use "
                      f".venv/bin/{token} if the project has one): {cmd}")
+    p.extend(_blank_template_problems(t))
     p.extend(_fence_advisories(t))
     p.extend(_operator_witness_advisories(t))
     if repo is not None:
         p.extend(_gitignored_path_problems(t, repo))
+        p.extend(_repository_problems(t, repo))
     return p
 
 
@@ -643,7 +788,7 @@ def main(argv):
             print(f"{path}: OK")
         advisories = [a for a in problems if a.startswith(ADVISORY_PREFIX)]
         if repo is None:
-            advisories.append(f"{ADVISORY_PREFIX}gitignored-path check "
+            advisories.append(f"{ADVISORY_PREFIX}repository check "
                               f"skipped: pass --repo PATH to check named "
                               f"paths against the target repository")
         for pr in blockers + advisories:
