@@ -52,6 +52,74 @@ class AgentFallbackTests(SweepTestCase):
             code = operator.main(self.tgt, SimpleNamespace(team='team-1'))
         return code, out.getvalue()
 
+    def test_failed_writer_probe_continues_on_implementer(self):
+        from holophyte.serve_runs import active_routes
+
+        self.routes()
+        self.configure(f'[agents]\nimplementer = "{self.fallback}"\n'
+                       f'writer = "{self.primary}"\n')
+        def turn(*_):
+            self.assertEqual(active_routes(self.tgt)['writer'],
+                             {'command': self.fallback, 'fallback': self.fallback})
+            self.assertEqual(agents.agent(self.tgt, 'write', 'describe', self.target),
+                             'turn completed')
+            return 0
+        code, output = self.start(turn)
+        self.assertEqual(code, 0)
+        self.assertIn('writer probe failed', output)
+        self.assertIn('using implementer', output)
+        self.assertEqual(self.calls.read_text().splitlines(), [
+            'devin-fallback ' + agents.PROBE_GOAL,
+            'codex-primary ' + agents.PROBE_GOAL,
+            'devin-fallback describe'])
+
+    def test_writer_status_tracks_implementer_fallback_and_clears(self):
+        from holophyte.serve_runs import active_routes
+
+        self.routes()
+        self.configure(f'[agents]\nimplementer = "{self.primary}"\n'
+                       f'implementer_fallback = "{self.fallback}"\n'
+                       f'writer = "{self.primary}"\n')
+        self.addCleanup(reset, self.tgt)
+        self.assertTrue(agents.startup_routes(
+            self.tgt, SimpleNamespace(team='team-1')))
+        self.assertEqual(active_routes(self.tgt)['writer'],
+                         {'command': self.fallback, 'fallback': self.fallback})
+        # A read-only startup probe must not clear the published substitution.
+        Path(self.primary).write_text(f'#!{sys.executable}\nprint("ready")\n')
+        agents.probe_writer(self.tgt, activate=False)
+        self.assertEqual(active_routes(self.tgt)['writer']['command'], self.fallback)
+        agents.probe_writer(self.tgt, activate=True)
+        self.assertEqual(active_routes(self.tgt)['writer'], {'command': self.primary})
+        Path(self.primary).write_text(f'#!{sys.executable}\nprint("unavailable")\n')
+        agents.probe_writer(self.tgt, activate=True)
+        self.assertEqual(active_routes(self.tgt)['writer']['command'], self.fallback)
+        reset(self.tgt)
+        self.assertEqual(active_routes(self.tgt)['writer'], {'command': self.primary})
+
+    def test_worker_probes_writer_without_fallback_keys(self):
+        from holophyte import pool
+
+        subprocess.run(['git', 'init', '-q', str(self.target)], check=True)
+        self.routes()
+        self.configure(f'[agents]\nimplementer = "{self.fallback}"\n'
+                       f'writer = "{self.primary}"\n[loop]\nworkers = 2\n')
+        def turn(*_):
+            self.assertEqual(agents.agent(self.tgt, 'write', 'describe', self.target),
+                             'turn completed')
+            return pool.WORKER_PARKED
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), patch.object(
+                pool, '_worker', side_effect=turn):
+            code = pool.worker(self.tgt, SimpleNamespace(team='team-1'))
+        self.assertEqual(code, pool.WORKER_PARKED)
+        self.assertIn('writer probe failed', out.getvalue())
+        self.assertIn('using implementer', out.getvalue())
+        self.assertEqual(self.calls.read_text().splitlines(), [
+            'devin-fallback ' + agents.PROBE_GOAL,
+            'codex-primary ' + agents.PROBE_GOAL,
+            'devin-fallback describe'])
+
     def test_missing_implementer_image_stops_before_claim(self):
         import subprocess
 

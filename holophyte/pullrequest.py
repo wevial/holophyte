@@ -108,7 +108,7 @@ def _pr_template(wt):
 
 def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
                      beat_s, wt, started, budget_min, issue_url, *, refresh=None):
-    """One implementer turn writes the PR title and body from the diff.
+    """One writer turn explains the candidate in a PR title and body.
     Return `(title, body)`, using a Summary stub when the reply is unusable
     or the turn runs out of time, with one printed line saying so. A refresh
     returns None on refusal so its caller keeps the existing body.
@@ -136,8 +136,10 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         f" the candidate for ticket {task_id}: {task}.",
         "Answer with exactly one line `TITLE: ...` (the title alone, under"
         f" {pr.PR_TITLE_MAX} characters) followed by the description in"
-        " Markdown. Describe what the diff changes and why, in this"
-        " repository's own style; do not paste the ticket, and do not add"
+        " Markdown. Explain what the change does for a user or caller and why"
+        " first. Note decisions, risks and anything surprising. Do not narrate"
+        " the diff. Do not list files, styles, class names, renames or tests."
+        " Use this repository's own style; do not paste the ticket, and do not add"
         " a link to the ticket -- the loop appends one. Do not edit, commit"
         " or run anything: answer with the text only.",
     ]
@@ -163,10 +165,12 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         parts.extend([
             "the description as it stands:\n\n" + current,
             "what this fix answered:\n\n" + answered,
-            "Rewrite the description to match the current full diff. The title"
+            "Rewrite the description to explain the current behaviour and reasons."
+            " The title"
             " will be ignored. Do not include Linear, Evidence, or appended bot"
-            " blocks. The loop preserves and extends the Changes since first"
-            " review list; omit that section from your reply.",
+            " blocks. Under `## Changes since first review`, give one bullet for"
+            " this fix: what changed in behaviour, one line only. Follow the"
+            " same prose rules above. Omit earlier rounds; the loop preserves them.",
         ])
     goal = "\n\n".join(parts)
     left = budget_min - (monotonic() - started) / 60
@@ -176,7 +180,7 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
                            f"writing the pull request text for {branch}"
                            " from the diff")
     reply, timed_out = _timed(target, conn, run_id, beat_s, wt, minutes,
-                              goal)
+                              goal, role="write")
     parsed = None if timed_out else pr.parse_pr_text(reply)
     if parsed is None or not parsed[1]:
         why = ("the turn ran out of time" if timed_out
@@ -221,8 +225,13 @@ def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
     if written is None:
         return
     _, history = _without_changes(own)
-    description, _ = _without_changes(written[1])
-    history.append(f"- Round {len(history) + 1}: {' '.join(answered.split())}")
+    description, changes = _without_changes(written[1])
+    if (not description.strip() or len(changes) != 1
+            or not changes[0][2:].strip()):
+        print(f"[holo2] written PR text refused for {task_id}: missing behaviour"
+              " summary; leaving the pull request body unchanged")
+        return
+    history.append(f"- Round {len(history) + 1}: {changes[0][2:]}")
     text = description.rstrip() + "\n\n" + CHANGES_HEADING + "\n" + "\n".join(history)
     with heartbeat_while(conn, run_id, beat_s):
         latest = pr.rest(target, pull, "GET", endpoint)["body"] or ""

@@ -357,7 +357,8 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
             Commit("the scripted work"), APPROVE, Idle(""),
             Reply("THREAD 1: ADDRESS -- a real crash"),
             Commit("fix: default load()"),
-            Idle("TITLE: Fixed load\nLoad handles missing input."),
+            Idle("TITLE: Fixed load\nLoad handles missing input.\n\n"
+                 "## Changes since first review\n- Missing input no longer crashes."),
             provider=self.provider())
 
         self.assertEqual(fake.roles.count("review"), 1)
@@ -365,7 +366,7 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
                          [f"gh pr edit {self.URL} --body-file -"])
         history = self.pr_body.read_text().split("## Changes since first review\n")[1]
         self.assertTrue(history.startswith("- Round 1:"))
-        self.assertIn("ADDRESS: a real crash", history)
+        self.assertIn("Missing input no longer crashes.", history)
         fixed = self.git("rev-parse", BRANCH).strip()
         original = fake.turns[1].candidate_sha[:12]
         self.assertIn(
@@ -482,7 +483,8 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
             Reply("THREAD 1: ADDRESS -- preserve missing input"),
             Commit("thread fix on resume"), REQUEST_CHANGES,
             Commit("review fix"), APPROVE,
-            Idle("TITLE: Updated description\nBoth defects fixed."),
+            Idle("TITLE: Updated description\nBoth defects fixed.\n\n"
+                 "## Changes since first review\n- Missing input is preserved."),
             provider=self.provider())
 
         prompt = fake.turns[-1].goal
@@ -490,8 +492,9 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
         for text in ("ADDRESS: preserve missing input",
                      "scripted change is incomplete", "repair the pin"):
             self.assertIn(text, prompt)
-            self.assertIn(text, body)
-        self.assertIn("## Changes since first review\n- Round 1:", body)
+            self.assertNotIn(text, body)
+        self.assertIn("## Changes since first review\n"
+                      "- Round 1: Missing input is preserved.", body)
 
     def test_babysit_review_fix_waits_for_head_and_checks_before_merging(self):
         old, fake, naps = self.review_fix_propagation(catches_up=True)
