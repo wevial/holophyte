@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Board } from "./components/Board";
 import { Hosts } from "./components/Hosts";
+import { RunDetail } from "./components/RunDetail";
 import { Now } from "./components/Now";
 import { Shipped } from "./components/Shipped";
 import { Rail, type ProjectChoice, type View } from "./components/Rail";
@@ -25,6 +26,16 @@ export function App({
   pollDeps?: PollDeps;
   timeoutMs?: number;
 }) {
+  const readRun = () => {
+    const match = /^#run=([1-9]\d*)$/.exec(window.location.hash);
+    return match && Number.isSafeInteger(Number(match[1])) ? Number(match[1]) : null;
+  };
+  const [linkedRun, setLinkedRun] = useState(readRun);
+  useEffect(() => {
+    const changed = () => setLinkedRun(readRun());
+    window.addEventListener("hashchange", changed);
+    return () => window.removeEventListener("hashchange", changed);
+  }, []);
   const [view, setView] = useState<View>("now");
   const [project, setProject] = useState<ProjectChoice>("all");
   const [theme, setTheme] = useState<Theme>(readTheme);
@@ -51,14 +62,21 @@ export function App({
       <Rail
         peers={peers}
         view={view}
-        onView={setView}
+        onView={(next) => { window.location.hash = ""; setLinkedRun(null); setView(next); }}
         project={project}
         onProject={setProject}
         theme={theme}
         onTheme={chooseTheme}
       />
       <main className="min-w-0 flex-1 overflow-y-auto">
-        {view === "shipped" ? (
+        {linkedRun != null ? (
+          <section aria-label={`Run ${linkedRun}`} className="py-6">
+            <a href="#" className="mx-6 text-link">Back to Now</a>
+            <h1 className="mx-6 my-3 text-[20px] font-semibold">Run {linkedRun}</h1>
+            <RunDetail base={base} id={linkedRun} now={hosts.find(host => host.base === base)?.status?.now ?? daemonNow}
+              polls={polls} deps={pollDeps} />
+          </section>
+        ) : view === "shipped" ? (
           <Shipped shipped={shipped} now={daemonNow} polls={polls} deps={pollDeps} />
         ) : view === "board" ? (
           <Board hosts={shownHosts} shipped={shipped} now={daemonNow} polls={polls} deps={pollDeps} />
