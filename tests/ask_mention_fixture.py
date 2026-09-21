@@ -31,7 +31,10 @@ class AskMentionCases:
     def test_conversation_ask_pass(self):
         self.test_ask_pass(conversation=True)
 
-    def test_ask_pass(self, conversation=False):
+    def test_latest_ask_overrides_earlier_fix(self):
+        self.test_ask_pass(followup=True)
+
+    def test_ask_pass(self, conversation=False, followup=False):
         self.configure(
             '[merge]\nmode = "pr"\napprove = "human"\n'
             '[example]\napi_key = "sentinel-ask-secret"\n'
@@ -39,11 +42,13 @@ class AskMentionCases:
         question = (
             "@holophyte ask: Can an existing guest be renamed? sentinel-ask-secret"
         )
+        comments = ("@holophyte fix: Rename the guest",
+                    ((("operator", "User"), question),)) if followup else (question,)
         state = (
             self.conversation_state(("operator", "User"), question)
             if conversation
             else self.pr_state(
-                [("src/app.py", 30, ("operator", "User"), question)],
+                [("src/app.py", 30, ("operator", "User"), *comments)],
                 mergeable="CONFLICTING",
             )
         )
