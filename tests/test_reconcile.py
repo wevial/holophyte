@@ -531,6 +531,13 @@ class ContentWakeTests(MergeModeFixture):
                     commits={'nodes': [{'commit': {'oid': 'old-commit',
                         'committedDate': H.T1, 'statusCheckRollup':
                         {'state': 'SUCCESS'}}}]}, reviewDecision='APPROVED')
+        from holophyte import pr_status, reconcile
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        with patch.object(pr_status, 'graphql', return_value={
+                'repository': {'pullRequest': dict(node, updatedAt=H.T1)}}):
+            reconcile._pr_seen(self.tgt, pr_status.parse_pr_url(self.URL),
+                               conn, store.read.blocked_tickets(conn)[0].runId)
         H.fake_client(self, node)
         self.main_output(provider=StubProvider())
         self.assertEqual(self.read("SELECT action FROM interventions "
@@ -628,3 +635,75 @@ class ContentWakeTests(MergeModeFixture):
                                        "WHERE action = 'babysit'")), len(before) + 1)
         self.assertEqual(self.read("SELECT summary FROM runEvents WHERE "
                                    "kind = 'pr_empty_wakes' ORDER BY id")[-1], ('0',))
+
+    def test_newly_pushed_old_commit_wakes_once_after_a_real_park_read(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+
+        from holophyte import pr_status, reconcile
+        H.parked_with_mark(self, H.T1, 0)
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        ticket = store.read.blocked_tickets(conn)[0]
+        pull = pr_status.parse_pr_url(self.URL)
+        old = {'commit': {'oid': 'seen', 'committedDate': H.T1,
+                         'author': {'user': {'login': 'person'}}}}
+        node = dict(H.OPEN_PULL, updatedAt=H.T1, commits={'nodes': [old]})
+        answer = {'repository': {'pullRequest': node},
+                  'viewer': {'login': 'factory'}}
+        with patch.object(pr_status, 'graphql', return_value=answer):
+            reconcile._pr_seen(self.tgt, pull, conn, ticket.runId)
+            with patch.object(store, 'babysit') as wake:
+                reconcile._rebabysit(conn, ticket, pull,
+                                     pr_status.pull_status(self.tgt, pull), 0)
+                wake.assert_not_called()
+                node['commits']['nodes'].append({'commit': {
+                    'oid': 'newly-pushed', 'committedDate': '2020-01-01T09:00:00Z',
+                    'author': {'user': {'login': 'person'}}}})
+                status = pr_status.pull_status(self.tgt, pull)
+                reconcile._rebabysit(conn, ticket, pull, status, 0)
+                wake.assert_called_once()
+                self.assertIn('commit', wake.call_args.args[2])
+                wake.reset_mock()
+                reconcile._rebabysit(conn, ticket, pull, status, 0)
+                wake.assert_not_called()
+
+    def test_overflow_budget_prevents_dispatch_for_connections_and_replies(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+
+        from holophyte import pr_status, reconcile
+        H.parked_with_mark(self, H.T1, 0)
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        page = {'nodes': [], 'pageInfo': {
+            'hasPreviousPage': True, 'startCursor': 'previous'}}
+        comment = {'id': 'new', 'createdAt': H.T2,
+                   'author': {'login': 'person'}, 'body': 'Please check'}
+        reset = '2099-01-01T00:00:00Z'
+        for thread in (False, True):
+            with self.subTest(thread=thread):
+                node = dict(H.OPEN_PULL, updatedAt=H.T2)
+                if thread:
+                    node['reviewThreads'] = {'nodes': [
+                        {'id': 'thread', 'comments': page}]}
+                else:
+                    node['comments'] = page
+                overflow = {'comments': {'nodes': [comment]}}
+                answers = [
+                    {'repository': {'pullRequest': node},
+                     'rateLimit': {'remaining': 520, 'resetAt': reset}},
+                    dict({'node': overflow} if thread else
+                         {'repository': {'pullRequest': overflow}},
+                         rateLimit={'remaining': 480, 'resetAt': reset})]
+                budget = reconcile.GitHubBudget()
+                with patch.object(pr_status, 'graphql', side_effect=answers) as read, \
+                        patch.object(reconcile, 'GITHUB_BUDGET', budget), \
+                        patch.object(store, 'babysit') as wake:
+                    reconcile._reconcile_pull_requests(
+                        self.tgt, conn,
+                        conn.execute("SELECT id FROM projects").fetchone()[0],
+                        StubProvider())
+                    wake.assert_not_called()
+                    self.assertEqual(budget.remaining, 480)
+                    self.assertEqual(budget.reset_at, reset)
+                    self.assertIn('rateLimit { remaining resetAt }',
+                                  read.call_args.args[2])

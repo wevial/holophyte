@@ -33,14 +33,16 @@ def _pages(target, pull, page, field, fields, read, *, thread=None):
                      f'nodes {{ {fields} }} }}')
         if thread:
             query = ('query($id: ID!, $before: String) { node(id: $id) { '
-                     '... on PullRequestReviewThread { ' + selection + ' } } }')
+                     '... on PullRequestReviewThread { ' + selection
+                     + ' } } rateLimit { remaining resetAt } }')
             data = read(target, pull, query,
                         {'id': thread, 'before': info['startCursor']})
             page = data['node'][field]
         else:
             query = ('query($owner: String!, $name: String!, $number: Int!, '
                      '$before: String) { repository(owner: $owner, name: $name) { '
-                     'pullRequest(number: $number) { ' + selection + ' } } }')
+                     'pullRequest(number: $number) { ' + selection
+                     + ' } } rateLimit { remaining resetAt } }')
             data = read(target, pull, query, dict(owner=pull.owner, name=pull.name,
                         number=pull.number, before=info['startCursor']))
             page = data['repository']['pullRequest'][field]
@@ -63,13 +65,22 @@ def _item(field, item, viewer):
             else item.get('createdAt'), item.get('id'))
 
 
-def activities(target, pull, node, viewer, read):
+def activities(target, pull, node, viewer, read, rate=None):
+    """Collect content and update rate with the last overflow response."""
+    def budgeted_read(*args):
+        data = read(*args)
+        if rate is not None and isinstance(data.get('rateLimit'), dict):
+            rate.update(data['rateLimit'])
+        return data
+
     result = []
     for field, fields in FIELDS.items():
-        items = _pages(target, pull, node.get(field) or {}, field, fields, read)
+        items = _pages(target, pull, node.get(field) or {},
+                       field, fields, budgeted_read)
         for item in items:
             comments = (_pages(target, pull, item.get('comments') or {},
-                        'comments', COMMENT_FIELDS, read, thread=item.get('id'))
+                        'comments', COMMENT_FIELDS, budgeted_read,
+                        thread=item.get('id'))
                         if field == 'reviewThreads' else (item,))
             for comment in comments:
                 activity = _item(field, comment, viewer)
@@ -131,3 +142,22 @@ def break_empty_wakes(conn, ticket):
                      (reason, ticket.runId))
         conn.execute('UPDATE tickets SET blockedQuestion = ? WHERE id = ?',
                      (reason, ticket.id))
+
+
+def record_commits(conn, run_id, status):
+    """Snapshot eligible commit identities; embedded dates are not push times."""
+    store.record_event(conn, run_id, 'pr_seen_commits', json.dumps(
+        [item[2] for item in status.activity if item[0] == 'commit']))
+
+
+def arrived(conn, run_id, status, seen_at):
+    previous = latest(conn, run_id, 'pr_seen_commits')
+    seen = set(json.loads(previous)) if previous is not None else None
+    result = [item for item in status.activity
+              if (item[2] not in seen if item[0] == 'commit' and seen is not None
+                  else item[1] > seen_at)]
+    # Older parks have no identity snapshot: establish it without treating
+    # their historical commits as new activity.
+    if seen is None and not result:
+        record_commits(conn, run_id, status)
+    return result

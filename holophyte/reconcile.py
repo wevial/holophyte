@@ -325,8 +325,9 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     mark = _seen(status)
     if seen_at is None:
         store.record_pr_seen(conn, run_id, mark, parked_only=True)
+        pr_activity.record_commits(conn, run_id, status)
         return None
-    arrived = [item for item in status.activity if item[1] > seen_at]
+    arrived = pr_activity.arrived(conn, run_id, status, seen_at)
     if not arrived:
         store.record_pr_seen(conn, run_id, mark, parked_only=True,
                              facts_only=True)
@@ -348,6 +349,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)
+            pr_activity.record_commits(conn, run_id, status)
             store.record_event(conn, run_id, "pr_wake", json.dumps(arrived))
             store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
@@ -470,4 +472,5 @@ def _pr_seen(target, pull, conn=None, run_id=None):
     GITHUB_BUDGET.remember(status)
     if conn is not None and run_id is not None:
         pr_activity.record_pass(conn, run_id, status)
+        pr_activity.record_commits(conn, run_id, status)
     return _seen(status)

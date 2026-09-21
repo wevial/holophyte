@@ -152,7 +152,7 @@ def pull_status(target, pull):
     updated = node.get("updatedAt")
     decision = node.get("reviewDecision")
     return PullStatus(activity=activities(target, pull, node,
-                      (data.get("viewer") or {}).get("login"), graphql),
+                      (data.get("viewer") or {}).get("login"), graphql, rate),
                       merged=bool(node.get("merged")),
                       closed=node.get("state") == "CLOSED",
                    closed_by=_closed_by(node),
