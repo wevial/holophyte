@@ -46,3 +46,29 @@ test("migration evidence expires as the view clock advances past six hours", asy
   view.rerender(<Now hosts={view.hosts} project="all" now={now + 7 * 3600000} deps={view.deps} />);
   expect(screen.queryByText(/schema/)).toBeNull();
 });
+
+test("open pull requests sit below the Floor and leave only questions in the band", async () => {
+  const host = hostOf(status, { level: "attention", now: status.now, items: [
+    { kind: "blocked", level: "attention", ticket: "KO-1", question: "Which option?" },
+    ...[2, 3].map(run => ({ kind: "pr_open", level: "attention", run, ticket: `KO-${run}`, reason: "Waiting for review" })),
+  ] });
+  const deps = { fetch: async () => new Response("", { status: 404 }) };
+  const view = render(<Now hosts={[host]} project="all" now={now} deps={deps} />);
+  await act(settle);
+  const band = screen.getByRole("region", { name: "Needs you" });
+  expect(Array.from(band.querySelectorAll("li")).map(row => row.getAttribute("data-kind"))).toEqual(["blocked"]);
+  expect(band.querySelector("[data-count]")!.textContent).toBe("1");
+  expect(screen.queryByRole("button", { name: /PRs/ })).toBeNull();
+  const pointer = screen.getByRole("link", { name: "2 pull requests below" });
+  const table = screen.getByRole("region", { name: "Pull requests" });
+  expect(band.contains(pointer)).toBe(true);
+  expect(pointer.getAttribute("href")).toBe(`#${table.id}`);
+  expect(table.querySelectorAll("tbody tr")).toHaveLength(2);
+  expect(screen.getByRole("region", { name: "Floor" }).compareDocumentPosition(table) & 4).toBe(4);
+  view.rerender(<Now hosts={[hostOf(status, NO_ATTENTION)]} project="all" now={now} deps={deps} />);
+  await act(settle);
+  expect(screen.queryByRole("region", { name: "Pull requests" })).toBeNull();
+  expect(screen.queryByText(/pull requests? below/)).toBeNull();
+  expect(screen.getByText("Nothing needs you")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Floor" })).toBeTruthy();
+});

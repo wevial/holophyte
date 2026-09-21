@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { postAction } from "../lib/actions";
-import type { RowDaemon } from "./AttentionRow";
+import type { RowDaemon } from "./RowActions";
 import { ActionButton } from "./ActionButton";
 
 /** Private maintainer feedback; only the daemon receives this text. */
