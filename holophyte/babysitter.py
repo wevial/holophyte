@@ -309,6 +309,7 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
         merged = detail
     with heartbeat_while(conn, run_id, beat_s):
         pr.push_branch(target, branch)
+    merged = sh(["git", "rev-parse", branch], wt)
     print(f"[holo2] pushed {branch} to {pr.REMOTE} at {merged[:12]}"
           " after the conflict merge")
     if merged != sha:
@@ -961,6 +962,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"branch {branch} preserved at {fixed[:12]}"))
     with heartbeat_while(conn, run_id, beat_s):
         pr.push_branch(target, branch)
+    fixed = sh(["git", "rev-parse", branch], wt)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
     summaries = babysitter.parse_summaries(fixes)
     # Human review threads stay open unless explicitly addressed to the factory.

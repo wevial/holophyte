@@ -345,7 +345,9 @@ class MergeConfigTests(ConfigTestCase):
     """Merge defaults, overrides, and startup validation."""
     def test_an_absent_table_is_auto_and_local(self):
         self.locate()
-        self.assertEqual(config_tables.merge_config(self.tgt),
+        config = config_tables.merge_config(self.tgt)
+        self.assertTrue(config.strip_attribution)
+        self.assertEqual(config[1:],
                          ("auto", "local", 5, "merge", 180, 300, 1800, "", (), "",
                           "e2e/capture", "", None, 10, 20,
                           "park", "act", (), "holophyte", (), ("devin-ai-integration",
