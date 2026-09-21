@@ -11,9 +11,11 @@ the loop or the board; a run context keeps configured review turns alive.
 Third slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
 """
+import codecs
 import contextlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -402,11 +404,7 @@ def review_scratch(repo):
             yield Path(scratch)
         finally:
             try:
-                listing = sh(["git", "worktree", "list", "--porcelain", "-z"], cwd=repo)
-                for field in listing.split("\0"):
-                    if not field.startswith("worktree "):
-                        continue
-                    path = Path(field.removeprefix("worktree "))
+                for path in review_worktrees(repo):
                     if path.resolve().is_relative_to(Path(scratch).resolve()):
                         try:
                             sh(["git", "worktree", "remove", "--force", "--force",
@@ -415,6 +413,19 @@ def review_scratch(repo):
                             print(f"[holo2] review worktree cleanup failed: {exc}")
             finally:
                 sh(["git", "worktree", "prune"], cwd=repo)
+
+
+def review_worktrees(repo):
+    """Read porcelain on Git 2.34 (raw paths) and newer Git (C-quoted paths)."""
+    listing = sh(["git", "worktree", "list", "--porcelain"], cwd=repo)
+    # The following HEAD/bare field terminates the path: old Git can emit
+    # literal newlines in it. New Git quotes control bytes and uses octal
+    # escapes for non-ASCII bytes, which must be decoded before filesystem text.
+    for raw in re.findall(r'^worktree (.*?)\n(?:HEAD [0-9a-f]+|bare)(?:\n|$)',
+                          listing, re.MULTILINE | re.DOTALL):
+        if raw.startswith('"'):
+            raw = os.fsdecode(codecs.escape_decode(os.fsencode(raw[1:-1]))[0])
+        yield Path(raw)
 
 
 def configured_review(cmd, cwd, cap, env, role, command):

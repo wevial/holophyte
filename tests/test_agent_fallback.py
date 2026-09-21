@@ -271,21 +271,22 @@ class AgentFallbackTests(SweepTestCase):
             'commit', '--allow-empty', '-qm', 'base'], cwd=self.target)
         return sh(['git', 'rev-parse', 'HEAD'], cwd=self.target)
 
-    def scratch_reviewer(self, *, sleep=False):
+    def scratch_reviewer(self, *, sleep=False, checkout='checkout with spaces'):
         path = self.root / 'scratch-reviewer'
         self.evidence = self.root / 'review-evidence.json'
         path.write_text(
             f'#!{sys.executable}\n'
             'import json, os, pathlib, subprocess, sys, time\n'
             'scratch = pathlib.Path(os.environ["HOLOPHYTE_REVIEW_SCRATCH"])\n'
-            'checkout = scratch / "checkout with spaces"\n'
+            f'checkout = scratch / {checkout!r}\n'
             'subprocess.run(["git", "worktree", "add", "--detach", '
             'str(checkout), "HEAD"], check=True, capture_output=True)\n'
             'child = subprocess.Popen([sys.executable, "-c", '
             '"import time; time.sleep(60)"])\n'
             f'pathlib.Path({str(self.evidence)!r}).write_text(json.dumps('
             '{"scratch": str(scratch), "pids": [os.getpid(), child.pid]}))\n'
-            + ('time.sleep(60)\n' if sleep else
+            + ('subprocess.run(["git", "worktree", "lock", str(checkout)], '
+               'check=True, capture_output=True)\ntime.sleep(60)\n' if sleep else
                'child.terminate()\nchild.wait()\n'
                'subprocess.run(["git", "worktree", "remove", str(checkout)], '
                'check=True, capture_output=True)\nprint("PASS")\n'))
@@ -315,7 +316,8 @@ class AgentFallbackTests(SweepTestCase):
 
     def test_timeout_reaps_review_seats_and_scratch_worktree(self):
         sha = self.reviewer_repository()
-        command = self.scratch_reviewer(sleep=True)
+        command = self.scratch_reviewer(
+            sleep=True, checkout='quoted " café\\name\n\ncheckout')
         self.addCleanup(self.kill_review_leftovers)
         for role, seat in (('review', 'reviewer'), ('adjudicate', 'adjudicator')):
             with self.subTest(role=role):
@@ -363,6 +365,41 @@ class AgentFallbackTests(SweepTestCase):
         self.assertEqual(result, 'PASS')
         self.assertEqual(printed.getvalue(), '')
         self.assert_review_cleanup()
+
+    def test_review_cleanup_with_git_234_porcelain(self):
+        sha = self.reviewer_repository()
+        real_sh = agents.sh
+        checkout = 'quoted " café\\name\n\ncheckout'
+
+        def git_234(argv, **kwargs):
+            if argv[:3] == ['git', 'worktree', 'list']:
+                if '-z' in argv:
+                    raise RuntimeError("git worktree list: unknown switch `z'")
+                # Git 2.34 emits raw paths, including embedded newlines.
+                listing = (f'worktree {self.target}\nHEAD {sha}\n'
+                           'branch refs/heads/main\n\n')
+                scratch = Path(json.loads(self.evidence.read_text())['scratch'])
+                if (scratch / checkout).exists():
+                    listing += (f'worktree {scratch / checkout}\nHEAD {sha}\n'
+                                'detached\nlocked\n\n')
+                return listing
+            return real_sh(argv, **kwargs)
+
+        for sleep in (False, True):
+            with self.subTest(timeout=sleep):
+                command = self.scratch_reviewer(sleep=sleep, checkout=checkout)
+                self.addCleanup(self.kill_review_leftovers)
+                self.configure(f'[agents]\nreviewer = "{command}"\n')
+                printed = io.StringIO()
+                with patch.object(agents, 'sh', side_effect=git_234), \
+                        contextlib.redirect_stdout(printed):
+                    result = agents.agent(self.tgt, 'review', 'judge', self.target,
+                                          base_sha=sha, candidate_sha=sha, timeout=1)
+                self.assertEqual(result.timed_out, sleep)
+                if not sleep:
+                    self.assertEqual(result, 'PASS')
+                self.assertEqual(printed.getvalue(), '')
+                self.assert_review_cleanup()
 
     def test_failed_mid_turn_probe_does_not_redispatch_or_log_switch(self):
         self.routes(probe_fails=False, fallback_fails=True)
