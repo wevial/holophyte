@@ -49,6 +49,22 @@
       "round": 1,
       "strikes": 0,
       "host": "writer"
+    },
+    {
+      "id": 1,
+      "ticket": "KO-8",
+      "ticket_url": null,
+      "title": "Unestimated ticket",
+      "phase": "claimed",
+      "started_ms": 1750000000000,
+      "heartbeat_age_ms": 0,
+      "elapsed_ms": 0,
+      "working_ms": 0,
+      "work_started_ms": null,
+      "time_box_ms": null,
+      "round": 0,
+      "strikes": 0,
+      "host": null
     }
   ]
 }

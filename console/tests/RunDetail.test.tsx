@@ -1,5 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import unestimatedDetail from "../../tests/fixtures/serve/run-detail-unestimated.json";
+import { TimeBoxBar } from "../src/components/TimeBoxBar";
 import { Now } from "../src/components/Now";
 import { RunDetail } from "../src/components/RunDetail";
 import { formatClock } from "../src/lib/format";
@@ -682,4 +684,17 @@ test("the floor names a status contract failure and hides that daemon's old rows
   expect(within(floor).getByRole("alert").textContent).toContain(`${BASE}/status at runs`);
   expect(floor.querySelector("[data-run]")).toBeNull();
   expect(within(floor).queryByText("Nothing on the floor")).toBeNull();
+});
+
+test("an unestimated legacy run renders with an unknown budget, not a contract error or overrun", async () => {
+  await mount(unestimatedDetail, unestimatedDetail.run.started_ms + 20 * MINUTE);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("article", { name: "run 1" })).toBeTruthy();
+  expect(screen.getByText(/working box unknown/)).toBeTruthy();
+  expect(document.querySelector('[data-box="over"]')).toBeNull();
+  render(<TimeBoxBar elapsedMs={20 * MINUTE} boxMs={null} />);
+  const bar = screen.getByRole("progressbar", { name: "Working time budget unknown" });
+  expect(bar.hasAttribute("aria-valuenow")).toBe(false);
+  expect(bar.getAttribute("data-tone")).toBe("none");
+  expect(screen.getByText("working 20m 0s / n/a")).toBeTruthy();
 });

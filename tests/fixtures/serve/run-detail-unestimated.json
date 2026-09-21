@@ -1,0 +1,29 @@
+{
+  "run": {
+    "id": 1,
+    "ticket": "KO-8",
+    "ticket_url": null,
+    "title": "Unestimated ticket",
+    "phase": "claimed",
+    "attempt": 1,
+    "started_ms": 1750000000000,
+    "ended_ms": null,
+    "outcome": null,
+    "elapsed_ms": 0,
+    "working_ms": 0,
+    "time_box_ms": null,
+    "branch": null,
+    "host": null,
+    "heartbeat_age_ms": 0,
+    "merge_sha": null,
+    "commit_url": null,
+    "pr_url": null,
+    "work_started_ms": null,
+    "approved_at": null,
+    "approved_by": null,
+    "max_rounds": 2
+  },
+  "rounds": [],
+  "findings": [],
+  "events": []
+}

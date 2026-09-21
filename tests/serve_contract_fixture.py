@@ -27,7 +27,7 @@ def normalize_contract(value, key=""):
 
 
 def contract_answers(case):
-    """A live reviewed run, including every run-detail collection."""
+    """A reviewed run plus an unestimated run predating host recording."""
     case.seed()
     with store.open(str(case.db)) as conn:
         store.record_review_round(
@@ -51,11 +51,21 @@ def contract_answers(case):
             "SELECT id FROM runEvents WHERE kind = 'operator_note'").fetchone()[0]
         consume(conn, case.run, [event_id], 1)
         store.record_event(conn, case.run, "bot_finding", "Review is advisory", now=NOW)
+        project = store.tickets.ensure_project(conn, "team-1", case.target)
+        ticket = store.tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-8", linear_identifier="KO-8",
+            title="Unestimated ticket", acceptance_criteria=["Run without an estimate"],
+            verification_commands=["echo ok"], time_box_ms=None)
+        store.tickets.transition(conn, ticket, "in_flight")
+        unestimated_run = store.claim(conn, project, ticket, now=NOW)
+    case.null_host(unestimated_run)
     target = Target.locate(case.target)
     answers = {}
     for name, (code, body) in {
         "status": holophyte.serve.status(target, now=NOW, started_ms=NOW),
         "run-detail": holophyte.serve_runs.run_detail(target, str(case.run), now=NOW),
+        "run-detail-unestimated": holophyte.serve_runs.run_detail(
+            target, str(unestimated_run), now=NOW),
     }.items():
         case.assertEqual(code, 200)
         answers[name] = normalize_contract(body)
