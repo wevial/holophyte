@@ -39,6 +39,88 @@ def bare_target(case, path):
         worktrees=path.parent / f"{path.name}.worktrees")
 
 
+class SeatProbeTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name) / "repo"
+        self.repo.mkdir()
+        self.tgt = bare_target(self, self.repo)
+        self.git("init", "-q")
+        self.git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                 "commit", "--allow-empty", "-qm", "probe base")
+        self.sha = self.git("rev-parse", "HEAD").strip()
+
+    def git(self, *args):
+        return subprocess.check_output(["git", *args], cwd=self.repo, text=True)
+
+    def configure(self, seat, script):
+        self.tgt = bare_target(self, self.repo)
+        command = shlex.join([sys.executable, "-c", script])
+        self.tgt.config_path.write_text(
+            f"[agents]\n{seat} = {json.dumps(command)}\n")
+
+    def test_review_seats_require_command_output(self):
+        scripts = (
+            ("print('ready')", False),
+            ("import subprocess, sys; "
+             "assert 'git rev-parse HEAD' in sys.argv[-1]; "
+             "print('ready', subprocess.check_output("
+             "['git', 'rev-parse', 'HEAD'], text=True).strip())", True),
+            ("import subprocess; "
+             "print('ready', subprocess.check_output("
+             "['git', 'rev-parse', '--short', 'HEAD'], text=True).strip())", False),
+        )
+        for role, seat in (("review", "reviewer"), ("adjudicate", "adjudicator")):
+            for fallback in (False, True):
+                for script, passes in scripts:
+                    with self.subTest(role=role, fallback=fallback, script=script):
+                        self.configure(seat + ("_fallback" if fallback else ""),
+                                       script)
+                        result = holophyte.agents.probe_seat(
+                            self.tgt, role, fallback=fallback)
+                        self.assertEqual(result.ok, passes, result.describe())
+                        self.assertNotIn(self.sha, result.command[-1])
+                        if passes:
+                            self.assertIn(self.sha, result.output)
+                        else:
+                            self.assertIn("answered without reporting the commit",
+                                          result.describe())
+                            self.assertIn("| ready", result.describe())
+
+    def test_default_container_review_seats_receive_command_goal(self):
+        self.configure("reviewer_fallback", "print('ready')")
+        # The default route is probed when a fallback is configured.
+        with self.tgt.config_path.open("a") as config:
+            config.write('adjudicator_fallback = "false"\n')
+        def run_review(**kwargs):
+            self.assertIn("git rev-parse HEAD", kwargs["prompt"])
+            self.assertNotIn(self.sha, kwargs["prompt"])
+            return "ready " + subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=kwargs["repo"], text=True)
+
+        for role in ("review", "adjudicate"):
+            with self.subTest(role=role), patch.object(
+                    review_runner, "run_review", side_effect=run_review):
+                self.assertTrue(holophyte.agents.probe_seat(self.tgt, role).ok)
+            with patch.object(review_runner, "run_review", return_value="ready"):
+                self.assertFalse(holophyte.agents.probe_seat(self.tgt, role).ok)
+
+    def test_implementer_retains_text_only_goal_and_pass_rule(self):
+        for fallback in (False, True):
+            for output, code, passes in (("READY", 0, True), ("already", 0, True),
+                                         ("ready", 1, False), ("hello", 0, False)):
+                with self.subTest(fallback=fallback, output=output, code=code):
+                    self.configure(
+                        "implementer" + ("_fallback" if fallback else ""),
+                        "import sys; "
+                        "assert sys.argv[-1] == 'Reply with the single word: ready'; "
+                        f"print({output!r}); sys.exit({code})")
+                    result = holophyte.agents.probe_seat(
+                        self.tgt, "implement", fallback=fallback)
+                    self.assertEqual(result.ok, passes, result.describe())
+
+
 class AgentRouteTests(unittest.TestCase):
     def setUp(self):
         self.worktree = Path("/tmp/holophyte-agent-contract")

@@ -2,11 +2,10 @@
 import subprocess
 import sys
 
-from config_fixture import ConfigTestCase
-
 import holophyte.agents
 import store
 import store.tickets
+from tests.config_fixture import ConfigTestCase
 
 
 class ConfiguredHeartbeatTests(ConfigTestCase):
