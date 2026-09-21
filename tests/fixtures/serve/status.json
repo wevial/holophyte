@@ -11,6 +11,9 @@
     },
     "adjudicator": {
       "command": null
+    },
+    "writer": {
+      "command": null
     }
   },
   "workers_on_previous_build": 0,

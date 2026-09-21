@@ -318,6 +318,77 @@ class MergeModePullRequestTests(MergeModeFixture):
                       " ORDER BY id"),
             [("KO-131", "blocked_on_operator"), ("KO-132", "merged")])
 
+    def test_writer_commands_and_prompts(self):
+        from holophyte import agents
+
+        calls = self.db.parent / "writer-calls.jsonl"
+        command = self.db.parent / "fake-writer"
+        command.write_text(
+            f"#!{sys.executable}\nimport json, sys\n"
+            f"with open({str(calls)!r}, 'a') as out:\n"
+            " out.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+            "print('TITLE: Faster search\\nSearch results arrive sooner.'"
+            " + ('\\n\\n## Changes since first review\\n- Search no longer stalls.'"
+            " if 'what this fix answered' in sys.argv[-1] else ''))\n")
+        command.chmod(0o755)
+        pull = holophyte.pr_status.parse_pr_url(self.URL)
+        for writer in (True, False):
+            with self.subTest(writer=writer):
+                config = f'[agents]\nimplementer = "{command} implementer"\n'
+                if writer:
+                    config += f'writer = "{command} writer"\n'
+                self.configure(config + '[merge]\npr_style = "Use plain prose."\n')
+                with patch.object(holophyte.loop, "agent", agents.agent):
+                    title, body = holophyte.pullrequest._written_pr_text(
+                        self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                        self.BODY, 60, self.target, monotonic(), 5, None)
+                    with patch.object(holophyte.pr, "rest",
+                                      return_value={"body": body}), \
+                            patch.object(holophyte.pr, "edit_pr_body") as edit:
+                        holophyte.pullrequest.refresh_pr_text(
+                            self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                            self.BODY, 60, self.target, 5, pull,
+                            "ADDRESS: replace correlated subquery")
+                self.assertEqual(title, "Faster search")
+                self.assertIn("- Round 1: Search no longer stalls.",
+                              edit.call_args.args[2])
+                self.assertNotIn("correlated subquery", edit.call_args.args[2])
+                turns = [json.loads(line)
+                         for line in calls.read_text().splitlines()][-2:]
+                self.assertEqual([turn[0] for turn in turns],
+                                 ["writer" if writer else "implementer"] * 2)
+                for _, prompt in turns:
+                    self.assertIn("what the change does for a user or caller and why",
+                                  prompt)
+                    prohibition = ("Do not list files, styles, class names, "
+                                   "renames or tests.")
+                    self.assertIn(prohibition, prompt)
+                    self.assertLess(prompt.index(prohibition),
+                                    prompt.index("Use plain prose."))
+    def test_writer_unusable_reply_and_timeout_use_stub(self):
+        from holophyte import agents
+
+        command = self.db.parent / "refused-writer"
+        self.configure(f'[agents]\nwriter = "{command}"\nimplementer="false"\n')
+        real_run = agents.run_capped
+        for timeout in (False, True):
+            command.write_text(f"#!{sys.executable}\nimport time\n"
+                               + ("time.sleep(60)\n" if timeout else
+                                  "print('Unusable reply')\n"))
+            command.chmod(0o755)
+            def bounded(cmd, cwd, cap, **kwargs):
+                return real_run(cmd, cwd, 0.1, **kwargs)
+            with self.subTest(timeout=timeout), patch.object(
+                    agents, "run_capped", side_effect=bounded), patch(
+                    "sys.stdout", new_callable=io.StringIO) as out:
+                result = holophyte.pullrequest._written_pr_text(
+                    self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                    self.BODY, 60, self.target, monotonic(), 5, None)
+                self.assertIn("could not be written", result[1])
+                self.assertEqual(out.getvalue().count("written PR text refused"), 1)
+                self.assertIn("ran out of time" if timeout else "no `TITLE:` line",
+                              out.getvalue())
+
     def test_a_written_pr_takes_the_turns_title_and_body(self):
         """After the approval one more implementer
         turn is given the diff, the ticket, the repository's `AGENTS.md`
@@ -390,8 +461,8 @@ class MergeModePullRequestTests(MergeModeFixture):
     PR_TEMPLATE = ("## Summary\n\n<!-- what the change does. -->\n\n"
                    "## Why\n\n<!-- why it is needed. -->\n")
 
-    # The prompt the frozen base's written turn was handed for this
-    # scenario, recorded once from `refs/review/base`: criterion 2's
+    # The frozen prompt for this scenario, updated in KO-561 for the
+    # behavior-first writing instruction: criterion 2's
     # oracle. Comparing the live prompt against the same run's own output
     # would let a drift in the shared text move both sides together.
     RECORDED = (ROOT / "tests" / "fixtures" / "pullrequest"
@@ -401,12 +472,12 @@ class MergeModePullRequestTests(MergeModeFixture):
         """KO-430: a worktree carrying `.github/pull_request_template.md`
         gives the written turn the file under a "fill its sections"
         heading, ahead of the style line; a worktree without one gets
-        the frozen base's prompt byte for byte, witnessed against the
+        the frozen fixture's prompt byte for byte, witnessed against the
         recording."""
         provider = self.written_target()
         fake, _ = self.loop(Commit("the scripted work"), APPROVE,
                             self.WRITTEN, provider=provider)
-        # A worktree with no template file: the recorded base prompt,
+        # A worktree with no template file: the recorded fixture prompt,
         # byte for byte.
         base = self.RECORDED.read_text()
         self.assertEqual(fake.turns[2].goal, base)
@@ -437,7 +508,7 @@ class MergeModePullRequestTests(MergeModeFixture):
     def refresh(self, answer, answered="ADDRESS: replace correlated subquery"):
         with patch.object(holophyte.loop, "_timed",
                           side_effect=answer if callable(answer) else
-                          lambda *args: answer) as turn:
+                          lambda *args, **kwargs: answer) as turn:
             holophyte.pullrequest.refresh_pr_text(
                 self.tgt, None, None, "KO-131", "add a thing", BRANCH,
                 self.BODY, 60, self.target, 5,
@@ -483,27 +554,30 @@ class MergeModePullRequestTests(MergeModeFixture):
         preserved = original[original.index("## Evidence"):]
         self.pr_body.write_text(original)
         appended = "\n<!-- new bot -->\nAppended during writing.\n"
-        def write_and_append(*args):
+        def write_and_append(*args, **kwargs):
             self.pr_body.write_text(self.pr_body.read_text() + appended)
-            return "TITLE: Ignored title\nGrouped join description.", False
+            return ("TITLE: Ignored title\nGrouped join description.\n\n"
+                    "## Changes since first review\n- Results arrive sooner.", False)
         prompt = self.refresh(write_and_append)
         preserved += appended
         first = self.pr_body.read_text()
         self.assertTrue(first.endswith(preserved))
         self.assertTrue(first.startswith("Grouped join description."))
         self.assertIn("## Changes since first review\n- Round 1: "
-                      "ADDRESS: replace correlated subquery", first)
+                      "Results arrive sooner.", first)
         self.assertIn("the description as it stands", prompt)
         self.assertIn("Original subquery description.", prompt)
         self.assertIn("what this fix answered", prompt)
         self.assertIn("git diff main...HEAD", prompt)
-        self.refresh(("TITLE: Still ignored\nJoin with null handling.", False),
+        self.refresh(("TITLE: Still ignored\nJoin with null handling.\n\n"
+                      "## Changes since first review\n- Keep rows without matches.",
+                      False),
                      "ADDRESS: preserve null rows")
         second = self.pr_body.read_text()
         self.assertTrue(second.endswith(preserved))
         self.assertIn("## Changes since first review\n"
-                      "- Round 1: ADDRESS: replace correlated subquery\n"
-                      "- Round 2: ADDRESS: preserve null rows", second)
+                      "- Round 1: Results arrive sooner.\n"
+                      "- Round 2: Keep rows without matches.", second)
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(edits, [f"gh pr edit {self.URL} --body-file -"] * 2)
 
@@ -514,7 +588,13 @@ class MergeModePullRequestTests(MergeModeFixture):
                     "Capture\n<!-- bot -->tail\n")
         self.pr_body.write_text(original)
         for answer, reason in [(("", True), "ran out of time"),
-                               (("No title line", False), "no `TITLE:` line")]:
+                               (("No title line", False), "no `TITLE:` line"),
+                               (("TITLE: Valid\nNew prose", False),
+                                "missing behaviour summary"),
+                               (("TITLE: Valid\nNew prose\n\n"
+                                 "## Changes since first review\n- \t\n\n"
+                                 "## Risks\nNone.", False),
+                                "missing behaviour summary")]:
             with self.subTest(reason=reason), patch(
                     "sys.stdout", new_callable=io.StringIO) as out:
                 self.refresh(answer)

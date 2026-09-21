@@ -87,6 +87,7 @@ AGENT_CONFIG_KEYS = {
     "implement": "implementer",
     "review": "reviewer",
     "adjudicate": "adjudicator",
+    "write": "writer",
 }
 
 # The `[agents]` keys that choose the Codex route the review container runs,
@@ -329,7 +330,9 @@ def check_agent_commands(target):
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
         argv = agent_command(target, role, "")
-        if role == "implement" and isolated:
+        if role == "write" and argv is not None:
+            check_command_path(target, key, argv[0])
+        if role == "write" or (role == "implement" and isolated):
             continue
         if argv is None:
             if agent_command(target, role, "", fallback=True) is not None:
