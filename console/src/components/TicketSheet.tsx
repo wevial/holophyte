@@ -4,7 +4,7 @@ import { useEffect, useId, useRef } from "react";
 import type { BoardCard } from "../lib/board";
 import { STATE_LABELS } from "../lib/board";
 import type { HostRecord } from "../lib/hosts";
-import { renderMarkdown } from "../lib/markdown";
+import { Markdown } from "./Markdown";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { useTicket } from "../hooks/useTicket";
 import { BoxBar } from "./TimeBoxBar";
@@ -89,7 +89,7 @@ export function TicketSheet({
           </h2>
           {card.run && <><span>working {workingMs(card.run) == null ? "n/a" : formatDuration(workingMs(card.run)!)} · wall {formatDuration(card.run.elapsed_ms)}</span><BoxBar elapsedMs={workingMs(card.run)} boxMs={card.run.time_box_ms} height={5} /></>}
         </header>
-        <div data-sheet-body className="ticket-body min-h-0 flex-1 overflow-y-auto px-5 py-4 text-[13px] leading-[1.5] text-body">
+        <div data-sheet-body className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-[13px] leading-[1.5] text-body">
           {state === "loading" ? (
             <p className="text-muted">Loading the ticket…</p>
           ) : state === "needs_token" ? (
@@ -105,7 +105,7 @@ export function TicketSheet({
           ) : ticket && ticket.body.trim() === "" ? (
             <p className="text-muted">This ticket was mirrored before the store kept bodies.</p>
           ) : (
-            ticket && renderMarkdown(ticket.body)
+            ticket && <Markdown>{ticket.body}</Markdown>
           )}
         </div>
       </div>

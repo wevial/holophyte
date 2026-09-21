@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FATE_LABEL, findingParts, findingPath, severityOf, type Fate } from "../lib/findings";
-import { cleanCommentBody, renderCommentBody, renderMarkdown } from "../lib/markdown";
+import { Markdown } from "./Markdown";
 import type { Finding } from "../lib/types";
 import { SeverityPill } from "./SeverityPill";
 
@@ -31,7 +31,7 @@ export function FindingCard({
   const location = finding.line != null ? `${path}:${finding.line}` : path;
   const parts = finding.summary != null
     ? { title: null, body: finding.summary, criterion: null }
-    : findingParts(cleanCommentBody(finding.message));
+    : findingParts(finding.message);
   return (
     <li
       data-finding
@@ -59,8 +59,8 @@ export function FindingCard({
         </p>
       )}
       {parts.body !== "" && (
-        <div data-body className="ticket-body mt-1 text-[14px] leading-[1.45] text-body">
-          {renderCommentBody(parts.body)}
+        <div data-body className="mt-1 text-[14px] leading-[1.45] text-body">
+          <Markdown>{parts.body}</Markdown>
         </div>
       )}
       {sentence != null && (
@@ -76,7 +76,7 @@ export function FindingCard({
             onClick={() => setOriginalOpen((open) => !open)}>
             {originalOpen ? "Hide original comment" : "Show original comment"}
           </button>
-          {originalOpen && <div data-original className="ticket-body mt-2 text-[13px] text-muted">{renderMarkdown(finding.raw)}</div>}
+          {originalOpen && <div data-original className="mt-2 text-[13px] text-muted"><Markdown>{finding.raw}</Markdown></div>}
         </div>
       )}
     </li>
@@ -100,8 +100,8 @@ function CriterionFold({ text }: { text: string }) {
         </span>
         criterion
       </button>
-      <div data-criterion hidden={!open} className="ticket-body mt-1 text-[13px] leading-[1.45] text-muted">
-        {renderMarkdown(text)}
+      <div data-criterion hidden={!open} className="mt-1 text-[13px] leading-[1.45] text-muted">
+        <Markdown>{text}</Markdown>
       </div>
     </div>
   );
