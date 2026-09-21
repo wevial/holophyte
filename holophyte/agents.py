@@ -399,25 +399,28 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 @contextlib.contextmanager
 def review_scratch(repo):
     """Own the wrapper's scratch space, including git's worktree registrations."""
+    env = {key: value for key, value in os.environ.items()
+           if key not in {"GIT_DIR", "GIT_COMMON_DIR",
+                          "GIT_WORK_TREE", "GIT_INDEX_FILE"}}
     with tempfile.TemporaryDirectory(prefix="holophyte-review-") as scratch:
         try:
             yield Path(scratch)
         finally:
             try:
-                for path in review_worktrees(repo):
+                for path in review_worktrees(repo, env=env):
                     if path.resolve().is_relative_to(Path(scratch).resolve()):
                         try:
                             sh(["git", "worktree", "remove", "--force", "--force",
-                                str(path)], cwd=repo)
+                                str(path)], cwd=repo, env=env)
                         except (OSError, RuntimeError) as exc:
                             print(f"[holo2] review worktree cleanup failed: {exc}")
             finally:
-                sh(["git", "worktree", "prune"], cwd=repo)
+                sh(["git", "worktree", "prune"], cwd=repo, env=env)
 
 
-def review_worktrees(repo):
+def review_worktrees(repo, env=None):
     """Read porcelain on Git 2.34 (raw paths) and newer Git (C-quoted paths)."""
-    listing = sh(["git", "worktree", "list", "--porcelain"], cwd=repo)
+    listing = sh(["git", "worktree", "list", "--porcelain"], cwd=repo, env=env)
     # The following HEAD/bare field terminates the path: old Git can emit
     # literal newlines in it. New Git quotes control bytes and uses octal
     # escapes for non-ASCII bytes, which must be decoded before filesystem text.

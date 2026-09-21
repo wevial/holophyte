@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -365,6 +366,43 @@ class AgentFallbackTests(SweepTestCase):
         self.assertEqual(result, 'PASS')
         self.assertEqual(printed.getvalue(), '')
         self.assert_review_cleanup()
+
+    def test_review_cleanup_ignores_inherited_git_repository_variables(self):
+        from holophyte.gates import sh
+
+        self.reviewer_repository()
+        other = self.root / 'other-repository'
+        sh(['git', 'init', '-q', str(other)])
+        sh(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
+            'commit', '--allow-empty', '-qm', 'other'], cwd=other)
+        stale = self.root / 'other-checkout'
+        sh(['git', 'worktree', 'add', '--detach', str(stale)], cwd=other)
+        shutil.rmtree(stale)
+        before = sh(['git', 'worktree', 'list', '--porcelain'], cwd=other)
+        polluted = {
+            'GIT_DIR': str(other / '.git'),
+            'GIT_COMMON_DIR': str(other / '.git'),
+            'GIT_WORK_TREE': str(other),
+            'GIT_INDEX_FILE': str(other / '.git' / 'index'),
+        }
+        printed = io.StringIO()
+        with patch.dict(os.environ, polluted), contextlib.redirect_stdout(printed):
+            with agents.review_scratch(self.target) as scratch:
+                # Create in the intended repository before exercising cleanup
+                # under the inherited environment pointing at another repo.
+                with patch.dict(os.environ):
+                    for key in polluted:
+                        os.environ.pop(key)
+                    checkout = scratch / 'locked checkout'
+                    sh(['git', 'worktree', 'add', '--detach', str(checkout)],
+                       cwd=self.target)
+                    sh(['git', 'worktree', 'lock', str(checkout)], cwd=self.target)
+        self.assertFalse(scratch.exists())
+        self.assertNotIn(str(scratch), sh(
+            ['git', 'worktree', 'list', '--porcelain'], cwd=self.target))
+        self.assertEqual(sh(['git', 'worktree', 'list', '--porcelain'], cwd=other),
+                         before)
+        self.assertEqual(printed.getvalue(), '')
 
     def test_review_cleanup_with_git_234_porcelain(self):
         sha = self.reviewer_repository()

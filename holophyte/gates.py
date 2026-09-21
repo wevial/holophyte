@@ -549,9 +549,9 @@ def outcome_class_of(exc):
     return "infra" if isinstance(exc, InfraFailure) else "work"
 
 
-def sh(args, cwd=None):
+def sh(args, cwd=None, env=None):
     """Run an argv list — no shell, so task text can't break quoting."""
-    r = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    r = subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env)
     if r.returncode != 0:
         raise RuntimeError(f"`{args}` failed:\n{r.stdout}\n{r.stderr}")
     return r.stdout.strip()
