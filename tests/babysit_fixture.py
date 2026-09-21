@@ -390,7 +390,13 @@ class OperatorNoteCase:
         self.operator_note_pass(
             False, 'bot_threads = "advisory"\nbot_logins = ["maintainer"]\n')
 
-    def operator_note_pass(self, bots, config=""):
+    def test_operator_note_question_marker_keeps_fix_path(self):
+        self.operator_note_pass(False, note="@holophyte ? remove the subheader")
+
+    def test_operator_note_ask_marker_keeps_fix_path(self):
+        self.operator_note_pass(False, note="@holophyte ask: remove the subheader")
+
+    def operator_note_pass(self, bots, config="", note="remove the subheader"):
         import store
         from store.operator_notes import notes, send_back
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + config)
@@ -398,7 +404,7 @@ class OperatorNoteCase:
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         with store.open(str(self.tgt.store_path)) as conn:
             run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
-            note_id = send_back(conn, run_id, "remove the subheader", "maintainer")
+            note_id = send_back(conn, run_id, note, "maintainer")
         for path in self.api_dir.iterdir():
             path.unlink()
         threads = [self.DEFECT, self.NIT] if bots else []

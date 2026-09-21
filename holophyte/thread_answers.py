@@ -1,6 +1,6 @@
 """Read-only mention answers and attributed thread replies."""
 import store
-from holophyte import pr
+from holophyte import maintainer_notes, pr
 from holophyte.agents import agent_route
 from holophyte.conversation_comments import ASK_REPLY_MARKER, quote_request
 from holophyte.gates import InfraFailure
@@ -14,7 +14,8 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte import babysitter
     from holophyte.loop import agent, sh
     from holophyte.pullrequest import _park_on_pr
-    asks = tuple(t for t in threads if t.classification == "MENTIONED"
+    asks = tuple(t for t in threads if not maintainer_notes.is_note(t)
+                 and t.classification == "MENTIONED"
                  and t.intent == "ask")
     for thread in asks:
         prompt = (f"Answer the question on {pull.url}. Read the checkout and ticket. "
