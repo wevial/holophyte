@@ -23,7 +23,8 @@ import { PrLink, Sha } from "./ShippedTable";
 /** Count independent reviews against their cap; other rounds have no review budget. */
 export function roundLine(body: RunDetailBody): string {
   const reviewer = body.run.reviewer_model ?? body.rounds[0]?.reviewer_model;
-  const reviews = body.rounds.filter(round => round.reviewer_model === reviewer).length;
+  const reviews = body.rounds.filter(
+    round => round.reviewer_model === reviewer && round.verdict !== "error").length;
   const other = body.rounds.length - reviews;
   const max = body.run.max_rounds ?? reviews;
   return `Review ${reviews} of ${max}${other ? ` · ${other} other rounds` : ""} · ${phaseLabel(body.run.phase, body.run.pr_url)}`;

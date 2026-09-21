@@ -708,6 +708,15 @@ test("header counts independent reviews separately from mechanical and bot round
   expect(screen.getByText("Review 1 of 2 · 3 other rounds · reviewing")).toBeTruthy();
 });
 
+test("header excludes failed independent reviews from the review budget", async () => {
+  await mount({ ...DETAIL, rounds: [
+    { ...DETAIL.rounds[0]!, round: 1, reviewer_model: "independent-review", verdict: "error" },
+    { ...DETAIL.rounds[0]!, round: 2, reviewer_model: "independent-review", verdict: "approve" },
+    { ...DETAIL.rounds[0]!, round: 3, reviewer_model: "independent-review", verdict: "error" },
+  ] }, T + 20 * MINUTE);
+  expect(screen.getByText("Review 1 of 2 · 2 other rounds · reviewing")).toBeTruthy();
+});
+
 test("finding summaries identify declined reasons and leave other verdicts unchanged", () => {
   for (const verdict of ["DECLINE", "ADDRESS", "FOLLOW_UP"]) {
     const { container, unmount } = render(<FindingCard finding={{ message: "original",

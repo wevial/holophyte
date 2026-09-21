@@ -64,6 +64,10 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                          body="branch's line\nmain's line\n"), REQUEST_CHANGES,
                   provider=self.provider())
         self.assertEqual(self.steps(), ["conflict_merge", "covering_review", "parked"])
+        events = self.read("SELECT kind, summary FROM runEvents ORDER BY seq")
+        covering = events.index(("babysit_step", "covering_review"))
+        self.assertEqual(events[covering - 1][0], "phase_change")
+        self.assertIn("-> reviewing: review of the fix at", events[covering - 1][1])
 
     def test_fix_push_head_catches_up(self):
         self.fix_push_head_propagation(False)

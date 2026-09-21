@@ -593,8 +593,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(failure_reason.verify(
             out, verify_cmd, f"before the review of the fix on {pull.url}; "
             f"branch {branch} preserved at {sha[:12]}"))
-    record_step(conn, run_id, "covering_review")
     set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
+    record_step(conn, run_id, "covering_review")
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     rnd = _next_round(conn, run_id)
     round_started = int(time() * 1000)
