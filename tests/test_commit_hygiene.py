@@ -64,12 +64,34 @@ class CommitHygieneTests(unittest.TestCase):
         self.git('push', 'origin', 'task')
         # Even a missing/stale tracking ref cannot license rewriting remote history.
         self.git('update-ref', '-d', 'refs/remotes/origin/task')
-        message = 'Next change\n\nCo-Authored-By: Alice Example <alice@example.com>'
+        message = ('Next change\n\nSigned-off-by: Alice Example <alice@example.com>\n'
+                   'Co-Authored-By: Alice Example <alice@example.com>')
         tip = self.commit(message)
+        original = subprocess.check_output(['git', 'cat-file', 'commit', tip],
+                                           cwd=self.repo).split(b'\n\n', 1)[1]
         pr.push_branch(self.target, 'task')
         self.assertEqual(self.git('rev-parse', 'task', cwd=self.remote), tip)
         self.assertEqual(self.git('rev-parse', tip + '^'), published)
         self.assertEqual(self.git('show', '-s', '--format=%B', tip), message)
+        remote_message = subprocess.check_output(['git', 'cat-file', 'commit', tip],
+                                                 cwd=self.remote).split(b'\n\n', 1)[1]
+        self.assertEqual(remote_message, original)
+
+    def test_push_preserves_human_trailer_block_after_stripping_agent(self):
+        body = ('[Invites] Refuse renaming invites for existing accounts\n\n'
+                'Body line.\n\nAddresses review feedback.')
+        human = 'Co-Authored-By: Pat Person <pat@example.com>\n'
+        self.commit(body + ATTRIBUTION + '\n' + human)
+
+        pr.push_branch(self.target, 'task')
+
+        raw = subprocess.check_output(['git', 'cat-file', 'commit', 'task'],
+                                      cwd=self.remote)
+        message = raw.split(b'\n\n', 1)[1]
+        trailers = subprocess.check_output(['git', 'interpret-trailers', '--parse'],
+                                           input=message, cwd=self.remote)
+        self.assertEqual(trailers, human.encode())
+        self.assertEqual(message, (body + '\n\n' + human).encode())
 
     def test_push_prunes_conflicting_stale_tracking_refs_before_cleanup(self):
         base = self.git('rev-parse', 'main')
