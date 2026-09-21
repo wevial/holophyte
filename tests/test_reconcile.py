@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -162,6 +163,105 @@ class ReconcileTests(LoopFixture):
         self.assertEqual(self.statuses(), {"KO-1": "ready", "KO-2": "needs_spec",
                                            "KO-3": "ready"})
         return runs
+
+    def abandoned_tree(self, pushed=True):
+        runs = self.seed()
+        branch = "holo/ko-2"
+        wt = self.worktrees / "ko-2"
+        remote = self.target.parent / "remote.git"
+        self.git("init", "--bare", str(remote))
+        self.git("remote", "add", "origin", str(remote))
+        self.git("worktree", "add", "-b", branch, str(wt))
+        (wt / "committed.txt").write_text("ticket work\n")
+        self.git("add", ".", cwd=wt)
+        self.git("commit", "-m", "ticket work", cwd=wt)
+        if pushed:
+            self.git("push", "origin", branch)
+        conn = store.open(str(self.db))
+        conn.execute("UPDATE runs SET branch = ? WHERE id = ?",
+                     (branch, runs["KO-2"]))
+        conn.commit()
+        conn.close()
+        return wt, branch, runs["KO-2"]
+
+    def cancel_tree(self):
+        provider = StubProvider()
+        provider.closed = {"KO-2": "canceled"}
+        return self.main_output(provider=provider)
+
+    def test_abandoned_pushed_tree_is_removed_but_branch_remains(self):
+        wt, branch, _ = self.abandoned_tree()
+        self.cancel_tree()
+        self.assertEqual(self.statuses()["KO-2"], "abandoned")
+        self.assertFalse(wt.exists())
+        self.assertNotIn(str(wt), self.git("worktree", "list"))
+        self.git("show-ref", "--verify", f"refs/heads/{branch}")
+
+    def test_abandoned_tree_reachable_from_main_needs_no_remote(self):
+        wt, branch, _ = self.abandoned_tree(pushed=False)
+        self.git("merge", "--ff-only", branch)
+        self.git("remote", "remove", "origin")
+        self.cancel_tree()
+        self.assertFalse(wt.exists())
+        self.git("show-ref", "--verify", f"refs/heads/{branch}")
+
+    def test_stale_remote_tracking_ref_does_not_allow_retirement(self):
+        wt, branch, _ = self.abandoned_tree()
+        remote = self.target.parent / "remote.git"
+        self.git("update-ref", "-d", f"refs/heads/{branch}", cwd=remote)
+        self.git("show-ref", "--verify", f"refs/remotes/origin/{branch}")
+        self.assertIn("commits exist nowhere else", self.cancel_tree())
+        self.assertTrue(wt.is_dir())
+
+    def test_remote_verification_failures_are_preserved_and_reported(self):
+        wt, _, run_id = self.abandoned_tree()
+        real_run = subprocess.run
+        for command in ("ls-remote", "fetch"):
+            with self.subTest(command=command):
+                def fail_remote(args, **kwargs):
+                    if args[:2] == ["git", command]:
+                        return subprocess.CompletedProcess(
+                            args, 128, stdout="", stderr="fatal: transport unavailable")
+                    return real_run(args, **kwargs)
+                with patch("holophyte.claim.subprocess.run", side_effect=fail_remote):
+                    printed = self.cancel_tree()
+                self.assertTrue(wt.is_dir())
+                line = next(line for line in printed.splitlines()
+                            if "remote verification failed" in line)
+                self.assertIn(command, line)
+                self.assertIn("transport unavailable", line)
+                self.assertIn("KO-2", line)
+                self.assertNotIn("commits exist nowhere else", printed)
+                self.assertIn((run_id, line), self.read(
+                    "SELECT runId, summary FROM runEvents"))
+                # Let the next subcase witness the same cancellation transition.
+                conn = store.open(str(self.db))
+                conn.execute("UPDATE tickets SET status = 'ready'"
+                             " WHERE linearIdentifier = 'KO-2'")
+                conn.commit()
+                conn.close()
+
+    def test_abandoned_dirty_tree_is_preserved_and_reported(self):
+        wt, _, run_id = self.abandoned_tree()
+        (wt / "uncommitted.txt").write_bytes(b"preserve these bytes\n")
+        printed = self.cancel_tree()
+        self.assertEqual((wt / "uncommitted.txt").read_bytes(),
+                         b"preserve these bytes\n")
+        line = next(line for line in printed.splitlines()
+                    if "uncommitted work" in line)
+        self.assertIn("KO-2", line)
+        self.assertIn((run_id, line), self.read(
+            "SELECT runId, summary FROM runEvents"))
+
+    def test_abandoned_unpushed_commits_are_preserved(self):
+        wt, _, run_id = self.abandoned_tree(pushed=False)
+        printed = self.cancel_tree()
+        self.assertTrue(wt.is_dir())
+        line = next(line for line in printed.splitlines()
+                    if "commits exist nowhere else" in line)
+        self.assertIn("KO-2", line)
+        self.assertIn((run_id, line), self.read(
+            "SELECT runId, summary FROM runEvents"))
 
     def statuses(self):
         return dict(self.read("SELECT linearIdentifier, status FROM tickets"))

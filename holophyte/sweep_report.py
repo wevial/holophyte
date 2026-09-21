@@ -12,6 +12,7 @@ it prints -- `merge_lock_lines()` inside `sweep()`'s transaction and
 `sweep_lines()` on a loud `supervise_pass()`.
 """
 import sys
+from pathlib import Path
 from time import time
 
 import review_runner
@@ -194,6 +195,8 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
     owned = conn is None
     conn = conn if conn is not None else store.open(target.store_path, migrate=act)
     try:
+        for line in debris_lines(target, conn):
+            print(line, file=out)
         if now is None:
             now = int(time() * 1000)
         print("\n".join(sweep_lines(sweep(target, conn, now, act, provider),
@@ -202,6 +205,27 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
     finally:
         if owned:
             conn.close()
+
+
+def debris_lines(target, conn):
+    """Final tickets' factory checkout paths, reported only, even with --act."""
+    from holophyte.target import worktree_path
+
+    rows = conn.execute(
+        "SELECT DISTINCT t.linearIdentifier, t.status, r.branch, p.repoPath"
+        " FROM tickets t"
+        " JOIN runs r ON r.ticketId = t.id JOIN projects p ON p.id = t.projectId"
+        " WHERE t.status IN ('merged', 'abandoned') AND r.branch IS NOT NULL"
+        " ORDER BY t.linearIdentifier, r.branch")
+    lines = []
+    for identifier, status, branch, repo_path in rows:
+        if Path(repo_path).resolve() != target.path.resolve():
+            continue
+        path = worktree_path(target, branch)
+        if (path.is_dir() and not path.is_symlink()
+                and path.resolve().is_relative_to(target.worktrees.resolve())):
+            lines.append(f"debris: {identifier} ({status}): {path}")
+    return lines
 
 
 def review_container_lines(act=False):

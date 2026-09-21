@@ -48,6 +48,36 @@ from sweep_fixture import (  # noqa: E402 - after the insert
 from test_review_runner import docker_shim  # noqa: E402 - after the insert
 
 
+class WorktreeDebrisTests(SweepTestCase):
+    def test_only_final_ticket_worktrees_are_reported_without_removal(self):
+        def git(*args):
+            subprocess.run(["git", *args], cwd=self.target, check=True,
+                           capture_output=True)
+        git("init", "-b", "main")
+        git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+            "commit", "--allow-empty", "-m", "base")
+        ended = self.a_run()
+        store.set_branch(self.conn, ended, "holo/ko-1")
+        store.release(self.conn, ended, "failed", "cancelled")
+        store.tickets.walk_ticket(self.conn, self.ticket_of[ended], "abandoned")
+        live = self.a_run()
+        store.set_branch(self.conn, live, "holo/ko-2")
+        paths = [self.tgt.worktrees / f"ko-{n}" for n in (1, 2)]
+        for n, path in enumerate(paths, 1):
+            git("worktree", "add", "-b", f"holo/ko-{n}", str(path))
+        # Existing stores can retain a symlink spelling of the same repository.
+        alias = self.root / "alias"
+        alias.symlink_to(self.target, target_is_directory=True)
+        self.conn.execute("UPDATE projects SET repoPath = ? WHERE id = ?",
+                          (str(alias), self.project))
+        self.conn.commit()
+        for flags in ((), ("--act",)):
+            printed = "\n".join(self.run_sweep(T0, *flags))
+            self.assertIn(f"debris: KO-1 (abandoned): {paths[0]}", printed)
+            self.assertNotIn(str(paths[1]), printed)
+            self.assertTrue(all(path.is_dir() for path in paths))
+
+
 class StaleHeartbeatTests(SweepTestCase):
     """Liveness: one silent sighting is a strike, two in a row is a trip."""
 

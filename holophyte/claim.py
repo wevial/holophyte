@@ -495,6 +495,64 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
                        " their work")
 
 
+def _retirement_remote_tip(target, branch):
+    """Read and fetch the current remote tip, distinguishing absence from failure."""
+    remote = subprocess.run(
+        ["git", "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}"],
+        cwd=target.path, capture_output=True, text=True, timeout=60)
+    if remote.returncode == 2:
+        return None
+    if remote.returncode:
+        raise RuntimeError("remote verification failed (git ls-remote): "
+                           + remote.stderr.strip())
+    tip = remote.stdout.split()[0]
+    fetched = subprocess.run(
+        ["git", "fetch", "--no-tags", "--no-write-fetch-head", "origin", tip],
+        cwd=target.path, capture_output=True, text=True, timeout=60)
+    if fetched.returncode:
+        raise RuntimeError("remote verification failed (git fetch): "
+                           + fetched.stderr.strip())
+    return tip
+
+
+def retire_worktree(target, branch):
+    """Remove a clean, backed-up task checkout; return a refusal or None.
+
+    Keep the branch. A remote read must succeed before its tip is trusted;
+    stale remote-tracking refs are not evidence that work is still backed up.
+    """
+    from holophyte.target import worktree_path
+
+    wt = worktree_path(target, branch)
+    if wt.resolve() == target.worktrees.resolve() or wt.is_symlink():
+        return "worktree is not a task checkout"
+    if not wt.resolve().is_relative_to(target.worktrees.resolve()):
+        return "worktree is outside the target's worktrees directory"
+    try:
+        if not wt.exists():
+            sh(["git", "worktree", "prune"], target.path)
+            return None
+        if sh(["git", "status", "--porcelain", "--untracked-files=all"], wt).strip():
+            return "uncommitted work"
+        if sh(["git", "symbolic-ref", "HEAD"], wt).strip() != f"refs/heads/{branch}":
+            return "worktree is not on the recorded task branch"
+        head = sh(["git", "rev-parse", "HEAD"], wt).strip()
+        def reachable(ref):
+            return subprocess.run(
+                ["git", "merge-base", "--is-ancestor", head, ref],
+                cwd=target.path, capture_output=True).returncode == 0
+        backed_up = reachable("refs/heads/main")
+        if not backed_up:
+            tip = _retirement_remote_tip(target, branch)
+            backed_up = tip is not None and reachable(tip)
+        if not backed_up:
+            return "commits exist nowhere else (not confirmed on remote branch or main)"
+        sh(["git", "worktree", "remove", str(wt)], target.path)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+        return f"worktree retirement refused: {error}"
+    return None
+
+
 def _park_unlisted(conn, project, listed):
     """Walk each `ready` mirror row the board's ready listing no longer
     names to `blocked_on_deps`; one printed line names them (KO-425).
