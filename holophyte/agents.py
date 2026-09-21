@@ -191,7 +191,7 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
     cap = PROBE_TIMEOUT if timeout is None else timeout
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
-            if role != "implement":
+            if role in ("review", "adjudicate"):
                 sh(["git", "clone", "--shared", "--quiet",
                     str(target.path), scratch])
                 sha = sh(["git", "rev-parse", "HEAD"], cwd=scratch).strip()
@@ -232,6 +232,7 @@ def agent_route(target, role):
     harness or model ran would be evidence of something that did not happen,
     and the rows are what FINDINGS.md and the fingerprint are built from.
     """
+    role = effective_role(target, role)
     command = (routes(target).commands.get(role)
             or (target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
             or (DEFAULT_IMPLEMENTER if role == "implement" else
@@ -280,12 +281,39 @@ def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
         sh(["git", "update-ref", name, sha], cwd=repo)
 
 
+def effective_role(target, role):
+    """An absent or startup-refused writer follows the active implementer."""
+    if role == "write" and (routes(target).writer_failed
+                            or agent_command(target, role, "") is None):
+        return "implement"
+    return role
+
+
+def writer_turn(target, goal, cwd, timeout, on_start):
+    """Like a configured adjudicator: text-only prompt, host command, scratch.
+
+    The configured wrapper supplies its own read-only sandbox. No review refs
+    are needed: the writing prompt already carries the bounded diff.
+    """
+    goal = outbound(goal, known_secrets(target.config()))
+    cmd = agent_command(target, "write", goal)
+    cap = min(timeout, 1800) if timeout is not None else 1800
+    with review_scratch(cwd) as scratch:
+        env = dict(os.environ, HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
+        hook = {"on_start": on_start} if on_start is not None else {}
+        _, output = run_capped(cmd, cwd, cap, env=env, **hook)
+    return AgentOutput(output.strip(), shlex.join(cmd[:-1]))
+
+
 def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None):
     """Account for one role call, including timeout and exceptional returns."""
     from store.working import working
 
+    role = effective_role(target, role)
     with working(conn, run_id):
+        if role == "write":
+            return writer_turn(target, goal, cwd, timeout, on_start)
         record_pending_switch(target, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn, run_id=run_id)
@@ -546,4 +574,17 @@ def startup_routes(target, provider, implementer_probe=None, *, activate=True):
         _record_startup_probe(target, provider, probe)
         if not probe.ok:
             return False
+    probe_writer(target, activate=activate)
     return True
+
+
+def probe_writer(target, *, activate):
+    """A prose route failure is reported but never prevents implementation."""
+    probe = probe_seat(target, "write")
+    if probe is None:
+        return
+    print(probe_diagnostic(target, probe))
+    if not probe.ok:
+        print("[holo2] writer route down; using implementer for PR text")
+    if activate:
+        routes(target).writer_failed = not probe.ok

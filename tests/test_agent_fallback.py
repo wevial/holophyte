@@ -52,6 +52,23 @@ class AgentFallbackTests(SweepTestCase):
             code = operator.main(self.tgt, SimpleNamespace(team='team-1'))
         return code, out.getvalue()
 
+    def test_failed_writer_probe_continues_on_implementer(self):
+        self.routes()
+        self.configure(f'[agents]\nimplementer = "{self.fallback}"\n'
+                       f'writer = "{self.primary}"\n')
+        def turn(*_):
+            self.assertEqual(agents.agent(self.tgt, 'write', 'describe', self.target),
+                             'turn completed')
+            return 0
+        code, output = self.start(turn)
+        self.assertEqual(code, 0)
+        self.assertIn('writer probe failed', output)
+        self.assertIn('using implementer', output)
+        self.assertEqual(self.calls.read_text().splitlines(), [
+            'devin-fallback ' + agents.PROBE_GOAL,
+            'codex-primary ' + agents.PROBE_GOAL,
+            'devin-fallback describe'])
+
     def test_missing_implementer_image_stops_before_claim(self):
         import subprocess
 

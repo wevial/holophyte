@@ -477,18 +477,20 @@ def _scale_note(target, budget_min):
     return f" ({budget_min * scale:g} min at scale {scale:g})"
 
 
-def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
-    """Run one implementer turn under its scaled wall-clock budget.
+def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *, role="implement"):
+    """Run one turn under its scaled wall-clock budget.
 
     Return `(output, timed_out)`; retain output and reap children on timeout.
     The sweep hook kills the same group if the run is swept."""
     # The sweep's hook: a beat that finds the run ended kills the turn's
     # whole process group, the same kill the budget sends, and the block
     # raises `RunSwept` for `run_task()` once the turn has stopped.
+    from holophyte.agents import effective_role
+    role = effective_role(target, role)
     kill = GroupKill()
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            return (agent(target, "implement", goal, wt,
+            return (agent(target, role, goal, wt,
                           timeout=budget_min * budget_scale(target) * 60,
                           on_start=kill.arm, conn=conn, run_id=run_id),
                     False)
@@ -499,7 +501,8 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal):
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", "replace")
         partial = partial.strip()
-        print("[holo2] implementer output before the budget fired:\n"
+        print(f"[holo2] {'writer' if role == 'write' else 'implementer'}"
+              " output before the budget fired:\n"
               + (partial[-2000:] or "(no output before the budget fired)"))
         return partial, True
 

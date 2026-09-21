@@ -55,11 +55,18 @@ each table below.
 
 ## `[agents]`
 
+A configured `writer` uses the same host-command treatment as a configured
+adjudicator: its wrapper is responsible for enforcing read-only access. The
+writing prompt asks for text only, leads with behaviour and reasons, and applies
+the target's `pr_style` afterwards. Without a writer, writing keeps the
+implementer's command and isolation settings.
+
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
 | `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string; override to select another implementer harness. |
 | `reviewer` | Default: Hardened Codex review container | Non-empty command string; override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string; change to supply a separate adjudication route. |
+| `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
 | `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
 | `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |

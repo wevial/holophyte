@@ -65,6 +65,7 @@ class ActiveRoutes:
         self.pending = {}
         self.project = None
         self.failed = False
+        self.writer_failed = False
         self.stream = None
         self.target = target
 
