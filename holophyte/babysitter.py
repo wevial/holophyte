@@ -576,7 +576,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             base = reviewed or sh(["git", "merge-base", "main", sha], cwd=wt)
             answered = sh(["git", "log", "--format=%s", f"{base}..{sha}"], cwd=wt)
         refresh_pr_text(target, conn, run_id, task_id, ticket.splitlines()[0],
-                        branch, ticket, beat_s, wt, budget_min, pull, answered)
+                        branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
                     pull, f"{_moved(sha, reviewed)}, and a human"
                     " says merge on the candidate as it stands"
@@ -647,7 +647,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             answered = sh(["git", "log", "--format=%s",
                            f"{reviewed or base_sha}..{sha}"], cwd=wt)
         refresh_pr_text(target, conn, run_id, task_id, ticket.splitlines()[0],
-                        branch, ticket, beat_s, wt, budget_min, pull, answered)
+                        branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
         return sha
     ledger(conn, run_id, task_id, "round",
            f"Round {rnd}: REQUEST_CHANGES on the fix at {sha} on"

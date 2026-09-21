@@ -841,7 +841,10 @@ class ParkedPullRequestTests(SweepTestCase):
     # a fake on PATH records.
     ACTIVE_PULL = {"state": "OPEN", "merged": False,
                    "updatedAt": "2026-09-02T10:00:00Z",
-                   "reviewThreads": {"totalCount": 2}}
+                   "reviewThreads": {"totalCount": 2},
+                   "comments": {"nodes": [{"id": "new-comment",
+                       "createdAt": "2026-09-02T10:00:00Z",
+                       "author": {"login": "reviewer"}, "body": "Please check"}]}}
 
     def fake_systemctl(self):
         """A `systemctl` first on PATH that records each call's arguments,
@@ -1010,7 +1013,7 @@ class ParkedPullRequestTests(SweepTestCase):
         self.seen_before_activity(run_id)
         calls = self.fake_systemctl()
         quiet = dict(self.ACTIVE_PULL, updatedAt="2026-09-01T10:00:00Z",
-                     reviewThreads={"totalCount": 1})
+                     reviewThreads={"totalCount": 1}, comments={"nodes": []})
         self.fake_github(quiet)
 
         out = self.one_pass(T0 + 20 * MINUTE, StubProvider())
@@ -1185,7 +1188,7 @@ class ParkedPullRequestTests(SweepTestCase):
         run_id = self.parked_on_pr()
         self.seen_before_activity(run_id)
         quiet = dict(self.ACTIVE_PULL, updatedAt="2026-09-01T10:00:00Z",
-                     reviewThreads={"totalCount": 1})
+                     reviewThreads={"totalCount": 1}, comments={"nodes": []})
         self.fake_github(quiet)
         provider = StubProvider(
             ready=[{"id": "KO-1", "issue_id": "issue-1"}])
@@ -1205,7 +1208,7 @@ class ParkedPullRequestTests(SweepTestCase):
         run_id = self.parked_on_pr()
         self.seen_before_activity(run_id)
         quiet = dict(self.ACTIVE_PULL, updatedAt="2026-09-01T10:00:00Z",
-                     reviewThreads={"totalCount": 1})
+                     reviewThreads={"totalCount": 1}, comments={"nodes": []})
         self.fake_github(quiet)
         provider = StubProvider(
             ready=[{"id": "KO-1", "issue_id": "issue-1"},

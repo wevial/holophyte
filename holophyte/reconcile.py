@@ -18,13 +18,14 @@ Moved verbatim out of `holophyte/loop.py` (KO-387) -- `_pr_seen()` out of
 `holophyte/pullrequest.py` -- and the loop imports back the names its
 remaining call sites use.
 """
+import json
 from datetime import datetime, timezone
 from time import time
 
 import store
 import store.read
 import store.tickets
-from holophyte import pr_status
+from holophyte import pr_activity, pr_status
 from holophyte.board import ledger, mirror_push, refresh_board_states
 from holophyte.config_tables import merge_config
 from holophyte.findings import refresh_findings
@@ -300,7 +301,8 @@ def _budget_low():
 
 def _seen(status):
     """`store.record_pr_seen()`'s tuple from one `PullStatus`."""
-    return (status.updated_at, status.threads, status.checks, status.review)
+    at = max([status.updated_at or "", *(item[1] for item in status.activity)])
+    return (at or None, status.threads, status.checks, status.review)
 
 
 def _rebabysit(conn, ticket, pull, status, poll_ms):
@@ -308,26 +310,9 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     request has review activity the last pass did not see; the ticket's
     Linear id when it was sent, None otherwise (KO-362).
 
-    Activity is an `updatedAt` past the run's `prSeenAt` or a thread
-    count above its `prSeenThreads`. A run with no `prSeenAt` -- parked
-    by a module older than the column, or after a read that failed --
-    has nothing to compare against: what the read saw is recorded and
-    the tick moves on, so the next one can tell. A read that starts no
-    round still refreshes the checks rollup and review decision beside
-    the mark (`/attention`'s facts, KO-368) without moving the mark
-    itself, so a check turning green or a review landing shows on the
-    item as soon as the next tick reads it. The interval is per
-    pull request, measured from the park (`runs.lastHeartbeat`, the
-    park's stamp): activity within `poll_ms` of it is named and waits.
-    Otherwise `store.babysit()`'s one transaction -- its
-    intervention row, source `supervisor` (the loop's own machinery, not
-    a person), naming what moved, the run ended with its resume
-    point at the merge gate, the ticket walked to `ready` -- with the
-    mark advanced in the same transaction, so the same activity is not
-    sent twice; the loop's next claim resumes the candidate on its pull
-    request and makes another round of passes, whose park records what
-    it saw after its own writes. A refusal is the ticket having moved
-    while GitHub was asked: one line, nothing written.
+    Only newly authored content beyond the park's mark can wake it. A
+    timestamp bump alone refreshes facts; it never dispatches a paid pass.
+    The wake records the content in the same transaction as the intervention.
     """
     identifier, run_id = ticket.linearIdentifier, ticket.runId
     row = conn.execute("SELECT prSeenAt, prSeenThreads, lastHeartbeat,"
@@ -340,12 +325,13 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
     mark = _seen(status)
     if seen_at is None:
         store.record_pr_seen(conn, run_id, mark, parked_only=True)
+        pr_activity.record_commits(conn, run_id, status)
         return None
-    grew = (status.threads is not None and seen_threads is not None
-            and status.threads > seen_threads)
-    if status.updated_at <= seen_at and not grew:
+    arrived = pr_activity.arrived(conn, run_id, status, seen_at)
+    if not arrived:
         store.record_pr_seen(conn, run_id, mark, parked_only=True,
                              facts_only=True)
+        pr_activity.break_empty_wakes(conn, ticket)
         return None
     waited_ms = int(time() * 1000) - (parked_ms or 0)
     if waited_ms < poll_ms:
@@ -356,12 +342,15 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
               f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")
         return None
     threads = "?" if status.threads is None else status.threads
-    note = (f"new review activity on {pull.url}: updated"
+    note = (f"new review activity on {pull.url}: "
+            f"{', '.join(sorted({item[0] for item in arrived}))}; updated"
             f" {status.updated_at} (last seen {seen_at}), {threads} review"
             f" threads (last seen {seen_threads})")
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)
+            pr_activity.record_commits(conn, run_id, status)
+            store.record_event(conn, run_id, "pr_wake", json.dumps(arrived))
             store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
         print(f"[holo2] {identifier}: {pull.url} has new review activity but"
@@ -469,7 +458,7 @@ def _reject_pr(conn, run_id, pull, who, branch, sha):
     print(f"[holo2] {question}; {reason}")
 
 
-def _pr_seen(target, pull):
+def _pr_seen(target, pull, conn=None, run_id=None):
     """`(updatedAt, thread count, checks, review)` as the pull request
     reads now -- `store.record_pr_seen()`'s tuple -- for the park to
     record after the pass's own writes; None when GitHub could not be
@@ -481,4 +470,7 @@ def _pr_seen(target, pull):
               " the park records no activity mark")
         return None
     GITHUB_BUDGET.remember(status)
+    if conn is not None and run_id is not None:
+        pr_activity.record_pass(conn, run_id, status)
+        pr_activity.record_commits(conn, run_id, status)
     return _seen(status)

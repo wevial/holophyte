@@ -60,6 +60,32 @@ class MergeModePullRequestTests(MergeModeFixture):
     the pull request; the passes over threads and checks are
     `MergeModeBabysitPassTests` (`test_babysit_pass.py`)."""
 
+    def test_resumed_human_candidate_keeps_current_description(self):
+        from test_babysit_threads import MergeModeBabysitThreadsTests as H
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state([H.DEFECT]), self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""),
+                  Reply("THREAD 1: ADDRESS -- a real crash"), Commit("fix"),
+                  Idle("TITLE: Fixed load\nLoad handles missing input.\n\n"
+                       "## Changes since first review\n"
+                       "- Missing input no longer crashes the load."),
+                  provider=self.provider())
+        body = self.pr_body.read_text()
+        self.assertIn("Load handles missing input.", body)
+        self.assertIn("- Round 1: Missing input no longer crashes the load.", body)
+        self.serve(self.pr_state())
+        edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
+        self.assertEqual(len(edits), 1)
+        holophyte.operator.babysit_ticket(
+            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+        fake, _ = self.loop(provider=self.provider())
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.pr_body.read_text(), body)
+        self.assertEqual([c for c in self.recorded() if c.startswith("gh pr edit")],
+                         edits)
+        self.assertEqual(self.read("SELECT phase FROM runs ORDER BY id")[-1],
+                         ("awaiting_merge_approval",))
+
     def test_pr_pushes_opens_the_pull_request_and_parks_the_run(self):
         """Push, then create with the ticket title and Summary stub.
         With green checks and `approve = "human"`, park ready to merge: the
@@ -1078,6 +1104,10 @@ class MergeModePullRequestTests(MergeModeFixture):
         with no checks, a repository requiring no review)."""
         pull = dict(self.OPEN_PULL, updatedAt=at,
                     reviewThreads={"totalCount": threads})
+        if threads:
+            pull["comments"] = {"nodes": [{"id": "comment-1",
+                "createdAt": self.T2, "author": {"login": "reviewer"},
+                "body": "Please check this"}]}
         if checks is not None:
             pull["commits"] = {"nodes": [
                 {"commit": {"statusCheckRollup": {"state": checks}}}]}
@@ -1136,6 +1166,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             self.read("SELECT summary FROM runEvents"
                       " WHERE kind = 'intervention'"),
             [(f"supervisor babysit: new review activity on {self.URL}:"
+              " conversation comment;"
               f" updated {self.T2} (last seen {self.T1}), 1 review threads"
               " (last seen 0)",)])
         self.assertEqual(self.read("SELECT status FROM tickets"),
