@@ -59,13 +59,14 @@ FAIL_MARK = "__holo2_verify_failed__"
 VACUOUS_RE = re.compile(r"^\s*(?:Ran 0 tests\b|collected 0 items\b)", re.M)
 
 
-def split_and_clauses(cmd):  # noqa: C901 -- hand-written tokenizer; slice 4b owns it
+def split_and_clauses(cmd, *, allow_or=False):  # noqa: C901 -- hand-written tokenizer; slice 4b owns it
     """Split a verify command on its top-level `&&` operators.
 
     Returns the clause list, or None when the command uses shell constructs
     whose meaning per-clause instrumentation could change (`||`, `;`, `&`,
     newlines, heredocs, backticks) or whose quoting/nesting is unbalanced.
-    Those commands are run verbatim instead."""
+    Those commands are run verbatim instead. Block classification allows
+    `||` with allow_or=True so explicit failure tolerance stays eligible."""
     if "<<" in cmd:
         return None
     clauses, buf = [], []
@@ -107,7 +108,7 @@ def split_and_clauses(cmd):  # noqa: C901 -- hand-written tokenizer; slice 4b ow
                 continue
             if ch == "&" and prev not in "><":  # background job
                 return None
-            if cmd[i:i + 2] == "||" or ch in ";\n":
+            if (cmd[i:i + 2] == "||" and not allow_or) or ch in ";\n":
                 return None
         buf.append(ch)
         i += 1
@@ -118,8 +119,8 @@ def split_and_clauses(cmd):  # noqa: C901 -- hand-written tokenizer; slice 4b ow
 
 
 def instrumented_script(clauses, *, stop_on_failure=True):
-    """One shell script that runs clauses in order. An && chain stops at the
-    first failure; newline blocks retain their last-command exit semantics.
+    """One shell script that runs clauses in order. Chains and newline blocks
+    stop at the first failure by default.
     Failures retain the original exit status. Clauses stay in a single shell,
     so `cd` and exported variables still carry across them.
 
@@ -439,13 +440,16 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
     if not cmd:
         return True, passed + "(no verify command)"
     # Complete, simple command lines can be marked without splitting the
-    # shell: exported variables and cd still carry, and a newline block keeps
-    # its existing last-command exit semantics. Complex shell programs remain
+    # shell: exported variables and cd still carry, and a newline block stops
+    # at the first failing line. Compound lists force verbatim
+    # execution: wrapping compound lists in `||` suppresses their errexit.
+    # Complex shell programs remain
     # verbatim; the whole program is their command.
     lines = [text for text in cmd.splitlines()
              if text.strip() and not text.lstrip().startswith('#')]
     block = len(lines) > 1 and all(
-        '<<' not in text and not text.endswith('\\') and subprocess.run(
+        split_and_clauses(text, allow_or=True) is not None
+        and subprocess.run(
             ['bash', '-n'], input=text, text=True, capture_output=True).returncode == 0
         for text in lines)
     clauses = lines if block else split_and_clauses(cmd)
@@ -453,7 +457,7 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
     try:
         returncode, out = _verify_command(
             target,
-            instrumented_script(clauses, stop_on_failure=not block) if marked else cmd,
+            instrumented_script(clauses, stop_on_failure=True) if marked else cmd,
             cwd, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
         # The cap is a failed verify, not a crash: `run_capped` has already

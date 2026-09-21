@@ -18,6 +18,65 @@ from tests.fake_agent import APPROVE, Commit  # noqa: E402
 from tests.loop_fixture import LoopFixture  # noqa: E402
 
 
+class VerifyBlockTests(unittest.TestCase):
+    def test_compound_block_preserves_errexit(self):
+        with tempfile.TemporaryDirectory() as cwd:
+            ok, out = holophyte.gates.run_verify(
+                "set -e; false; touch should-not-run\ntrue", cwd)
+            self.assertFalse((Path(cwd) / "should-not-run").exists())
+            self.assertFalse(ok, out)
+            self.assertEqual(out.failure["exit_status"], 1)
+
+    def test_block_stops_at_first_failure_and_names_its_status(self):
+        with tempfile.TemporaryDirectory() as cwd:
+            ok, out = holophyte.gates.run_verify(
+                "false\ntouch should-not-run && true", cwd)
+            self.assertFalse(ok, out)
+            self.assertIn("clause 1 of 2 exited 1", out)
+            self.assertIn("failing clause: false", out)
+            self.assertEqual(out.failure["command_index"], 1)
+            self.assertEqual(out.failure["exit_status"], 1)
+            self.assertFalse((Path(cwd) / "should-not-run").exists())
+
+    def test_passing_blocks_preserve_shell_state_and_explicit_tolerance(self):
+        with tempfile.TemporaryDirectory() as cwd:
+            (Path(cwd) / "sub").mkdir()
+            (Path(cwd) / "sub" / "value").write_text("carried")
+            commands = (
+                'export VERIFY_VALUE=carried && cd sub\n'
+                'test "$(cat value)" = "$VERIFY_VALUE"',
+                "false || true\nprintf tolerated",
+                "printf one\nprintf two\nprintf three",
+                "true && printf chained",
+                "cat <<'EOF'\nheredoc\nEOF",
+                "printf single",
+            )
+            for command, expected in zip(
+                    commands, ("", "tolerated", "one\ntwo\nthree",
+                               "chained", "heredoc", "single")):
+                with self.subTest(command=command):
+                    ok, out = holophyte.gates.run_verify(command, cwd)
+                    self.assertTrue(ok, out)
+                    self.assertEqual(out, expected)
+
+    def test_baseline_blocks_stop_at_first_failure_in_both_tiers(self):
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as cwd:
+            for tier in ("always", "before_merge"):
+                with self.subTest(tier=tier):
+                    config = {"verify": {tier: [
+                        "false\ntouch should-not-run && true"]}}
+                    target = SimpleNamespace(config=lambda: config)
+                    ok, out = holophyte.gates.with_baseline(
+                        target, cwd, "true", True, "", before_merge=True)
+                    self.assertFalse(ok, out)
+                    self.assertIn("clause 1 of 2 exited 1", out)
+                    self.assertEqual(out.results[-1]["tier"], tier)
+                    self.assertEqual(out.results[-1]["exitCode"], 1)
+                    self.assertFalse((Path(cwd) / "should-not-run").exists())
+
+
 class MergeLockTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

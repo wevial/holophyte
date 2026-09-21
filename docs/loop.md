@@ -87,16 +87,25 @@ machines it walks. Back to the [README](index.md).
    run's failure reason — so the requeue carries the work; only a tree with
    no changes at all is discarded.
 4. Verify gate: the ticket's mechanical verify command must pass before
-   each review round and again before merge. The target's `[verify] always`
+   each review round and again before merge. Every line of an instrumented
+   simple newline verify block must pass, and the run stops at the first
+   failure. Lines share one shell,
+   so exported variables and `cd` carry forward; an allowed failure must
+   say so explicitly with `|| true`. The target's `[verify] always`
    baseline runs after the ticket commands at every verify gate, including
    fix rounds; `before_merge` adds a final tier at the merge gate. Each tier
    runs in order and stops on failure. Both default to empty lists, and
    `timeout_sec` defaults to 300 seconds per baseline command; see
    [verify configuration](config.md#verify). A failure is fail-loud: a
-   top-level `&&` chain is run clause by clause in one shell, and the report
-   names the clause that failed and its exit status, shows the output of
-   every clause that ran, and names the clauses the failure short-circuited
-   — silence is reported as silence, never as a bare non-zero exit.
+   parseable top-level `&&` chain or instrumented simple newline block runs
+   clause by clause in one shell,
+   and the report names the clause that failed and its exit status, shows
+   the output of every clause that ran, and names the clauses the failure
+   short-circuited
+   — silence is reported as silence, never as a bare non-zero exit. Complex
+   shell programs (including semicolon-separated command lists) execute verbatim
+   with their own shell exit semantics; the instrumented first-failure and
+   clause-level reporting guarantees do not apply to them.
 5. Local reviewer agent (Codex / GPT-5.6 Sol at medium effort) reviews the
    diff against the task inside the hardened container boundary described in
    [Reviewing](reviewing.md);
