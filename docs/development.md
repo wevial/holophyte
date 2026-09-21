@@ -127,6 +127,8 @@ Each module, one line:
 - `holophyte/thread_mentions.py` — latest-comment mentions as PR instructions.
 - `holophyte/thread_findings.py` — structured PR findings, bounded originals,
   and read-only normalization of legacy thread rows.
+- `holophyte/babysit_steps.py` — records PR babysitting step changes without
+  repeating unchanged steps during polling.
 - `holophyte/babysitter.py` — the babysit pass over a pull request: the
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round

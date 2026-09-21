@@ -287,7 +287,7 @@ test("a failed Needs You row opens its named run card with the frozen time box a
   await act(settle);
   expect(asked).toContain(`${BASE}/runs/436`);
   const card = screen.getByRole("article", { name: "run 436" });
-  expect(within(card).getByText(/Round 1 of/)).toBeTruthy();
+  expect(within(card).getByText(/Review 1 of/)).toBeTruthy();
   expect(card.querySelector("[data-timeline]")).not.toBeNull();
   expect(card.querySelector("[data-box]")!.textContent).toBe("20m left in working box · wall 10m");
   fireEvent.keyDown(document.querySelector('[aria-expanded="true"]')!, { key: "Enter" });

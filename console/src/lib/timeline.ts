@@ -75,6 +75,11 @@ const PHASE_KINDS: Record<string, SegmentKind> = {
   blocked_on_operator: "parked",
 };
 
+const STEP_KINDS: Record<string, SegmentKind> = {
+  checks: "wait", quiet: "wait", threads: "review", fix: "fix",
+  conflict_merge: "fix", covering_review: "review", parked: "parked",
+};
+
 /** `FROM -> TO: detail` → `TO`; null when the summary is not that shape. */
 export function phaseAfterArrow(summary: string): string | null {
   const match = /->\s*([a-z_]+)/.exec(summary);
@@ -125,6 +130,14 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
   let phase: string | null = null;
   let prOpen = false;
   for (const change of changes) {
+    if (change.kind === "babysit_step") {
+      const kind = STEP_KINDS[change.summary];
+      if (!kind) continue;
+      close(change.at);
+      prOpen = true;
+      open = { kind, label: change.summary, from: change.at, reason: change.summary };
+      continue;
+    }
     if (change.kind === "pull_request") {
       prOpen = true;
       if (phase !== "merge_gate") continue;
@@ -149,7 +162,7 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
   if (open) {
     // Older event streams can lack the PR-open boundary. Only infer the
     // live tail from the current URL; never recolour an explicit verify.
-    if (live && phase === "merge_gate" && run.pr_url && !open.reason?.includes("pre-merge verify")) {
+    if (live && phase === "merge_gate" && run.pr_url && !STEP_KINDS[open.reason ?? ""] && !open.reason?.includes("pre-merge verify")) {
       open.kind = "wait";
       open.label = phaseLabel(phase, run.pr_url);
     }
@@ -216,7 +229,7 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
  */
 export function buildTimeline(run: TimelineRun, now: number): Segment[] {
   const changes = (run.events ?? [])
-    .filter((event) => event.kind === "phase_change" ||
+    .filter((event) => event.kind === "phase_change" || event.kind === "babysit_step" ||
       (event.kind === "pull_request" && (event.summary.startsWith("pull request open") ||
         event.summary.startsWith("adopted the branch's open pull request"))))
     .sort((a, b) => a.at - b.at);
