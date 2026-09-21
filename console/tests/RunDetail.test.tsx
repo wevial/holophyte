@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Now } from "../src/components/Now";
 import { RunDetail } from "../src/components/RunDetail";
 import { formatClock } from "../src/lib/format";
@@ -650,4 +650,36 @@ test("thread findings lead with summary and verdict and disclose the original on
   expect(card.textContent).toContain("Original analysis.");
   fireEvent.click(screen.getByRole("button", { name: "Hide original comment" }));
   expect(card.textContent).not.toContain("Original analysis.");
+});
+
+test("a contract failure replaces the last good cards with one endpoint and field banner", async () => {
+  let body: unknown = DETAIL;
+  const deps = { fetch: (async (url: string) => Response.json(url.endsWith('/files') ? FILES : body)) as Fetch };
+  const view = render(<RunDetail base={BASE} id={91} now={T} polls={0} deps={deps} />);
+  await act(settle);
+  expect(screen.queryByRole('article', { name: 'run 91' })).not.toBeNull();
+  body = { ...DETAIL, run: { ...DETAIL.run, phase: 42 } };
+  view.rerender(<RunDetail base={BASE} id={91} now={T} polls={1} deps={deps} />);
+  await act(settle);
+  expect(screen.getAllByRole('alert')).toHaveLength(1);
+  expect(screen.getByRole('alert').textContent).toContain(`${BASE}/runs/91`);
+  expect(screen.getByRole('alert').textContent).toContain('run.phase');
+  expect(screen.queryByRole('article', { name: 'run 91' })).toBeNull();
+  expect(document.querySelector('[data-finding]')).toBeNull();
+});
+
+test("the floor names a status contract failure and hides that daemon's old rows", async () => {
+  const { pollPeers } = await import("../src/hooks/usePeers");
+  const { mergeHosts } = await import("../src/lib/hosts");
+  const previous = [hostOf(working, NO_ATTENTION)];
+  const results = await pollPeers(BASE, previous, { fetch: async (url) =>
+    Response.json(url.endsWith("/status") ? { ...working, runs: "changed" } : NO_ATTENTION),
+  });
+  render(<Now hosts={mergeHosts(previous, results, T)} project="all" now={T}
+    deps={{ fetch: async () => new Response("", { status: 404 }) }} />);
+  await act(settle);
+  const floor = screen.getByRole("region", { name: "Floor" });
+  expect(within(floor).getByRole("alert").textContent).toContain(`${BASE}/status at runs`);
+  expect(floor.querySelector("[data-run]")).toBeNull();
+  expect(within(floor).queryByText("Nothing on the floor")).toBeNull();
 });

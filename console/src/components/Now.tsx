@@ -35,7 +35,7 @@ export function Now({
   const toggleRun = (key: string) => setExpandedRun((previous) => (previous === key ? null : key));
   const shown = visibleHosts(hosts, project);
   const daemons: DaemonStatus[] = [];
-  for (const host of shown) if (host.status) daemons.push({ base: host.base, status: host.status, seen_ms: host.seen_ms });
+  for (const host of shown) if (host.status && !host.contract_error) daemons.push({ base: host.base, status: host.status, seen_ms: host.seen_ms });
 
   const ledgers = useLedger(shown, now, polls, deps);
   const served = shown.filter((host) => ledgers[host.address] && !ledgers[host.address]!.absent);
@@ -57,6 +57,7 @@ export function Now({
       )}
       <Floor
         daemons={daemons}
+        contractErrors={shown.filter((host) => host.contract_error).map((host) => host.error!)}
         project={project}
         expandedRun={expandedRun}
         onToggleRun={toggleRun}

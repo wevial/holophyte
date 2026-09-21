@@ -1,52 +1,5 @@
-import type { ThreadFindingFields } from "./findings";
-import type { Instruction } from "./findings";
-
-/** The daemon's `/status` body (holophyte/serve.py `status()`). `project`
- *  and `daemon` arrive with the daemon field ticket, so both are optional. */
-export interface Status {
-  target: string;
-  project?: string;
-  schema_version?: number;
-  host: string;
-  now: number;
-  daemon?: { started_ms: number; pid: number };
-  workers_on_previous_build?: number;
-  active_routes?: Record<string, { command: string | null; fallback?: string }>;
-  supervisor: Supervisor;
-  thresholds: { heartbeat_stale_ms: number; strikes: number };
-  /** Whether `[serve] actions = true` opened the `POST /actions/...`
-   *  routes; a daemon older than the field sends none, read as false. */
-  actions?: boolean;
-  /** Whether `[serve] config_edit = true` opened `GET`/`PUT /config`;
-   *  absent on an older daemon, read as false. */
-  config_edit?: boolean;
-  runs: Run[];
-}
-
-export interface Supervisor {
-  state: "live" | "stale" | "none";
-  pid: number | null;
-  heartbeat_age_ms: number | null;
-  host: string | null;
-}
-
-export interface Run {
-  pr_url?: string | null;
-  id: number;
-  ticket: string;
-  ticket_url?: string | null;
-  phase: string;
-  heartbeat_age_ms: number;
-  elapsed_ms: number;
-  working_ms?: number | null;
-  work_started_ms?: number | null;
-  time_box_ms: number;
-  host: string;
-  title?: string;
-  started_ms?: number;
-  round?: number;
-  strikes?: number;
-}
+import type { z } from "zod";
+import type { statusSchema, supervisorSchema, runSchema, findingSchema, roundSchema, runDetailSchema, runEventSchema } from "./schemas";
 
 /** The daemon's `/attention` body (holophyte/serve.py `attention()`). */
 export interface Attention {
@@ -62,68 +15,6 @@ export interface AttentionItem {
   /** On an item that names a run: the pull request it opened, else null. */
   pr_url?: string | null;
   [key: string]: unknown;
-}
-
-/** One review finding as the daemon decodes it from `reviewRounds.findings`. */
-export interface Finding extends ThreadFindingFields {
-  path: string;
-  line?: number | null;
-  severity: string;
-  criterion?: string;
-  message: string;
-}
-
-/** One review round of `/runs/N`, oldest first on the wire. */
-export interface Round {
-  round: number;
-  started_ms: number;
-  ended_ms: number | null;
-  verdict: "pass" | "changes_requested" | "error" | string;
-  reviewer_model?: string | null;
-  findings: Finding[];
-  instructions?: Instruction[];
-  operator_notes?: { kind: "operator_note"; event_id: number; note: string; author: string }[];
-}
-
-/** The daemon's `/runs/N` body (holophyte/serve.py `run_detail()`). */
-export interface RunDetailBody {
-  run: {
-    id: number;
-    ticket: string;
-    ticket_url?: string | null;
-    title?: string | null;
-    phase: string;
-    attempt?: number;
-    started_ms: number;
-    ended_ms: number | null;
-    elapsed_ms?: number;
-    working_ms?: number | null;
-    work_started_ms?: number | null;
-    outcome?: string | null;
-    time_box_ms: number;
-    branch?: string | null;
-    host: string | null;
-    heartbeat_age_ms?: number | null;
-    merge_sha?: string | null;
-    /** The merge commit's page on origin when the sha has reached it, else null. */
-    commit_url?: string | null;
-    /** The pull request the run opened under PR mode (`runs.prUrl`), else null. */
-    pr_url?: string | null;
-    /** The loop's review-round cap; a body without it falls back to the rounds seen. */
-    max_rounds?: number;
-    approved_at?: number | null;
-    approved_by?: string | null;
-  };
-  findings?: { tone: "advisory"; message: string }[];
-  rounds: Round[];
-  events: RunEvent[];
-}
-
-/** One narrative run event of `/runs/N` (`runEvents` with `level = narrative`). */
-export interface RunEvent {
-  at: number;
-  kind: string;
-  summary: string;
 }
 
 /** One file of `/runs/N/files`: git's status letter and its line counts. */
@@ -215,3 +106,11 @@ export interface BoardBody {
   columns: { state: BoardState; tickets: BoardWireTicket[] }[];
   now: number;
 }
+
+export type Status = z.infer<typeof statusSchema>;
+export type Supervisor = z.infer<typeof supervisorSchema>;
+export type Run = z.infer<typeof runSchema>;
+export type Finding = z.infer<typeof findingSchema>;
+export type Round = z.infer<typeof roundSchema>;
+export type RunDetailBody = z.infer<typeof runDetailSchema>;
+export type RunEvent = z.infer<typeof runEventSchema>;

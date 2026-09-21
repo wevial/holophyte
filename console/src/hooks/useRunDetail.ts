@@ -1,4 +1,5 @@
-import { defaultPollDeps, type Fetch } from "../lib/poll";
+import { runDetailSchema } from "../lib/schemas";
+import { AnswerError, fetchJson, defaultPollDeps, type Fetch } from "../lib/poll";
 import type { RunDetailBody } from "../lib/types";
 import { useRunResource } from "./useRunResource";
 
@@ -14,10 +15,12 @@ export interface RunDetailState {
 /** One `/runs/N`; a 404 is named as the store not having the run. */
 export async function fetchRunDetail(base: string, id: number, fetchImpl: Fetch): Promise<RunDetailBody> {
   const url = `${base}/runs/${id}`;
-  const response = await fetchImpl(url, { headers: { accept: "application/json" } });
-  if (response.status === 404) throw new Error(`run ${id} is not in the store`);
-  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
-  return (await response.json()) as RunDetailBody;
+  try {
+    return await fetchJson(fetchImpl, url, runDetailSchema);
+  } catch (failure) {
+    if (failure instanceof AnswerError && failure.status === 404) throw new Error(`run ${id} is not in the store`);
+    throw failure;
+  }
 }
 
 /**

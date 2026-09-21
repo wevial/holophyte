@@ -1,3 +1,5 @@
+import type { z } from "zod";
+import type { instructionSchema, threadFindingFieldsSchema } from "./schemas";
 import type { LedgerRow } from "./ledger";
 import type { Finding, Round } from "./types";
 
@@ -242,25 +244,5 @@ export function findingsHistory(rounds: Round[], ledger: LedgerRow[]): RoundHist
 }
 
 
-export interface Instruction {
-  kind: "instruction";
-  path: string;
-  line?: number | null;
-  author: string;
-  request: string;
-  url: string;
-  outcome?: "changed" | "kept" | "asked";
-  reply?: string;
-}
-
-/** Named fields on a PR thread; absent on pre-PR reviewer prose. */
-export interface ThreadFindingFields {
-  fingerprint?: { path: string; line?: number | null; severity: string };
-  kind?: "thread" | "finding";
-  author?: string;
-  author_kind?: string;
-  verdict?: string;
-  summary?: string;
-  raw?: string;
-  url?: string;
-}
+export type Instruction = z.infer<typeof instructionSchema>;
+export type ThreadFindingFields = z.infer<typeof threadFindingFieldsSchema>;

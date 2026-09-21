@@ -1,3 +1,4 @@
+import sharedDetail from "../../tests/fixtures/serve/run-detail.json";
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { useRunDetail } from "../src/hooks/useRunDetail";
@@ -12,7 +13,7 @@ const working = await fixture<Status>("working.json");
 afterEach(cleanup);
 
 test("/runs/N is fetched once on expand and once per poll while expanded; collapsing stops it", async () => {
-  const body = { run: { id: 91, started_ms: 0, time_box_ms: 1 }, rounds: [], events: [] } as unknown as RunDetailBody;
+  const body = { ...sharedDetail, run: { ...sharedDetail.run, id: 91 } } as RunDetailBody;
   const requests: string[] = [];
   const polling = stubFetch({ status: working, attention: NO_ATTENTION });
   const spy: Fetch = (url, init) => {
@@ -64,7 +65,7 @@ test("/runs/N is fetched once on expand and once per poll while expanded; collap
 });
 
 test("a failed refresh keeps the last good body and names the failure", async () => {
-  const body = { run: { id: 7 }, rounds: [], events: [] } as unknown as RunDetailBody;
+  const body = { ...sharedDetail, run: { ...sharedDetail.run, id: 7 } } as RunDetailBody;
   let calls = 0;
   const flaky: Fetch = async () => {
     calls += 1;

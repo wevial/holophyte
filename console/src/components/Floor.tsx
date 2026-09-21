@@ -14,6 +14,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
  *  `runKey`, and `renderDetail` fills the open row's slot. */
 export function Floor({
   daemons,
+  contractErrors = [],
   project,
   expandedRun,
   onToggleRun,
@@ -21,6 +22,7 @@ export function Floor({
   deps = defaultPollDeps,
 }: {
   daemons: DaemonStatus[];
+  contractErrors?: string[];
   project: ProjectChoice;
   expandedRun: string | null;
   onToggleRun: (key: string) => void;
@@ -39,8 +41,9 @@ export function Floor({
           {plural(runs, "run")} · {plural(projects, "project")}
         </span>
       </div>
+      {contractErrors.map((error) => <p role="alert" key={error} className="mt-3 text-sm font-semibold text-bad">{error}</p>)}
       {runs === 0 ? (
-        <p className="mt-3 text-[13px] text-muted">Nothing on the floor</p>
+        <p className="mt-3 text-[13px] text-muted">{contractErrors.length ? "Floor data unavailable" : "Nothing on the floor"}</p>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
           {groups

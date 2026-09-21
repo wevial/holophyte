@@ -220,7 +220,7 @@ test("an open merge_lock_wait event labels the phase until its end event", async
   for (const ended of [false, true]) {
     cleanup();
     const events = ended ? [begin, { ...begin, summary: JSON.stringify({ state: "end", holder: 380, waited: 420 }) }] : [begin];
-    const fetch = async () => new Response(JSON.stringify({ run, rounds: [], events }));
+    const fetch = async () => new Response(JSON.stringify({ run: { ...run, ended_ms: null }, rounds: [], events }));
     render(<Floor daemons={on({ ...extended, runs: [run] })} project="all" expandedRun={null} onToggleRun={noop} deps={{ fetch }} />);
     await act(async () => { await settle(); });
     expect(within(rows()[0]!).getByText(ended ? "monitoring PR" : "waiting for merge lock")).toBeTruthy();

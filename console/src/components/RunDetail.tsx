@@ -58,7 +58,7 @@ export function RunDetail({
     <div data-detail className="pr-4 pb-[14px] pl-[44px]">
       {loading && <p className="text-[12px] text-muted">loading…</p>}
       {error && (
-        <p data-detail-error className="text-[12px] font-semibold text-bad">
+        <p role="alert" data-detail-error className="text-[12px] font-semibold text-bad">
           {error}
         </p>
       )}

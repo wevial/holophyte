@@ -1,3 +1,4 @@
+import sharedDetail from "../../tests/fixtures/serve/run-detail.json";
 import { afterEach, expect, test } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import { RunRow } from "../src/components/RunRow";
@@ -19,7 +20,7 @@ test("a collapsed Floor row reads the PR URL from run detail and refreshes it", 
   const urls: string[] = [];
   const deps = { fetch: async (url: string | URL | Request) => {
     urls.push(String(url));
-    return Response.json({ run: { pr_url } });
+    return Response.json({ ...sharedDetail, run: { ...sharedDetail.run, pr_url } });
   } };
   const run = { id: 453, ticket: "KO-453", phase: "merge_gate", heartbeat_age_ms: 0,
     elapsed_ms: 0, time_box_ms: 100, host: "writer" };
