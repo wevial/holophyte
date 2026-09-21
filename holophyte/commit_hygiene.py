@@ -98,7 +98,7 @@ def strip_attribution(target, wt, branch):
     remotes = _git(wt, 'remote').decode().splitlines()
     if 'origin' in remotes:
         # Explicit refspec also covers remotes configured to fetch only main.
-        _git(wt, 'fetch', '--no-tags', 'origin',
+        _git(wt, 'fetch', '--prune', '--no-tags', 'origin',
              '+refs/heads/*:refs/remotes/origin/*')
     commits = _unpublished(wt, tip)
     rewritten = {}

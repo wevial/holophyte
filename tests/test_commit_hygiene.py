@@ -71,6 +71,28 @@ class CommitHygieneTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', tip + '^'), published)
         self.assertEqual(self.git('show', '-s', '--format=%B', tip), message)
 
+    def test_push_prunes_conflicting_stale_tracking_refs_before_cleanup(self):
+        base = self.git('rev-parse', 'main')
+        self.git('push', 'origin', 'main:refs/heads/foo')
+        self.git('fetch', 'origin')
+        # Simulate another clone replacing foo without updating our tracking ref.
+        self.git('update-ref', '-d', 'refs/heads/foo', cwd=self.remote)
+        self.git('update-ref', 'refs/heads/foo/bar', base, cwd=self.remote)
+        self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/foo'), base)
+        original = self.commit('New change' + ATTRIBUTION)
+        tree = self.git('rev-parse', 'HEAD^{tree}')
+
+        pr.push_branch(self.target, 'task')
+
+        tip = self.git('rev-parse', 'task', cwd=self.remote)
+        self.assertNotEqual(tip, original)
+        self.assertEqual(self.git('show', '-s', '--format=%B', tip), 'New change')
+        self.assertEqual(self.git('rev-parse', tip + '^{tree}'), tree)
+        self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/foo/bar'), base)
+        self.assertEqual(self.git('for-each-ref', '--format=%(refname)',
+                                  'refs/remotes/origin/foo'),
+                         'refs/remotes/origin/foo/bar')
+
     def test_disabled_and_custom_patterns(self):
         self.config = {'merge': {'strip_attribution': []}}
         tip = self.commit('Keep this' + ATTRIBUTION)
