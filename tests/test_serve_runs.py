@@ -466,7 +466,30 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertEqual(rnd["instructions"][1]["author"], "maintainer")
         self.assertEqual(rnd["instructions"][1]["request"], "Keep validation")
         self.assertEqual(len(rnd["findings"]), 1)
-        self.assertIn("Handle empty tokens", rnd["findings"][0]["message"])
+        self.assertEqual("handle empty tokens", rnd["findings"][0]["summary"])
+
+    def test_legacy_thread_summary_is_read_without_rewriting_the_row(self):
+        self.seed_reviewed()
+        raw = "- app.py:7 @review-bot[bot]: <details> -- ADDRESS: analysis</details>"
+        finding = dict(path="original.py", line=3, severity="nit", url="https://example.test/thread",
+                       message=raw + " -- ADDRESS: the index keeps a forced file")
+        conn = store.open(str(self.db))
+        try:
+            store.record_review_round(conn, self.run, 3, "changes_requested",
+                                      "github:review-bot[bot]", findings=[finding])
+            before = conn.execute("SELECT * FROM reviewRounds").fetchall()
+            self.start()
+            code, _, body = self.request("GET", f"/runs/{self.run}")
+            self.assertEqual(code, 200)
+            self.assertEqual(body["rounds"][-1]["findings"], [dict(
+                finding, kind="thread", author="review-bot[bot]", author_kind="bot",
+                verdict="ADDRESS", summary="the index keeps a forced file",
+                message="the index keeps a forced file", raw=raw, path="app.py", line=7,
+                fingerprint=dict(path="original.py", line=3, severity="nit"))])
+            self.assertEqual(conn.execute("SELECT * FROM reviewRounds").fetchall(),
+                             before)
+        finally:
+            conn.close()
 
     def test_bot_instructions_read_as_findings_without_changing_stored_rows(self):
         self.seed_reviewed()
@@ -492,7 +515,8 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertEqual(rnd["findings"][0]["author"], "coderabbitai")
         self.assertEqual(rnd["findings"][0]["message"], "Handle empty tokens")
         self.assertNotEqual(rnd["findings"][0].get("kind"), "instruction")
-        self.assertEqual(rnd["findings"][1], legacy)
+        self.assertEqual(rnd["findings"][1]["summary"], "Check tokens")
+        self.assertEqual(rnd["findings"][1]["author_kind"], "bot")
         conn = store.open(str(self.db))
         try:
             after = conn.execute("SELECT * FROM reviewRounds").fetchall()

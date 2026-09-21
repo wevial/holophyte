@@ -32,19 +32,6 @@ import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
-from tests.test_cli_babysit import BabysitCliFixture  # noqa: E402
-
-
-class CliMaintainerThreadTests(BabysitCliFixture, unittest.TestCase):
-    def test_cli_note_becomes_a_pending_maintainer_instruction_after_resume(self):
-        self.cli("--note", "fix the padding")
-        state = self.pending()
-        self.assertEqual(len(state.threads), 1)
-        thread, = state.threads
-        self.assertEqual(thread.author_kind, "maintainer")
-        self.assertEqual(thread.body, "fix the padding")
-        self.assertEqual(thread.author, "operator")
-        self.assertTrue(thread.id.startswith("operator_note:"))
 
 
 class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
@@ -136,7 +123,7 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
             "SELECT findings FROM reviewRounds WHERE round = 2")[0][0])
         self.assertEqual(len(findings), 4)
         for finding, author in zip(findings, authors):
-            self.assertEqual(finding["kind"], "finding")
+            self.assertEqual(finding["kind"], "thread")
             self.assertEqual(finding["author"], author)
             self.assertNotIn("outcome", finding)
         self.assertEqual(findings[-1]["kind"], "instruction")
@@ -257,12 +244,22 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
 
     def test_a_stalled_fix_round_keeps_implementer_output(self):
         self.configure('[merge]\nmode = "pr"\n')
-        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        raw = "<details>analysis chain</details>\n**Forced file**"
+        self.fake_route(states=[self.pr_state([
+            ("src/app.py", 10, ("review-bot", "Bot"), raw)])])
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Reply("THREAD 1: ADDRESS -- the index keeps a forced file"),
                             Idle("reading store/read.py\nstill reading"),
                             provider=self.provider())
 
+        finding, = json.loads(self.read(
+            "SELECT findings FROM reviewRounds WHERE round = 2")[0][0])
+        self.assertEqual(finding, dict(
+            kind="thread", author="review-bot", author_kind="bot", verdict="ADDRESS",
+            summary="the index keeps a forced file",
+            message="the index keeps a forced file",
+            path="src/app.py", line=10, url=self.URL + "#discussion_r1",
+            severity="p2", raw=raw))
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("failed", "failed")])
         self.assertEqual(self.git("rev-parse", BRANCH).strip(),
@@ -754,7 +751,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertNotIn(person[3], goal)
         self.assertNotIn("wevial", goal)
         self.assertNotIn("THREAD 2", goal)
-        # Nothing posted: no reply, no resolve, no fix pushed.
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
         self.assertEqual([c for c in self.recorded() if c.startswith("git")],
                          [f"git push origin {BRANCH}"])
@@ -763,10 +759,7 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
             " WHERE round = 2")
         messages = [f["message"] for f in json.loads(findings)]
         self.assertEqual(len(messages), 2, messages)
-        self.assertIn("src/app.py:30 @wevial", messages[0])
-        self.assertIn("-- HUMAN: opened by a person", messages[0])
-        self.assertIn("src/app.py:10 @review-bot", messages[1])
-        self.assertIn("-- ADDRESS: a real crash", messages[1])
+        self.assertEqual(messages, ["opened by a person", "a real crash"])
         self.assertEqual(route, "github:review-bot+wevial")
         ((ledger,),) = self.read(
             "SELECT text FROM ledger WHERE kind = 'round' AND text LIKE"
@@ -860,9 +853,8 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         ((findings,),) = self.read(
             "SELECT findings FROM reviewRounds WHERE round = 2")
         messages = [f["message"] for f in json.loads(findings)]
-        self.assertIn("-- HUMAN: a person's thread the adjudicator would not"
-                      " address", messages[0])
-        self.assertIn("-- ADDRESS: a real crash", messages[1])
+        self.assertEqual(messages, ["a person's thread the adjudicator would not"
+                                    " address", "a real crash"])
         self.assertEqual(
             self.read("SELECT phase, outcome, prUrl, candidateSha FROM runs"),
             [("awaiting_merge_approval", None, self.URL, fixed)])

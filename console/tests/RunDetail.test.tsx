@@ -631,3 +631,23 @@ test("before any recorded review the header keeps its preview and no chip or fol
   expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("implementing · 1m 00s");
   expect(document.querySelector("[data-round-fold]")).toBeNull();
 });
+
+
+test("thread findings lead with summary and verdict and disclose the original on demand", async () => {
+  await mount({ ...DETAIL, rounds: [{ ...DETAIL.rounds[1]!, findings: [{
+    kind: "thread", path: "app.py", line: 7, severity: "nit", author: "review-bot",
+    author_kind: "bot", verdict: "ADDRESS", summary: "the index keeps a forced file",
+    message: "the index keeps a forced file", raw: "<details>Original analysis. </details>".repeat(200),
+    url: "https://example.test/thread",
+  }] }] }, T + 20 * MINUTE);
+  const card = document.querySelector("[data-finding]")!;
+  expect(card.textContent).toContain("the index keeps a forced file");
+  expect(card.querySelector("[data-verdict]")!.textContent).toBe("ADDRESS");
+  expect(card.querySelector("[data-author]")!.textContent).toContain("review-bot");
+  expect(card.querySelector("[data-location]")!.textContent).toBe("app.py:7");
+  expect(card.textContent).not.toContain("Original analysis.");
+  fireEvent.click(screen.getByRole("button", { name: "Show original comment" }));
+  expect(card.textContent).toContain("Original analysis.");
+  fireEvent.click(screen.getByRole("button", { name: "Hide original comment" }));
+  expect(card.textContent).not.toContain("Original analysis.");
+});

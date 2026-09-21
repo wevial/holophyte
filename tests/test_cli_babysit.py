@@ -95,3 +95,15 @@ class BabysitCliTests(BabysitCliFixture, unittest.TestCase):
         ).fetchone(), ("ready",))
         self.assertTrue(out.endswith("for another look"), out)
         self.assertEqual(self.pending().threads, ())
+
+
+class CliMaintainerThreadTests(BabysitCliFixture, unittest.TestCase):
+    def test_cli_note_becomes_a_pending_maintainer_instruction_after_resume(self):
+        self.cli("--note", "fix the padding")
+        state = self.pending()
+        self.assertEqual(len(state.threads), 1)
+        thread, = state.threads
+        self.assertEqual(thread.author_kind, "maintainer")
+        self.assertEqual(thread.body, "fix the padding")
+        self.assertEqual(thread.author, "operator")
+        self.assertTrue(thread.id.startswith("operator_note:"))
