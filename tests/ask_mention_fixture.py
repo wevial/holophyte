@@ -1,11 +1,14 @@
 """Behavioral witnesses for explicit read-only pull request questions."""
 
+import io
 import json
+import subprocess
+from unittest.mock import patch
 
-from fake_agent import Commit, Idle, Reply
+from fake_agent import APPROVE, Commit, Idle, Reply
 from loop_fixture import BRANCH
 
-from holophyte import pr, thread_mentions
+from holophyte import agents, operator, pr, thread_mentions
 
 
 class AskMentionCases:
@@ -83,7 +86,8 @@ class AskMentionCases:
         calls = self.api_calls()
         self.assertEqual(
             [k for k, _ in calls],
-            ["state", "conversation" if conversation else "reply"],
+            (["state", "conversation"] if conversation
+             else ["state", "reply", "resolve"]),
         )
         body = calls[1][1]["body"]
         self.assertIn("---- Comment by ", body)
@@ -98,6 +102,27 @@ class AskMentionCases:
         self.assertEqual(record["outcome"], "asked")
         self.assertIn(record["reply"], body)
         self.assertFalse(any("push " in c for c in self.recorded()[calls_before:]))
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), sha)
+
+        node = state["data"]["repository"]["pullRequest"]
+        if conversation:
+            node["comments"]["nodes"].append(
+                self.comment(2, ("writer", "User"), body))
+        else:
+            review = node["reviewThreads"]["nodes"][0]
+            review["comments"]["nodes"].append(
+                self.comment(2, ("writer", "User"), body))
+            review["isResolved"] = any(k == "resolve" for k, _ in calls)
+            node["mergeable"] = "MERGEABLE"
+        operator.babysit_ticket(self.tgt, "KO-131", operator.BABYSIT_DEFAULT_NOTE,
+                                out=io.StringIO())
+        self.serve(state)
+        again, _ = self.loop(provider=self.provider())
+        self.assertEqual(again.roles, [])
+        self.assertEqual(len([k for k, _ in self.api_calls()
+                              if k in ("reply", "conversation")]), 1)
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM runEvents WHERE kind = 'instruction'"), [(1,)])
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), sha)
 
     def mixed_mentions(self):
@@ -127,3 +152,50 @@ class AskMentionCases:
             if f.get("kind") == "instruction"
         ]
         self.assertEqual([f["outcome"] for f in findings], ["changed"])
+
+    def initial_auto_ask(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([
+            ("src/app.py", 30, ("operator", "User"), "@holophyte ask: Why?")])])
+        fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
+                            Reply("See src/app.py:30. No change warranted."),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual([k for k, _ in self.api_calls()],
+                         ["state", "reply", "resolve", "merge"])
+
+    def failed_ask(self, result):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        state = self.conversation_state(("operator", "User"), "@holophyte ask: Why?")
+        self.resume_with_conversation(state)
+        sha = self.git("rev-parse", BRANCH).strip()
+
+        class FailedAnswer:
+            role = Reply.role
+
+            def play(self, cwd, turn):
+                kwargs = ({"side_effect": result} if isinstance(result, Exception)
+                          else {"return_value": result})
+                with patch("holophyte.agents.run_capped", **kwargs):
+                    return agents.configured_review(
+                        ["reviewer"], cwd, 1800, {}, "adjudicate", "reviewer")
+
+        fake, _ = self.loop(FailedAnswer(), provider=self.provider())
+        self.assertEqual(fake.roles, ["adjudicate"])
+        self.assertEqual([k for k, _ in self.api_calls()], ["state"])
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM runEvents WHERE kind = 'instruction'"), [(0,)])
+        self.assertEqual(self.read(
+            "SELECT outcome, outcomeClass FROM runs ORDER BY id DESC LIMIT 1"),
+            [("failed", "infra")])
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), sha)
+
+    def nonzero_ask(self):
+        self.failed_ask((1, "Could not read checkout"))
+
+    def timed_out_ask(self):
+        self.failed_ask(subprocess.TimeoutExpired("reviewer", 1800))
+
+    def empty_ask(self):
+        self.failed_ask((0, "  \n"))

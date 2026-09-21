@@ -40,6 +40,10 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
                                  MergeModeFixture):
     """Thread judgment, bot policy, operator notes, and fix rounds."""
     test_mention_intents = AskMentionCases.mention_intents
+    test_initial_auto_ask = AskMentionCases.initial_auto_ask
+    test_nonzero_ask = AskMentionCases.nonzero_ask
+    test_timed_out_ask = AskMentionCases.timed_out_ask
+    test_empty_ask = AskMentionCases.empty_ask
     test_ask_pass = AskMentionCases.ask_pass
     test_mixed_mentions = AskMentionCases.mixed_mentions
 
@@ -533,7 +537,6 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
                       + fake.turns[2].candidate_sha[:12] + " asked for changes",
                       self.question())
 
-
     def test_the_review_of_a_fix_is_held_to_the_criteria(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
@@ -560,7 +563,6 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
             self.read("SELECT verdict FROM reviewRounds WHERE round = 4"),
             [("changes_requested",)])
         self.assertIn("CRITERION 1: unwitnessed", self.question())
-
 
     def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
         self.configure('[merge]\nmode = "pr"\n')
@@ -621,7 +623,6 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
         self.assertIn(self.NIT[3], question)
         self.assertNotIn(self.DEFECT[3], question)
 
-
     def test_a_fix_round_that_leaves_edits_is_not_pushed_or_resolved(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])
@@ -651,7 +652,6 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
             "SELECT outcome, outcomeReason FROM runs")
         self.assertEqual(outcome, "failed")
         self.assertIn("uncommitted", reason)
-
 
     def test_a_thread_follow_up_reaches_the_adjudicator_and_the_question(self):
         self.configure('[merge]\nmode = "pr"\n')

@@ -62,10 +62,11 @@ def transport_failure(exit_code, output):
 class AgentOutput(str):
     """Turn text retaining the dispatched route for outage classification."""
 
-    def __new__(cls, output, command, *, timed_out=False):
+    def __new__(cls, output, command, *, timed_out=False, exit_code=0):
         result = super().__new__(cls, output)
         result.command = command
         result.timed_out = timed_out
+        result.exit_code = exit_code
         return result
 
 
@@ -434,11 +435,11 @@ def review_worktrees(repo, env=None):
 def configured_review(cmd, cwd, cap, env, role, command):
     """Turn the group cap into a reviewer failure eligible for route fallback."""
     try:
-        _, output = run_capped(cmd, cwd, cap, env=env)
+        code, output = run_capped(cmd, cwd, cap, env=env)
     except subprocess.TimeoutExpired:
         message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
         return AgentOutput(message, command, timed_out=True)
-    return AgentOutput(output.strip(), command)
+    return AgentOutput(output.strip(), command, exit_code=code)
 
 
 # Exact substrings emitted by the supported routes. Keep causes here so the

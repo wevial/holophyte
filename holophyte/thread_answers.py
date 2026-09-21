@@ -2,7 +2,8 @@
 import store
 from holophyte import babysitter, pr
 from holophyte.agents import agent_route
-from holophyte.conversation_comments import quote_request
+from holophyte.conversation_comments import ASK_REPLY_MARKER, quote_request
+from holophyte.gates import InfraFailure
 from holophyte.redact import known_secrets, outbound
 from holophyte.runs import heartbeat_while
 from store.instructions import record_instruction_reply
@@ -25,17 +26,22 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
             reply = agent(target, "adjudicate", prompt, wt, conn=conn,
                           base_sha=sh(["git", "merge-base", "main", sha], cwd=wt),
                           candidate_sha=sha, run_id=run_id)
-        body = babysitter.COMMENT_HEADER.format(
-            model=agent_route(target, "adjudicate")) + "\n\n" + reply
-        post(target, conn, run_id, beat_s, pull, thread, body, resolve=False,
+        if (getattr(reply, "timed_out", False)
+                or getattr(reply, "exit_code", 0) != 0 or not reply.strip()):
+            raise InfraFailure("ask adjudicator failed or returned an empty answer")
+        header = babysitter.COMMENT_HEADER.format(
+            model=agent_route(target, "adjudicate"))
+        body = f"{header}\n\n{ASK_REPLY_MARKER}\n{reply}"
+        post(target, conn, run_id, beat_s, pull, thread, body, resolve=True,
              instruction=dict(kind="instruction", path=thread.path or "(no file)",
                               line=thread.line, author=thread.comments[-1].author,
                               request=thread.request, url=thread.url))
     remaining = tuple(t for t in threads if t not in asks)
     if asks and not remaining:
         why = previous_park_reason(conn, run_id, branch)
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                    why, (), reviewed=reviewed)
+        if why is not None:
+            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+                        why, (), reviewed=reviewed)
     return remaining
 
 
@@ -51,8 +57,7 @@ def previous_park_reason(conn, run_id, branch):
         if row:
             note = row[0].split(" -> awaiting_merge_approval: ", 1)[1]
             return note.rsplit("; " + branch + " at ", 1)[0]
-    return ('ready to merge; waiting for a human to say merge '
-            '([merge] approve = "human")')
+    return None
 
 
 def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=None):
