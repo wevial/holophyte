@@ -10,6 +10,24 @@ LEGACY = re.compile(r" -- (?:MENTIONED: )?(ADDRESS|DECLINE|HUMAN|FOLLOW_UP): ")
 AUTHOR = re.compile(r"^- (.*?) @([^:]+):")
 
 
+def headline(text):
+    """Extract a short visible headline from a bot's unadjudicated comment."""
+    text = re.sub(r"<!--.*?-->|<!--", "", text, flags=re.S)
+    text = re.sub(r"<details\b[^>]*>.*?</details\s*>|<details\b[^>]*>",
+                  "", text, flags=re.S | re.I)
+    # Bot category banners use single emphasis, sometimes separated by pipes.
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    lines = [line for line in lines if re.sub(
+        r"(?<!\*)\*(?!\*)[^*]+\*(?!\*)|(?<!_)_(?!_)[^_]+_(?!_)",
+        "", line).strip(" |")]
+    bold = re.search(r"\*\*(.+?)\*\*|__(.+?)__", "\n".join(lines), re.S)
+    title = (bold[1] or bold[2]) if bold else next(iter(lines), "")
+    title = " ".join(title.split())
+    if len(title) > 200:
+        title = title[:201].rsplit(" ", 1)[0][:200]
+    return title
+
+
 def bounded_raw(text):
     """Redact before cutting so a partial secret cannot escape redaction."""
     text = outbound(text)
@@ -39,8 +57,8 @@ def normalize_thread(finding, bot_logins):
         return finding
     message = finding.get("message", "")
     if finding.get("kind") == "finding" and finding.get("author"):
-        summary = finding.get("request", message)
-        return dict(finding, kind="thread", verdict="ADDRESS", summary=summary,
+        summary = headline(finding.get("request", message))
+        return dict(finding, kind="thread", summary=summary,
                     message=summary, raw=bounded_raw(message),
                     author_kind="bot" if bot_author(finding["author"], bot_logins)
                     else "unknown", url=finding.get("url", ""))
