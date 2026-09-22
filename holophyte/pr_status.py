@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from holophyte.config_tables import merge_config
 from holophyte.conversation_comments import conversation_threads
 from holophyte.gates import InfraFailure
 from holophyte.pr import (
@@ -17,8 +18,9 @@ from holophyte.pr import (
     graphql,
     rest,
 )
-from holophyte.pr_activity import ACTIVITY_FIELDS, activities
+from holophyte.pr_activity import ACTIVITY_FIELDS, HEADER, activities
 from holophyte.pr_contexts import CONTEXTS_FIELDS, status_contexts_of
+from holophyte.thread_mentions import classify
 
 # The shape of a pull request URL, `gh pr create`'s and the API's alike; the
 # host is kept so an Enterprise PR is answered on its own API.
@@ -208,26 +210,29 @@ def parse_pr_url(url):
 
 
 def pr_state(target, pull):
-    """One read of the pull request: its unresolved review threads, the
-    head commit's check rollup, its `mergeable` answer, its `updatedAt`,
+    """One read of the pull request: its unresolved review threads (and
+    resolved ones a new mention reopened, `_reopened()`), the head
+    commit's check rollup, its `mergeable` answer, its `updatedAt`,
     and whether it is already merged or closed."""
     first_page = node = _pull_request_page(target, pull, None)
     threads = []
     while True:
         page = node.get("reviewThreads") or {}
         for t in (page.get("nodes") or ()):
-            if not isinstance(t, dict) or t.get("isResolved"):
+            if not isinstance(t, dict):
                 continue
             comments = _comments_of(target, pull, t)
             if not comments:
                 continue
             first, *rest = comments
-            threads.append(Thread(
+            thread = Thread(
                 id=t.get("id") or "", path=t.get("path") or "",
                 line=t.get("line"), author=first.author, body=first.body,
                 url=_comment_url(t) or pull.url,
                 outdated=bool(t.get("isOutdated")), replies=tuple(rest),
-                author_kind=first.author_kind))
+                author_kind=first.author_kind)
+            if not t.get("isResolved") or _reopened(target, thread):
+                threads.append(thread)
         info = page.get("pageInfo") or {}
         if not (info.get("hasNextPage") and info.get("endCursor")):
             break
@@ -240,6 +245,17 @@ def pr_state(target, pull):
         except InfraFailure:
             runs = None
     return _state_of(first_page, threads, runs, required)
+
+
+def _reopened(target, thread):
+    """A resolved thread still speaks to the factory when its latest
+    comment is not the factory's own and mentions it from an authorised
+    account: resolving after an answer does not end the conversation."""
+    if HEADER.match(thread.comments[-1].body):
+        return False
+    merge = merge_config(target)
+    return classify(thread, merge.mention_handle,
+                    merge.mention_accounts).classification == "MENTIONED"
 
 
 def _check_reads(target, pull, sha):
