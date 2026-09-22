@@ -25,6 +25,7 @@ from pathlib import Path
 import review_runner
 from holophyte import isolation
 from holophyte.agent_routes import route_prose, routes, safe_command
+from holophyte.agent_turns import recorded_turn
 from holophyte.config import (
     AGENT_CONFIG_KEYS,
     DEFAULT_IMPLEMENTER,
@@ -62,9 +63,10 @@ def transport_failure(exit_code, output):
 class AgentOutput(str):
     """Turn text retaining the dispatched route for outage classification."""
 
-    def __new__(cls, output, command, *, timed_out=False):
+    def __new__(cls, output, command, *, timed_out=False, exit_code=0):
         result = super().__new__(cls, output)
         result.command = command
+        result.exit_code = None if timed_out else exit_code
         result.timed_out = timed_out
         return result
 
@@ -329,8 +331,8 @@ def writer_turn(target, goal, cwd, timeout, on_start):
     with review_scratch(cwd) as scratch:
         env = dict(os.environ, HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
         hook = {"on_start": on_start} if on_start is not None else {}
-        _, output = run_capped(cmd, cwd, cap, env=env, **hook)
-    return AgentOutput(output.strip(), shlex.join(cmd[:-1]))
+        code, output = run_capped(cmd, cwd, cap, env=env, **hook)
+    return AgentOutput(output.strip(), shlex.join(cmd[:-1]), exit_code=code)
 
 
 def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
@@ -338,18 +340,25 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     """Account for one role call, including timeout and exceptional returns."""
     from store.working import working
 
+    requested_role = role
     role = effective_role(target, role)
     with working(conn, run_id):
         if role == "write":
-            return writer_turn(target, goal, cwd, timeout, on_start)
+            return recorded_turn(target, requested_role, role, conn, run_id,
+                                 lambda: writer_turn(
+                                     target, goal, cwd, timeout, on_start))
         record_pending_switch(target, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn, run_id=run_id)
-        output = _agent(target, role, goal, cwd, **kwargs)
+
+        def launch():
+            return recorded_turn(target, requested_role, role, conn, run_id,
+                                 lambda: _agent(target, role, goal, cwd, **kwargs))
+        output = launch()
         command = getattr(output, "command", agent_route(target, role))
         reason = outage_reason(command, output)
         if reason and activate_fallback(target, role, reason, conn, run_id):
-            return _agent(target, role, goal, cwd, **kwargs)
+            return launch()
         return output
 
 
@@ -490,11 +499,11 @@ def review_worktrees(repo, env=None):
 def configured_review(cmd, cwd, cap, env, role, command):
     """Turn the group cap into a reviewer failure eligible for route fallback."""
     try:
-        _, output = run_capped(cmd, cwd, cap, env=env)
+        code, output = run_capped(cmd, cwd, cap, env=env)
     except subprocess.TimeoutExpired:
         message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
         return AgentOutput(message, command, timed_out=True)
-    return AgentOutput(output.strip(), command)
+    return AgentOutput(output.strip(), command, exit_code=code)
 
 
 # Exact substrings emitted by the supported routes. Keep causes here so the

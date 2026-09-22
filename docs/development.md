@@ -25,6 +25,7 @@ Each module, one line:
 - `holophyte/gates.py` — the verify gate: a ticket's command in, a red or
   green fail-loud report out.
 - `holophyte/agent_routes.py` — process-owned route state and live console snapshots.
+- `holophyte/agent_turns.py` — per-turn command labels, timing and run events.
 - `holophyte/isolation.py` — host/container implementer launch seam, validated
   isolation settings, credential boundary and container cleanup.
 - `holophyte/isolation_git.py` — Git metadata validation and atomic object copying.

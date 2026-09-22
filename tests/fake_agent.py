@@ -172,7 +172,7 @@ class FakeAgent:
 
     Patch it over the real callable — `patch.object(holophyte.loop, "agent", fake)` —
     and the loop runs unchanged with no agent process anywhere in it. The
-    turns it was asked for are kept in order, so a test can assert the flow
+    effective seats it dispatched are kept in order, so a test can assert the flow
     the loop actually walked rather than the flow the script hoped for.
     """
 
@@ -183,6 +183,9 @@ class FakeAgent:
 
     def __call__(self, target, role, goal, cwd, *, base_sha=None, conn=None,
                  candidate_sha=None, timeout=None, on_start=None, run_id=None):
+        # Like agent(), dispatch the requested turn through its effective seat.
+        from holophyte.agents import effective_role
+        role = effective_role(target, role)
         n = len(self.turns) + 1
         if not self.script:
             raise ScriptError(f"script exhausted: the loop asked for a {role!r}"
@@ -206,7 +209,7 @@ class FakeAgent:
 
     @property
     def roles(self):
-        """The turn sequence the loop asked for, e.g. `['implement', 'review']`."""
+        """The dispatched seat sequence, e.g. `['implement', 'review']`."""
         return [turn.role for turn in self.turns]
 
 

@@ -486,9 +486,9 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *, role="implemen
     # The sweep's hook: a beat that finds the run ended kills the turn's
     # whole process group, the same kill the budget sends, and the block
     # raises `RunSwept` for `run_task()` once the turn has stopped.
-    from holophyte.agents import effective_role, record_session
+    # Preserve the requested role for turn attribution; agent() owns routing.
+    from holophyte.agents import record_session
     session_role = role
-    role = effective_role(target, role)
     kill = GroupKill()
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
