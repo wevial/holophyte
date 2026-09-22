@@ -34,6 +34,7 @@ python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run p
 python3 factory.py --babysit KO-n [--note TEXT] /path/to/repo # look at a parked run's pull request again
 python3 factory.py /path/to/repo --pause KO-n --note TEXT # stop at the next safe point
 python3 factory.py /path/to/repo --resume KO-n # continue a paused run
+python3 factory.py /path/to/repo --abort KO-n --note TEXT # end a run now, preserving its work
 python3 factory.py --repoint KO-n SHA --note TEXT /path/to/repo # move a parked candidate to a rebuilt branch tip
 python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # record a change landed outside the factory
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo

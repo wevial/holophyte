@@ -249,6 +249,18 @@ class PauseStatusTests(ServeTestCase):
                                        (self.run,)).fetchone()[0])
 
 
+    def test_pending_abort_supersedes_a_pause_in_status(self):
+        self.seed()
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        store.pause(conn, self.run, "reboot writer")
+        store.abort(conn, self.run, "host going down")
+        self.start()
+        _, _, body = self.request("GET", "/status")
+        run = next(r for r in body["runs"] if r["id"] == self.run)
+        self.assertEqual((run["stop_action"], run["stop_requested"]),
+                         ("abort", "host going down"))
+
 class PullRequestTitleTests(ServeTestCase):
     """KO-622: the `pr_open` item names the pull request by the title the
     reconcile's read recorded, and the ticket by its own title."""

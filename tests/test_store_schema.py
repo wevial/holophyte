@@ -1246,7 +1246,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
         after['runs'] = [tuple(value for column, value in zip(columns, row)
                                if column not in {'parkKind', 'failureKind',
-                                                 'stopRequested',
+                                                 'stopRequested', 'workerPid',
                                                  'prSeenTitle'})
                          for row in after['runs']]
         self.assertEqual(after, self.before)

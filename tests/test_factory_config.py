@@ -13,7 +13,7 @@ import time
 import tomllib
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import holophyte.agents
 import holophyte.claim
@@ -588,7 +588,7 @@ class AgentCommandTests(ConfigTestCase):
                                         run_id=None)
         run.assert_called_once_with(
             ["my-reviewer", "--diff", "review it"],
-            self.WORKTREE, 1800,
+            self.WORKTREE, 1800, on_start=ANY,
             env=dict(os.environ, HOLOPHYTE_REVIEW_CANDIDATE="refs/review/candidate",
                      HOLOPHYTE_REVIEW_SCRATCH="/scratch"),
         )

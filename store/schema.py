@@ -144,6 +144,9 @@ CREATE TABLE IF NOT EXISTS runs (
     -- place "where is this run executing" can be answered from. Nullable:
     -- rows older than the column are not backfilled.
     host              TEXT,
+    -- The pid of the process that claimed the run and works it on `host`,
+    -- so `--abort` can tell a dead worker from a live one (KO-592).
+    workerPid         INTEGER,
     -- §5's "re-enters the phase it left": the phase a parked run goes back
     -- to, written by whoever parks it and consumed by `resume()`. Not a
     -- state-model field — the doc states the rule and leaves the mechanism
@@ -467,6 +470,7 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
     ("runs", "stopRequested", "stopRequested INTEGER REFERENCES interventions(id)"),
+    ("runs", "workerPid", "workerPid INTEGER"),
     ("runs", "parkKind", "parkKind TEXT "
      + _enums.check_clause("parkKind", _enums.ParkKind)),
     ('runs', 'failureKind', 'failureKind TEXT '
@@ -749,7 +753,8 @@ def _widen_interventions_action(conn):
                          "'restart_supervisor'", "'launch_loop'",
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
                          "'migrate'", "'hold'", "'release_hold'",
-                         "'register_project'", "'disable'", "'pause'")):
+                         "'register_project'", "'disable'", "'pause'",
+                         "'abort'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —

@@ -93,3 +93,6 @@ for phase in ('claimed', 'working', 'verifying', 'reviewing', 'addressing',
     BASELINE['RUN_PHASE_TRANSITIONS'][phase] |= {'paused'}
 BASELINE['RUN_PHASE_TRANSITIONS']['paused'] = frozenset({
     'working', 'verifying', 'reviewing', 'addressing', 'merge_gate', 'merging'})
+
+# KO-592: an emergency stop shares the request column with a distinct action.
+BASELINE['INTERVENTION_ACTIONS'] += ('abort',)

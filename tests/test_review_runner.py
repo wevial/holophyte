@@ -419,6 +419,65 @@ class ContainerLifetimeTests(unittest.TestCase):
                 review_runner.stray_containers()
 
 
+class AbortedReviewTests(unittest.TestCase):
+    """KO-592: an operator's abort ends a default-route review in one beat."""
+
+    setUp = ContainerLifetimeTests.setUp
+    recorded = ContainerLifetimeTests.recorded
+
+    def test_an_abort_kills_the_container_client_and_removes_the_container(self):
+        import threading
+
+        import holophyte.agents
+        import holophyte.target
+        import store
+        import store.tickets
+        from holophyte.stop import Aborted
+        base, candidate = two_commit_repo(self.root / "repo")
+        (self.root / "auth.json").write_text("{}")
+        env = dict(self.env, HOLOPHYTE_HOME=str(self.root / "home"))
+        with patch.dict(os.environ, env):
+            target = holophyte.target.Target.locate(self.root / "repo")
+            target.store_path.parent.mkdir(parents=True)
+            (target.store_path.parent / "config.toml").write_text(
+                "[supervisor]\nheartbeat_stale_min = 0.05\n")
+            target = holophyte.target.Target.locate(self.root / "repo")
+            conn = store.open(str(target.store_path))
+            self.addCleanup(conn.close)
+            project = store.tickets.ensure_project(conn, "team", target.path)
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id="i", linear_identifier="KO-1",
+                title="t", acceptance_criteria=["c"], verification_commands=["true"])
+            store.tickets.transition(conn, ticket, "in_flight")
+            run = store.claim(conn, project, ticket)
+            started, asked = Path(self.env["HOLOPHYTE_DOCKER_STARTED"]), []
+
+            def abort_once_running():
+                while not started.exists():
+                    time.sleep(0.05)
+                other = store.open(str(target.store_path))
+                try:
+                    store.abort(other, run, "host going down")
+                finally:
+                    other.close()
+                asked.append(time.monotonic())
+
+            threading.Thread(target=abort_once_running, daemon=True).start()
+            root = self.root
+            with patch.object(review_runner, "SCRATCH_ROOT", root / "reviews"), \
+                    patch.object(review_runner, "CODEX_AUTH", root / "auth.json"), \
+                    self.assertRaises(Aborted):
+                holophyte.agents.agent(target, "review", "review", target.path,
+                                       base_sha=base, candidate_sha=candidate,
+                                       conn=conn, run_id=run)
+        # One 1.5 s beat, not the shim's ten-second container.
+        self.assertLess(time.monotonic() - asked[0], 1.5 + 1)
+        name = next(line.split()[line.split().index("--name") + 1]
+                    for line in self.recorded() if line.startswith("run "))
+        self.assertIn(f"rm --force {name}", self.recorded())
+        self.assertEqual(conn.execute("SELECT outcome FROM runs").fetchone(),
+                         ("abandoned",))
+
 class ContainerCommandTests(unittest.TestCase):
     def test_script_creates_the_temp_directory_and_keeps_tmp_noexec(self):
         with tempfile.TemporaryDirectory() as tmp:

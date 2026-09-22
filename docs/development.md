@@ -44,7 +44,8 @@ Each module, one line:
   read-only query over the store that claims no ticket, cuts no worktree and
   calls no one.
 - `holophyte/run.py` — the frozen claimed run and the shared landing entry point.
-- `holophyte/stop.py` — cooperative pause requests and durable continuations.
+- `holophyte/stop.py` — cooperative pause requests, operator aborts and durable
+  continuations.
 - `holophyte/runs.py` — the store seam: a run's progress as store rows.
 - `holophyte/board.py` — Linear as the notice board: the ticket mirror, its
   pushes, `--file-ticket` and the escalation. Ticket status lives in the
