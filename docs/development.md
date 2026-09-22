@@ -9,6 +9,7 @@ The `holophyte/` package is the factory; `factory.py` is its entry point.
 Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
+- `holophyte/cli_project.py` — project registration, listing and admission commands.
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
   `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
@@ -164,9 +165,12 @@ The store is its own package:
 - `store/operate.py` — the operator API: `release()`/`resume()`/
   `requeue()`/`repoint()`/`approve()`/`babysit()`, `record_intervention()`
   and the `runEvents` writers, re-exported from the package.
+- `store/failure_kinds.py` — prefix-only backfill for historical run failures.
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.
+- `store/project_paths.py` — canonical project identity reads that require operator
+  repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3
   `TICKET_TRANSITIONS` table and `transition()`/`walk_ticket()`,
   `mirror_ticket`, §2's `pickable()`/`pickable_tickets()` and the Mermaid
@@ -177,6 +181,8 @@ The store is its own package:
   project-owned startup evidence before a first claim (KO-466).
 - `store/working.py` — persisted work intervals, finally-safe settlement and
   non-mutating effective-work reads; excludes orchestration waits.
+- `store/writes.py` — named transactional writes for board state, questions,
+  pull request metadata, outcome reasons and board ask timestamps.
 - `store/read.py` — typed read views over the store: one query, one row
   type, no SQL elsewhere.
 

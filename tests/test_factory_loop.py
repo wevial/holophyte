@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.test_factory_loop` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
+from failure_kind_fixture import FailureKindCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     FAIL,
@@ -63,7 +64,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
-class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
+class LoopTests(FailureKindCases, ReviewSessionCases, FixSessionCases, LoopFixture):
     def test_illegal_phase_is_infrastructure_failure_and_preserves_work(self):
         original = store.set_phase
 
@@ -342,6 +343,8 @@ class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
                   Commit("fix round 1"), REQUEST_CHANGES,
                   Commit("fix round 2"), MALFORMED)
 
+        self.assertEqual(self.read("SELECT failureKind FROM runs"),
+                         [("review_route",)])
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertIn(BRANCH, self.branches())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
@@ -602,6 +605,7 @@ class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
         self.assertEqual(
             self.read("SELECT outcome, outcomeClass, outcomeReason FROM runs"),
             [("failed", "infra", "the reviewer container did not start")])
+        self.assertEqual(self.read("SELECT failureKind FROM runs"), [("infra",)])
         self.assertEqual(self.status(), "in_flight")
 
     def test_infra_failures_alone_never_block_the_ticket(self):
@@ -1103,6 +1107,7 @@ class GateConflictImplementerTests(LoopFixture):
                     self.tgt, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
+        self.assertEqual(failed.exception.failure_kind, "budget")
         self.assertEqual(
             str(failed.exception),
             f"merging main into {branch} conflicted on: README.md;"
@@ -1268,6 +1273,7 @@ class NoCommitOutputTests(LoopFixture):
         seen = self.removals_seen()
 
         self.loop(IdleThenTimeout(message))
+        self.assertEqual(self.read("SELECT failureKind FROM runs"), [("budget",)])
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())

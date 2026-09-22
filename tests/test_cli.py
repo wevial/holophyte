@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,6 +74,57 @@ class RepointFlagTests(unittest.TestCase):
         return self.conn.execute(
             "SELECT candidateSha FROM runs WHERE id = ?",
             (self.run,)).fetchone()[0]
+
+    def test_project_commands_list_and_admission(self):
+        def command(*args):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                holophyte.cli.cli(["project", *args, "--store",
+                                   str(self.target.store_path)])
+            return out.getvalue()
+        store.ensure_project(self.conn, "team-2", self.root / "aaa")
+        third = store.ensure_project(self.conn, "team-3", self.root / "zzz")
+        command("hold", "aaa", "--note", "waiting")
+        command("disable", "zzz", "--note", "retired")
+        lines = command("list").splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertIn("aaa", lines[0])
+        self.assertIn("held", lines[0])
+        self.assertIn("waiting", lines[0])
+        self.assertIn("enabled", lines[1])
+        self.assertIn(str(self.run), lines[1])
+        self.assertIn("disabled", lines[2])
+        self.assertIn("retired", lines[2])
+        command("enable", "zzz")
+        self.assertEqual(self.conn.execute(
+            "SELECT admission FROM projects WHERE id = ?", (third,)
+        ).fetchone(), ("enabled",))
+
+    def test_project_add_registers_once_without_runs(self):
+        repo = self.root / "fresh"
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        target = holophyte.target.Target.locate(repo)
+        with self.assertRaisesRegex(SystemExit, "configuration naming a team"):
+            holophyte.cli.cli(["project", "add", str(repo)])
+        self.assertFalse(target.store_path.exists())
+        with self.assertRaisesRegex(SystemExit, "not a repository root"):
+            holophyte.cli.cli(["project", "add", str(self.root / "missing")])
+        target.holo_dir.mkdir(parents=True)
+        target.config_path.write_text('[board]\nteam = "fresh-team"\n'
+                                      'project_id = "fresh-project"\n')
+        with contextlib.redirect_stdout(io.StringIO()):
+            holophyte.cli.cli(["project", "add", str(repo)])
+        conn = open_store(target)
+        self.addCleanup(conn.close)
+        self.assertEqual(conn.execute(
+            "SELECT repoPath, admission FROM projects").fetchall(),
+            [(str(repo), "enabled")])
+        self.assertEqual(conn.execute("SELECT count(*) FROM runs").fetchone(), (0,))
+        self.assertEqual(conn.execute(
+            "SELECT action FROM interventions WHERE projectId IS NOT NULL"
+        ).fetchall(), [("register_project",)])
+        with self.assertRaisesRegex(SystemExit, "project 1 already registered"):
+            holophyte.cli.cli(["project", "add", str(repo)])
 
     def test_note_is_required(self):
         self.park()

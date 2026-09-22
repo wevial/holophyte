@@ -36,10 +36,43 @@ class StoreEnumTests(unittest.TestCase):
                          {key: previous[key] for key in unchanged})
         self.assertEqual(actual['interventions', 'action'],
                          previous['interventions', 'action'][:-2]
-                         + ", 'hold', 'release_hold'))")
+                         + ", 'hold', 'release_hold', 'register_project', 'disable'))")
         self.assertEqual(set(actual), set(enums.CONSTRAINED_COLUMNS))
         for key, enum in enums.CONSTRAINED_COLUMNS.items():
             self.assertEqual(actual[key], enums.check_clause(key[1], enum), key)
+
+    def test_version_29_projects_migrate_without_losing_history(self):
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        schema = (store.schema.SCHEMA + ";" + store.schema._INTERVENTIONS_DDL)
+        schema = schema.replace(", 'disabled'", "")
+        schema = schema.replace(", 'register_project', 'disable'", "")
+        conn.executescript(schema)
+        project = store.ensure_project(conn, "team", "/repo")
+        store.hold(conn, project, "maintenance")
+        conn.execute("PRAGMA user_version = 29")
+        statements = []
+        conn.set_trace_callback(statements.append)
+        store.init(conn)
+        conn.set_trace_callback(None)
+        # Each INSERT ... SELECT copies the entire intervention history.
+        copies = [sql for sql in statements
+                  if sql.upper().startswith("INSERT INTO INTERVENTIONS")
+                  and "SELECT" in sql.upper()]
+        self.assertEqual(len(copies), 1, copies)
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (30,))
+        self.assertEqual(conn.execute(
+            "SELECT admission, holdNote FROM projects").fetchone(),
+            ("held", "maintenance"))
+        store.set_admission(conn, project, "disabled", "retired")
+        self.assertEqual(conn.execute(
+            "SELECT action, note FROM interventions WHERE projectId = ? ORDER BY id",
+            (project,)).fetchall(), [("hold", "maintenance"), ("disable", "retired")])
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        store.init(conn)
+        self.assertEqual(conn.execute(
+            "SELECT admission, holdNote FROM projects").fetchone(),
+            ("disabled", "retired"))
 
     def test_public_vocabulary_and_graph_membership(self):
         self.assertEqual(store.PHASES, tuple(e.value for e in enums.RunPhase))

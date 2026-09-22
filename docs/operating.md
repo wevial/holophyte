@@ -221,6 +221,40 @@ finds a daemon at the bind address and the target's port from the
 convention, nothing else; splitting the drawer onto a second machine is
 [Across machines](operating/hosts.md).
 
+### Registering and disabling projects
+
+`python3 factory.py project add PATH` validates a repository root and its
+existing `[board]` configuration, then registers it without starting a run.
+A second add refuses and names the existing row. Configuration remains in its
+existing per-project file; registration does not move it. New registrations,
+including implicit loop registration, store canonical absolute repository paths.
+If a legacy row has a relative path, registration and admission checks refuse
+with its project ID and a request for operator repair. Its original base is not
+stored: verify the original repository location and repair the row to its
+canonical absolute path through the operator protocol before retrying. Do not
+interpret it relative to the current working directory. This refusal applies
+across the store because the ambiguous row could identify any target.
+`project list` remains available to inspect the rows.
+
+From the repository directory, use `python3 factory.py project list` to print
+name, path, admission, note and newest run, ordered by name and path. All project
+commands accept `--store PATH` to select one database explicitly; this does not
+combine stores. Without it, `add` uses the added repository's store and the other
+commands use the current repository's store.
+
+`project hold NAME --note TEXT` stops new admission while workers drain.
+`project disable NAME --note TEXT` also stops admission; a disabled supervisor
+exits at startup, and `/status` reports the disabled state and note with no runs.
+`project enable NAME` enables admission again (an optional `--note` records why).
+NAME is the repository directory's basename; ambiguous names are refused.
+The existing `factory.py PATH --hold --note TEXT` and
+`factory.py PATH --release-hold --note TEXT` remain aliases with the same
+`hold` and `release_hold` intervention actions. Disabling records `disable`, and
+registration records `register_project`.
+
+This change upgrades the store schema from 29 to 30 to widen the project
+admission CHECK to include `disabled` and admit the new intervention actions.
+
 ## Schema upgrades
 
 Pull, then restart the supervisor, then restart everything else in any order.

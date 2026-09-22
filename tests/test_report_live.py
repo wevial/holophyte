@@ -29,6 +29,23 @@ class LiveReportTests(ReportStoreCase):
         with patch("socket.gethostname", return_value="writer"):
             self.completed_run(1, 5, 25, 0, "merged")
 
+    def test_failure_counts_in_report_and_sweep(self):
+        from holophyte.sweep_report import sweep_report
+        from holophyte.target import Target
+
+        for number, kind in enumerate(('verify', 'infra', 'verify', 'budget'), 20):
+            run = self.live_run(number, NOW - 1000, 'working')
+            store.release(self.conn, run, 'failed', 'unchanged reason',
+                          failure_kind=kind)
+        expected = ['failures budget: 1', 'failures infra: 1', 'failures verify: 2']
+        self.assertEqual([line for line in report.report_lines(self.conn)
+                          if line.startswith('failures ')], expected)
+        out = io.StringIO()
+        with patch('holophyte.sweep_report.review_container_lines', return_value=[]):
+            sweep_report(Target.locate(self.target), conn=self.conn, out=out, now=NOW)
+        for line in expected:
+            self.assertIn(line, out.getvalue().splitlines())
+
     def test_operator_commands_allow_bucket_without_credentials(self):
         (self.db.parent / "config.toml").write_text(
             '[merge.media_bucket]\nendpoint = "https://objects.example.invalid"\n'

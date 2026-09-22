@@ -9,6 +9,7 @@ sweep read the box once for the whole run.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import signal
 import sqlite3
@@ -47,6 +48,17 @@ class TimeBoxAllowanceTests(unittest.TestCase):
 
 class TimeBoxPerTurnSweepTests(SweepTestCase):
     """A run 46 min old with a 30 min box: overdue on one turn, not on two."""
+
+    def test_disabled_supervisor_exits_before_lock_or_sweep(self):
+        store.set_admission(self.conn, 1, "disabled", "retired")
+        out = io.StringIO()
+        with patch.object(holophyte.supervisor, "acquire_supervisor_lock") as lock:
+            holophyte.supervisor.supervise(self.tgt, out=out)
+            with (contextlib.chdir(self.target),
+                  patch.object(self.tgt, "path", Path("."))):
+                holophyte.supervisor.supervise(self.tgt, out=out)
+        lock.assert_not_called()
+        self.assertIn("disabled: retired", out.getvalue())
 
     def a_round(self, run_id, number=1, at=T0 + 20 * MINUTE):
         store.record_review_round(

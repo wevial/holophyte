@@ -443,11 +443,9 @@ def close_ticket(target, identifier, landed, note=None, out=None, provider=None)
             ledger_text = conn.execute(
                 "SELECT text FROM ledger WHERE runId = ? ORDER BY id DESC LIMIT 1",
                 (run_id,)).fetchone()[0]
-            conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
-                         (ticket_id,))
+            store.set_question(conn, ticket_id, None)
             store.walk_ticket(conn, ticket_id, "merged")
-            conn.execute("UPDATE runs SET mergeSha = NULL WHERE id = ?",
-                         (run_id,))
+            store.clear_merge_sha(conn, run_id)
         release_lease_label(target, conn, ticket_id, provider, run_id)
         mirror_push(conn, ticket_id, provider)
         post_ledger_comment(ticket.linearIssueId, ledger_text, provider)

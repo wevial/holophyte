@@ -11,6 +11,7 @@ class AutonomyProfile(str, Enum):
 class ProjectAdmission(str, Enum):
     ENABLED = 'enabled'
     HELD = 'held'
+    DISABLED = 'disabled'
 
 
 class TicketStatus(str, Enum):
@@ -52,6 +53,18 @@ class RunOutcome(str, Enum):
     ABANDONED = 'abandoned'
     FAILED = 'failed'
     REJECTED = 'rejected'
+
+
+class FailureKind(str, Enum):
+    VERIFY = 'verify'
+    REVIEW_ROUTE = 'review_route'
+    FIX_NO_PROGRESS = 'fix_no_progress'
+    NO_COMMITS = 'no_commits'
+    BUDGET = 'budget'
+    MERGE_LOCK = 'merge_lock'
+    INFRA = 'infra'
+    SWEPT = 'swept'
+    UNCLASSIFIED = 'unclassified'
 
 
 class OutcomeClass(str, Enum):
@@ -124,6 +137,8 @@ class InterventionAction(str, Enum):
     MIGRATE = 'migrate'
     HOLD = 'hold'
     RELEASE_HOLD = 'release_hold'
+    REGISTER_PROJECT = 'register_project'
+    DISABLE = 'disable'
 
 
 # Line breaks are part of the existing sqlite_master SQL contract.
@@ -144,6 +159,7 @@ CONSTRAINED_COLUMNS = {
     ('runs', 'phase'): RunPhase,
     ('runs', 'outcome'): RunOutcome,
     ('runs', 'outcomeClass'): OutcomeClass,
+    ('runs', 'failureKind'): FailureKind,
     ('runs', 'resumePhase'): ResumePhase,
     ('reviewRounds', 'verdict'): ReviewVerdict,
     ('runEvents', 'level'): EventLevel,

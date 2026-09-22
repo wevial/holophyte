@@ -33,9 +33,13 @@ EXPECTED = [
     # (`shepherd` until KO-374 renamed it with the rows).
     "babysit",
     "claim",
+    "clear_merge_sha",  # KO-582: named writers replace loop SQL.
     "contract_drift",
     "contract_snapshot",
     "ensure_project",
+    "register_project",  # KO-586: explicit project registration and admission.
+    "list_projects",
+    "set_admission",
     "findings_fingerprint",
     "findings_overlap",
     "heartbeat",
@@ -81,11 +85,16 @@ EXPECTED = [
     "resume",
     "run_contract",
     "run_phase",
+    "set_board_state",
     "set_branch",
+    "set_outcome_reason",
     "set_phase",
+    "set_pull_request",
+    "set_question",
     # KO-321: the review-round cap the loop gave a run, written where the
     # loop computes it so `/runs/N` serves the cap this run had.
     "set_review_round_cap",
+    "stamp_board_ask",
     "transaction",
     "transition",
     "unreturned_loop_restarts",
@@ -203,6 +212,17 @@ def operator_api_names():
 
 
 class StoreSurfaceTests(unittest.TestCase):
+    def test_loop_has_no_raw_state_updates(self):
+        root = AGENTS_MD.parent
+        pattern = re.compile(r"\bUPDATE\s+(?:runs|tickets|projects)\b", re.I)
+        matches = [
+            f"{path.relative_to(root)}:{source.count(chr(10), 0, match.start()) + 1}"
+            for path in sorted((root / "holophyte").rglob("*.py"))
+            for source in [path.read_text()]
+            for match in pattern.finditer(source)
+        ]
+        self.assertEqual(matches, [], "raw store writes: " + ", ".join(matches))
+
     def test_enum_refactor_preserves_exported_names_and_values(self):
         from tests.store_enums_fixture import BASELINE
 

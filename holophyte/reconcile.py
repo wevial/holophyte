@@ -408,8 +408,7 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
             f"{pull.url} merged on GitHub by {who} as {short}; the run is"
             " closed out as merged", source="human", trigger="manual")
         store.release(conn, run_id, "merged", merge_sha=sha)
-        conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
-                     (ticket.id,))
+        store.set_question(conn, ticket.id, None)
         store.tickets.walk_ticket(conn, ticket.id, "merged")
     mirror_push(conn, ticket.id, provider)
     ledger(conn, run_id, identifier, "merge",
@@ -455,10 +454,8 @@ def _reject_pr(conn, run_id, pull, who, branch, sha):
         store.release(conn, run_id, "rejected", reason)
         ticket_id = store.read.run_snapshot(conn, run_id).ticketId
         store.walk_ticket(conn, ticket_id, "blocked_on_operator")
-        conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
-                     (question, ticket_id))
-        conn.execute("UPDATE runs SET candidateSha = ?, prUrl = ? WHERE id = ?",
-                     (sha, pull.url, run_id))
+        store.set_question(conn, ticket_id, question)
+        store.set_pull_request(conn, run_id, pull.url, sha)
     print(f"[holo2] {question}; {reason}")
 
 
