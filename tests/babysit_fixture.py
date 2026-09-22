@@ -46,6 +46,7 @@ class BabysitHelpers:
                      "No change; naming remains FOLLOW_UP per the amendment."]
         if mode == "secret":
             sentences[0] += " Credential fixture-credential-574 is unavailable."
+            sentences[1] += " api_key=fixture-unconfigured-574"
         output = "Reading additional input from stdin...\nTHREAD 1: " + sentences[0]
         if mode != "partial":
             output += "\nTHREAD 2: " + sentences[1] + "\nTHREAD 3: Kept the amendment."
@@ -75,9 +76,11 @@ class BabysitHelpers:
         question = self.question()
         if mode == "secret":
             self.assertIn("Credential [redacted] is unavailable.", question)
+            self.assertIn("api_key=[redacted]", question)
             persisted = repr(self.read("SELECT summary, payload FROM runEvents"))
             persisted += repr(self.read("SELECT * FROM ledger"))
             self.assertNotIn("fixture-credential-574", question + persisted)
+            self.assertNotIn("fixture-unconfigured-574", question + persisted)
             return
         for thread, sentence in zip((self.DEFECT, self.NIT), sentences):
             self.assertIn(f"{thread[0]}:{thread[1]}", question)

@@ -915,7 +915,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         sh,
     )
     from holophyte.pullrequest import _park_on_pr
-    from holophyte.redact import known_secrets, outbound
+    from holophyte.redact import known_secrets, outbound, redact_prose
     record_step(conn, run_id, "fix")
     maintainer_notes.start_fix(conn, run_id, addressed)
     fixes, timed_out = _transport_timed(target, conn, run_id, beat_s, wt, budget_min,
@@ -924,7 +924,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     if fixed == sha:
         _record_implementer_output(conn, run_id, f"fix round {pass_no}: {fixes}",
                                    known_secrets(target.config()))
-    summaries = babysitter.parse_summaries(fixes)
+    summaries = babysitter.parse_summaries(redact_prose(fixes, assignments=True))
     if (addressed and fixed == sha and not timed_out
             and all(summaries.get(n) for n, _, _ in addressed)
             and not _candidate_drift(wt, branch, fixed)):
