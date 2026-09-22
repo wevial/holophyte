@@ -182,18 +182,24 @@ class WorkingTimeTests(SweepTestCase):
                 stack.enter_context(patch.object(module, name, return_value=result))
             stack.enter_context(patch.object(pullrequest, 'monotonic', return_value=0))
             scenarios = (
-                (loop._implement, ['done'], 1),
-                (loop._review_rounds,
+                (loop._implement, 'working', ['done'], 1),
+                (loop._review_rounds, 'working',
                  ['done', 'VERDICT: REQUEST_CHANGES', 'fixed'], 3),
-                (claim._resolve_merge_conflict, ['fixed'], 1),
-                (pullrequest._written_pr_text, ['TITLE: change\nDescription'], 1),
-                (merge_gate._merge_gate, ['done'], 1),
-                (loop._terminal_adjudication, ['done', 'VERDICT: PASS'], 2),
-                (babysitter._answer_threads, ['THREAD 1: DECLINE: not a blocker'], 1),
-                (babysitter._fix_threads, ['fixed', 'done'], 2),
+                (claim._resolve_merge_conflict, 'merge_gate', ['fixed'], 1),
+                (pullrequest._written_pr_text, 'merge_gate',
+                 ['TITLE: change\nDescription'], 1),
+                (merge_gate._merge_gate, 'merge_gate', ['done'], 1),
+                (loop._terminal_adjudication, 'addressing',
+                 ['done', 'VERDICT: PASS'], 2),
+                (babysitter._answer_threads, 'merge_gate',
+                 ['THREAD 1: DECLINE: not a blocker'], 1),
+                (babysitter._fix_threads, 'merge_gate', ['fixed', 'done'], 2),
             )
-            for function, outputs, expected_calls in scenarios:
+            for function, phase, outputs, expected_calls in scenarios:
                 with self.subTest(controller=function.__name__):
+                    # These are independent controller calls, not one loop path.
+                    run = self.a_run(phase=phase)
+                    values['run_id'] = run
                     responses[:] = outputs
                     before = len(calls)
                     kwargs = {name: values[name] for name in
@@ -201,7 +207,8 @@ class WorkingTimeTests(SweepTestCase):
                               if name in values}
                     function(**kwargs)
                     self.assertEqual(len(calls) - before, expected_calls)
-                    self.assertEqual(self.snapshot(run).workingMs, len(calls) * 10)
+                    self.assertEqual(
+                        self.snapshot(run).workingMs, (len(calls) - before) * 10)
                     self.assertFalse(responses)
             # The real retry loop and PR pending/quiet loops advance wall time.
             stack.enter_context(patch.object(loop, 'sleep', nap))
@@ -220,7 +227,7 @@ class WorkingTimeTests(SweepTestCase):
                               side_effect=[pending, quiet, quiet]), \
                     patch.object(babysitter, '_quiet_left', side_effect=[1000, 0]):
                 babysitter._settled_state(self.tgt, self.conn, run, 100, pull)
-            self.assertEqual(self.snapshot(run).workingMs, len(calls) * 10)
+            self.assertEqual(self.snapshot(run).workingMs, (len(calls) - before) * 10)
             self.assertGreater(now[0] - T0, 30_000)
 
     def test_work_accounting_ownership_race(self):

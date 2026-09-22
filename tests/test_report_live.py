@@ -10,6 +10,7 @@ import holophyte.cli
 import holophyte.report as report
 import store
 import store.tickets
+from tests.phase_fixture import advance_phase, finish_run
 from tests.test_wiring_telemetry import ReportStoreCase
 
 NOW = 1_700_010_000_000
@@ -51,7 +52,7 @@ class LiveReportTests(ReportStoreCase):
             self.conn, project, linear_issue_id=f"issue-{number}",
             linear_identifier=f"KO-{number}", title="live ticket")
         run = store.claim(self.conn, project, ticket, now=started)
-        store.set_phase(self.conn, run, phase, now=NOW - 12_000)
+        advance_phase(self.conn, run, phase, now=NOW - 12_000)
         self.conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?", (url, run))
         self.conn.commit()
         return run
@@ -63,7 +64,7 @@ class LiveReportTests(ReportStoreCase):
         read_finished = report.report_rows
 
         def finish_between_reads(conn):
-            store.release(writer, run, "merged", now=NOW)
+            finish_run(writer, run, "merged", now=NOW)
             return read_finished(conn)
 
         with patch.object(report, "report_rows", side_effect=finish_between_reads):

@@ -33,6 +33,7 @@ import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import finish_run  # noqa: E402 - after sys.path setup
 
 
 class StubProvider:
@@ -212,7 +213,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         ticket = store.tickets.mirror_ticket(conn, project, time_box_ms=25 * 60 * 1000,
                                      **mirror)
         run_id = store.claim(conn, project, ticket)
-        store.release(conn, run_id, "merged")
+        finish_run(conn, run_id, "merged")
 
         store.tickets.mirror_ticket(conn, project, time_box_ms=90 * 60 * 1000, **mirror)
 
@@ -260,7 +261,7 @@ class ReportStoreCase(unittest.TestCase):
         self.conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
                           (actual_min * 60_000, run_id))
         self.conn.commit()
-        store.release(self.conn, run_id, outcome, now=at + actual_min * 60_000)
+        finish_run(self.conn, run_id, outcome, now=at + actual_min * 60_000)
 
     def three_runs(self):
         self.completed_run(1, actual_min=5, estimate_min=25, rounds=2,

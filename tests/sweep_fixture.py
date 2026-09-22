@@ -22,6 +22,7 @@ import holophyte.sweep_report  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import advance_phase, seed_observed_phase  # noqa: E402
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000  # an epoch-millisecond wall clock the tests do sums on
@@ -102,9 +103,10 @@ class SweepTestCase(unittest.TestCase):
         run_id = store.claim(self.conn, project, ticket, now=claimed_at)
         self.ticket_of[run_id] = ticket
         if phase != "claimed":
-            # Seed the observed phase; sweep fixtures do not run the loop.
-            self.conn.execute("UPDATE runs SET phase = ? WHERE id = ?", (phase, run_id))
-            self.conn.commit()
+            if phase in {"blocked_on_operator", "squashing"}:
+                seed_observed_phase(self.conn, run_id, phase, now=claimed_at)
+            else:
+                advance_phase(self.conn, run_id, phase, now=claimed_at)
         if active_work:
             self.conn.execute('UPDATE runs SET workStartedAt = ? WHERE id = ?',
                               (claimed_at, run_id))

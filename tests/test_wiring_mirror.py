@@ -26,6 +26,7 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import merged_task  # noqa: E402 - after sys.path setup
 
 ISSUE_UUID = "b0c1d2e3-4567-4890-abcd-ef0123456789"  # Linear's canonical id
 
@@ -136,7 +137,8 @@ class MirrorPushTests(unittest.TestCase):
     def loop(self, merged=True, provider=None):
         """Run the loop over one task, with the run itself stubbed out."""
         provider = provider or StubProvider(a_task())
-        with patch.object(holophyte.loop, "run_task", return_value=merged):
+        with patch.object(holophyte.loop, "run_task",
+                          side_effect=merged_task if merged else lambda *a: False):
             holophyte.operator.main(self.tgt, provider)
         return provider
 
@@ -150,7 +152,7 @@ class MirrorPushTests(unittest.TestCase):
         def spy(target, task, conn=None, run_id=None, provider=None):
             seen["states"] = list(provider.states)
             seen["status"] = self.status()
-            return True
+            return merged_task(target, task, conn, run_id, provider)
 
         provider = StubProvider(a_task())
         with patch.object(holophyte.loop, "run_task", spy):

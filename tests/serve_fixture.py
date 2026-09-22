@@ -24,6 +24,7 @@ import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import finish_run
 
 SEC = 1000
 MIN = 60 * SEC
@@ -96,7 +97,7 @@ class ServeTestCase(unittest.TestCase):
                 conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
                              (took, run))
                 conn.commit()
-                store.release(conn, run, outcome, now=started + took,
+                finish_run(conn, run, outcome, now=started + took,
                               merge_sha=sha)
         finally:
             conn.close()

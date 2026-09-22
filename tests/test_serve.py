@@ -31,6 +31,7 @@ import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
+from tests.phase_fixture import advance_phase, finish_run, park_run
 
 # How far the clock may move between seeding and the assertion: the daemon
 # stamps its own `now`, so an age is "about" the seeded distance.
@@ -290,7 +291,7 @@ class StatusTests(ServeTestCase):
         self.seed()
         conn = store.open(str(self.db))
         try:
-            store.set_phase(conn, self.run, "reviewing", now=self.now - MIN)
+            advance_phase(conn, self.run, "reviewing", now=self.now - MIN)
             for number in (1, 2):
                 store.record_review_round(
                     conn, self.run, number, "changes_requested", "reviewer",
@@ -646,7 +647,7 @@ class AttentionTests(ServeTestCase):
             conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                          ("Which branch is canonical?", blocked))
             conn.commit()
-            store.park(conn, self.blocked_run, "blocked_on_operator",
+            park_run(conn, self.blocked_run, "blocked_on_operator",
                        "asked the operator", now=self.asked - MIN)
             if redirect:
                 store.record_intervention(
@@ -739,7 +740,7 @@ class AttentionTests(ServeTestCase):
                          (f"PR open: {url}\nreview requested from a coworker"
                           "\n1. src/x.py:3 by @coworker", parked))
             conn.commit()
-            store.park(conn, run, "awaiting_merge_approval", "PR open",
+            park_run(conn, run, "awaiting_merge_approval", "PR open",
                        candidate_sha="a" * 40, pr_url=url,
                        now=self.now - 2 * MIN, pr_seen=pr_seen)
         finally:
@@ -861,7 +862,7 @@ class AttentionTests(ServeTestCase):
 
         conn = store.open(str(self.db))
         try:
-            store.release(conn, self.run, "merged")
+            finish_run(conn, self.run, "merged")
         finally:
             conn.close()
 
@@ -919,7 +920,7 @@ class BoardTests(ServeTestCase):
             merged = ticket(6)
             store.tickets.transition(conn, merged, "in_flight")
             run = store.claim(conn, project, merged, now=self.now - 20 * MIN)
-            store.release(conn, run, "merged", now=self.now - 10 * MIN,
+            finish_run(conn, run, "merged", now=self.now - 10 * MIN,
                           merge_sha=MERGE_SHA)
             store.tickets.transition(conn, merged, "merged")
             live = ticket(5)
@@ -1005,7 +1006,7 @@ class PrUrlTests(ServeTestCase):
                 run = store.claim(conn, project, ticket, now=self.now - 20 * MIN)
                 store.set_phase(conn, run, "working", now=self.now - 20 * MIN)
                 store.tickets.transition(conn, ticket, "blocked_on_operator")
-                store.park(conn, run, "blocked_on_operator", "parked on the PR",
+                park_run(conn, run, "blocked_on_operator", "parked on the PR",
                            candidate_sha=MERGE_SHA, pr_url=url,
                            now=self.now - 10 * MIN)
                 self.runs[ident] = run
@@ -1020,7 +1021,7 @@ class PrUrlTests(ServeTestCase):
         conn = store.open(str(self.db))
         try:
             for run in self.runs.values():
-                store.release(conn, run, "merged", now=self.now - MIN,
+                finish_run(conn, run, "merged", now=self.now - MIN,
                               merge_sha=MERGE_SHA)
         finally:
             conn.close()
