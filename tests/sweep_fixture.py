@@ -102,7 +102,9 @@ class SweepTestCase(unittest.TestCase):
         run_id = store.claim(self.conn, project, ticket, now=claimed_at)
         self.ticket_of[run_id] = ticket
         if phase != "claimed":
-            store.set_phase(self.conn, run_id, phase, now=claimed_at)
+            # Seed the observed phase; sweep fixtures do not run the loop.
+            self.conn.execute("UPDATE runs SET phase = ? WHERE id = ?", (phase, run_id))
+            self.conn.commit()
         if active_work:
             self.conn.execute('UPDATE runs SET workStartedAt = ? WHERE id = ?',
                               (claimed_at, run_id))

@@ -570,6 +570,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.addCleanup(conn.close)
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
                          store.SCHEMA_VERSION)
+        store.set_phase(conn, run, "merge_gate")
         store.release(conn, run, "rejected", "closed by alice")
         self.assertEqual(conn.execute("SELECT phase, outcome FROM runs")
                          .fetchone(), ("rejected", "rejected"))
@@ -624,6 +625,8 @@ class StoreSchemaVersionTests(unittest.TestCase):
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
             title="ticket 1")
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        for phase in ("merge_gate", "merging"):
+            store.set_phase(conn, run_id, phase, now=1_700_000_050_000)
         store.release(conn, run_id, "merged", now=1_700_000_060_000)
         conn.close()
         raw = self.raw()

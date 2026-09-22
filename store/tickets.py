@@ -139,13 +139,22 @@ def render_state_graph_section(name, transitions):
             f"```\n<!-- end {name} -->\n")
 
 
-class IllegalTransition(Exception):
-    """A status change the §3 diagram does not draw; nothing was written.
+class IllegalTransition(ValueError):
+    """A ticket status or run phase edge the graph refuses; nothing was written.
 
     Also raised for an unknown target status and for a ticket id that does not
     exist — neither names an edge of the diagram, and both are the same
     mistake from the caller's side: a status change that will not happen.
     """
+
+    def __init__(self, run_id, previous=None, phase=None):
+        # Ticket callers retain their existing message-only exception API.
+        if previous is None:
+            super().__init__(run_id)
+        else:
+            super().__init__(
+                f"run {run_id}: illegal phase transition {previous} -> {phase}")
+            self.run_id, self.previous, self.phase = run_id, previous, phase
 
 
 def transition(conn, ticket_id, to_status):

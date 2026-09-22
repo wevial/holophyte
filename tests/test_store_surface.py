@@ -97,7 +97,7 @@ EXPECTED_CLASSES = [
     "ApproveRefused",
     "ClaimConflict",
     "GuidanceNotAccepted",
-    "IllegalTransition",
+    "IllegalTransition",  # Shared ticket-status and run-phase refusal.
     "Pickability",
     "RepointRefused",
     "RequeueRefused",

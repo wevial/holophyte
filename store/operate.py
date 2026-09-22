@@ -6,13 +6,13 @@ escalation-ladder commands `requeue()`/`approve()`/`babysit()`/`repoint()`
 with their refusals and the `_release_parked()` transaction `approve()` and
 `babysit()` share, `GATE_CONFLICT_REASON`/`is_gate_conflict()` and
 `repoint()`'s `FULL_SHA`, the §5 resume machinery (`RESUMABLE_*`/
-`PARKED_PHASES`, the `RUN_PHASE_TRANSITIONS` graph, `ResumeRefused`,
+`PARKED_PHASES`, the re-exported `RUN_PHASE_TRANSITIONS` graph, `ResumeRefused`,
 `resume()`) and `record_intervention()` with the `INTERVENTION_*` unions
 it validates against. The `runEvents` writers, `park()` and
 `record_pr_seen()` are run lifecycle, not operator API, and stay home;
 so does `GuidanceNotAccepted` -- the package defines it once this module
 has bound `ResumeRefused`, and `resume()` reaches it through a deferred
-`from . import`. `PHASES`, `_append_event`, `set_phase()` and
+`from . import`. `_append_event`, `set_phase()` and
 `record_ledger()` are shared with the run API and imported back from the
 package; `walk_ticket` comes straight from `store.tickets`. The
 supervisor sweep's liveness bookkeeping followed in the same slice's
@@ -27,8 +27,9 @@ import re
 import socket
 import time
 
-from . import PHASES, _append_event, _redact_values, record_ledger, set_phase
+from . import _append_event, _redact_values, record_ledger, set_phase
 from . import enums as _enums
+from .enums import RESUMABLE_WORK_PHASES, RUN_PHASE_TRANSITIONS  # noqa: F401
 from .enums import RunPhase as _Phase
 from .schema import _transaction
 from .tickets import walk_ticket
@@ -518,10 +519,6 @@ def repoint(conn, ticket_id, sha, note, now=None):
 # as a failed run's `resumePhase`: `failed` and `blocked_on_operator` are
 # phases a run is parked *in*, not phases work was interrupted in, so neither
 # is a phase to send a resumed run back to.
-RESUMABLE_WORK_PHASES = frozenset(
-    {_Phase.WORKING.value, _Phase.VERIFYING.value, _Phase.REVIEWING.value,
-     _Phase.ADDRESSING.value}
-)
 RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {
     _Phase.FAILED.value, _Phase.BLOCKED_ON_OPERATOR.value}
 # The phases a run is parked *in*, alive and waiting for a person: the loop
@@ -532,66 +529,6 @@ RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {
 # it (`--approve`) is what moves it on.
 PARKED_PHASES = frozenset({
     _Phase.BLOCKED_ON_OPERATOR.value, _Phase.AWAITING_MERGE_APPROVAL.value})
-
-# §4's run graph as an edge table, keyed like `TICKET_TRANSITIONS` so both
-# state machines render through `render_state_graph()` the same way. The
-# edges are the ones the loop writes — `factory.py`'s `set_phase()` calls,
-# `release()`'s move into the terminal phase for each outcome, and `resume()`'s
-# way back out of a parked run — not a `set_phase()` gate: that function moves
-# a run between any two phases on purpose, so the table is the loop's map and
-# the wiring tests hold the walked streams against it. Every phase in `PHASES`
-# is a key so a declared phase always renders as a node; `squashing` is
-# declared but has no edge because this loop never enters it (the merge is
-# --no-ff). `awaiting_merge_approval` is entered from `merge_gate` under
-# `[merge] approve = "human"` by `park()`; the run stays open there, so the
-# only edges out are the ones a release writes for a run that did not merge.
-RUN_PHASE_TRANSITIONS = {
-    # `claimed -> merge_gate` is the approved candidate's run: `--approve`
-    # ended the parked run with `resumePhase = 'merge_gate'`, and the claim
-    # that follows reuses its worktree and branch and goes straight to the
-    # gate -- nothing to implement or review, the candidate already was.
-    _Phase.CLAIMED.value: frozenset({
-        _Phase.WORKING.value, _Phase.MERGE_GATE.value,
-        _Phase.FAILED.value, _Phase.KILLED.value}),
-    _Phase.WORKING.value: frozenset({
-        _Phase.VERIFYING.value, _Phase.FAILED.value,
-        _Phase.KILLED.value}),
-    _Phase.VERIFYING.value: frozenset({
-        _Phase.REVIEWING.value, _Phase.FAILED.value,
-        _Phase.KILLED.value}),
-    _Phase.REVIEWING.value: frozenset({
-        _Phase.ADDRESSING.value, _Phase.MERGE_GATE.value,
-        _Phase.FAILED.value, _Phase.KILLED.value}),
-    _Phase.ADDRESSING.value: frozenset({
-        _Phase.VERIFYING.value, _Phase.FAILED.value,
-        _Phase.KILLED.value}),
-    _Phase.MERGE_GATE.value: frozenset({
-        _Phase.MERGING.value,
-        _Phase.AWAITING_MERGE_APPROVAL.value, _Phase.FAILED.value,
-        _Phase.KILLED.value, _Phase.REJECTED.value}),
-    # `awaiting_merge_approval -> done` is the pull request a person merged
-    # on GitHub while the run waited for `--approve`: the loop's reconcile
-    # ends the parked run merged with that merge commit (KO-359). The
-    # operator's own `--approve` still ends it `failed` (abandoned) and lets
-    # the next run merge.
-    _Phase.AWAITING_MERGE_APPROVAL.value: frozenset({
-        _Phase.DONE.value,
-        _Phase.FAILED.value, _Phase.KILLED.value, _Phase.REJECTED.value}),
-    _Phase.MERGING.value: frozenset({
-        _Phase.DONE.value, _Phase.FAILED.value,
-        _Phase.KILLED.value}),
-    _Phase.SQUASHING.value: frozenset(),
-    _Phase.DONE.value: frozenset(),
-    # `resume()`: a failed run re-enters its `resumePhase`, or `working`
-    # when none was recorded; a `blocked_on_operator` run always re-enters
-    # `working`.
-    _Phase.FAILED.value: RESUMABLE_WORK_PHASES,
-    _Phase.BLOCKED_ON_OPERATOR.value: frozenset({_Phase.WORKING.value}),
-    _Phase.KILLED.value: frozenset(),
-    _Phase.REJECTED.value: frozenset(),
-}
-assert set(RUN_PHASE_TRANSITIONS) == set(PHASES)
-
 
 class ResumeRefused(Exception):
     """A resume the state model does not allow; nothing was written."""

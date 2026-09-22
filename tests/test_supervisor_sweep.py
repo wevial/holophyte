@@ -488,6 +488,8 @@ class NotSweptTests(SweepTestCase):
     def test_an_ended_run_is_not_swept(self):
         """A finished run's heartbeat stopped because the work stopped."""
         done = self.a_run()
+        for phase in ("verifying", "reviewing", "merge_gate", "merging"):
+            store.set_phase(self.conn, done, phase, now=T0)
         store.release(self.conn, done, "merged", now=T0 + MINUTE)
         live = self.a_run(claimed_at=T0 + 2 * MINUTE)
 
@@ -731,6 +733,8 @@ class ActingSweepTests(SweepTestCase):
 
         def finish_then_act(target, conn, trip, provider=None, knobs=None):
             # The run's own process, landing after the verdict committed.
+            for phase in ("verifying", "reviewing", "merge_gate", "merging"):
+                store.set_phase(conn, trip.run_id, phase, now=at)
             store.release(conn, trip.run_id, "merged", now=at)
             return original_act(target, conn, trip, provider, knobs)
 
@@ -762,6 +766,8 @@ class ActingSweepTests(SweepTestCase):
 
         def finish_one_then_act(target, conn, trip, provider=None, knobs=None):
             if trip.run_id == finished:
+                for phase in ("verifying", "reviewing", "merge_gate", "merging"):
+                    store.set_phase(conn, trip.run_id, phase, now=at)
                 store.release(conn, trip.run_id, "merged", now=at)
             return original_act(target, conn, trip, provider, knobs)
 

@@ -105,6 +105,7 @@ from store.working import effective_work
 def run_task(target, task, conn=None, run_id=None, provider=None):
     """Run `task` through `_run_stages()`, and stop if the store ended the run.
 
+    An illegal phase edge fails as infrastructure, preserving the worktree.
     The one catch for `store.RunEnded`, and the one for `RunSwept`, its
     mid-turn counterpart from `heartbeat_while()` (see the second `except`).
     The supervisor's `act_on_trip()` --
@@ -123,6 +124,8 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     """
     try:
         return _run_stages(target, task, conn, run_id, provider)
+    except store.IllegalTransition as refused:
+        raise InfraFailure(str(refused)) from refused
     except store.RunEnded as ended:
         print(f"[holo2] run {ended.run_id} was ended by the supervisor"
               f" ({ended.outcome}: {ended.reason}); stopping")
