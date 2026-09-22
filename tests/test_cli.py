@@ -8,12 +8,14 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import socket
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import holophyte.board
 import holophyte.cli
 import holophyte.target
 import store
@@ -65,6 +67,14 @@ class RepointFlagTests(unittest.TestCase):
             holophyte.cli.cli([str(self.repo), *args])
         return out.getvalue(), err.getvalue()
 
+    def board_cli(self, board, *args):
+        """`cli()` on a target with a `[board]` table, `board` its provider."""
+        self.target.holo_dir.mkdir(parents=True, exist_ok=True)
+        self.target.config_path.write_text('[board]\nteam = "team-1"\n'
+                                           'project_id = "project-1"\n')
+        with patch.object(holophyte.cli, "LinearProvider", return_value=board):
+            return self.cli(*args)
+
     def candidate_sha(self):
         return self.conn.execute(
             "SELECT candidateSha FROM runs WHERE id = ?",
@@ -93,19 +103,36 @@ class RepointFlagTests(unittest.TestCase):
         git("worktree", "add", "-q", "-b", "task/ko-1", str(wt))
         (wt / "edit.txt").write_text("unsaved\n")
         store.set_branch(self.conn, self.run, "task/ko-1")
+        board = Mock()
+
+        def abort():
+            return self.board_cli(board, "--abort", "KO-1",
+                                  "--note", "host going down")[0]
         # The claim recorded this live process as the worker; it just beat.
         store.heartbeat(self.conn, self.run)
-        out, _ = self.cli("--abort", "KO-1", "--note", "host going down")
-        self.assertIn("abort requested", out)
-        self.assertIsNone(self.conn.execute("SELECT endedAt FROM runs").fetchone()[0])
-        # A worker that beat a moment ago and then died: its heartbeat is fresh.
+        self.assertIn("abort requested", abort())
+        # A stale beat does not prove a live worker dead, nor does a dead pid
+        # on a host this one cannot ask: neither commits under the writer.
+        self.conn.execute("UPDATE runs SET lastHeartbeat = 0")
+        self.conn.commit()
+        self.assertIn("abort requested", abort())
         dead = subprocess.Popen(["true"])
         dead.wait()
-        self.conn.execute("UPDATE runs SET workerPid = ?", (dead.pid,))
+        self.conn.execute("UPDATE runs SET workerPid = ?, host = 'elsewhere'",
+                          (dead.pid,))
+        self.conn.commit()
+        self.assertIn("abort requested", abort())
+        self.assertIsNone(self.conn.execute("SELECT endedAt FROM runs").fetchone()[0])
+        self.assertEqual(git("log", "-1", "--format=%s", "task/ko-1").strip(), "base")
+        board.set_state.assert_not_called()
+        # A worker on this host that beat a moment ago and then died.
+        self.conn.execute("UPDATE runs SET host = ?", (socket.gethostname(),))
         self.conn.commit()
         store.heartbeat(self.conn, self.run)
-        out, _ = self.cli("--abort", "KO-1", "--note", "host going down")
-        self.assertIn("no live worker", out)
+        self.assertIn("no live worker", abort())
+        board.set_state.assert_called_once_with("issue-1", "Todo")
+        board.unlabel_issue.assert_called_once_with(
+            "issue-1", holophyte.board.lease_label(self.target))
         self.assertEqual(self.conn.execute(
             "SELECT r.outcome, r.outcomeReason, t.status FROM runs r"
             " JOIN tickets t ON t.id = r.ticketId").fetchone(),
@@ -123,7 +150,7 @@ class RepointFlagTests(unittest.TestCase):
         before = self.conn.execute("SELECT (SELECT COUNT(*) FROM interventions),"
                                    " (SELECT COUNT(*) FROM runEvents)").fetchone()
         with self.assertRaisesRegex(SystemExit, "outcome failed"):
-            self.cli("--abort", "KO-1", "--note", "too late")
+            self.board_cli(Mock(), "--abort", "KO-1", "--note", "too late")
         self.assertEqual(self.conn.execute(
             "SELECT (SELECT COUNT(*) FROM interventions),"
             " (SELECT COUNT(*) FROM runEvents)").fetchone(), before)

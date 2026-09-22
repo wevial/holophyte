@@ -429,12 +429,12 @@ def _store_verb(args, target, board):
     """Run the operator verb the command line names, if it is one of the
     verbs that write the store and exit, including `--close`, which also
     projects the result to the board. No agent route has to resolve first."""
-    # Hands the ticket back to a loop that will mirror it to the board when
-    # it claims it again, so a target with no board exits here naming the
-    # key, before anything is written.
+    # Parks the ticket and may end the run here, which projects to the board
+    # like `--close`, so a target with no board exits here naming the key.
     if args.abort:
         from holophyte.stop import abort_command
-        abort_command(target, args.abort, args.note)
+        abort_command(target, args.abort, args.note,
+                      provider=require_board(target, board))
         return True
     if args.pause or args.resume:
         from holophyte.stop import command
@@ -444,6 +444,9 @@ def _store_verb(args, target, board):
         from holophyte.admission import change
         change(target, args.hold, args.note)
         return True
+    # Hands the ticket back to a loop that will mirror it to the board when
+    # it claims it again, so a target with no board exits here naming the
+    # key, before anything is written.
     if args.requeue is not None:
         requeue(target, args.requeue, args.note,
                 provider=require_board(target, board))

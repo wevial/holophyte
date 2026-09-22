@@ -1,7 +1,6 @@
 """Cooperative run stops and their durable continuation at stage boundaries."""
 import json
 import socket
-import time
 from contextvars import ContextVar
 from dataclasses import asdict
 
@@ -160,10 +159,11 @@ def command(target, identifier, note, *, resume=False):
         conn.close()
 
 
-def abort_command(target, identifier, note):
+def abort_command(target, identifier, note, *, provider):
     """CLI adapter: record the abort, then end the run here when no worker
-    beats for it; a live worker ends it at its next heartbeat."""
-    from holophyte.config_tables import sweep_config
+    can still touch its tree, and project the park to the board as the
+    worker path does; otherwise a live worker ends it at its next heartbeat."""
+    from holophyte import board
     from holophyte.operator import _operator_store, _ticket_by_identifier
     conn = _operator_store(target)
     try:
@@ -173,14 +173,16 @@ def abort_command(target, identifier, note):
         if run_id is None:
             raise ValueError(f"{identifier} has no run to abort")
         store.abort(conn, run_id, note)
-        if worker_alive(conn, run_id, sweep_config(target).heartbeat_stale_ms):
+        if not worker_gone(conn, run_id):
             print(f"[holo2] {identifier}: abort requested; run {run_id} ends"
-                  " at its worker's next heartbeat")
+                  " at its worker's next heartbeat (this host cannot confirm"
+                  " that worker gone; a silent one is the sweep's)")
             return
         try:
             end_aborted(conn, run_id)
         except Aborted:
-            pass
+            board.mirror_push(conn, ticket_id, provider)
+            board.release_lease_label(target, conn, ticket_id, provider, run_id)
         print(f"[holo2] {identifier}: run {run_id} had no live worker;"
               " ended abandoned and parked")
     except ValueError as refused:
@@ -189,18 +191,19 @@ def abort_command(target, identifier, note):
         conn.close()
 
 
-def worker_alive(conn, run_id, stale_ms):
-    """Whether a worker still works the run: not parked, beating inside the
-    stale threshold, and -- when it runs on this host with a recorded pid --
-    a process that exists. A fresh beat alone does not prove a worker that
-    died just after it; another host's pid cannot be asked."""
+def worker_gone(conn, run_id):
+    """Whether no worker can still write the run's tree: the run is parked,
+    or it was claimed on this host by a recorded process that no longer
+    exists. A stale heartbeat proves nothing -- a slow worker, another
+    host's pid, or a run with no recorded pid may still be writing -- so
+    those leave the abort pending rather than commit under a live writer."""
     from holophyte.supervisor_lock import pid_alive
-    phase, beat, host, pid = conn.execute(
-        "SELECT phase, lastHeartbeat, host, workerPid FROM runs WHERE id = ?",
+    phase, host, pid = conn.execute(
+        "SELECT phase, host, workerPid FROM runs WHERE id = ?",
         (run_id,)).fetchone()
-    if phase in store.PARKED_PHASES or time.time() * 1000 - beat >= stale_ms:
-        return False
-    return pid is None or host != socket.gethostname() or pid_alive(pid)
+    if phase in store.PARKED_PHASES:
+        return True
+    return pid is not None and host == socket.gethostname() and not pid_alive(pid)
 
 
 def pending_requests(conn):

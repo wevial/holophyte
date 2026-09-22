@@ -54,11 +54,15 @@ stages the tree with the reclaim path's environment exclusions and commits it
 as `WIP: preserve work at operator abort`. When the run has a pull request it
 pushes the branch. Last, it ends the run `abandoned` with the note and parks
 the ticket `blocked_on_operator` with the note as its question. When the run
-has no live worker, the command does the same itself, minus the kill. No live
-worker means the run is parked awaiting merge approval, its heartbeat is
-older than the stale threshold, or, on the host that claimed it, the process
-recorded at claim (`runs.workerPid`) no longer exists. The pid check catches
-a worker that died just after a fresh beat. Nothing is merged and nothing is deleted: the worktree and
+has no live worker, the command does the same itself, minus the kill, and
+moves the board issue to the parked state and takes the lease label off, as
+the worker does; so a target with no `[board]` table exits naming the key.
+No live worker means the run is parked awaiting merge approval, or, on the
+host that claimed it, the process recorded at claim (`runs.workerPid`) no
+longer exists. A stale heartbeat alone is not enough: a slow worker, a run
+claimed on another host, or one with no recorded pid may still be writing
+the tree, so the abort stays pending for its worker's next heartbeat, or
+for the sweep once that worker is confirmed silent. Nothing is merged and nothing is deleted: the worktree and
 branch stay for the sweep's debris path, and an open pull request stays open.
 An ended run, or one parked `blocked_on_operator`, refuses the request and
 names why, and nothing is written.
