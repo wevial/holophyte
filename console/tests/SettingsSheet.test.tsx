@@ -162,16 +162,38 @@ test("pull-request controls show loaded values and save their dotted keys togeth
   } }]);
 });
 
-test("PR quiet seconds rejects a fractional edit instead of saving a truncated integer", async () => {
-  const { fetch, puts } = daemon(TEXT, { ...VALUES, merge: { pr_quiet_sec: 300 } });
+test.each([1, 1.5, 2])("budget scale at %s renders a decimal field and saves a JSON number", async (current) => {
+  const text = TEXT.replace("[agents]", `[agents]\nbudget_scale = ${current.toFixed(1)}`);
+  const { fetch, puts } = daemon(text, { ...VALUES, agents: { ...VALUES.agents, budget_scale: current } });
   await open(editable, fetch);
-  fireEvent.change(field("merge.pr_quiet_sec"), { target: { value: "120.5" } });
+  const input = screen.getByRole("spinbutton", { name: /^Budget scale/ }) as HTMLInputElement;
+  expect(input.readOnly).toBe(false);
+  expect(input.value).toBe(String(current));
+  expect(input.step).toBe("any");
+  fireEvent.change(input, { target: { value: "2.5" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await act(settle);
+  expect(puts).toEqual([{ patch: { "agents.budget_scale": 2.5 } }]);
+});
+
+test.each([
+  ["loop", "workers"],
+  ["merge", "pr_rounds"],
+  ["merge", "pr_poll_sec"],
+  ["merge", "check_wait_sec"],
+  ["merge", "pr_quiet_sec"],
+])("%s.%s rejects a fractional edit instead of saving a truncated integer", async (table, key) => {
+  const { fetch, puts } = daemon(TEXT, { ...VALUES, [table]: { ...VALUES[table], [key]: 3 } });
+  await open(editable, fetch);
+  const input = field(`${table}.${key}`);
+  expect(input.step).toBe("1");
+  fireEvent.change(input, { target: { value: "1.5" } });
   const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
   expect(save.disabled).toBe(true);
   fireEvent.click(save);
   await act(settle);
   expect(puts).toEqual([]);
-  expect(field("merge.pr_quiet_sec").value).toBe("300");
+  expect(input.value).toBe("3");
 });
 
 test("the raw tab edited and Save clicked: the PUT body carries text and no patch, even after a field edit", async () => {
@@ -219,7 +241,7 @@ test("a 400 naming [loop] workers shows the daemon's sentence under the workers 
 });
 
 test("a refusal naming a dotted patch key selects the Fields tab; a refused raw save stays in the raw tab with its draft intact, so the correction keeps every raw edit", async () => {
-  let error = "loop.workers: a patch value is a string, an integer, a boolean or a list of strings, not float";
+  let error = "loop.workers: cannot change an integer to a float";
   const { fetch, puts } = daemon(TEXT, VALUES, () => Response.json({ ok: false, error }, { status: 400 }));
   await open(editable, fetch);
   const dialog = screen.getByRole("dialog");
@@ -262,7 +284,7 @@ test("a daemon whose /status lacks config_edit opens the sheet read-only, every 
   expect(dialog.querySelector("[data-config-edit-off]")!.textContent).toBe(CONFIG_EDIT_OFF);
   expect(CONFIG_EDIT_OFF).toContain("[serve] config_edit");
   const controls = Array.from(dialog.querySelectorAll("[data-field]")) as (HTMLInputElement | HTMLSelectElement)[];
-  expect(controls.length).toBe(16);
+  expect(controls.length).toBe(17);
   for (const control of controls) {
     expect(control instanceof HTMLSelectElement ? control.disabled : control.readOnly).toBe(true);
   }

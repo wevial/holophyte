@@ -40,7 +40,7 @@ BACKUP_STAMP = "%Y%m%dT%H%M%SZ"
 # `PUT /config` with `{"patch": {...}}` (KO-364) edits the file in place
 # with `tomlkit`, the factory's one dependency (`requirements.txt`): a
 # patch value is one of these, a list holding strings only.
-PATCH_VALUE_TYPES = (str, int, bool, list)
+PATCH_VALUE_TYPES = (str, int, float, bool, list)
 TOMLKIT_MISSING = ("[holo2] the daemon needs the tomlkit module to edit the"
                    " config in place (PUT /config patch); install it with"
                    " python3 -m pip install --user -r requirements.txt")
@@ -153,7 +153,7 @@ def patch_config(target, patch, now):
     """`PUT /config` with `{"patch": {...}}` (KO-364): the current file
     edited in place with `tomlkit`, then held, recorded, backed up and
     written exactly as a `text` is. `patch` is a flat object of dotted
-    `table.key` to a string, integer, boolean or list of strings; the
+    `table.key` to a string, integer, float, boolean or list of strings; the
     table is one this version reads (`config.KNOWN_KEYS`) and is created
     when the file lacks it. Comments, order and the layout of everything
     but the patched values are kept byte for byte; a multi-line array is
@@ -204,16 +204,19 @@ def apply_patch(current, patch):
         elif not isinstance(section, (tomlkit.items.Table,
                                       tomlkit.items.InlineTable)):
             raise PatchError(f"{key}: [{table}] must be a table")
+        if isinstance(value, float) and isinstance(section.get(name),
+                                                   tomlkit.items.Integer):
+            raise PatchError(f"{key}: cannot change an integer to a float")
         set_patched(tomlkit, section, name, value)
     return tomlkit.dumps(document)
 
 
 def check_patch_value(key, value):
-    """`PatchError` unless `value` is a string, an integer, a boolean or
-    a list of strings -- the shapes a patch carries and the loader reads."""
+    """`PatchError` unless `value` is a string, an integer, a float, a
+    boolean or a list of strings -- the shapes a patch carries and the loader reads."""
     if not isinstance(value, PATCH_VALUE_TYPES):
         raise PatchError(f"{key}: a patch value is a string, an integer, a"
-                         f" boolean or a list of strings, not"
+                         f" float, a boolean or a list of strings, not"
                          f" {type(value).__name__}")
     if isinstance(value, list) and not all(isinstance(item, str)
                                            for item in value):
@@ -228,6 +231,9 @@ def set_patched(tomlkit, section, name, value):
     about a command no longer in the file would only mislead -- and
     every comment outside that line stays."""
     existing = section.get(name)
+    if isinstance(value, float) or (type(value) is int
+                                   and isinstance(existing, tomlkit.items.Float)):
+        value = tomlkit.float_(float(value))
     if not (isinstance(value, list)
             and isinstance(existing, tomlkit.items.Array)):
         section[name] = value

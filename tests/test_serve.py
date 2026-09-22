@@ -37,6 +37,47 @@ from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
 SLACK = 10 * SEC
 
 
+class DecimalConfigPatchTests(ServeTestCase):
+    """KO-415: decimal patches retain their TOML and JSON number types."""
+
+    def start_config(self, settings):
+        self.seed()
+        token = self.root / "serve.token"
+        token.write_text("config-test-token\n")
+        token.chmod(0o600)
+        self.bearer = {"Authorization": "Bearer config-test-token"}
+        self.before = (f'[serve]\ntoken_file = "{token}"\n'
+                       f'config_edit = true\n{settings}')
+        self.start(self.before)
+
+    def test_decimal_and_integer_patches_preserve_a_float_key(self):
+        self.start_config("[agents]\nbudget_scale = 1.0  # scale\n")
+        for incoming, expected in ((1.5, "1.5"), (2, "2.0"), (2.0, "2.0")):
+            with self.subTest(incoming=repr(incoming)):
+                code, _, body = self.request(
+                    "PUT", "/config", self.bearer,
+                    body={"patch": {"agents.budget_scale": incoming}})
+                self.assertEqual(code, 200, body)
+                self.assertEqual((self.db.parent / "config.toml").read_text(),
+                                 self.before.replace("1.0", expected))
+                code, _, body = self.request("GET", "/config", self.bearer)
+                self.assertEqual(code, 200, body)
+                value = body["values"]["agents"]["budget_scale"]
+                self.assertEqual(value, float(expected))
+                self.assertIsInstance(value, float)
+
+    def test_float_patch_cannot_change_an_integer_key_type(self):
+        self.start_config("[loop]\nworkers = 2\n")
+        code, _, body = self.request(
+            "PUT", "/config", self.bearer,
+            body={"patch": {"loop.workers": 1.5}})
+        self.assertEqual(code, 400, body)
+        for word in ("loop.workers", "integer", "float"):
+            self.assertIn(word, body["error"])
+        self.assertEqual((self.db.parent / "config.toml").read_text(), self.before)
+        self.assertEqual(list(self.db.parent.glob("config.toml.bak-*")), [])
+
+
 class PeersTests(ServeTestCase):
     """`GET /peers`: the target's `[console] daemons` beside the address
     this daemon bound, so a page loaded from it knows where to fan out."""
