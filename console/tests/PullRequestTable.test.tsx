@@ -16,7 +16,7 @@ const item: AttentionItem = {
   kind: "pr_open", level: "attention", run: 47, ticket: "KO-7",
   ticket_url: "https://linear.app/team/issue/KO-7", pr_url: "https://github.com/o/r/pull/2170",
   reason: "Waiting for maintainer review", asked_ms: status.now - 600000,
-  pr: { checks: "success", review: "review_required", threads: 0 },
+  pr: { number: 2170, checks: "success", review: "review_required", threads: 0 },
 };
 const host = hostOf({ ...status, project: "/projects/repo", actions: true }, { level: "attention", now: status.now, items: [item] });
 afterEach(() => { cleanup(); localStorage.clear(); });
@@ -95,6 +95,54 @@ const detail: RunDetailBody = {
     { at: status.now - 700000, kind: "started", summary: "Started work" },
   ],
 };
+
+test("last factory activity skips commit snapshots and shows the action's sentence and time", async () => {
+  const at = status.now - 120000;
+  const sentence = "verifying -> awaiting_merge_approval: the fix rounds moved the candidate forward";
+  const deps = { fetch: async () => Response.json({ ...detail, events: [
+    { at: status.now, kind: "pr_seen_commits", summary: "[]" },
+    { at, kind: "phase_change", summary: sentence },
+  ] }) };
+  render(<PullRequestTable hosts={[host]} project="all" now={status.now} deps={deps} />);
+  fireEvent.click(screen.getByRole("button", { name: "Details for KO-7" }));
+  await act(settle);
+  const activity = screen.getByRole("region", { name: "Last factory activity" });
+  expect(within(activity).getByText(sentence)).toBeTruthy();
+  expect(activity.textContent).not.toContain("[]");
+  expect(activity.querySelector("time")!.getAttribute("datetime")).toBe(new Date(at).toISOString());
+  expect(activity.querySelector("time")!.textContent).toContain("2m ago");
+});
+
+test("bookkeeping-only detail has no factory activity recorded", async () => {
+  const deps = { fetch: async () => Response.json({ ...detail, events: [
+    { at: status.now, kind: "pr_seen_commits", summary: "[]" },
+    { at: status.now - 1, kind: "pr_empty_wakes", summary: "2" },
+    { at: status.now - 2, kind: "pr_wake_breaker", summary: "paused" },
+    { at: status.now - 3, kind: "pr_text_sha", summary: "abc123" },
+  ] }) };
+  render(<PullRequestTable hosts={[host]} project="all" now={status.now} deps={deps} />);
+  fireEvent.click(screen.getByRole("button", { name: "Details for KO-7" }));
+  await act(settle);
+  const activity = screen.getByRole("region", { name: "Last factory activity" });
+  expect(within(activity).getByText("No factory activity recorded")).toBeTruthy();
+  expect(activity.querySelector("time")).toBeNull();
+});
+
+test("expansion keeps the reason only in the collapsed row and preserves PR facts", async () => {
+  render(<PullRequestTable hosts={[host]} project="all" now={status.now}
+    deps={{ fetch: async () => Response.json(detail) }} />);
+  const toggle = screen.getByRole("button", { name: "Details for KO-7" });
+  fireEvent.click(toggle);
+  await act(settle);
+  const table = screen.getByRole("table");
+  expect(within(table).getAllByText(item.reason as string)).toHaveLength(1);
+  expect(within(toggle.closest("tr")!).getByText(item.reason as string)).toBeTruthy();
+  const facts = screen.getByRole("region", { name: "Pull request facts" });
+  for (const text of ["Number: 2170", "Checks: success", "Review: review_required", "Open threads: 0"]) {
+    expect(facts.textContent).toContain(text);
+  }
+  expect(within(facts).getByRole("link", { name: item.pr_url! }).getAttribute("href")).toBe(item.pr_url!);
+});
 
 test("project tables follow Floor order, pool hosts, omit empty projects and the Project column", () => {
   const other = hostOf({ ...status, project: "/projects/alpha" }, { level: "attention", now: status.now,

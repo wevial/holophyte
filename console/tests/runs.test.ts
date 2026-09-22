@@ -1,10 +1,30 @@
 import { expect, test } from "bun:test";
-import { boxPercent, boxTone, groupByProject, phaseLabel, strikeTone } from "../src/lib/runs";
+import { boxPercent, boxTone, groupByProject, lastActivity, phaseLabel, strikeTone } from "../src/lib/runs";
 import type { Status } from "../src/lib/types";
 import { fixture } from "./harness";
 import { buildTimeline, type TimelineRun } from "../src/lib/timeline";
 
 const PR_URL = "https://github.com/example/repo/pull/453";
+
+test("lastActivity selects the newest action in any order, excluding bookkeeping", () => {
+  const phase = { at: 20, kind: "phase_change", summary: "verifying -> awaiting_merge_approval: ready" };
+  const opened = { at: 10, kind: "pull_request", summary: "Opened pull request" };
+  const bookkeeping = [
+    { at: 30, kind: "pr_seen_commits", summary: "[]" },
+    { at: 40, kind: "pr_empty_wakes", summary: "2" },
+    { at: 50, kind: "pr_wake_breaker", summary: "paused" },
+    { at: 60, kind: "pr_text_sha", summary: "abc123" },
+  ];
+  const events = [bookkeeping[0]!, phase, bookkeeping[1]!, opened, ...bookkeeping.slice(2)];
+  for (const ordered of [events, events.toReversed(), events.toSorted((a, b) => a.at - b.at)]) {
+    const before = [...ordered];
+    expect(lastActivity(ordered)).toEqual(phase);
+    expect(ordered).toEqual(before);
+  }
+  expect(lastActivity(bookkeeping)).toBeNull();
+  expect(lastActivity([])).toBeNull();
+  expect(lastActivity([...events, { at: 70, kind: "pr_seen", summary: "PR updated" }])?.kind).toBe("pr_seen");
+});
 
 test("only merge_gate with a PR URL is monitoring PR", () => {
   expect(phaseLabel("merge_gate", PR_URL)).toBe("monitoring PR");
