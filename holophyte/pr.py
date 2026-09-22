@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
@@ -145,6 +146,18 @@ class Thread:
 
 
 @dataclass(frozen=True)
+class FailedCheck:
+    """A check run on the head commit whose conclusion is red. `job_id` is
+    the GitHub Actions job whose log `job_log()` reads; None for a check
+    run another app made or a commit status, which have no such log."""
+
+    name: str
+    conclusion: str
+    url: str
+    job_id: int | None = None
+
+
+@dataclass(frozen=True)
 class PrState:
     """The pull request as one `pr_state()` read saw it. `mergeable` is
     GitHub's answer: MERGEABLE, CONFLICTING or UNKNOWN -- and UNKNOWN is
@@ -161,6 +174,7 @@ class PrState:
     mergeable: str = "UNKNOWN"
     updated_at: int | None = None
     pending_contexts: tuple = ()
+    failed_checks: tuple = ()  # `FailedCheck`s of the head commit
 
 
 def origin_url(target):
@@ -622,20 +636,44 @@ def rest(target, pull, method, path, payload=None):
     return _call(target, pull.host, method, path, payload)
 
 
+def job_log(target, pull, job_id):
+    """The plain-text log of GitHub Actions job `job_id`. The endpoint
+    answers with a redirect to text, not JSON, so it is read raw on the
+    same route `rest()` takes."""
+    path = f"repos/{pull.owner}/{pull.name}/actions/jobs/{job_id}/logs"
+    if shutil.which(GH) is not None:
+        return _gh_output(target, pull.host, "GET", path, None)
+    return _api_output(pull.host, "GET", path, None, _route_token())
+
+
 def _call(target, host, method, path, payload):
     """The one call shape both APIs go through: `gh api` when `gh` is on
     PATH, the token and `urllib` otherwise; the decoded JSON answer, or
     `InfraFailure` for a route that refused or did not answer."""
     if shutil.which(GH) is not None:
         return _call_with_gh(target, host, method, path, payload)
+    return _call_with_api(host, method, path, payload, _route_token())
+
+
+def _route_token():
+    """The token the `urllib` route sends; `InfraFailure` without one."""
     token = token_from_env()
     if token is None:
         raise InfraFailure(f"no {GH!r} on PATH and no "
                            f"{' or '.join(TOKEN_VARS)} in the environment")
-    return _call_with_api(host, method, path, payload, token)
+    return token
 
 
 def _call_with_gh(target, host, method, path, payload):
+    stdout = _gh_output(target, host, method, path, payload)
+    try:
+        return json.loads(stdout) if stdout.strip() else {}
+    except ValueError:
+        raise InfraFailure(f"{GH} api {path} answered something that is not"
+                           f" JSON: {_short(stdout)}") from None
+
+
+def _gh_output(target, host, method, path, payload):
     argv = [GH, "api", "--hostname", host, "--method", method, path]
     body = None
     if payload is not None:
@@ -650,14 +688,31 @@ def _call_with_gh(target, host, method, path, payload):
     if r.returncode:
         detail = " ".join((r.stderr or r.stdout).split())[-500:]
         raise InfraFailure(f"{GH} api {path} failed: {detail or 'no output'}")
-    try:
-        return json.loads(r.stdout) if r.stdout.strip() else {}
-    except ValueError:
-        raise InfraFailure(f"{GH} api {path} answered something that is not"
-                           f" JSON: {_short(r.stdout)}") from None
+    return r.stdout
 
 
 def _call_with_api(host, method, path, payload, token):
+    text = _api_output(host, method, path, payload, token)
+    try:
+        return json.loads(text) if text.strip() else {}
+    except ValueError:
+        raise InfraFailure(f"GitHub answered {method} {path} with something"
+                           f" that is not JSON: {_short(text)}") from None
+
+
+class _TokenStaysHome(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect without carrying the token to another host: the
+    job-log endpoint redirects to a signed URL off the API's host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and (urllib.parse.urlsplit(newurl).netloc
+                                != urllib.parse.urlsplit(req.full_url).netloc):
+            new.remove_header("Authorization")
+        return new
+
+
+def _api_output(host, method, path, payload, token):
     base = API if host == "github.com" else f"https://{host}/api/v3"
     if path == "graphql":
         url = (f"{API}/graphql" if host == "github.com"
@@ -672,8 +727,9 @@ def _call_with_api(host, method, path, payload, token):
                  "Content-Type": "application/json",
                  "User-Agent": "holophyte"})
     try:
-        with urllib.request.urlopen(request, timeout=PR_TIMEOUT) as response:
-            text = response.read().decode("utf-8", "replace")
+        opener = urllib.request.build_opener(_TokenStaysHome)
+        with opener.open(request, timeout=PR_TIMEOUT) as response:
+            return response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         detail = " ".join(e.read().decode("utf-8", "replace").split())[-500:]
         raise InfraFailure(f"GitHub refused {method} {path} ({e.code}):"
@@ -681,11 +737,6 @@ def _call_with_api(host, method, path, payload, token):
     except (urllib.error.URLError, OSError) as e:
         raise InfraFailure(f"GitHub did not answer {method} {path}:"
                            f" {e}") from None
-    try:
-        return json.loads(text) if text.strip() else {}
-    except ValueError:
-        raise InfraFailure(f"GitHub answered {method} {path} with something"
-                           f" that is not JSON: {_short(text)}") from None
 
 
 def _short(value):

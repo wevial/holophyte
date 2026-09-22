@@ -484,8 +484,10 @@ class MergeModeFixture(LoopFixture):
         `pullRequests(headRefName:)` lookup (KO-407) one open pull request
         at `open_pr` -- none without it -- and the reconcile's pull-status
         read (KO-359) an open pull request; the check-runs and
-        branch-rules reads answer no runs and no rules. `push_exit` and
-        `push_sh` control push failure and an optional delay. A push
+        branch-rules reads answer no runs and no rules, and a job's log
+        read answers `self.job_log`'s text -- a failed call without it.
+        `push_exit` and `push_sh` control push failure and an optional
+        delay. A push
         the fake answers successfully also appends `REF SHA` to
         `self.push_log`: the refspec's source resolved in the pushing
         checkout at push time, which is the tip a real remote's branch
@@ -500,6 +502,7 @@ class MergeModeFixture(LoopFixture):
         self.push_log = bindir / "pushes.log"
         self.api_dir = bindir / "api"
         self.api_dir.mkdir()
+        self.job_log = bindir / "job.log"
         # The open step's lookup answer: `open_pr` is the URL the branch
         # is already open as, None the common "no open pull request".
         self.open_answer = bindir / "open.json"
@@ -555,6 +558,8 @@ class MergeModeFixture(LoopFixture):
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            f'    *actions/jobs/*/logs*) cat "{self.job_log}" && exit 0;'
+            ' exit 1;;\n'
             '    *"GET repos/example/repo/pulls/"*) '
             "python3 -c 'import json,pathlib; "
             f'p=pathlib.Path("{self.pr_body}"); '

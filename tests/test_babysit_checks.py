@@ -253,5 +253,97 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertIn(BRANCH, self.branches())
 
 
+class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
+    """A red Actions check gets one fix turn per babysit; anything else parks."""
+    RED_UNIT = {"name": "unit", "status": "completed", "conclusion": "failure",
+                "html_url": "https://github.com/example/repo/actions/runs/5"
+                            "/job/42",
+                "id": 42, "app": {"slug": "github-actions"}}
+    FAILED_LINE = "FAIL: test_x (tests.test_y.Case.test_x)"
+
+    def red_unit_check(self, *, until_fixed):
+        """Serve `unit` red on the head's check runs: on the first head
+        read only when `until_fixed`, on every head otherwise."""
+        heads = []
+
+        def check_runs(target, pull, sha):
+            heads.extend([sha] if sha not in heads else [])
+            red = sha == heads[0] or not until_fixed
+            return [self.RED_UNIT if red
+                    else dict(self.RED_UNIT, conclusion="success")]
+        self.enterContext(patch.object(holophyte.pr_status, "_check_runs_of",
+                                       check_runs))
+
+    def test_a_red_actions_check_is_fixed_verified_reviewed_and_merged(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.job_log.write_text("".join(f"step {n}\n" for n in range(200))
+                                + self.FAILED_LINE + "\n")
+        self.red_unit_check(until_fixed=True)
+        verified = self.worktrees.parent / "verified.log"
+        task = dict(a_task(), body=self.BODY,
+                    verify=f"git rev-parse HEAD >> {verified}")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: the unit failure"), APPROVE, Idle(""),
+                            provider=StubProvider(task))
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review", "implement"])
+        goal = fake.turns[3].goal
+        self.assertIn("unit", goal)
+        self.assertIn(self.RED_UNIT["html_url"], goal)
+        self.assertIn(self.FAILED_LINE, goal)
+        self.assertIn("step 199", goal)
+        self.assertNotIn("step 100\n", goal)  # The log's tail, not all of it.
+        fixed = self.pushed()[-1][1]
+        self.assertEqual(self.git("log", "-1", "--format=%s", fixed).strip(),
+                         "fix: the unit failure")
+        self.assertIn(fixed, verified.read_text().split())
+        self.assertEqual(fake.turns[4].candidate_sha, fixed)
+        merges = [v["sha"] for kind, v in self.api_calls() if kind == "merge"]
+        self.assertEqual(merges, [fixed])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_a_check_still_red_after_its_one_fix_parks(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.job_log.write_text(self.FAILED_LINE + "\n")
+        self.red_unit_check(until_fixed=False)
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: the unit failure"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "implement", "implement"])
+        self.assertEqual(self.pushed()[-1][1],
+                         self.git("rev-parse", BRANCH).strip())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("checks failure on the head commit", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_a_red_status_that_is_not_an_actions_job_parks_unfixed(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        state = self.pr_state(checks="FAILURE")
+        commit, = state["data"]["repository"]["pullRequest"]["commits"]["nodes"]
+        commit["commit"]["statusCheckRollup"]["contexts"] = {
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "nodes": [{"__typename": "StatusContext", "context": "ci/external",
+                       "state": "FAILURE"}]}
+        self.fake_route(states=[state])
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("checks failure on the head commit", self.question())
+        self.assertFalse([c for c in self.recorded() if "actions/jobs" in c])
+
+
 if __name__ == "__main__":
     unittest.main()
