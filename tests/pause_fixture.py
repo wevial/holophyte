@@ -44,6 +44,32 @@ class PauseReply:
 
 
 class PauseFailureCases:
+    def test_pause_with_run_argument_syncs_board_and_releases_label(self):
+        from holophyte import board
+        from holophyte.dispatch import SWEPT
+
+        run_task = holophyte.loop.run_task
+        completed = []
+
+        def run_with_identity(target, task, conn, run_id, provider):
+            run = task["_run"]
+            ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+            with (
+                patch.object(board, "mirror_push", wraps=board.mirror_push) as mirror,
+                patch.object(board, "release_lease_label",
+                             wraps=board.release_lease_label) as release,
+            ):
+                result = run_task(run, task)
+            mirror.assert_called_once_with(conn, ticket_id, provider)
+            release.assert_called_once_with(target, conn, ticket_id, provider, run_id)
+            completed.append(result)
+
+        with patch.object(holophyte.loop, "run_task", side_effect=run_with_identity):
+            self.loop(PauseEdit(self.db))
+        self.assertEqual(completed, [SWEPT])
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "verifying")])
+
     def test_pause_before_malformed_review_reminder(self):
         from fake_agent import Reply
         self.loop(Commit(), PauseReply(self.db, Reply("no verdict")))

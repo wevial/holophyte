@@ -133,10 +133,10 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         raise InfraFailure(str(refused)) from refused
     except store.RunEnded as ended:
         if ended.outcome == "paused":
-            ticket_id = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
-                                     (run_id,)).fetchone()[0]
-            board.mirror_push(conn, ticket_id, provider)
-            board.release_lease_label(target, conn, ticket_id, provider, run_id)
+            ticket_id = store.read.run_snapshot(run.conn, run.run_id).ticketId
+            board.mirror_push(run.conn, ticket_id, run.provider)
+            board.release_lease_label(run.target, run.conn, ticket_id,
+                                      run.provider, run.run_id)
             return SWEPT
         print(f"[holo2] run {ended.run_id} was ended by the supervisor"
               f" ({ended.outcome}: {ended.reason}); stopping")

@@ -66,7 +66,7 @@ export function RunRow({
         <span className="truncate font-mono text-[13px] font-semibold text-ink"><TicketLink ticket={run.ticket} ticket_url={run.ticket_url} /></span>
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[14px] text-body">{run.title ?? ""}</span>
-          {run.stop_requested && <span title={run.stop_requested} className="text-[12px] text-muted">Pause requested: {run.stop_requested}</span>}
+          {run.stop_requested && <span title={run.stop_requested} className="min-w-0 truncate text-[12px] text-muted">Pause requested: {run.stop_requested}</span>}
           <StrikePill strikes={run.strikes ?? 0} max={thresholds.strikes} />
         </span>
         <span>
