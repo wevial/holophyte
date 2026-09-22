@@ -80,6 +80,48 @@ class StoreEnumTests(unittest.TestCase):
             "SELECT admission, holdNote FROM projects").fetchone(),
             ("disabled", "retired"))
 
+    def test_pause_after_migrating_recent_intervention_constraints(self):
+        # v30/v31 already admit every action in the old widening probe.
+        schema = (store.schema.SCHEMA + ";" + store.schema._INTERVENTIONS_DDL)
+        schema = schema.replace(", 'pause'", "").replace(", 'paused'", "")
+        schema = schema.replace(
+            "    stopRequested     INTEGER REFERENCES interventions(id),\n", "")
+        for version in (30, 31):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "store.db"
+                old = sqlite3.connect(path)
+                old.executescript(schema)
+                project = store.ensure_project(old, "team", "/repo")
+                ticket = store.tickets.mirror_ticket(
+                    old, project, "issue", linear_identifier="KO-1", title="pause",
+                    acceptance_criteria=["work is preserved"],
+                    verification_commands=["true"])
+                run = store.claim(old, project, ticket)
+                store.set_phase(old, run, "working")
+                prior = store.record_intervention(old, run, "operator_note", "history")
+                history = old.execute("SELECT * FROM interventions WHERE id = ?",
+                                      (prior,)).fetchone()
+                old.execute(f"PRAGMA user_version = {version}")
+                old.commit()
+                old.close()
+                conn = store.open(path)
+                try:
+                    request = store.pause(conn, run, "reboot writer")
+                    self.assertEqual(conn.execute(
+                        "SELECT stopRequested FROM runs WHERE id = ?",
+                        (run,)).fetchone(), (request,))
+                    store.release(conn, run, "paused", resume_phase="verifying")
+                    self.assertEqual(conn.execute(
+                        "SELECT outcome, resumePhase FROM runs WHERE id = ?",
+                        (run,)).fetchone(), ("paused", "verifying"))
+                    self.assertEqual(conn.execute(
+                        "SELECT * FROM interventions WHERE id = ?",
+                        (prior,)).fetchone(), history)
+                    self.assertEqual(
+                        conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+                finally:
+                    conn.close()
+
     def test_public_vocabulary_and_graph_membership(self):
         self.assertEqual(store.PHASES, tuple(e.value for e in enums.RunPhase))
         self.assertEqual(store.tickets.TICKET_STATUSES,
