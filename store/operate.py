@@ -613,7 +613,8 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
         else:
             target = phase
         conn.execute(
-            "UPDATE runs SET phase = ?, resumePhase = NULL WHERE id = ?",
+            "UPDATE runs SET phase = ?, resumePhase = NULL, parkKind = NULL"
+            " WHERE id = ?",
             (target, run_id),
         )
         if phase in ENDED_PHASES:

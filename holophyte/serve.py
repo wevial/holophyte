@@ -285,14 +285,10 @@ def supervisor_view(target, beat, now, knobs):
             "host": host_label(target, beat.host)}
 
 
-PR_OPEN_PREFIX = "PR open:"
-
-
 def parked_item(ticket):
     """One `blocked_on_operator` ticket as an `/attention` item. A ticket
-    whose run has a `prUrl` and whose question opens with `PR open:` -- the
-    line `_park_on_pr()` writes first -- is `pr_open`: the run waits on a
-    review or a merge, not on an answer, so the item carries the URL, the
+    whose run has a `prUrl` and `parkKind = pull_request` is `pr_open`: the run waits
+    on a review or a merge, not on an answer, so the item carries the URL, the
     `reason` (the question with that first line removed) and `pr`: the
     pull request's `number` from the URL (null when the URL is not of
     GitHub's shape) and the `checks`, `review` and `threads` the
@@ -300,8 +296,9 @@ def parked_item(ticket):
     `prSeenThreads`, KO-368), each null for a run never polled. Every
     other ticket is `blocked` with its `question`."""
     question = ticket.blockedQuestion or ""
-    if ticket.prUrl and question.startswith(PR_OPEN_PREFIX):
-        _, _, reason = question.partition("\n")
+    if ticket.prUrl and ticket.parkKind == "pull_request":
+        _, separator, reason = question.partition("\n")
+        reason = reason if separator else question
         match = PR_URL_RE.match(ticket.prUrl)
         return {"kind": "pr_open", "ticket": ticket.linearIdentifier,
                 "ticket_url": ticket.ticketUrl,

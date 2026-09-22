@@ -687,7 +687,7 @@ def escalate(conn, ticket_id, provider):
     return True
 
 
-def block_ticket(conn, ticket_id, provider, question):
+def block_ticket(conn, ticket_id, provider, question, park_kind="question"):
     """Park `ticket_id` as `blocked_on_operator`, asking `question`.
 
     The status move through `mirror_status()`, then the question into the
@@ -703,6 +703,9 @@ def block_ticket(conn, ticket_id, provider, question):
         return False
     conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                  (redact_values(question), ticket_id))
+    conn.execute("UPDATE runs SET parkKind = ? WHERE id ="
+                 " (SELECT COALESCE(activeRunId, lastRunId) FROM tickets WHERE id = ?)",
+                 (park_kind, ticket_id))
     conn.commit()
     return True
 

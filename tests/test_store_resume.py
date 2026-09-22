@@ -115,7 +115,12 @@ class ResumeTests(unittest.TestCase):
     def test_guidance_on_a_blocked_run_resumes_working_and_is_recorded(self):
         run_id = self.a_run("blocked_on_operator")
 
+        self.conn.execute("UPDATE runs SET parkKind = 'question' WHERE id = ?",
+                          (run_id,))
+        self.conn.commit()
         store.resume(self.conn, run_id, guidance="use the staging bucket")
+        self.assertEqual(self.conn.execute(
+            "SELECT parkKind FROM runs WHERE id = ?", (run_id,)).fetchone(), (None,))
 
         # §4: `blocked_on_operator --> working : guidance provided`.
         self.assertEqual(self.run_row(run_id)[0], "working")

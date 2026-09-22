@@ -46,6 +46,15 @@ class RunPhase(str, Enum):
     REJECTED = 'rejected'
 
 
+class ParkKind(str, Enum):
+    PULL_REQUEST = 'pull_request'
+    PULL_REQUEST_CLOSED = 'pull_request_closed'
+    THREAD = 'thread'
+    FIX_DECLINED = 'fix_declined'
+    MERGE_LOCK = 'merge_lock'
+    QUESTION = 'question'
+
+
 class RunOutcome(str, Enum):
     MERGED = 'merged'
     KILLED = 'killed'
@@ -142,6 +151,7 @@ CONSTRAINED_COLUMNS = {
     ('tickets', 'status'): TicketStatus,
     ('tickets', 'affinity'): Affinity,
     ('runs', 'phase'): RunPhase,
+    ('runs', 'parkKind'): ParkKind,
     ('runs', 'outcome'): RunOutcome,
     ('runs', 'outcomeClass'): OutcomeClass,
     ('runs', 'resumePhase'): ResumePhase,

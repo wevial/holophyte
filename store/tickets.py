@@ -190,6 +190,9 @@ def transition(conn, ticket_id, to_status):
         conn.execute(
             "UPDATE tickets SET status = ? WHERE id = ?", (to_status, ticket_id)
         )
+        if from_status == "blocked_on_operator":
+            conn.execute("UPDATE runs SET parkKind = NULL WHERE ticketId = ?",
+                         (ticket_id,))
     return from_status
 
 

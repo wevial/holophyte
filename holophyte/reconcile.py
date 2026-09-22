@@ -457,7 +457,8 @@ def _reject_pr(conn, run_id, pull, who, branch, sha):
         store.walk_ticket(conn, ticket_id, "blocked_on_operator")
         conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                      (question, ticket_id))
-        conn.execute("UPDATE runs SET candidateSha = ?, prUrl = ? WHERE id = ?",
+        conn.execute("UPDATE runs SET candidateSha = ?, prUrl = ?,"
+                     " parkKind = 'pull_request_closed' WHERE id = ?",
                      (sha, pull.url, run_id))
     print(f"[holo2] {question}; {reason}")
 

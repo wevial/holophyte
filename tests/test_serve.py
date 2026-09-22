@@ -741,7 +741,7 @@ class AttentionTests(ServeTestCase):
                           "\n1. src/x.py:3 by @coworker", parked))
             conn.commit()
             park_run(conn, run, "awaiting_merge_approval", "PR open",
-                       candidate_sha="a" * 40, pr_url=url,
+                       candidate_sha="a" * 40, pr_url=url, park_kind="pull_request",
                        now=self.now - 2 * MIN, pr_seen=pr_seen)
         finally:
             conn.close()

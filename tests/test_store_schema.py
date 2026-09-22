@@ -1184,7 +1184,8 @@ class AdmissionMigrationTests(unittest.TestCase):
             conn.close()
             conn = store.open(path)
             try:
-                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (28,))
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                                 (store.schema.SCHEMA_VERSION,))
                 self.assertEqual(
                     conn.execute("SELECT admission, holdNote FROM projects").fetchall(),
                     [("enabled", None)],
@@ -1242,8 +1243,10 @@ class Version26EnumMigrationTests(unittest.TestCase):
         after['interventions'] = after['interventions'][:1]
         # Admission columns are new; all pre-existing project values survive.
         after['projects'] = [row[:7] + row[9:] for row in after['projects']]
+        after['runs'] = [row[:9] + row[10:] for row in after['runs']]
         self.assertEqual(after, self.before)
-        self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 28)
+        self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],
+                         store.schema.SCHEMA_VERSION)
         self.assertEqual(conn.execute('PRAGMA foreign_key_check').fetchall(), [])
         self.assertIsNotNone(conn.execute(
             "SELECT sql FROM sqlite_master"
@@ -1284,6 +1287,46 @@ class Version26EnumMigrationTests(unittest.TestCase):
         self.assertEqual(conn.execute(
             'SELECT name, sql FROM sqlite_master ORDER BY name').fetchall(),
             self.old_schema)
+
+
+class ParkKindMigrationTests(unittest.TestCase):
+    def test_previous_store_backfills_only_current_parked_runs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "store.db"
+            conn = sqlite3.connect(path)
+            conn.executescript("\n".join(
+                line for line in store.schema.SCHEMA.splitlines()
+                if not line.strip().startswith("parkKind ")))
+            project = store.tickets.ensure_project(conn, "team", "/repo")
+            for n, question in enumerate(("PR open: URL\nready", "rejected: URL",
+                                          "Please help", "PR open: stale"), 1):
+                conn.execute("INSERT INTO tickets (id, projectId, linearIssueId,"
+                             " linearIdentifier, title, status, mirroredAt, affinity,"
+                             " blockedQuestion) VALUES (?, ?, ?, ?,"
+                             " 'old', ?, 1, 'any', ?)",
+                             (n, project, str(n), f"KO-{n}",
+                              "blocked_on_operator" if n < 4 else "ready", question))
+                conn.execute("INSERT INTO runs (id, ticketId, projectId,"
+                             " attempt, phase,"
+                             " startedAt, lastHeartbeat) VALUES (?, ?, ?, 1, ?, 1, 1)",
+                             (n, n, project, "rejected" if n == 2
+                              else "awaiting_merge_approval"))
+                conn.execute("UPDATE tickets SET lastRunId = ? WHERE id = ?", (n, n))
+            conn.execute("PRAGMA user_version = 28")
+            conn.commit()
+            conn.close()
+            conn = store.open(path)
+            self.addCleanup(conn.close)
+            self.assertEqual(conn.execute(
+                "SELECT parkKind FROM runs ORDER BY id").fetchall(),
+                             [("pull_request",), ("pull_request_closed",),
+                              ("question",), (None,)])
+            conn.execute("UPDATE tickets SET blockedQuestion = 'new wording'")
+            conn.commit()
+            store.init(conn)
+            self.assertEqual(conn.execute(
+                "SELECT parkKind FROM runs WHERE id = 1").fetchone(),
+                             ("pull_request",))
 
 
 if __name__ == "__main__":

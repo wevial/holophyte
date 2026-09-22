@@ -193,7 +193,7 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("fail", asked)
 
         closed = holophyte.claim.skip_line(
-            "KO-131", 0, url, f"rejected: {url}")
+            "KO-131", 0, url, f"rejected: {url}", "pull_request_closed")
         self.assertIn(f"a question: rejected: {url};", closed)
         self.assertNotIn("--approve", closed)
 
