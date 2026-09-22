@@ -36,6 +36,7 @@ from holophyte.merge_lock import live_merge_lock
 from holophyte.pullrequest import _landed_pr, _open_pr, _resume_on_pr
 from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
+from holophyte.stop import stop_if_requested
 
 
 def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
@@ -94,7 +95,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                              issue_id, task, branch, wt, carried, started,
                              verify_cmd, contracts, budget_min, body,
                              criteria)
-    if not carried.approved:
+    if not carried.approved and not carried.paused:
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to merge the candidate for: {task}\nrun"
                f" {carried.run_id} was released by --babysit, which is not"
@@ -151,6 +152,8 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                            beat_s, wt, started, budget_min, issue_url)
             sha = sh(["git", "rev-parse", branch], wt)
         else:
+            if carried.paused and merge.approve == "human":
+                _park_for_approval(conn, run_id, provider, task_id, branch, sha)
             return _land(target, conn, run_id, provider, task_id, task,
                          branch, wt, sha, ok, started, budget_min, 0)
     merge_sha = _babysit(target, conn, run_id, provider, task_id,
@@ -342,6 +345,7 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
                              target=target)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id, before_merge=True)
+    stop_if_requested(conn, run_id, "merge_gate")
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")

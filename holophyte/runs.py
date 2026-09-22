@@ -93,6 +93,8 @@ def set_phase(conn, run_id, phase, note=None):
     """
     if conn is None:
         return
+    from holophyte.stop import stop_if_requested
+    stop_if_requested(conn, run_id, phase)
     store.set_phase(conn, run_id, phase, note)
 
 

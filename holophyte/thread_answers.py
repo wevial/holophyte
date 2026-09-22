@@ -29,6 +29,8 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
             reply = agent(target, "adjudicate", prompt, wt, conn=conn,
                           base_sha=sh(["git", "merge-base", "main", sha], cwd=wt),
                           candidate_sha=sha, run_id=run_id)
+        from holophyte.stop import stop_if_requested
+        stop_if_requested(conn, run_id, "merge_gate")
         if (getattr(reply, "timed_out", False)
                 or getattr(reply, "exit_code", 0) != 0 or not reply.strip()):
             raise InfraFailure("ask adjudicator failed or returned an empty answer")

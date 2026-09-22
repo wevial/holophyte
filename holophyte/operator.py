@@ -157,7 +157,9 @@ def _serial(target, provider, knobs):
                 # left it saying, so it is not offered again this pass, and
                 # a failure the sweep already counted is not counted twice.
                 skip.add(task["id"])
-                print(f"[holo2] {task['id']} was swept mid-turn; continuing"
+                outcome = conn.execute("SELECT outcome FROM runs WHERE id = ?",
+                                       (run_id,)).fetchone()[0]
+                print(f"[holo2] {task['id']} ended ({outcome}); continuing"
                       " to the next ready ticket")
                 continue
             if not merged:

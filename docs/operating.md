@@ -7,6 +7,34 @@ commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
 escalation ladder they sit on in the [runbook](operating/runbook.md). Back
 to the [README](index.md).
 
+## Pause one run at its next safe point
+
+`factory.py TARGET --pause KO-n --note "reboot writer"` records an intervention
+and marks that run in one transaction. The current turn continues; `/status`
+reports `stop_requested` with the note, and the console run card shows
+“Pause requested” until the stop takes effect. An ended run refuses the request
+and names its outcome. Repeating a pending request keeps the original note.
+
+The loop checks before each phase, after implementation, verification and
+review, after a fix turn, and between babysit passes and polling steps. A pause
+never freezes or kills a streaming turn. The stop stages work using the same
+environment exclusions as worktree reclaim, commits remaining edits as WIP,
+preserves the worktree and branch, and ends the run with outcome `paused` and
+its next phase in `resumePhase`. The ticket is `blocked_on_operator` with the
+request note. Babysit fixes stop before their push or thread replies; resuming
+an open PR returns through its gate to read the current checks and threads.
+
+`factory.py TARGET --resume KO-n` uses the store resume path and returns the
+ticket to ready. The next claim reuses the worktree and continues from the
+recorded boundary. Implementation is skipped when it already finished; review
+continuations retain the verification result and findings they need. A pause
+does not grant merge approval: targets requiring a human still require it.
+
+This change migrates the store from schema 31 to 32, adding `runs.stopRequested`
+and the `paused` outcome/phase and `pause` intervention action. A pending pause
+requires a writer running this build to reach a boundary.
+
+
 A ticket parked `blocked_on_operator` by a merge gate conflict -- the gate's
 merge of `main` into the branch conflicted, the run failed and the branch
 was preserved -- comes back through `--requeue KO-n --note TEXT` once you

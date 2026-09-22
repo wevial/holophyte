@@ -84,3 +84,12 @@ BASELINE = {'PHASES': ('claimed',
                            'blocked_on_operator': frozenset({'working'}),
                            'killed': frozenset(),
                            'rejected': frozenset()}}
+
+# KO-589: a cooperative pause is an ended run with a recorded continuation.
+BASELINE['PHASES'] += ('paused',)
+BASELINE['INTERVENTION_ACTIONS'] += ('pause',)
+for phase in ('claimed', 'working', 'verifying', 'reviewing', 'addressing',
+              'merge_gate', 'merging', 'squashing', 'awaiting_merge_approval'):
+    BASELINE['RUN_PHASE_TRANSITIONS'][phase] |= {'paused'}
+BASELINE['RUN_PHASE_TRANSITIONS']['paused'] = frozenset({
+    'working', 'verifying', 'reviewing', 'addressing', 'merge_gate', 'merging'})

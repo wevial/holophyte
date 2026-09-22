@@ -44,7 +44,7 @@ DOCUMENTED_COLUMNS = {
         # Store-owned, not a documented field: §5 requires a resume to
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.
-        "resumePhase",
+        "resumePhase", "stopRequested",
         # Store-owned too: the ticket's estimate as it stood at the claim, so
         # a finished run's estimate-vs-actual does not move when the ticket's
         # own `timeBoxMs` is later re-mirrored.

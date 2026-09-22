@@ -11,6 +11,7 @@ from holophyte.gates import MergeParked, RunFailure, sh
 from holophyte.reconcile import _pr_seen
 from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase
+from holophyte.stop import stop_if_requested
 
 
 def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
@@ -184,6 +185,7 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
                            " from the diff")
     reply, timed_out = _timed(target, conn, run_id, beat_s, wt, minutes,
                               goal, role="write")
+    stop_if_requested(conn, run_id, "merge_gate")
     parsed = None if timed_out else pr.parse_pr_text(reply)
     if parsed is None or not parsed[1]:
         why = ("the turn ran out of time" if timed_out

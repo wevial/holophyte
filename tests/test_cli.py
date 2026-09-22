@@ -1,11 +1,6 @@
 """`factory.py TARGET --repoint KO-n SHA --note TEXT`: a parked candidate
 moved to a rebuilt branch tip, through the command line (KO-297).
 
-The mode is the store's `repoint()` behind argparse, so what is tested here
-is the wiring: `--note` is required the way `--requeue` requires it and the
-refusal never reaches the store, the two shas are printed on success, and a
-store refusal is a non-zero exit naming the ticket with nothing written.
-
 Run: python3 -m unittest discover -s tests -p 'test_cli.py' -v
 """
 from __future__ import annotations
@@ -74,6 +69,18 @@ class RepointFlagTests(unittest.TestCase):
         return self.conn.execute(
             "SELECT candidateSha FROM runs WHERE id = ?",
             (self.run,)).fetchone()[0]
+
+    def test_pause_requires_note_and_refuses_ended_outcome(self):
+        with self.assertRaises(SystemExit):
+            self.cli("--pause", "KO-1")
+        out, _ = self.cli("--pause", "KO-1", "--note", "reboot writer")
+        self.assertIn("pause requested", out)
+        store.release(self.conn, self.run, "failed")
+        count = self.conn.execute("SELECT COUNT(*) FROM interventions").fetchone()
+        with self.assertRaisesRegex(SystemExit, "outcome failed"):
+            self.cli("--pause", "KO-1", "--note", "too late")
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM interventions").fetchone(), count)
 
     def test_project_commands_list_and_admission(self):
         def command(*args):

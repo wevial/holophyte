@@ -64,3 +64,9 @@ test("working and wall clocks: Board budget agrees with the run row", () => {
   expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("20");
   expect(document.body.textContent).toContain("working 2m 0s / 10m · wall 20m 0s");
 });
+
+
+test("a live run card carries the pending pause note", () => {
+  render(<RunRow {...props} run={{ ...run, stop_requested: "reboot writer" }} />);
+  expect(screen.getByText("Pause requested: reboot writer")).toBeTruthy();
+});

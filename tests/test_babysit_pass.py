@@ -38,6 +38,19 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     """Pass structure, settling, quiet clocks, and refreshing main."""
+    def test_pause_during_fix_stops_before_push_or_reply(self):
+        from pause_fixture import PauseEdit
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        self.loop(Commit(), APPROVE, Idle(''),
+                  Reply('THREAD 1: ADDRESS -- broken'), PauseEdit(self.db),
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "merge_gate")])
+        self.assertEqual(len(self.pushed()), 1)
+        self.assertEqual([kind for kind, _ in self.api_calls()
+                          if kind in ("reply", "resolve", "merge")], [])
+
     def test_timed_out_thread_fix_records_budget(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])

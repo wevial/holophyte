@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- open, and a column is cheaper to keep true than reconstructing the
     -- phase from the runEvents log. NULL means "nothing recorded", which
     -- `resume()` reads as §4's drawn edge back, `working`.
+    stopRequested     INTEGER REFERENCES interventions(id),
     resumePhase       TEXT
         {_enums.check_clause('resumePhase', _enums.ResumePhase)},
     -- The candidate a run parked awaiting merge approval was parked on: the
@@ -337,7 +338,7 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 29 records typed run failure kinds with prefix backfill (KO-584).
 # Version 30 adds disabled project admission and registration (KO-586).
 # Version 31 types run park reasons and backfills legacy questions (KO-583).
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 32
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -460,6 +461,7 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # ALTER TABLE preserves CHECK; UNIQUE and NOT NULL without a default require
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
+    ("runs", "stopRequested", "stopRequested INTEGER REFERENCES interventions(id)"),
     ("runs", "parkKind", "parkKind TEXT "
      + _enums.check_clause("parkKind", _enums.ParkKind)),
     ('runs', 'failureKind', 'failureKind TEXT '
@@ -637,6 +639,7 @@ def init(conn):
                          " WHERE t.lastRunId = runs.id"
                          " AND t.status = 'blocked_on_operator')"
                          " WHERE parkKind IS NULL")
+        if version < 32:
             _rebuild_enum_tables(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the

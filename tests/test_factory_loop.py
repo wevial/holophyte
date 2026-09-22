@@ -65,6 +65,25 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class LoopTests(FailureKindCases, ReviewSessionCases, FixSessionCases, LoopFixture):
+    def test_pause_after_implement_preserves_work_and_parks_with_note(self):
+        from pause_fixture import PauseEdit
+        self.loop(PauseEdit(self.db))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "verifying")])
+        self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
+                         [("blocked_on_operator", "reboot writer")])
+        wt = self.worktrees / "ko-131-add-a-thing"
+        self.assertEqual((wt / "pause-work.txt").read_text(),
+                         "preserve this uncommitted work\n")
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
+        events = self.read("SELECT kind, summary FROM runEvents ORDER BY seq")
+        request = next(i for i, (kind, _) in enumerate(events)
+                       if kind == "intervention")
+        release = next(i for i, (_, summary) in enumerate(events)
+                       if "outcome paused" in summary)
+        self.assertLess(request, release)
+        self.assertIn("WIP: preserve work at operator pause", self.subjects(BRANCH))
+
     def test_illegal_phase_is_infrastructure_failure_and_preserves_work(self):
         original = store.set_phase
 
