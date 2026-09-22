@@ -95,7 +95,8 @@ class NonPythonApprovalCitationTests(unittest.TestCase):
         test.parent.mkdir(parents=True)
         test.write_text(
             'test("Turns lists recorded sessions and opens rendered '
-            'transcript entries in a panel", () => {});\n')
+            'transcript entries in a panel", () => {});\n'
+            "test('Turns shows \"No sessions\" when empty', () => {});\n")
         self.approved = self.commit("approved")
         (self.root / "holophyte").mkdir()
         (self.root / "holophyte/fix.py").write_text("# fix\n")
@@ -124,6 +125,11 @@ class NonPythonApprovalCitationTests(unittest.TestCase):
     def test_cited_title_in_unchanged_file_witnesses_criterion(self):
         self.assertEqual(
             self.criterion_five(self.findings("Turns lists recorded sessions")), [])
+
+    def test_cited_title_with_escaped_quotes_witnesses_criterion(self):
+        # KO-654: the escaped form must not truncate at the first quote.
+        self.assertEqual(self.criterion_five(
+            self.findings(r'Turns shows \"No sessions\" when empty')), [])
 
     def test_absent_title_leaves_criterion_unwitnessed(self):
         (finding,) = self.criterion_five(self.findings("Turns sort by date"))
