@@ -74,6 +74,8 @@ Each module, one line:
   target's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: `run_task`'s stages.
 - `holophyte/fix_session.py` — review fix-session arms, resume argv and fresh retry.
+- `holophyte/session_arms.py` — shared run-number assignment for session experiments.
+- `holophyte/review_session.py` — reviewer session-file capture and resume requests.
 - `holophyte/dispatch.py` — the dispatcher out of `holophyte/loop.py`
   (KO-412): one claim run under its crash containment and close-out,
   the startup sweep and the queue mirror.

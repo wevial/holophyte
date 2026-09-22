@@ -141,9 +141,9 @@ class CloseOutTelemetryTests(unittest.TestCase):
         """Drive `main()` over one 5-minute ticket, faking only the agents."""
         replies = list(replies)
         turns = []
-
-        def fake_agent(target, role, goal, cwd, *, base_sha=None, conn=None,
-                       candidate_sha=None, timeout=None, on_start=None, run_id=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None,
+                       candidate_sha=None, timeout=None, on_start=None,
+                       conn=None, run_id=None, review_round=None):
             turns.append(role)
             if role != "implement":
                 return replies.pop(0)

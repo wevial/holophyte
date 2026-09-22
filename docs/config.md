@@ -237,8 +237,28 @@ neither startup nor the operator named.
 | `review_rounds_per_lines` | Default: `800` | Integer at least 0; change the diff-size scaling interval, or use 0 to disable scaling. |
 | `review_rounds_max` | Default: `4` | Integer at least 1 and at least review_rounds; change the scaled round ceiling. |
 | `workers` | Default: `1` | Integer at least 1; increase to work multiple claimable tickets concurrently. |
+| `review_session` | Default: `"fresh"` | `fresh`, `resume`, or `alternate`; alternate requests reviewer resume on odd run ids, fresh on even run ids. |
 | `fix_session` | Default: `"fresh"` | `fresh`, `resume`, or `alternate`; alternate resumes odd run ids and starts even run ids fresh. |
 | `tick_sec` | Default: `120` seconds | Integer at least 10; change how soon a pool with spare slots notices new work. |
+
+Configured reviewer wrappers may write their session id to
+`$HOLOPHYTE_REVIEW_SCRATCH/session` before exiting. The file must contain an
+opaque non-empty string of at most 200 characters with no whitespace (including
+no trailing newline). Missing, unreadable or invalid ids are silently ignored.
+The factory reads it before removing the scratch directory and records an
+`agent_session` event with `session_id`, `role`, `route`, and review `round`.
+It does not replace the implementer's recorded session.
+
+With `review_session = "resume"`, round two and later on the primary route
+receive round one's primary reviewer id in `HOLOPHYTE_REVIEW_RESUME`. The
+wrapper is responsible for resuming that session, including across its
+throwaway checkout directories. The full review prompt is still passed.
+The first round, fresh arm, missing id, and fallback route receive no resume
+variable. Each re-review in the experiment records a `review_session` event
+with `arm`, `requested`, and a `reason` when no resume is requested. The default
+`fresh` setting emits no such experiment event. The default container reviewer,
+PR thread reviews, covering review, and adjudicator are outside this experiment.
+The reviewer remains independent of the implementer in every arm.
 
 ```toml
 [loop]

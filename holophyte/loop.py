@@ -777,7 +777,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                 "line:\n"
                 "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
                 "If REQUEST_CHANGES, list only concrete blockers.", wt,
-                base_sha, sha, conn, run_id, run_agent=agent)
+                base_sha, sha, conn, run_id, run_agent=agent, review_round=rnd)
         # Store even the round that ends the loop.
         record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                      ok, out,

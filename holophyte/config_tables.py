@@ -191,9 +191,9 @@ LOOP_KEYS = {
     "review_rounds": 2,
     "review_rounds_per_lines": 800,
     "review_rounds_max": 4,
-    "workers": 1,
-    "tick_sec": 120,
+    "workers": 1, "tick_sec": 120,
     "fix_session": "fresh",
+    "review_session": "fresh",
 }
 LOOP_ORDERS = ("identifier", "priority")
 # The keys that must be integers, and the least each may be: a run with no
@@ -244,8 +244,8 @@ def loop_config(target):
             raise SystemExit(
                 f"[holo2] {target.config_path}: [loop] {key} must be a boolean "
                 f"(true or false), got {value!r}")
-        choices = {"order": LOOP_ORDERS,
-                   "fix_session": ("fresh", "resume", "alternate")}
+        choices = {"order": LOOP_ORDERS, **dict.fromkeys(
+            ("fix_session", "review_session"), ("fresh", "resume", "alternate"))}
         if key in choices and value not in choices[key]:
             allowed = " or ".join(f'"{o}"' for o in choices[key])
             raise SystemExit(
