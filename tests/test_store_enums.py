@@ -63,7 +63,8 @@ class StoreEnumTests(unittest.TestCase):
                   if sql.upper().startswith("INSERT INTO INTERVENTIONS")
                   and "SELECT" in sql.upper()]
         self.assertEqual(len(copies), 1, copies)
-        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (30,))
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                         (store.schema.SCHEMA_VERSION,))
         self.assertEqual(conn.execute(
             "SELECT admission, holdNote FROM projects").fetchone(),
             ("held", "maintenance"))
