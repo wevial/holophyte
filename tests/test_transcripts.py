@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from holophyte.transcripts import locate, render
+from tests.transcript_fixture import TranscriptCase
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'transcripts'
 
@@ -73,3 +74,20 @@ class TranscriptTests(unittest.TestCase):
                 ('command', 'wait for cell 8'),
                 ('tool', 'done\nExit code: 0'),
             ])
+
+
+class TranscriptFallbackTests(TranscriptCase):
+    def test_transcript_render_failure_falls_back_to_later_root(self):
+        path = self.turns()
+        stale, valid = self.root / 'stale', self.root / 'valid'
+        self.transcript(stale, '').write_bytes(b'\xff\n')
+        self.transcript(valid, 'Recovered transcript')
+        self.start(f'[serve]\ntranscripts = ["{stale}", "{valid}"]\n')
+        turn = self.request('GET', path)[2]['turns'][0]
+        url = f"{path}/{turn['id']}/transcript"
+        code, _, body = self.request('GET', url)
+        self.assertEqual(code, 200)
+        self.assertEqual(body, {'entries': [
+            {'speaker': 'assistant', 'text': 'Recovered transcript'}]})
+        (valid / 'rollout-first.jsonl').unlink()
+        self.assertEqual(self.request('GET', url)[0], 404)

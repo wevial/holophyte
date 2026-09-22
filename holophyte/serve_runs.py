@@ -630,14 +630,14 @@ def run_transcript(target, segment):
     if turn is None:
         return missing
     secrets = known_secrets(target.config())
-    try:
-        for root in roots:
-            for kind in ('codex', 'devin'):
+    for root in roots:
+        for kind in ('codex', 'devin'):
+            try:
                 path = locate(kind, turn['session_id'], root)
                 if path is not None:
                     return 200, {"entries": [
                         {"speaker": speaker, "text": outbound(text, secrets)}
                         for speaker, text in render(path)]}
-    except (OSError, UnicodeError, RuntimeError):
-        pass
+            except (OSError, UnicodeError, RuntimeError):
+                continue
     return missing
