@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 ROOT = Path(__file__).resolve().parent.parent
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
@@ -346,6 +346,7 @@ class AgentRouteTests(unittest.TestCase):
             timeout=1800,
             verdicts=None,
             carry=[],
+            on_start=ANY,
         )
         self.assertEqual(holophyte.agents.agent_route(self.tgt, "review"),
                          "codex-sol-medium")

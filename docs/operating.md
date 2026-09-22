@@ -48,8 +48,8 @@ the run ends.
 The run's worker notices the mark at its next heartbeat. It kills the current
 turn's process group, the same `SIGKILL` a budget timeout sends: an
 implementer's, or a configured `[agents]` reviewer's. A review on the default
-container route is not killed; the abort completes when that review returns.
-It then
+container route has its container client killed, and the runner then
+removes the container. It then
 stages the tree with the reclaim path's environment exclusions and commits it
 as `WIP: preserve work at operator abort`. When the run has a pull request it
 pushes the branch. Last, it ends the run `abandoned` with the note and parks

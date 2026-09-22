@@ -412,21 +412,28 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     dispatched_route = shlex.join(cmd[:-1]) if cmd is not None else DEFAULT_IMPLEMENTER
     if cmd is None:
         if role != "implement":
+            from holophyte.runs import heartbeat_while
             model, effort = review_route(target)
+            # An abort or a sweep kills the container's client; the runner
+            # then removes the container (KO-592).
+            kill = GroupKill()
+            beat_s = sweep_config(target).heartbeat_stale_ms / 2000
             try:
-                return AgentOutput(review_runner.run_review(
-                    repo=Path(cwd),
-                    run_id=run_id,
-                    base_sha=base_sha,
-                    candidate_sha=candidate_sha,
-                    prompt=goal,
-                    model=model,
-                    effort=effort,
-                    profile=review_profile(model, effort),
-                    timeout=1800,
-                    verdicts=None,
-                    carry=carry_directories(target),
-                ), review_profile(model, effort))
+                with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
+                    return AgentOutput(review_runner.run_review(
+                        repo=Path(cwd),
+                        run_id=run_id,
+                        base_sha=base_sha,
+                        candidate_sha=candidate_sha,
+                        prompt=goal,
+                        model=model,
+                        effort=effort,
+                        profile=review_profile(model, effort),
+                        timeout=1800,
+                        verdicts=None,
+                        carry=carry_directories(target),
+                        on_start=kill.arm,
+                    ), review_profile(model, effort))
             except review_runner.ReviewBoundaryError as e:
                 # The runner could not stage, start or read the reviewer —
                 # a missing CLI, an image that will not build, a container
