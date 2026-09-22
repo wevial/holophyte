@@ -1414,6 +1414,8 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
 
     def test_open_refuses_a_schema_referencing_a_missing_table(self):
         raw = sqlite3.connect(self.path)
+        # Not WAL, so the switch open() would make is a header write too.
+        raw.execute("PRAGMA journal_mode = DELETE")
         raw.execute("CREATE TABLE strays (id INTEGER PRIMARY KEY,"
                     " ghostId INTEGER REFERENCES ghosts (id))")
         # A table the migration itself would create: refusing must not
@@ -1421,24 +1423,18 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         raw.execute("DROP TABLE loopRestarts")
         raw.execute(f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1:d}")
         raw.commit()
-        before = raw.execute("SELECT type, name, sql FROM sqlite_master"
-                             " ORDER BY name").fetchall()
-        interventions = raw.execute("SELECT * FROM interventions").fetchall()
         raw.close()
+        before = self.path.read_bytes()
 
         with self.assertRaisesRegex(store.schema.SchemaError,
                                     r"strays\.ghostId.*\bghosts\b"):
             store.open(self.path)
 
+        self.assertEqual(self.path.read_bytes(), before)
         raw = sqlite3.connect(self.path)
         self.addCleanup(raw.close)
-        self.assertEqual(raw.execute("PRAGMA user_version").fetchone()[0],
-                         store.schema.SCHEMA_VERSION - 1)
-        self.assertEqual(raw.execute("SELECT type, name, sql FROM sqlite_master"
-                                     " ORDER BY name").fetchall(), before)
-        self.assertEqual(raw.execute("SELECT * FROM interventions").fetchall(),
-                         interventions)
-
+        self.assertEqual(raw.execute("PRAGMA journal_mode").fetchone(),
+                         ("delete",))
 
 if __name__ == "__main__":
     unittest.main()

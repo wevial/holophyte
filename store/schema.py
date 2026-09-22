@@ -466,12 +466,6 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
     # `BEGIN IMMEDIATE` waits for on the write lock, and stating it on the
     # connection keeps it from depending on how sqlite3 applied the argument.
     conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_S * 1000}")
-    mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
-    if mode.lower() != "wal":
-        conn.close()
-        raise sqlite3.DatabaseError(
-            f"{path}: could not enable WAL mode (journal_mode is {mode!r})"
-        )
     try:
         if not migrate:
             if version < SCHEMA_VERSION:
@@ -484,8 +478,13 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
             # this refuses is left as it was found.
             init(conn)
         # After migrating, not before: an older store may reference a table
-        # only the ladder creates. Read-only, ahead of the index writes.
+        # only the ladder creates. Read-only, ahead of the WAL switch and the
+        # index writes, both of which persist.
         _refuse_dangling_references(conn)
+        mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+        if mode.lower() != "wal":
+            raise sqlite3.DatabaseError(
+                f"{path}: could not enable WAL mode (journal_mode is {mode!r})")
         if migrate:
             conn.executescript(INDEXES)
     except BaseException:
