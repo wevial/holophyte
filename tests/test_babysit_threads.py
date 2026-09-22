@@ -37,6 +37,24 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                                  cases.BabysitHelpers, MergeModeFixture):
     """Thread judgment, bot policy, operator notes, and fix rounds."""
+    def test_answered_no_commit_threads_park_and_accept_corrected_instruction(self):
+        self.no_commit_thread_answers("complete")
+
+    def test_dirty_no_commit_threads_fail(self):
+        self.no_commit_thread_answers("dirty")
+
+    def test_no_commit_park_redacts_configured_secrets(self):
+        self.no_commit_thread_answers("secret")
+
+    def test_no_commit_review_fix_without_threads_still_fails(self):
+        self.no_commit_review_fix_fails()
+
+    def test_partially_answered_no_commit_threads_fail(self):
+        self.no_commit_thread_answers("partial")
+
+    def test_budget_cutoff_with_all_thread_answers_fails(self):
+        self.no_commit_thread_answers("timeout")
+
     def test_human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
         self.human_conversation_mention_is_fixed_and_replied_on_the_pull()
 
@@ -267,7 +285,7 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         ((summary, payload),) = self.read(
             "SELECT summary, payload FROM runEvents"
             " WHERE kind = 'implementer_output'")
-        self.assertEqual(summary, "fix round 1: reading store/read.py")
+        self.assertEqual(summary, "still reading")
         self.assertIn("reading store/read.py\nstill reading", payload)
 
     def test_fix_transport_retry_preserves_the_pr_on_second_failure(self):
@@ -528,7 +546,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                       + fake.turns[2].candidate_sha[:12] + " asked for changes",
                       self.question())
 
-
     def test_the_review_of_a_fix_is_held_to_the_criteria(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
@@ -555,7 +572,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
             self.read("SELECT verdict FROM reviewRounds WHERE round = 4"),
             [("changes_requested",)])
         self.assertIn("CRITERION 1: unwitnessed", self.question())
-
 
     def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
         self.configure('[merge]\nmode = "pr"\n')
@@ -616,7 +632,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn(self.NIT[3], question)
         self.assertNotIn(self.DEFECT[3], question)
 
-
     def test_a_fix_round_that_leaves_edits_is_not_pushed_or_resolved(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])
@@ -647,7 +662,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertEqual(outcome, "failed")
         self.assertIn("uncommitted", reason)
 
-
     def test_a_thread_follow_up_reaches_the_adjudicator_and_the_question(self):
         self.configure('[merge]\nmode = "pr"\n')
         follow_up = ("Hold on: do we want load() to default at all? Asking"
@@ -669,7 +683,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn(f"> {self.DEFECT[3]}", question)
         self.assertIn(f"> {follow_up}", question)
         self.assertIn("@ko", question)
-
 
     def test_a_thread_with_a_second_page_of_comments_is_read_to_the_end(self):
         self.configure('[merge]\nmode = "pr"\n')
@@ -705,7 +718,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn(last_word, goal)
         self.assertLess(goal.index(first_reply[1]), goal.index(last_word))
 
-
     def test_a_human_verdict_posts_nothing_and_parks_with_the_thread(self):
         self.configure('[merge]\nmode = "pr"\n')
         asks = ("src/app.py", 30, "ko",
@@ -732,7 +744,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
             self.read("SELECT verdict, reviewerModel FROM reviewRounds"
                       " WHERE round = 2"),
             [("changes_requested", "github:ko")])
-
 
     def test_a_thread_a_person_opened_is_human_before_the_adjudicator(self):
         self.configure('[merge]\nmode = "pr"\n')
@@ -776,7 +787,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {person[3]}", question)
         self.assertIn("src/app.py:30 by @wevial", question)
-
 
     def test_under_act_a_person_s_address_is_fixed_replied_and_left_open(self):
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
@@ -825,7 +835,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
                       question)
         self.assertIn("src/app.py:30 (@wevial)", question)
 
-
     def test_under_act_a_declined_person_is_human_and_the_bot_is_fixed(self):
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
         person = ("src/app.py", 30, ("wevial", "User"),
@@ -867,7 +876,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn("src/app.py:30 by @wevial", question)
         self.assertNotIn(self.DEFECT[3], question)
 
-
     def test_under_act_a_bot_s_human_verdict_still_parks_before_acting(self):
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n')
         asks = ("src/app.py", 30, "ask-bot",
@@ -890,7 +898,6 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {asks[3]}", question)
         self.assertNotIn(f"> {self.DEFECT[3]}", question)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -1230,23 +1230,23 @@ class NoCommitOutputTests(LoopFixture):
 
     def test_a_no_commit_turn_keeps_the_message_before_the_discard(self):
         seen = self.removals_seen()
-        message = "This contract cannot be met.\nThe verify line names no file."
+        message = "Startup noise.\nThe verify line names no file."
 
         self.loop(Idle(message))
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
         self.assertEqual(self.events(),
-                         [("This contract cannot be met.", message)])
+                         [("The verify line names no file.", message)])
         # Recorded before the removal, not after: the event was already in
         # the store when the worktree went.
-        self.assertEqual(seen, [[("This contract cannot be met.", message)]])
+        self.assertEqual(seen, [[("The verify line names no file.", message)]])
 
     def test_a_timed_out_turn_without_commits_keeps_its_output(self):
         """The cap can fire after the implementer has explained itself but
         before it commits: what `agent()` captured before the kill is the
         run's evidence, not an empty payload saying it printed nothing."""
-        message = "This contract cannot be met.\nThe verify line names no file."
+        message = "Startup noise.\nThe verify line names no file."
         seen = self.removals_seen()
 
         self.loop(IdleThenTimeout(message))
@@ -1254,8 +1254,8 @@ class NoCommitOutputTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
         self.assertEqual(self.events(),
-                         [("This contract cannot be met.", message)])
-        self.assertEqual(seen, [[("This contract cannot be met.", message)]])
+                         [("The verify line names no file.", message)])
+        self.assertEqual(seen, [[("The verify line names no file.", message)]])
 
     def test_a_nonzero_exit_without_commits_keeps_its_output_too(self):
         """Capture a real CLI's nonzero-exit output before discarding its branch."""
@@ -1272,7 +1272,7 @@ class NoCommitOutputTests(LoopFixture):
                 holophyte.operator.main(self.tgt, provider)
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
-        self.assertEqual(self.events(), [("refusing this ticket",
+        self.assertEqual(self.events(), [("a second line",
                                           "refusing this ticket\na second line")])
 
     def test_a_secret_in_prose_output_never_reaches_the_store(self):
@@ -1293,7 +1293,7 @@ class NoCommitOutputTests(LoopFixture):
             self.loop(Idle(message))
 
         ((summary, payload),) = self.events()
-        self.assertEqual(summary, "Cannot continue.")
+        self.assertEqual(summary, "the token_file path is /run/secrets/x")
         for secret in ("example-secret-value", "cfg-secret-value",
                        "env-secret-value", "ghp_pasted"):
             self.assertNotIn(secret, payload)
@@ -1309,7 +1309,7 @@ class NoCommitOutputTests(LoopFixture):
         self.loop(Idle(message))
 
         ((summary, payload),) = self.events()
-        self.assertEqual(summary, "first line")
+        self.assertEqual(summary, "x" * cap)
         self.assertEqual(len(payload), cap)
         self.assertEqual(payload, message[-cap:])
 
