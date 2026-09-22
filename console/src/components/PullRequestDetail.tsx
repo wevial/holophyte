@@ -3,6 +3,7 @@ import { useRunDetail } from "../hooks/useRunDetail";
 import type { PrFacts } from "../lib/attention";
 import { formatAge, formatClock } from "../lib/format";
 import type { Fetch } from "../lib/poll";
+import { lastActivity } from "../lib/runs";
 import type { AttentionItem } from "../lib/types";
 import { FindingCard } from "./FindingCard";
 import { Markdown } from "./Markdown";
@@ -20,7 +21,7 @@ export function PullRequestDetail({ base, id, item, now, polls, deps }: {
   const { detail, loading, error } = useRunDetail(base, id, polls + retry, deps);
   const rounds = [...(detail?.rounds ?? [])].sort((a, b) => a.started_ms - b.started_ms || a.round - b.round);
   const latest = rounds.at(-1);
-  const activity = [...(detail?.events ?? [])].sort((a, b) => b.at - a.at)[0];
+  const activity = lastActivity(detail?.events ?? []);
   const facts = item.pr as PrFacts | undefined;
   return <div className="space-y-3 break-words text-[13px] text-body">
     {loading && <p role="status" className="text-muted">Loading run detail…</p>}
@@ -41,7 +42,6 @@ export function PullRequestDetail({ base, id, item, now, polls, deps }: {
       </section>
       <section aria-label="Pull request facts">
         <h4 className="font-semibold text-ink">Pull request facts</h4>
-        {typeof item.reason === "string" && <Markdown>{item.reason}</Markdown>}
         <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1">
           {Object.entries({ "Number": facts?.number, "Checks": facts?.checks, "Review": facts?.review, "Open threads": facts?.threads })
             .map(([label, value]) => <div key={label}><dt className="inline font-semibold">{label}: </dt><dd className="inline">{value ?? "unknown"}</dd></div>)}

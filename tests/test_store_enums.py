@@ -1,0 +1,63 @@
+"""The SQL boundary and public vocabulary agree, without changing schema 26."""
+import re
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+import store
+from store import enums
+
+PREVIOUS_SCHEMA = Path(__file__).with_name('store_v26.sql')
+CHECK = re.compile(r'CHECK \((?:\S+ IS NULL\s+OR )?(\S+) IN \([^)]*\)\)')
+
+
+def enum_checks(conn):
+    return {(table, match[1].strip('"')): match[0]
+            for table, sql in conn.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type = 'table'")
+            for match in CHECK.finditer(sql)}
+
+
+class StoreEnumTests(unittest.TestCase):
+    def test_fresh_constraints_equal_enums_and_previous_schema_verbatim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = store.open(Path(tmp) / 'store.db')
+            self.addCleanup(conn.close)
+            actual = enum_checks(conn)
+        old = sqlite3.connect(':memory:')
+        self.addCleanup(old.close)
+        old.executescript(PREVIOUS_SCHEMA.read_text())
+        self.assertEqual(actual, enum_checks(old))
+        self.assertEqual(set(actual), set(enums.CONSTRAINED_COLUMNS))
+        for key, enum in enums.CONSTRAINED_COLUMNS.items():
+            self.assertEqual(actual[key], enums.check_clause(key[1], enum), key)
+
+    def test_public_vocabulary_and_graph_membership(self):
+        self.assertEqual(store.PHASES, tuple(e.value for e in enums.RunPhase))
+        self.assertEqual(store.tickets.TICKET_STATUSES,
+                         tuple(e.value for e in enums.TicketStatus))
+        self.assertEqual(store.INTERVENTION_ACTIONS,
+                         tuple(e.value for e in enums.InterventionAction))
+        for graph, enum in ((store.TICKET_TRANSITIONS, enums.TicketStatus),
+                            (store.RUN_PHASE_TRANSITIONS, enums.RunPhase)):
+            self.assertEqual(set(graph), {e.value for e in enum})
+            for targets in graph.values():
+                self.assertLessEqual(set(targets), {e.value for e in enum})
+        self.assertLessEqual(store.PARKED_PHASES, set(store.PHASES))
+
+    def test_module_loads_without_store_package(self):
+        # Load the standalone file: Python's dotted import would necessarily
+        # execute store/__init__.py before it could reach store.enums.
+        result = subprocess.run([sys.executable, '-I', '-c', '''
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location('standalone_enums', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert module.RunPhase.CLAIMED.value == 'claimed'
+assert not any(n == 'store' or n.startswith('store.') for n in sys.modules)
+''', str(Path(enums.__file__).resolve())], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)

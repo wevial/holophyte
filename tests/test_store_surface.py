@@ -201,6 +201,13 @@ def operator_api_names():
 
 
 class StoreSurfaceTests(unittest.TestCase):
+    def test_enum_refactor_preserves_exported_names_and_values(self):
+        from tests.store_enums_fixture import BASELINE
+
+        for name, expected in BASELINE.items():
+            with self.subTest(name=name):
+                self.assertEqual(getattr(store, name), expected)
+
     def test_public_functions_match_the_allow_list(self):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
