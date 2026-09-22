@@ -195,10 +195,15 @@ with `returncode` null and `timed_out` true when the cap ended it, and
 ## What a no-commit turn leaves on the run
 
 An implementer turn that ends without a commit, whatever its exit code,
-is a failed run whose branch and worktree are discarded. Before the
-discard the loop records one `detail`-level runEvent of kind
-`implementer_output`: its summary is the first line of the implementer's
-final message and its payload the message's last 4000 characters
+normally fails the run. A PR fix turn that is not cut off, leaves a clean
+candidate, and answers every addressed thread with a `THREAD n:` summary
+instead parks as `blocked_on_operator` with the implementer's reasons, so
+an operator can send it back with a corrected instruction. Dirty no-commit
+fix turns retain the failure and recovery path.
+
+The loop records one `detail`-level runEvent of kind `implementer_output`:
+its summary is the last non-empty line of the implementer's final message
+and its payload the message's last 4000 characters
 (`OUTPUT_TAIL` in `holophyte/loop.py`), passed through the prose redactor
 (`redact_prose()` in `holophyte/redact.py`): every credential the config
 and the environment hold, and every `name = value` pair with a secret's

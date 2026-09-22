@@ -40,6 +40,12 @@ class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
     def test_answered_no_commit_threads_park_and_accept_corrected_instruction(self):
         self.no_commit_thread_answers("complete")
 
+    def test_dirty_no_commit_threads_fail(self):
+        self.no_commit_thread_answers("dirty")
+
+    def test_no_commit_park_redacts_configured_secrets(self):
+        self.no_commit_thread_answers("secret")
+
     def test_no_commit_review_fix_without_threads_still_fails(self):
         self.no_commit_review_fix_fails()
 

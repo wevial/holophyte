@@ -908,7 +908,6 @@ def _verdicts_by_kind(threads, judged, parsed):
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None):
-    """Fix, verify, push and answer threads; return the fixed candidate's sha."""
     from holophyte.loop import (
         _candidate_drift,
         _record_implementer_output,
@@ -916,7 +915,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         sh,
     )
     from holophyte.pullrequest import _park_on_pr
-    from holophyte.redact import known_secrets
+    from holophyte.redact import known_secrets, outbound
     record_step(conn, run_id, "fix")
     maintainer_notes.start_fix(conn, run_id, addressed)
     fixes, timed_out = _transport_timed(target, conn, run_id, beat_s, wt, budget_min,
@@ -927,16 +926,17 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                                    known_secrets(target.config()))
     summaries = babysitter.parse_summaries(fixes)
     if (addressed and fixed == sha and not timed_out
-            and all(summaries.get(n) for n, _, _ in addressed)):
+            and all(summaries.get(n) for n, _, _ in addressed)
+            and not _candidate_drift(wt, branch, fixed)):
         why = "Fix round made no commit; operator instruction needed:\n" + "\n".join(
             f"THREAD {n} -- {where(thread)}:\n> {summaries[n]}"
             for n, thread, _ in addressed)
+        why = outbound(why, known_secrets(target.config()))
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull, why, ())
     if timed_out or fixed == sha:
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,
             f"for {pull.url}; branch {branch} preserved at {sha[:12]}"))
-    # Preserve uncommitted work without pushing or resolving threads.
     unclean = _candidate_drift(wt, branch, fixed)
     if unclean:
         ledger(conn, run_id, task_id, "failure",
