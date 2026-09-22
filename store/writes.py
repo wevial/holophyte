@@ -10,11 +10,19 @@ def set_board_state(conn, ticket_id, state):
                      (state, ticket_id))
 
 
-def set_question(conn, ticket_id, question):
-    """Set the operator question, or clear it with None."""
+def set_question(conn, ticket_id, question, *, park_kind=None):
+    """Set or clear the question, optionally typing the active or last run's park.
+
+    Prose-only updates preserve the kind already recorded by the park writer.
+    """
     with _transaction(conn):
         conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                      (question, ticket_id))
+        if park_kind is not None:
+            conn.execute("UPDATE runs SET parkKind = ? WHERE id ="
+                         " (SELECT COALESCE(activeRunId, lastRunId)"
+                         " FROM tickets WHERE id = ?)",
+                         (park_kind, ticket_id))
 
 
 def clear_merge_sha(conn, run_id):

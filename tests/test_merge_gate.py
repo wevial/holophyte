@@ -64,6 +64,17 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class LockFailureWordingTests(LoopFixture):
+    def test_gate_lock_timeout_records_typed_park(self):
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("7 0\n")
+        with patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
+            self.loop(Commit("candidate"), APPROVE)
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("merge_lock",)])
+        question, = self.read("SELECT blockedQuestion FROM tickets")[0]
+        self.assertTrue(question.startswith(
+            f"merge lock: merge lock {path} held by run 7"))
+
     def test_gate_lock_failure_keeps_gate_wording(self):
         gates = holophyte.gates
         path = gates.merge_lock_path(self.tgt)
@@ -277,6 +288,7 @@ class MergeApprovalTests(LoopFixture):
         self.assertEqual(
             self.read("SELECT status, blockedQuestion FROM tickets"),
             [("blocked_on_operator", "merge?")])
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("question",)])
         sha = self.git("rev-parse", BRANCH).strip()
         # The approving round's comment precedes the parking notice.
         (_, body) = provider.comments[-1]

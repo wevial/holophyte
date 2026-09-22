@@ -220,5 +220,14 @@ class HeldStatusTests(ServeTestCase):
             (body["admission"], body["hold_note"]), ("held", "reboot pending")
         )
 
+class TypedParkAttentionTests(unittest.TestCase):
+    def test_reworded_pull_request_stays_a_pull_request(self):
+        ticket = store.read.BlockedTicket(
+            id=1, linearIdentifier="KO-1", blockedQuestion="Approval needed",
+            prUrl="https://github.com/example/repo/pull/7",
+            parkKind="pull_request")
+        self.assertEqual(holophyte.serve.parked_item(ticket)["kind"], "pr_open")
+
+
 if __name__ == "__main__":
     unittest.main()

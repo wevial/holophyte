@@ -381,6 +381,9 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(self.read("SELECT phase, outcome FROM runs WHERE id = 2"),
                          [("awaiting_merge_approval", None)])
         self.assertIn("waiting for a human to say merge", self.question())
+        self.assertEqual(self.read(
+            "SELECT parkKind FROM runs ORDER BY id DESC LIMIT 1"),
+                         [("pull_request",)])
 
     def test_threads_past_the_first_page_keep_the_pr_from_reading_quiet(self):
         self.configure('[merge]\nmode = "pr"\n')

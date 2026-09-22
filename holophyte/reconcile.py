@@ -454,7 +454,8 @@ def _reject_pr(conn, run_id, pull, who, branch, sha):
         store.release(conn, run_id, "rejected", reason)
         ticket_id = store.read.run_snapshot(conn, run_id).ticketId
         store.walk_ticket(conn, ticket_id, "blocked_on_operator")
-        store.set_question(conn, ticket_id, question)
+        store.set_question(conn, ticket_id, question,
+                           park_kind="pull_request_closed")
         store.set_pull_request(conn, run_id, pull.url, sha)
     print(f"[holo2] {question}; {reason}")
 

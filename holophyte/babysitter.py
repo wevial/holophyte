@@ -932,7 +932,8 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"THREAD {n} -- {where(thread)}:\n> {summaries[n]}"
             for n, thread, _ in addressed)
         why = outbound(why, known_secrets(target.config()))
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull, why, ())
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull, why, (),
+                    park_kind="fix_declined")
     if timed_out or fixed == sha:
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,

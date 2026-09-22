@@ -485,7 +485,7 @@ def record_agent_session(conn, run_id, session_id, role, route):
 
 
 def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
-         now=None, approved_sha=None, pr_seen=None):
+         now=None, approved_sha=None, pr_seen=None, park_kind="question"):
     """Park the live run `run_id` in `phase` and give its lease back.
 
     `[merge] approve = "human"`: the reviewer approved and the pre-merge
@@ -523,6 +523,7 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
     transaction (KO-362, KO-368), so the loop's per-tick reconcile knows
     what activity the pass has already answered. None records nothing.
 
+    `park_kind` records the typed reason; prose remains on the ticket.
     `phase` must be one of `PARKED_PHASES`; the sweep leaves those alone, so
     a run parked here is not reported dead for having no heartbeat. Parking
     a run that has already ended raises `RunEnded`, and an unknown `run_id`
@@ -541,6 +542,8 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
         (ticket_id,) = row
         # `set_phase()` is what refuses an ended run, with `RunEnded`.
         set_phase(conn, run_id, phase, note=note, now=now)
+        conn.execute("UPDATE runs SET parkKind = ? WHERE id = ?",
+                     (park_kind, run_id))
         if candidate_sha is not None:
             conn.execute("UPDATE runs SET candidateSha = ? WHERE id = ?",
                          (candidate_sha, run_id))

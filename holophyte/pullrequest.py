@@ -315,7 +315,7 @@ def _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
     quoted = "\n\n".join(babysitter.quoted(t) for _, t, _ in human)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                 "a thread needs a human's answer; nothing was posted on"
-                f" it:\n{quoted}", listed, reviewed=reviewed)
+                f" it:\n{quoted}", listed, reviewed=reviewed, park_kind="thread")
 
 
 def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
@@ -362,7 +362,7 @@ def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
 
 
 def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                why, threads, reviewed=None):
+                why, threads, reviewed=None, park_kind="pull_request"):
     """Park the run on its pull request: the ticket asks `PR open: URL`
     with `why` and the open `threads` listed, `store.park()` writes
     `runs.prUrl`, `runs.candidateSha` and -- `reviewed`, the sha the last
@@ -382,14 +382,14 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
     question = babysitter.open_threads_question(pull, why, threads)
     if conn is not None and run_id is not None:
         ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-        if not block_ticket(conn, ticket_id, provider, question):
+        if not block_ticket(conn, ticket_id, provider, question, park_kind=park_kind):
             print(f"[holo2] {task_id} could not be moved to"
                   " blocked_on_operator; parking the run anyway")
         store.park(conn, run_id, "awaiting_merge_approval",
                    f"{babysitter.gist(why)}; {branch} at {short} is open as"
                    f" {pull.url} ([merge] mode = \"pr\")",
                    candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed,
-                   pr_seen=_pr_seen(target, pull, conn, run_id))
+                   pr_seen=_pr_seen(target, pull, conn, run_id), park_kind=park_kind)
     print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"

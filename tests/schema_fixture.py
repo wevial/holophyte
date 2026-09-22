@@ -23,7 +23,8 @@ DOCUMENTED_COLUMNS = {
     },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
-        "providerSessionId", "branch", "prUrl", "startedAt", "lastHeartbeat",
+        "providerSessionId", "branch", "prUrl", "parkKind", "startedAt",
+        "lastHeartbeat",
         "endedAt", "reviewRoundCount", "outcome", "outcomeReason", "failureKind",
         "workingMs", "workStartedAt",
         # Store-owned: the merge commit a merged run landed on main as, so

@@ -88,6 +88,7 @@ class BlockedTicket:
     askedMs: int | None = None
     # The pull request the parked run opened (`runs.prUrl`), None when none.
     prUrl: str | None = None
+    parkKind: str | None = None
     prSeenChecks: str | None = None
     prSeenReview: str | None = None
     prSeenThreads: int | None = None
@@ -110,7 +111,7 @@ def blocked_tickets(conn, project_id=None):
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
-        " r.prSeenThreads, t.url, t.boardState"
+        " r.prSeenThreads, t.url, t.boardState, r.parkKind"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
@@ -118,7 +119,7 @@ def blocked_tickets(conn, project_id=None):
                           askedMs=row[4] if row[4] is not None else row[5],
                           prUrl=row[6], prSeenChecks=row[7],
                           prSeenReview=row[8], prSeenThreads=row[9], ticketUrl=row[10],
-                          boardState=row[11])
+                          boardState=row[11], parkKind=row[12])
             for row in rows]
 
 

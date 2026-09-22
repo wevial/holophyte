@@ -38,6 +38,9 @@ class StoreEnumTests(unittest.TestCase):
                          previous['interventions', 'action'][:-2]
                          + ", 'hold', 'release_hold', 'register_project', 'disable'))")
         self.assertEqual(set(actual), set(enums.CONSTRAINED_COLUMNS))
+        self.assertEqual(actual['runs', 'parkKind'],
+                         "CHECK (parkKind IN ('pull_request', 'pull_request_closed', "
+                         "'thread', 'fix_declined', 'merge_lock', 'question'))")
         for key, enum in enums.CONSTRAINED_COLUMNS.items():
             self.assertEqual(actual[key], enums.check_clause(key[1], enum), key)
 
@@ -60,7 +63,8 @@ class StoreEnumTests(unittest.TestCase):
                   if sql.upper().startswith("INSERT INTO INTERVENTIONS")
                   and "SELECT" in sql.upper()]
         self.assertEqual(len(copies), 1, copies)
-        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (30,))
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                         (store.schema.SCHEMA_VERSION,))
         self.assertEqual(conn.execute(
             "SELECT admission, holdNote FROM projects").fetchone(),
             ("held", "maintenance"))

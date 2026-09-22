@@ -119,6 +119,9 @@ class ApproveCliTests(unittest.TestCase):
         self.assertNotEqual(phase, "awaiting_merge_approval")
         self.assertIsNotNone(ended)
         self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+        self.assertEqual(self.conn.execute(
+            "SELECT parkKind FROM runs WHERE id = ?", (self.run,)).fetchone(),
+            (None,))
         # Released, the ticket is claimable again -- the loop's next pass
         # is what takes the candidate to the gate.
         self.assertTrue(store.tickets.pickable(self.conn, self.ticket))

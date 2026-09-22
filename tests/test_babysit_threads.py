@@ -713,6 +713,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
         question = self.question()
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {asks[3]}", question)
         self.assertIn("src/app.py:30 by @ko", question)
@@ -760,6 +761,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
         question = self.question()
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {person[3]}", question)
         self.assertIn("src/app.py:30 by @wevial", question)
@@ -847,6 +849,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             self.read("SELECT phase, outcome, prUrl, candidateSha FROM runs"),
             [("awaiting_merge_approval", None, self.URL, fixed)])
         question = self.question()
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {person[3]}", question)
         self.assertIn("src/app.py:30 by @wevial", question)
@@ -871,6 +874,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
         question = self.question()
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {asks[3]}", question)
         self.assertNotIn(f"> {self.DEFECT[3]}", question)

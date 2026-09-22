@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS runs (
     providerSessionId TEXT,
     branch            TEXT,
     prUrl             TEXT,
+    parkKind          TEXT {_enums.check_clause("parkKind", _enums.ParkKind)},
     startedAt         INTEGER NOT NULL,
     lastHeartbeat     INTEGER NOT NULL,  -- staleness detection
     endedAt           INTEGER,
@@ -335,7 +336,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 28 adds project admission holds and their interventions (KO-578).
 # Version 29 records typed run failure kinds with prefix backfill (KO-584).
 # Version 30 adds disabled project admission and registration (KO-586).
-SCHEMA_VERSION = 30
+# Version 31 types run park reasons and backfills legacy questions (KO-583).
+SCHEMA_VERSION = 31
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -458,6 +460,8 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # ALTER TABLE preserves CHECK; UNIQUE and NOT NULL without a default require
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
+    ("runs", "parkKind", "parkKind TEXT "
+     + _enums.check_clause("parkKind", _enums.ParkKind)),
     ('runs', 'failureKind', 'failureKind TEXT '
      + _enums.check_clause('failureKind', _enums.FailureKind)),
     ("projects", "admission", "admission TEXT NOT NULL DEFAULT 'enabled' "
@@ -624,7 +628,15 @@ def init(conn):
         if version < 29:
             from .failure_kinds import backfill
             backfill(conn)
-        if version < 30:
+        if version < 31:
+            conn.execute("UPDATE runs SET parkKind = (SELECT CASE"
+                         " WHEN blockedQuestion GLOB 'PR open:*' THEN 'pull_request'"
+                         " WHEN blockedQuestion GLOB 'rejected:*'"
+                         " THEN 'pull_request_closed'"
+                         " ELSE 'question' END FROM tickets t"
+                         " WHERE t.lastRunId = runs.id"
+                         " AND t.status = 'blocked_on_operator')"
+                         " WHERE parkKind IS NULL")
             _rebuild_enum_tables(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the

@@ -173,19 +173,20 @@ def _gate_lock(target, conn, run_id, provider, task_id, branch, sha, beat_s):
             yield
     except MergeLockHeld as e:
         _park_at_gate(conn, run_id, provider, task_id, branch, sha,
-                      f"merge lock: {e}", f"MERGE GATE DID NOT RUN: {e}.")
+                      f"merge lock: {e}", f"MERGE GATE DID NOT RUN: {e}.",
+                      park_kind="merge_lock")
         raise
 
 
 def _park_at_gate(conn, run_id, provider, task_id, branch, sha, question,
-                  ledger_text):
+                  ledger_text, park_kind="question"):
     """A gate refusal that is a person's to answer: the ticket goes
     `blocked_on_operator` asking `question`, the ledger records why, and
     the caller raises the failure that leaves branch and worktree in place.
     The run itself ends the way every refused merge ends."""
     if conn is not None and run_id is not None:
         ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-        if not block_ticket(conn, ticket_id, provider, question):
+        if not block_ticket(conn, ticket_id, provider, question, park_kind=park_kind):
             print(f"[holo2] {task_id} could not be moved to"
                   " blocked_on_operator; failing the run anyway")
     ledger(conn, run_id, task_id, "failure",
