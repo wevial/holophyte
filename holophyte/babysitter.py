@@ -2,9 +2,7 @@
 import json
 import re
 import subprocess
-import tempfile
 from dataclasses import replace
-from pathlib import Path
 from time import monotonic, time
 
 import store
@@ -33,6 +31,7 @@ from holophyte.gates import (
     sh,
     with_baseline,
 )
+from holophyte.main_checkout import detached_main
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -361,23 +360,18 @@ def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
 
 
 def _verify_detached_main(target, conn, run_id, beat_s, wt, ref, command, contracts):
-    """Check the fetched main once in an isolated sibling, then remove it."""
+    """Check the fetched main once in a prepared sibling, then remove it."""
     sha = sh(["git", "rev-parse", ref], wt)
-    with tempfile.TemporaryDirectory(prefix="main-verify-", dir=wt.parent) as tmp:
-        detached = Path(tmp) / "tree"
-        sh(["git", "worktree", "add", "--detach", str(detached), sha], wt)
-        try:
-            command, skipped = drop_candidate_modules(command, wt, detached)
-            if skipped and conn is not None and run_id is not None:
-                store.record_event(
-                    conn, run_id, "verification",
-                    f"main-side verify at {sha[:12]} skipped"
-                    f" {', '.join(skipped)}: exists only on the candidate,"
-                    " not on main, so main cannot import it")
-            ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
-                                      sha, command, contracts)
-        finally:
-            sh(["git", "worktree", "remove", "--force", str(detached)], wt)
+    with detached_main(target, conn, run_id, beat_s, wt, sha) as detached:
+        command, skipped = drop_candidate_modules(command, wt, detached)
+        if skipped and conn is not None and run_id is not None:
+            store.record_event(
+                conn, run_id, "verification",
+                f"main-side verify at {sha[:12]} skipped"
+                f" {', '.join(skipped)}: exists only on the candidate,"
+                " not on main, so main cannot import it")
+        ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
+                                  sha, command, contracts)
     return sha, ok, out
 
 

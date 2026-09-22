@@ -146,6 +146,9 @@ Each module, one line:
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round
   text, the parked question, and the passes that drive them.
+- `holophyte/main_checkout.py` — the detached main checkout the babysit
+  pass verifies main in, given the task worktree's `[worktree] carry`
+  directories, or its `[worktree] setup`, first.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
