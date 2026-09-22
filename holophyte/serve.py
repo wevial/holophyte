@@ -134,12 +134,16 @@ from holophyte.serve_runs import (
     RUN_FILES_PATH,
     RUN_LEDGER_PATH,
     RUN_PATH,
+    RUN_TRANSCRIPT_PATH,
+    RUN_TURNS_PATH,
     json_host,
     ledger,
     no_store,
     run_detail,
     run_files,
     run_ledger,
+    run_transcript,
+    run_turns,
     runs,
     shipped,
 )
@@ -588,6 +592,8 @@ def static_file(console_dir, path):
 SHAPED_ROUTES = (
     (RUN_PATH, run_detail),
     (RUN_FILES_PATH, run_files),
+    (RUN_TURNS_PATH, run_turns),
+    (RUN_TRANSCRIPT_PATH, run_transcript),
     (RUN_LEDGER_PATH, run_ledger),
     (TICKET_PATH, ticket_detail),
 )

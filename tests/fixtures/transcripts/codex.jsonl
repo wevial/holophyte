@@ -1,0 +1,6 @@
+{"ordinal": 2, "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Check the project."}]}}
+{"ordinal": 2, "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "I will run the checks."}]}}
+{"ordinal": 11, "type": "response_item", "payload": {"type": "custom_tool_call", "id": "call-1", "status": "completed", "call_id": "call-1", "name": "exec", "input": "await tools.exec_command({cmd: \"echo checked\"});"}}
+{"ordinal": 820, "type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "call-1", "output": [{"type": "input_text", "text": "{\"exit_code\": 0, \"output\": \"checked\\n\"}"}]}}
+{"type": "future_type", "payload": {"text": "DO NOT SHOW"}}
+{"ordinal": 2, "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "All checks passed."}]}}
