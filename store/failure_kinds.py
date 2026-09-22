@@ -4,7 +4,8 @@
 # is evidence we cannot classify. Live writers supply their own kind.
 PREFIXES = {
     'verify': ('verify failed',),
-    'review_route': ('reviewer returned no verdict', 'reviewer route failed'),
+    'review_route': ('reviewer returned no verdict', 'reviewer route failed',
+                     'terminal adjudication: MALFORMED;'),
     'fix_no_progress': ('fix round made no progress',),
     'no_commits': ('implementer made no commits', 'implementer made no new commits'),
     'budget': ('out of time:', 'implementer exceeded the ', 'fix round timed out'),

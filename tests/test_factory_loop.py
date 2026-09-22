@@ -343,6 +343,8 @@ class LoopTests(FailureKindCases, ReviewSessionCases, FixSessionCases, LoopFixtu
                   Commit("fix round 1"), REQUEST_CHANGES,
                   Commit("fix round 2"), MALFORMED)
 
+        self.assertEqual(self.read("SELECT failureKind FROM runs"),
+                         [("review_route",)])
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         self.assertIn(BRANCH, self.branches())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])

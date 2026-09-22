@@ -37,7 +37,10 @@ def compose(kind, **facts):
         raise ValueError(f'unknown failure kind: {kind}')
     if facts.get('context'):
         text += f"; {facts['context']}"
-    failure_kind = {'verify': 'verify', 'adjudication': 'unclassified',
+    failure_kind = {'verify': 'verify',
+                    'adjudication': ('review_route'
+                                     if facts.get('decision') == 'MALFORMED'
+                                     else 'unclassified'),
                     'fix_round': ('budget' if facts.get('timed_out')
                                   else 'fix_no_progress')}[kind]
     return Reason(text, {'kind': kind, **facts}, failure_kind)

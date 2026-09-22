@@ -1297,6 +1297,8 @@ class FailureKindMigrationTests(unittest.TestCase):
             ('verify failed: command 3 [false], exit 1; boom', 'verify'),
             ('reviewer returned no verdict line twice; candidate preserved',
              'review_route'),
+            ('terminal adjudication: MALFORMED; no criterion detail', 'review_route'),
+            ('terminal adjudication: FAIL; criterion 1 not met', 'unclassified'),
             ('fix round made no progress; 2 findings open', 'fix_no_progress'),
             ('implementer made no commits; discarded', 'no_commits'),
             ('implementer exceeded the 30 min budget; work kept', 'budget'),
