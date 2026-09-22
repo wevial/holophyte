@@ -15,6 +15,7 @@ Moved verbatim from `holophyte.loop` (KO-424, design note 0015).
 """
 import contextlib
 import subprocess
+from dataclasses import replace
 
 import store
 import store.read
@@ -38,9 +39,8 @@ from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 
 
-def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
-                          task, branch, wt, carried, started, verify_cmd,
-                          contracts, budget_min, body, criteria=(),
+def _resume_at_merge_gate(run, carried, verify_cmd,
+                          contracts, body, criteria=(),
                           issue_url=None):
     """The approved candidate's run: the preserved worktree, the pre-merge
     verify against the main of today, the merge. No implementer, no reviewer.
@@ -83,6 +83,9 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     `claimed -> merge_gate` directly, the one edge §4 draws for this path,
     with the carried run named on the stream.
     """
+    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    task_id, issue_id, task = run.task_id, run.issue_id, run.task
+    branch, wt, started, budget_min = run.branch, run.wt, run.started, run.budget_min
     from holophyte.loop import _candidate_drift, _land
     # The branch is recorded first, as `_cut_worktree()` records it: the
     # worktree stands from the run's first moment, and the files panel reads
@@ -151,8 +154,7 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
                            beat_s, wt, started, budget_min, issue_url)
             sha = sh(["git", "rev-parse", branch], wt)
         else:
-            return _land(target, conn, run_id, provider, task_id, task,
-                         branch, wt, sha, ok, started, budget_min, 0)
+            return _land(replace(run, sha=sha), ok)
     merge_sha = _babysit(target, conn, run_id, provider, task_id,
                           issue_id, task, branch, wt, sha, beat_s, url,
                           f"{task}\n\n{body}" if body else task,

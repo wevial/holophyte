@@ -17,8 +17,8 @@ Seventh and last slice of the phase-2 module split; moved verbatim from
 `factory.py`, which is now the entry point that imports `holophyte.cli`.
 """
 import json
-import re
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from time import monotonic, sleep, time
 from time import monotonic as retry_clock
@@ -33,16 +33,15 @@ from holophyte.babysitter import _babysit
 from holophyte.board import (
     block_ticket,
     ledger,
-    mirror_key,
 )
 from holophyte.claim import (
     _cut_worktree,
     _setup_worktree,
+    claimed_run,
     conflict_brief,
     merge_conflicts,
 )
 from holophyte.config import (
-    branch_prefix,
     budget_scale,
 )
 from holophyte.config_tables import (
@@ -90,7 +89,6 @@ from holophyte.runs import (
     review_round_cap,
     set_phase,
 )
-from holophyte.target import worktree_path
 from store.working import effective_work
 
 # The paths a run works against, plus the config they carry, are a `Target`
@@ -123,7 +121,8 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     the ender said so.
     """
     try:
-        return _run_stages(target, task, conn, run_id, provider)
+        run = task.get("_run") or claimed_run(target, task, conn, run_id, provider)
+        return _run_stages(run, task)
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused
     except store.RunEnded as ended:
@@ -141,7 +140,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         return SWEPT
 
 
-def _run_stages(target, task, conn=None, run_id=None, provider=None):
+def _run_stages(run, task):
     """task: dict from a provider — {id, title, verify, budget_min}.
 
     Each task works in its own git worktree (the target stays on main, untouched),
@@ -166,13 +165,8 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     merge gate, the merge -- each a plain function over the same values this
     frame threads, in the order they ran when this was one function (KO-211).
     """
-    task_id = task["id"]
-    # The id the ticket is mirrored and re-read under, taken before `task` is
-    # rebound to the title below.
-    issue_id = mirror_key(task)
-    # Claim-to-merge wall clock: run_task is entered immediately after the
-    # claim, so this is the ticket's actual duration as far as the loop knows.
-    started = monotonic()
+    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    task_id, issue_id, started = run.task_id, run.issue_id, run.started
     verify_cmd, budget_min = task.get("verify"), task["budget_min"]
     contracts = task.get("contracts")
     # The approved ticket body, kept before `task` collapses to its title: it
@@ -187,17 +181,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     # None for a provider that carries none.
     issue_url = task.get("url")
     task = task["title"]
-    # The name carries the ticket identifier ahead of the title slug: two
-    # tickets whose titles agree for 30 characters must not share a branch or
-    # a worktree, and a preserved branch has to be traceable to its ticket
-    # from `git branch` alone, whatever `[worktree] branch_prefix` puts ahead
-    # of the slash. The title portion keeps its own cap; the identifier is
-    # added on top of it rather than eating into it.
-    ident = re.sub(r"[^a-z0-9]+", "-", task_id.lower()).strip("-")
-    slug = re.sub(r"[^a-z0-9]+", "-", task.lower())[:30].strip("-")
-    slug = f"{ident}-{slug}"
-    branch = f"{branch_prefix(target)}/{slug}"
-    wt = worktree_path(target, branch)
+    branch, wt = run.branch, run.wt
     # The approved candidate: `--approve` ended the ticket's parked run with
     # its resume point at the merge gate, and its worktree still stands.
     # Nothing to implement or review -- the candidate was, and a person said
@@ -205,8 +189,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
     carried = _approved_candidate(conn, run_id)
     if carried is not None and wt.exists():
         return _resume_at_merge_gate(
-            target, conn, run_id, provider, task_id, issue_id, task, branch,
-            wt, carried, started, verify_cmd, contracts, budget_min, body,
+            run, carried, verify_cmd, contracts, body,
             criteria, issue_url=issue_url)
     fresh = _cut_worktree(target, conn, run_id, provider, task_id, task,
                           branch, wt)
@@ -286,8 +269,7 @@ def _run_stages(target, task, conn=None, run_id=None, provider=None):
             # candidate is approved and verified, and a person says "merge".
             _park_for_approval(conn, run_id, provider, task_id, branch, sha)
         else:
-            return _land(target, conn, run_id, provider, task_id, task,
-                         branch, wt, sha, ok, started, budget_min, rnd)
+            return _land(replace(run, sha=sha, rnd=rnd), ok)
     merge_sha = _babysit(target, conn, run_id, provider, task_id,
                           issue_id, task, branch, wt, sha, beat_s, url,
                           ticket, verify_cmd, contracts, budget_min,
@@ -398,11 +380,13 @@ def _candidate_drift(wt, branch, approved):
     return None
 
 
-def _land(target, conn, run_id, provider, task_id, task, branch, wt, sha, ok,
-          started, budget_min, rnd):
+def _land(run, ok):
     """The merge, the target's `[merge] after` commands and the merged ledger
     line; returns the merge commit's sha. Shared by the ordinary run and the
     approved candidate's."""
+    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    task_id, task, branch, wt = run.task_id, run.task, run.branch, run.wt
+    sha, started, budget_min, rnd = run.sha, run.started, run.budget_min, run.rnd
     merge_sha = _merge(target, conn, run_id, provider, task_id, task, branch,
                        wt, sha)
     # Still under the merge lock, so the checkout the commands see is the
