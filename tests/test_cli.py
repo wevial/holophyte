@@ -93,12 +93,17 @@ class RepointFlagTests(unittest.TestCase):
         git("worktree", "add", "-q", "-b", "task/ko-1", str(wt))
         (wt / "edit.txt").write_text("unsaved\n")
         store.set_branch(self.conn, self.run, "task/ko-1")
-        store.heartbeat(self.conn, self.run)  # a worker beating right now
+        # The claim recorded this live process as the worker; it just beat.
+        store.heartbeat(self.conn, self.run)
         out, _ = self.cli("--abort", "KO-1", "--note", "host going down")
         self.assertIn("abort requested", out)
         self.assertIsNone(self.conn.execute("SELECT endedAt FROM runs").fetchone()[0])
-        self.conn.execute("UPDATE runs SET lastHeartbeat = ?", (T0,))  # it died
+        # A worker that beat a moment ago and then died: its heartbeat is fresh.
+        dead = subprocess.Popen(["true"])
+        dead.wait()
+        self.conn.execute("UPDATE runs SET workerPid = ?", (dead.pid,))
         self.conn.commit()
+        store.heartbeat(self.conn, self.run)
         out, _ = self.cli("--abort", "KO-1", "--note", "host going down")
         self.assertIn("no live worker", out)
         self.assertEqual(self.conn.execute(

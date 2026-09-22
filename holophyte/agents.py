@@ -39,7 +39,7 @@ from holophyte.config import (
     review_route,
     sweep_config,
 )
-from holophyte.gates import InfraFailure, run_capped, sh
+from holophyte.gates import GroupKill, InfraFailure, run_capped, sh
 from holophyte.redact import known_secrets, outbound
 from holophyte.redact import safe_print as print
 
@@ -445,8 +445,12 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 
         beat_s = sweep_config(target).heartbeat_stale_ms / 2000
         cap = 1800 if timeout is None else min(timeout, 1800)
+        # A sweep or an operator's abort mid-review kills the reviewer's
+        # process group, as it kills an implementer's (KO-592).
+        kill = GroupKill()
         try:
-            with review_scratch(cwd) as scratch, heartbeat_while(conn, run_id, beat_s):
+            with review_scratch(cwd) as scratch, heartbeat_while(
+                    conn, run_id, beat_s, on_swept=kill):
                 env = dict(
                     os.environ, HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
                     HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
@@ -455,7 +459,8 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 prepare_environment(target, env, conn, run_id, role, route,
                                     review_round)
                 try:
-                    return configured_review(cmd, cwd, cap, env, role, dispatched_route)
+                    return configured_review(cmd, cwd, cap, env, role,
+                                             dispatched_route, on_start=kill.arm)
                 finally:
                     record_session(scratch, conn, run_id, role, route, review_round)
         finally:
@@ -510,10 +515,10 @@ def review_worktrees(repo, env=None):
         yield Path(raw)
 
 
-def configured_review(cmd, cwd, cap, env, role, command):
+def configured_review(cmd, cwd, cap, env, role, command, on_start=None):
     """Turn the group cap into a reviewer failure eligible for route fallback."""
     try:
-        code, output = run_capped(cmd, cwd, cap, env=env)
+        code, output = run_capped(cmd, cwd, cap, on_start=on_start, env=env)
     except subprocess.TimeoutExpired:
         message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
         return AgentOutput(message, command, timed_out=True)

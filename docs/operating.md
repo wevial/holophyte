@@ -46,20 +46,26 @@ beside `stop_requested` and the console run card shows “Abort requested” unt
 the run ends.
 
 The run's worker notices the mark at its next heartbeat. It kills the current
-turn's process group, the same `SIGKILL` a budget timeout sends. It then
+turn's process group, the same `SIGKILL` a budget timeout sends: an
+implementer's, or a configured `[agents]` reviewer's. A review on the default
+container route is not killed; the abort completes when that review returns.
+It then
 stages the tree with the reclaim path's environment exclusions and commits it
 as `WIP: preserve work at operator abort`. When the run has a pull request it
 pushes the branch. Last, it ends the run `abandoned` with the note and parks
 the ticket `blocked_on_operator` with the note as its question. When the run
-has no live worker, because its heartbeat is older than the stale threshold
-or it is parked awaiting merge approval, the command does the same itself,
-minus the kill. Nothing is merged and nothing is deleted: the worktree and
+has no live worker, the command does the same itself, minus the kill. No live
+worker means the run is parked awaiting merge approval, its heartbeat is
+older than the stale threshold, or, on the host that claimed it, the process
+recorded at claim (`runs.workerPid`) no longer exists. The pid check catches
+a worker that died just after a fresh beat. Nothing is merged and nothing is deleted: the worktree and
 branch stay for the sweep's debris path, and an open pull request stays open.
 An ended run, or one parked `blocked_on_operator`, refuses the request and
 names why, and nothing is written.
 
-This adds the `abort` intervention action. The store widens its action check
-in place, with no schema version change.
+This adds the `abort` intervention action and the `runs.workerPid` column.
+The store widens its action check and adds the column in place, with no
+schema version change.
 
 A ticket parked `blocked_on_operator` by a merge gate conflict -- the gate's
 merge of `main` into the branch conflicted, the run failed and the branch

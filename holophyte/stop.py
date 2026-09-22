@@ -1,5 +1,6 @@
 """Cooperative run stops and their durable continuation at stage boundaries."""
 import json
+import socket
 import time
 from contextvars import ContextVar
 from dataclasses import asdict
@@ -172,11 +173,7 @@ def abort_command(target, identifier, note):
         if run_id is None:
             raise ValueError(f"{identifier} has no run to abort")
         store.abort(conn, run_id, note)
-        phase, beat = conn.execute("SELECT phase, lastHeartbeat FROM runs"
-                                   " WHERE id = ?", (run_id,)).fetchone()
-        age = int(time.time() * 1000) - beat
-        if phase not in store.PARKED_PHASES \
-                and age < sweep_config(target).heartbeat_stale_ms:
+        if worker_alive(conn, run_id, sweep_config(target).heartbeat_stale_ms):
             print(f"[holo2] {identifier}: abort requested; run {run_id} ends"
                   " at its worker's next heartbeat")
             return
@@ -190,6 +187,20 @@ def abort_command(target, identifier, note):
         raise SystemExit(f"[holo2] {refused}") from None
     finally:
         conn.close()
+
+
+def worker_alive(conn, run_id, stale_ms):
+    """Whether a worker still works the run: not parked, beating inside the
+    stale threshold, and -- when it runs on this host with a recorded pid --
+    a process that exists. A fresh beat alone does not prove a worker that
+    died just after it; another host's pid cannot be asked."""
+    from holophyte.supervisor_lock import pid_alive
+    phase, beat, host, pid = conn.execute(
+        "SELECT phase, lastHeartbeat, host, workerPid FROM runs WHERE id = ?",
+        (run_id,)).fetchone()
+    if phase in store.PARKED_PHASES or time.time() * 1000 - beat >= stale_ms:
+        return False
+    return pid is None or host != socket.gethostname() or pid_alive(pid)
 
 
 def pending_requests(conn):

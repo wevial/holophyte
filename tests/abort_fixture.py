@@ -8,9 +8,10 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-from fake_agent import IMPLEMENT, FakeAgent
-from loop_fixture import BRANCH
+from fake_agent import IMPLEMENT, Commit, FakeAgent
+from loop_fixture import BRANCH, VALID_BODY, StubProvider, a_task
 
+import holophyte.agents as agents
 import holophyte.config_tables
 import store
 
@@ -99,3 +100,37 @@ class AbortTurnCases:
         request = events.index(f"human abort: {NOTE}")
         release = next(i for i, s in enumerate(events) if "outcome abandoned" in s)
         self.assertLess(request, release)
+
+    def test_abort_kills_a_configured_reviewers_group(self):
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n[agents]\n"
+                       "reviewer = \"sh -c 'sleep 30 & exec sleep 30'\"\n")
+        beat_s = holophyte.config_tables.sweep_config(
+            self.tgt).heartbeat_stale_ms / 2000
+        implementer, seen, real = FakeAgent(Commit("work")), {}, agents.run_capped
+
+        def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
+            def started(proc):
+                on_start(proc)
+                conn, run = live_run(self.db)
+                try:
+                    store.abort(conn, run, NOTE)
+                finally:
+                    conn.close()
+                seen["asked"] = time.monotonic()
+            code, out = real(cmd, cwd, timeout, on_start=started, **kwargs)
+            seen["elapsed"], seen["code"] = time.monotonic() - seen["asked"], code
+            return code, out
+
+        def dispatch(target, role, goal, cwd, **kwargs):
+            if role == IMPLEMENT:
+                return implementer(target, role, goal, cwd, **kwargs)
+            return agents.agent(target, role, goal, cwd, **kwargs)
+
+        with patch.object(agents, "run_capped", run_capped), \
+                patch.object(sys, "stdout", io.StringIO()):
+            self.loop(fake=dispatch,
+                      provider=StubProvider(dict(a_task(), body=VALID_BODY)))
+        self.assertEqual(seen["code"], -signal.SIGKILL)
+        self.assertLess(seen["elapsed"], beat_s + 1)
+        self.assertEqual(self.read("SELECT outcome, outcomeReason FROM runs"),
+                         [("abandoned", NOTE)])

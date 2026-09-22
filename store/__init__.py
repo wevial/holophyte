@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import socket
 import time
 
@@ -204,10 +205,10 @@ def claim(conn, project_id, ticket_id, now=None):
         run_id = conn.execute(
             "INSERT INTO runs"
             " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
-            "  timeBoxMs, ticketSnapshot, host, workingMs)"
-            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, 0)",
+            "  timeBoxMs, ticketSnapshot, host, workerPid, workingMs)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?, 0)",
             (ticket_id, project_id, prior + 1, now, now, estimate, snapshot,
-             socket.gethostname()),
+             socket.gethostname(), os.getpid()),
         ).lastrowid
         # Scoped by projectId as well as id: claiming another project's ticket
         # would otherwise open a run of this project on work it does not
