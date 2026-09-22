@@ -40,6 +40,7 @@ import ticket_template as _ticket_template
 from holophyte.redact import redact_document as _redact_document
 from holophyte.redact import redact_values as _redact_values
 
+from . import enums as _enums
 from .schema import (  # noqa: F401
     SCHEMA_VERSION,
     SchemaNewer,
@@ -220,16 +221,8 @@ def claim(conn, project_id, ticket_id, now=None):
     return run_id
 
 
-# §4's phase union, transcribed from the diagram's phase list. It duplicates
-# the `runs.phase` CHECK constraint deliberately: the constraint is the
-# enforcement, this is what a caller's typo is caught against *before* a
-# transaction opens, so a misspelled phase reads as a named ValueError rather
-# than as a bare IntegrityError from a table the caller never mentions.
-PHASES = (
-    "claimed", "working", "verifying", "reviewing", "addressing", "merge_gate",
-    "awaiting_merge_approval", "merging", "squashing", "done",
-    "blocked_on_operator", "failed", "killed", "rejected",
-)
+# Validate phases against the same vocabulary SQLite enforces.
+PHASES = tuple(e.value for e in _enums.RunPhase)
 
 
 class RunEnded(ValueError):
@@ -410,7 +403,7 @@ def run_phase(conn, run_id):
 # §2's two log levels. `narrative` is the run's story and drives the live
 # view; `detail` is the volume underneath it, and is the only level §2 gives a
 # payload to.
-EVENT_LEVELS = ("narrative", "detail")
+EVENT_LEVELS = tuple(e.value for e in _enums.EventLevel)
 
 
 def _append_event(conn, run_id, level, kind, summary, at, payload=None):
@@ -604,9 +597,8 @@ def _json_list(field, values):
 
 # The `ledger` table's two enums, transcribed from its CHECKs so a typo is a
 # ValueError naming it here rather than an IntegrityError from SQLite.
-LEDGER_KINDS = ("merge", "failure", "round", "adjudication", "intervention",
-                "note")
-LEDGER_SOURCES = ("loop", "operator")
+LEDGER_KINDS = tuple(e.value for e in _enums.LedgerKind)
+LEDGER_SOURCES = tuple(e.value for e in _enums.LedgerSource)
 
 
 def record_ledger(conn, run_id, kind, text, source="loop", now=None):
@@ -819,7 +811,7 @@ def findings_overlap(earlier, later):
 # caller can map onto it without reading the DDL. The reviewer's own
 # vocabulary is a different one (`APPROVE`/`REQUEST_CHANGES`, `PASS`/`FAIL`);
 # translating it is the loop's job, not this module's.
-ROUND_VERDICTS = ("pass", "changes_requested", "error")
+ROUND_VERDICTS = tuple(e.value for e in _enums.ReviewVerdict)
 
 
 def _document_argument(label, value):
