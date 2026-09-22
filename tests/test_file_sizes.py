@@ -2,7 +2,7 @@
 
 Nothing else stops a module from growing; this file is the rule that runs
 with the suite. `CEILING` sets the caps — 1000 lines a source module,
-1500 a test module — and `OVER` holds every tracked Python file over its
+1500 a test module — and `OVER` holds every unpinned tracked Python file over its
 cap. The walk fails the suite when a listed file grows past its entry,
 when an unlisted file passes its ceiling, and when a listed file is back
 under the ceiling — a stale entry. `PINNED` bounds a file a slice brought
@@ -111,12 +111,13 @@ def wc_counts(root=ROOT):
     return counts
 
 
-def expected_over(counts, ceiling=CEILING):
-    """The table `wc -l` says this tree needs: each tracked file over
+def expected_over(counts, ceiling=CEILING, pinned=PINNED):
+    """The table `wc -l` says this tree needs: each unpinned tracked file over
     its ceiling at exactly its measured count."""
     return {
         name: lines for name, lines in counts.items()
-        if lines > ceiling["test" if name.startswith("tests/") else "source"]
+        if name not in pinned
+        and lines > ceiling["test" if name.startswith("tests/") else "source"]
     }
 
 
@@ -134,7 +135,7 @@ def violations(counts, over=OVER, ceiling=CEILING, pinned=PINNED):
             elif lines <= cap:
                 bad.append(f"{name}: {lines} lines is under the {cap}-line "
                            f"ceiling; the table entry is stale — delete it")
-        elif lines > cap:
+        elif name not in pinned and lines > cap:
             bad.append(f"{name}: {lines} lines is over the {cap}-line "
                        f"ceiling with no table entry")
         pin = pinned.get(name)
@@ -165,6 +166,28 @@ class FileSizeRatchet(unittest.TestCase):
 class RatchetSelfTests(unittest.TestCase):
     """The failure paths, witnessed with a temporary table and temporary
     files so the messages are seen, not assumed."""
+
+    def test_pins_allow_growth_above_the_ordinary_ceiling(self):
+        for name, pin in (("pkg/mod.py", 1060), ("tests/test_mod.py", 1560)):
+            for count in (pin - 59, pin):
+                with self.subTest(name=name, count=count):
+                    counts = {name: count}
+                    pins = {name: pin}
+                    self.assertEqual(violations(counts, over={}, pinned=pins), [])
+                    self.assertEqual(expected_over(counts, pinned=pins), {})
+            with self.subTest(name=name, count=pin + 1):
+                self.assertEqual(
+                    violations({name: pin + 1}, over={}, pinned={name: pin}),
+                    [f"{name}: {pin + 1} lines is over its pinned entry of {pin}"])
+
+    def test_unpinned_files_still_need_entries_above_the_ceiling(self):
+        counts = {"pkg/mod.py": 1001, "tests/test_mod.py": 1501}
+        self.assertEqual(violations(counts, over={}, pinned={}), [
+            "pkg/mod.py: 1001 lines is over the 1000-line ceiling with no table entry",
+            "tests/test_mod.py: 1501 lines is over the 1500-line ceiling "
+            "with no table entry",
+        ])
+        self.assertEqual(expected_over(counts, pinned={}), counts)
 
     def test_a_pinned_file_can_grow_or_shrink_within_its_bound(self):
         for count in (900, 899, 840, 751, 750):
