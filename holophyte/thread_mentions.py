@@ -6,9 +6,35 @@ from dataclasses import replace
 
 from holophyte import questions, redact
 
+REFUSAL = "Only listed maintainers may instruct the factory here"
 
-def classify(thread, handle):
+
+def authorized(author, accounts):
+    return not accounts or author.lower() in {name.lower() for name in accounts}
+
+
+def refuse(target, pull, thread, conn=None, run_id=None, beat_s=1):
+    from holophyte.agents import agent_route
+    from holophyte.babysitter import COMMENT_HEADER, _post
+
+    if any(c.body.startswith("---- Comment by ") and REFUSAL in c.body
+           for c in thread.comments):
+        return
+    body = (COMMENT_HEADER.format(model=agent_route(target, "adjudicate"))
+            + "\n\n" + REFUSAL)
+    _post(target, conn, run_id, beat_s, pull, thread, body, resolve=False)
+
+
+def refused(thread, handle, accounts):
+    return (not authorized(thread.comments[-1].author, accounts)
+            and classify(thread, handle).classification == "MENTIONED")
+
+
+def classify(thread, handle, accounts=()):
     """Only the latest comment can address the factory."""
+    if not authorized(thread.comments[-1].author, accounts):
+        return replace(thread, classification="", request="",
+                       intent="unmarked", triage=None)
     if thread.triage is not None:
         return thread
     pattern = re.compile(r"(?<![\w@-])@" + re.escape(handle) + r"(?![\w-])", re.I)
@@ -24,6 +50,11 @@ def classify(thread, handle):
             thread, classification="MENTIONED", request=request, intent=intent
         )
     return thread
+
+
+def classified(threads, merge):
+    return tuple(classify(t, merge.mention_handle, merge.mention_accounts)
+                 for t in threads)
 
 
 def instruction(thread):

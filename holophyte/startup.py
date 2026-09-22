@@ -38,7 +38,11 @@ def eager_import():
 
 def banner(target=None):
     print(f'[holo2] factory at {build_sha()}', flush=True)
-    if target is not None and merge_config(target).media_bucket:
+    merge = merge_config(target) if target is not None else None
+    if merge and not merge.mention_accounts and merge.human_threads == "act":
+        print("[holo2] mentions are open to any account "
+              "([merge] mention_accounts is empty)", flush=True)
+    if merge and merge.media_bucket:
         try:
             media_store.credentials()
         except media_store.MissingCredentials as error:
