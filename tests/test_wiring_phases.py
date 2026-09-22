@@ -29,6 +29,7 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
+from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
 
 class StubProvider:
@@ -121,7 +122,7 @@ class RunPhaseTests(unittest.TestCase):
                        conn=None, run_id=None, review_round=None):
             turns.append(role)
             if role != "implement":
-                return replies.pop(0)
+                return answer_scope(goal, replies.pop(0))
             n = sum(1 for turn in turns if turn == "implement")
             (Path(cwd) / f"change{n}.txt").write_text(f"work {n}\n")
             self.git("add", "-A", cwd=cwd)
