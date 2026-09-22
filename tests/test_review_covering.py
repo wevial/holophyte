@@ -76,3 +76,55 @@ class CoveringPromptTests(unittest.TestCase):
         self.assertNotIn("tests/test_actual.py", instructions)
         self.assertEqual(findings, [
             f"tests/test_override.py (changed since approval at {self.approved})"])
+
+
+class NonPythonApprovalCitationTests(unittest.TestCase):
+    """KO-601: a covering review may cite a console test by its title."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        for args in (("init", "-q", "-b", "main"),
+                     ("config", "user.name", "Test reviewer"),
+                     ("config", "user.email", "reviewer@example.test")):
+            self.git(*args)
+        test = self.root / "console/tests/RunDetail.test.tsx"
+        test.parent.mkdir(parents=True)
+        test.write_text(
+            'test("Turns lists recorded sessions and opens rendered '
+            'transcript entries in a panel", () => {});\n')
+        self.approved = self.commit("approved")
+        (self.root / "holophyte").mkdir()
+        (self.root / "holophyte/fix.py").write_text("# fix\n")
+        self.head = self.commit("fix")
+
+    def git(self, *args):
+        return subprocess.check_output(
+            ["git", *args], cwd=self.root, text=True, stderr=subprocess.PIPE
+        ).strip()
+
+    def commit(self, subject):
+        self.git("add", ".")
+        self.git("commit", "-qm", subject)
+        return self.git("rev-parse", "HEAD")
+
+    def findings(self, title):
+        reply = (f"CRITERION 5: met — approval at {self.approved[:7]}; "
+                 f'console/tests/RunDetail.test.tsx::"{title}"')
+        return review.criteria_findings(
+            reply, ["one", "two", "three", "four", "turns open in a panel"],
+            self.root, approved_range=(self.approved, self.head))
+
+    def criterion_five(self, findings):
+        return [f for f in findings if f["line"] == 5]
+
+    def test_cited_title_in_unchanged_file_witnesses_criterion(self):
+        self.assertEqual(
+            self.criterion_five(self.findings("Turns lists recorded sessions")), [])
+
+    def test_absent_title_leaves_criterion_unwitnessed(self):
+        (finding,) = self.criterion_five(self.findings("Turns sort by date"))
+        self.assertIn("CRITERION 5: unwitnessed", finding["message"])
+        self.assertIn("console/tests/RunDetail.test.tsx", finding["message"])
+        self.assertIn("Turns sort by date", finding["message"])

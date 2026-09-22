@@ -8,6 +8,7 @@ from pathlib import Path
 
 from holophyte.review import (
     covering_scope,
+    criteria_brief,
     criteria_findings,
     missing_witnesses,
     test_references,
@@ -52,6 +53,31 @@ class WitnessResolutionTests(unittest.TestCase):
         (note,) = self.missing("test_nope")
         self.assertIn("fallback", note)
         self.assertIn("test_nope", note)
+
+
+class NonPythonWitnessTests(unittest.TestCase):
+    """KO-601: a witness may name a Go or TypeScript test by file and name."""
+
+    def test_go_test_function_is_checked_in_its_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            test = root / "internal/mail/flags_test.go"
+            test.parent.mkdir(parents=True)
+            references = test_references(
+                "first review: internal/mail/flags_test.go::TestMarkRead")
+            test.write_text("package mail\n\n"
+                            "func TestMarkRead(t *testing.T) {}\n")
+            self.assertEqual(missing_witnesses(references, root), [])
+            test.write_text("package mail\n\n"
+                            "func TestArchive(t *testing.T) {}\n")
+            (note,) = missing_witnesses(references, root)
+            self.assertIn("internal/mail/flags_test.go", note)
+            self.assertIn("TestMarkRead", note)
+
+    def test_brief_shows_python_and_quoted_title_forms(self):
+        brief = criteria_brief(["the behavior works"])
+        self.assertIn("tests/file.py::TestClass::test_name", brief)
+        self.assertIn('path::"test name"', brief)
 
 
 class VerificationBriefTests(unittest.TestCase):
