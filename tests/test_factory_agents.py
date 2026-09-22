@@ -102,7 +102,7 @@ class AgentTurnEventTests(unittest.TestCase):
             "SELECT providerSessionId FROM runs WHERE id=?", (self.run,)).fetchone()[0])
 
     def test_wrapper_rejects_invalid_sessions_and_accepts_length_boundary(self):
-        for session in ('', 'two words', 'id\n', 'x' * 201, 'x' * 200):
+        for session in ('', 'two words', 'id\n', 'id\x00', 'x' * 201, 'x' * 200):
             with self.subTest(session_length=len(session)):
                 command = self.stub('review-session',
                     "import os\nfrom pathlib import Path\n"
