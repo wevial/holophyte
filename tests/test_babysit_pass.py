@@ -69,6 +69,53 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(events[covering - 1][0], "phase_change")
         self.assertIn("-> reviewing: review of the fix at", events[covering - 1][1])
 
+    def test_approved_fix_review_carries_unchanged_witness(self):
+        self.covering_approval(False)
+
+    def test_approved_fix_review_rejects_changed_witness(self):
+        self.covering_approval(True)
+
+    def covering_approval(self, touch_test):
+        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        fixture = self
+
+        class TwoFixes:
+            role = "implement"
+
+            def play(self, cwd, turn):
+                Commit("first fix", path="fix.txt").play(cwd, turn)
+                path = "tests/test_thing.py" if touch_test else "other.txt"
+                return Commit("second fix", path=path,
+                              body="def test_it_works():\n    assert True\n").play(
+                                  cwd, turn)
+
+        class PriorApproval:
+            role = "review"
+
+            def play(self, cwd, turn):
+                approved = fixture.git("rev-parse", "HEAD~2", cwd=cwd).strip()
+                return (f"CRITERION 1: met — approval at {approved}; "
+                        "tests/test_thing.py::test_it_works\nVERDICT: APPROVE")
+
+        fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- crash"), TwoFixes(),
+                            PriorApproval(), Idle(""), provider=self.provider())
+        covering = [t for t in fake.turns if t.role == "review"][-1]
+        approved, candidate = [sha for _, sha in self.pushed()]
+        for text in (approved, candidate, f"{approved}..{candidate}",
+                     "first fix", "second fix", "fix.txt", "2 files changed",
+                     "Review this range", "do not run the full suite again"):
+            self.assertIn(text, covering.goal)
+        self.assertNotIn("read the whole candidate", covering.goal)
+        self.assertNotIn("Review this range", fake.turns[1].goal)
+        self.assertIn("do not run the full suite again", fake.turns[1].goal)
+        self.assertEqual(bool([v for k, v in self.api_calls() if k == "merge"]),
+                         not touch_test)
+        self.assertEqual(self.read("SELECT verdict FROM reviewRounds "
+                                   "ORDER BY id")[-1][0],
+                         "changes_requested" if touch_test else "pass")
+
     def test_fix_push_head_catches_up(self):
         self.fix_push_head_propagation(False)
 
@@ -266,6 +313,9 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
 
         fake, _ = self.loop(ReviewBeforeMerge(), Idle(""), provider=self.provider())
         self.assertEqual(fake.roles, ["review", "implement"])
+        self.assertIn("read the whole candidate, the fixes included",
+                      fake.turns[0].goal)
+        self.assertIn("last review of it asked for changes", fake.turns[0].goal)
         self.assertEqual(fake.turns[0].candidate_sha, candidate)
         self.assertEqual([v["sha"] for kind, v in self.api_calls()
                           if kind == "merge"], [candidate])

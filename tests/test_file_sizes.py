@@ -31,11 +31,11 @@ OVER = {}
 # Pins are upper bounds, initialized with 60 lines of headroom in KO-576.
 # Lower a pin when it sits more than 150 lines above its file's count.
 PINNED = {
-    "holophyte/babysitter.py": 1049, "holophyte/board.py": 961,
+    "holophyte/babysitter.py": 1047, "holophyte/board.py": 961,
     "holophyte/claim.py": 963, "holophyte/cli.py": 539,
     "holophyte/config.py": 894, "holophyte/dispatch.py": 323,
     "holophyte/config_tables.py": 695, "holophyte/findings.py": 391,
-    "holophyte/gates.py": 870, "holophyte/loop.py": 958,
+    "holophyte/gates.py": 870, "holophyte/loop.py": 961,
     "holophyte/merge_gate.py": 562,
     "holophyte/operator.py": 539, "holophyte/pool.py": 432,
     "holophyte/pr.py": 739, "holophyte/pr_status.py": 497,
@@ -50,7 +50,7 @@ PINNED = {
     "store/operate.py": 975, "store/read.py": 1018,
     "store/schema.py": 869, "store/tickets.py": 522,
     "tests/config_fixture.py": 136, "tests/loop_fixture.py": 713,
-    "tests/serve_fixture.py": 230, "tests/test_babysit_pass.py": 404,
+    "tests/serve_fixture.py": 230, "tests/test_babysit_pass.py": 454,
     "tests/test_babysit_threads.py": 965, "tests/test_babysit_checks.py": 317,
     "tests/test_babysitter.py": 576, "tests/test_config_tables.py": 558,
     "tests/test_claim.py": 1560, "tests/test_claim_mirror.py": 238,

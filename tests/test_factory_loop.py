@@ -19,8 +19,7 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-# `fake_agent` is a helper, not a test module: discovery never imports it, and
-# how this file is imported decides whether `tests/` is on the path at all.
+# Helper resolution depends on whether unittest uses discovery or module imports.
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.test_factory_loop` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
@@ -45,6 +44,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     StubProvider,
     a_task,
 )
+from review_session_fixture import ReviewSessionCases  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
@@ -63,7 +63,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
-class LoopTests(FixSessionCases, LoopFixture):
+class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
     def test_implementer_sessions_survive_implement_and_fix_turns(self):
         self.configure("[agents]\nimplementer_session = 'session id: ([a-z-]+)'\n")
 

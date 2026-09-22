@@ -706,7 +706,10 @@ def _verify_brief(verify_cmd, ok, out):
         return ""
     return (f"The ticket's verification commands and the target's baseline "
             f"({count} commands) were run and "
-            f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n")
+            f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
+            + ("The suite has been run by the factory at this commit; do not run "
+               "the full suite again, run only focused tests needed to check a "
+               "specific concern.\n" if ok else ""))
 
 
 def _changed_lines(wt):
@@ -777,7 +780,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                 "line:\n"
                 "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
                 "If REQUEST_CHANGES, list only concrete blockers.", wt,
-                base_sha, sha, conn, run_id, run_agent=agent)
+                base_sha, sha, conn, run_id, run_agent=agent, review_round=rnd)
         # Store even the round that ends the loop.
         record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                      ok, out,

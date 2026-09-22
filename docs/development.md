@@ -74,6 +74,8 @@ Each module, one line:
   target's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: `run_task`'s stages.
 - `holophyte/fix_session.py` — review fix-session arms, resume argv and fresh retry.
+- `holophyte/session_arms.py` — shared run-number assignment for session experiments.
+- `holophyte/review_session.py` — reviewer session-file capture and resume requests.
 - `holophyte/dispatch.py` — the dispatcher out of `holophyte/loop.py`
   (KO-412): one claim run under its crash containment and close-out,
   the startup sweep and the queue mirror.
@@ -126,7 +128,8 @@ Each module, one line:
 - `holophyte/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.
 - `holophyte/thread_answers.py` — read-only mention answers and thread replies.
-- `holophyte/thread_mentions.py` — latest-comment mentions as PR instructions.
+- `holophyte/thread_mentions.py` — mention markers and typed intent triage.
+- `holophyte/questions.py` — typed choice requests and safe service failures.
 - `holophyte/thread_findings.py` — structured PR findings, bounded originals,
   and read-only normalization of legacy thread rows.
 - `holophyte/babysit_steps.py` — records PR babysitting step changes without

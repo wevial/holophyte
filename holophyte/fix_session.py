@@ -6,6 +6,7 @@ import store
 from holophyte.agents import effective_role, routes
 from holophyte.config import check_command_path, config_table, loop_config
 from holophyte.gates import sh
+from holophyte.session_arms import select_arm
 
 
 def resume_template(target):
@@ -22,14 +23,6 @@ def resume_template(target):
         raise SystemExit(f'{key}: {exc}') from exc
     check_command_path(target, 'implementer_resume', argv[0])
     return argv
-
-
-def select_arm(target, run_id):
-    """Alternate by the store run number, keeping every round in one arm."""
-    mode = loop_config(target).fix_session
-    if mode == 'alternate':
-        return 'resume' if run_id is not None and run_id % 2 else 'fresh'
-    return mode
 
 
 def resume_argv(target, conn, run_id):
@@ -59,7 +52,7 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
     fresh = ('A reviewer left findings on your work. The ticket you '
              'are held to, acceptance criteria included:\n\n'
              f'{ticket}\n\n' + findings)
-    arm = select_arm(target, run_id)
+    arm = select_arm(loop_config(target).fix_session, run_id)
     argv, reason = (resume_argv(target, conn, run_id)
                     if arm == 'resume' else (None, None))
     args = (target, conn, run_id, beat_s, wt, budget_min)

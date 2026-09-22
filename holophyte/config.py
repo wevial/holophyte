@@ -40,14 +40,8 @@ from holophyte.config_tables import (
 def load_config(path):
     """Parse the target's TOML config, or `{}` when there is no file.
 
-    An absent file is the common case and means "all defaults" — the factory
-    ships no config of its own. A file that exists but does not parse is a
-    startup error naming the file and what `tomllib` objected to: a config the
-    operator wrote and the factory silently ignored would route a run to a
-    harness nobody chose, which is the one outcome the file exists to prevent.
-    Unknown tables are left alone, so a config written for a later version
-    still loads here; a key this version does not read inside a table it does
-    is refused by `check_config_keys()` at startup.
+    Malformed TOML is a startup error; unknown tables remain forward compatible.
+    Unknown keys in known tables are refused by `check_config_keys()`.
     """
     path = Path(path)
     try:
@@ -125,6 +119,7 @@ KNOWN_KEYS["board"] = frozenset(BOARD_KEYS)
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
 KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
+KNOWN_KEYS["questions"] = frozenset(("url", "key_env", "min_confidence"))
 
 
 def check_config_keys(target):
@@ -155,6 +150,11 @@ def check_config(target):
     CLI startup and daemon writes share these checks; refusals name the setting.
     """
     merge = merge_config(target)
+    from holophyte.questions import settings
+    try:
+        settings(target.config())
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
     verify_config(target)
     check_config_keys(target)
     budget_scale(target)

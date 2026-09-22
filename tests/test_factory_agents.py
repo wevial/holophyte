@@ -84,6 +84,38 @@ class AgentTurnEventTests(unittest.TestCase):
             "SELECT payload FROM runEvents WHERE runId=? AND kind='agent_turn' "
             "ORDER BY seq", (self.run,))]
 
+    def test_wrapper_session_recorded_before_scratch_cleanup(self):
+        command = self.stub("review-session", "import os\nfrom pathlib import Path\n"
+                            "p = Path(os.environ['HOLOPHYTE_REVIEW_SCRATCH'])\n"
+                            "(p / 'session').write_text('opaque-session')\n"
+                            "print(p)")
+        self.configure(reviewer=command)
+        output = self.turn('review', review_round=1)
+        self.assertFalse(Path(str(output)).exists())
+        events = [json.loads(row[0]) for row in self.conn.execute(
+            "SELECT payload FROM runEvents WHERE kind='agent_session'")]
+        self.assertEqual(len(events), 1)
+        self.assertEqual({k: events[0][k] for k in ('session_id', 'role', 'route')},
+                         dict(session_id='opaque-session', role='review',
+                              route='primary'))
+        self.assertIsNone(self.conn.execute(
+            "SELECT providerSessionId FROM runs WHERE id=?", (self.run,)).fetchone()[0])
+
+    def test_wrapper_rejects_invalid_sessions_and_accepts_length_boundary(self):
+        for session in ('', 'two words', 'id\n', 'id\x00', 'x' * 201, 'x' * 200):
+            with self.subTest(session_length=len(session)):
+                command = self.stub('review-session',
+                    "import os\nfrom pathlib import Path\n"
+                    "p = Path(os.environ['HOLOPHYTE_REVIEW_SCRATCH'])\n"
+                    f"(p / 'session').write_text({session!r})\nprint(p)")
+                self.configure(reviewer=command)
+                output = self.turn('review', review_round=1)
+                self.assertFalse(Path(str(output)).exists())
+                count = self.conn.execute(
+                    "SELECT count(*) FROM runEvents WHERE kind='agent_session'"
+                ).fetchone()[0]
+                self.assertEqual(count, int(len(session) == 200))
+
     def test_roles_status_labels_and_probe_without_context(self):
         command = self.stub("devin-review", "import time; time.sleep(0.05)")
         self.configure(implementer=command + " -m first --model ignored",
@@ -518,7 +550,8 @@ class ReviewLoopTests(unittest.TestCase):
         replies = list(replies)
 
         def fake_agent(target, role, goal, cwd, *, base_sha=None, conn=None,
-                       candidate_sha=None, timeout=None, on_start=None, run_id=None):
+                       candidate_sha=None, timeout=None, on_start=None, run_id=None,
+                       review_round=None):
             self.events.append(role)
             self.goals.append((role, goal))
             if role != "implement":

@@ -1,6 +1,6 @@
 """Read-only mention answers and attributed thread replies."""
 import store
-from holophyte import maintainer_notes, pr
+from holophyte import maintainer_notes, pr, thread_mentions
 from holophyte.agents import agent_route
 from holophyte.conversation_comments import ASK_REPLY_MARKER, quote_request
 from holophyte.gates import InfraFailure
@@ -14,6 +14,7 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte import babysitter
     from holophyte.loop import agent, sh
     from holophyte.pullrequest import _park_on_pr
+    threads = tuple(thread_mentions.triaged(threads, ticket, target.config()))
     asks = tuple(t for t in threads if not maintainer_notes.is_note(t)
                  and t.classification == "MENTIONED"
                  and t.intent == "ask")
@@ -34,10 +35,13 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
         header = babysitter.COMMENT_HEADER.format(
             model=agent_route(target, "adjudicate"))
         body = f"{header}\n\n{ASK_REPLY_MARKER}\n{reply}"
+        if thread.triage is not None:
+            body += "\n\n" + thread_mentions.FIX_HINT
         post(target, conn, run_id, beat_s, pull, thread, body, resolve=True,
              instruction=dict(kind="instruction", path=thread.path or "(no file)",
                               line=thread.line, author=thread.comments[-1].author,
-                              request=thread.request, url=thread.url))
+                              request=thread.request, url=thread.url,
+                              **({"triage": thread.triage} if thread.triage else {})))
     remaining = tuple(t for t in threads if t not in asks)
     if asks and not remaining:
         why = previous_park_reason(conn, run_id, branch)

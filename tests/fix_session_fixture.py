@@ -137,7 +137,9 @@ class FixSessionConfigCases:
         for setting, key in (("[agents]\nimplementer_resume = 'cli resume'",
                               'implementer_resume'),
                              ("[agents]\nimplementer_resume = 4", 'implementer_resume'),
-                             ("[loop]\nfix_session = 'sometimes'", 'fix_session')):
+                             ("[loop]\nfix_session = 'sometimes'", 'fix_session'),
+                             ("[loop]\nreview_session = 'sometimes'",
+                              'review_session')):
             with self.subTest(setting=setting):
                 self.locate(setting)
                 with self.assertRaisesRegex(SystemExit, key):
