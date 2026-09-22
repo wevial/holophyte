@@ -15,6 +15,54 @@ from holophyte import pr, questions, redact, thread_mentions
 
 
 class QuestionsTests(unittest.TestCase):
+    def test_http_endpoints_are_rejected_before_sending_credentials(self):
+        for url in ("http://classifier.example/q", "http://localhost:8000/q"):
+            with (
+                self.subTest(url=url),
+                patch.dict(os.environ, {"TYPESAFE_API_KEY": "test-question-key"}),
+                patch("holophyte.questions.urllib.request.urlopen") as send,
+            ):
+                result = questions.ask(
+                    thread_mentions.MENTION_INTENT,
+                    {},
+                    config={"questions": {"url": url}},
+                )
+                self.assertEqual(result, questions.Failure("invalid_config"))
+                send.assert_not_called()
+
+    def test_response_size_boundary(self):
+        document = json.dumps(
+            {
+                "answers": {
+                    "q": {
+                        "choice": "fix",
+                        "confidence": 0.9,
+                        "probabilities": {
+                            "fix": 0.9,
+                            "question": 0.05,
+                            "unclear": 0.05,
+                        },
+                    }
+                }
+            }
+        ).encode()
+        for size, expected in (
+            (65536, questions.Answer("fix", 0.9)),
+            (65537, questions.Failure("response_too_large")),
+        ):
+            response = io.BytesIO(document.ljust(size, b" "))
+            with (
+                self.subTest(size=size),
+                patch.dict(os.environ, {"TYPESAFE_API_KEY": "test-question-key"}),
+                patch(
+                    "holophyte.questions.urllib.request.urlopen", return_value=response
+                ),
+                patch.object(response, "read", wraps=response.read) as read,
+            ):
+                result = questions.ask(thread_mentions.MENTION_INTENT, {}, config={})
+                self.assertEqual(result, expected)
+                read.assert_called_once_with(65537)
+
     def test_request_context_and_redaction(self):
         secret = "typed-question-sentinel"
         response = {

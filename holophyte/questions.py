@@ -16,6 +16,7 @@ DEFAULTS = dict(
     key_env="TYPESAFE_API_KEY",
     min_confidence=0.6,
 )
+MAX_RESPONSE_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -41,8 +42,8 @@ def settings(config):
         raise ValueError("[questions] must be a table")
     values = DEFAULTS | table
     url, name = values["url"], values["key_env"]
-    if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-        raise ValueError("[questions] url must be an HTTP(S) URL")
+    if not isinstance(url, str) or not url.startswith("https://"):
+        raise ValueError("[questions] url must be an HTTPS URL (including localhost)")
     if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
         raise ValueError("[questions] key_env must be an environment variable name")
     if not probability(values["min_confidence"]):
@@ -116,7 +117,10 @@ def ask(question, state, *, config):
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=10) as response:
-            return parse(json.load(response), question)
+            payload = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(payload) > MAX_RESPONSE_BYTES:
+                return Failure("response_too_large")
+            return parse(json.loads(payload), question)
     except TimeoutError:
         return Failure("timeout")
     except urllib.error.URLError as error:
