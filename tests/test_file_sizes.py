@@ -52,7 +52,7 @@ PINNED = {
     "tests/config_fixture.py": 136, "tests/loop_fixture.py": 713,
     "tests/serve_fixture.py": 230, "tests/test_babysit_pass.py": 454,
     "tests/test_babysit_threads.py": 963, "tests/test_babysit_checks.py": 317,
-    "tests/test_babysitter.py": 589, "tests/test_config_tables.py": 558,
+    "tests/test_babysitter.py": 602, "tests/test_config_tables.py": 558,
     "tests/test_claim.py": 1560, "tests/test_claim_mirror.py": 238,
     "tests/test_cli.py": 227,
     "tests/test_cli_approve.py": 390, "tests/test_cli_requeue.py": 333,

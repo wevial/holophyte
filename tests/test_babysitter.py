@@ -470,6 +470,8 @@ class ConflictingPullRequestTests(MergeModeFixture):
         def verify(command, cwd, *args, **kwargs):
             cwd = Path(cwd)
             calls.append((command, cwd))
+            if not command:
+                return True, "(no verify command)"
             missing = [n for n in re.findall(r"tests\.(\w+)", command)
                        if not (cwd / "tests" / f"{n}.py").exists()]
             if missing:
@@ -529,6 +531,17 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.assertEqual(self.read(
             "SELECT COUNT(*) FROM runEvents WHERE runId = 2"
             " AND summary LIKE 'main-side verify%'"), [(0,)])
+
+    def test_a_clause_left_after_a_dropped_one_still_runs_on_main(self):
+        shared = "python3 -m unittest tests.test_shared"
+        moved = self.module_candidate(
+            "python3 -m unittest tests.test_branch_only && " + shared)
+        calls, verify = self.module_verify(main_red=True)
+        with verify:
+            fake, _ = self.resume()
+        self.assertEqual(fake.roles, [])
+        self.assertIn(f"main is red at {moved}", self.question())
+        self.assertEqual(calls[1][0], shared)
 
     def test_a_tree_conflict_goes_to_the_implementer_then_parks(self):
         """KO-377: `origin/main` conflicts with the branch in the tree.
