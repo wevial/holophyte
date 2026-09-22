@@ -248,6 +248,38 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIsNone(self.rc)
 
 
+    def test_pr_merged_by_a_person_mid_pass_ends_the_run_merged(self):
+        # KO-653: a person merged the PR while the run waited on its
+        # checks in `merge_gate`; the worker crashed on `merge_gate -> done`.
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state(checks="PENDING"),
+                                self.pr_state(merged=True)])
+        with patch.object(holophyte.pr, "SLEEP", lambda _: None):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertIsNone(self.rc)
+        self.assertEqual(self.read("SELECT phase, outcome, mergeSha FROM runs"),
+                         [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status, activeRunId FROM tickets"),
+                         [("merged", None)])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        # Every transition it made replays through the real store's gate.
+        moves = [s.split(":")[0].split(" -> ") for (s,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'phase_change'"
+            " ORDER BY id")]
+        self.assertEqual(moves[-1], ["merge_gate", "done"])
+        import store
+        with closing(store.open(self.db)) as conn:
+            project = conn.execute("SELECT id FROM projects").fetchone()[0]
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id="issue-replay",
+                linear_identifier="KO-9653", title="replay",
+                acceptance_criteria=["Given a replay, then it is legal"])
+            run = store.claim(conn, project, ticket)
+            for old, new in moves:
+                self.assertEqual(store.set_phase(conn, run, new), old)
+
+
     def test_closed_pr_at_pass_cap_is_rejected(self):
         self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
         closed = self.pr_state()
