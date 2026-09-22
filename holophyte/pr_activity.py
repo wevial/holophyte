@@ -138,10 +138,8 @@ def break_empty_wakes(conn, ticket):
         if not parked:
             return
         store.record_event(conn, ticket.runId, 'pr_wake_breaker', reason)
-        conn.execute('UPDATE runs SET outcomeReason = ? WHERE id = ?',
-                     (reason, ticket.runId))
-        conn.execute('UPDATE tickets SET blockedQuestion = ? WHERE id = ?',
-                     (reason, ticket.id))
+        store.set_outcome_reason(conn, ticket.runId, reason)
+        store.set_question(conn, ticket.id, reason)
 
 
 def record_commits(conn, run_id, status):

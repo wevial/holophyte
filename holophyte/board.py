@@ -320,8 +320,7 @@ def refresh_board_states(conn, project, provider):
         state = task.get("board_state") if task else None
         if state is not None:
             with store.transaction(conn):
-                conn.execute("UPDATE tickets SET boardState = ? WHERE id = ?",
-                             (state, ticket.id))
+                store.set_board_state(conn, ticket.id, state)
 
 
 def mirror_task(conn, project, task, specced=True):
@@ -701,9 +700,7 @@ def block_ticket(conn, ticket_id, provider, question):
     """
     if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
         return False
-    conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
-                 (redact_values(question), ticket_id))
-    conn.commit()
+    store.set_question(conn, ticket_id, redact_values(question))
     return True
 
 
