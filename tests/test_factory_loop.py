@@ -1,7 +1,6 @@
 """Factory loop control flow, driven end to end with zero agent calls.
 
-The fake agent scripts implement/review turns; throwaway repositories,
-worktrees, verification and merges are real.
+Fake agents script turns; repositories, worktrees, verification and merges are real.
 Run: python3 -m unittest discover -s tests -p 'test_factory_loop*' -v
 """
 from __future__ import annotations
@@ -36,6 +35,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     no_agent_processes,
 )
+from fix_session_fixture import FixSessionCases  # noqa: E402
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
     CommitThenTimeout,
@@ -63,7 +63,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
-class LoopTests(LoopFixture):
+class LoopTests(FixSessionCases, LoopFixture):
     def test_implementer_sessions_survive_implement_and_fix_turns(self):
         self.configure("[agents]\nimplementer_session = 'session id: ([a-z-]+)'\n")
 

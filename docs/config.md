@@ -72,6 +72,7 @@ implementer's command and isolation settings.
 | `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
 | `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and target toolchain. Startup refuses a missing image and prints its build command. |
 | `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
+| `implementer_resume` | Default: absent (disabled) | Command string containing `{session}`; the findings prompt is appended as the last argv element. |
 | `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. |
 | `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
@@ -111,6 +112,21 @@ HEAD and index return to the host after the container has been removed. Verify
 and capture commands still run on the host. The image must supply the CLI;
 host executables are not mounted. The reviewer image alone may need extending
 for the configured implementer. `none` preserves existing host behavior.
+
+Set `[loop] fix_session = "resume"` to reuse the recorded session for review
+fix rounds, with e.g. `implementer_resume = "codex exec resume {session}"`
+in `[agents]` (include the model and sandbox flags for your implementer).
+The resumed prompt contains reviewer findings and adjudication instructions;
+the original ticket is already in the session. `alternate` assigns odd store
+run ids to resume and even ids to fresh, consistently across their fix rounds.
+Resume requires this run's session id, a configured template and the primary
+implementer route. Otherwise the ordinary fresh prompt is used. A nonzero
+resume exit without a new commit gets one fresh retry, subject to the run
+budget; a timeout remains a budget failure. Resume launch errors also retry
+fresh once. With either experimental setting, each fix round records a
+`fix_session` run event with `arm`, `resumed`, and a `reason` when skipped or
+failed. The default `fresh` setting records no such events. These settings
+apply to review fix rounds only; pull request babysitting is unchanged.
 
 Set `implementer_session` to extract a session handle from captured implementer
 output (stdout and stderr), for example the Codex banner:
@@ -221,6 +237,7 @@ neither startup nor the operator named.
 | `review_rounds_per_lines` | Default: `800` | Integer at least 0; change the diff-size scaling interval, or use 0 to disable scaling. |
 | `review_rounds_max` | Default: `4` | Integer at least 1 and at least review_rounds; change the scaled round ceiling. |
 | `workers` | Default: `1` | Integer at least 1; increase to work multiple claimable tickets concurrently. |
+| `fix_session` | Default: `"fresh"` | `fresh`, `resume`, or `alternate`; alternate resumes odd run ids and starts even run ids fresh. |
 | `tick_sec` | Default: `120` seconds | Integer at least 10; change how soon a pool with spare slots notices new work. |
 
 ```toml

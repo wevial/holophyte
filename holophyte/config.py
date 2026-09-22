@@ -4,11 +4,8 @@ The reader (`load_config`) and every table the factory reads -- `[agents]`,
 `[worktree]`, `[supervisor]`, `[loop]` -- with the defaults an absent table
 leaves in place, the constraints a present value is held to, and the startup
 checks that refuse a bad one before anything is claimed. Nothing here knows
-the loop, the gates or the store: a function takes a `Target`-shaped value
-(`.config()`, `.config_path`) and answers about its config.
+the loop, gates or store; readers take a `Target`-shaped value.
 
-First slice of the phase-2 module split; moved verbatim from `factory.py`,
-which imports back the names its remaining call sites use.
 """
 import collections
 import math
@@ -115,7 +112,8 @@ KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
                   "implementer_isolation", "implementer_image",
-                  "implementer_credential", "implementer_session"}),
+                  "implementer_credential", "implementer_session",
+                  "implementer_resume"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry", "env_source", "env_allow"}),
 }
@@ -161,6 +159,8 @@ def check_config(target):
     check_config_keys(target)
     budget_scale(target)
     implementer_session(target)
+    from holophyte.fix_session import resume_template
+    resume_template(target)
     from holophyte.isolation import route_for
     route = route_for(target)
     if merge.ui_capture and route.backend == "container" and not route.writable:

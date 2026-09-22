@@ -478,7 +478,8 @@ def _scale_note(target, budget_min):
     return f" ({budget_min * scale:g} min at scale {scale:g})"
 
 
-def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *, role="implement"):
+def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *,
+           role="implement", argv=None):
     """Run one turn under its scaled wall-clock budget.
 
     Return `(output, timed_out)`; retain output and reap children on timeout.
@@ -494,7 +495,8 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *, role="implemen
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
             output = agent(target, role, goal, wt,
                           timeout=budget_min * budget_scale(target) * 60,
-                          on_start=kill.arm, conn=conn, run_id=run_id)
+                          on_start=kill.arm, conn=conn, run_id=run_id,
+                          **({"argv": argv} if argv is not None else {}))
             timed_out = False
     except subprocess.TimeoutExpired as expired:
         print(f"[holo2] task exceeded {budget_min} min budget"
@@ -800,16 +802,10 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
         # Refuse a fix turn if the run has no budget left.
         _check_run_cap(target, conn, run_id, budget_min, sha)
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        fixes, timed_out = _timed(
-            target, conn, run_id, beat_s, wt, budget_min,
-            "A reviewer left findings on your work. The ticket you "
-            "are held to, acceptance criteria included:\n\n"
-            f"{ticket}\n\nReviewer findings:\n\n{verdict}\n\n"
-            "For EACH finding, adjudicate it first: ADDRESS (concrete "
-            "blocker — fix now), FOLLOW_UP (valid but out of scope — name "
-            "it in the commit message), or DECLINE (invalid/out-of-scope — "
-            "state the rationale in the commit message). Then fix only the "
-            "ADDRESS items and commit.")
+        from holophyte.fix_session import fix_turn
+        fixes, timed_out = fix_turn(
+            target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
+            timed=_timed, check_cap=_check_run_cap)
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                f"Reviewer findings:\n{verdict}\n\n"
