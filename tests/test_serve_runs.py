@@ -29,6 +29,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import finish_run
 from tests.ticket_url_fixture import assert_api_url
+from tests.transcript_fixture import TranscriptCase
 
 SLACK = test_serve.SLACK
 
@@ -845,3 +846,55 @@ class ServeContractTests(ServeTestCase):
             with self.subTest(endpoint=name):
                 expected = json.loads((fixtures / f"{name}.json").read_text())
                 self.assertEqual(body, expected)
+
+
+class TurnTests(TranscriptCase):
+    def test_ordered_turns_and_default_off(self):
+        path = self.turns()
+        self.start()
+        code, _, body = self.request('GET', path)
+        self.assertEqual(code, 200)
+        rows = body['turns']
+        self.assertEqual([(r['role'], r['route'], r['seconds'], r['session_id'])
+                          for r in rows], [('implement', 'primary', 10, 'first'),
+                                           ('review', 'primary', 20, 'second'),
+                                           ('implement', 'fallback', 30, 'third')])
+        url = f"{path}/{rows[0]['id']}/transcript"
+        self.assertEqual(self.request('GET', url)[0], 404)
+
+    def test_no_turns_is_an_empty_list(self):
+        self.seed()
+        self.start()
+        self.assertEqual(self.request('GET', f'/runs/{self.run}/turns')[2],
+                         {'turns': []})
+
+    def test_transcripts_are_redacted_and_confined(self):
+        path = self.turns()
+        allowed = self.root / 'sessions'
+        file = self.transcript(allowed, 'registered-secret-value is here')
+        self.start(f'[serve]\ntranscripts = ["{allowed}"]\n'
+                   '[extra]\napi_key = "registered-secret-value"\n')
+        rows = self.request('GET', path)[2]['turns']
+        url = f"{path}/{rows[0]['id']}/transcript"
+        code, _, body = self.request('GET', url)
+        self.assertEqual(code, 200)
+        self.assertEqual(body, {'entries': [
+            {'speaker': 'assistant', 'text': '[redacted] is here'}]})
+        outside = self.root / file.name
+        file.rename(outside)
+        self.assertEqual(self.request('GET', url)[0], 404)
+        file.symlink_to(outside)
+        self.assertEqual(self.request('GET', url)[0], 404)
+        self.assertEqual(self.request('GET', f'{path}/999999/transcript')[0], 404)
+
+    def test_devin_export_under_a_single_configured_root(self):
+        path = self.turns()
+        folder = self.root / 'second'
+        folder.mkdir()
+        fixture = Path(__file__).parent / 'fixtures/transcripts/devin.json'
+        (folder / 'export.json').write_text(fixture.read_text())
+        self.start(f'[serve]\ntranscripts = "{self.root}"\n')
+        turn = self.request('GET', path)[2]['turns'][1]
+        code, _, body = self.request('GET', f"{path}/{turn['id']}/transcript")
+        self.assertEqual(code, 200)
+        self.assertIn('Exit code: 0', body['entries'][3]['text'])

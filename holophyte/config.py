@@ -778,11 +778,12 @@ SERVE_KEYS = {
     "token_file": None,
     "actions": False,
     "config_edit": False,
+    "transcripts": [],
     "name": None,
 }
 KNOWN_KEYS["serve"] = frozenset(SERVE_KEYS)
 ServeConfig = collections.namedtuple(
-    "ServeConfig", ("token_file", "actions", "name", "config_edit"))
+    "ServeConfig", ("token_file", "actions", "name", "config_edit", "transcripts"))
 
 
 def serve_config(target):
@@ -819,10 +820,12 @@ def serve_config(target):
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] name must be a non-empty "
             f"systemd instance name without '/', got {name!r}")
+    from holophyte.transcript_config import transcript_roots
+    transcripts = transcript_roots(target, table.get("transcripts", []))
     token_file = table.get("token_file", SERVE_KEYS["token_file"])
     if token_file is None:
         return ServeConfig(token_file=None, actions=actions, name=name,
-                           config_edit=config_edit)
+                           config_edit=config_edit, transcripts=transcripts)
     if not isinstance(token_file, str) or not token_file.strip():
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] token_file must be a "
@@ -831,4 +834,4 @@ def serve_config(target):
     if not path.is_absolute():
         path = Path(target.config_path).parent / path
     return ServeConfig(token_file=path, actions=actions, name=name,
-                       config_edit=config_edit)
+                       config_edit=config_edit, transcripts=transcripts)
