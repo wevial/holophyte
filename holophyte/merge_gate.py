@@ -8,8 +8,8 @@ verify, the drift check -- run under `_gate_lock()`, the loop's take on
 human under `[merge] approve = "human"`; `_resume_at_merge_gate()` is the
 run that carries the approved candidate back through the gate; `_merge()`
 is the `--no-ff` merge onto main and its one self-resolved conflict.
-`_run_stages()` and `_land()` in `holophyte.loop` call in; back-references
-into the loop are deferred imports inside function bodies.
+`_run_stages()` in `holophyte.loop` and `land()` in `holophyte.run` call in;
+back-references into the loop are deferred imports inside function bodies.
 
 Moved verbatim from `holophyte.loop` (KO-424, design note 0015).
 """
@@ -19,6 +19,7 @@ from dataclasses import replace
 
 import store
 import store.read
+from holophyte import run as run_state
 from holophyte.babysitter import _babysit
 from holophyte.board import block_ticket, ledger, merge_drift
 from holophyte.claim import _resolve_merge_conflict, reuse_leftover
@@ -34,7 +35,7 @@ from holophyte.gates import (
     with_baseline,
 )
 from holophyte.merge_lock import live_merge_lock
-from holophyte.pullrequest import _landed_pr, _open_pr, _resume_on_pr
+from holophyte.pullrequest import _open_pr, _resume_on_pr
 from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 
@@ -86,17 +87,14 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
     target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
     task_id, issue_id, task = run.task_id, run.issue_id, run.task
     branch, wt, started, budget_min = run.branch, run.wt, run.started, run.budget_min
-    from holophyte.loop import _candidate_drift, _land
+    from holophyte.loop import _candidate_drift
     # The branch is recorded first, as `_cut_worktree()` records it: the
     # worktree stands from the run's first moment, and the files panel reads
     # `runs.branch` to find it whichever way the resume goes (KO-304).
     store.set_branch(conn, run_id, branch)
     merge = merge_config(target)
     if merge.mode == "pr" and carried.pr_url is not None:
-        return _resume_on_pr(target, conn, run_id, provider, task_id,
-                             issue_id, task, branch, wt, carried, started,
-                             verify_cmd, contracts, budget_min, body,
-                             criteria)
+        return _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria)
     if not carried.approved:
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to merge the candidate for: {task}\nrun"
@@ -154,14 +152,11 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
                            beat_s, wt, started, budget_min, issue_url)
             sha = sh(["git", "rev-parse", branch], wt)
         else:
-            return _land(replace(run, sha=sha), ok)
-    merge_sha = _babysit(target, conn, run_id, provider, task_id,
-                          issue_id, task, branch, wt, sha, beat_s, url,
-                          f"{task}\n\n{body}" if body else task,
-                          verify_cmd, contracts, budget_min, criteria,
-                          reviewed=sha, verified=sha)
-    return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
-                      merge_sha, started, budget_min, 0)
+            return run_state.land(replace(run, sha=sha), ok)
+    run = replace(run, sha=sha, pr_url=url)
+    run = _babysit(run, beat_s, f"{task}\n\n{body}" if body else task,
+                   verify_cmd, contracts, criteria, reviewed=sha, verified=sha)
+    return run_state.land(run, True)
 
 
 @contextlib.contextmanager

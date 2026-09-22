@@ -643,6 +643,8 @@ def _claim_next(target, conn, project, provider, order, skip, seen):
             skip.add(task["id"])
             continue
         if run_id is not None:
+            # Carry the value through the existing provider-task dispatch seam;
+            # do not mutate the provider's task or rebuild the run at each phase.
             task = dict(task, _run=claimed_run(target, task, conn, run_id, provider))
         return task, ticket_id, run_id
 
@@ -926,7 +928,8 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
     return run_id
 
 
-def claimed_run(target, task, conn=None, run_id=None, provider=None):
+def claimed_run(target, task, conn=None, run_id=None, provider=None, *,
+                clock=monotonic):
     """Name a run once, including direct callers without a store claim."""
     ident = re.sub(r"[^a-z0-9]+", "-", task["id"].lower()).strip("-")
     slug = re.sub(r"[^a-z0-9]+", "-", task["title"].lower())[:30].strip("-")
@@ -934,4 +937,4 @@ def claimed_run(target, task, conn=None, run_id=None, provider=None):
     row = store.read.run_snapshot(conn, run_id) if conn is not None else None
     return Run(target, conn, run_id, provider, task["id"], mirror_key(task),
                task["title"], branch, worktree_path(target, branch),
-               task["budget_min"], monotonic(), row.startedAt if row else None)
+               task["budget_min"], clock(), row.startedAt if row else None, clock=clock)

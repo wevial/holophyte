@@ -28,10 +28,10 @@ import store
 import store.read
 import ticket_template
 from holophyte import failure_reason, pr_status
-from holophyte.agents import agent, review_refs, transport_failure
+from holophyte import run as run_state
+from holophyte.agents import agent, record_session, review_refs, transport_failure
 from holophyte.babysitter import _babysit
 from holophyte.board import (
-    block_ticket,
     ledger,
 )
 from holophyte.claim import (
@@ -54,23 +54,23 @@ from holophyte.environment_git import paths, stage_work, unstage_environment
 from holophyte.gates import (
     GroupKill,
     InfraFailure,
-    MergeParked,
     RunFailure,
     record_unreviewed_verification,
     run_verify,
     sh,
     with_baseline,
 )
+from holophyte.gates import (
+    MergeParked as MergeParked,
+)
 from holophyte.merge_gate import (
     _gate_lock,
-    _merge,
     _merge_gate,
     _park_for_approval,
     _resume_at_merge_gate,
 )
 from holophyte.pr_media import implementer_brief as _capture_brief
 from holophyte.pullrequest import (
-    _landed_pr,
     _open_pr,
     _park_on_pr,
 )
@@ -101,7 +101,10 @@ from store.working import effective_work
 
 
 def run_task(target, task, conn=None, run_id=None, provider=None):
-    """Run `task` through `_run_stages()`, and stop if the store ended the run.
+    """Pass the claimed Run through the stages, stopping if the store ended it.
+
+    Accept a Run as `target`, or the historical target/task call. Claimed tasks
+    carry `_run`; direct storeless calls construct the same value here.
 
     An illegal phase edge fails as infrastructure, preserving the worktree.
     The one catch for `store.RunEnded`, and the one for `RunSwept`, its
@@ -121,7 +124,9 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     the ender said so.
     """
     try:
-        run = task.get("_run") or claimed_run(target, task, conn, run_id, provider)
+        run = target if isinstance(target, run_state.Run) else task.get("_run")
+        run = run or claimed_run(
+            target, task, conn, run_id, provider, clock=monotonic)
         return _run_stages(run, task)
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused
@@ -152,8 +157,8 @@ def _run_stages(run, task):
     round through `record_round()`, so in-flight state outlives the process:
     the run row, its rounds and its event stream say what the loop was doing
     and what the reviewer found, instead of that living only in this frame and
-    in prose. Both default to None for a direct call with no store, which runs
-    the same stages and records nothing.
+    in prose. Both are None on a direct call with no store, which runs the same stages
+    and records nothing.
 
     `provider` is the board the ticket came from, and the run needs it for one
     question only: at the merge gate, has the ticket's contract been edited
@@ -269,13 +274,11 @@ def _run_stages(run, task):
             # candidate is approved and verified, and a person says "merge".
             _park_for_approval(conn, run_id, provider, task_id, branch, sha)
         else:
-            return _land(replace(run, sha=sha, rnd=rnd), ok)
-    merge_sha = _babysit(target, conn, run_id, provider, task_id,
-                          issue_id, task, branch, wt, sha, beat_s, url,
-                          ticket, verify_cmd, contracts, budget_min,
-                          criteria, reviewed=sha, verified=sha, just_pushed=True)
-    return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
-                      merge_sha, started, budget_min, rnd)
+            return run_state.land(replace(run, sha=sha, rnd=rnd), ok)
+    run = replace(run, sha=sha, rnd=rnd, pr_url=url)
+    run = _babysit(run, beat_s, ticket, verify_cmd, contracts, criteria,
+                   reviewed=sha, verified=sha, just_pushed=True)
+    return run_state.land(run, True)
 
 
 def _approved_candidate(conn, run_id):
@@ -380,80 +383,6 @@ def _candidate_drift(wt, branch, approved):
     return None
 
 
-def _land(run, ok):
-    """The merge, the target's `[merge] after` commands and the merged ledger
-    line; returns the merge commit's sha. Shared by the ordinary run and the
-    approved candidate's."""
-    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
-    task_id, task, branch, wt = run.task_id, run.task, run.branch, run.wt
-    sha, started, budget_min, rnd = run.sha, run.started, run.budget_min, run.rnd
-    merge_sha = _merge(target, conn, run_id, provider, task_id, task, branch,
-                       wt, sha)
-    # Still under the merge lock, so the checkout the commands see is the
-    # main this merge left and no sibling's merge moves it under them. A
-    # failure parks the run rather than failing it: the merge has landed,
-    # and a failed run would send the loop back to redo work main holds.
-    _run_after(target, conn, run_id, provider, task_id, merge_sha,
-               merge_config(target).after)
-    # Nothing tells Linear the ticket is done here any more. The merge makes
-    # the ticket `merged` in the store, and `main()` projects that status onto
-    # the board through `mirror_push()` once the run has been released — one
-    # writer of the workflow state instead of a call from the middle of a run
-    # that has not finished ending yet.
-    # One greppable line of timing data per merged ticket: the estimate stays
-    # write-only otherwise, and a future burndown script reads this format.
-    actual_min = (monotonic() - started) / 60
-    ledger(conn, run_id, task_id, "merge",
-           f"MERGED to main (branch {branch} deleted). "
-           f"Verify: {'passed' if ok else 'n/a'}.\n"
-           f"actual: {actual_min:.1f} min · estimate: {budget_min} min · "
-           f"rounds: {rnd}", provider)
-    # The task's own commit of FINDINGS.md is `main()`'s, not this frame's:
-    # the run's close-out entry exists only once the run has been released,
-    # which happens after this returns.
-    print(f"[holo2] merged: {task}")
-    # The merge commit itself, for the close-out to stamp on the run: truthy,
-    # so every caller that read this as "did it merge" still does.
-    return merge_sha
-
-
-# How much of a failed `[merge] after` command's output the park's note and
-# ledger carry: the last lines, where a build tool says what went wrong.
-AFTER_TAIL_LINES = 20
-
-
-def _run_after(target, conn, run_id, provider, task_id, merge_sha, commands):
-    """`[merge] after` (KO-347): run `commands` in order in the main checkout
-    once the merge commit exists, each printed with its exit code. The first
-    nonzero exit stops the list and parks the run `blocked_on_operator` with
-    the command and the tail of its output as the note and the ticket's
-    question; `MergeParked` then unwinds the run without marking it merged.
-    Nothing here touches the merge commit: main keeps it either way.
-    """
-    for cmd in commands:
-        done = subprocess.run(cmd, shell=True, cwd=target.path,
-                              capture_output=True, text=True)
-        print(f"[holo2] after: {cmd} -> exit {done.returncode}")
-        if done.returncode == 0:
-            continue
-        tail = "\n".join((done.stdout + done.stderr).splitlines()
-                         [-AFTER_TAIL_LINES:])
-        why = (f"[merge] after command failed with exit {done.returncode}:"
-               f" {cmd}\n{tail}")
-        if conn is not None and run_id is not None:
-            ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-            if not block_ticket(conn, ticket_id, provider, why):
-                print(f"[holo2] {task_id} could not be moved to"
-                      " blocked_on_operator; parking the run anyway")
-            store.park(conn, run_id, "blocked_on_operator", why)
-        print(f"[holo2] parked after merge {merge_sha[:12]}: {why}")
-        ledger(conn, run_id, task_id, "note",
-               f"MERGED to main at {merge_sha}, then {why}\nThe merge stands;"
-               " the run waits in blocked_on_operator.", provider)
-        raise MergeParked(f"merged at {merge_sha[:12]}; after command failed:"
-                          f" {cmd}")
-
-
 def _scale_note(target, budget_min):
     """The ` (45 min at scale 1.5)` a budget line carries when the
     target's `[agents] budget_scale` stretches the ticket's estimate for
@@ -475,7 +404,6 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *,
     # whole process group, the same kill the budget sends, and the block
     # raises `RunSwept` for `run_task()` once the turn has stopped.
     # Preserve the requested role for turn attribution; agent() owns routing.
-    from holophyte.agents import record_session
     session_role = role
     kill = GroupKill()
     try:

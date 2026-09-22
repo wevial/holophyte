@@ -43,6 +43,7 @@ Each module, one line:
   (actual, estimate, ratio, rounds, outcome) with mean and median ratio, a
   read-only query over the store that claims no ticket, cuts no worktree and
   calls no one.
+- `holophyte/run.py` — the frozen claimed run and the shared landing entry point.
 - `holophyte/runs.py` — the store seam: a run's progress as store rows.
 - `holophyte/board.py` — Linear as the notice board: the ticket mirror, its
   pushes, `--file-ticket` and the escalation. Ticket status lives in the
