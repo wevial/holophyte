@@ -51,7 +51,7 @@ PINNED = {
     "store/schema.py": 869, "store/tickets.py": 522,
     "tests/config_fixture.py": 136, "tests/loop_fixture.py": 713,
     "tests/serve_fixture.py": 230, "tests/test_babysit_pass.py": 454,
-    "tests/test_babysit_threads.py": 965, "tests/test_babysit_checks.py": 317,
+    "tests/test_babysit_threads.py": 963, "tests/test_babysit_checks.py": 317,
     "tests/test_babysitter.py": 576, "tests/test_config_tables.py": 558,
     "tests/test_claim.py": 1560, "tests/test_claim_mirror.py": 238,
     "tests/test_cli.py": 174,
