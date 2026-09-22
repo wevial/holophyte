@@ -1,0 +1,12 @@
+{"comment": "change to Rename Guest", "label": "fix", "source": "Relos PR 2204, quoted in KO-559", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Can a guest who already has an account be renamed?", "label": "question", "source": "Relos PR 2204, 2026-09-21 question paraphrased from KO-559", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Turn this function into a const", "label": "fix", "source": "Relos PR 2199, quoted in KO-559", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Please add a regression test for an empty guest name.", "label": "fix", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Remove the duplicate validation here.", "label": "fix", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Why do we look up the account before updating the guest?", "label": "question", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Does this also update the name on their existing account?", "label": "question", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Where is the permission check performed?", "label": "question", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "This looks a little risky.", "label": "unclear", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Not sure about this naming.", "label": "unclear", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Hmm, existing accounts...", "label": "unclear", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}
+{"comment": "Something seems off with the empty-name case.", "label": "unclear", "source": "synthetic", "ticket_title": "Rename a guest", "file": "guest.ts", "line": 30, "earlier_comments": []}

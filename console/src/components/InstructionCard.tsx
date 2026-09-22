@@ -17,6 +17,12 @@ export function InstructionCard({ instruction }: { instruction: Instruction }) {
         ) : <span className="truncate font-mono text-[12px] text-muted">{location}</span>}
         <span className="text-[12px] text-muted">@{instruction.author}</span>
       </div>
+      {instruction.triage && (
+        <p className="mt-1 text-[11px] text-muted">
+          Triage: {instruction.triage.decision} · confidence {instruction.triage.confidence ?? "unavailable"}
+          {" · "}{instruction.triage.route} · {instruction.triage.reason}
+        </p>
+      )}
       <div className="mt-1 text-[14px] leading-[1.45] text-body">
         <Markdown>{instruction.request}</Markdown>
       </div>

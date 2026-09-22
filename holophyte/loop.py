@@ -706,7 +706,10 @@ def _verify_brief(verify_cmd, ok, out):
         return ""
     return (f"The ticket's verification commands and the target's baseline "
             f"({count} commands) were run and "
-            f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n")
+            f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
+            + ("The suite has been run by the factory at this commit; do not run "
+               "the full suite again, run only focused tests needed to check a "
+               "specific concern.\n" if ok else ""))
 
 
 def _changed_lines(wt):

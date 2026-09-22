@@ -130,13 +130,13 @@ class Thread:
     url: str
     outdated: bool = False
     replies: tuple = ()  # `Comment`s after the opening one
-    # Opening author's kind: bots get answers; people go to the operator.
     # Unknown authors (including deleted accounts) are treated as people.
     author_kind: str = "unknown"
     kind: str = "review"
     classification: str = ""
     request: str = ""
     intent: str = "unmarked"
+    triage: dict | None = None
 
     @property
     def comments(self):

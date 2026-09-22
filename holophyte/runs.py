@@ -281,7 +281,7 @@ def _ending_of(conn, run_id):
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  started_at=None, criteria=(), root=None, route=None,
-                 prior_reply="", structured_findings=None):
+                 prior_reply="", structured_findings=None, approved_range=None):
     """Record one review or adjudication round as a `reviewRounds` row.
 
     The round the loop just ran, as the store holds it: the verdict, the
@@ -339,7 +339,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     if structured_findings is not None:
         findings = structured_findings
     if role == "review" and verdict != "error":
-        unwitnessed = criteria_findings(reply, criteria, root)
+        unwitnessed = criteria_findings(reply, criteria, root,
+                                        approved_range=approved_range)
         if unwitnessed:
             verdict = "changes_requested"
             findings = findings + unwitnessed
