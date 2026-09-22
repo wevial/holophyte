@@ -73,6 +73,9 @@ class BabysitHelpers:
                          ("awaiting_merge_approval", None, self.URL))
         self.assertEqual(self.git("rev-parse", BRANCH).strip(),
                          candidate)
+        self.assertEqual(self.read(
+            "SELECT parkKind FROM runs ORDER BY id DESC LIMIT 1"),
+            [("fix_declined",)])
         question = self.question()
         if mode == "secret":
             self.assertIn("Credential [redacted] is unavailable.", question)

@@ -37,6 +37,9 @@ EXPECTED = [
     "contract_drift",
     "contract_snapshot",
     "ensure_project",
+    "register_project",  # KO-586: explicit project registration and admission.
+    "list_projects",
+    "set_admission",
     "findings_fingerprint",
     "findings_overlap",
     "heartbeat",
@@ -66,6 +69,7 @@ EXPECTED = [
     "record_review_round",
     "record_strike",
     "record_supervisor_heartbeat",
+    "pause",
     "release",
     "release_hold",
     # KO-297: the operator's `--repoint`, a parked candidate moved to a

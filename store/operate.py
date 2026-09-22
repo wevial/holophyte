@@ -38,6 +38,7 @@ from .tickets import walk_ticket
 # leave a finished run parked in the phase it was working in. `killed` is its
 # own phase in §4; the other two failure outcomes share `failed`.
 TERMINAL_PHASES = {
+    "paused": "paused",
     _enums.RunOutcome.REJECTED.value: _Phase.REJECTED.value,
     _enums.RunOutcome.MERGED.value: _Phase.DONE.value,
     _enums.RunOutcome.KILLED.value: _Phase.KILLED.value,
@@ -57,7 +58,8 @@ OUTCOME_CLASSES = frozenset(e.value for e in _enums.OutcomeClass)
 
 
 def release(conn, run_id, outcome, reason=None, now=None,
-            outcome_class="work", merge_sha=None, failure_kind=None):
+            outcome_class="work", merge_sha=None, failure_kind=None, resume_phase=None,
+            candidate_sha=None):
     """End run `run_id` with `outcome` and give the ticket's lease back.
 
     The mirror of `claim()`, and the reason a crashed loop does not brick the
@@ -153,7 +155,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
         # resumable are worth recording — a run that failed while `claimed` or
         # mid-merge has no work phase to go back to, and `resume()` reads the
         # NULL as §4's edge back to `working`.
-        resume_phase = (stopped_in
+        resume_phase = resume_phase if outcome == "paused" else (stopped_in
                         if TERMINAL_PHASES[outcome] == "failed"
                         and stopped_in in RESUMABLE_WORK_PHASES
                         else None)
@@ -165,11 +167,12 @@ def release(conn, run_id, outcome, reason=None, now=None,
         conn.execute(
             "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
             " outcomeClass = ?, resumePhase = ?, mergeSha = ?, failureKind = ?,"
+            " candidateSha = COALESCE(?, candidateSha),"
             " reviewRoundCount = (SELECT COUNT(*) FROM reviewRounds"
             "                     WHERE runId = ? AND verdict != 'error')"
             " WHERE id = ?",
             (now, outcome, reason, outcome_class, resume_phase, merge_sha,
-             failure_kind, run_id, run_id),
+             failure_kind, candidate_sha, run_id, run_id),
         )
         conn.execute(
             "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
@@ -522,7 +525,7 @@ def repoint(conn, ticket_id, sha, note, now=None):
 # phases a run is parked *in*, not phases work was interrupted in, so neither
 # is a phase to send a resumed run back to.
 RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {
-    _Phase.FAILED.value, _Phase.BLOCKED_ON_OPERATOR.value}
+    _Phase.FAILED.value, _Phase.BLOCKED_ON_OPERATOR.value, "paused"}
 # The phases a run is parked *in*, alive and waiting for a person: the loop
 # wrote a question (or, under `[merge] approve = "human"`, an approved
 # candidate), gave the lease back and went home. Neither has a heartbeat by
@@ -534,6 +537,24 @@ PARKED_PHASES = frozenset({
 
 class ResumeRefused(Exception):
     """A resume the state model does not allow; nothing was written."""
+
+
+def pause(conn, run_id, note, source="human", now=None):
+    """Record a cooperative stop request before marking the live run, atomically."""
+    with _transaction(conn):
+        row = conn.execute("SELECT endedAt, outcome, stopRequested FROM runs"
+                           " WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        if row[0] is not None:
+            raise ValueError(f"run {run_id} already ended with outcome {row[1]}")
+        if row[2] is not None:
+            return row[2]
+        request = record_intervention(conn, run_id, "pause", note,
+                                      source=source, guidance=note, now=now)
+        conn.execute("UPDATE runs SET stopRequested = ? WHERE id = ?",
+                     (request, run_id))
+    return request
 
 
 def resume(conn, run_id, guidance=None, source="human", now=None):
@@ -608,14 +629,16 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
             raise ResumeRefused(
                 f"run {run_id}: phase {phase} is not one state-model §5 resumes"
             )
-        if phase == "failed" and resume_phase is not None:
+        if phase in ("failed", "paused") and resume_phase is not None:
             target = resume_phase
         elif phase in ("failed", "blocked_on_operator"):
             target = "working"
         else:
             target = phase
         conn.execute(
-            "UPDATE runs SET phase = ?, resumePhase = NULL WHERE id = ?",
+            "UPDATE runs SET phase = ?, resumePhase = NULL, parkKind = NULL,"
+            " stopRequested = NULL"
+            " WHERE id = ?",
             (target, run_id),
         )
         if phase in ENDED_PHASES:
@@ -870,12 +893,14 @@ def unreturned_loop_restarts(conn, grace_ms, now=None):
 
 def hold(conn, project_id, note):
     """Stop new admission, recording the reason before the project changes."""
-    return _set_admission(conn, project_id, note, "held", "hold")
+    from .tickets import set_admission
+    return set_admission(conn, project_id, "held", note)
 
 
 def release_hold(conn, project_id, note):
     """Enable admission again without changing any ticket or run."""
-    return _set_admission(conn, project_id, note, "enabled", "release_hold")
+    from .tickets import set_admission
+    return set_admission(conn, project_id, "enabled", note)
 
 
 def _set_admission(conn, project_id, note, state, action):
@@ -894,5 +919,5 @@ def _set_admission(conn, project_id, note, state, action):
             " VALUES (?, 'human', 'manual', ?, ?, ?)",
             (project_id, action, note, int(time.time() * 1000))).lastrowid
         conn.execute("UPDATE projects SET admission = ?, holdNote = ? WHERE id = ?",
-                     (state, note if state == "held" else None, project_id))
+                     (state, note if state != "enabled" else None, project_id))
         return intervention

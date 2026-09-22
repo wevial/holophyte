@@ -594,3 +594,55 @@ def active_routes(target):
     return {seat: {"command": fallback.get(seat, table.get(seat)),
                    **({"fallback": fallback[seat]} if seat in fallback else {})}
             for seat in AGENT_CONFIG_KEYS.values()}
+
+
+RUN_TURNS_PATH = re.compile(r"^/runs/([^/]+)/turns$")
+RUN_TRANSCRIPT_PATH = re.compile(r"^/runs/([^/]+/turns/[^/]+)/transcript$")
+
+
+def run_turns(target, text):
+    """Ordered turn telemetry remains readable even when transcripts are off."""
+    from holophyte.redact import known_secrets, outbound
+    from holophyte.transcripts import turns
+    failed, run = locate_run(target, text)
+    if failed is not None:
+        return failed
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        rows = conn.execute(
+            "SELECT seq, kind, payload FROM runEvents WHERE runId=? "
+            "AND kind IN ('agent_turn', 'agent_session') ORDER BY seq", (run.id,))
+        body = json.dumps({"turns": turns(rows)})
+        return 200, json.loads(outbound(body, known_secrets(target.config())))
+    finally:
+        conn.close()
+
+
+def run_transcript(target, segment):
+    """Render a turn's session within the opt-in roots, with outbound redaction."""
+    from holophyte.config import serve_config
+    from holophyte.redact import known_secrets, outbound
+    from holophyte.transcripts import locate, render
+    roots = serve_config(target).transcripts
+    missing = (404, {"error": "transcript unavailable"})
+    if not roots:
+        return missing
+    run_id, _, turn_id = segment.split('/')
+    code, body = run_turns(target, run_id)
+    if code != 200:
+        return code, body
+    turn = next((t for t in body['turns'] if str(t['id']) == turn_id), None)
+    if turn is None:
+        return missing
+    secrets = known_secrets(target.config())
+    for root in roots:
+        for kind in ('codex', 'devin'):
+            try:
+                path = locate(kind, turn['session_id'], root)
+                if path is not None:
+                    return 200, {"entries": [
+                        {"speaker": speaker, "text": outbound(text, secrets)}
+                        for speaker, text in render(path)]}
+            except (OSError, UnicodeError, RuntimeError):
+                continue
+    return missing

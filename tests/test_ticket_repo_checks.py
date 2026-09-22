@@ -22,45 +22,58 @@ class RepositoryChecksTests(unittest.TestCase):
             '.venv/bin/python -m unittest tests.test_a')
 
     def problems(self, body):
-        return tt.blocking(tt.validate(tt.parse(body), repo=self.repo))
+        return tt.blocking(self.everything(body))
 
-    def test_witness_paths_and_new_declarations(self):
+    def everything(self, body):
+        return tt.validate(tt.parse(body), repo=self.repo)
+
+    def missing(self, body):
+        return [p for p in self.everything(body) if 'does not exist' in p]
+
+    def test_missing_paths_are_advisories_in_all_three_places(self):
+        advisory = tt.ADVISORY_PREFIX + 'path does not exist in '
+        for label, anchor, replacement in (
+            ('Acceptance criteria #1', 'then 4 lines including header.',
+             'then `tests/test_a.py` and `tests/test_missing.py` witness it.'),
+            ('Implementation notes',
+             'Endpoint lives beside the other order routes.',
+             'Use `tests/test_missing.py`.'),
+            ('verify command', '.venv/bin/python -m unittest tests.test_a',
+             'ruff check tests/test_a.py tests/test_missing.py'),
+        ):
+            with self.subTest(label=label):
+                body = self.body.replace(anchor, replacement)
+                self.assertEqual(self.missing(body), [
+                    f'{advisory}{label}: tests/test_missing.py'])
+                self.assertEqual(self.problems(body), [])
+
+    def test_new_declarations_silence_the_advisory(self):
         anchor = 'then 4 lines including header.'
-        body = self.body.replace(anchor, 'then `tests/test_a.py` and '
-                                 '`tests/test_missing.py` witness it.')
-        self.assertEqual(self.problems(body), [
-            'path does not exist in Acceptance criteria #1: tests/test_missing.py'])
         for declaration in ('a new test file `tests/test_missing.py`',
                             'a new directory `tests/future/` with '
                             '`tests/future/test_missing.py`',
                             'a new directory `future` with `future/test_missing.py`'):
             with self.subTest(declaration=declaration):
-                self.assertEqual(self.problems(self.body.replace(anchor,
+                self.assertEqual(self.missing(self.body.replace(anchor,
                                  f'then {declaration} witnesses it.')), [])
         body = self.body.replace(anchor, 'then new behavior works. '
                                  '`tests/test_missing.py` witnesses it.')
-        self.assertIn('tests/test_missing.py', '\n'.join(self.problems(body)))
-        notes = self.body.replace('Endpoint lives beside the other order routes.',
-                                  'Use `tests/test_missing.py`.')
-        self.assertEqual(self.problems(notes), [
-            'path does not exist in Implementation notes: tests/test_missing.py'])
+        self.assertIn('tests/test_missing.py', '\n'.join(self.missing(body)))
 
-    def test_verify_paths_modules_and_exclusions(self):
+    def test_verify_modules_and_exclusions(self):
         body = self.body.replace('tests.test_a', 'tests.test_a tests.test_gone')
-        self.assertEqual(self.problems(body), [
-            'unittest module does not exist in verify command: tests.test_gone'])
+        self.assertEqual(self.missing(body), [
+            f'{tt.ADVISORY_PREFIX}unittest module does not exist in verify '
+            'command: tests.test_gone'])
+        self.assertEqual(self.problems(body), [])
         declared = body.replace('Endpoint lives beside the other order routes.',
                                 'Add a new test file `tests/test_gone.py`.')
-        self.assertEqual(self.problems(declared), [])
-        body = self.body.replace('.venv/bin/python -m unittest tests.test_a',
-                                 'ruff check tests/test_a.py tests/gone.py')
-        self.assertEqual(self.problems(body), [
-            'path does not exist in verify command: tests/gone.py'])
+        self.assertEqual(self.missing(declared), [])
         (self.repo / '.gitignore').write_text('generated/\n')
         body = self.body.replace('Endpoint lives beside the other order routes.',
                                 'Examples: `tests/test_*.py`, `--flag`, '
                                 '`python3 -m unittest`, `generated/result.py`.')
-        self.assertFalse(any('does not exist' in p for p in self.problems(body)))
+        self.assertEqual(self.missing(body), [])
 
     def test_paths_must_resolve_inside_repository(self):
         with tempfile.TemporaryDirectory(dir=self.repo.parent) as outside:
@@ -80,12 +93,14 @@ class RepositoryChecksTests(unittest.TestCase):
                      f'python3 {path}'),
                 ):
                     with self.subTest(path=path, label=label):
-                        self.assertIn(f'path does not exist in {label}: {path}',
-                                      self.problems(self.body.replace(
-                                          anchor, replacement)))
+                        body = self.body.replace(anchor, replacement)
+                        self.assertIn(
+                            f'path is outside the repository in {label}: {path}',
+                            self.problems(body))
+                        self.assertEqual(self.missing(body), [])
         body = self.body.replace('then 4 lines including header.',
                                  'then `tests/../tests/test_a.py` witnesses it.')
-        self.assertEqual(self.problems(body), [])
+        self.assertEqual(self.everything(body), self.everything(self.body))
 
     def test_blank_template_and_cli_without_repo(self):
         for interpreter in ("python3", "python3 -B", "python3 -u",

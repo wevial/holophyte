@@ -21,9 +21,11 @@ inside their callers, the house back-import pattern (`holophyte/pool.py`,
 `holophyte/pullrequest.py`), so a `holophyte.loop` attribute patch lands.
 """
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
+from time import monotonic
 
 import store
 import store.read
@@ -41,13 +43,19 @@ from holophyte.board import (
     lease_label,
     lease_turn,
     ledger,
+    mirror_key,
     mirror_push,
     mirror_status,
     mirror_task,
     release_lease_label,
     store_status,
 )
-from holophyte.config import setup_commands, setup_timeout, worktree_environment
+from holophyte.config import (
+    branch_prefix,
+    setup_commands,
+    setup_timeout,
+    worktree_environment,
+)
 from holophyte.config_tables import sweep_config
 from holophyte.environment_git import (
     environment_temporary_directory,
@@ -64,10 +72,11 @@ from holophyte.gates import (
     sh,
 )
 from holophyte.merge_lock import live_merge_lock
-from holophyte.reconcile import PR_CLOSED_QUESTION
 from holophyte.redact import redact_values
 from holophyte.redact import safe_print as print
+from holophyte.run import Run
 from holophyte.runs import heartbeat_while, set_phase
+from holophyte.target import worktree_path
 
 
 def timeout_report(cmd, expired):
@@ -633,16 +642,20 @@ def _claim_next(target, conn, project, provider, order, skip, seen):
             # problem. Skipped like a held ticket found at admission.
             skip.add(task["id"])
             continue
+        if run_id is not None:
+            # Carry the value through the existing provider-task dispatch seam;
+            # do not mutate the provider's task or rebuild the run at each phase.
+            task = dict(task, _run=claimed_run(target, task, conn, run_id, provider))
         return task, ticket_id, run_id
 
 
-def skip_line(identifier, strikes, pr_url, question):
+def skip_line(identifier, strikes, pr_url, question, park_kind=None):
     """The admit step's one line for a ticket the store holds parked.
 
     Pure, so the wording is tested without a store. A pull request wins:
     the run behind it is parked alive, so its URL and the `--approve` that
     merges it are the whole story whatever failed before it -- unless the
-    question says the PR was closed unmerged (`PR_CLOSED_QUESTION`), when
+    park kind says the PR was closed unmerged, when
     there is nothing an `--approve` would merge and the question is the
     line. A merge-gate conflict (`GATE_CONFLICT_QUESTION`) names its way
     back, `--requeue` once the branch is resolved (KO-365). Then a module's
@@ -655,7 +668,7 @@ def skip_line(identifier, strikes, pr_url, question):
     """
     from holophyte.merge_gate import GATE_CONFLICT_QUESTION
 
-    closed = (question or "").strip().startswith(PR_CLOSED_QUESTION)
+    closed = park_kind == "pull_request_closed"
     if pr_url and not closed:
         return (f"{identifier} is parked on PR {pr_url} awaiting"
                 f" --approve {identifier}; skipping it")
@@ -735,14 +748,14 @@ def _admit_ticket(target, conn, project, provider, task, seen):
         # or a question -- so a ticket parked for the operator's merge is
         # not reported as a failure that never happened.
         ticket = store.read.ticket_by_id(conn, ticket_id)
-        pr_url = None
+        pr_url, park_kind = None, None
         if ticket.lastRunId is not None:
-            row = conn.execute("SELECT prUrl FROM runs WHERE id = ?",
+            row = conn.execute("SELECT prUrl, parkKind FROM runs WHERE id = ?",
                                (ticket.lastRunId,)).fetchone()
-            pr_url = row[0] if row else None
+            pr_url, park_kind = row if row else (None, None)
         print("[holo2] " + skip_line(task["id"],
                                      len(failure_history(conn, ticket_id)),
-                                     pr_url, ticket.blockedQuestion))
+                                     pr_url, ticket.blockedQuestion, park_kind))
         return None
     # Same place, the store's own question: §2's `pickable()`. The
     # board and the store can disagree about whether a ticket is
@@ -913,3 +926,15 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
               " from; stopping for a human")
         return None
     return run_id
+
+
+def claimed_run(target, task, conn=None, run_id=None, provider=None, *,
+                clock=monotonic):
+    """Name a run once, including direct callers without a store claim."""
+    ident = re.sub(r"[^a-z0-9]+", "-", task["id"].lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", task["title"].lower())[:30].strip("-")
+    branch = f"{branch_prefix(target)}/{ident}-{slug}"
+    row = store.read.run_snapshot(conn, run_id) if conn is not None else None
+    return Run(target, conn, run_id, provider, task["id"], mirror_key(task),
+               task["title"], branch, worktree_path(target, branch),
+               task["budget_min"], clock(), row.startedAt if row else None, clock=clock)

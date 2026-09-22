@@ -525,6 +525,23 @@ class GitignoredPathTests(unittest.TestCase):
         self.assertIsNone(
             holophyte.board.body_problem({"body": TRACKED_CRITERION}, self.repo))
 
+    def test_body_naming_only_missing_paths_is_claimable(self):
+        # REL-134/135: bodies naming files only their open pull request holds.
+        text = TRACKED_CRITERION.replace(
+            "`src/lotuspod/cli.py` runs",
+            "`src/lotuspod/cli.py` runs and `tests/test_counts.py` passes"
+        ).replace(".venv/bin/python -m unittest test_orders_export",
+                  ".venv/bin/python -m unittest tests.test_counts")
+        self.assertIsNone(holophyte.board.body_problem({"body": text}, self.repo))
+
+    def test_body_problem_names_a_path_outside_the_repository(self):
+        text = TRACKED_CRITERION.replace("`src/lotuspod/cli.py`",
+                                         "`../elsewhere/cli.py`")
+        self.assertEqual(
+            holophyte.board.body_problem({"body": text}, self.repo),
+            "path is outside the repository in Acceptance criteria #1: "
+            "../elsewhere/cli.py")
+
 
 class PathCandidateTests(unittest.TestCase):
     def test_code_spans_links_and_prose_yield_relative_paths_only(self):

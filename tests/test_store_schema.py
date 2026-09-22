@@ -1244,8 +1244,11 @@ class Version26EnumMigrationTests(unittest.TestCase):
         # Admission columns are new; all pre-existing project values survive.
         after['projects'] = [row[:7] + row[9:] for row in after['projects']]
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
-        index = columns.index('failureKind')
-        after['runs'] = [r[:index] + r[index + 1:] for r in after['runs']]
+        after['runs'] = [tuple(value for column, value in zip(columns, row)
+                               if column not in {'parkKind', 'failureKind',
+                                                 'stopRequested',
+                                                 'prSeenTitle'})
+                         for row in after['runs']]
         self.assertEqual(after, self.before)
         self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],
                          store.schema.SCHEMA_VERSION)
@@ -1291,56 +1294,44 @@ class Version26EnumMigrationTests(unittest.TestCase):
             self.old_schema)
 
 
-class FailureKindMigrationTests(unittest.TestCase):
-    def test_previous_schema_backfills_only_known_prefixes_and_preserves_reasons(self):
-        cases = [
-            ('verify failed: command 3 [false], exit 1; boom', 'verify'),
-            ('reviewer returned no verdict line twice; candidate preserved',
-             'review_route'),
-            ('terminal adjudication: MALFORMED; no criterion detail', 'review_route'),
-            ('terminal adjudication: FAIL; criterion 1 not met', 'unclassified'),
-            ('fix round made no progress; 2 findings open', 'fix_no_progress'),
-            ('implementer made no commits; discarded', 'no_commits'),
-            ('implementer exceeded the 30 min budget; work kept', 'budget'),
-            ('out of time: 90 min spent', 'budget'),
-            ('merge lock /repo/lock held by run 3', 'merge_lock'),
-            ('implementer transport failure (ECONNRESET)', 'infra'),
-            ('swept by the supervisor in phase working: stale_heartbeat', 'swept'),
-            ('something else mentions verify failed', 'unclassified'),
-            (None, 'unclassified'),
-        ]
+class ParkKindMigrationTests(unittest.TestCase):
+    def test_previous_store_backfills_only_current_parked_runs(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'store.db'
+            path = Path(directory) / "store.db"
             conn = sqlite3.connect(path)
-            # Frozen pre-change schema, not generated from the implementation.
-            conn.executescript(Path(__file__).with_name('store_v28.sql').read_text())
-            conn.execute("INSERT INTO projects (linearTeamId, repoPath,"
-                         " defaultBranch, autonomyProfile)"
-                         " VALUES ('t', '/repo', 'main', 'personal')")
-            conn.execute("INSERT INTO tickets (projectId, linearIssueId,"
-                         " linearIdentifier,"
-                         " title, mirroredAt, status, affinity)"
-                         " VALUES (1, 'i', 'KO-1', 'old', 1, 'ready', 'any')")
-            for attempt, (reason, _) in enumerate(cases, 1):
-                conn.execute("INSERT INTO runs (ticketId, projectId, attempt, phase,"
-                             " startedAt, lastHeartbeat, endedAt, outcome,"
-                             " outcomeReason)"
-                             " VALUES (1, 1, ?, 'failed', 1, 2, 2, 'failed', ?)",
-                             (attempt, reason))
-            conn.execute('PRAGMA user_version = 28')
+            conn.executescript("\n".join(
+                line for line in store.schema.SCHEMA.splitlines()
+                if not line.strip().startswith("parkKind ")))
+            project = store.tickets.ensure_project(conn, "team", "/repo")
+            for n, question in enumerate(("PR open: URL\nready", "rejected: URL",
+                                          "Please help", "PR open: stale"), 1):
+                conn.execute("INSERT INTO tickets (id, projectId, linearIssueId,"
+                             " linearIdentifier, title, status, mirroredAt, affinity,"
+                             " blockedQuestion) VALUES (?, ?, ?, ?,"
+                             " 'old', ?, 1, 'any', ?)",
+                             (n, project, str(n), f"KO-{n}",
+                              "blocked_on_operator" if n < 4 else "ready", question))
+                conn.execute("INSERT INTO runs (id, ticketId, projectId,"
+                             " attempt, phase,"
+                             " startedAt, lastHeartbeat) VALUES (?, ?, ?, 1, ?, 1, 1)",
+                             (n, n, project, "rejected" if n == 2
+                              else "awaiting_merge_approval"))
+                conn.execute("UPDATE tickets SET lastRunId = ? WHERE id = ?", (n, n))
+            conn.execute("PRAGMA user_version = 29")
             conn.commit()
             conn.close()
             conn = store.open(path)
             self.addCleanup(conn.close)
             self.assertEqual(conn.execute(
-                'SELECT outcomeReason, failureKind FROM runs ORDER BY attempt'
-            ).fetchall(),
-                cases)
+                "SELECT parkKind FROM runs ORDER BY id").fetchall(),
+                             [("pull_request",), ("pull_request_closed",),
+                              ("question",), (None,)])
+            conn.execute("UPDATE tickets SET blockedQuestion = 'new wording'")
+            conn.commit()
             store.init(conn)
             self.assertEqual(conn.execute(
-                'SELECT outcomeReason, failureKind FROM runs ORDER BY attempt'
-            ).fetchall(),
-                cases)
+                "SELECT parkKind FROM runs WHERE id = 1").fetchone(),
+                             ("pull_request",))
 
 
 if __name__ == "__main__":

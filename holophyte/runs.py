@@ -93,6 +93,8 @@ def set_phase(conn, run_id, phase, note=None):
     """
     if conn is None:
         return
+    from holophyte.stop import stop_if_requested
+    stop_if_requested(conn, run_id, phase)
     store.set_phase(conn, run_id, phase, note)
 
 
@@ -182,6 +184,8 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
         swept.append(_ending_of(conn, run_id))
     if swept:
         outcome, reason = swept[0]
+        if outcome == "paused":
+            raise store.RunEnded(run_id, outcome, reason) from failure
         raise RunSwept(run_id, outcome, reason) from failure
     if failure is not None:
         raise failure

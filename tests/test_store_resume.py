@@ -89,6 +89,19 @@ class ResumeTests(unittest.TestCase):
             (run_id,),
         ).fetchall()
 
+    def test_pause_records_request_then_resumes_at_boundary(self):
+        run_id = self.a_run("working")
+        request = store.pause(self.conn, run_id, "reboot writer")
+        self.assertEqual(self.conn.execute(
+            "SELECT stopRequested, endedAt FROM runs WHERE id = ?",
+            (run_id,)).fetchone(), (request, None))
+        store.release(self.conn, run_id, "paused", resume_phase="verifying")
+        self.assertEqual(self.run_row(run_id)[:2], ("paused", "verifying"))
+        self.assertEqual(store.resume(self.conn, run_id), "verifying")
+        self.assertEqual(self.conn.execute(
+            "SELECT phase, stopRequested, outcome, endedAt FROM runs WHERE id = ?",
+            (run_id,)).fetchone(), ("verifying", None, None, None))
+
     # --- the invariant: guidance only where it was asked for -------------
 
     def test_guidance_on_a_working_run_is_refused_and_writes_nothing(self):
@@ -115,7 +128,12 @@ class ResumeTests(unittest.TestCase):
     def test_guidance_on_a_blocked_run_resumes_working_and_is_recorded(self):
         run_id = self.a_run("blocked_on_operator")
 
+        self.conn.execute("UPDATE runs SET parkKind = 'question' WHERE id = ?",
+                          (run_id,))
+        self.conn.commit()
         store.resume(self.conn, run_id, guidance="use the staging bucket")
+        self.assertEqual(self.conn.execute(
+            "SELECT parkKind FROM runs WHERE id = ?", (run_id,)).fetchone(), (None,))
 
         # §4: `blocked_on_operator --> working : guidance provided`.
         self.assertEqual(self.run_row(run_id)[0], "working")

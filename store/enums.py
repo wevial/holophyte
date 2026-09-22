@@ -11,6 +11,7 @@ class AutonomyProfile(str, Enum):
 class ProjectAdmission(str, Enum):
     ENABLED = 'enabled'
     HELD = 'held'
+    DISABLED = 'disabled'
 
 
 class TicketStatus(str, Enum):
@@ -44,6 +45,16 @@ class RunPhase(str, Enum):
     FAILED = 'failed'
     KILLED = 'killed'
     REJECTED = 'rejected'
+    PAUSED = 'paused'
+
+
+class ParkKind(str, Enum):
+    PULL_REQUEST = 'pull_request'
+    PULL_REQUEST_CLOSED = 'pull_request_closed'
+    THREAD = 'thread'
+    FIX_DECLINED = 'fix_declined'
+    MERGE_LOCK = 'merge_lock'
+    QUESTION = 'question'
 
 
 class RunOutcome(str, Enum):
@@ -52,6 +63,7 @@ class RunOutcome(str, Enum):
     ABANDONED = 'abandoned'
     FAILED = 'failed'
     REJECTED = 'rejected'
+    PAUSED = 'paused'
 
 
 class FailureKind(str, Enum):
@@ -136,6 +148,9 @@ class InterventionAction(str, Enum):
     MIGRATE = 'migrate'
     HOLD = 'hold'
     RELEASE_HOLD = 'release_hold'
+    REGISTER_PROJECT = 'register_project'
+    DISABLE = 'disable'
+    PAUSE = 'pause'
 
 
 # Line breaks are part of the existing sqlite_master SQL contract.
@@ -154,6 +169,7 @@ CONSTRAINED_COLUMNS = {
     ('tickets', 'status'): TicketStatus,
     ('tickets', 'affinity'): Affinity,
     ('runs', 'phase'): RunPhase,
+    ('runs', 'parkKind'): ParkKind,
     ('runs', 'outcome'): RunOutcome,
     ('runs', 'outcomeClass'): OutcomeClass,
     ('runs', 'failureKind'): FailureKind,
@@ -249,4 +265,10 @@ RUN_PHASE_TRANSITIONS = {
     RunPhase.KILLED.value: frozenset(),
     RunPhase.REJECTED.value: frozenset(),
 }
+# KO-589: cooperative stop is legal from every live working boundary.
+for _phase in ("claimed", "working", "verifying", "reviewing", "addressing",
+               "merge_gate", "merging", "squashing", "awaiting_merge_approval"):
+    RUN_PHASE_TRANSITIONS[_phase] |= {"paused"}
+RUN_PHASE_TRANSITIONS["paused"] = frozenset({
+    "working", "verifying", "reviewing", "addressing", "merge_gate", "merging"})
 assert set(RUN_PHASE_TRANSITIONS) == {e.value for e in RunPhase}

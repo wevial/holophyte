@@ -1,6 +1,6 @@
 import { Fragment, useId, useState } from "react";
 import { useTick } from "../hooks/useTick";
-import { describe, filterItems, orderByAge, splitPullRequests, type ProjectChoice } from "../lib/attention";
+import { describe, filterItems, orderByAge, prTitle, splitPullRequests, type ProjectChoice } from "../lib/attention";
 import { projectName } from "../lib/derive";
 import { formatAge } from "../lib/format";
 import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
@@ -62,6 +62,7 @@ export function PullRequestTable({ hosts, project, now, actionFetch, polls = 0, 
               const key = `${String(item.daemon ?? "")}-pr_open-${String(item.run ?? item.ticket ?? index)}`;
               const detailId = `${id}-${encodeURIComponent(key)}`;
               const open = expanded.has(key);
+              const title = prTitle(item);
               return <Fragment key={key}>
                 <tr className="border-t border-line align-top">
                   <td className="px-4 py-3 font-mono">
@@ -72,9 +73,14 @@ export function PullRequestTable({ hosts, project, now, actionFetch, polls = 0, 
                       <span aria-hidden="true">{open ? "▾" : "▸"}</span>
                     </button>}
                     <TicketLink ticket={description.ticket ?? "—"} ticket_url={item.ticket_url} /></td>
-                  <td className="px-4 py-3 font-mono text-link">{item.pr_url ? (
-                    <a href={item.pr_url} target="_blank" rel="noopener noreferrer">{prLabel(item.pr_url).replace(/^PR /, "")}</a>
-                  ) : "—"}</td>
+                  <td className="max-w-[28rem] px-4 py-3" title={title ?? undefined}>
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      {item.pr_url ? (
+                        <a className="shrink-0 font-mono text-link" href={item.pr_url} target="_blank" rel="noopener noreferrer">{prLabel(item.pr_url).replace(/^PR /, "")}</a>
+                      ) : <span className="shrink-0 font-mono">—</span>}
+                      {title && <span className="min-w-0 truncate">{title}</span>}
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <p>{description.body}</p>
                     <PrFacts facts={description.facts} />

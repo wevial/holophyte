@@ -193,7 +193,7 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("fail", asked)
 
         closed = holophyte.claim.skip_line(
-            "KO-131", 0, url, f"rejected: {url}")
+            "KO-131", 0, url, f"rejected: {url}", "pull_request_closed")
         self.assertIn(f"a question: rejected: {url};", closed)
         self.assertNotIn("--approve", closed)
 
@@ -289,6 +289,55 @@ class TicketNameTests(LoopFixture):
 
 
 class LeftoverWorktreeTests(LoopFixture):
+    def test_pause_after_review_resumes_findings_without_repeating_review(self):
+        from pause_fixture import PauseReply
+
+        from holophyte.stop import command
+        self.loop(Commit(), PauseReply(self.db, REQUEST_CHANGES))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "addressing")])
+        command(self.tgt, "KO-131", None, resume=True)
+        fake, _ = self.loop(Commit("address recorded findings"), APPROVE)
+        self.assertIn("scripted change is incomplete", fake.turns[0].goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+
+    def test_pause_after_approval_preserves_human_merge_gate(self):
+        from pause_fixture import PauseReply
+
+        from holophyte.stop import command
+        self.configure('[merge]\napprove = "human"\n')
+        self.loop(Commit(), PauseReply(self.db, APPROVE))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "merge_gate")])
+        command(self.tgt, "KO-131", None, resume=True)
+        self.loop()  # No new agent turn, and no merge approval granted by resume.
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        self.assertEqual(self.read("SELECT phase FROM runs ORDER BY id"),
+                         [("paused",), ("awaiting_merge_approval",)])
+
+    def test_resumed_pause_reuses_worktree_without_implementing(self):
+        from pause_fixture import PauseEdit
+
+        from holophyte.stop import command
+        self.loop(PauseEdit(self.db))
+        wt = self.worktrees / "ko-131-add-a-thing"
+        original = wt.stat().st_ino
+        command(self.tgt, "KO-131", None, resume=True)
+        # An APPROVE-only script fails if another implement turn is dispatched.
+        cut = holophyte.claim._cut_worktree
+        def reuse(*args, **kwargs):
+            self.assertEqual(wt.stat().st_ino, original)
+            return cut(*args, **kwargs)
+        with patch.object(holophyte.loop, "_cut_worktree", side_effect=reuse):
+            self.loop(APPROVE)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+        self.assertEqual(self.git("show", "main:pause-work.txt"),
+                         "preserve this uncommitted work\n")
+
+
     def leftover(self):
         """A registered leftover worktree on BRANCH, as a failed run leaves it."""
         wt = self.worktrees / "ko-131-add-a-thing"

@@ -185,7 +185,7 @@ class MediaTests(unittest.TestCase):
             {'implementer_credential': {'env': 'CAPTURE_KEY'}},
         ]
         with patch.object(pr_media, '_produce',
-                          return_value='capture failed') as produce:
+                          return_value=('capture failed', '')) as produce:
             pr_media.prepare(self.target, self.repo, 'KO-530')
             for number, change in enumerate(changes, 2):
                 with self.subTest(change=change):
@@ -202,7 +202,8 @@ class MediaTests(unittest.TestCase):
         source.write_text('ALLOWED=first-secret\nEXCLUDED=one\n')
         self.config['agents'] = {'implementer_isolation': 'container'}
         self.config['worktree'] = {'env_source': str(source), 'env_allow': ['ALLOWED']}
-        with patch.object(pr_media, '_produce', return_value='evidence') as produce:
+        with patch.object(pr_media, '_produce',
+                          return_value=('evidence', '')) as produce:
             pr_media.prepare(self.target, self.repo, 'KO-530')
             source.write_text('EXCLUDED=two\nALLOWED=first-secret\n')
             pr_media.prepare(self.target, self.repo, 'KO-530')
@@ -532,6 +533,13 @@ class MediaTests(unittest.TestCase):
         self.assertIn("private", self.ledger.call_args.args[4])
         self.assertEqual(self.open(private=True), body)
         self.visibility.assert_not_called()
+
+    def test_evidence_names_the_candidate_it_captured(self):
+        self.candidate()
+        body = self.open()
+        section = body[body.index("## Evidence"):].split("\n\n")
+        self.assertEqual(section[1],
+                         f"Captured at {self.git('rev-parse', 'HEAD')[:12]}")
 
     def test_non_ui_and_unconfigured_do_not_capture(self):
         self.candidate("holophyte/loop.py")

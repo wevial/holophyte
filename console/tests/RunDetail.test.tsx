@@ -95,6 +95,7 @@ const answering =
     entries: LedgerRow[] = [],
   ): Fetch =>
   async (url) => {
+    if (url.endsWith("/runs/91/turns")) return Response.json({ turns: [] });
     if (url.endsWith("/runs/91/files")) return typeof files === "function" ? files() : files;
     if (url.endsWith("/runs/91/ledger")) return Response.json({ run_id: 91, ticket: "KO-232", entries });
     return url.endsWith("/runs/91") ? Response.json(body) : new Response("not found", { status: 404 });
@@ -749,4 +750,45 @@ test("a pending files 409 renders the branch wait in muted text", async () => {
   expect(note.textContent).toBe("branch task/ko-232 not cut yet");
   expect(note.className).toContain("text-muted");
   expect(note.className).not.toContain("text-bad");
+});
+
+test("Turns lists recorded sessions and opens rendered transcript entries in a panel", async () => {
+  const requested: string[] = [];
+  const fetch: Fetch = async url => {
+    requested.push(url);
+    if (url.endsWith("/turns")) return Response.json({ turns: [
+      { id: 4, role: "implement", route: "primary", seconds: 12, session_id: "session-one" },
+    ] });
+    if (url.endsWith("/turns/4/transcript")) return Response.json({ entries: [
+      { speaker: "user", text: "Check the project." },
+      { speaker: "command", text: "echo checked" },
+      { speaker: "tool", text: "checked\nExit code: 0" },
+      { speaker: "assistant", text: "All checks passed. <script>literal</script>" },
+    ] });
+    return answering(DETAIL)(url);
+  };
+  render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+  await screen.findByRole("link", { name: "Open transcript" });
+  const turns = screen.getByRole("region", { name: "Turns" });
+  expect(turns.textContent).toContain("implement · primary · 12.0 s · session-one");
+  expect(requested.some(url => url.endsWith("/transcript"))).toBe(false);
+  fireEvent.click(within(turns).getByRole("link", { name: "Open transcript" }));
+  const panel = screen.getByRole("region", { name: "Transcript" });
+  await within(panel).findByText("Check the project.");
+  expect(panel.textContent).toContain("Exit code: 0");
+  expect(panel.textContent).toContain("All checks passed. <script>literal</script>");
+  expect(panel.querySelector("script")).toBeNull();
+  fireEvent.click(within(panel).getByRole("button", { name: "Close transcript" }));
+  expect(screen.queryByRole("region", { name: "Transcript" })).toBeNull();
+});
+
+test("an unavailable transcript explains the missing file or opt-in inside the panel", async () => {
+  const fetch: Fetch = async url => url.endsWith("/turns")
+    ? Response.json({ turns: [{ id: 8, role: "review", route: "primary", seconds: 4, session_id: "review-session" }] })
+    : answering(DETAIL)(url);
+  render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+  await screen.findByRole("link", { name: "Open transcript" });
+  fireEvent.click(screen.getByRole("link", { name: "Open transcript" }));
+  const alert = await within(screen.getByRole("region", { name: "Transcript" })).findByRole("alert");
+  expect(alert.textContent).toContain("Transcript unavailable");
 });

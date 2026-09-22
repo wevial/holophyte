@@ -9,6 +9,7 @@ The `holophyte/` package is the factory; `factory.py` is its entry point.
 Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
+- `holophyte/cli_project.py` — project registration, listing and admission commands.
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
   `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
@@ -42,6 +43,8 @@ Each module, one line:
   (actual, estimate, ratio, rounds, outcome) with mean and median ratio, a
   read-only query over the store that claims no ticket, cuts no worktree and
   calls no one.
+- `holophyte/run.py` — the frozen claimed run and the shared landing entry point.
+- `holophyte/stop.py` — cooperative pause requests and durable continuations.
 - `holophyte/runs.py` — the store seam: a run's progress as store rows.
 - `holophyte/board.py` — Linear as the notice board: the ticket mirror, its
   pushes, `--file-ticket` and the escalation. Ticket status lives in the
@@ -65,6 +68,8 @@ Each module, one line:
 - `holophyte/serve_actions.py` — the daemon's `POST /actions/...` routes
   (KO-395): the body parser, the two unit actions, `requeue`, and the
   interventions row each records before it acts.
+- `holophyte/transcripts.py` — opted-in transcript location, rendering and turn event joins.
+- `holophyte/transcript_config.py` — the daemon transcript root allow-list.
 - `holophyte/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
@@ -165,6 +170,8 @@ The store is its own package:
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.
+- `store/project_paths.py` — canonical project identity reads that require operator
+  repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3
   `TICKET_TRANSITIONS` table and `transition()`/`walk_ticket()`,
   `mirror_ticket`, §2's `pickable()`/`pickable_tickets()` and the Mermaid

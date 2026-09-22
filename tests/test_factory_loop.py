@@ -42,10 +42,13 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     IdleThenTimeout,
     InfraRefuse,
     LoopFixture,
+    MergeModeFixture,
     StubProvider,
     a_task,
 )
+from pause_fixture import PauseFailureCases  # noqa: E402
 from review_session_fixture import ReviewSessionCases  # noqa: E402
+from run_landing_fixture import landing_path  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
@@ -64,7 +67,27 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
-class LoopTests(FailureKindCases, ReviewSessionCases, FixSessionCases, LoopFixture):
+class LoopTests(PauseFailureCases, FailureKindCases, ReviewSessionCases,
+                FixSessionCases, LoopFixture):
+    def test_pause_after_implement_preserves_work_and_parks_with_note(self):
+        from pause_fixture import PauseEdit
+        self.loop(PauseEdit(self.db))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "verifying")])
+        self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
+                         [("blocked_on_operator", "reboot writer")])
+        wt = self.worktrees / "ko-131-add-a-thing"
+        self.assertEqual((wt / "pause-work.txt").read_text(),
+                         "preserve this uncommitted work\n")
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
+        events = self.read("SELECT kind, summary FROM runEvents ORDER BY seq")
+        request = next(i for i, (kind, _) in enumerate(events)
+                       if kind == "intervention")
+        release = next(i for i, (_, summary) in enumerate(events)
+                       if "outcome paused" in summary)
+        self.assertLess(request, release)
+        self.assertIn("WIP: preserve work at operator pause", self.subjects(BRANCH))
+
     def test_illegal_phase_is_infrastructure_failure_and_preserves_work(self):
         original = store.set_phase
 
@@ -1340,3 +1363,14 @@ class NoCommitOutputTests(LoopFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunLandingTests(MergeModeFixture):
+    def test_local_landing_carries_the_claim(self):
+        landing_path(self, "local")
+
+    def test_approved_landing_carries_the_new_claim(self):
+        landing_path(self, "approved")
+
+    def test_babysitter_landing_carries_the_claim(self):
+        landing_path(self, "pr")

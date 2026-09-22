@@ -76,9 +76,10 @@ class BlockedTicket:
     was asked: the newest `redirect` intervention on that run, else the
     run's `lastHeartbeat` for a ticket parked by a module that recorded no
     redirect. Both are None only for a ticket that was parked with no run
-    behind it at all. `prSeenChecks`, `prSeenReview` and `prSeenThreads`
-    are what the reconcile last saw of the run's pull request
-    (`runs.prSeen*`, KO-368), None for a run never polled or with no run.
+    behind it at all. `prSeenChecks`, `prSeenReview`, `prSeenThreads` and
+    `prSeenTitle` are what the reconcile last saw of the run's pull
+    request (`runs.prSeen*`, KO-368, KO-622), None for a run never polled
+    or with no run. `title` is the ticket's own title.
     """
 
     id: int
@@ -88,9 +89,12 @@ class BlockedTicket:
     askedMs: int | None = None
     # The pull request the parked run opened (`runs.prUrl`), None when none.
     prUrl: str | None = None
+    parkKind: str | None = None
     prSeenChecks: str | None = None
     prSeenReview: str | None = None
     prSeenThreads: int | None = None
+    prSeenTitle: str | None = None
+    title: str | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
 
@@ -110,7 +114,8 @@ def blocked_tickets(conn, project_id=None):
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
-        " r.prSeenThreads, t.url, t.boardState"
+        " r.prSeenThreads, t.url, t.boardState, r.parkKind, r.prSeenTitle,"
+        " t.title"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
@@ -118,7 +123,8 @@ def blocked_tickets(conn, project_id=None):
                           askedMs=row[4] if row[4] is not None else row[5],
                           prUrl=row[6], prSeenChecks=row[7],
                           prSeenReview=row[8], prSeenThreads=row[9], ticketUrl=row[10],
-                          boardState=row[11])
+                          boardState=row[11], parkKind=row[12],
+                          prSeenTitle=row[13], title=row[14])
             for row in rows]
 
 
@@ -303,20 +309,21 @@ class ApprovedCandidate:
     # a fix round or a rejected fix leaves `sha` past it; None when the
     # park recorded none (a store older than the column).
     approved_sha: str | None = None
+    paused: bool = False
 
 
 def approved_candidate(conn, ticket_id, run_id):
     """The latest prior run released to the gate and its explicit approval."""
     row = conn.execute(
-        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha, approvedAt"
+        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha, approvedAt, outcome"
         " FROM runs"
         " WHERE ticketId = ? AND id <> ?"
         " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
-    if row is None or row[1] != "merge_gate":
+    if row is None or row[1] not in ("merge_gate", "merging"):
         return None
     return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
                              approved=row[5] is not None,
-                             approved_sha=row[4])
+                             approved_sha=row[4], paused=row[6] == "paused")
 
 
 def last_independent_verdict(conn, ticket_id):

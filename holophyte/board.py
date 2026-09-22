@@ -686,7 +686,7 @@ def escalate(conn, ticket_id, provider):
     return True
 
 
-def block_ticket(conn, ticket_id, provider, question):
+def block_ticket(conn, ticket_id, provider, question, park_kind="question"):
     """Park `ticket_id` as `blocked_on_operator`, asking `question`.
 
     The status move through `mirror_status()`, then the question into the
@@ -700,7 +700,8 @@ def block_ticket(conn, ticket_id, provider, question):
     """
     if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
         return False
-    store.set_question(conn, ticket_id, redact_values(question))
+    store.set_question(conn, ticket_id, redact_values(question),
+                       park_kind=park_kind)
     return True
 
 
