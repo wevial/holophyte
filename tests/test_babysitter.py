@@ -12,6 +12,7 @@ Run: python3 -m unittest discover -s tests -p 'test_babysit*' -v
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,8 @@ from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
 from loop_fixture import (  # noqa: E402
     BRANCH,
     MergeModeFixture,
+    StubProvider,
+    a_task,
 )
 
 import holophyte.loop  # noqa: E402
@@ -456,6 +459,89 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.assertEqual(calls[2][1], calls[0][1])
         self.assertNotEqual(calls[2][2], calls[0][2])
         self.assertEqual(self.pushed()[-1][1], calls[2][2])
+
+    def module_verify(self, main_red):
+        """A verify that imports what its command names, as unittest does:
+        a `tests.name` without `tests/name.py` in the tree fails. The
+        candidate's own module makes the merged tree fail until FIXED.md,
+        and `main_red` makes main fail with every module present."""
+        calls = []
+
+        def verify(command, cwd, *args, **kwargs):
+            cwd = Path(cwd)
+            calls.append((command, cwd))
+            if not command:
+                return True, "(no verify command)"
+            missing = [n for n in re.findall(r"tests\.(\w+)", command)
+                       if not (cwd / "tests" / f"{n}.py").exists()]
+            if missing:
+                return False, f"No module named 'tests.{missing[0]}'"
+            ok = (cwd / "FIXED.md").exists() or not (
+                main_red or (cwd / "tests" / "test_branch_only.py").exists())
+            return ok, "ok" if ok else "FAILED (failures=1)"
+
+        return calls, patch("holophyte.gates._run_verify", side_effect=verify)
+
+    def module_candidate(self, command):
+        """KO-597: a candidate adding `tests/test_branch_only.py`, a main
+        moved on by `tests/test_shared.py`, and a ticket verify `command`
+        the resumed pass reads."""
+        self.parked_on_a_nit(Commit("candidate", path="tests/test_branch_only.py"))
+        self.provider = lambda: StubProvider(
+            dict(a_task(), body=self.BODY, verify=command))
+        moved = self.remote_main("tests/test_shared.py", "main's test\n")
+        self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
+        return moved
+
+    def test_a_module_only_the_candidate_adds_is_not_run_on_main(self):
+        command = "python3 -m unittest tests.test_branch_only tests.test_shared"
+        moved = self.module_candidate(command)
+        calls, verify = self.module_verify(main_red=False)
+        with verify:
+            fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
+        self.assertEqual(fake.roles, ["implement", "implement"])
+        self.assertNotIn("main is red", fake.turns[0].goal)
+        self.assertIn(f"main at {moved} passes", fake.turns[0].goal)
+        self.assertEqual(calls[0][0], command)
+        self.assertEqual(calls[1][0], "python3 -m unittest tests.test_shared")
+        self.assertEqual(calls[2][0], command)
+        commands = [row["command"] for (raw,) in self.read(
+            "SELECT verificationResults FROM reviewRounds WHERE runId = 2"
+            " ORDER BY round") for row in json.loads(raw)]
+        self.assertEqual(commands[:2],
+                         [command, "python3 -m unittest tests.test_shared"])
+        ((event,),) = self.read(
+            "SELECT summary FROM runEvents WHERE runId = 2"
+            " AND summary LIKE 'main-side verify%'")
+        self.assertIn("tests.test_branch_only", event)
+        self.assertIn("only on the candidate", event)
+        self.assertNotIn("main is red", self.question())
+        self.assertIn("the fix rounds moved the candidate", self.question())
+
+    def test_a_red_main_with_every_module_present_still_parks(self):
+        command = "python3 -m unittest tests.test_shared"
+        moved = self.module_candidate(command)
+        calls, verify = self.module_verify(main_red=True)
+        with verify:
+            fake, _ = self.resume()
+        self.assertEqual(fake.roles, [])
+        self.assertIn(f"main is red at {moved}; verify command: {command}",
+                      self.question())
+        self.assertEqual([c for c, _ in calls], [command, command])
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM runEvents WHERE runId = 2"
+            " AND summary LIKE 'main-side verify%'"), [(0,)])
+
+    def test_a_clause_left_after_a_dropped_one_still_runs_on_main(self):
+        shared = "python3 -m unittest tests.test_shared"
+        moved = self.module_candidate(
+            "python3 -m unittest tests.test_branch_only && " + shared)
+        calls, verify = self.module_verify(main_red=True)
+        with verify:
+            fake, _ = self.resume()
+        self.assertEqual(fake.roles, [])
+        self.assertIn(f"main is red at {moved}", self.question())
+        self.assertEqual(calls[1][0], shared)
 
     def test_a_tree_conflict_goes_to_the_implementer_then_parks(self):
         """KO-377: `origin/main` conflicts with the branch in the tree.

@@ -27,6 +27,7 @@ from holophyte.gates import (
     InfraFailure,
     RunFailure,
     VerificationOutput,
+    drop_candidate_modules,
     record_unreviewed_verification,
     run_verify,
     sh,
@@ -366,6 +367,13 @@ def _verify_detached_main(target, conn, run_id, beat_s, wt, ref, command, contra
         detached = Path(tmp) / "tree"
         sh(["git", "worktree", "add", "--detach", str(detached), sha], wt)
         try:
+            command, skipped = drop_candidate_modules(command, wt, detached)
+            if skipped and conn is not None and run_id is not None:
+                store.record_event(
+                    conn, run_id, "verification",
+                    f"main-side verify at {sha[:12]} skipped"
+                    f" {', '.join(skipped)}: exists only on the candidate,"
+                    " not on main, so main cannot import it")
             ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
                                       sha, command, contracts)
         finally:
