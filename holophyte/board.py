@@ -700,12 +700,8 @@ def block_ticket(conn, ticket_id, provider, question, park_kind="question"):
     """
     if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
         return False
-    with store.transaction(conn):
-        store.set_question(conn, ticket_id, redact_values(question))
-        conn.execute("UPDATE runs SET parkKind = ? WHERE id ="
-                     " (SELECT COALESCE(activeRunId, lastRunId)"
-                     " FROM tickets WHERE id = ?)",
-                     (park_kind, ticket_id))
+    store.set_question(conn, ticket_id, redact_values(question),
+                       park_kind=park_kind)
     return True
 
 
