@@ -110,9 +110,10 @@ def _note_checks(parser, args):
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
-    if args.hold or args.release_hold or args.pause:
+    if args.hold or args.release_hold or args.pause or args.abort:
         if not (args.note or "").strip():
-            parser.error("--hold, --release-hold and --pause require --note TEXT")
+            parser.error("--hold, --release-hold, --pause and --abort"
+                         " require --note TEXT")
         return
     optional = args.approve or args.babysit or args.close
     if args.note is not None and args.requeue is None \
@@ -170,6 +171,10 @@ def _legacy_cli(argv):
                        help="stop at the next safe point; requires --note")
     modes.add_argument("--resume", metavar="KO-n",
                        help="resume a paused run at its recorded boundary")
+    modes.add_argument("--abort", metavar="KO-n",
+                       help="end a run now: kill its turn, commit its tree as"
+                       " WIP, push an open pull request's branch, park the"
+                       " ticket; requires --note")
     modes.add_argument(
         "--report", action="store_true",
         help="print the target store's estimate-vs-actual table and exit; "
@@ -427,6 +432,10 @@ def _store_verb(args, target, board):
     # Hands the ticket back to a loop that will mirror it to the board when
     # it claims it again, so a target with no board exits here naming the
     # key, before anything is written.
+    if args.abort:
+        from holophyte.stop import abort_command
+        abort_command(target, args.abort, args.note)
+        return True
     if args.pause or args.resume:
         from holophyte.stop import command
         command(target, args.pause or args.resume, args.note, resume=bool(args.resume))

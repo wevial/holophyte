@@ -749,7 +749,8 @@ def _widen_interventions_action(conn):
                          "'restart_supervisor'", "'launch_loop'",
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
                          "'migrate'", "'hold'", "'release_hold'",
-                         "'register_project'", "'disable'", "'pause'")):
+                         "'register_project'", "'disable'", "'pause'",
+                         "'abort'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —

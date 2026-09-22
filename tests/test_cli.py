@@ -82,6 +82,47 @@ class RepointFlagTests(unittest.TestCase):
         self.assertEqual(self.conn.execute(
             "SELECT COUNT(*) FROM interventions").fetchone(), count)
 
+    def test_abort_ends_a_run_whose_worker_is_gone_and_not_a_live_one(self):
+        def git(*args):
+            return subprocess.run(["git", *args], cwd=self.repo, check=True,
+                                  capture_output=True, text=True).stdout
+        git("init", "-q", "-b", "main")
+        git("-c", "user.email=t@example.invalid", "-c", "user.name=t",
+            "commit", "-q", "--allow-empty", "-m", "base")
+        wt = holophyte.target.worktree_path(self.target, "task/ko-1")
+        git("worktree", "add", "-q", "-b", "task/ko-1", str(wt))
+        (wt / "edit.txt").write_text("unsaved\n")
+        store.set_branch(self.conn, self.run, "task/ko-1")
+        store.heartbeat(self.conn, self.run)  # a worker beating right now
+        out, _ = self.cli("--abort", "KO-1", "--note", "host going down")
+        self.assertIn("abort requested", out)
+        self.assertIsNone(self.conn.execute("SELECT endedAt FROM runs").fetchone()[0])
+        self.conn.execute("UPDATE runs SET lastHeartbeat = ?", (T0,))  # it died
+        self.conn.commit()
+        out, _ = self.cli("--abort", "KO-1", "--note", "host going down")
+        self.assertIn("no live worker", out)
+        self.assertEqual(self.conn.execute(
+            "SELECT r.outcome, r.outcomeReason, t.status FROM runs r"
+            " JOIN tickets t ON t.id = r.ticketId").fetchone(),
+            ("abandoned", "host going down", "blocked_on_operator"))
+        self.assertEqual(git("log", "-1", "--format=%s", "task/ko-1").strip(),
+                         "WIP: preserve work at operator abort")
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM interventions WHERE action = 'abort'"
+        ).fetchone(), (1,))
+
+    def test_abort_refuses_an_ended_run_naming_its_outcome(self):
+        with self.assertRaises(SystemExit):
+            self.cli("--abort", "KO-1")
+        store.release(self.conn, self.run, "failed")
+        before = self.conn.execute("SELECT (SELECT COUNT(*) FROM interventions),"
+                                   " (SELECT COUNT(*) FROM runEvents)").fetchone()
+        with self.assertRaisesRegex(SystemExit, "outcome failed"):
+            self.cli("--abort", "KO-1", "--note", "too late")
+        self.assertEqual(self.conn.execute(
+            "SELECT (SELECT COUNT(*) FROM interventions),"
+            " (SELECT COUNT(*) FROM runEvents)").fetchone(), before)
+
     def test_project_commands_list_and_admission(self):
         def command(*args):
             out = io.StringIO()

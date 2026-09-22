@@ -953,6 +953,7 @@ from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     RequeueRefused,
     ResumeRefused,
     _release_parked,
+    abort,
     approve,
     babysit,
     hold,

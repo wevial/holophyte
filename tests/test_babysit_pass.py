@@ -63,6 +63,22 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("paused",), ("merged",)])
 
+    def test_abort_during_fix_pushes_wip_and_leaves_the_pull_request(self):
+        from abort_fixture import NOTE, AbortEdit
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        self.loop(Commit(), APPROVE, Idle(''),
+                  Reply('THREAD 1: ADDRESS -- broken'), AbortEdit(self.db),
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT outcome, outcomeReason FROM runs"),
+                         [("abandoned", NOTE)])
+        self.assertEqual(self.subjects(BRANCH)[0],
+                         "WIP: preserve work at operator abort")
+        self.assertEqual(self.pushed()[-1][1], self.git("rev-parse", BRANCH).strip())
+        self.assertEqual([kind for kind, _ in self.api_calls()
+                          if kind not in ("state", "comments")], [])
+        self.assertNotIn("close", "\n".join(self.recorded()))
+
     def test_timed_out_thread_fix_records_budget(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])

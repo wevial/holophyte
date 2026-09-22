@@ -25,6 +25,8 @@ import store.working
 # Alphabetical. Edit this list in the same change that adds or removes a
 # public function, and say why in the commit.
 EXPECTED = [
+    # KO-592: `--abort`, an emergency stop recorded before the run is marked.
+    "abort",
     # KO-258: the operator's `--approve`, the release of a run parked in
     # `awaiting_merge_approval`, one transaction like `requeue`.
     "approve",

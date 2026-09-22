@@ -89,7 +89,7 @@ from holophyte.runs import (
     review_round_cap,
     set_phase,
 )
-from holophyte.stop import boundary, continuation, stop_if_requested
+from holophyte.stop import Aborted, boundary, continuation, stop_if_requested
 from store.working import effective_work
 
 # The paths a run works against, plus the config they carry, are a `Target`
@@ -132,7 +132,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused
     except store.RunEnded as ended:
-        if ended.outcome == "paused":
+        if ended.outcome == "paused" or isinstance(ended, Aborted):
             ticket_id = store.read.run_snapshot(run.conn, run.run_id).ticketId
             board.mirror_push(run.conn, ticket_id, run.provider)
             board.release_lease_label(run.target, run.conn, ticket_id,

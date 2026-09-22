@@ -1,5 +1,6 @@
 """Cooperative run stops and their durable continuation at stage boundaries."""
 import json
+import time
 from contextvars import ContextVar
 from dataclasses import asdict
 
@@ -15,13 +16,15 @@ def stop_if_requested(conn, run_id, phase):
     if conn is None or run_id is None:
         return
     row = conn.execute(
-        "SELECT r.endedAt, r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl"
-        " FROM runs r JOIN projects p ON p.id = r.projectId"
+        "SELECT r.endedAt, r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl,"
+        " i.action FROM runs r JOIN projects p ON p.id = r.projectId"
         " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
         (run_id,)).fetchone()
     if row is None or row[0] is not None:
         return
-    _, branch, ticket_id, repo, note, pr_url = row
+    _, branch, ticket_id, repo, note, pr_url, action = row
+    if action == "abort":
+        end_aborted(conn, run_id)
     phase = "merge_gate" if pr_url else phase
     sha = preserve(Target.locate(repo), branch) if branch else None
     with _transaction(conn):
@@ -42,7 +45,50 @@ def stop_if_requested(conn, run_id, phase):
     raise store.RunEnded(run_id, "paused", note)
 
 
-def preserve(target, branch):
+class Aborted(store.RunEnded):
+    """This worker ended its own run `abandoned` for an operator's `--abort`."""
+
+
+def abort_requested(conn, run_id):
+    """Whether the live run carries an operator's pending abort."""
+    return conn.execute(
+        "SELECT 1 FROM runs r JOIN interventions i ON i.id = r.stopRequested"
+        " WHERE r.id = ? AND r.endedAt IS NULL AND i.action = 'abort'",
+        (run_id,)).fetchone() is not None
+
+
+def end_aborted(conn, run_id):
+    """Commit the tree as WIP, push it when a pull request is open, then end
+    the run `abandoned` with the note and park the ticket; the turn's
+    process group is the caller's to have killed. Merges, closes and
+    deletes nothing."""
+    from holophyte import pr
+    from holophyte.gates import InfraFailure
+    branch, ticket_id, repo, note, pr_url = conn.execute(
+        "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl"
+        " FROM runs r JOIN projects p ON p.id = r.projectId"
+        " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
+        (run_id,)).fetchone()
+    target = Target.locate(repo)
+    sha = preserve(target, branch, "abort") if branch else None
+    if sha and pr_url:
+        try:
+            pr.push_branch(target, branch)
+        except InfraFailure as refused:
+            store.record_event(conn, run_id, "warning", f"abort push: {refused}")
+    with _transaction(conn):
+        ended, outcome, reason = conn.execute(
+            "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
+            (run_id,)).fetchone()
+        if ended is not None:
+            raise store.RunEnded(run_id, outcome, reason)
+        store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
+        store.walk_ticket(conn, ticket_id, "blocked_on_operator")
+        store.set_question(conn, ticket_id, note)
+    raise Aborted(run_id, "abandoned", note)
+
+
+def preserve(target, branch, why="pause"):
     """Reuse the reclaim path's environment exclusions and staging policy."""
     from holophyte.claim import paths, sh, stage_work, unstage_environment
     wt = worktree_path(target, branch)
@@ -53,7 +99,7 @@ def preserve(target, branch):
         stage_work(target, wt)
         sh(["git", "-c", "user.name=holophyte",
             "-c", "user.email=holophyte@factory.invalid", "commit", "-m",
-            "WIP: preserve work at operator pause"], cwd=wt)
+            f"WIP: preserve work at operator {why}"], cwd=wt)
 
     return sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
@@ -113,15 +159,49 @@ def command(target, identifier, note, *, resume=False):
         conn.close()
 
 
+def abort_command(target, identifier, note):
+    """CLI adapter: record the abort, then end the run here when no worker
+    beats for it; a live worker ends it at its next heartbeat."""
+    from holophyte.config_tables import sweep_config
+    from holophyte.operator import _operator_store, _ticket_by_identifier
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        (run_id,) = conn.execute("SELECT COALESCE(activeRunId, lastRunId)"
+                                 " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        if run_id is None:
+            raise ValueError(f"{identifier} has no run to abort")
+        store.abort(conn, run_id, note)
+        phase, beat = conn.execute("SELECT phase, lastHeartbeat FROM runs"
+                                   " WHERE id = ?", (run_id,)).fetchone()
+        age = int(time.time() * 1000) - beat
+        if phase not in store.PARKED_PHASES \
+                and age < sweep_config(target).heartbeat_stale_ms:
+            print(f"[holo2] {identifier}: abort requested; run {run_id} ends"
+                  " at its worker's next heartbeat")
+            return
+        try:
+            end_aborted(conn, run_id)
+        except Aborted:
+            pass
+        print(f"[holo2] {identifier}: run {run_id} had no live worker;"
+              " ended abandoned and parked")
+    except ValueError as refused:
+        raise SystemExit(f"[holo2] {refused}") from None
+    finally:
+        conn.close()
+
+
 def pending_requests(conn):
-    """Older read-only stores have no request column until their writer migrates."""
+    """Pending stops as run id -> (action, note); older read-only stores
+    have no request column until their writer migrates."""
     columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
     if "stopRequested" not in columns or not conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name = 'interventions'").fetchone():
         return {}
-    return dict(conn.execute("SELECT r.id, i.guidance FROM runs r"
-                             " JOIN interventions i ON i.id = r.stopRequested"
-                             " WHERE r.endedAt IS NULL"))
+    return {run: (action, note) for run, action, note in conn.execute(
+        "SELECT r.id, i.action, i.guidance FROM runs r"
+        " JOIN interventions i ON i.id = r.stopRequested WHERE r.endedAt IS NULL")}
 
 
 def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows):

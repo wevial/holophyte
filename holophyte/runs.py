@@ -152,6 +152,12 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     whether the body returned or raised. A body that ends on its own path
     inside a live run is unaffected: no beat fails, nothing is raised.
 
+    An operator's `--abort` is noticed the same way (KO-592): a beat that
+    finds the run marked kills the turn through `on_swept` and stops, and
+    the exit -- or the exit beat, for a mark that landed between beats --
+    commits the tree, pushes it when a pull request is open, and ends the
+    run `abandoned` through `end_aborted()`, which raises `Aborted`.
+
     The exit beats once more, on the caller's own `conn`, after the thread
     is joined. A run ended between the timer's last beat and the block's
     exit -- a sweep landing as the agent finishes -- was otherwise never
@@ -182,6 +188,11 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
         thread.join()
     if not swept and not store.heartbeat(conn, run_id):
         swept.append(_ending_of(conn, run_id))
+    from holophyte.stop import Aborted, abort_requested, end_aborted
+    if swept[:1] == [ABORT] or not swept and abort_requested(conn, run_id):
+        end_aborted(conn, run_id)  # raises Aborted once the run is ended
+    if isinstance(failure, Aborted):
+        raise failure  # an inner block or boundary already ended the run
     if swept:
         outcome, reason = swept[0]
         if outcome == "paused":
@@ -204,11 +215,20 @@ def _fallback_heartbeat(conn, run_id, swept, stop):
     return True
 
 
+# What a beat appends when the run is live but an operator asked to abort it.
+ABORT = ("abort", None)
+
+
 def _heartbeat(conn, run_id, swept):
-    """Beat and read an ending under the connection's transaction lock."""
+    """Beat and read an ending, or a pending abort, under the connection's
+    transaction lock."""
+    from holophyte.stop import abort_requested
     with store.transaction(conn):
         if store.heartbeat(conn, run_id):
-            return True
+            if not abort_requested(conn, run_id):
+                return True
+            swept.append(ABORT)
+            return False
         swept.append(_ending_of(conn, run_id))
         return False
 
@@ -253,7 +273,7 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat):
                     print(f"[holo2] heartbeat failed: {e}", flush=True)
                 failed = True
                 continue
-            # Swept: the run is over. Kill the turn, then stop beating.
+            # Swept or aborted: kill the turn, then stop beating.
             _notify_swept(on_swept)
             return
     finally:

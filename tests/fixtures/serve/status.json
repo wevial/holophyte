@@ -54,7 +54,8 @@
       "round": 1,
       "strikes": 0,
       "host": "writer",
-      "stop_requested": null
+      "stop_requested": null,
+      "stop_action": null
     },
     {
       "id": 1,
@@ -71,7 +72,8 @@
       "round": 0,
       "strikes": 0,
       "host": null,
-      "stop_requested": null
+      "stop_requested": null,
+      "stop_action": null
     }
   ]
 }
