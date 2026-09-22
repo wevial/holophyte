@@ -543,7 +543,8 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.assertIn(f"main is red at {moved}", self.question())
         self.assertEqual(calls[1][0], shared)
 
-    def carry_candidate(self, command, setup=None, installed=True):
+    def carry_candidate(self, command, setup=None, installed=True,
+                        carry=("deps",)):
         """KO-643: a candidate adding THING.md, a target carrying the
         ignored `deps` directory, the task worktree holding it when
         `installed`, and a main moved on by MOVED.md. Returns the task
@@ -555,7 +556,7 @@ class ConflictingPullRequestTests(MergeModeFixture):
         with open(common / "info" / "exclude", "a") as exclude:
             exclude.write("deps\n")
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
-                       '[worktree]\ncarry = ["deps"]\n'
+                       f"[worktree]\ncarry = {json.dumps(list(carry))}\n"
                        + (f"setup = {json.dumps(setup)}\n" if setup else ""))
         self.provider = lambda: StubProvider(
             dict(a_task(), body=self.BODY, verify=command))
@@ -592,6 +593,18 @@ class ConflictingPullRequestTests(MergeModeFixture):
         (event,) = self.prepared()
         self.assertIn("ran setup for deps: mkdir deps", event)
         self.assertNotIn("FAILED", event)
+
+    def test_setup_replacing_a_carried_link_still_cleans_up(self):
+        """Review finding: setup that swaps a carried link for a directory
+        must not turn the checkout's cleanup into a crash."""
+        command = "test -d deps && test -e FIXED.md -o ! -e THING.md"
+        wt, moved = self.carry_candidate(
+            command, setup=["rm -rf deps && mkdir -p deps other-deps"],
+            carry=("deps", "other-deps"))
+        fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
+        self.assertIn(f"main at {moved} passes", fake.turns[0].goal)
+        self.assertNotIn("--detach", self.git("worktree", "list", "--porcelain"))
+        self.assertEqual((wt / "deps" / "package.txt").read_text(), "installed\n")
 
     def test_a_true_red_main_with_the_directory_carried_still_parks(self):
         command = "test -d deps && test ! -e MOVED.md"

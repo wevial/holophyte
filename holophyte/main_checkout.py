@@ -31,9 +31,13 @@ def detached_main(target, conn, run_id, beat_s, wt, sha):
             links = _prepare(target, conn, run_id, beat_s, wt, detached, sha)
             yield detached
         finally:
-            for link in links:
-                link.unlink()
-            sh(["git", "worktree", "remove", "--force", str(detached)], wt)
+            try:
+                # Setup may have replaced a link with a directory of its own.
+                for link in links:
+                    if link.is_symlink():
+                        link.unlink()
+            finally:
+                sh(["git", "worktree", "remove", "--force", str(detached)], wt)
 
 
 def _prepare(target, conn, run_id, beat_s, wt, detached, sha):
