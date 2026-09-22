@@ -1163,5 +1163,32 @@ class OpenRetryTests(unittest.TestCase):
                     self.assertEqual(sleep.call_args_list, sleeps)
 
 
+class AdmissionMigrationTests(unittest.TestCase):
+    def test_version_26_projects_default_to_enabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "store.db"
+            conn = sqlite3.connect(path)
+            previous = "\n".join(
+                line
+                for line in store.schema.SCHEMA.splitlines()
+                if not line.strip().startswith(
+                    ("admission ", "holdNote ", "CHECK (admission IN"))
+            )
+            conn.executescript(previous)
+            store.ensure_project(conn, "team", "/repo")
+            conn.execute("PRAGMA user_version = 26")
+            conn.commit()
+            conn.close()
+            conn = store.open(path)
+            try:
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (27,))
+                self.assertEqual(
+                    conn.execute("SELECT admission, holdNote FROM projects").fetchall(),
+                    [("enabled", None)],
+                )
+                store.hold(conn, 1, "migration supports holds")
+            finally:
+                conn.close()
+
 if __name__ == "__main__":
     unittest.main()

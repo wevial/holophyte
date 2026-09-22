@@ -161,5 +161,21 @@ class FailedAttentionTests(ServeTestCase):
                 self.assertEqual(list(self.conn.iterdump()), before)
 
 
+class HeldStatusTests(ServeTestCase):
+    def test_status_reports_project_hold(self):
+        self.seed()
+        conn = store.open(self.db)
+        try:
+            project = store.ensure_project(conn, "team-1", self.target)
+            store.hold(conn, project, "reboot pending")
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            (body["admission"], body["hold_note"]), ("held", "reboot pending")
+        )
+
 if __name__ == "__main__":
     unittest.main()

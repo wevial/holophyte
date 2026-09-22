@@ -89,6 +89,8 @@ Each module, one line:
   `main` (the serial pass or the pool's scheduler) and the self-merge
   re-exec, `report`, and the `--requeue`/`--approve`/`--babysit`/
   `--repoint` store verbs.
+- `holophyte/admission.py` — project admission reads, hold/release CLI commands,
+  and the scheduler's held-project exit after its workers finish.
 - `holophyte/claim.py` — claiming a ticket and cutting its worktree:
   `_claim_next` over `_admit_ticket`'s questions and `_claim_run`'s lease
   and board label, then `_cut_worktree`/`reuse_leftover`,

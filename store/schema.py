@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS projects (
         CHECK (autonomyProfile IN ('personal', 'shared_low_risk', 'production')),
     highRiskPaths       TEXT    NOT NULL DEFAULT '[]',  -- JSON string[] of globs
     verificationDefault TEXT,
+    admission           TEXT NOT NULL DEFAULT 'enabled'
+        CHECK (admission IN ('enabled', 'held')),
+    holdNote            TEXT,
     -- Epoch ms the supervisor's board fallback last asked Linear for the
     -- ready listing, so `board_ask_sec` throttles across passes and across
     -- the supervisor's restarts. NULL until the first ask.
@@ -327,7 +330,8 @@ CREATE TABLE IF NOT EXISTS interventions (
                             'close_out', 'requeue', 'approve', 'repoint',
                             'babysit', 'reconcile', 'restart_supervisor',
                             'launch_loop', 'launch_backoff', 'route_fallback',
-                            'config_edit', 'operator_note', 'migrate')),
+                            'config_edit', 'operator_note', 'migrate',
+                            'hold', 'release_hold')),
     note      TEXT,  -- store-level migration evidence as JSON
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
@@ -340,7 +344,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 24 records the process responsible for schema migrations (KO-495).
 # Version 25 mirrors board state names for attention and requeue (KO-503).
 # Version 26 records explicit human merge approval on runs (KO-513).
-SCHEMA_VERSION = 26
+# Version 27 adds project admission holds and their interventions (KO-578).
+SCHEMA_VERSION = 27
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -463,6 +468,9 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # ALTER TABLE preserves CHECK; UNIQUE and NOT NULL without a default require
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
+    ("projects", "admission", "admission TEXT NOT NULL DEFAULT 'enabled' "
+     "CHECK (admission IN ('enabled', 'held'))"),
+    ("projects", "holdNote", "holdNote TEXT"),
     ("runs", "approvedAt", "approvedAt INTEGER"),
     ("runs", "approvedBy", "approvedBy TEXT"),
     ("tickets", "boardState", "boardState TEXT"),
@@ -712,7 +720,7 @@ def _widen_interventions_action(conn):
            for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
                          "'restart_supervisor'", "'launch_loop'",
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
-                         "'migrate'")):
+                         "'migrate'", "'hold'", "'release_hold'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —

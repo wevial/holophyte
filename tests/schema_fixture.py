@@ -7,7 +7,8 @@ DOCUMENTED_COLUMNS = {
         # Store-owned: when the supervisor's board fallback last asked
         # Linear for the ready listing, so `board_ask_sec` throttles
         # across passes and restarts (KO-434).
-        "boardAskedAt", "launchBackoffUntil", "launchBackoffReason",
+        "admission", "holdNote", "boardAskedAt",
+        "launchBackoffUntil", "launchBackoffReason",
     },
     "tickets": {
         "id", "projectId", "linearIssueId", "linearIdentifier", "title",

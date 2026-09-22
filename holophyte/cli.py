@@ -110,6 +110,10 @@ def _note_checks(parser, args):
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
+    if args.hold or args.release_hold:
+        if not (args.note or "").strip():
+            parser.error("--hold and --release-hold require --note TEXT")
+        return
     optional = args.approve or args.babysit or args.close
     if args.note is not None and args.requeue is None \
             and args.repoint is None and optional is None:
@@ -280,7 +284,8 @@ def cli(argv=None):
     # to replace, while an approval says "merge" by itself.
     parser.add_argument(
         "--note", metavar="TEXT",
-        help="with --requeue: why the ticket goes back in the queue; with "
+        help="with --hold or --release-hold: why admission changes; "
+             "with --requeue: why the ticket goes back in the queue; with "
              "--repoint: why the candidate moved to the new sha; with "
              "--approve: anything the approval should say beyond "
              f"{APPROVE_DEFAULT_NOTE!r}; with --babysit: a maintainer instruction "
@@ -304,6 +309,10 @@ def cli(argv=None):
              "and estimate from the validated file instead of creating one; "
              "state, priority and relations stay as they are, and the stored "
              "body is read back and validated as on filing")
+    modes.add_argument("--hold", action="store_true",
+                       help="hold project admission; requires --note")
+    modes.add_argument("--release-hold", action="store_true",
+                       help="release project hold; requires --note")
     args = parser.parse_args(argv)
     eager_import()
     _file_ticket_only(parser, args)
@@ -402,6 +411,10 @@ def _store_verb(args, target, board):
     # Hands the ticket back to a loop that will mirror it to the board when
     # it claims it again, so a target with no board exits here naming the
     # key, before anything is written.
+    if args.hold or args.release_hold:
+        from holophyte.admission import change
+        change(target, args.hold, args.note)
+        return True
     if args.requeue is not None:
         requeue(target, args.requeue, args.note,
                 provider=require_board(target, board))

@@ -57,6 +57,9 @@ def _reconcile_at_startup(target, conn, project, provider):
     newest run is parked on a pull request to this reconcile, whatever
     the board says, and the next pass asks GitHub again.
     """
+    from holophyte.admission import held_line
+    if held_line(conn, project):
+        return
     _reconcile_pull_requests(target, conn, project, provider)
     _reconcile_mirror(conn, project, provider, target)
 
@@ -203,8 +206,9 @@ def _reconcile_pull_requests(target, conn, project, provider):
     naming the reset. Returns the Linear ids of the tickets sent back,
     so the serial loop can claim them again this pass.
     """
+    from holophyte.admission import held_line
     sent = set()
-    if _budget_low():
+    if held_line(conn, project) or _budget_low():
         return sent
     poll_ms = merge_config(target).pr_poll_sec * 1000
     for ticket in store.read.blocked_tickets(conn, project):

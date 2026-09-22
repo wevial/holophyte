@@ -549,7 +549,8 @@ def board_ready(conn, project, provider, out, now=None, board_ask_ms=None):
     Open mirrors also refresh board state by identifier, including tickets
     absent from the ready listing because the operator shelved them.
     """
-    if provider is None:
+    from holophyte.admission import held_line
+    if provider is None or held_line(conn, project):
         return 0
     now = int(time() * 1000) if now is None else now
     if linear_budget_low(now, out):
@@ -639,7 +640,8 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     asked = []
     owed = []
     live = False
-    for (project,) in conn.execute("SELECT id FROM projects ORDER BY id"):
+    for (project,) in conn.execute(
+            "SELECT id FROM projects WHERE admission = 'enabled' ORDER BY id"):
         if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
             live = True
             continue
