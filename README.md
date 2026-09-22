@@ -24,6 +24,8 @@ only to build the console (`bun --cwd=console run build`); see
 ```
 python3 factory.py /path/to/repo                  # run the loop
 python3 factory.py --report /path/to/repo         # estimate-vs-actual table
+python3 factory.py /path/to/repo --hold --note TEXT # stop new admission; existing runs continue
+python3 factory.py /path/to/repo --release-hold --note TEXT # enable admission again
 python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails them
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
 python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback, the console at /; HOST:PORT to bind elsewhere

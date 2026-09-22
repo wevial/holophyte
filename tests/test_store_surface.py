@@ -39,6 +39,7 @@ EXPECTED = [
     "findings_fingerprint",
     "findings_overlap",
     "heartbeat",
+    "hold",  # KO-578: project admission operator verbs.
     "init",
     "latest_supervisor_heartbeat",
     "mirror_ticket",
@@ -65,6 +66,7 @@ EXPECTED = [
     "record_strike",
     "record_supervisor_heartbeat",
     "release",
+    "release_hold",
     # KO-297: the operator's `--repoint`, a parked candidate moved to a
     # rebuilt branch tip as a recorded intervention instead of raw SQL.
     "repoint",

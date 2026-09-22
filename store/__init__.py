@@ -149,14 +149,8 @@ def claim(conn, project_id, ticket_id, now=None):
     `attempt` is 1 + the ticket's prior runs, making it 1-based. `now` is epoch
     milliseconds for `startedAt`/`lastHeartbeat`, defaulting to the clock.
 
-    The run also takes its own copy of the ticket's `timeBoxMs`, because the
-    claim is the moment the estimate applied to this attempt: a later mirror
-    of the same Linear issue may carry a re-pointed estimate, and a run row
-    that read it back through the ticket would silently restate what it was
-    budgeted. A ticket with no estimate snapshots NULL, the same "unknown".
-
-    `ticketSnapshot` is frozen for the same reason and one more: the contract
-    the run is worked to is the body as it stood at the claim, so a mirror
+    A held project returns None before a run is created. The estimate and
+    `ticketSnapshot` freeze the claim-time contract, so a later mirror
     that later re-points the title or either list must not be able to change
     what this run was asked for after the fact. The merge gate reads the
     freeze back through `run_contract()` and compares it with the live ticket.
@@ -165,6 +159,10 @@ def claim(conn, project_id, ticket_id, now=None):
         now = int(time.time() * 1000)
     conn.execute("BEGIN IMMEDIATE")
     try:
+        if conn.execute("SELECT admission FROM projects WHERE id = ?",
+                        (project_id,)).fetchone() == ("held",):
+            conn.commit()
+            return None
         # A ticket row that does not exist matches nothing here and is
         # refused a moment later by the ownership check below: an unknown
         # ticket is a malformed claim, not a lease conflict, and reads
@@ -943,6 +941,7 @@ from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     _release_parked,
     approve,
     babysit,
+    hold,
     is_gate_conflict,
     latest_supervisor_heartbeat,
     record_intervention,
@@ -951,6 +950,7 @@ from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     record_strike,
     record_supervisor_heartbeat,
     release,
+    release_hold,
     repoint,
     requeue,
     resume,

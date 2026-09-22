@@ -1,4 +1,4 @@
-"""The SQL boundary and public vocabulary agree, without changing schema 26."""
+"""The SQL boundary and public vocabulary agree, preserving existing constraints."""
 import re
 import sqlite3
 import subprocess
@@ -30,7 +30,13 @@ class StoreEnumTests(unittest.TestCase):
         old = sqlite3.connect(':memory:')
         self.addCleanup(old.close)
         old.executescript(PREVIOUS_SCHEMA.read_text())
-        self.assertEqual(actual, enum_checks(old))
+        previous = enum_checks(old)
+        unchanged = set(previous) - {('interventions', 'action')}
+        self.assertEqual({key: actual[key] for key in unchanged},
+                         {key: previous[key] for key in unchanged})
+        self.assertEqual(actual['interventions', 'action'],
+                         previous['interventions', 'action'][:-2]
+                         + ", 'hold', 'release_hold'))")
         self.assertEqual(set(actual), set(enums.CONSTRAINED_COLUMNS))
         for key, enum in enums.CONSTRAINED_COLUMNS.items():
             self.assertEqual(actual[key], enums.check_clause(key[1], enum), key)

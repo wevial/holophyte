@@ -226,6 +226,8 @@ def status(target, now=None, started_ms=None):
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
         strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
         beat = store.read.supervisor_beat(conn)
+        from holophyte.admission import state
+        admission, hold_note = state(conn, target)
         schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
     finally:
         conn.close()
@@ -239,6 +241,7 @@ def status(target, now=None, started_ms=None):
     return 200, {
         "target": str(target.path),
         "project": str(target.path),
+        "admission": admission, "hold_note": hold_note,
         "schema_version": schema_version,
         "active_routes": active_routes(target),
         "workers_on_previous_build": workers_on_previous_build(target),

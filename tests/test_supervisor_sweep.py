@@ -25,7 +25,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
@@ -1012,6 +1012,35 @@ class ReviewContainerSweepTests(SweepTestCase):
         self.assertIn("docker", section)
         self.assertFalse(self.log.exists())
 
+
+class HeldProjectTests(SweepTestCase):
+    def test_hold_preserves_working_and_parked_runs_across_supervisor_pass(self):
+        live = self.a_run()
+        parked = self.a_run()
+        for phase in ("verifying", "reviewing", "merge_gate"):
+            store.set_phase(self.conn, parked, phase, now=T0)
+        store.tickets.transition(self.conn, self.ticket_of[parked],
+                                 "blocked_on_operator")
+        store.park(self.conn, parked, "awaiting_merge_approval", now=T0,
+                   pr_url="https://github.com/org/repo/pull/1")
+        before = self.conn.execute("SELECT * FROM runs ORDER BY id").fetchall()
+        store.hold(self.conn, self.project, "reboot pending")
+        provider = Mock(team="team-1")
+        with patch("holophyte.reconcile._reconcile_pull_requests") as reconcile:
+            holophyte.supervisor.supervise_pass(
+                self.tgt, 42, T0, now=T0 + MINUTE, provider=provider,
+                out=io.StringIO()
+            )
+        reconcile.assert_not_called()
+        self.assertEqual(provider.mock_calls, [])
+        self.assertEqual(
+            self.conn.execute("SELECT * FROM runs ORDER BY id").fetchall(), before
+        )
+        store.set_phase(self.conn, live, "verifying", now=T0 + MINUTE)
+        self.assertEqual(store.run_phase(self.conn, live), "verifying")
+        output = "\n".join(self.run_sweep(T0 + MINUTE))
+        self.assertIn("held: reboot pending", output)
+        self.assertIn(str(self.target), output)
 
 if __name__ == "__main__":
     unittest.main()

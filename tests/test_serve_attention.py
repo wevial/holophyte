@@ -1,5 +1,6 @@
 """Failed attempts need attention only until a newer attempt exists."""
 import io
+import sqlite3
 import unittest
 from unittest.mock import patch
 
@@ -161,6 +162,48 @@ class FailedAttentionTests(ServeTestCase):
                     "SELECT COUNT(*) FROM interventions").fetchone()[0], count)
                 self.assertEqual(list(self.conn.iterdump()), before)
 
+
+class HeldStatusTests(ServeTestCase):
+    def test_status_before_writer_migrates_version_26_is_read_only(self):
+        self.assert_status_before_writer_migrates_is_read_only(26)
+
+    def test_status_before_writer_migrates_version_27_is_read_only(self):
+        self.assert_status_before_writer_migrates_is_read_only(27)
+
+    def assert_status_before_writer_migrates_is_read_only(self, version):
+        previous = "\n".join(
+            line for line in store.schema.SCHEMA.splitlines()
+            if not line.strip().startswith(
+                ("admission ", "holdNote ", "CHECK (admission IN")))
+        with sqlite3.connect(self.db) as conn:
+            conn.executescript(previous)
+            store.ensure_project(conn, "team-1", self.target)
+            conn.execute(f"PRAGMA user_version = {version}")
+            before = list(conn.iterdump())
+        self.start()
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["schema_version"], version)
+        self.assertEqual((body["admission"], body["hold_note"]),
+                         ("enabled", None))
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (version,))
+            self.assertEqual(list(conn.iterdump()), before)
+
+    def test_status_reports_project_hold(self):
+        self.seed()
+        conn = store.open(self.db)
+        try:
+            project = store.ensure_project(conn, "team-1", self.target)
+            store.hold(conn, project, "reboot pending")
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            (body["admission"], body["hold_note"]), ("held", "reboot pending")
+        )
 
 if __name__ == "__main__":
     unittest.main()

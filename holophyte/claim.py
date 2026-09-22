@@ -610,7 +610,12 @@ def _claim_next(target, conn, project, provider, order, skip, seen):
     leased by another run mid-claim -- is added to `skip`, so the caller's
     next ask is the one after it. The ask that finds nothing reconciles
     the mirror first (`_park_unlisted()`, KO-425)."""
+    from holophyte.admission import held_line
     while True:
+        line = held_line(conn, project)
+        if line:
+            print(line)
+            return None, None, None
         task = provider.claim_next(skip=skip, order=order)
         if not task:
             _park_unlisted(conn, project,
@@ -867,6 +872,8 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
             return HELD
         # The board half of the lease, right after the store half and
         # before the run is anything another writer could collide with.
+        if run_id is None:
+            return None
         leased = _lease_on_board(target, conn, provider, task, ticket_id,
                                  run_id)
     if leased is not True:

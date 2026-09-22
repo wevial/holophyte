@@ -1166,6 +1166,34 @@ class OpenRetryTests(unittest.TestCase):
                     self.assertEqual(sleep.call_args_list, sleeps)
 
 
+class AdmissionMigrationTests(unittest.TestCase):
+    def test_version_26_projects_default_to_enabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "store.db"
+            conn = sqlite3.connect(path)
+            previous = "\n".join(
+                line
+                for line in store.schema.SCHEMA.splitlines()
+                if not line.strip().startswith(
+                    ("admission ", "holdNote ", "CHECK (admission IN"))
+            )
+            conn.executescript(previous)
+            store.ensure_project(conn, "team", "/repo")
+            conn.execute("PRAGMA user_version = 26")
+            conn.commit()
+            conn.close()
+            conn = store.open(path)
+            try:
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (28,))
+                self.assertEqual(
+                    conn.execute("SELECT admission, holdNote FROM projects").fetchall(),
+                    [("enabled", None)],
+                )
+                store.hold(conn, 1, "migration supports holds")
+            finally:
+                conn.close()
+
+
 class Version26EnumMigrationTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -1212,8 +1240,10 @@ class Version26EnumMigrationTests(unittest.TestCase):
         after = self.rows(conn)
         # Opening adds one truthful migration-evidence row, as every version does.
         after['interventions'] = after['interventions'][:1]
+        # Admission columns are new; all pre-existing project values survive.
+        after['projects'] = [row[:7] + row[9:] for row in after['projects']]
         self.assertEqual(after, self.before)
-        self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 27)
+        self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 28)
         self.assertEqual(conn.execute('PRAGMA foreign_key_check').fetchall(), [])
         self.assertIsNotNone(conn.execute(
             "SELECT sql FROM sqlite_master"

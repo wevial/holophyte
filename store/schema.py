@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS projects (
         {_enums.check_clause('autonomyProfile', _enums.AutonomyProfile)},
     highRiskPaths       TEXT    NOT NULL DEFAULT '[]',  -- JSON string[] of globs
     verificationDefault TEXT,
+    admission           TEXT NOT NULL DEFAULT 'enabled'
+        {_enums.check_clause('admission', _enums.ProjectAdmission)},
+    holdNote            TEXT,
     -- Epoch ms the supervisor's board fallback last asked Linear for the
     -- ready listing, so `board_ask_sec` throttles across passes and across
     -- the supervisor's restarts. NULL until the first ask.
@@ -327,7 +330,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 25 mirrors board state names for attention and requeue (KO-503).
 # Version 26 records explicit human merge approval on runs (KO-513).
 # Version 27 generates every enum CHECK from store.enums (KO-579).
-SCHEMA_VERSION = 27
+# Version 28 adds project admission holds and their interventions (KO-578).
+SCHEMA_VERSION = 28
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -450,6 +454,9 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # ALTER TABLE preserves CHECK; UNIQUE and NOT NULL without a default require
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
+    ("projects", "admission", "admission TEXT NOT NULL DEFAULT 'enabled' "
+     + _enums.check_clause("admission", _enums.ProjectAdmission)),
+    ("projects", "holdNote", "holdNote TEXT"),
     ("runs", "approvedAt", "approvedAt INTEGER"),
     ("runs", "approvedBy", "approvedBy TEXT"),
     ("tickets", "boardState", "boardState TEXT"),
@@ -608,7 +615,7 @@ def init(conn):
         _widen_runs_outcomes(conn)
         _widen_interventions_action(conn)
         _project_startup_events(conn)
-        if version < 27:
+        if version < 28:
             _rebuild_enum_tables(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
@@ -705,7 +712,7 @@ def _widen_interventions_action(conn):
            for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
                          "'restart_supervisor'", "'launch_loop'",
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
-                         "'migrate'")):
+                         "'migrate'", "'hold'", "'release_hold'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
