@@ -34,6 +34,7 @@ FACTORY = ROOT / "factory.py"
 # carry no `__module__`, so they are not listed. Edit these lists in the same
 # change that moves a name, and say why in the commit.
 DEFINED = {
+    _module("run"): ["Run", "land"],
     _module("target"): [
         "Target",
         "adopt_legacy_state",
@@ -332,6 +333,10 @@ class MediaStartupTests(unittest.TestCase):
 
 
 class MovedNamesTests(unittest.TestCase):
+
+    def test_landing_is_owned_by_run(self):
+        self.assertFalse(hasattr(_module("loop"), "_land"))
+
 
     def test_each_moved_name_is_defined_in_its_new_module(self):
         for module, names in DEFINED.items():

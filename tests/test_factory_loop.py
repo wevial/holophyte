@@ -42,11 +42,13 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     IdleThenTimeout,
     InfraRefuse,
     LoopFixture,
+    MergeModeFixture,
     StubProvider,
     a_task,
 )
 from pause_fixture import PauseFailureCases  # noqa: E402
 from review_session_fixture import ReviewSessionCases  # noqa: E402
+from run_landing_fixture import landing_path  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
@@ -1368,3 +1370,14 @@ class NoCommitOutputTests(LoopFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunLandingTests(MergeModeFixture):
+    def test_local_landing_carries_the_claim(self):
+        landing_path(self, "local")
+
+    def test_approved_landing_carries_the_new_claim(self):
+        landing_path(self, "approved")
+
+    def test_babysitter_landing_carries_the_claim(self):
+        landing_path(self, "pr")

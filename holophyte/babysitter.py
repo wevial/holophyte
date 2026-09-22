@@ -29,6 +29,7 @@ from holophyte.gates import (
     VerificationOutput,
     record_unreviewed_verification,
     run_verify,
+    sh,
     with_baseline,
 )
 from holophyte.pr import NO_AUTHOR
@@ -42,6 +43,7 @@ from holophyte.review import (
     evidence_brief,
     parse_findings,
 )
+from holophyte.run import Run
 from holophyte.runs import heartbeat_while, record_round
 from holophyte.stop import boundary, fix_state, stop_if_requested
 from holophyte.thread_answers import answer_asks, post
@@ -267,7 +269,7 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                        ticket=""):
     """Merge and push main; unresolved conflicts get one turn, then park."""
     from holophyte.claim import merge_conflicts
-    from holophyte.loop import _timed, sh
+    from holophyte.loop import _timed
     from holophyte.merge_gate import _is_ancestor, _merge_ref, merge_conflict_goal
     from holophyte.pullrequest import _park_on_pr
     with heartbeat_while(conn, run_id, beat_s):
@@ -357,7 +359,6 @@ def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
 
 def _verify_detached_main(target, conn, run_id, beat_s, wt, ref, command, contracts):
     """Check the fetched main once in an isolated sibling, then remove it."""
-    from holophyte.loop import sh
     sha = sh(["git", "rev-parse", ref], wt)
     with tempfile.TemporaryDirectory(prefix="main-verify-", dir=wt.parent) as tmp:
         detached = Path(tmp) / "tree"
@@ -405,13 +406,29 @@ def _diff_identity(wt, ref):
                           capture_output=True, check=True).stdout
 
 
-def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
-              wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
-              criteria=(), approved=False, reviewed=None, verified=None, fix_note=None,
-              just_pushed=False):
+def _babysit(run, *args, **kwargs):
+    """Accept a Run; retain the positional seam for storeless callers."""
+    legacy = not isinstance(run, Run)
+    if legacy:
+        (conn, run_id, provider, task_id, issue_id, task, branch, wt, sha,
+         beat_s, url, ticket, verify_cmd, contracts, budget_min, *rest) = args
+        run = Run(run, conn, run_id, provider, task_id, issue_id, task,
+                  branch, wt, budget_min, monotonic(), sha=sha, pr_url=url)
+        args = (beat_s, ticket, verify_cmd, contracts, *rest)
+    result = _babysit_pass(run, *args, **kwargs)
+    return result.merge_sha if legacy else result
+
+
+def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
+                   approved=False, reviewed=None, verified=None, fix_note=None,
+                   just_pushed=False):
     """Watch a PR until merge or park, bounded by rounds and a no-work deadline.
     Changed candidates need verification and independent review; human approval
     covers only the released SHA. Conflict recovery pushes origin/main's merge."""
+    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    task_id, issue_id = run.task_id, run.issue_id
+    branch, wt, sha = run.branch, run.wt, run.sha
+    budget_min, url = run.budget_min, run.pr_url
     from holophyte.pullrequest import _park_on_pr
     merge = merge_config(target)
     pull = pr_status.parse_pr_url(url)
@@ -435,7 +452,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
         done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
                             sha, pull, state, reviewed)
         if done is not None:
-            return done
+            return replace(run, sha=sha, merge_sha=done)
         state = replace(state, threads=answer_asks(
             target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
             pull, thread_mentions.classified(state.threads, merge), ticket, reviewed))
@@ -485,10 +502,11 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             reviewed = sha
         if merge.approve == "auto" or approved:
             try:
-                return _verified_merge(target, conn, run_id, provider, task_id,
+                merge_sha = _verified_merge(target, conn, run_id, provider, task_id,
                                        issue_id, branch, wt, sha, beat_s, pull,
                                        reviewed, verified, verify_cmd, contracts,
                                        ticket, budget_min, merge.approve == "auto")
+                return replace(run, sha=sha, merge_sha=merge_sha)
             except pr.MergeRefused as refused:
                 verified = sha
                 sha, pushed_state, reviewed = _merge_origin_main(
@@ -559,7 +577,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None, *, fix_context=""):
     """Verify and review; allow one fix past the cap, then park on rejection."""
-    from holophyte.loop import _verify_brief, agent, set_phase, sh
+    from holophyte.loop import _verify_brief, agent, set_phase
     from holophyte.pullrequest import _park_on_pr, refresh_pr_text
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
@@ -761,7 +779,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     Resolve declines only for configured bots or `[bot]` logins. Other declines
     park open. Human ADDRESSes under act are answered but stay open; other
     human verdicts park without a reply."""
-    from holophyte.loop import agent, sh
+    from holophyte.loop import agent
     from holophyte.pullrequest import _park_human, _park_on_pr
     merge = merge_config(target)
     record_step(conn, run_id, "threads")
@@ -921,7 +939,6 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         _candidate_drift,
         _record_implementer_output,
         _transport_timed,
-        sh,
     )
     from holophyte.pullrequest import _park_on_pr
     from holophyte.redact import known_secrets, outbound, redact_prose

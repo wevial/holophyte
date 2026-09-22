@@ -1,10 +1,12 @@
 import re
+from dataclasses import replace
 from time import monotonic
 
 import store
 import store.read
 import ticket_template
 from holophyte import babysitter, pr, pr_activity, pr_media, pr_status
+from holophyte import run as run_state
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
 from holophyte.gates import MergeParked, RunFailure, sh
@@ -14,9 +16,7 @@ from holophyte.runs import heartbeat_while, set_phase
 from holophyte.stop import resume_babysit_fix, stop_if_requested
 
 
-def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
-                  branch, wt, carried, started, verify_cmd, contracts,
-                  budget_min, body, criteria=()):
+def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
     """The resumed run of a candidate open as a pull request: the babysitter
     again, from the branch as it stands, with the release's answer
     (`carried.approved`) deciding what a green, quiet PR does.
@@ -34,6 +34,8 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
     babysitter is told no sha is verified (`verified=None`) and runs the
     merge gate -- the ticket's verify commands, then the drift check --
     on the candidate before the merge API is called."""
+    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    task_id, task, branch, wt = run.task_id, run.task, run.branch, run.wt
     from holophyte.loop import _sync_branch_from_origin
 
     url = carried.pr_url
@@ -66,19 +68,15 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
     sha, pushed = resume_babysit_fix(
         target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
         pr_status.parse_pr_url(url), f"{task}\n\n{body}" if body else task,
-        verify_cmd, contracts, budget_min, carried)
-    merge_sha = babysitter._babysit(target, conn, run_id, provider, task_id,
-                                    issue_id, task, branch, wt, sha, beat_s,
-                                    url, f"{task}\n\n{body}" if body else task,
-                                    verify_cmd, contracts, budget_min,
-                                    criteria, approved=carried.approved,
-                                    reviewed=reviewed, verified=None,
-                                    just_pushed=pushed,
-                                    fix_note=(None if carried.approved else
-                                              store.read.babysit_note(
-                                                  conn, carried.run_id)))
-    return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
-                      merge_sha, started, budget_min, 0)
+        verify_cmd, contracts, run.budget_min, carried)
+    run = replace(run, sha=sha, pr_url=url)
+    run = babysitter._babysit(
+        run, beat_s, f"{task}\n\n{body}" if body else task,
+        verify_cmd, contracts, criteria, approved=carried.approved,
+        reviewed=reviewed, verified=None, just_pushed=pushed,
+        fix_note=(None if carried.approved else
+                  store.read.babysit_note(conn, carried.run_id)))
+    return run_state.land(run, True)
 
 
 # The most of `git diff main...HEAD` a written-PR turn is shown, in

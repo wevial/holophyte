@@ -68,9 +68,10 @@ class LivePullRequestTests(MergeModeFixture):
         observed = []
         babysit = holophyte.pullrequest.babysitter._babysit
 
-        def observe_resume(target, conn, run_id, *args, **kwargs):
-            observed.append(holophyte.serve_runs.run_detail(target, str(run_id)))
-            return babysit(target, conn, run_id, *args, **kwargs)
+        def observe_resume(run, *args, **kwargs):
+            observed.append(holophyte.serve_runs.run_detail(
+                run.target, str(run.run_id)))
+            return babysit(run, *args, **kwargs)
 
         with patch.object(holophyte.pullrequest.babysitter, "_babysit",
                           observe_resume):

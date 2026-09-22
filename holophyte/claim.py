@@ -21,9 +21,11 @@ inside their callers, the house back-import pattern (`holophyte/pool.py`,
 `holophyte/pullrequest.py`), so a `holophyte.loop` attribute patch lands.
 """
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
+from time import monotonic
 
 import store
 import store.read
@@ -41,13 +43,19 @@ from holophyte.board import (
     lease_label,
     lease_turn,
     ledger,
+    mirror_key,
     mirror_push,
     mirror_status,
     mirror_task,
     release_lease_label,
     store_status,
 )
-from holophyte.config import setup_commands, setup_timeout, worktree_environment
+from holophyte.config import (
+    branch_prefix,
+    setup_commands,
+    setup_timeout,
+    worktree_environment,
+)
 from holophyte.config_tables import sweep_config
 from holophyte.environment_git import (
     environment_temporary_directory,
@@ -66,7 +74,9 @@ from holophyte.gates import (
 from holophyte.merge_lock import live_merge_lock
 from holophyte.redact import redact_values
 from holophyte.redact import safe_print as print
+from holophyte.run import Run
 from holophyte.runs import heartbeat_while, set_phase
+from holophyte.target import worktree_path
 
 
 def timeout_report(cmd, expired):
@@ -632,6 +642,10 @@ def _claim_next(target, conn, project, provider, order, skip, seen):
             # problem. Skipped like a held ticket found at admission.
             skip.add(task["id"])
             continue
+        if run_id is not None:
+            # Carry the value through the existing provider-task dispatch seam;
+            # do not mutate the provider's task or rebuild the run at each phase.
+            task = dict(task, _run=claimed_run(target, task, conn, run_id, provider))
         return task, ticket_id, run_id
 
 
@@ -912,3 +926,15 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
               " from; stopping for a human")
         return None
     return run_id
+
+
+def claimed_run(target, task, conn=None, run_id=None, provider=None, *,
+                clock=monotonic):
+    """Name a run once, including direct callers without a store claim."""
+    ident = re.sub(r"[^a-z0-9]+", "-", task["id"].lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", task["title"].lower())[:30].strip("-")
+    branch = f"{branch_prefix(target)}/{ident}-{slug}"
+    row = store.read.run_snapshot(conn, run_id) if conn is not None else None
+    return Run(target, conn, run_id, provider, task["id"], mirror_key(task),
+               task["title"], branch, worktree_path(target, branch),
+               task["budget_min"], clock(), row.startedAt if row else None, clock=clock)
