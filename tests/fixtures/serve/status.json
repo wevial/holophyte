@@ -1,7 +1,7 @@
 {
   "target": "/repo",
   "project": "/repo",
-  "schema_version": 31,
+  "schema_version": 32,
   "admission": "enabled",
   "hold_note": null,
   "active_routes": {
@@ -53,7 +53,8 @@
       "time_box_ms": 1500000,
       "round": 1,
       "strikes": 0,
-      "host": "writer"
+      "host": "writer",
+      "stop_requested": null
     },
     {
       "id": 1,
@@ -69,7 +70,8 @@
       "time_box_ms": null,
       "round": 0,
       "strikes": 0,
-      "host": null
+      "host": null,
+      "stop_requested": null
     }
   ]
 }

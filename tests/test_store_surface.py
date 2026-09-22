@@ -69,6 +69,7 @@ EXPECTED = [
     "record_review_round",
     "record_strike",
     "record_supervisor_heartbeat",
+    "pause",
     "release",
     "release_hold",
     # KO-297: the operator's `--repoint`, a parked candidate moved to a

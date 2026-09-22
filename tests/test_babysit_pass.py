@@ -38,6 +38,31 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     """Pass structure, settling, quiet clocks, and refreshing main."""
+    def test_pause_during_fix_stops_before_push_or_reply(self):
+        from pause_fixture import PauseEdit
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        self.loop(Commit(), APPROVE, Idle(''),
+                  Reply('THREAD 1: ADDRESS -- broken'), PauseEdit(self.db),
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "merge_gate")])
+        self.assertEqual(len(self.pushed()), 1)
+        self.assertEqual([kind for kind, _ in self.api_calls()
+                          if kind in ("reply", "resolve", "merge")], [])
+        from holophyte.stop import command
+        preserved = self.git("rev-parse", BRANCH).strip()
+        self.serve(self.pr_state())
+        command(self.tgt, "KO-131", None, resume=True)
+        # Only a covering review and PR text remain; a fix replay fails the script.
+        self.loop(APPROVE, Idle(''), provider=self.provider())
+        self.assertEqual(self.pushed()[-1][1], preserved)
+        self.assertEqual(len(self.pushed()), 2)
+        self.assertEqual([kind for kind, _ in self.api_calls()
+                          if kind in ("reply", "resolve")], ["reply", "resolve"])
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+
     def test_timed_out_thread_fix_records_budget(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])

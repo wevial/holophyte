@@ -955,6 +955,7 @@ from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     hold,
     is_gate_conflict,
     latest_supervisor_heartbeat,
+    pause,
     record_intervention,
     record_loop_restart,
     record_loop_return,

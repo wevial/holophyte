@@ -110,9 +110,9 @@ def _note_checks(parser, args):
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
-    if args.hold or args.release_hold:
+    if args.hold or args.release_hold or args.pause:
         if not (args.note or "").strip():
-            parser.error("--hold and --release-hold require --note TEXT")
+            parser.error("--hold, --release-hold and --pause require --note TEXT")
         return
     optional = args.approve or args.babysit or args.close
     if args.note is not None and args.requeue is None \
@@ -166,6 +166,10 @@ def _legacy_cli(argv):
     # and exits, so a command line naming both is a mistake argparse should
     # answer rather than a silent choice between them.
     modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--pause", metavar="KO-n",
+                       help="stop at the next safe point; requires --note")
+    modes.add_argument("--resume", metavar="KO-n",
+                       help="resume a paused run at its recorded boundary")
     modes.add_argument(
         "--report", action="store_true",
         help="print the target store's estimate-vs-actual table and exit; "
@@ -423,6 +427,10 @@ def _store_verb(args, target, board):
     # Hands the ticket back to a loop that will mirror it to the board when
     # it claims it again, so a target with no board exits here naming the
     # key, before anything is written.
+    if args.pause or args.resume:
+        from holophyte.stop import command
+        command(target, args.pause or args.resume, args.note, resume=bool(args.resume))
+        return True
     if args.hold or args.release_hold:
         from holophyte.admission import change
         change(target, args.hold, args.note)

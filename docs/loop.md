@@ -365,6 +365,7 @@ stateDiagram-v2
     killed
     merge_gate
     merging
+    paused
     rejected
     reviewing
     squashing
@@ -372,16 +373,19 @@ stateDiagram-v2
     working
     addressing --> failed
     addressing --> killed
+    addressing --> paused
     addressing --> verifying
     awaiting_merge_approval --> done
     awaiting_merge_approval --> failed
     awaiting_merge_approval --> killed
+    awaiting_merge_approval --> paused
     awaiting_merge_approval --> rejected
     blocked_on_operator --> working
     claimed --> awaiting_merge_approval
     claimed --> failed
     claimed --> killed
     claimed --> merge_gate
+    claimed --> paused
     claimed --> working
     failed --> addressing
     failed --> reviewing
@@ -391,6 +395,7 @@ stateDiagram-v2
     merge_gate --> failed
     merge_gate --> killed
     merge_gate --> merging
+    merge_gate --> paused
     merge_gate --> rejected
     merge_gate --> verifying
     merging --> awaiting_merge_approval
@@ -399,19 +404,30 @@ stateDiagram-v2
     merging --> failed
     merging --> killed
     merging --> merge_gate
+    merging --> paused
     merging --> verifying
+    paused --> addressing
+    paused --> merge_gate
+    paused --> merging
+    paused --> reviewing
+    paused --> verifying
+    paused --> working
     reviewing --> addressing
     reviewing --> awaiting_merge_approval
     reviewing --> failed
     reviewing --> killed
     reviewing --> merge_gate
+    reviewing --> paused
     reviewing --> verifying
+    squashing --> paused
     verifying --> awaiting_merge_approval
     verifying --> failed
     verifying --> killed
+    verifying --> paused
     verifying --> reviewing
     working --> failed
     working --> killed
+    working --> paused
     working --> verifying
 ```
 <!-- end state-graph: runs -->

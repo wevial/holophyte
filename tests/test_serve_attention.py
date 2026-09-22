@@ -231,3 +231,19 @@ class TypedParkAttentionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PauseStatusTests(ServeTestCase):
+    def test_pending_request_is_visible_while_turn_is_live(self):
+        self.seed()
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        store.pause(conn, self.run, "reboot writer")
+        self.start()
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        run = next(r for r in body["runs"] if r["id"] == self.run)
+        self.assertEqual((run["phase"], run["stop_requested"]),
+                         ("working", "reboot writer"))
+        self.assertIsNone(conn.execute("SELECT endedAt FROM runs WHERE id = ?",
+                                       (self.run,)).fetchone()[0])

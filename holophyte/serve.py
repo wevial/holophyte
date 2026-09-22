@@ -224,6 +224,8 @@ def status(target, now=None, started_ms=None):
     conn = store.read.open_readonly(target.store_path)
     try:
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
+        from holophyte.stop import pending_requests
+        stops = pending_requests(conn)
         strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
         beat = store.read.supervisor_beat(conn)
         from holophyte.admission import state
@@ -260,6 +262,7 @@ def status(target, now=None, started_ms=None):
                   "ticket_url": run.ticketUrl,
                   "title": run.title,
                   "phase": run.phase,
+                  "stop_requested": stops.get(run.id),
                   "started_ms": run.startedAt,
                   "heartbeat_age_ms": now - run.lastHeartbeat,
                   "elapsed_ms": now - run.startedAt,

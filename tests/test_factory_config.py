@@ -932,7 +932,8 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = ["true"]\n')
         conn = object()
 
-        with patch.object(store, "set_phase") as set_phase:
+        with patch.object(store, "set_phase") as set_phase, \
+                patch("holophyte.stop.stop_if_requested"):
             holophyte.claim.run_worktree_setup(self.tgt, wt, conn, "run-1")
 
         set_phase.assert_called_once()

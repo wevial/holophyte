@@ -8,6 +8,7 @@ export const supervisorSchema = z.looseObject({
 
 export const runSchema = z.looseObject({
   id: z.number(), ticket: z.string(), phase: z.string(),
+  stop_requested: z.string().nullable().optional(),
   ticket_url: z.string().nullable().optional(), pr_url: z.string().nullable().optional(),
   heartbeat_age_ms: z.number(), elapsed_ms: z.number(),
   working_ms: z.number().nullable().optional(), work_started_ms: z.number().nullable().optional(),

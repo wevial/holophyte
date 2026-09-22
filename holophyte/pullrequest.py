@@ -5,7 +5,7 @@ from time import monotonic
 import store
 import store.read
 import ticket_template
-from holophyte import babysitter, pr, pr_activity, pr_media
+from holophyte import babysitter, pr, pr_activity, pr_media, pr_status
 from holophyte import run as run_state
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
@@ -13,6 +13,7 @@ from holophyte.gates import MergeParked, RunFailure, sh
 from holophyte.reconcile import _pr_seen
 from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase
+from holophyte.stop import resume_babysit_fix, stop_if_requested
 
 
 def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
@@ -64,11 +65,15 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
           " babysitting it")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
     set_phase(conn, run_id, "merge_gate", f"babysitting {url}")
+    sha, pushed = resume_babysit_fix(
+        target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
+        pr_status.parse_pr_url(url), f"{task}\n\n{body}" if body else task,
+        verify_cmd, contracts, run.budget_min, carried)
     run = replace(run, sha=sha, pr_url=url)
     run = babysitter._babysit(
         run, beat_s, f"{task}\n\n{body}" if body else task,
         verify_cmd, contracts, criteria, approved=carried.approved,
-        reviewed=reviewed, verified=None,
+        reviewed=reviewed, verified=None, just_pushed=pushed,
         fix_note=(None if carried.approved else
                   store.read.babysit_note(conn, carried.run_id)))
     return run_state.land(run, True)
@@ -183,6 +188,7 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
                            " from the diff")
     reply, timed_out = _timed(target, conn, run_id, beat_s, wt, minutes,
                               goal, role="write")
+    stop_if_requested(conn, run_id, "merge_gate")
     parsed = None if timed_out else pr.parse_pr_text(reply)
     if parsed is None or not parsed[1]:
         why = ("the turn ran out of time" if timed_out

@@ -600,6 +600,8 @@ def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
             decision = "MALFORMED"
         if decision != "MALFORMED":
             break
+        from holophyte.stop import stop_if_requested
+        stop_if_requested(conn, run_id, "reviewing")
         if attempt == 0:
             first_reply = "first reply (no verdict):\n" + comment_body(reply)
             prompt += ("\n\nYour previous reply had no clean terminal verdict. "
