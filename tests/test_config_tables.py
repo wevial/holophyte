@@ -349,8 +349,8 @@ class MergeConfigTests(ConfigTestCase):
         self.assertTrue(config.strip_attribution)
         self.assertEqual(config[1:],
                          ("auto", "local", 5, "merge", 180, 300, 1800, "", False,
-                          (), "", "e2e/capture", "", None, 10, 20,
-                          "park", "act", (), "holophyte", (), ("devin-ai-integration",
+                          (), "", "e2e/capture", "", None, 10, 20, "park",
+                          "act", (), "holophyte", (), (), ("devin-ai-integration",
                            "coderabbitai", "greptile-apps", "github-actions")))
 
     def test_bucket_validates_without_credentials_and_secrets_are_redacted(self):

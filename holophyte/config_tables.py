@@ -373,8 +373,7 @@ DEFAULT_STRIP_ATTRIBUTION = (
 )
 MERGE_KEYS = {
     "strip_attribution": DEFAULT_STRIP_ATTRIBUTION,
-    "approve": "auto",
-    "mode": "local",
+    "approve": "auto", "mode": "local",
     "pr_rounds": 5,
     "pr_merge_method": "merge",
     "pr_poll_sec": 180,
@@ -385,7 +384,7 @@ MERGE_KEYS = {
     "media_repo": "",
     "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
-    "mention_handle": "holophyte",
+    "mention_handle": "holophyte", "mention_accounts": (),
     "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
                                "greptile-apps", "github-actions"),
 }
@@ -444,7 +443,8 @@ def merge_config(target):
                     + f", got {value!r}")
             values[key] = value
             continue
-        if key in ("after", "bot_authors", "bot_logins", "ui_paths"):
+        if key in ("after", "bot_authors", "bot_logins", "ui_paths",
+                   "mention_accounts"):
             if not isinstance(value, (list, tuple)) \
                     or not all(isinstance(cmd, str) for cmd in value):
                 raise SystemExit(

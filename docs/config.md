@@ -560,6 +560,7 @@ Use TOML literal strings for custom patterns, for example
 | `human_threads` | Default: `"park"` | `"park"` or `"act"`; choose act to judge and fix concrete human requests while leaving their threads unresolved. |
 | `bot_threads` | Default: `"act"` | `"act"` or `"advisory"`; choose advisory to record unmentioned bot findings without blocking the merge. |
 | `bot_logins` | Default: `[]` | List of login strings; set to classify additional bot accounts for advisory routing and human-reply escalation. |
+| `mention_accounts` | Default: `[]` | List of GitHub login strings, matched case-insensitively; only these accounts may give mention instructions. Empty or absent keeps mentions open to any account; startup logs this once when `human_threads = "act"`. |
 | `mention_handle` | Default: `"holophyte"` | String, written without `@`; change the handle used for direct instructions in threads and the PR conversation. |
 | `after` | Default: `[]` | List of shell command strings; set post-merge builds or other commands needed in the main checkout after a local merge. |
 | `bot_authors` | Default: `["devin-ai-integration", "coderabbitai", "greptile-apps", "github-actions"]` | List of login strings replacing these defaults; change which bots' declined threads are resolved (the `[bot]` suffix still qualifies). |
@@ -597,6 +598,13 @@ pr_style = ""
 # its output; the merge stays. Not run under mode = "pr".
 after = ["bun --cwd=console run build"]
 ```
+
+With a non-empty `mention_accounts` list, unlisted mentions receive one reply per
+thread: "Only listed maintainers may instruct the factory here", with the standard
+comment header. Review threads retain normal bot or human routing; conversation
+comments yield no instruction. Set `mention_accounts = ["maintainer-login"]`
+to restrict instructions in both places. A bare string or a non-string list entry
+is rejected at startup.
 
 `mention_handle` defaults to `"holophyte"` (without `@`). A review thread's
 latest comment mentioning `@holophyte`, case-insensitively, is an instruction:
