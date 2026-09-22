@@ -10,6 +10,9 @@ from loop_fixture import BRANCH
 
 from holophyte import agents, operator, pr, thread_mentions
 
+# The factory's answer to an earlier ask in the same thread.
+ANSWERED = "---- Comment by reviewer ----\n\nBecause guests are keyed by name."
+
 
 class AskMentionCases:
     def test_mention_intents(self):
@@ -34,7 +37,10 @@ class AskMentionCases:
     def test_latest_ask_overrides_earlier_fix(self):
         self.test_ask_pass(followup=True)
 
-    def test_ask_pass(self, conversation=False, followup=False):
+    def test_resolved_thread_follow_up_is_answered(self):
+        self.test_ask_pass(resolved=True)
+
+    def test_ask_pass(self, conversation=False, followup=False, resolved=False):
         self.configure(
             '[merge]\nmode = "pr"\napprove = "human"\n'
             '[example]\napi_key = "sentinel-ask-secret"\n'
@@ -42,8 +48,14 @@ class AskMentionCases:
         question = (
             "@holophyte ask: Can an existing guest be renamed? sentinel-ask-secret"
         )
-        comments = ("@holophyte fix: Rename the guest",
-                    ((("operator", "User"), question),)) if followup else (question,)
+        comments = (question,)
+        if followup:
+            comments = ("@holophyte fix: Rename the guest",
+                        ((("operator", "User"), question),))
+        if resolved:
+            comments = ("@holophyte ask: Why rename?",
+                        ((("writer", "User"), ANSWERED),
+                         (("operator", "User"), question)))
         state = (
             self.conversation_state(("operator", "User"), question)
             if conversation
@@ -52,6 +64,8 @@ class AskMentionCases:
                 mergeable="CONFLICTING",
             )
         )
+        if resolved:
+            self.review_threads(state)[0]["isResolved"] = True
         self.resume_with_conversation(
             state, initial_state=self.pr_state(checks="FAILURE")
         )
@@ -173,6 +187,25 @@ class AskMentionCases:
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual([k for k, _ in self.api_calls()],
                          ["state", "reply", "resolve", "merge"])
+
+    def test_resolved_thread_without_new_mention_is_skipped(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        state = self.pr_state()
+        self.review_threads(state).append(self.thread(
+            1, "src/app.py", 30, ("operator", "User"), "@holophyte ask: Why?",
+            ((("writer", "User"), ANSWERED),
+             (("operator", "User"), "Thanks, that makes sense.")),
+            resolved=True))
+        self.fake_route(states=[state])
+        fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual([k for k, _ in self.api_calls()], ["state", "merge"])
+
+    @staticmethod
+    def review_threads(state):
+        return state["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
 
     def failed_ask(self, result):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
