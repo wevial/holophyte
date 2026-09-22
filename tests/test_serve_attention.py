@@ -13,7 +13,7 @@ import store
 import store.read
 import store.tickets
 from provider import LinearProvider
-from tests.phase_fixture import advance_phase
+from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase
 
 
@@ -247,3 +247,64 @@ class PauseStatusTests(ServeTestCase):
                          ("working", "reboot writer"))
         self.assertIsNone(conn.execute("SELECT endedAt FROM runs WHERE id = ?",
                                        (self.run,)).fetchone()[0])
+
+
+class PullRequestTitleTests(ServeTestCase):
+    """KO-622: the `pr_open` item names the pull request by the title the
+    reconcile's read recorded, and the ticket by its own title."""
+    URL = "https://github.com/example/repo/pull/2170"
+    TITLE = "[People] Let inviters rename pending collaborators"
+
+    def setUp(self):
+        super().setUp()
+        self.seed()
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
+        ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
+        store.tickets.transition(self.conn, ticket.id, "blocked_on_operator")
+        self.conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                          (f"PR open: {self.URL}\nreview requested", ticket.id))
+        self.conn.commit()
+        park_run(self.conn, self.run, "awaiting_merge_approval", "PR open",
+                 candidate_sha="a" * 40, pr_url=self.URL,
+                 park_kind="pull_request", now=self.now - MIN)
+
+    def read_status(self, title):
+        """One reconcile read of the pull request answering `title`,
+        recorded as the reconcile records an unchanged pull request."""
+        from holophyte import pr_status, reconcile
+        node = {"state": "OPEN", "merged": False, "mergeCommit": None,
+                "mergedBy": None, "updatedAt": "2026-09-22T10:00:00Z",
+                "title": title}
+        with patch.object(pr_status, "graphql", return_value={
+                "repository": {"pullRequest": node}}):
+            status = pr_status.pull_status(
+                None, pr_status.parse_pr_url(self.URL))
+        store.record_pr_seen(self.conn, self.run, reconcile._seen(status),
+                             parked_only=True, facts_only=True)
+
+    def pr_open(self):
+        self.start()
+        _, _, body = self.request("GET", "/attention")
+        return next(item for item in body["items"]
+                    if item["kind"] == "pr_open")
+
+    def test_a_read_title_is_recorded_and_a_later_read_replaces_it(self):
+        self.read_status(self.TITLE)
+        title = "SELECT prSeenTitle FROM runs WHERE id = ?"
+        self.assertEqual(self.conn.execute(title, (self.run,)).fetchone(),
+                         (self.TITLE,))
+        self.read_status("[People] Rename pending collaborators")
+        self.assertEqual(self.conn.execute(title, (self.run,)).fetchone(),
+                         ("[People] Rename pending collaborators",))
+
+    def test_the_item_carries_the_recorded_title_and_the_ticket_title(self):
+        self.read_status(self.TITLE)
+        item = self.pr_open()
+        self.assertEqual((item["pr"]["title"], item["title"]),
+                         (self.TITLE, "ticket 7"))
+
+    def test_a_run_never_read_has_no_pull_request_title(self):
+        item = self.pr_open()
+        self.assertEqual((item["pr"]["title"], item["title"]),
+                         (None, "ticket 7"))

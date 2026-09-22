@@ -1,7 +1,7 @@
 {
   "target": "/repo",
   "project": "/repo",
-  "schema_version": 32,
+  "schema_version": 33,
   "admission": "enabled",
   "hold_note": null,
   "active_routes": {

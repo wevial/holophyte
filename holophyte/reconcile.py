@@ -306,7 +306,8 @@ def _budget_low():
 def _seen(status):
     """`store.record_pr_seen()`'s tuple from one `PullStatus`."""
     at = max([status.updated_at or "", *(item[1] for item in status.activity)])
-    return (at or None, status.threads, status.checks, status.review)
+    return (at or None, status.threads, status.checks, status.review,
+            status.title)
 
 
 def _rebabysit(conn, ticket, pull, status, poll_ms):
@@ -461,7 +462,7 @@ def _reject_pr(conn, run_id, pull, who, branch, sha):
 
 
 def _pr_seen(target, pull, conn=None, run_id=None):
-    """`(updatedAt, thread count, checks, review)` as the pull request
+    """`(updatedAt, thread count, checks, review, title)` as the pull request
     reads now -- `store.record_pr_seen()`'s tuple -- for the park to
     record after the pass's own writes; None when GitHub could not be
     asked, which the park records as nothing seen."""

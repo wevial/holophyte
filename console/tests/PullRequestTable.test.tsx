@@ -34,6 +34,20 @@ test("a parked candidate shows its project, linked ticket and PR, reason and ban
   expect(cells[3]!.textContent).toBe("10m");
 });
 
+test("the Pull request cell names the pull request by its read title, else by the ticket's title", () => {
+  const titled = "[People] Let inviters rename pending collaborators";
+  const hosts = [hostOf({ ...status, project: "/projects/repo" }, { level: "attention", now: status.now, items: [
+    { ...item, title: "ticket 7", pr: { ...(item.pr as object), title: titled } },
+    { ...item, ticket: "KO-8", run: 48, title: "Ticket eight's title", pr: { ...(item.pr as object), title: null } },
+  ] })];
+  render(<PullRequestTable hosts={hosts} project="all" now={status.now} />);
+  const [first, second] = screen.getAllByRole("row").slice(1).map(row => within(row).getAllByRole("cell")[1]!);
+  expect(first!.textContent).toBe(`#2170${titled}`);
+  expect(first!.getAttribute("title")).toBe(titled);
+  expect(second!.textContent).toBe("#2170Ticket eight's title");
+  expect(second!.getAttribute("title")).toBe("Ticket eight's title");
+});
+
 test("project selection narrows both the table and the pointer, including a PR-only band", () => {
   const other = hostOf({ ...status, project: "/projects/other" }, { level: "attention", now: status.now,
     items: [{ ...item, ticket: "KO-8", run: 48 }] }, "http://writer:7711");

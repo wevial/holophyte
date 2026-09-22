@@ -192,6 +192,10 @@ CREATE TABLE IF NOT EXISTS runs (
     prSeenThreads     INTEGER,
     prSeenChecks      TEXT,
     prSeenReview      TEXT,
+    -- The pull request's title as the same read saw it, so `/attention`'s
+    -- `pr_open` item names the pull request and not only its number
+    -- (KO-622). NULL until a read recorded one.
+    prSeenTitle       TEXT,
     UNIQUE (ticketId, attempt)
 );
 
@@ -338,7 +342,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 29 records typed run failure kinds with prefix backfill (KO-584).
 # Version 30 adds disabled project admission and registration (KO-586).
 # Version 31 types run park reasons and backfills legacy questions (KO-583).
-SCHEMA_VERSION = 32
+# Version 33 records the pull request title the reconcile read (KO-622).
+SCHEMA_VERSION = 33
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -555,6 +560,11 @@ ADDED_COLUMNS = (
         "runs",
         "prSeenReview",
         "prSeenReview TEXT",
+    ),
+    (
+        "runs",
+        "prSeenTitle",
+        "prSeenTitle TEXT",
     ),
     (
         "projects",
