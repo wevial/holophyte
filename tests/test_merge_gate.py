@@ -63,6 +63,23 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
+class LockFailureWordingTests(LoopFixture):
+    def test_gate_lock_failure_keeps_gate_wording(self):
+        gates = holophyte.gates
+        path = gates.merge_lock_path(self.tgt)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("7 0\n")
+        with patch.object(gates, 'MERGE_LOCK_WAIT_SEC', 0):
+            with self.assertRaises(gates.MergeLockHeld) as caught:
+                with holophyte.merge_gate._gate_lock(
+                        self.tgt, None, 8, None, 'KO-2', 'task/test', 'abc', 60):
+                    self.fail('entered a held lock')
+        self.assertEqual(str(caught.exception),
+                         f"merge lock {path} held by run 7 for longer than the"
+                         " 0s wait; the gate did not run; waited 0s. A holder whose"
+                         " run has ended is cleared by --sweep --act")
+
+
 class CrashContainmentTests(LoopFixture):
     """Any exception out of `run_task()` is that run's failure: closed out
     with the error text as its reason, both leases released, one clean line,

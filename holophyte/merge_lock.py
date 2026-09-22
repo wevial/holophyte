@@ -12,18 +12,19 @@ from holophyte.runs import heartbeat_while, set_phase
 
 
 @contextlib.contextmanager
-def live_merge_lock(target, conn, run_id, beat_s):
-    """Keep the acquisition alive, then close its wait event before the gate."""
+def live_merge_lock(target, conn, run_id, beat_s, operation="gate"):
+    """Keep the acquisition alive, then close its wait event before the work."""
     with contextlib.ExitStack() as stack:
         with heartbeat_while(conn, run_id, beat_s):
             with _live_lock_wait(target, conn, run_id) as extend:
-                stack.enter_context(merge_lock(target, run_id, extend_wait=extend))
+                stack.enter_context(merge_lock(target, run_id, extend_wait=extend,
+                                               operation=operation))
         yield
 
 
 @contextlib.contextmanager
 def _live_lock_wait(target, conn, run_id):
-    """One paired event for an extended acquisition, closed before the gate."""
+    """One paired event for an extended acquisition, closed before the work."""
     started, since = monotonic(), time()
     waiting = {}
     ceiling = merge_config(target).check_wait_sec + 300
@@ -53,7 +54,7 @@ def _live_lock_wait(target, conn, run_id):
                 dict(waiting, state="end", waited=monotonic() - started)))
 
 
-def lock_nap(path, elapsed, wait, poll, extend_wait):
+def lock_nap(path, elapsed, wait, poll, extend_wait, operation="gate"):
     if elapsed < wait:
         return min(poll, wait - elapsed)
     holder = read_merge_lock(path)
@@ -66,5 +67,5 @@ def lock_nap(path, elapsed, wait, poll, extend_wait):
     extra = f"; waited {elapsed:.0f}s" if elapsed > wait else ""
     raise MergeLockHeld(
         f"merge lock {path} held by {who} for longer than the"
-        f" {wait:.0f}s wait; the gate did not run{extra}. A holder whose"
+        f" {wait:.0f}s wait; the {operation} did not run{extra}. A holder whose"
         " run has ended is cleared by --sweep --act")

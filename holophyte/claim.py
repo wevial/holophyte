@@ -48,6 +48,7 @@ from holophyte.board import (
     store_status,
 )
 from holophyte.config import setup_commands, setup_timeout, worktree_environment
+from holophyte.config_tables import sweep_config
 from holophyte.environment_git import (
     environment_temporary_directory,
     exclude_environment,
@@ -58,11 +59,11 @@ from holophyte.environment_git import (
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
-    merge_lock,
     outcome_class_of,
     run_verify,
     sh,
 )
+from holophyte.merge_lock import live_merge_lock
 from holophyte.reconcile import PR_CLOSED_QUESTION
 from holophyte.redact import redact_values
 from holophyte.redact import safe_print as print
@@ -350,7 +351,7 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
     return head
 
 
-def _refresh_main(target, run_id=None):
+def _refresh_main(target, run_id=None, conn=None):
     """Fetch `origin` and fast-forward the checkout's `main` when
     `origin/main` is ahead, so every branch is cut from everything already
     on `main` anywhere (KO-378). Three cases after the fetch: `origin/main`
@@ -372,7 +373,9 @@ def _refresh_main(target, run_id=None):
         return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
                               cwd=target.path, capture_output=True).returncode == 0
 
-    with merge_lock(target, run_id):
+    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+    with live_merge_lock(target, conn, run_id, beat_s,
+                         operation="fetch before the cut"):
         fr = subprocess.run(["git", "fetch", "origin"], cwd=target.path,
                             capture_output=True, text=True)
         if fr.returncode != 0:
@@ -450,7 +453,7 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
                f"FAILED to cut a fresh worktree for: {task}\n"
                f"{why}\nNothing was deleted.", provider)
         raise RunFailure(f"cannot cut a fresh worktree: {why}")
-    _refresh_main(target, run_id)
+    _refresh_main(target, run_id, conn)
     sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
     sh(["git", "checkout", "-b", branch], cwd=wt)
     return True
