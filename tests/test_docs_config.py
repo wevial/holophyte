@@ -84,6 +84,12 @@ class ConfigReferenceTests(unittest.TestCase):
                 AssertionError, r"\[merge\] missing entry `media_repo`"):
             assert_documented(self, misplaced)
 
+    def test_review_session_wrapper_contract(self):
+        document = (DOCS / "config.md").read_text()
+        for term in ("review_session", "HOLOPHYTE_REVIEW_RESUME",
+                     "HOLOPHYTE_REVIEW_SCRATCH", "200", "whitespace"):
+            self.assertIn(term, document)
+
     def test_review_behavior_notes(self):
         document = (DOCS / "reviewing.md").read_text().lower()
         for term in ("conversation", "explicit", "rewritten"):

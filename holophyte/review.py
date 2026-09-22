@@ -522,16 +522,17 @@ def criteria_brief(criteria):
 
 
 def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
-                  run_agent=None):
+                  run_agent=None, review_round=None):
     """Re-ask a malformed review once; keep its evidence out of the verdict."""
     from holophyte.agents import agent
     from holophyte.board import comment_body
 
     run_agent = run_agent or agent
     first_reply = ""
+    session = {} if review_round is None else {"review_round": review_round}
     for attempt in range(2):
         reply = run_agent(target, "review", prompt, wt, base_sha=base_sha,
-                          candidate_sha=sha, conn=conn, run_id=run_id)
+                          candidate_sha=sha, conn=conn, run_id=run_id, **session)
         try:
             decision = review_runner.terminal_verdict(reply)
         except review_runner.ReviewBoundaryError:

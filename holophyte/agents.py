@@ -336,7 +336,8 @@ def writer_turn(target, goal, cwd, timeout, on_start):
 
 
 def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
-          timeout=None, on_start=None, conn=None, run_id=None, argv=None):
+          timeout=None, on_start=None, conn=None, run_id=None, argv=None,
+          review_round=None):
     """Account for one role call, including timeout and exceptional returns."""
     from store.working import working
 
@@ -350,7 +351,7 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         record_pending_switch(target, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
-                      run_id=run_id, argv=argv)
+                      run_id=run_id, argv=argv, review_round=review_round)
 
         def launch():
             return recorded_turn(target, requested_role, role, conn, run_id,
@@ -365,7 +366,8 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 
 
 def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
-          timeout=None, on_start=None, conn=None, run_id=None, argv=None):
+          timeout=None, on_start=None, conn=None, run_id=None, argv=None,
+          review_round=None):
     """Run one agent turn for a role. Returns combined output text.
 
     An `implement` turn runs in a process group of its own under `timeout`
@@ -447,7 +449,14 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 env = dict(
                     os.environ, HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
                     HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
-                return configured_review(cmd, cwd, cap, env, role, dispatched_route)
+                from holophyte.review_session import prepare_environment, record_session
+                route = 'fallback' if role in routes(target).commands else 'primary'
+                prepare_environment(target, env, conn, run_id, role, route,
+                                    review_round)
+                try:
+                    return configured_review(cmd, cwd, cap, env, role, dispatched_route)
+                finally:
+                    record_session(scratch, conn, run_id, role, route, review_round)
         finally:
             check_review_refs(cwd, run_id, base_sha, candidate_sha)
     # `IMPL_TIMEOUT` is the scaled thirty minutes on this target: the

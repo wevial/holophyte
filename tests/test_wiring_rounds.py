@@ -120,9 +120,9 @@ class ReviewRoundRowTests(unittest.TestCase):
         """Run the loop over one task, answering each review turn in order."""
         turns = []
         replies = list(replies)
-
-        def fake_agent(target, role, goal, cwd, *, base_sha=None, conn=None,
-                       candidate_sha=None, timeout=None, on_start=None, run_id=None):
+        def fake_agent(target, role, goal, cwd, *, base_sha=None,
+                       candidate_sha=None, timeout=None, on_start=None,
+                       conn=None, run_id=None, review_round=None):
             turns.append(role)
             if role != "implement":
                 return replies.pop(0)
