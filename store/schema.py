@@ -645,14 +645,16 @@ def init(conn):
 def _rebuild_enum_tables(conn):
     """Copy constrained tables through the generated DDL in init's transaction."""
     for table in dict.fromkeys(table for table, _ in _enums.CONSTRAINED_COLUMNS):
+        # The dedicated widening step already installs the current intervention
+        # DDL and translates historical actions; do not copy its history twice.
+        if table == "interventions":
+            continue
         indexes = conn.execute(
             "SELECT sql FROM sqlite_master WHERE tbl_name = ?"
             " AND type IN ('index', 'trigger') AND sql IS NOT NULL", (table,)
         ).fetchall()
-        schema = _INTERVENTIONS_DDL if table == "interventions" else SCHEMA
-        ddl = schema.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1]
-        ddl = (ddl.rstrip().removesuffix(")") if table == "interventions"
-               else ddl.split(");", 1)[0])
+        ddl = SCHEMA.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1]
+        ddl = ddl.split(");", 1)[0]
         conn.execute(f"CREATE TABLE {table}_enum_new (" + ddl + ")")
         columns = ", ".join(f'"{row[1]}"' for row in conn.execute(
             f"PRAGMA table_info({table})"))

@@ -51,7 +51,15 @@ class StoreEnumTests(unittest.TestCase):
         project = store.ensure_project(conn, "team", "/repo")
         store.hold(conn, project, "maintenance")
         conn.execute("PRAGMA user_version = 29")
+        statements = []
+        conn.set_trace_callback(statements.append)
         store.init(conn)
+        conn.set_trace_callback(None)
+        # Each INSERT ... SELECT copies the entire intervention history.
+        copies = [sql for sql in statements
+                  if sql.upper().startswith("INSERT INTO INTERVENTIONS")
+                  and "SELECT" in sql.upper()]
+        self.assertEqual(len(copies), 1, copies)
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (30,))
         self.assertEqual(conn.execute(
             "SELECT admission, holdNote FROM projects").fetchone(),

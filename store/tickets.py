@@ -55,9 +55,9 @@ def register_project(conn, linear_team_id, repo_path):
     from pathlib import Path
     path = str(Path(repo_path).resolve())
     with _transaction(conn):
-        row = conn.execute("SELECT id, repoPath FROM projects "
-                           "WHERE linearTeamId = ? OR repoPath = ?",
-                           (linear_team_id, path)).fetchone()
+        row = next((row for row in conn.execute(
+            "SELECT id, repoPath, linearTeamId FROM projects ORDER BY id")
+            if row[2] == linear_team_id or str(Path(row[1]).resolve()) == path), None)
         if row:
             raise ValueError(f"project {row[0]} already registered: {row[1]}")
         project = ensure_project(conn, linear_team_id, path)
