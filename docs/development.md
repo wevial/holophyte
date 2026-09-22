@@ -126,7 +126,8 @@ Each module, one line:
 - `holophyte/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.
 - `holophyte/thread_answers.py` — read-only mention answers and thread replies.
-- `holophyte/thread_mentions.py` — latest-comment mentions as PR instructions.
+- `holophyte/thread_mentions.py` — mention markers and typed intent triage.
+- `holophyte/questions.py` — typed choice requests and safe service failures.
 - `holophyte/thread_findings.py` — structured PR findings, bounded originals,
   and read-only normalization of legacy thread rows.
 - `holophyte/babysit_steps.py` — records PR babysitting step changes without

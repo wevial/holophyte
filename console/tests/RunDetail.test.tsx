@@ -562,7 +562,7 @@ test("bot findings stay visible as advisory on active and completed run cards", 
 test("instructions show each request once with its state and thread link", async () => {
   const body = structuredClone(DETAIL);
   body.rounds[1]!.instructions = [
-    { kind: "instruction", path: "app.py", line: 30, author: "operator", request: "Use the path token", url: "https://example.com/thread/1", outcome: "changed", reply: "Addressed in abc: used path token" },
+    { kind: "instruction", path: "app.py", line: 30, author: "operator", request: "Use the path token", url: "https://example.com/thread/1", outcome: "changed", reply: "Addressed in abc: used path token", triage: { decision: "fix", confidence: 0.9, route: "fix", reason: "fix" } },
     { kind: "instruction", path: "app.py", line: 40, author: "maintainer", request: "Preserve validation", url: "https://example.com/thread/2" },
   ];
   await mount(body, T + 20 * MINUTE);
@@ -572,6 +572,7 @@ test("instructions show each request once with its state and thread link", async
   expect(screen.getByText("awaiting fix")).toBeTruthy();
   expect(screen.getByRole("link", { name: "app.py:30" }).getAttribute("href")).toBe("https://example.com/thread/1");
   expect(screen.getByText("@maintainer")).toBeTruthy();
+  expect(screen.getByText(/Triage: fix · confidence 0.9/)).toBeTruthy();
   expect(screen.queryByText(/MENTIONED|VERDICT/)).toBeNull();
 });
 

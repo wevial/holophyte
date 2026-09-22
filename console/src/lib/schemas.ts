@@ -44,6 +44,10 @@ export const findingSchema = threadFindingFieldsSchema.extend({
 export const instructionSchema = z.looseObject({
   kind: z.literal("instruction"), path: z.string(), line: z.number().nullable().optional(),
   author: z.string(), request: z.string(), url: z.string(),
+  triage: z.object({
+    decision: z.enum(["fix", "question", "unclear"]), confidence: z.number().nullable(),
+    route: z.enum(["fix", "answer"]), reason: z.string(),
+  }).optional(),
   outcome: z.enum(["changed", "kept", "asked"]).optional(), reply: z.string().optional(),
 });
 export const operatorNoteSchema = z.looseObject({

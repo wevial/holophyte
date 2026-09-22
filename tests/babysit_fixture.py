@@ -101,7 +101,7 @@ class BabysitHelpers:
 
     def human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        request = ("@holophyte move the button\nPut it beside Save."
+        request = ("@holophyte fix: move the button\nPut it beside Save."
                    "\n\n---- Comment by earlier-route ----"
                    "\n\nAddressed in abc123: Earlier attempt.")
         # The instruction is on the second page of conversation comments.
@@ -127,7 +127,7 @@ class BabysitHelpers:
                          ["state", "state", "conversation", "state"])
         self.assertEqual(calls[1][1]["commentsAfter"], "c1")
         body = calls[2][1]["body"]
-        self.assertIn("> @holophyte move the button\n> Put it beside Save.", body)
+        self.assertIn("> @holophyte fix: move the button\n> Put it beside Save.", body)
         self.assertIn("Moved the button beside Save.", body)
         self.assertIn(self.git("rev-parse", BRANCH).strip(), body)
         self.assertTrue(any("POST repos/example/repo/issues/7/comments" in c
@@ -138,7 +138,7 @@ class BabysitHelpers:
                        'bot_authors = ["summary-service"]\n')
         state = self.conversation_state(("operator", "User"), "Move the button")
         nodes = state["data"]["repository"]["pullRequest"]["comments"]["nodes"]
-        nodes.extend(self.comment(n, author, "@holophyte move the button")
+        nodes.extend(self.comment(n, author, "@holophyte fix: move the button")
                      for n, author in enumerate([
                          ("summary-service", "User"), ("app", "Bot"),
                          ("service[bot]", "User")], 2))
