@@ -870,12 +870,14 @@ def unreturned_loop_restarts(conn, grace_ms, now=None):
 
 def hold(conn, project_id, note):
     """Stop new admission, recording the reason before the project changes."""
-    return _set_admission(conn, project_id, note, "held", "hold")
+    from .tickets import set_admission
+    return set_admission(conn, project_id, "held", note)
 
 
 def release_hold(conn, project_id, note):
     """Enable admission again without changing any ticket or run."""
-    return _set_admission(conn, project_id, note, "enabled", "release_hold")
+    from .tickets import set_admission
+    return set_admission(conn, project_id, "enabled", note)
 
 
 def _set_admission(conn, project_id, note, state, action):
@@ -894,5 +896,5 @@ def _set_admission(conn, project_id, note, state, action):
             " VALUES (?, 'human', 'manual', ?, ?, ?)",
             (project_id, action, note, int(time.time() * 1000))).lastrowid
         conn.execute("UPDATE projects SET admission = ?, holdNote = ? WHERE id = ?",
-                     (state, note if state == "held" else None, project_id))
+                     (state, note if state != "enabled" else None, project_id))
         return intervention

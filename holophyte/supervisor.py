@@ -782,6 +782,13 @@ NEWER_SCHEMA = "newer than the version"
 
 
 def supervise(target, provider=None, interval=None, wait=None, out=None):
+    from holophyte.admission import disabled_startup
+    if disabled_startup(target, out):
+        return
+    return _supervise(target, provider, interval, wait, out)
+
+
+def _supervise(target, provider=None, interval=None, wait=None, out=None):
     """`--supervise`'s whole body: lock, sweep, sleep, repeat until a signal.
 
     The lock is taken before the first pass and given back on every way out

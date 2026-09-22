@@ -136,6 +136,14 @@ def _close_checks(parser, args):
 
 
 def cli(argv=None):
+    from holophyte.cli_project import project_cli
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["project"]:
+        return project_cli(argv[1:])
+    return _legacy_cli(argv)
+
+
+def _legacy_cli(argv):
     """Parse the command line and run the mode it names.
 
     An explicit parser rather than `sys.argv[1]`, which is what the target
@@ -146,7 +154,8 @@ def cli(argv=None):
     """
     parser = argparse.ArgumentParser(
         prog="factory.py",
-        description="Holophyte: a minimal Linear-driven software factory.")
+        description="Holophyte: a minimal Linear-driven software factory.",
+        epilog="Project commands: factory.py project --help")
     # Required, with no default: a default would name one operator's checkout,
     # and a bare `factory.py` would then run against a path that exists on
     # one machine. A missing target is an argparse error, the same way a
@@ -391,6 +400,9 @@ def cli(argv=None):
     # names resolves before the loop claims a ticket. `--report` skips this: it
     # calls nobody, so a reviewer that is not installed on the machine reading
     # the table is not that reading's problem.
+    from holophyte.admission import disabled_startup
+    if disabled_startup(target):
+        return 0
     check_agent_commands(target)
     # Same window, same reason: the `[worktree]` table is read here rather
     # than by the first run that cuts a worktree with it.

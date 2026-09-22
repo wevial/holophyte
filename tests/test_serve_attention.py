@@ -190,6 +190,21 @@ class HeldStatusTests(ServeTestCase):
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (version,))
             self.assertEqual(list(conn.iterdump()), before)
 
+    def test_disabled_status_hides_live_runs(self):
+        self.seed()
+        conn = store.open(self.db)
+        try:
+            project = store.ensure_project(conn, "team-1", self.target)
+            store.set_admission(conn, project, "disabled", "retired")
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertEqual((body["admission"], body["hold_note"]),
+                         ("disabled", "retired"))
+        self.assertEqual(body["runs"], [])
+
     def test_status_reports_project_hold(self):
         self.seed()
         conn = store.open(self.db)

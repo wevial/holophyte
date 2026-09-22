@@ -15,10 +15,12 @@ from __future__ import annotations
 import collections
 import json
 import time
+from pathlib import Path
 
 from . import _json_list
 from . import enums as _enums
 from .enums import TicketStatus as _Status
+from .project_paths import canonical_projects
 from .schema import _transaction
 
 
@@ -36,7 +38,9 @@ def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
     path or another autonomy profile is a policy change, not a side effect of
     starting a loop, so it is not done here.
     """
+    path = str(Path(repo_path).resolve())
     with _transaction(conn):
+        canonical_projects(conn)
         row = conn.execute(
             "SELECT id FROM projects WHERE linearTeamId = ?", (linear_team_id,)
         ).fetchone()
@@ -46,8 +50,44 @@ def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
             "INSERT INTO projects"
             " (linearTeamId, repoPath, defaultBranch, autonomyProfile)"
             " VALUES (?, ?, ?, ?)",
-            (linear_team_id, str(repo_path), default_branch, autonomy_profile),
+            (linear_team_id, path, default_branch, autonomy_profile),
         ).lastrowid
+
+
+def register_project(conn, linear_team_id, repo_path):
+    """Explicit registration refuses an existing team or canonical path."""
+    path = str(Path(repo_path).resolve())
+    with _transaction(conn):
+        paths = canonical_projects(conn)
+        row = next((row for row in conn.execute(
+            "SELECT id, repoPath, linearTeamId FROM projects ORDER BY id")
+            if row[2] == linear_team_id or paths[row[0]] == path), None)
+        if row:
+            raise ValueError(f"project {row[0]} already registered: {row[1]}")
+        project = ensure_project(conn, linear_team_id, path)
+        conn.execute(
+            'INSERT INTO interventions (projectId, source, "trigger", action, note, at)'
+            " VALUES (?, 'human', 'manual', 'register_project', ?, ?)",
+            (project, f"registered {path}", int(time.time() * 1000)))
+        return project
+
+
+def list_projects(conn):
+    """Return projects in stable name/path order, including their newest run."""
+    rows = conn.execute(
+        "SELECT id, repoPath, admission, holdNote, "
+        "(SELECT id FROM runs WHERE projectId = projects.id "
+        "ORDER BY startedAt DESC, id DESC LIMIT 1) FROM projects").fetchall()
+    return sorted(rows, key=lambda row: (Path(row[1]).name, row[1], row[0]))
+
+
+def set_admission(conn, project_id, admission, note):
+    """Set admission with the same recorded actions as the legacy flags."""
+    from .operate import _set_admission
+    actions = {"enabled": "release_hold", "held": "hold", "disabled": "disable"}
+    if admission not in actions:
+        raise ValueError(f"unknown admission {admission!r}")
+    return _set_admission(conn, project_id, note, admission, actions[admission])
 
 
 # The §3 status diagram, transcribed edge for edge, plus the one edge below
