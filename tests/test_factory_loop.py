@@ -69,13 +69,6 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 class LoopTests(PauseFailureCases, FailureKindCases, ReviewSessionCases,
                 FixSessionCases, LoopFixture):
-    def test_pause_before_malformed_review_reminder(self):
-        from fake_agent import Reply
-        from pause_fixture import PauseReply
-        self.loop(Commit(), PauseReply(self.db, Reply("no verdict")))
-        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
-                         [("paused", "reviewing")])
-
     def test_pause_after_implement_preserves_work_and_parks_with_note(self):
         from pause_fixture import PauseEdit
         self.loop(PauseEdit(self.db))

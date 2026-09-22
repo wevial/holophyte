@@ -44,6 +44,12 @@ class PauseReply:
 
 
 class PauseFailureCases:
+    def test_pause_before_malformed_review_reminder(self):
+        from fake_agent import Reply
+        self.loop(Commit(), PauseReply(self.db, Reply("no verdict")))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "reviewing")])
+
     def test_pause_after_failed_terminal_verification_resumes_its_result(self):
         from holophyte.stop import command
         calls = 0

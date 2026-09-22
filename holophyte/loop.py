@@ -27,7 +27,7 @@ import review_runner
 import store
 import store.read
 import ticket_template
-from holophyte import failure_reason, pr_status
+from holophyte import board, failure_reason, pr_status
 from holophyte import run as run_state
 from holophyte.agents import agent, record_session, review_refs, transport_failure
 from holophyte.babysitter import _babysit
@@ -133,11 +133,10 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         raise InfraFailure(str(refused)) from refused
     except store.RunEnded as ended:
         if ended.outcome == "paused":
-            from holophyte.board import mirror_push, release_lease_label
             ticket_id = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
                                      (run_id,)).fetchone()[0]
-            mirror_push(conn, ticket_id, provider)
-            release_lease_label(target, conn, ticket_id, provider, run_id)
+            board.mirror_push(conn, ticket_id, provider)
+            board.release_lease_label(target, conn, ticket_id, provider, run_id)
             return SWEPT
         print(f"[holo2] run {ended.run_id} was ended by the supervisor"
               f" ({ended.outcome}: {ended.reason}); stopping")
