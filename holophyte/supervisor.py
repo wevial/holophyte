@@ -290,7 +290,7 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
         # `close_out_failure()` calls its `confirm` with no arguments, so
         # the target is bound here, where the dependency is visible,
         # rather than captured from this scope.
-        provider, functools.partial(confirm, target))
+        provider, functools.partial(confirm, target), failure_kind="swept")
     return Outcome(trip, acted, seen["phase"])
 
 

@@ -502,9 +502,15 @@ class RunFailure(Exception):
     the text as its `outcomeReason`.
     """
 
-    def __init__(self, reason):
+    failure_kind = 'unclassified'
+
+    def __init__(self, reason, failure_kind=None):
+        from store.enums import FailureKind
+
         super().__init__(reason)
         self.reason = reason
+        self.failure_kind = FailureKind(failure_kind or getattr(
+            reason, 'failure_kind', self.failure_kind)).value
 
 
 class InfraFailure(RunFailure):
@@ -523,6 +529,8 @@ class InfraFailure(RunFailure):
     keeps its meaning: nothing that raises `RunFailure` today is reclassified.
     """
 
+    failure_kind = 'infra'
+
 
 class MergeLockHeld(InfraFailure):
     """The merge lock stayed held past the wait bound.
@@ -533,6 +541,8 @@ class MergeLockHeld(InfraFailure):
     no strike is spent, and the message names the holder so the operator
     knows which run (or which stale lock) to look at.
     """
+
+    failure_kind = 'merge_lock'
 
 
 class MergeParked(Exception):

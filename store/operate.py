@@ -57,7 +57,7 @@ OUTCOME_CLASSES = frozenset(e.value for e in _enums.OutcomeClass)
 
 
 def release(conn, run_id, outcome, reason=None, now=None,
-            outcome_class="work", merge_sha=None):
+            outcome_class="work", merge_sha=None, failure_kind=None):
     """End run `run_id` with `outcome` and give the ticket's lease back.
 
     The mirror of `claim()`, and the reason a crashed loop does not brick the
@@ -115,6 +115,8 @@ def release(conn, run_id, outcome, reason=None, now=None,
     `merged` outcome may carry one; any other outcome with a sha is a caller
     bug and raises before any write.
     """
+    failure_kind = (_enums.FailureKind(failure_kind or "unclassified").value
+                    if outcome == "failed" else None)
     reason = _redact_values(reason) if reason is not None else None
     if outcome not in TERMINAL_PHASES:
         raise ValueError(f"unknown outcome {outcome!r}")
@@ -162,12 +164,12 @@ def release(conn, run_id, outcome, reason=None, now=None,
         # disagreeing with the rounds it summarizes.
         conn.execute(
             "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
-            " outcomeClass = ?, resumePhase = ?, mergeSha = ?,"
+            " outcomeClass = ?, resumePhase = ?, mergeSha = ?, failureKind = ?,"
             " reviewRoundCount = (SELECT COUNT(*) FROM reviewRounds"
             "                     WHERE runId = ? AND verdict != 'error')"
             " WHERE id = ?",
             (now, outcome, reason, outcome_class, resume_phase, merge_sha,
-             run_id, run_id),
+             failure_kind, run_id, run_id),
         )
         conn.execute(
             "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
@@ -619,7 +621,8 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
         if phase in ENDED_PHASES:
             conn.execute(
                 "UPDATE runs SET endedAt = NULL, outcome = NULL,"
-                " outcomeReason = NULL, outcomeClass = 'work' WHERE id = ?",
+                " outcomeReason = NULL, failureKind = NULL,"
+                " outcomeClass = 'work' WHERE id = ?",
                 (run_id,),
             )
         conn.execute(

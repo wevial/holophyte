@@ -304,7 +304,7 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
     """The conflict-resolution turn `reuse_leftover()` hands the
     implementer at claim time, run from the merge gate's mid-merge
     worktree `wt` (KO-404); the merged sha when the turn leaves the merge
-    committed over a clean tree, None when not.
+    committed over a clean tree, plus the failure kind when not.
 
     The conflict is the same wherever it is met, so the hand-off is the
     same one: mid-merge worktree, the paths named, the ticket along for
@@ -336,19 +336,19 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
                           " run.\n\nThe ticket the branch"
                           f" answers:\n\n{ticket}")
     if timed_out or merge_conflicts(wt):
-        return None
+        return None, "budget" if timed_out else "unclassified"
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if not (_is_ancestor(wt, "main", head) and _is_ancestor(wt, sha, head)):
         # The turn ended the merge itself rather than resolving it -- or
         # reset the candidate's work away: a HEAD main alone reaches would
         # send the gate's verify over main, not the merge.
-        return None
+        return None, "unclassified"
     if sh(["git", "status", "--porcelain"], cwd=wt):
         # The merge commit landed but the turn left uncommitted edits;
         # the verify would read them and the merged sha does not hold
         # them.
-        return None
-    return head
+        return None, "unclassified"
+    return head, None
 
 
 def _refresh_main(target, run_id=None, conn=None):
@@ -793,7 +793,8 @@ def _refuse_claim(conn, task, run_id, reason):
     `infra`, no work started, no strike -- and say the loop stops."""
     refused = InfraFailure(reason)
     store.release(conn, run_id, "failed", str(refused),
-                  outcome_class=outcome_class_of(refused))
+                  outcome_class=outcome_class_of(refused),
+                  failure_kind=refused.failure_kind)
     print(f"[holo2] {task['id']}: {refused}; stopping for a human")
     return None
 
@@ -846,7 +847,7 @@ def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
         drop_lease_label(conn, ticket_id, provider, issue_id, label)
         store.release(conn, run_id, "failed",
                       f"the board showed {others[0]}'s lease label at claim;"
-                      " no work started", outcome_class="infra")
+                      " no work started", outcome_class="infra", failure_kind="infra")
         print(f"[holo2] {task['id']} is leased by {others[0]} on the board;"
               " skipping it")
         return HELD
@@ -898,7 +899,8 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
         refused = InfraFailure("ticket was not ready when the run"
                                " was claimed; no work started")
         store.release(conn, run_id, "failed", str(refused),
-                      outcome_class=outcome_class_of(refused))
+                      outcome_class=outcome_class_of(refused),
+                      failure_kind=refused.failure_kind)
         release_lease_label(target, conn, ticket_id, provider, run_id)
         # This refusal is a failed run, but an `infra` one: no work
         # started, so it does not count towards parking the ticket.

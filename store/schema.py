@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS runs (
     outcome           TEXT
         {_enums.check_clause('outcome', _enums.RunOutcome)},
     outcomeReason     TEXT,
+    failureKind TEXT
+        {_enums.check_clause('failureKind', _enums.FailureKind)},
     -- The merge commit a `merged` run landed on main as, the full sha.
     -- NULL until the merge close-out writes it, and NULL forever on a run
     -- that ended any other way or was released by a module older than the
@@ -331,7 +333,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 26 records explicit human merge approval on runs (KO-513).
 # Version 27 generates every enum CHECK from store.enums (KO-579).
 # Version 28 adds project admission holds and their interventions (KO-578).
-SCHEMA_VERSION = 28
+# Version 29 records typed run failure kinds with prefix backfill (KO-584).
+SCHEMA_VERSION = 29
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -454,6 +457,8 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # ALTER TABLE preserves CHECK; UNIQUE and NOT NULL without a default require
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
+    ('runs', 'failureKind', 'failureKind TEXT '
+     + _enums.check_clause('failureKind', _enums.FailureKind)),
     ("projects", "admission", "admission TEXT NOT NULL DEFAULT 'enabled' "
      + _enums.check_clause("admission", _enums.ProjectAdmission)),
     ("projects", "holdNote", "holdNote TEXT"),
@@ -615,6 +620,9 @@ def init(conn):
         _widen_runs_outcomes(conn)
         _widen_interventions_action(conn)
         _project_startup_events(conn)
+        if version < 29:
+            from .failure_kinds import backfill
+            backfill(conn)
         if version < 28:
             _rebuild_enum_tables(conn)
         # Stamped last and inside the same transaction as the ladder, so a

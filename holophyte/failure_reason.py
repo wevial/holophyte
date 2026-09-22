@@ -9,9 +9,10 @@ def line(value):
 class Reason(str):
     """A normal reason string carrying lossless facts to close-out."""
 
-    def __new__(cls, text, facts):
+    def __new__(cls, text, facts, failure_kind="unclassified"):
         value = super().__new__(cls, line(text)[:400])
         value.facts = facts
+        value.failure_kind = failure_kind
         return value
 
 
@@ -36,7 +37,13 @@ def compose(kind, **facts):
         raise ValueError(f'unknown failure kind: {kind}')
     if facts.get('context'):
         text += f"; {facts['context']}"
-    return Reason(text, {'kind': kind, **facts})
+    failure_kind = {'verify': 'verify',
+                    'adjudication': ('review_route'
+                                     if facts.get('decision') == 'MALFORMED'
+                                     else 'unclassified'),
+                    'fix_round': ('budget' if facts.get('timed_out')
+                                  else 'fix_no_progress')}[kind]
+    return Reason(text, {'kind': kind, **facts}, failure_kind)
 
 
 def verify(output, command, context):

@@ -26,6 +26,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
+    IdleThenTimeout,
     MergeModeFixture,
 )
 
@@ -37,6 +38,17 @@ import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     """Pass structure, settling, quiet clocks, and refreshing main."""
+    def test_timed_out_thread_fix_records_budget(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        self.loop(Commit(), APPROVE, Idle(''),
+                  Reply('THREAD 1: ADDRESS -- broken'), IdleThenTimeout(),
+                  provider=self.provider())
+        ((kind, reason),) = self.read('SELECT failureKind, outcomeReason FROM runs')
+        self.assertEqual(kind, 'budget')
+        self.assertTrue(reason.startswith('fix round timed out; 1 findings open;'),
+                        reason)
+
     def steps(self):
         return [row[0] for row in self.read(
             "SELECT summary FROM runEvents WHERE kind = 'babysit_step' ORDER BY seq")]

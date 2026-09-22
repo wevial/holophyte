@@ -24,7 +24,7 @@ DOCUMENTED_COLUMNS = {
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
         "providerSessionId", "branch", "prUrl", "startedAt", "lastHeartbeat",
-        "endedAt", "reviewRoundCount", "outcome", "outcomeReason",
+        "endedAt", "reviewRoundCount", "outcome", "outcomeReason", "failureKind",
         "workingMs", "workStartedAt",
         # Store-owned: the merge commit a merged run landed on main as, so
         # the ticket-to-commit link is a column and not a grep of git log.
