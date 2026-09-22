@@ -19,7 +19,7 @@ export const UNBOUND_NOTE = "edit this one in the raw tab";
 /** The line over the fields when the daemon could not parse the file. */
 export const UNPARSED_LINE = "The file does not parse as TOML; the fields are empty until the raw tab fixes it.";
 
-type FieldKind = { kind: "text" } | { kind: "number" } | { kind: "lines" } | { kind: "select"; options: readonly string[] };
+type FieldKind = { kind: "text" } | { kind: "number"; numeric: "integer" | "decimal" } | { kind: "lines" } | { kind: "select"; options: readonly string[] };
 
 /** One typed field: the `[table] key` it binds and how it is drawn. */
 export type Field = { table: string; key: string; label: string } & FieldKind;
@@ -32,17 +32,18 @@ export const FIELDS: readonly Field[] = [
   { table: "agents", key: "implementer", label: "Implementer command", kind: "text" },
   { table: "agents", key: "review_model", label: "Review model", kind: "text" },
   { table: "agents", key: "review_effort", label: "Review effort", kind: "select", options: ["low", "medium", "high", "xhigh"] },
+  { table: "agents", key: "budget_scale", label: "Budget scale", kind: "number", numeric: "decimal" },
   { table: "worktree", key: "setup", label: "Worktree setup", kind: "lines" },
-  { table: "loop", key: "workers", label: "Workers", kind: "number" },
+  { table: "loop", key: "workers", label: "Workers", kind: "number", numeric: "integer" },
   { table: "merge", key: "mode", label: "Merge mode", kind: "select", options: ["local", "pr"] },
   { table: "merge", key: "approve", label: "Approval", kind: "select", options: ["auto", "human"] },
   { table: "merge", key: "pr_merge_method", label: "PR merge method", kind: "select", options: ["merge", "squash", "rebase"] },
   { table: "merge", key: "human_threads", label: "Human threads", kind: "select", options: ["park", "act"] },
   { table: "merge", key: "pr_style", label: "PR style", kind: "text" },
-  { table: "merge", key: "pr_rounds", label: "PR rounds", kind: "number" },
-  { table: "merge", key: "pr_poll_sec", label: "PR poll seconds", kind: "number" },
-  { table: "merge", key: "check_wait_sec", label: "Check wait seconds", kind: "number" },
-  { table: "merge", key: "pr_quiet_sec", label: "PR quiet seconds", kind: "number" },
+  { table: "merge", key: "pr_rounds", label: "PR rounds", kind: "number", numeric: "integer" },
+  { table: "merge", key: "pr_poll_sec", label: "PR poll seconds", kind: "number", numeric: "integer" },
+  { table: "merge", key: "check_wait_sec", label: "Check wait seconds", kind: "number", numeric: "integer" },
+  { table: "merge", key: "pr_quiet_sec", label: "PR quiet seconds", kind: "number", numeric: "integer" },
   { table: "merge", key: "after", label: "After merge", kind: "lines" },
   { table: "board", key: "label", label: "Board label", kind: "text" },
 ];
@@ -252,7 +253,7 @@ export function SettingsSheet({
       );
     }
     if (field.kind === "number") {
-      const decimal = bound.state === "bound" && typeof bound.value === "number" && !Number.isInteger(bound.value);
+      const decimal = field.numeric === "decimal";
       return (
         <input
           {...common}
