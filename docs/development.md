@@ -74,6 +74,9 @@ Each module, one line:
 - `holophyte/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
+- `holophyte/serve_watch.py` — the daemon's code-moved check and its
+  in-flight request count (KO-648): what re-executes it between requests
+  once the factory checkout's `HEAD` moves.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the

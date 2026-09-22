@@ -10,9 +10,11 @@ import http.client
 import io
 import json
 import os
+import shutil
 import signal
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
 import unittest
@@ -22,8 +24,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
-
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
@@ -32,6 +32,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
 from tests.phase_fixture import advance_phase, finish_run, park_run
+from tests.serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
 # How far the clock may move between seeding and the assertion: the daemon
 # stamps its own `now`, so an age is "about" the seeded distance.
@@ -1196,6 +1197,204 @@ class DisconnectedClientTests(unittest.TestCase):
         self.assertEqual(len(out.getvalue().splitlines()), 1)
         self.assertIn("/status", out.getvalue())
         self.assertNotIn("Traceback", out.getvalue())
+
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def git(checkout, *args):
+    """Run git in `checkout` as a throwaway identity; its stdout, stripped."""
+    return subprocess.run(
+        ["git", "-c", "user.name=serve-test", "-c", "user.email=serve@test",
+         "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+         *args], cwd=checkout, capture_output=True, text=True,
+        check=True).stdout.strip()
+
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+class FollowsCodeProcessTests(ServeTestCase):
+    """KO-648 end to end: a real daemon run from its own git checkout of the
+    factory re-executes when that checkout's `HEAD` moves, and the fresh
+    process answers on the address the old one held."""
+
+    def factory_checkout(self):
+        """A copy of this factory committed as commit A in its own git
+        repository, with the check interval cut so the test is quick."""
+        checkout = self.root / "factory"
+        skip = shutil.ignore_patterns("__pycache__")
+        for package in ("holophyte", "store"):
+            shutil.copytree(REPO / package, checkout / package, ignore=skip)
+        for module in REPO.glob("*.py"):
+            shutil.copy(module, checkout)
+        serve_py = checkout / "holophyte" / "serve_watch.py"
+        text = serve_py.read_text()
+        self.assertIn("\nCODE_CHECK_SEC = 15\n", text)
+        serve_py.write_text(text.replace("\nCODE_CHECK_SEC = 15\n",
+                                         "\nCODE_CHECK_SEC = 0.2\n"))
+        git(checkout, "init", "-q")
+        git(checkout, "add", "-A")
+        git(checkout, "commit", "-q", "-m", "A")
+        return checkout
+
+    def get_status(self, port):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("GET", "/status")
+            response = conn.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            conn.close()
+
+    def test_a_moved_checkout_re_executes_and_answers_on_the_same_address(self):
+        self.seed()
+        checkout = self.factory_checkout()
+        first = git(checkout, "rev-parse", "HEAD")
+        port = free_port()
+        daemon = subprocess.Popen(
+            [sys.executable, "-u", str(checkout / "factory.py"),
+             str(self.target), "--serve", f"127.0.0.1:{port}"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        lines = []
+        reader = threading.Thread(target=lambda: lines.extend(daemon.stdout))
+        reader.start()
+        self.addCleanup(daemon.stdout.close)
+        self.addCleanup(reader.join)
+        self.addCleanup(daemon.wait, 10)
+        self.addCleanup(daemon.kill)
+        announced = f"[holo2] serving 127.0.0.1:{port} "
+
+        def wait_for(count):
+            deadline = monotonic() + 20
+            while monotonic() < deadline and daemon.poll() is None:
+                if sum(line.startswith(announced) for line in lines) >= count:
+                    return
+                sleep(0.05)
+            self.fail(f"no serving line #{count}: {''.join(lines)}")
+
+        wait_for(1)
+        code, before = self.get_status(port)
+        self.assertEqual(code, 200, before)
+
+        git(checkout, "commit", "-q", "--allow-empty", "-m", "B")
+        second = git(checkout, "rev-parse", "HEAD")
+        wait_for(2)
+
+        moved = [line for line in lines if "factory code moved" in line]
+        self.assertEqual(len(moved), 1, "".join(lines))
+        self.assertIn(f"factory code moved from {first} to {second};"
+                      " serve re-executing", moved[0])
+        code, after = self.get_status(port)
+        self.assertEqual(code, 200, after)
+        # The same pid (an exec, not a child) answering as a fresh daemon.
+        self.assertIsNone(daemon.poll())
+        self.assertGreater(after["daemon"]["started_ms"],
+                           before["daemon"]["started_ms"])
+
+
+class FollowsCodeTests(ServeTestCase):
+    """KO-648 in process: `serve()` on this thread with the revision read
+    and the `EXEC` seam patched, a client on a helper thread."""
+
+    INTERVAL = 0.05
+
+    def serve_with(self, revision, client):
+        """Run `serve()` until it re-executes or `client(port)` returns and
+        a SIGTERM stops it; `(printed, events)` where `events` holds "EXEC"
+        once the seam was called."""
+        self.seed()
+        tgt = holophyte.target.Target.locate(self.target)
+        out = io.StringIO()
+        self.events = []
+        returned = threading.Event()
+
+        def drive():
+            deadline = monotonic() + 10
+            while "serving" not in out.getvalue() and monotonic() < deadline:
+                sleep(0.01)
+            port = int(out.getvalue().split()[2].rsplit(":", 1)[1])
+            try:
+                client(port)
+            finally:
+                if not returned.wait(5):
+                    os.kill(os.getpid(), signal.SIGTERM)
+        helper = threading.Thread(target=drive)
+        helper.start()
+        with patch.object(holophyte.serve, "factory_revision", revision), \
+                patch.object(holophyte.serve, "EXEC",
+                             lambda *_: self.events.append("EXEC")), \
+                patch.object(sys, "orig_argv", ["python3", "factory.py"]):
+            try:
+                code = holophyte.serve.serve(tgt, "127.0.0.1:0", out=out,
+                                             interval=self.INTERVAL)
+            finally:
+                returned.set()
+                helper.join()
+        self.assertEqual(code, 0)
+        return out.getvalue()
+
+    def test_a_request_in_flight_is_answered_before_the_re_exec(self):
+        moved, checked = threading.Event(), threading.Event()
+        answers = []
+
+        def revision():
+            if moved.is_set():
+                checked.set()
+                return "bbb"
+            return "aaa"
+
+        def slow_status(target, started_ms=None):
+            moved.set()
+            self.assertTrue(checked.wait(10))  # the check ran mid-request
+            sleep(0.3)
+            self.events.append("answered")
+            return 200, {"slow": True}
+
+        def client(port):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn.request("GET", "/status")
+            response = conn.getresponse()
+            answers.append((response.status, json.loads(response.read())))
+            conn.close()
+
+        with patch.object(holophyte.serve, "status", slow_status):
+            printed = self.serve_with(revision, client)
+
+        self.assertEqual(answers, [(200, {"slow": True})])
+        self.assertEqual(self.events, ["answered", "EXEC"])
+        self.assertIn("[holo2] factory code moved from aaa to bbb;"
+                      " serve re-executing", printed)
+
+    def test_an_unreadable_head_keeps_serving_and_logs_once(self):
+        reads = []
+        answers = []
+
+        def revision():
+            reads.append(None)
+            return "aaa" if len(reads) == 1 else None
+
+        def client(port):
+            deadline = monotonic() + 10
+            while len(reads) < 4 and monotonic() < deadline:
+                sleep(0.01)
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn.request("GET", "/status")
+            answers.append(conn.getresponse().status)
+            conn.close()
+
+        printed = self.serve_with(revision, client)
+
+        self.assertGreaterEqual(len(reads), 4)
+        self.assertEqual(answers, [200])
+        self.assertEqual(self.events, [])
+        self.assertEqual(printed.count("cannot read the factory checkout's"
+                                       " HEAD"), 1, printed)
+        self.assertIn("serve stopping on signal", printed)
+
 
 
 if __name__ == "__main__":

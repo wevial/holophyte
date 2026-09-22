@@ -85,6 +85,15 @@ token on every bind as the actions do, since a writable config is
 and the change applies at that start, not to a running loop. Off, both
 are 404.
 
+The daemon follows the factory code as the supervisor does (KO-648): it
+records the `factory_revision()` it started from and, every
+`CODE_CHECK_SEC` between requests, reads the checkout's `HEAD` again. When
+the two differ it stops accepting, lets the requests in flight finish,
+closes its socket and re-executes itself through `reexec_self()` with the
+same command line, so it binds the same address again -- the port typed,
+not the one an ephemeral `:0` happened to get. A checkout whose `HEAD`
+cannot be read logs that once and keeps serving the build it has.
+
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
 from __future__ import annotations
@@ -113,6 +122,7 @@ from holophyte.config_tables import (
     sweep_config,
 )
 from holophyte.pr_status import PR_URL_RE
+from holophyte.reexec import reexec_self
 from holophyte.report import host_label
 from holophyte.serve_actions import (
     ACTIONS,
@@ -147,7 +157,8 @@ from holophyte.serve_runs import (
     runs,
     shipped,
 )
-from holophyte.supervisor import SWEEPABLE_PHASES
+from holophyte.serve_watch import CODE_CHECK_SEC, CodeWatch, InFlight, Moved
+from holophyte.supervisor import SWEEPABLE_PHASES, factory_revision
 from store.working import effective_work
 
 ADDRESS_SHAPE = "PORT|HOST:PORT"
@@ -164,6 +175,9 @@ TOKEN_FORBIDDEN_MODE = stat.S_IRWXG | stat.S_IRWXO
 # carry no store data.
 OPEN_PATHS = frozenset({"/peers"})
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
+# The re-exec seam, as the supervisor's: a test patches it and the test
+# runner is never exec-ed.
+EXEC = os.execv
 # How long a failed run stays on `/attention`: a failure the operator has
 # not requeued or merged past in a day is one they have not looked at.
 FAILED_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -829,7 +843,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         pass
 
 
-class StatusServer(ThreadingHTTPServer):
+class StatusServer(InFlight, ThreadingHTTPServer):
     """The bound server, carrying the one target its handler answers for,
     the directory it serves the console from, the moment it was bound,
     which `/status` reports as the daemon's `started_ms`, and what `/peers`
@@ -846,6 +860,9 @@ class StatusServer(ThreadingHTTPServer):
     answering them open."""
 
     daemon_threads = True
+    # Called by `serve_forever()` between requests; `serve()` sets it to
+    # its `CodeWatch`.
+    code_check = None
 
     def __init__(self, target, address, console_dir=CONSOLE_DIR, token=None):
         self.target = target
@@ -861,6 +878,10 @@ class StatusServer(ThreadingHTTPServer):
         super().__init__(address, StatusHandler)
         host, port = self.server_address[:2]
         self.self_address = f"{host}:{port}"
+
+    def service_actions(self):
+        if self.code_check is not None:
+            self.code_check()
 
 
 def make_server(target, host, port, console_dir=CONSOLE_DIR, token=None):
@@ -880,18 +901,24 @@ class _Stopped(Exception):
     """Raised inside `serve_forever()` by the signal handler to unwind it."""
 
 
-def serve(target, address, out=None):
-    """`--serve`'s whole body: bind, announce, answer until SIGINT/SIGTERM.
+def serve(target, address, out=None, interval=CODE_CHECK_SEC):
+    """`--serve`'s whole body: bind, announce, answer until SIGINT/SIGTERM
+    or until the factory code moves, then re-execute.
 
     The handler for the stop signals raises out of `serve_forever()` rather
     than calling `shutdown()`: `shutdown()` waits for the serving loop to
-    notice, and the loop is the thread the signal interrupted.
+    notice, and the loop is the thread the signal interrupted. The code
+    check raises out of it the same way, from the loop's own thread between
+    requests; the re-exec waits for the requests in flight, after the
+    socket is closed so the fresh process can bind it. Returns after a
+    re-exec only when a test's `EXEC` does.
     """
     out = out or sys.stdout
     require_tomlkit()
     host, port = parse_address(address)
     token = resolve_token(target, host)
     server = make_server(target, host, port, token=token)
+    watch = server.code_check = CodeWatch(interval, out, factory_revision)
 
     def on_signal(signum, _frame):
         raise _Stopped(signum)
@@ -908,11 +935,17 @@ def serve(target, address, out=None):
         print(f"[holo2] serving {bound_host}:{bound_port} {mode} for"
               f" {target.path}, {guard}", file=out)
         try:
-            server.serve_forever()
+            server.serve_forever(poll_interval=min(0.5, interval))
         except _Stopped:
             print("[holo2] serve stopping on signal", file=out)
+        except Moved:
+            pass  # `watch.moved_to` says so, past the `finally`
     finally:
         for signum, handler in previous.items():
             signal.signal(signum, handler)
         server.server_close()
+    if watch.moved_to is not None:
+        server.drain()
+        reexec_self(f"factory code moved from {watch.started_from} to"
+                    f" {watch.moved_to}; serve re-executing", EXEC, out)
     return 0
